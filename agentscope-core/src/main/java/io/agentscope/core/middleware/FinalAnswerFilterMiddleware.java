@@ -70,6 +70,9 @@ public class FinalAnswerFilterMiddleware implements MiddlewareBase {
         private final ReplyLifecycleTracker tracker = new ReplyLifecycleTracker();
 
         private Flux<AgentEvent> handle(AgentEvent event) {
+            if (!tracker.sourceKey(event).isTopLevel()) {
+                return Flux.just(event);
+            }
             Observation observation = tracker.observe(event);
 
             if (event instanceof ModelCallStartEvent) {

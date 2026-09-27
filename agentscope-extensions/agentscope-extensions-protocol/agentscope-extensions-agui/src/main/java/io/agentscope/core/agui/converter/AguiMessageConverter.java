@@ -101,12 +101,15 @@ public class AguiMessageConverter {
         if (content instanceof MessageContent.Text text) {
             addTextBlock(blocks, text.value(), aguiMessage);
         } else if (content instanceof MessageContent.Blocks blocksContent) {
-            if (!aguiMessage.isUserMessage()) {
-                throw new IllegalArgumentException(
-                        "Structured content blocks are only supported for AG-UI user messages");
-            }
+            List<ContentBlock> structuredBlocks = new ArrayList<>();
             for (InputContent input : blocksContent.parts()) {
-                blocks.add(toContentBlock(input));
+                structuredBlocks.add(toContentBlock(input));
+            }
+            if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+                blocks.add(
+                        new ToolResultBlock(aguiMessage.getToolCallId(), null, structuredBlocks));
+            } else {
+                blocks.addAll(structuredBlocks);
             }
         } else if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
             // Tool message with no content (e.g. frontend tool returning nothing): still

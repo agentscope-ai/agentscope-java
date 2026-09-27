@@ -50,6 +50,7 @@ import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.DataBlockStartEvent;
 import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
@@ -96,6 +97,48 @@ class AguiAgentAdapterV2Test {
 
     @Nested
     class RuntimeContextAndLifecycleTests {
+
+        @Test
+        void textOutputDispositionConfigIsAppliedToReActStreams() {
+            ReActAgent agent = mock(ReActAgent.class);
+            Msg result =
+                    AssistantMessage.builder()
+                            .id("reply-1")
+                            .content(TextBlock.builder().text("answer").build())
+                            .generateReason(GenerateReason.MODEL_STOP)
+                            .build();
+            Flux<AgentEvent> source =
+                    Flux.just(
+                            new AgentStartEvent("thread-v2", "run-v2", "react"),
+                            new ModelCallStartEvent("reply-1"),
+                            new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                            new AgentResultEvent(result),
+                            new AgentEndEvent("reply-1"));
+            when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(source);
+
+            List<AguiEvent> disabled =
+                    new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                            .run(input())
+                            .collectList()
+                            .block();
+            assertNotNull(disabled);
+            assertFalse(disabled.stream().anyMatch(AguiEvent.Custom.class::isInstance));
+            assertFalse(disabled.stream().anyMatch(AguiEvent.MessagesSnapshot.class::isInstance));
+
+            AguiAdapterConfig enabledConfig =
+                    AguiAdapterConfig.builder().textOutputDispositionEnabled(true).build();
+            List<AguiEvent> enabled =
+                    new AguiAgentAdapter(agent, enabledConfig).run(input()).collectList().block();
+            assertNotNull(enabled);
+            AguiEvent.Custom disposition =
+                    enabled.stream()
+                            .filter(AguiEvent.Custom.class::isInstance)
+                            .map(AguiEvent.Custom.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals("agentscope.text_output.disposition", disposition.name());
+            assertTrue(enabled.stream().anyMatch(AguiEvent.MessagesSnapshot.class::isInstance));
+        }
 
         @Test
         void testRunUsesReActStreamEventsWithRuntimeContext() {

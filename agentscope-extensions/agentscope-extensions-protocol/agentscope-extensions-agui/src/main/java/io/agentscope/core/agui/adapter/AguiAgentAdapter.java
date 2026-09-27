@@ -29,6 +29,7 @@ import io.agentscope.core.agui.converter.AguiToolConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventStreams;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -110,7 +111,8 @@ public class AguiAgentAdapter {
                 new AgentEventConverterRegistry(
                         config.getEventConverters(),
                         config.getEventEnrichers(),
-                        config.isEmitSubagentEventsAsNative());
+                        config.isEmitSubagentEventsAsNative(),
+                        config.isTextOutputDispositionEnabled());
     }
 
     /**
@@ -203,6 +205,7 @@ public class AguiAgentAdapter {
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             reAct.streamEvents(msgs, runtimeContext), "agent stream is null");
+            events = withTextOutputDisposition(events);
             return new AgentStream(
                     convertAgentEvents(events, context), () -> finishPendingEvents(context));
         }
@@ -214,6 +217,7 @@ public class AguiAgentAdapter {
                     Objects.requireNonNull(
                             invokeHarnessStreamEvents(agent, msgs, runtimeContext),
                             "agent stream is null");
+            events = withTextOutputDisposition(events);
             return new AgentStream(
                     convertAgentEvents(events, context), () -> finishPendingEvents(context));
         }
@@ -238,6 +242,12 @@ public class AguiAgentAdapter {
                 .concatMapIterable(event -> agentEventConverterRegistry.convert(event, context))
                 .onErrorResume(
                         error -> Flux.concat(finishPendingEvents(context), Flux.error(error)));
+    }
+
+    private Flux<AgentEvent> withTextOutputDisposition(Flux<AgentEvent> events) {
+        return config.isTextOutputDispositionEnabled()
+                ? AgentEventStreams.withTextOutputDisposition(events)
+                : events;
     }
 
     private Flux<AguiEvent> finishPendingEvents(AguiStreamContext context) {

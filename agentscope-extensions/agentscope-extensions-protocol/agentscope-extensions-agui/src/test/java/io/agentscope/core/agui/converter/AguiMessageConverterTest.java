@@ -536,16 +536,53 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertBlocksContentRejectedForNonUserMessage() {
+    void testConvertAssistantBlocksContent() {
+        AguiMessage aguiMsg =
+                AguiMessage.blocksMessage(
+                        "msg-1",
+                        "assistant",
+                        List.of(
+                                new ImageInputContent(
+                                        new InputContentUrlSource("https://example.com/img.png"),
+                                        null)),
+                        null,
+                        null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.ASSISTANT, msg.getRole());
+        assertTrue(msg.hasContentBlocks(ImageBlock.class));
+        AguiMessage roundTrip = converter.toAguiMessage(msg);
+        assertEquals("assistant", roundTrip.getRole());
+        assertTrue(roundTrip.hasBlocks());
+        assertEquals(1, ((MessageContent.Blocks) roundTrip.getContent()).parts().size());
+    }
+
+    @Test
+    void testConvertToolBlocksContentPreservesToolResultId() {
         AguiMessage aguiMsg =
                 AguiMessage.blocksMessage(
                         "msg-1",
                         "tool",
-                        List.of(new TextInputContent("not a valid tool content block")),
+                        List.of(
+                                new AudioInputContent(
+                                        new InputContentUrlSource("https://example.com/audio.mp3"),
+                                        null)),
                         null,
                         "tc-1");
 
-        assertThrows(IllegalArgumentException.class, () -> converter.toMsg(aguiMsg));
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tc-1", result.getId());
+        assertTrue(result.getOutput().stream().anyMatch(AudioBlock.class::isInstance));
+
+        AguiMessage roundTrip = converter.toAguiMessage(msg);
+        assertEquals("tool", roundTrip.getRole());
+        assertEquals("tc-1", roundTrip.getToolCallId());
+        assertTrue(roundTrip.hasBlocks());
     }
 
     @Test

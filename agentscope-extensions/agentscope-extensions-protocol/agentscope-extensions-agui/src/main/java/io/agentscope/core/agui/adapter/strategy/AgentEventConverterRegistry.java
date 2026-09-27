@@ -66,6 +66,23 @@ public class AgentEventConverterRegistry {
             List<AgentEventConverter> customConverters,
             List<AguiEventEnricher> enrichers,
             boolean emitSubagentEventsAsNative) {
+        this(customConverters, enrichers, emitSubagentEventsAsNative, false);
+    }
+
+    /**
+     * Create a registry with built-in converters, custom converters, enrichers, subagent
+     * presentation mode, and optional text output disposition support.
+     *
+     * @param customConverters converters registered after built-in converters
+     * @param enrichers enrichers applied after each conversion
+     * @param emitSubagentEventsAsNative whether child events use native converters
+     * @param textOutputDispositionEnabled whether disposition events are converted to AG-UI events
+     */
+    public AgentEventConverterRegistry(
+            List<AgentEventConverter> customConverters,
+            List<AguiEventEnricher> enrichers,
+            boolean emitSubagentEventsAsNative,
+            boolean textOutputDispositionEnabled) {
         Map<Class<? extends AgentEvent>, AgentEventConverter> map = new LinkedHashMap<>();
         register(map, new AgentLifecycleEventConverter());
         register(map, new PermissionConfirmEventConverter());
@@ -76,6 +93,9 @@ public class AgentEventConverterRegistry {
         register(map, new ToolResultEventConverter());
         register(map, new ModelCallUsageEventConverter());
         register(map, new CustomAgentEventConverter());
+        if (textOutputDispositionEnabled) {
+            register(map, new TextOutputDispositionConverter());
+        }
         if (customConverters != null) {
             for (AgentEventConverter converter : customConverters) {
                 register(map, Objects.requireNonNull(converter, "converter cannot be null"));
@@ -97,6 +117,7 @@ public class AgentEventConverterRegistry {
         Objects.requireNonNull(event, "event cannot be null");
         Objects.requireNonNull(context, "context cannot be null");
         context.beginEvent();
+        context.observe(event);
         if (!emitSubagentEventsAsNative && !context.isTopLevelEvent(event)) {
             subagentConverter.convert(event, context);
         } else {

@@ -38,6 +38,8 @@ import java.util.Objects;
  * <p>It is public only so internal components in different packages (for example {@code
  * io.agentscope.core.middleware}) can share one set of reply/source correlation rules. It is not part
  * of the supported API surface and may change without notice; do not use it outside this project.
+ * Instances are scoped to one subscription and must be accessed serially by that stream; the
+ * tracker is intentionally not synchronized.
  */
 public final class ReplyLifecycleTracker {
 
