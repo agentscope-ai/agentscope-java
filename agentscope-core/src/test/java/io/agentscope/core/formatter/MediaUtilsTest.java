@@ -28,9 +28,12 @@ import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.SocketPolicy;
@@ -94,6 +97,28 @@ class MediaUtilsTest {
                     "fixture".getBytes(java.nio.charset.StandardCharsets.UTF_8),
                     MediaUtils.readUrlAsBytes(server.url("/redirect").toString()));
             assertEquals(2, server.getRequestCount());
+        }
+    }
+
+    @Test
+    void downloadEncodesHttpContentAsBase64() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setBody("fixture"));
+            assertEquals(
+                    "Zml4dHVyZQ==",
+                    MediaUtils.downloadUrlToBase64(server.url("/media").toString()));
+        }
+    }
+
+    @Test
+    void httpsDownloadPropagatesTlsFailure() throws IOException, NoSuchAlgorithmException {
+        try (MockWebServer server = new MockWebServer()) {
+            // Exercise HTTPS without external networking or relaxing TLS validation.
+            server.useHttps(SSLContext.getDefault().getSocketFactory(), false);
+            server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.FAIL_HANDSHAKE));
+            assertThrows(
+                    SSLException.class,
+                    () -> MediaUtils.downloadUrlToBase64(server.url("/media").toString()));
         }
     }
 

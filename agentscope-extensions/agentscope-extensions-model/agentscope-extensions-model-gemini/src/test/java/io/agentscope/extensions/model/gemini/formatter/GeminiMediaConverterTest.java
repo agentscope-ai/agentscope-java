@@ -37,6 +37,7 @@ import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -102,6 +103,17 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
         Blob blob = converter.convertToInlineDataPart(block).inlineData().orElseThrow();
         assertArrayEquals(Files.readAllBytes(tempImageFile), blob.data().orElseThrow());
         assertEquals("image/png", blob.mimeType().orElseThrow());
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "\t"})
+    void absentOrBlankMimeHintFallsBackToExtension(String mimeType) throws IOException {
+        ImageBlock block =
+                new ImageBlock(new URLSource(tempImageFile.toUri().toString(), mimeType));
+        Blob blob = converter.convertToInlineDataPart(block).inlineData().orElseThrow();
+        assertEquals("image/png", blob.mimeType().orElseThrow());
+        assertArrayEquals(Files.readAllBytes(tempImageFile), blob.data().orElseThrow());
     }
 
     @Test
