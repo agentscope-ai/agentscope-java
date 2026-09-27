@@ -82,6 +82,15 @@ public class AguiMessageConverter {
     private static final String RESUME_PAYLOAD_REASON = "reason";
 
     /**
+     * Prefix the agent runtime recognises on an error tool result's text.
+     *
+     * <p>Mirrors the literal {@link ToolResultBlock#error(String, String)} emits. Core exposes no
+     * constant for it, so it is repeated here for the case where an error has to be combined with
+     * the payload the client sent alongside it.
+     */
+    private static final String ERROR_TEXT_PREFIX = "[ERROR] ";
+
+    /**
      * Creates a new AguiMessageConverter
      */
     public AguiMessageConverter() {}
@@ -293,6 +302,14 @@ public class AguiMessageConverter {
         if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
             // Tool results must always carry a ToolResultBlock, even when the frontend
             // returned empty content.
+            String error = aguiMessage.getError();
+            if (error != null && !error.isBlank()) {
+                // A frontend tool that failed reports the reason in the AG-UI `error` field
+                // rather than in `content`. Report the failure instead of a success, so the
+                // model can retry, report it, or ask the user.
+                blocks.add(errorResultBlock(aguiMessage.getToolCallId(), error, text));
+                return;
+            }
             String resultText = text != null ? text : "";
             blocks.add(
                     ToolResultBlock.builder()
@@ -306,6 +323,34 @@ public class AguiMessageConverter {
             return;
         }
         blocks.add(TextBlock.builder().text(text).build());
+    }
+
+    /**
+     * Build an ERROR tool result for a frontend tool that reported a failure.
+     *
+     * <p>{@link ToolResultBlock#error(String, String)} is used when the client sent no payload,
+     * so the error text keeps the {@code [ERROR]} prefix the agent runtime recognises. A payload
+     * sent alongside the error is kept after it rather than discarded, which the AG-UI protocol
+     * allows and which would otherwise lose the only part of the tool output the client sent.
+     *
+     * @param toolCallId the tool call ID the result answers
+     * @param error the error the frontend reported
+     * @param content the payload the frontend sent alongside the error, may be null
+     * @return the ERROR-state ToolResultBlock
+     */
+    private static ToolResultBlock errorResultBlock(
+            String toolCallId, String error, String content) {
+        if (content == null || content.isEmpty()) {
+            return ToolResultBlock.error(toolCallId, error);
+        }
+        return ToolResultBlock.builder()
+                .id(toolCallId)
+                .output(
+                        TextBlock.builder()
+                                .text(ERROR_TEXT_PREFIX + error + "\n" + content)
+                                .build())
+                .state(ToolResultState.ERROR)
+                .build();
     }
 
     /**

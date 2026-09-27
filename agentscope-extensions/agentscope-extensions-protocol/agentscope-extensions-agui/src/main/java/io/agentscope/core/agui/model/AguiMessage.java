@@ -46,6 +46,25 @@ public class AguiMessage {
     private final MessageContent content;
     private final List<AguiToolCall> toolCalls;
     private final String toolCallId;
+    private final String error;
+
+    /**
+     * Creates a new AguiMessage without an error payload.
+     *
+     * @param id The unique message ID
+     * @param role The message role (user, assistant, system, tool)
+     * @param content The message content (plain text or structured blocks), may be null
+     * @param toolCalls Tool calls for assistant messages (optional)
+     * @param toolCallId Tool call ID for tool messages (optional)
+     */
+    public AguiMessage(
+            String id,
+            String role,
+            MessageContent content,
+            List<AguiToolCall> toolCalls,
+            String toolCallId) {
+        this(id, role, content, toolCalls, toolCallId, null);
+    }
 
     /**
      * Creates a new AguiMessage.
@@ -55,6 +74,8 @@ public class AguiMessage {
      * @param content The message content (plain text or structured blocks), may be null
      * @param toolCalls Tool calls for assistant messages (optional)
      * @param toolCallId Tool call ID for tool messages (optional)
+     * @param error The error a frontend tool reported, per the AG-UI protocol's {@code error}
+     *     field on tool messages; may be null
      */
     @JsonCreator
     public AguiMessage(
@@ -62,7 +83,8 @@ public class AguiMessage {
             @JsonProperty("role") String role,
             @JsonProperty("content") MessageContent content,
             @JsonProperty("toolCalls") List<AguiToolCall> toolCalls,
-            @JsonProperty("toolCallId") String toolCallId) {
+            @JsonProperty("toolCallId") String toolCallId,
+            @JsonProperty("error") String error) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.role = Objects.requireNonNull(role, "role cannot be null");
         this.content = content;
@@ -71,6 +93,7 @@ public class AguiMessage {
                         ? Collections.unmodifiableList(toolCalls)
                         : Collections.emptyList();
         this.toolCallId = toolCallId;
+        this.error = error;
     }
 
     /**
@@ -245,6 +268,18 @@ public class AguiMessage {
     }
 
     /**
+     * Get the error a frontend tool reported, per the AG-UI protocol's {@code error} field.
+     *
+     * <p>Only tool messages carry it. When it is present, the inbound conversion reports the
+     * tool result as an error instead of a success.
+     *
+     * @return The error message, or null if no error was reported
+     */
+    public String getError() {
+        return error;
+    }
+
+    /**
      * Check if this is a user message.
      *
      * @return true if role is "user"
@@ -301,6 +336,8 @@ public class AguiMessage {
                 + toolCalls
                 + ", toolCallId='"
                 + toolCallId
+                + "', error='"
+                + error
                 + "'}";
     }
 
@@ -313,11 +350,12 @@ public class AguiMessage {
                 && Objects.equals(role, that.role)
                 && Objects.equals(content, that.content)
                 && Objects.equals(toolCalls, that.toolCalls)
-                && Objects.equals(toolCallId, that.toolCallId);
+                && Objects.equals(toolCallId, that.toolCallId)
+                && Objects.equals(error, that.error);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, role, content, toolCalls, toolCallId);
+        return Objects.hash(id, role, content, toolCalls, toolCallId, error);
     }
 }

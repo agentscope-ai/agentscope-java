@@ -48,6 +48,7 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -235,6 +236,80 @@ class AguiMessageConverterTest {
         assertNotNull(result);
         assertEquals("tc-1", result.getId());
         assertEquals(ToolResultState.SUCCESS, result.getState());
+    }
+
+    @Test
+    void testConvertToolMessageWithErrorProducesErrorState() {
+        AguiMessage aguiMsg =
+                new AguiMessage("msg-t1", "tool", null, null, "tc-1", "sandbox unavailable");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tc-1", result.getId());
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals("[ERROR] sandbox unavailable", resultText(result));
+    }
+
+    @Test
+    void testConvertToolMessageWithErrorAndContentKeepsBoth() {
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-t1",
+                        "tool",
+                        new MessageContent.Text("partial output"),
+                        null,
+                        "tc-1",
+                        "sandbox unavailable");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tc-1", result.getId());
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals("[ERROR] sandbox unavailable\npartial output", resultText(result));
+    }
+
+    @Test
+    void testConvertToolMessageWithBlankErrorStaysSuccess() {
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-t1",
+                        "tool",
+                        new MessageContent.Text("Tool result here"),
+                        null,
+                        "tc-1",
+                        "   ");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertEquals("Tool result here", resultText(result));
+    }
+
+    @Test
+    void testDeserializeToolMessageWithErrorField() {
+        // The AG-UI `error` field was dropped silently: the codec disables
+        // FAIL_ON_UNKNOWN_PROPERTIES and the model had no binding for it.
+        String json =
+                "{\"id\":\"msg-t1\",\"role\":\"tool\",\"toolCallId\":\"tc-1\","
+                        + "\"error\":\"sandbox unavailable\"}";
+
+        AguiMessage aguiMsg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+        assertEquals("msg-t1", aguiMsg.getId());
+        assertEquals("tc-1", aguiMsg.getToolCallId());
+        assertEquals("sandbox unavailable", aguiMsg.getError());
+
+        ToolResultBlock result =
+                converter.toMsg(aguiMsg).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals(ToolResultState.ERROR, result.getState());
     }
 
     @Test
