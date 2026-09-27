@@ -3066,7 +3066,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 String replyId,
                 AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
 
-            return evaluatePermissions(toolCalls)
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> schemaErrors = new ArrayList<>();
+            List<ToolUseBlock> gateCalls = new ArrayList<>();
+            for (ToolUseBlock toolCall : toolCalls) {
+                ToolResultBlock schemaError = schemaValidationFailure(toolCall);
+                if (schemaError != null) {
+                    schemaErrors.add(Map.entry(toolCall, schemaError));
+                } else {
+                    gateCalls.add(toolCall);
+                }
+            }
+
+            return evaluatePermissions(gateCalls)
                     .flatMapMany(
                             gate -> {
                                 List<ToolUseBlock> pending = gate.pendingAsk();
@@ -3075,8 +3086,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // Mark ToolUseBlock.state in context for every gated tool. ALLOWED
                                 // calls run immediately; ASKING calls cause the agent to pause and
                                 // return; DENIED calls get DENIED ToolResultBlocks written below.
+                                // Schema-invalid calls are omitted so they are not marked ASKING.
                                 Map<String, ToolCallState> stateUpdates = new HashMap<>();
-                                for (ToolUseBlock tc : toolCalls) {
+                                for (ToolUseBlock tc : gateCalls) {
                                     if (autoDenied.contains(tc.getId())) {
                                         // DENIED tools don't need a state change — they'll get a
                                         // DENIED ToolResultBlock and won't reappear in pending.
@@ -3097,8 +3109,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 updateToolCallStates(stateUpdates);
 
                                 if (pending.isEmpty()) {
-                                    return runToolBatch(
-                                            toolCalls, autoDenied, replyId, resultHolder);
+                                    Flux<AgentEvent> schemaEvents =
+                                            schemaErrorEventFlux(schemaErrors, replyId);
+                                    if (gateCalls.isEmpty()) {
+                                        resultHolder.set(schemaErrors);
+                                        return schemaEvents;
+                                    }
+                                    return schemaEvents.concatWith(
+                                            runToolBatch(
+                                                            gateCalls,
+                                                            autoDenied,
+                                                            replyId,
+                                                            resultHolder)
+                                                    .doOnComplete(
+                                                            () ->
+                                                                    prependSchemaErrors(
+                                                                            resultHolder,
+                                                                            schemaErrors)));
                                 }
 
                                 // Permission HITL: surface the pending tool calls, persist any
@@ -3106,10 +3133,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // still need confirmation, then signal stop via RequestStopEvent.
                                 // The agent's acting() will see the RequestStopEvent, set the
                                 // GenerateReason to PERMISSION_ASKING, and return.
+                                if (!schemaErrors.isEmpty()) {
+                                    writeSchemaErrorResults(schemaErrors);
+                                }
                                 if (!autoDenied.isEmpty()) {
                                     // Write DENIED results in-place so they aren't re-evaluated on
                                     // resume.
-                                    writeAutoDeniedResults(toolCalls, autoDenied);
+                                    writeAutoDeniedResults(gateCalls, autoDenied);
                                 }
                                 // resultHolder may be inspected by the caller after stream
                                 // completion;
@@ -3118,7 +3148,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 persistPendingRequestReplyId(
                                         Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
                                 Flux<AgentEvent> autoDeniedEvents =
-                                        Flux.fromIterable(toolCalls)
+                                        Flux.fromIterable(gateCalls)
                                                 .filter(tc -> autoDenied.contains(tc.getId()))
                                                 .concatMapIterable(
                                                         tc ->
@@ -3126,14 +3156,99 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                         tc,
                                                                         replyId,
                                                                         PERMISSION_DENIED_BY_RULES));
-                                return autoDeniedEvents.concatWith(
-                                        Flux.just(
-                                                new RequireUserConfirmEvent(replyId, pending),
-                                                new RequestStopEvent(
-                                                        "permission asking",
-                                                        GenerateReason.PERMISSION_ASKING)));
+                                return schemaErrorEventFlux(schemaErrors, replyId)
+                                        .concatWith(autoDeniedEvents)
+                                        .concatWith(
+                                                Flux.just(
+                                                        new RequireUserConfirmEvent(
+                                                                replyId, pending),
+                                                        new RequestStopEvent(
+                                                                "permission asking",
+                                                                GenerateReason.PERMISSION_ASKING)));
                             })
                     .doOnNext(this::publishEvent);
+        }
+
+        /**
+         * Validate a tool call against its schema before the permission gate. A call that cannot
+         * execute must not ask the user to confirm it.
+         *
+         * @param toolCall the proposed tool call
+         * @return the same error the executor would return, or null when the input is acceptable
+         */
+        private ToolResultBlock schemaValidationFailure(ToolUseBlock toolCall) {
+            AgentTool tool = activeToolkit.getTool(toolCall.getName(), toolRequestConfig);
+            if (tool == null) {
+                return null;
+            }
+            String args = toolCall.getContent();
+            if (args == null || args.isBlank()) {
+                args = JsonUtils.resolveToolCallArgsJson(toolCall);
+            }
+            String validationError = ToolValidator.validateInput(args, tool.getParameters());
+            if (validationError == null) {
+                return null;
+            }
+            String errorMsg =
+                    String.format(
+                            "Parameter validation failed for tool '%s': %s\n"
+                                    + "Please correct the parameters and try again.",
+                            toolCall.getName(), validationError);
+            return ToolResultBlock.error(errorMsg)
+                    .withIdAndName(toolCall.getId(), toolCall.getName());
+        }
+
+        private void writeSchemaErrorResults(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> schemaErrors) {
+            for (Map.Entry<ToolUseBlock, ToolResultBlock> entry : schemaErrors) {
+                Msg errorMsg =
+                        ToolResultMessageBuilder.buildToolResultMsg(
+                                entry.getValue(), entry.getKey(), getName());
+                state.contextMutable().add(errorMsg);
+            }
+        }
+
+        private void prependSchemaErrors(
+                AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder,
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> schemaErrors) {
+            if (schemaErrors.isEmpty()) {
+                return;
+            }
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> merged = new ArrayList<>(schemaErrors);
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> executed = resultHolder.get();
+            if (executed != null) {
+                merged.addAll(executed);
+            }
+            resultHolder.set(merged);
+        }
+
+        private Flux<AgentEvent> schemaErrorEventFlux(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> schemaErrors, String replyId) {
+            return Flux.fromIterable(schemaErrors)
+                    .concatMapIterable(
+                            entry -> {
+                                String text =
+                                        entry.getValue().getOutput().stream()
+                                                .filter(TextBlock.class::isInstance)
+                                                .map(TextBlock.class::cast)
+                                                .map(TextBlock::getText)
+                                                .findFirst()
+                                                .orElse("");
+                                ToolUseBlock toolCall = entry.getKey();
+                                return List.of(
+                                        new ToolResultStartEvent(
+                                                replyId, toolCall.getId(), toolCall.getName()),
+                                        new ToolResultTextDeltaEvent(
+                                                replyId,
+                                                toolCall.getId(),
+                                                toolCall.getName(),
+                                                text),
+                                        new ToolResultEndEvent(
+                                                replyId,
+                                                toolCall.getId(),
+                                                toolCall.getName(),
+                                                ToolResultState.ERROR));
+                            });
         }
 
         /**
