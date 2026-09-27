@@ -45,6 +45,7 @@ import com.anthropic.models.messages.WebSearchToolResultError;
 import com.anthropic.models.messages.WebSearchToolResultErrorCode;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -525,6 +526,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertEquals("srvtoolu_01", toolUse.getId());
         assertEquals("web_search", toolUse.getName());
         assertTrue(toolUse.isServerTool());
+        assertEquals(ToolCallState.FINISHED, toolUse.getState());
         assertEquals("AgentScope", toolUse.getInput().get("query"));
 
         io.agentscope.core.message.ToolResultBlock toolResult =
@@ -646,6 +648,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertEquals("srvtoolu_stream", toolUse.getId());
         assertEquals("web_search", toolUse.getName());
         assertTrue(toolUse.isServerTool());
+        assertEquals(ToolCallState.FINISHED, toolUse.getState());
     }
 
     @Test
