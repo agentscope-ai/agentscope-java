@@ -3120,6 +3120,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         return schemaEvents.doFinally(
                                                 signal -> {
                                                     if (signal != SignalType.ON_COMPLETE) {
+                                                        // Error or cancel never reaches
+                                                        // notifyPostActingHook. doFinally runs
+                                                        // after downstream onError, so this write
+                                                        // stays even if structured output rolled
+                                                        // the context back first.
                                                         writeSchemaErrorResults(schemaErrors);
                                                     }
                                                 });
@@ -3142,6 +3147,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                     // Error or cancel: acting()
                                                                     // never reaches
                                                                     // notifyPostActingHook.
+                                                                    // doFinally runs after
+                                                                    // downstream onError, so the
+                                                                    // write stays.
                                                                     writeSchemaErrorResults(
                                                                             schemaErrors);
                                                                 }
@@ -3209,6 +3217,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     toolCall.getName(),
                     toolRequestConfig,
                     state.getToolContext().getActivatedGroups())) {
+                log.warn(
+                        "Tool '{}' is not active for this session; rejected before the permission"
+                                + " gate",
+                        toolCall.getName());
                 return ToolResultBlock.error(
                                 ToolValidator.unavailableToolMessage(toolCall.getName()))
                         .withIdAndName(toolCall.getId(), toolCall.getName());

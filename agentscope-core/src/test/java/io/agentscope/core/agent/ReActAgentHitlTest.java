@@ -1172,6 +1172,27 @@ class ReActAgentHitlTest {
     }
 
     @Test
+    void inputMapOnlyCallWithRequiredSchemaStillAsks() {
+        CountingAskTool tool = new CountingAskTool();
+        Map<String, Object> input = new HashMap<>();
+        input.put("scope", "prod");
+        ToolUseBlock call = ToolUseBlock.builder().id("tc1").name("ask_scope").input(input).build();
+        ChatModelBase model =
+                new ScriptedModel(List.of(() -> Flux.just(toolUseResponse(List.of(call)))));
+        ReActAgent agent = buildAgent(model, toolkitWith(tool));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+        int iReq = indexOf(events, RequireUserConfirmEvent.class);
+        assertTrue(iReq >= 0, "input-map arguments must still reach the permission gate");
+        RequireUserConfirmEvent req = (RequireUserConfirmEvent) events.get(iReq);
+        assertEquals(1, req.getToolCalls().size());
+        assertEquals("tc1", req.getToolCalls().get(0).getId());
+        assertEquals(1, tool.permissionChecks.get());
+        assertEquals(0, tool.executions.get());
+    }
+
+    @Test
     void validAskCallWithRequiredFieldStillRequiresConfirmation() {
         CountingAskTool tool = new CountingAskTool();
         ChatModelBase model =

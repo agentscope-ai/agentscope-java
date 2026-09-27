@@ -942,4 +942,41 @@ class ToolValidatorTest {
                                     assistantMsg, List.of(userMsg1, userMsg2)));
         }
     }
+
+    @Test
+    @DisplayName("resolveArgsForValidation uses the input map when content is absent")
+    void resolveArgsUsesInputMapWhenContentAbsent() {
+        ToolUseBlock inputOnly =
+                ToolUseBlock.builder()
+                        .id("t")
+                        .name("ask_scope")
+                        .input(Map.of("scope", "prod"))
+                        .build();
+        String resolved = ToolValidator.resolveArgsForValidation(inputOnly);
+        assertNotNull(resolved);
+        assertTrue(resolved.contains("prod"), resolved);
+
+        ToolUseBlock withContent =
+                ToolUseBlock.builder()
+                        .id("t")
+                        .name("ask_scope")
+                        .input(Map.of("scope", "prod"))
+                        .content("{\"scope\":\"raw\"}")
+                        .build();
+        String raw = ToolValidator.resolveArgsForValidation(withContent);
+        assertNotNull(raw);
+        assertTrue(raw.contains("raw"), raw);
+        assertTrue(!raw.contains("prod"), raw);
+
+        ToolUseBlock placeholder =
+                ToolUseBlock.builder()
+                        .id("t")
+                        .name("ask_scope")
+                        .input(Map.of("scope", "prod"))
+                        .content("{}")
+                        .build();
+        String fromInput = ToolValidator.resolveArgsForValidation(placeholder);
+        assertNotNull(fromInput);
+        assertTrue(fromInput.contains("prod"), fromInput);
+    }
 }

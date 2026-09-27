@@ -278,7 +278,8 @@ public class Toolkit {
      *
      * <p>Same gate as {@link ToolExecutor}: external overrides are always callable, and an unknown
      * name is not treated as unavailable. The permission pre-gate uses this so an inactive tool
-     * keeps the unauthorized result instead of a schema error.
+     * keeps the unauthorized result instead of a schema error. Not a stable filter for callers
+     * outside that pre-gate; the executor remains the source of the check.
      *
      * @param toolName tool name
      * @param requestConfig per-call request config (may be null)
