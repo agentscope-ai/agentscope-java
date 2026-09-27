@@ -34,8 +34,14 @@ import java.util.Objects;
  *   <li>Local files: file:///absolute/path/to/file.jpg</li>
  * </ul>
  *
- * <p>Using URL sources is more efficient for large media files and allows
- * the system to stream content rather than loading everything into memory.
+ * <p>Depending on the provider, a converter may forward the URL or read the resource and
+ * embed its bytes in the model request. Local paths and file URIs therefore permit local
+ * file access and may send that file's contents to the provider.
+ *
+ * <p>This class is a media reference, not a filesystem or network access policy. Applications
+ * accepting untrusted input must authorize local files and remote destinations (including
+ * redirects) before conversion. MIME hints and filename extensions describe the intended media
+ * type; they do not validate file contents or grant permission to access a resource.
  *
  * <p>When the URL has no file extension (e.g. CDN signed URLs), set {@code mimeType}
  * explicitly so converters can route the content to the correct media slot without

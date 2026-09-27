@@ -29,8 +29,15 @@ import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.Base64;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Unit tests for GeminiMediaConverter.
@@ -38,6 +45,100 @@ import org.junit.jupiter.api.Test;
 class GeminiMediaConverterTest extends GeminiFormatterTestBase {
 
     private final GeminiMediaConverter converter = new GeminiMediaConverter();
+
+    @ParameterizedTest
+    @ValueSource(strings = {"audio/mpeg", "video/quicktime", "video/x-msvideo", "video/x-ms-wmv"})
+    void mimeHintAliasesRemainUsableWithFileUris(String mimeType) throws IOException {
+        URLSource source = new URLSource(tempAudioFile.toUri().toString(), mimeType);
+        Part part =
+                mimeType.startsWith("audio/")
+                        ? converter.convertToInlineDataPart(new AudioBlock(source))
+                        : converter.convertToInlineDataPart(new VideoBlock(source));
+        Blob blob = part.inlineData().orElseThrow();
+        assertEquals(mimeType, blob.mimeType().orElseThrow());
+        assertArrayEquals(Files.readAllBytes(tempAudioFile), blob.data().orElseThrow());
+    }
+
+    @Test
+    void rejectsOversizedDownloadForImageAndDataBlocks() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            for (int i = 0; i < 2; i++) {
+                server.enqueue(
+                        new MockResponse()
+                                .setBody("fixture")
+                                .setHeader("Content-Length", 50L * 1024 * 1024 + 1)
+                                .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
+            }
+            URLSource source = new URLSource(server.url("/image.png").toString());
+            RuntimeException imageFailure =
+                    assertThrows(
+                            RuntimeException.class,
+                            () -> converter.convertToInlineDataPart(new ImageBlock(source)));
+            RuntimeException dataFailure =
+                    assertThrows(
+                            RuntimeException.class,
+                            () ->
+                                    converter.convertToInlineDataPart(
+                                            DataBlock.builder().source(source).build()));
+            assertTrue(imageFailure.getCause().getMessage().contains("too large"));
+            assertTrue(dataFailure.getCause().getMessage().contains("too large"));
+        }
+    }
+
+    @Test
+    void rejectsWrongMimeCategoryBeforeDownloading() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            ImageBlock block =
+                    new ImageBlock(new URLSource(server.url("/media").toString(), "audio/mp3"));
+            assertThrows(
+                    IllegalArgumentException.class, () -> converter.convertToInlineDataPart(block));
+            assertEquals(0, server.getRequestCount());
+        }
+    }
+
+    @Test
+    void fileUriUsesTheSameImageBytesAsLocalPath() throws IOException {
+        ImageBlock block = new ImageBlock(new URLSource(tempImageFile.toUri().toString()));
+        Blob blob = converter.convertToInlineDataPart(block).inlineData().orElseThrow();
+        assertArrayEquals(Files.readAllBytes(tempImageFile), blob.data().orElseThrow());
+        assertEquals("image/png", blob.mimeType().orElseThrow());
+    }
+
+    @Test
+    void remoteImageQueryDoesNotChangeMimeType() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setBody("image fixture"));
+            ImageBlock block =
+                    new ImageBlock(new URLSource(server.url("/image.png?version=1.2").toString()));
+            assertEquals(
+                    "image/png",
+                    converter
+                            .convertToInlineDataPart(block)
+                            .inlineData()
+                            .orElseThrow()
+                            .mimeType()
+                            .orElseThrow());
+        }
+    }
+
+    @Test
+    void extensionlessImageUsesMimeHint() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setBody("image fixture"));
+            ImageBlock block =
+                    new ImageBlock(
+                            new URLSource(
+                                    server.url("/download?version=1.2").toString(), "image/png"));
+            assertEquals(
+                    "image/png",
+                    converter
+                            .convertToInlineDataPart(block)
+                            .inlineData()
+                            .orElseThrow()
+                            .mimeType()
+                            .orElseThrow());
+        }
+    }
 
     @Test
     void testConvertImageBlockWithBase64Source() {

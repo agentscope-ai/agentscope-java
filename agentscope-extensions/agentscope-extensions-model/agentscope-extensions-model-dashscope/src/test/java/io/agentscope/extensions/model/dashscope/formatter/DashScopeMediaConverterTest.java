@@ -33,7 +33,31 @@ import org.junit.jupiter.api.Test;
 @Tag("unit")
 class DashScopeMediaConverterTest {
 
+    @Test
+    void extensionlessImageUsesMimeHint() throws Exception {
+        String url = "https://example.com/download?version=1.2";
+        ImageBlock block = new ImageBlock(new URLSource(url, "image/png"));
+        assertEquals(url, new DashScopeMediaConverter().convertImageBlockToUrl(block));
+    }
+
     private final DashScopeMediaConverter converter = new DashScopeMediaConverter();
+
+    @Test
+    void localExtensionlessImageUsesMimeHint(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path file =
+                java.nio.file.Files.write(dir.resolve("image"), new byte[] {1, 2, 3});
+        for (String location : java.util.List.of(file.toString(), file.toUri().toString())) {
+            ImageBlock block = new ImageBlock(new URLSource(location, "image/png"));
+            assertEquals("data:image/png;base64,AQID", converter.convertImageBlockToUrl(block));
+        }
+    }
+
+    @Test
+    void rejectsWrongMimeCategory() {
+        ImageBlock block = new ImageBlock(new URLSource("https://example.com/media", "audio/mp3"));
+        assertThrows(IllegalArgumentException.class, () -> converter.convertImageBlockToUrl(block));
+    }
 
     @Test
     void testEmbedsLocalImageBytesForHttpTransport(

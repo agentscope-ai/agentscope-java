@@ -26,14 +26,9 @@ import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
-import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +36,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Converter for Gemini API multimodal content.
  * Converts ImageBlock, AudioBlock, and VideoBlock to Gemini Part objects with inline data.
+ * URL sources support local paths, file URIs and HTTP(S), with a 50MB read limit. An explicit
+ * MIME hint takes precedence over the URL extension; concrete blocks require a matching media type.
  */
 public class GeminiMediaConverter {
 
@@ -112,7 +109,7 @@ public class GeminiMediaConverter {
             data = Base64.getDecoder().decode(base64Source.getData());
         } else if (source instanceof URLSource urlSource) {
             try {
-                data = readFileAsBytes(urlSource.getUrl());
+                data = MediaUtils.readUrlAsBytes(urlSource.getUrl());
             } catch (IOException e) {
                 throw new RuntimeException(
                         "Failed to read DataBlock file: " + urlSource.getUrl(), e);
@@ -146,8 +143,8 @@ public class GeminiMediaConverter {
             // URL: read file and get mime type
             String url = urlSource.getUrl();
             try {
-                data = readFileAsBytes(url);
-                mimeType = getMimeType(url, mediaType);
+                mimeType = getMimeType(urlSource, mediaType);
+                data = MediaUtils.readUrlAsBytes(url);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to read file: " + url, e);
             }
@@ -164,44 +161,34 @@ public class GeminiMediaConverter {
     }
 
     /**
-     * Read a file from URL/path as byte array.
+     * Determine MIME type from an explicit hint or file extension before reading the source.
      *
-     * <p>Supports both remote URLs (http://, https://) and local file paths.
-     *
-     * @param url File URL or path
-     * @return File content as byte array
-     * @throws IOException If file cannot be read
-     */
-    private byte[] readFileAsBytes(String url) throws IOException {
-        // Check if it's a remote URL
-        if (url.startsWith("http://") || url.startsWith("https://")) {
-            try {
-                URL remoteUrl = URI.create(url).toURL();
-                try (InputStream in = remoteUrl.openStream()) {
-                    return in.readAllBytes();
-                }
-            } catch (IOException e) {
-                throw new IOException("Failed to download remote file: " + url, e);
-            }
-        } else {
-            // Local file path
-            Path path = Paths.get(url);
-            if (!Files.exists(path)) {
-                throw new IOException("File not found: " + url);
-            }
-            return Files.readAllBytes(path);
-        }
-    }
-
-    /**
-     * Determine MIME type from file extension.
-     *
-     * @param url File URL or path
+     * @param source File URL or path with an optional MIME hint
      * @param mediaType Media type category ("image", "audio", "video")
      * @return MIME type string (e.g., "image/png")
      */
-    private String getMimeType(String url, String mediaType) {
-        String extension = extractExtension(url);
+    private String getMimeType(URLSource source, String mediaType) {
+        String hint = source.getMimeType();
+        String normalizedHint = null;
+        String extension;
+        if (hint != null && !hint.isBlank()) {
+            normalizedHint = hint.toLowerCase(Locale.ROOT);
+            if (!normalizedHint.startsWith(mediaType + "/")) {
+                throw new IllegalArgumentException(
+                        "MIME type does not match " + mediaType + " block");
+            }
+            // MIME subtypes are not always file extensions (for example, audio/mpeg is MP3).
+            extension =
+                    switch (normalizedHint) {
+                        case "audio/mpeg" -> "mp3";
+                        case "video/quicktime" -> "mov";
+                        case "video/x-msvideo" -> "avi";
+                        case "video/x-ms-wmv" -> "wmv";
+                        default -> normalizedHint.substring(mediaType.length() + 1);
+                    };
+        } else {
+            extension = MediaUtils.getExtension(source.getUrl()).toLowerCase(Locale.ROOT);
+        }
 
         // Validate extension is supported
         List<String> supportedExts = SUPPORTED_EXTENSIONS.get(mediaType);
@@ -218,20 +205,6 @@ public class GeminiMediaConverter {
             extension = "jpeg";
         }
 
-        return mediaType + "/" + extension;
-    }
-
-    /**
-     * Extract file extension from URL or path.
-     *
-     * @param url File URL or path
-     * @return File extension in lowercase (without dot)
-     */
-    private String extractExtension(String url) {
-        int lastDotIndex = url.lastIndexOf('.');
-        if (lastDotIndex == -1 || lastDotIndex == url.length() - 1) {
-            throw new IllegalArgumentException("Cannot extract file extension from: " + url);
-        }
-        return url.substring(lastDotIndex + 1).toLowerCase();
+        return normalizedHint != null ? normalizedHint : mediaType + "/" + extension;
     }
 }
