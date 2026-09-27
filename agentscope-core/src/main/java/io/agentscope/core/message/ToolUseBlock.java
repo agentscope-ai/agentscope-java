@@ -34,8 +34,11 @@ import java.util.Map;
  */
 public final class ToolUseBlock extends ContentBlock {
 
-    /** Metadata key for Gemini thought signature (byte[] value). */
-    public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
+    /**
+     * Metadata key for an opaque model thought signature.
+     */
+    public static final String METADATA_THOUGHT_SIGNATURE =
+            ContentBlockMetadataKeys.THOUGHT_SIGNATURE;
 
     /**
      * Metadata key marking this tool call as a provider server tool (Boolean value). Server tools

@@ -16,25 +16,62 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ContentBlockMetadataKeys;
 import io.agentscope.core.message.TextBlock;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Text content accumulator for accumulating streaming text chunks.
  *
  * <p>This accumulator concatenates all text chunks in order to build the complete text content.
+ *
+ * <p>A chunk carrying a thought signature terminates its provider Part: the accumulated text and
+ * metadata so far are finalized as one block, so distinct signature-bearing Parts can be replayed
+ * without merging their metadata. Use {@link #buildAllTextBlocks()} for the Part-accurate view;
+ * the aggregate view returned by {@link #buildAggregated()} drops scalar thought signatures once
+ * multiple Parts were seen, because a single signature would be mis-attributed to the merged text.
+ *
+ * <p>List-valued metadata (e.g. reasoning details) is accumulated in stream order: entries from
+ * each chunk are appended rather than replaced. Scalar metadata uses last-write-wins. List values
+ * are always copied to prevent caller mutation from affecting accumulator state.
  * @hidden
  */
 public class TextAccumulator implements ContentAccumulator<TextBlock> {
 
     private final StringBuilder accumulated = new StringBuilder();
+    private final Map<String, Object> metadata = new HashMap<>();
+    private final List<TextBlock> completedBlocks = new ArrayList<>();
+    private final StringBuilder currentBlock = new StringBuilder();
+    private final Map<String, Object> currentMetadata = new HashMap<>();
 
     /**
      * @hidden
      */
     @Override
     public void add(TextBlock block) {
-        if (block != null && block.getText() != null) {
+        if (block == null) {
+            return;
+        }
+
+        if (block.getText() != null) {
             accumulated.append(block.getText());
+            currentBlock.append(block.getText());
+        }
+
+        Map<String, Object> blockMetadata = block.getMetadata();
+        if (blockMetadata != null && !blockMetadata.isEmpty()) {
+            BlockMetadataMerger.merge(metadata, blockMetadata);
+            BlockMetadataMerger.merge(currentMetadata, blockMetadata);
+        }
+
+        // A thought signature terminates its provider Part. Keep that boundary so distinct
+        // signature-bearing Parts can be replayed without merging their metadata.
+        if (blockMetadata != null
+                && blockMetadata.get(ContentBlockMetadataKeys.THOUGHT_SIGNATURE) != null) {
+            completeCurrentBlock();
         }
     }
 
@@ -43,10 +80,18 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
      */
     @Override
     public boolean hasContent() {
-        return accumulated.length() > 0;
+        return accumulated.length() > 0 || !metadata.isEmpty();
     }
 
     /**
+     * Returns a merged single-block view of the accumulated text.
+     *
+     * <p>The only guarantee this view gives is "the full text in stream order". Its metadata keeps
+     * the merged values, but once a Part boundary was crossed the scalar thought signature is
+     * dropped (no single signature covers text from multiple Parts), so consumers must not infer
+     * "signature present means this block is one replayable Part" beyond the single-Part case.
+     * Replay-accurate per-Part blocks are available from {@link #buildAllTextBlocks()}.
+     *
      * @hidden
      */
     @Override
@@ -54,7 +99,28 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
         if (!hasContent()) {
             return null;
         }
-        return TextBlock.builder().text(accumulated.toString()).build();
+        return TextBlock.builder()
+                .text(accumulated.toString())
+                .metadata(aggregateMetadata())
+                .build();
+    }
+
+    /**
+     * Build accumulated text blocks while preserving thought-signature Part boundaries.
+     *
+     * @hidden
+     * @return accumulated text blocks in their original order
+     */
+    public List<TextBlock> buildAllTextBlocks() {
+        if (!hasContent()) {
+            return List.of();
+        }
+
+        List<TextBlock> blocks = new ArrayList<>(completedBlocks);
+        if (currentBlock.length() > 0 || !currentMetadata.isEmpty()) {
+            blocks.add(buildCurrentBlock());
+        }
+        return List.copyOf(blocks);
     }
 
     /**
@@ -63,6 +129,10 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
     @Override
     public void reset() {
         accumulated.setLength(0);
+        metadata.clear();
+        completedBlocks.clear();
+        currentBlock.setLength(0);
+        currentMetadata.clear();
     }
 
     /**
@@ -78,12 +148,44 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
     /**
      * Replace the accumulated text with content reconstructed from the model-call event stream.
      *
+     * <p>Resets any in-flight thought-signature Part boundary and makes the new content the
+     * current block, so {@link #buildAllTextBlocks()} reflects the replaced text.
+     *
      * @hidden
      */
     public void replace(String text) {
-        accumulated.setLength(0);
+        reset();
         if (text != null) {
             accumulated.append(text);
+            currentBlock.append(text);
         }
+    }
+
+    /**
+     * Returns the aggregate view metadata: scalar thought signatures are dropped once a Part
+     * boundary was seen, because the merged text no longer corresponds to the signed Part.
+     */
+    private Map<String, Object> aggregateMetadata() {
+        if (metadata.isEmpty()) {
+            return null;
+        }
+        if (completedBlocks.isEmpty()) {
+            return new HashMap<>(metadata);
+        }
+        Map<String, Object> stripped = BlockMetadataMerger.withoutThoughtSignature(metadata);
+        return stripped.isEmpty() ? null : stripped;
+    }
+
+    private void completeCurrentBlock() {
+        completedBlocks.add(buildCurrentBlock());
+        currentBlock.setLength(0);
+        currentMetadata.clear();
+    }
+
+    private TextBlock buildCurrentBlock() {
+        return TextBlock.builder()
+                .text(currentBlock.toString())
+                .metadata(currentMetadata.isEmpty() ? null : currentMetadata)
+                .build();
     }
 }

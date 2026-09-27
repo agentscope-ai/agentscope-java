@@ -29,8 +29,11 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Formatter for Gemini Content Generation API.
@@ -52,6 +55,14 @@ import java.util.function.Function;
 public class GeminiChatFormatter
         extends AbstractBaseFormatter<
                 Content, GenerateContentResponse, GenerateContentConfig.Builder> {
+
+    private static final Logger log = LoggerFactory.getLogger(GeminiChatFormatter.class);
+
+    /**
+     * ThinkingLevel values accepted by the Gemini API (matching the SDK's ThinkingLevel enum).
+     */
+    private static final List<String> SUPPORTED_THINKING_LEVELS =
+            List.of("minimal", "low", "medium", "high");
 
     private final GeminiMessageConverter messageConverter;
     private final GeminiResponseParser responseParser;
@@ -117,16 +128,65 @@ public class GeminiChatFormatter
                 defaultOptions,
                 configBuilder::presencePenalty);
 
-        // Apply ThinkingConfig if either includeThoughts or thinkingBudget is set
+        // Apply ThinkingConfig when any thinking option is configured.
         Integer thinkingBudget =
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getThinkingBudget);
+        Boolean includeThoughts =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getIncludeThoughts);
+        String thinkingLevel =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getThinkingLevel);
 
-        if (thinkingBudget != null) {
+        String normalizedThinkingLevel =
+                thinkingLevel == null ? null : normalizeThinkingLevel(thinkingLevel);
+
+        if (thinkingBudget != null || includeThoughts != null || normalizedThinkingLevel != null) {
             ThinkingConfig.Builder thinkingConfigBuilder = ThinkingConfig.builder();
-            thinkingConfigBuilder.includeThoughts(true);
-            thinkingConfigBuilder.thinkingBudget(thinkingBudget);
+
+            if (includeThoughts != null) {
+                thinkingConfigBuilder.includeThoughts(includeThoughts);
+            } else if (thinkingBudget != null) {
+                // Preserve the existing behavior for callers that only set thinkingBudget.
+                thinkingConfigBuilder.includeThoughts(true);
+            }
+            if (thinkingBudget != null) {
+                thinkingConfigBuilder.thinkingBudget(thinkingBudget);
+            }
+            if (normalizedThinkingLevel != null) {
+                thinkingConfigBuilder.thinkingLevel(normalizedThinkingLevel);
+            }
+
             configBuilder.thinkingConfig(thinkingConfigBuilder.build());
         }
+    }
+
+    /**
+     * Normalizes a configured thinking level before it is forwarded to the Gemini API.
+     *
+     * <p>Trims surrounding whitespace and aligns the case of the values Gemini accepts
+     * ({@code "minimal"}, {@code "low"}, {@code "medium"}, {@code "high"}), so inputs such as
+     * {@code " Minimal "} or {@code "HIGH"} are sent in their accepted form instead of surfacing
+     * as an opaque remote error. Values outside the known set are forwarded unchanged after a
+     * warning, keeping the provider authoritative for newly added levels.
+     *
+     * @param thinkingLevel the configured thinking level (non-null)
+     * @return the normalized level, or null if the value is blank and should be dropped
+     */
+    private String normalizeThinkingLevel(String thinkingLevel) {
+        String trimmed = thinkingLevel.trim();
+        if (trimmed.isEmpty()) {
+            log.warn("Blank thinkingLevel configured, ignoring it");
+            return null;
+        }
+        String lowercased = trimmed.toLowerCase(Locale.ROOT);
+        if (!SUPPORTED_THINKING_LEVELS.contains(lowercased)) {
+            log.warn(
+                    "Unknown thinkingLevel '{}'; Gemini accepts {}. Forwarding it as-is and the"
+                            + " API may reject it",
+                    trimmed,
+                    SUPPORTED_THINKING_LEVELS);
+            return trimmed;
+        }
+        return lowercased;
     }
 
     /**
