@@ -42,8 +42,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-/** Unit tests for deterministic Redis agent-state key layouts. */
-@DisplayName("RedisAgentStateStore key layouts")
+/** Unit tests for {@link RedisAgentStateStore}. */
+@DisplayName("RedisAgentStateStore")
 class RedisAgentStateStoreTest {
 
     record TestState(String value) implements State {}
@@ -305,18 +305,6 @@ class RedisAgentStateStoreTest {
 
         verify(client, never()).deleteKeys(any(String[].class));
         verify(client, never()).getSetMembers("agentscope:session:{user/s1}:_keys");
-    }
-
-    @Test
-    @DisplayName("clearAllSessions deletes matching keys one at a time")
-    void clearAllSessionsDeletesClusterKeysIndividually() {
-        Set<String> keys =
-                Set.of("agentscope:session:{user/s1}:state", "agentscope:session:{user/s2}:state");
-        when(client.findKeysByPattern("agentscope:session:*")).thenReturn(keys);
-
-        assertEquals(2, store.clearAllSessions().block());
-
-        assertSingleKeyDeletes(keys);
     }
 
     @Test

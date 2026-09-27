@@ -157,8 +157,8 @@ stop-write cutover for each key prefix.
    otherwise the V1 updates will be invisible. V0 also reintroduces the original Cluster
    `CROSSSLOT` limitation.
 9. **Remove V0 data selectively.** After the observation window, delete only the old V0 keys, one
-   key per command. Do not use `clearAllSessions()` for this cleanup because it deletes both V0 and
-   V1 keys under the configured prefix.
+   key per command. Do not use prefix-wide cleanup because it also deletes V1 keys under the same
+   prefix.
 
 ### 2. RedisStore (BaseStore)
 

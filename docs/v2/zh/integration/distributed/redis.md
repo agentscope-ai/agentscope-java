@@ -147,8 +147,8 @@ V0 和 V1 使用不同的 key namespace。Store 配置为某个布局后，读�
    写入，可以让所有实例直接切回 V0。V1 已经产生新写入时，需要再次停写，将变化的数据
    反向迁移后再回滚，否则 V0 看不到这些更新。切回 V0 也会重新引入 Redis Cluster 的
    `CROSSSLOT` 问题。
-9. 定向清理 V0 数据。观察期结束后，逐 key 删除旧的 V0 数据。不要用
-   `clearAllSessions()` 完成这一步，因为它会删除该前缀下的 V0 和 V1 key。
+9. 定向清理 V0 数据。观察期结束后，逐 key 删除旧的 V0 数据。不要按前缀全量清理，
+   因为这会同时删除该前缀下的 V1 key。
 
 
 ### 2. RedisStore（BaseStore）
