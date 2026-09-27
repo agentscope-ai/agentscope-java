@@ -428,6 +428,69 @@ class MarketplaceStagerPathTest {
                 Files.exists(workspace.resolve(".skills-cache/_shared/_global/valid/marker.txt")));
     }
 
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "market", "git-owner/repo", "classpath-agentscope/skills"})
+    void duplicateSourcesAreMappedAndStagedSeparately(String source) throws IOException {
+        Path workspace = temp.resolve("workspace");
+        AgentSkillRepository first = repository(source);
+        AgentSkillRepository second = repository(source);
+        Map<AgentSkillRepository, String> namespaces =
+                MarketplaceStager.resolveSourceNamespaces(List.of(first, second));
+        assertFalse(namespaces.get(first).equals(namespaces.get(second)));
+        List<RepoBound> visible =
+                List.of(
+                        new RepoBound(skill("first"), first),
+                        new RepoBound(skill("second"), second));
+
+        Map<String, StageResult> result =
+                new MarketplaceStager(workspace).stage(visible, namespaces);
+
+        for (RepoBound bound : visible) {
+            String name = bound.skill().getName();
+            StageResult.Cached cached =
+                    assertInstanceOf(StageResult.Cached.class, result.get(name));
+            assertEquals(namespaces.get(bound.repo()), cached.sourceNamespace());
+            assertTrue(cached.sourceNamespace().matches("[A-Za-z0-9._-]{1,64}"));
+            assertEquals(
+                    "marker",
+                    Files.readString(
+                            workspace
+                                    .resolve(".skills-cache/_shared")
+                                    .resolve(cached.sourceNamespace())
+                                    .resolve(name)
+                                    .resolve("marker.txt")));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " "})
+    void blankExplicitNamespaceFallsBackToRepositorySource(String namespace) throws IOException {
+        Path workspace = temp.resolve("workspace");
+        AgentSkillRepository repo = repository("git-owner/repo");
+        MarketplaceStager stager = new MarketplaceStager(workspace);
+        List<RepoBound> visible = List.of(new RepoBound(skill("valid"), repo));
+        StageResult.Cached expected =
+                assertInstanceOf(
+                        StageResult.Cached.class,
+                        stager.stage(
+                                        visible,
+                                        MarketplaceStager.resolveSourceNamespaces(List.of(repo)))
+                                .get("valid"));
+        StageResult.Cached actual =
+                assertInstanceOf(
+                        StageResult.Cached.class,
+                        stager.stage(visible, Map.of(repo, namespace)).get("valid"));
+        assertEquals(expected, actual);
+        assertEquals(
+                "marker",
+                Files.readString(
+                        workspace
+                                .resolve(".skills-cache/_shared")
+                                .resolve(actual.sourceNamespace())
+                                .resolve("valid/marker.txt")));
+    }
+
     private static AgentSkill skill(String name) {
         return new AgentSkill(name, "test", "Body", Map.of("marker.txt", "marker"));
     }

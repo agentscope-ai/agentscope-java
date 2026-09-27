@@ -261,9 +261,6 @@ public final class MarketplaceStager {
             String ns = sourceNs.get(bound.repo());
             if (ns == null || ns.isBlank()) {
                 ns = bound.repo().getSource();
-                if (ns == null || ns.isBlank()) {
-                    ns = GLOBAL_NAMESPACE;
-                }
             }
 
             try {
