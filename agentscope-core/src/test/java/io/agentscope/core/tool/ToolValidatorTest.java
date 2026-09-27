@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -978,5 +979,23 @@ class ToolValidatorTest {
         String fromInput = ToolValidator.resolveArgsForValidation(placeholder);
         assertNotNull(fromInput);
         assertTrue(fromInput.contains("prod"), fromInput);
+    }
+
+    @Test
+    @DisplayName("resolveArgsForValidation normalises missing arguments to an empty object")
+    void resolveArgsNormalizesMissingArgumentsToEmptyObject() {
+        assertNull(ToolValidator.resolveArgsForValidation(null));
+
+        ToolUseBlock none = ToolUseBlock.builder().id("t").name("ask_scope").build();
+        assertEquals("{}", ToolValidator.resolveArgsForValidation(none));
+
+        ToolUseBlock blank =
+                ToolUseBlock.builder()
+                        .id("t")
+                        .name("ask_scope")
+                        .content("  ")
+                        .input(Map.of())
+                        .build();
+        assertEquals("{}", ToolValidator.resolveArgsForValidation(blank));
     }
 }

@@ -64,10 +64,12 @@ public final class ToolValidator {
      * <p>Raw {@link ToolUseBlock#getContent()} wins when it carries arguments, so a malformed
      * content string is still rejected. Missing content, and the accumulator's empty {@code "{}"}
      * placeholder, fall back to the input map. That is the map {@link ToolExecutor} later invokes,
-     * and both checks call this helper so they cannot disagree.
+     * and both checks call this helper so they cannot disagree. A call with no content and an empty
+     * input map returns {@code "{}"} so schema validation sees an empty object instead of a null
+     * string.
      *
      * @param toolUse the proposed tool call
-     * @return the string to validate, or null when the block is null or has no arguments
+     * @return the string to validate, or null when the block itself is null
      */
     public static String resolveArgsForValidation(ToolUseBlock toolUse) {
         if (toolUse == null) {
@@ -79,12 +81,12 @@ public final class ToolValidator {
         }
         Map<String, Object> input = toolUse.getInput();
         if (input == null || input.isEmpty()) {
-            return content;
+            return "{}";
         }
         try {
             return JsonUtils.getJsonCodec().toJson(input);
         } catch (Exception ignored) {
-            return content;
+            return content == null || content.isBlank() ? "{}" : content;
         }
     }
 
