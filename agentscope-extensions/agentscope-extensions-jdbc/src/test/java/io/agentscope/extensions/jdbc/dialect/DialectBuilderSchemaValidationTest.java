@@ -162,6 +162,18 @@ class DialectBuilderSchemaValidationTest {
     }
 
     @Test
+    @DisplayName("reopening an existing database with autoCreateTable(false) passes")
+    void reopenWithAutoCreateFalsePasses() {
+        DataSource ds = H2TestSupport.createDataSource("schema_reopen_no_create");
+
+        AbstractJdbcDialect.from(ds).build();
+
+        // Regression shape from main: create-then-reopen-check broke on default H2,
+        // where INFORMATION_SCHEMA string matching missed uppercase-stored identifiers.
+        assertDoesNotThrow(() -> AbstractJdbcDialect.from(ds).autoCreateTable(false).build());
+    }
+
+    @Test
     @DisplayName("directly constructing a store no longer issues any DDL")
     void directStoreConstructionIssuesNoDdl() throws Exception {
         DataSource ds = H2TestSupport.createDataSource("schema_no_direct_ddl");
