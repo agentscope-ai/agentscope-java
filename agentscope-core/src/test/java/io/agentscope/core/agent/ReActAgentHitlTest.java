@@ -40,6 +40,8 @@ import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -50,10 +52,12 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -1190,6 +1194,103 @@ class ReActAgentHitlTest {
         assertEquals("tc1", req.getToolCalls().get(0).getId());
         assertEquals(1, tool.permissionChecks.get());
         assertEquals(0, tool.executions.get());
+    }
+
+    @Test
+    void schemaErrorResultIsWrittenOnceWhenActingBatchErrors() {
+        CountingAskTool invalidTool = new CountingAskTool();
+        HangingAllowTool allow = new HangingAllowTool();
+        ToolUseBlock invalid =
+                ToolUseBlock.builder()
+                        .id("bad")
+                        .name("ask_scope")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+        Map<String, Object> input = new HashMap<>();
+        input.put("query", "x");
+        ToolUseBlock valid = ToolUseBlock.builder().id("good").name("allow").input(input).build();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse(List.of(invalid, valid))),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(invalidTool, allow))
+                        .middlewares(List.of(new FailActingAfterAllowedStart()))
+                        .build();
+
+        assertThrows(Exception.class, () -> agent.call(List.of()).block(Duration.ofSeconds(8)));
+
+        long badResults =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "bad".equals(tr.getId()))
+                        .count();
+        assertEquals(1, badResults, "an acting error must keep exactly one schema result");
+        String error =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "bad".equals(tr.getId()))
+                        .map(ReActAgentHitlTest::toolResultText)
+                        .findFirst()
+                        .orElse("");
+        assertTrue(
+                error.startsWith("Error: Parameter validation failed for tool 'ask_scope'"), error);
+    }
+
+    /**
+     * Errors the acting stream once the allowed call has started, so the schema-error write runs
+     * on the non-complete path instead of notifyPostActingHook.
+     */
+    private static final class FailActingAfterAllowedStart implements MiddlewareBase {
+        @Override
+        public Flux<AgentEvent> onActing(
+                io.agentscope.core.agent.Agent agent,
+                io.agentscope.core.agent.RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
+            return next.apply(input)
+                    .concatMap(
+                            event -> {
+                                if (event instanceof ToolResultStartEvent start
+                                        && "good".equals(start.getToolCallId())) {
+                                    return Flux.error(new IllegalStateException("acting failed"));
+                                }
+                                return Flux.just(event);
+                            });
+        }
+    }
+
+    private static final class HangingAllowTool extends ToolBase {
+        HangingAllowTool() {
+            super("allow", "hangs", schemaFor(), true, true, false, null, false, false);
+        }
+
+        private static Map<String, Object> schemaFor() {
+            Map<String, Object> schema = new HashMap<>();
+            schema.put("type", "object");
+            Map<String, Object> props = new HashMap<>();
+            props.put("query", Map.of("type", "string"));
+            schema.put("properties", props);
+            return schema;
+        }
+
+        @Override
+        public Mono<io.agentscope.core.permission.PermissionDecision> checkPermissions(
+                Map<String, Object> toolInput,
+                io.agentscope.core.permission.PermissionContextState context) {
+            return Mono.just(
+                    io.agentscope.core.permission.PermissionDecision.allow("allow: " + getName()));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            return Mono.never();
+        }
     }
 
     @Test
