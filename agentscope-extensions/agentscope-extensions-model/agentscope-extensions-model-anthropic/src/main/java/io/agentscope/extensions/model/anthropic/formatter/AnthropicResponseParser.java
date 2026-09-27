@@ -42,6 +42,8 @@ import reactor.core.publisher.Flux;
 public class AnthropicResponseParser {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicResponseParser.class);
+    private static final AnthropicServerToolHelper SERVER_TOOL_HELPER =
+            AnthropicServerToolHelper.instance();
 
     /**
      * Parse non-streaming Anthropic Message to ChatResponse.
@@ -84,6 +86,17 @@ public class AnthropicResponseParser {
                                             ThinkingBlock.builder()
                                                     .thinking(thinking.thinking())
                                                     .build()));
+
+            // Server tool use block (e.g. web_search executed on Anthropic's side)
+            block.serverToolUse()
+                    .ifPresent(
+                            serverToolUse ->
+                                    contentBlocks.add(SERVER_TOOL_HELPER.decodeUse(serverToolUse)));
+
+            // Server tool result blocks (results of tools executed on Anthropic's side)
+            SERVER_TOOL_HELPER
+                    .toResultParam(block)
+                    .ifPresent(param -> contentBlocks.add(SERVER_TOOL_HELPER.decodeResult(param)));
         }
 
         // Parse usage
@@ -229,6 +242,31 @@ public class AnthropicResponseParser {
                                                 .content("")
                                                 .build());
                             });
+
+            // Server tool use start (input arrives via subsequent input_json_delta events
+            // which are accumulated through the regular fragment mechanism)
+            startEvent
+                    .contentBlock()
+                    .serverToolUse()
+                    .ifPresent(
+                            serverToolUse -> {
+                                contentBlocks.add(
+                                        ToolUseBlock.builder()
+                                                .id(serverToolUse.id())
+                                                .name(serverToolUse.name().asString())
+                                                .input(Map.of())
+                                                .content("")
+                                                .metadata(
+                                                        Map.of(
+                                                                ToolUseBlock.METADATA_SERVER_TOOL,
+                                                                true))
+                                                .build());
+                            });
+
+            // Server tool results arrive complete in the start event
+            SERVER_TOOL_HELPER
+                    .toResultParam(startEvent.contentBlock())
+                    .ifPresent(param -> contentBlocks.add(SERVER_TOOL_HELPER.decodeResult(param)));
         }
 
         // Message delta - final usage information; combine the cumulative output tokens with
@@ -267,7 +305,7 @@ public class AnthropicResponseParser {
     /**
      * Parse JsonValue to Map for tool input.
      */
-    private static Map<String, Object> parseJsonInput(JsonValue jsonValue, String toolName) {
+    static Map<String, Object> parseJsonInput(JsonValue jsonValue, String toolName) {
         if (jsonValue == null) {
             return Map.of();
         }

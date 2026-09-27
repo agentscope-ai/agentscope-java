@@ -51,7 +51,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-默认排除 `read_file` / `write_file` / `edit_file` / `list_files` / `memory_*` / `session_search`——这些工具要么自带分页、要么返回值很小。`grep_files` 和 `glob_files` 会强制限制结果条数，但仍可触发大结果卸载，作为单条结果异常大时的第二道保护。**Shell `execute` 默认不排除**,因为命令输出可能非常大。
+默认排除 `read_file` / `write_file` / `edit_file` / `memory_search` / `memory_get` / `session_search`——这些工具要么自带分页、要么返回值很小。`grep_files` 和 `glob_files` 会强制限制结果条数，但仍可触发大结果卸载，作为单条结果异常大时的第二道保护。**Shell `execute` 默认不排除**,因为命令输出可能非常大。
 
 详情见[记忆 - 大工具结果卸载](/v2/zh/docs/harness/memory#大工具结果卸载)。
 
