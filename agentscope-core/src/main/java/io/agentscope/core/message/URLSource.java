@@ -42,6 +42,8 @@ import java.util.Objects;
  * accepting untrusted input must authorize local files and remote destinations (including
  * redirects) before conversion. MIME hints and filename extensions describe the intended media
  * type; they do not validate file contents or grant permission to access a resource.
+ * The shared HTTP(S) reader follows at most five same-protocol redirects and has no
+ * per-destination authorization callback; checking only the initial URL is insufficient.
  *
  * <p>When the URL has no file extension (e.g. CDN signed URLs), set {@code mimeType}
  * explicitly so converters can route the content to the correct media slot without

@@ -48,6 +48,32 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
     private final GeminiMediaConverter converter = new GeminiMediaConverter();
 
     @ParameterizedTest
+    @ValueSource(strings = {"image/jpg", "IMAGE/JPG", "image/jpeg"})
+    void jpegHintsAreCanonicalizedBeforeReadingFileUri(String mimeType) throws IOException {
+        ImageBlock block =
+                new ImageBlock(new URLSource(tempImageFile.toUri().toString(), mimeType));
+        Blob blob = converter.convertToInlineDataPart(block).inlineData().orElseThrow();
+        assertEquals("image/jpeg", blob.mimeType().orElseThrow());
+        assertArrayEquals(Files.readAllBytes(tempImageFile), blob.data().orElseThrow());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"image/bmp", "image/svg+xml", "image/gif"})
+    void unsupportedImageMimeHintsAreRejectedBeforeDownloading(String mimeType) throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setBody("fixture"));
+            ImageBlock block =
+                    new ImageBlock(new URLSource(server.url("/image.png").toString(), mimeType));
+            IllegalArgumentException failure =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> converter.convertToInlineDataPart(block));
+            assertTrue(failure.getMessage().contains("Unsupported MIME type"));
+            assertEquals(0, server.getRequestCount());
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"audio/mpeg", "video/quicktime", "video/x-msvideo", "video/x-ms-wmv"})
     void mimeHintAliasesRemainUsableWithFileUris(String mimeType) throws IOException {
         URLSource source = new URLSource(tempAudioFile.toUri().toString(), mimeType);

@@ -49,6 +49,7 @@ public class MediaUtils {
     // File size limits
     private static final long WARN_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
     private static final long MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
+    private static final int MAX_REDIRECTS = 5;
 
     // Supported extensions
     private static final List<String> SUPPORTED_IMAGE_EXTENSIONS =
@@ -112,13 +113,15 @@ public class MediaUtils {
     /**
      * Download a remote HTTP(S) URL and convert to base64.
      * Used for APIs that require base64 encoding instead of direct URLs (e.g., OpenAI audio).
-     * Bounds the read to 50MB and sets connection timeouts. Callers must authorize destinations,
-     * including redirects, through their application's network policy.
+     * Bounds the read to 50MB and follows at most five same-protocol redirects with connection
+     * timeouts. This method has no destination-policy callback: checking only the initial URL
+     * does not authorize redirects. Callers must enforce destination restrictions for every
+     * connection through their application's network policy, or fetch approved bytes themselves.
      *
      * @param url The remote URL to download
      * @return Base64-encoded string of downloaded content
-     * @throws IOException If the scheme is unsupported, download fails, exceeds the size limit,
-     *     or returns non-200 status
+     * @throws IOException If the scheme is unsupported, download fails, exceeds the size or
+     *     redirect limit, contains an invalid redirect, or returns non-200 status
      */
     public static String downloadUrlToBase64(String url) throws IOException {
         return Base64.getEncoder().encodeToString(downloadUrlAsBytes(url));
@@ -132,33 +135,63 @@ public class MediaUtils {
         }
         log.debug("Downloading remote URL for base64 encoding: {}", url);
 
-        HttpURLConnection connection = (HttpURLConnection) remoteUrl.openConnection();
-        try {
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(10000); // 10 seconds
-            connection.setReadTimeout(30000); // 30 seconds
-            connection.connect();
+        boolean followRedirects = HttpURLConnection.getFollowRedirects();
+        for (int redirects = 0; ; redirects++) {
+            HttpURLConnection connection = (HttpURLConnection) remoteUrl.openConnection();
+            try {
+                // Handle redirects here so the hop limit is independent of JVM-wide settings.
+                connection.setInstanceFollowRedirects(false);
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(10000); // 10 seconds
+                connection.setReadTimeout(30000); // 30 seconds
+                connection.connect();
 
-            int responseCode = connection.getResponseCode();
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                throw new IOException(
-                        "Failed to download URL: HTTP " + responseCode + " for " + url);
-            }
-
-            if (connection.getContentLengthLong() > MAX_SIZE_BYTES) {
-                throw new IOException("Downloaded content too large (max: " + MAX_SIZE_BYTES + ")");
-            }
-            try (InputStream is = connection.getInputStream()) {
-                // Content-Length may be absent or inaccurate; enforce the limit while reading.
-                byte[] bytes = readLimitedBytes(is);
-                if (bytes.length > WARN_SIZE_BYTES) {
-                    log.warn("Large download detected: {} bytes from {}", bytes.length, url);
+                int responseCode = connection.getResponseCode();
+                boolean redirect =
+                        switch (responseCode) {
+                            case 301, 302, 303, 307, 308 -> true;
+                            default -> false;
+                        };
+                if (redirect && followRedirects) {
+                    if (redirects >= MAX_REDIRECTS) {
+                        throw new IOException(
+                                "Too many media redirects (max: " + MAX_REDIRECTS + ")");
+                    }
+                    String location = connection.getHeaderField("Location");
+                    if (location == null || location.isBlank()) {
+                        throw new IOException("Media redirect is missing a Location header");
+                    }
+                    URL target = new URL(remoteUrl, location);
+                    // Preserve HttpURLConnection's same-protocol rule, including no TLS downgrade.
+                    if (!remoteUrl.getProtocol().equalsIgnoreCase(target.getProtocol())) {
+                        throw new IOException("Media redirects must keep the same HTTP(S) scheme");
+                    }
+                    remoteUrl = target;
+                    continue;
+                }
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    throw new IOException(
+                            "Failed to download URL: HTTP " + responseCode + " for " + remoteUrl);
                 }
 
-                return bytes;
+                if (connection.getContentLengthLong() > MAX_SIZE_BYTES) {
+                    throw new IOException(
+                            "Downloaded content too large (max: " + MAX_SIZE_BYTES + ")");
+                }
+                try (InputStream is = connection.getInputStream()) {
+                    // Content-Length may be absent or inaccurate; enforce the limit while reading.
+                    byte[] bytes = readLimitedBytes(is);
+                    if (bytes.length > WARN_SIZE_BYTES) {
+                        log.warn(
+                                "Large download detected: {} bytes from {}",
+                                bytes.length,
+                                remoteUrl);
+                    }
+                    return bytes;
+                }
+            } finally {
+                connection.disconnect();
             }
-        } finally {
-            connection.disconnect();
         }
     }
 
@@ -167,6 +200,7 @@ public class MediaUtils {
      *
      * <p>This method reads bytes without validating their media format. Callers are responsible
      * for authorizing local paths and remote destinations before passing untrusted input.
+     * HTTP(S) reads follow the redirect and network-policy contract of {@link #downloadUrlToBase64}.
      *
      * @param url local path, file URI, or remote HTTP(S) URL
      * @return resource bytes
@@ -188,6 +222,7 @@ public class MediaUtils {
     }
 
     static byte[] readLimitedBytes(InputStream input) throws IOException {
+        // InputStream.readNBytes grows in chunks; the limit is not an initial buffer allocation.
         // One extra byte distinguishes an exact-limit resource from an oversized one.
         byte[] bytes = input.readNBytes((int) MAX_SIZE_BYTES + 1);
         if (bytes.length > MAX_SIZE_BYTES) {

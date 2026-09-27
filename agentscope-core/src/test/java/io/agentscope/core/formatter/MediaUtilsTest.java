@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
+import java.net.HttpURLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
@@ -37,11 +38,13 @@ import javax.net.ssl.SSLException;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.SocketPolicy;
+import okio.Buffer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -77,6 +80,13 @@ class MediaUtilsTest {
     }
 
     @Test
+    void smallBoundedReadUsesSmallBuffers() throws IOException {
+        RepeatingInputStream input = new RepeatingInputStream(20 * 1024);
+        assertEquals(20 * 1024, MediaUtils.readLimitedBytes(input).length);
+        assertTrue(input.largestBuffer <= 64 * 1024);
+    }
+
+    @Test
     void rejectsOversizedLocalFileAndDirectory() throws IOException {
         Path file = tempDir.resolve("large.bin");
         try (RandomAccessFile sparse = new RandomAccessFile(file.toFile(), "rw")) {
@@ -97,6 +107,126 @@ class MediaUtilsTest {
                     "fixture".getBytes(java.nio.charset.StandardCharsets.UTF_8),
                     MediaUtils.readUrlAsBytes(server.url("/redirect").toString()));
             assertEquals(2, server.getRequestCount());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {301, 302, 303, 307, 308})
+    void followsRelativeMediaRedirects(int status) throws IOException, InterruptedException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(
+                    new MockResponse().setResponseCode(status).setHeader("Location", "media"));
+            server.enqueue(new MockResponse().setBody("fixture"));
+            assertEquals(
+                    "Zml4dHVyZQ==",
+                    MediaUtils.downloadUrlToBase64(server.url("/directory/start").toString()));
+            assertEquals("/directory/start", server.takeRequest().getPath());
+            assertEquals("/directory/media", server.takeRequest().getPath());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {5, 6})
+    void mediaRedirectsAreLimitedToFiveHops(int hops) throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            for (int i = 0; i < hops; i++) {
+                server.enqueue(
+                        new MockResponse().setResponseCode(302).setHeader("Location", "/loop"));
+            }
+            server.enqueue(new MockResponse().setBody("fixture"));
+            String url = server.url("/loop").toString();
+            if (hops == 5) {
+                assertEquals("Zml4dHVyZQ==", MediaUtils.downloadUrlToBase64(url));
+            } else {
+                IOException failure =
+                        assertThrows(IOException.class, () -> MediaUtils.downloadUrlToBase64(url));
+                assertTrue(failure.getMessage().contains("Too many media redirects"));
+            }
+            assertEquals(6, server.getRequestCount());
+        }
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" "})
+    void rejectsRedirectsWithoutLocation(String location) throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            MockResponse response = new MockResponse().setResponseCode(302);
+            if (location != null) {
+                response.setHeader("Location", location);
+            }
+            server.enqueue(response);
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () -> MediaUtils.readUrlAsBytes(server.url("/redirect").toString()));
+            assertTrue(failure.getMessage().contains("Location"));
+            assertEquals(1, server.getRequestCount());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "file:/media.png",
+                "ftp://localhost/media.png",
+                "https://localhost/media.png"
+            })
+    void rejectsRedirectSchemeChanges(String location) throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", location));
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () -> MediaUtils.readUrlAsBytes(server.url("/redirect").toString()));
+            assertTrue(failure.getMessage().contains("scheme"));
+            assertEquals(1, server.getRequestCount());
+        }
+    }
+
+    @Test
+    void redirectedDownloadStillRejectsOversizedContentLength() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", "/large"));
+            server.enqueue(
+                    new MockResponse()
+                            .setBody("small")
+                            .setHeader("Content-Length", 50L * 1024 * 1024 + 1)
+                            .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () -> MediaUtils.readUrlAsBytes(server.url("/redirect").toString()));
+            assertTrue(failure.getMessage().contains("too large"));
+            assertEquals(2, server.getRequestCount());
+        }
+    }
+
+    @Test
+    void preservesDisabledRedirectFollowing() throws IOException {
+        boolean previous = HttpURLConnection.getFollowRedirects();
+        try (MockWebServer server = new MockWebServer()) {
+            HttpURLConnection.setFollowRedirects(false);
+            server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", "/media"));
+            server.enqueue(new MockResponse().setBody("fixture"));
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () -> MediaUtils.readUrlAsBytes(server.url("/redirect").toString()));
+            assertTrue(failure.getMessage().contains("HTTP 302"));
+            assertEquals(1, server.getRequestCount());
+        } finally {
+            HttpURLConnection.setFollowRedirects(previous);
+        }
+    }
+
+    @Test
+    void downloadAboveWarningThresholdStillSucceeds() throws IOException {
+        byte[] content = new byte[10 * 1024 * 1024 + 1];
+        Arrays.fill(content, (byte) 1);
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setBody(new Buffer().write(content)));
+            assertArrayEquals(content, MediaUtils.readUrlAsBytes(server.url("/media").toString()));
         }
     }
 
@@ -145,6 +275,7 @@ class MediaUtilsTest {
 
     private static final class RepeatingInputStream extends InputStream {
         private int remaining;
+        private int largestBuffer;
 
         private RepeatingInputStream(int remaining) {
             this.remaining = remaining;
@@ -161,6 +292,7 @@ class MediaUtilsTest {
 
         @Override
         public int read(byte[] bytes, int offset, int length) {
+            largestBuffer = Math.max(largestBuffer, bytes.length);
             if (length == 0) {
                 return 0;
             }

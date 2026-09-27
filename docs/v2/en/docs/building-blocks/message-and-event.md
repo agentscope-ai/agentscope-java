@@ -77,6 +77,14 @@ Local content may be sent to the model provider. Applications that accept untrus
 must authorize local paths and network destinations, including redirect targets, before conversion.
 MIME hints and extension checks are routing metadata; they do not verify the actual file format.
 
+The shared HTTP(S) reader follows at most five same-protocol redirects. This cap is not a
+destination allowlist, and the reader has no per-hop authorization callback. Checking only the
+initial URL is insufficient: enforce restrictions on every connection through an outbound network
+policy, or fetch approved content in application code and pass it as a `Base64Source`.
+
+For migration details on the download methods and supported schemes, see the
+[media source migration notes](/v2/en/docs/others/release-notes#media-source-migration).
+
 ### Creating a message
 
 The role-pinned subclasses (`io.agentscope.core.message.UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage`) provide convenient constructors. When `content` is a plain string, it is wrapped in a `TextBlock` automatically.

@@ -57,6 +57,41 @@ public class GeminiMediaConverter {
                                     "wmv", "3gpp"),
                     "audio", List.of("mp3", "wav", "aiff", "aac", "ogg", "flac"));
 
+    /** Explicit MIME hints are validated independently of filename extensions. */
+    private static final Map<String, List<String>> SUPPORTED_MIME_TYPES =
+            Map.of(
+                    "image",
+                            List.of(
+                                    "image/png",
+                                    "image/jpeg",
+                                    "image/webp",
+                                    "image/heic",
+                                    "image/heif"),
+                    "video",
+                            List.of(
+                                    "video/mp4",
+                                    "video/mpeg",
+                                    "video/mov",
+                                    "video/avi",
+                                    "video/x-flv",
+                                    "video/flv",
+                                    "video/mpg",
+                                    "video/webm",
+                                    "video/wmv",
+                                    "video/3gpp",
+                                    "video/quicktime",
+                                    "video/x-msvideo",
+                                    "video/x-ms-wmv"),
+                    "audio",
+                            List.of(
+                                    "audio/mp3",
+                                    "audio/wav",
+                                    "audio/aiff",
+                                    "audio/aac",
+                                    "audio/ogg",
+                                    "audio/flac",
+                                    "audio/mpeg"));
+
     /**
      * Convert ImageBlock to Gemini Part with inline data.
      *
@@ -169,26 +204,22 @@ public class GeminiMediaConverter {
      */
     private String getMimeType(URLSource source, String mediaType) {
         String hint = source.getMimeType();
-        String normalizedHint = null;
-        String extension;
         if (hint != null && !hint.isBlank()) {
-            normalizedHint = hint.toLowerCase(Locale.ROOT);
+            String normalizedHint = hint.toLowerCase(Locale.ROOT);
             if (!normalizedHint.startsWith(mediaType + "/")) {
                 throw new IllegalArgumentException(
                         "MIME type does not match " + mediaType + " block");
             }
-            // MIME subtypes are not always file extensions (for example, audio/mpeg is MP3).
-            extension =
-                    switch (normalizedHint) {
-                        case "audio/mpeg" -> "mp3";
-                        case "video/quicktime" -> "mov";
-                        case "video/x-msvideo" -> "avi";
-                        case "video/x-ms-wmv" -> "wmv";
-                        default -> normalizedHint.substring(mediaType.length() + 1);
-                    };
-        } else {
-            extension = MediaUtils.getExtension(source.getUrl()).toLowerCase(Locale.ROOT);
+            if ("image/jpg".equals(normalizedHint)) {
+                normalizedHint = "image/jpeg";
+            }
+            if (!SUPPORTED_MIME_TYPES.get(mediaType).contains(normalizedHint)) {
+                throw new IllegalArgumentException(
+                        "Unsupported MIME type: " + hint + " for " + mediaType + " block");
+            }
+            return normalizedHint;
         }
+        String extension = MediaUtils.getExtension(source.getUrl()).toLowerCase(Locale.ROOT);
 
         // Validate extension is supported
         List<String> supportedExts = SUPPORTED_EXTENSIONS.get(mediaType);
@@ -205,6 +236,6 @@ public class GeminiMediaConverter {
             extension = "jpeg";
         }
 
-        return normalizedHint != null ? normalizedHint : mediaType + "/" + extension;
+        return mediaType + "/" + extension;
     }
 }

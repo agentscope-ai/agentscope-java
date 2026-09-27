@@ -74,6 +74,13 @@ Gemini 的 URL 来源和 `MediaUtils` 字节/base64 读取方法会在读取过�
 本地内容可能被发送给模型提供方。接受不可信引用的应用应在转换前授权本地路径和网络目标，
 包括重定向目标。MIME 提示和扩展名检查仅用于格式路由，不验证文件的实际格式。
 
+共享 HTTP(S) 读取方法最多跟随五次同协议重定向。次数上限不等于目标白名单，读取方法也不提供
+逐跳授权回调。仅检查初始 URL 并不足够：应用应通过出站网络策略限制每次连接，或自行获取
+经过授权的内容，再以 `Base64Source` 传入。
+
+下载方法及支持协议的迁移说明，请参阅
+[媒体来源迁移说明](/v2/zh/docs/others/release-notes#媒体来源迁移说明)。
+
 ### 创建消息
 
 按 role 固定的子类提供便捷构造（`io.agentscope.core.message.UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage`）。当 content 是普通字符串时，会自动包装为 `TextBlock`。
