@@ -62,10 +62,11 @@ import reactor.util.context.ContextView;
  * hops via {@code publishOn} / {@code subscribeOn}) is handled by
  * {@link ContextPropagationOperator}. The first call to either constructor
  * registers {@code ContextPropagationOperator.registerOnEachOperator()} once
- * for the JVM. That hook wraps every operator of every {@code Flux} and
- * {@code Mono} in the process, independent of which OpenTelemetry SDK records
- * spans, so child spans see the correct parent regardless of which thread the
- * signal lands on.
+ * for the JVM. From then on, that hook wraps each {@code Flux} and
+ * {@code Mono} operator as it is assembled anywhere in the process, independent
+ * of which OpenTelemetry SDK records spans, so child spans see the correct
+ * parent regardless of which thread the signal lands on. Chains assembled
+ * before the hook was registered are not retroactively wrapped.
  *
  * <p>When no OTel SDK is configured (only the default no-op provider is
  * active), every hook short-circuits with near-zero overhead.
