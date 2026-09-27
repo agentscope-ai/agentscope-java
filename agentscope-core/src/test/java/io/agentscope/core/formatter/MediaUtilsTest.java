@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
@@ -79,11 +80,28 @@ class MediaUtilsTest {
         assertEquals(1, input.remaining);
     }
 
-    @Test
-    void smallBoundedReadUsesSmallBuffers() throws IOException {
-        RepeatingInputStream input = new RepeatingInputStream(20 * 1024);
-        assertEquals(20 * 1024, MediaUtils.readLimitedBytes(input).length);
+    @ParameterizedTest
+    @ValueSource(ints = {0, 3, 20 * 1024, 64 * 1024, 64 * 1024 + 1})
+    void boundedReadUsesSmallBuffers(int size) throws IOException {
+        RepeatingInputStream input = new RepeatingInputStream(size);
+        assertEquals(size, MediaUtils.readLimitedBytes(input).length);
         assertTrue(input.largestBuffer <= 64 * 1024);
+    }
+
+    @Test
+    void boundedReadPreservesContentAcrossShortReads() throws IOException {
+        byte[] content = new byte[128 * 1024 + 17];
+        for (int i = 0; i < content.length; i++) {
+            content[i] = (byte) (i % 251);
+        }
+        InputStream input =
+                new ByteArrayInputStream(content) {
+                    @Override
+                    public synchronized int read(byte[] bytes, int offset, int length) {
+                        return super.read(bytes, offset, Math.min(length, 997));
+                    }
+                };
+        assertArrayEquals(content, MediaUtils.readLimitedBytes(input));
     }
 
     @Test

@@ -222,13 +222,23 @@ public class MediaUtils {
     }
 
     static byte[] readLimitedBytes(InputStream input) throws IOException {
-        // InputStream.readNBytes grows in chunks; the limit is not an initial buffer allocation.
-        // One extra byte distinguishes an exact-limit resource from an oversized one.
-        byte[] bytes = input.readNBytes((int) MAX_SIZE_BYTES + 1);
-        if (bytes.length > MAX_SIZE_BYTES) {
-            throw new IOException("Media content too large (max: " + MAX_SIZE_BYTES + ")");
+        // Keep the initial allocation small and grow the output as content arrives.
+        byte[] buffer = new byte[64 * 1024];
+        ByteArrayOutputStream output = new ByteArrayOutputStream(buffer.length);
+        int read;
+        // Read at most one overflow byte to distinguish exact-limit content from oversized input.
+        while ((read =
+                        input.read(
+                                buffer,
+                                0,
+                                (int) Math.min(buffer.length, MAX_SIZE_BYTES - output.size() + 1)))
+                != -1) {
+            if (output.size() + read > MAX_SIZE_BYTES) {
+                throw new IOException("Media content too large (max: " + MAX_SIZE_BYTES + ")");
+            }
+            output.write(buffer, 0, read);
         }
-        return bytes;
+        return output.toByteArray();
     }
 
     /**
