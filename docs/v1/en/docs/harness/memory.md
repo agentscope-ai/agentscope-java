@@ -1,5 +1,6 @@
 ---
 title: Memory
+zh_link: /v1/zh/docs/harness/memory
 ---
 
 ## Purpose

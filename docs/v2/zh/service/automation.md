@@ -1,5 +1,6 @@
 ---
 title: "自动化任务：计划与 Webhook"
+en_link: /v2/en/service/automation
 ---
 
 <Note>

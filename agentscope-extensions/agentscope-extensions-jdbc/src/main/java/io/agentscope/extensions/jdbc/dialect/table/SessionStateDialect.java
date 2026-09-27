@@ -75,8 +75,10 @@ public interface SessionStateDialect {
 
     /**
      * INSERT of a single state with {@code version = 1}. Used by {@code saveIfVersion} when
-     * {@code expectedVersion == 0} (create-if-absent); a primary-key conflict is detected by the
-     * caller and mapped to {@link io.agentscope.core.state.AgentStateStore#UNVERSIONED}.
+     * {@code expectedVersion == 0} (create-if-absent); on a primary-key conflict the caller
+     * falls back to {@link #sessionStateUpdateIfVersion} with {@code expectedVersion = 0} so
+     * that rows backfilled at version 0 still satisfy the CAS, and maps a non-zero-version
+     * mismatch to {@link io.agentscope.core.state.AgentStateStore#UNVERSIONED}.
      */
     default BoundSql sessionStateInsertIfAbsent(
             String sessionId, String stateKey, int itemIndex, String stateData) {

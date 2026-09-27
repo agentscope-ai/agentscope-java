@@ -21,6 +21,7 @@ import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -49,13 +50,15 @@ public class ReasoningContext {
     private final TextAccumulator textAcc = new TextAccumulator();
     private final ThinkingAccumulator thinkingAcc = new ThinkingAccumulator();
     private final ToolCallsAccumulator toolCallsAcc = new ToolCallsAccumulator();
-
-    private final List<Msg> allStreamedChunks = new ArrayList<>();
+    private final ServerToolResultAccumulator serverToolResults = new ServerToolResultAccumulator();
 
     // ChatUsage
     private int inputTokens = 0;
     private int outputTokens = 0;
     private int cachedTokens = 0;
+    private int cacheCreationTokens = 0;
+    private int reasoningTokens = 0;
+    private int toolUsePromptTokens = 0;
     private double time = 0;
 
     // Provider-specific response metadata to propagate to the final message
@@ -89,6 +92,9 @@ public class ReasoningContext {
             inputTokens = usage.getInputTokens();
             outputTokens = usage.getOutputTokens();
             cachedTokens = usage.getCachedTokens();
+            cacheCreationTokens = usage.getCacheCreationTokens();
+            reasoningTokens = usage.getReasoningTokens();
+            toolUsePromptTokens = usage.getToolUsePromptTokens();
             time = usage.getTime();
         }
 
@@ -106,7 +112,6 @@ public class ReasoningContext {
                 // Emit text block immediately
                 Msg msg = buildChunkMsg(tb);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
 
             } else if (block instanceof ThinkingBlock tb) {
                 thinkingAcc.add(tb);
@@ -114,7 +119,6 @@ public class ReasoningContext {
                 // Emit thinking block immediately
                 Msg msg = buildChunkMsg(tb);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
 
             } else if (block instanceof ToolUseBlock tub) {
                 // Accumulate tool calls and emit immediately for real-time streaming
@@ -128,7 +132,14 @@ public class ReasoningContext {
                 ToolUseBlock outputBlock = enrichToolUseBlockWithId(tub);
                 Msg msg = buildChunkMsg(outputBlock);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
+
+            } else if (block instanceof ToolResultBlock trb && trb.isServerTool()) {
+                // Server tool results arrive as part of the assistant response; keep them so
+                // they end up in the final message and can be echoed back on later turns.
+                serverToolResults.add(trb);
+
+                Msg msg = buildChunkMsg(trb);
+                streamingMsgs.add(msg);
             }
         }
 
@@ -166,9 +177,9 @@ public class ReasoningContext {
             blocks.add(textAcc.buildAggregated());
         }
 
-        // Add all tool calls
+        // Add all tool calls, placing server tool results right after their calls
         List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
-        blocks.addAll(toolCalls);
+        blocks.addAll(serverToolResults.placeAfterToolCalls(toolCalls));
 
         // If no content at all, return null
         if (blocks.isEmpty()) {
@@ -184,6 +195,9 @@ public class ReasoningContext {
                             .inputTokens(inputTokens)
                             .outputTokens(outputTokens)
                             .cachedTokens(cachedTokens)
+                            .cacheCreationTokens(cacheCreationTokens)
+                            .reasoningTokens(reasoningTokens)
+                            .toolUsePromptTokens(toolUsePromptTokens)
                             .time(time)
                             .build();
             metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
@@ -301,6 +315,9 @@ public class ReasoningContext {
                     .inputTokens(inputTokens)
                     .outputTokens(outputTokens)
                     .cachedTokens(cachedTokens)
+                    .cacheCreationTokens(cacheCreationTokens)
+                    .reasoningTokens(reasoningTokens)
+                    .toolUsePromptTokens(toolUsePromptTokens)
                     .time(time)
                     .build();
         }

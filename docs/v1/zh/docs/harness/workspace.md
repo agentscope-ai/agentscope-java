@@ -1,5 +1,6 @@
 ---
 title: 工作区
+en_link: /v1/en/docs/harness/workspace
 ---
 
 ## 作用

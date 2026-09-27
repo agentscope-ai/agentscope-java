@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.ollama.formatter;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -48,12 +49,17 @@ public class OllamaResponseParser {
 
         List<ContentBlock> contentBlocks = new ArrayList<>();
 
-        // 1. Handle Text Content
+        // 1. Handle Thinking Content (thinking models with the `think` option enabled)
+        if (msg != null && msg.getThinking() != null && !msg.getThinking().isEmpty()) {
+            contentBlocks.add(ThinkingBlock.builder().thinking(msg.getThinking()).build());
+        }
+
+        // 2. Handle Text Content
         if (msg != null && msg.getContent() != null && !msg.getContent().isEmpty()) {
             contentBlocks.add(TextBlock.builder().text(msg.getContent()).build());
         }
 
-        // 2. Handle Tool Calls
+        // 3. Handle Tool Calls
         if (msg != null) {
             List<OllamaToolCall> toolCalls = msg.getToolCalls();
             if (toolCalls != null && !toolCalls.isEmpty()) {
@@ -82,9 +88,13 @@ public class OllamaResponseParser {
             }
         }
 
-        // 3. Map Usage
+        // 4. Map Usage
         int inputTokens = response.getPromptEvalCount() != null ? response.getPromptEvalCount() : 0;
         int outputTokens = response.getEvalCount() != null ? response.getEvalCount() : 0;
+        int cachedTokens =
+                response.getPromptEvalCachedCount() != null
+                        ? response.getPromptEvalCachedCount()
+                        : 0;
         // Ollama durations are in nanoseconds, convert to seconds
         double time = response.getTotalDuration() != null ? response.getTotalDuration() / 1e9 : 0.0;
 
@@ -92,10 +102,11 @@ public class OllamaResponseParser {
                 ChatUsage.builder()
                         .inputTokens(inputTokens)
                         .outputTokens(outputTokens)
+                        .cachedTokens(cachedTokens)
                         .time(time)
                         .build();
 
-        // 4. Map Metadata
+        // 5. Map Metadata
         Map<String, Object> metadata = new HashMap<>();
         if (response.getModel() != null) metadata.put("model", response.getModel());
         if (response.getCreatedAt() != null) metadata.put("created_at", response.getCreatedAt());
@@ -105,6 +116,8 @@ public class OllamaResponseParser {
             metadata.put("load_duration", response.getLoadDuration());
         if (response.getPromptEvalCount() != null)
             metadata.put("prompt_eval_count", response.getPromptEvalCount());
+        if (response.getPromptEvalCachedCount() != null)
+            metadata.put("prompt_eval_cached_count", response.getPromptEvalCachedCount());
         if (response.getPromptEvalDuration() != null)
             metadata.put("prompt_eval_duration", response.getPromptEvalDuration());
         if (response.getEvalCount() != null) metadata.put("eval_count", response.getEvalCount());

@@ -237,9 +237,11 @@ class GeminiResponseParserTest {
 
         // Input tokens = promptTokenCount
         assertEquals(100, usage.getInputTokens());
+        assertEquals(0, usage.getToolUsePromptTokens());
 
         // Output tokens include candidate and model-generated thinking tokens.
         assertEquals(70, usage.getOutputTokens());
+        assertEquals(10, usage.getReasoningTokens());
 
         // Time should be > 0
         assertTrue(usage.getTime() >= 0);
@@ -263,15 +265,17 @@ class GeminiResponseParserTest {
 
         assertNotNull(usage);
         assertEquals(800, usage.getInputTokens());
+        assertEquals(300, usage.getToolUsePromptTokens());
         assertEquals(130, usage.getOutputTokens());
     }
 
     @Test
-    void testParseUsageMetadataUsesTotalWhenCandidateCountIsMissing() {
+    void testParseUsageMetadataIgnoresTotalWhenCandidateCountIsMissing() {
         GenerateContentResponseUsageMetadata usageMetadata =
                 GenerateContentResponseUsageMetadata.builder()
                         .promptTokenCount(500)
                         .toolUsePromptTokenCount(300)
+                        .thoughtsTokenCount(10)
                         .totalTokenCount(930)
                         .build();
 
@@ -282,7 +286,7 @@ class GeminiResponseParserTest {
 
         assertNotNull(usage);
         assertEquals(800, usage.getInputTokens());
-        assertEquals(130, usage.getOutputTokens());
+        assertEquals(10, usage.getOutputTokens());
     }
 
     @Test
@@ -335,6 +339,8 @@ class GeminiResponseParserTest {
 
         assertNotNull(chatResponse.getUsage());
         assertEquals(300, chatResponse.getUsage().getCachedTokens());
+        assertEquals(10, chatResponse.getUsage().getReasoningTokens());
+        assertEquals(0, chatResponse.getUsage().getToolUsePromptTokens());
     }
 
     @Test

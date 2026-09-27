@@ -97,10 +97,31 @@ public class DashScopeResponseParser {
             ChatUsage usage = null;
             DashScopeUsage u = response.getUsage();
             if (u != null) {
+                DashScopeUsage.OutputTokensDetails outputTokensDetails = u.getOutputTokensDetails();
+                DashScopeUsage.PromptTokensDetails promptTokensDetails = u.getPromptTokensDetails();
                 usage =
                         ChatUsage.builder()
                                 .inputTokens(u.getInputTokens() != null ? u.getInputTokens() : 0)
                                 .outputTokens(u.getOutputTokens() != null ? u.getOutputTokens() : 0)
+                                .cachedTokens(
+                                        promptTokensDetails != null
+                                                        && promptTokensDetails.getCachedTokens()
+                                                                != null
+                                                ? promptTokensDetails.getCachedTokens()
+                                                : 0)
+                                .cacheCreationTokens(
+                                        promptTokensDetails != null
+                                                        && promptTokensDetails
+                                                                        .getCacheCreationInputTokens()
+                                                                != null
+                                                ? promptTokensDetails.getCacheCreationInputTokens()
+                                                : 0)
+                                .reasoningTokens(
+                                        outputTokensDetails != null
+                                                        && outputTokensDetails.getReasoningTokens()
+                                                                != null
+                                                ? outputTokensDetails.getReasoningTokens()
+                                                : 0)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)

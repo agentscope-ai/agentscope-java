@@ -1,5 +1,6 @@
 ---
 title: AgentScope Builder Release
+zh_link: /v2/zh/blogs/agentscope-v1-builder
 ---
 
 In AgentScope Java 1.1.0, we distilled the "workspace as truth + self-evolution" experience from OpenClaw and the Coding Agent into a Harness engineering foundation: `HarnessAgent` + `AbstractFilesystem` + built-in compaction and layered memory. At the time, we made a promise: **write agent logic once and switch deployment shapes on demand — from a personal laptop all the way to enterprise distributed deployments**.

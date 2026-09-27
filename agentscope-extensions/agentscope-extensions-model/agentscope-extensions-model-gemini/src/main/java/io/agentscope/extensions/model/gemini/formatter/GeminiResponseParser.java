@@ -99,27 +99,16 @@ public class GeminiResponseParser {
                                 + metadata.toolUsePromptTokenCount().orElse(0);
                 int cachedTokens = metadata.cachedContentTokenCount().orElse(0);
                 int thinkingTokens = metadata.thoughtsTokenCount().orElse(0);
-                int outputTokens =
-                        metadata.candidatesTokenCount()
-                                .map(candidateTokens -> candidateTokens + thinkingTokens)
-                                .orElseGet(
-                                        () ->
-                                                metadata.totalTokenCount()
-                                                        .map(
-                                                                total ->
-                                                                        Math.max(
-                                                                                0,
-                                                                                total
-                                                                                        - inputTokens))
-                                                        // Without candidate or total counts,
-                                                        // thoughts are the only reported output.
-                                                        .orElse(thinkingTokens));
+                int toolUsePromptTokens = metadata.toolUsePromptTokenCount().orElse(0);
+                int outputTokens = metadata.candidatesTokenCount().orElse(0) + thinkingTokens;
 
                 usage =
                         ChatUsage.builder()
                                 .inputTokens(inputTokens)
                                 .outputTokens(outputTokens)
                                 .cachedTokens(cachedTokens)
+                                .toolUsePromptTokens(toolUsePromptTokens)
+                                .reasoningTokens(thinkingTokens)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)

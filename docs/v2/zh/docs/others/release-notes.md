@@ -1,6 +1,7 @@
 ---
 title: Release Notes
 description: AgentScope Java 各版本变更记录
+en_link: /v2/en/docs/others/release-notes
 ---
 
 本页记录 AgentScope Java 2.0 各版本的具体变更。从 1.x 升级的整体迁移指南请见 [V1 迁移指南](/v2/zh/docs/change-log)。

@@ -33,7 +33,6 @@ import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.dto.OpenAIStreamOptions;
-import io.agentscope.extensions.model.openai.formatter.OpenAIBaseFormatter;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 import java.time.Instant;
 import java.util.List;
@@ -127,7 +126,7 @@ public class OpenAIChatModel extends ChatModelBase {
         Instant start = Instant.now();
 
         // Format messages using formatter (handles provider-specific transformations)
-        List<OpenAIMessage> openaiMessages = formatter.format(messages);
+        List<OpenAIMessage> openaiMessages = formatter.format(messages, effectiveOptions);
 
         // Build request
         OpenAIRequest.Builder requestBuilder =
@@ -153,12 +152,6 @@ public class OpenAIChatModel extends ChatModelBase {
         // Apply tool choice if specified (formatter handles provider-specific tool choice)
         if (effectiveOptions.getToolChoice() != null) {
             formatter.applyToolChoice(request, effectiveOptions.getToolChoice());
-        }
-
-        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
-        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())
-                && formatter instanceof OpenAIBaseFormatter openAIFormatter) {
-            openAIFormatter.applyCacheControl(request.getMessages());
         }
 
         // Make the API call

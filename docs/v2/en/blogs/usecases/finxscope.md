@@ -1,5 +1,6 @@
 ---
 title: 'FinXScope: A Financial-Grade Agent Foundation'
+zh_link: /v2/zh/blogs/usecases/finxscope
 ---
 
 > Authors: Meng Chen (Bantang), Wen Jun (Siyue), Ling Lezhen (Lezhen), Xu Lei (Chongshu), Lin Yuan (Niren)

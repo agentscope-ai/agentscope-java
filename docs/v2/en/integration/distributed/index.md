@@ -1,5 +1,6 @@
 ---
 title: Distributed Storage (Distributed Store)
+zh_link: /v2/zh/integration/distributed/index
 ---
 
 AgentScope unifies all components that need distributed persistence under the `DistributedStore` interface. One line of configuration switches agent state, workspace filesystem, sandbox snapshots, and concurrency locks to the same distributed store.

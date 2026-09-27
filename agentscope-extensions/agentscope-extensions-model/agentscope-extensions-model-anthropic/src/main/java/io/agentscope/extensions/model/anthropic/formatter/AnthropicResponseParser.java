@@ -42,6 +42,8 @@ import reactor.core.publisher.Flux;
 public class AnthropicResponseParser {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicResponseParser.class);
+    private static final AnthropicServerToolHelper SERVER_TOOL_HELPER =
+            AnthropicServerToolHelper.instance();
 
     /**
      * Parse non-streaming Anthropic Message to ChatResponse.
@@ -84,17 +86,35 @@ public class AnthropicResponseParser {
                                             ThinkingBlock.builder()
                                                     .thinking(thinking.thinking())
                                                     .build()));
+
+            // Server tool use block (e.g. web_search executed on Anthropic's side)
+            block.serverToolUse()
+                    .ifPresent(
+                            serverToolUse ->
+                                    contentBlocks.add(SERVER_TOOL_HELPER.decodeUse(serverToolUse)));
+
+            // Server tool result blocks (results of tools executed on Anthropic's side)
+            SERVER_TOOL_HELPER
+                    .toResultParam(block)
+                    .ifPresent(param -> contentBlocks.add(SERVER_TOOL_HELPER.decodeResult(param)));
         }
 
         // Parse usage
         long baseInput = message.usage().inputTokens();
         long cacheRead = message.usage().cacheReadInputTokens().orElse(0L);
         long cacheCreate = message.usage().cacheCreationInputTokens().orElse(0L);
+        long reasoning =
+                message.usage()
+                        .outputTokensDetails()
+                        .map(details -> details.thinkingTokens())
+                        .orElse(0L);
         ChatUsage usage =
                 ChatUsage.builder()
                         .inputTokens((int) (baseInput + cacheRead + cacheCreate))
                         .outputTokens((int) message.usage().outputTokens())
                         .cachedTokens((int) cacheRead)
+                        .cacheCreationTokens((int) cacheCreate)
+                        .reasoningTokens((int) reasoning)
                         .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                         .build();
 
@@ -108,6 +128,7 @@ public class AnthropicResponseParser {
     private static class StreamUsageState {
         int inputTokens;
         int cachedTokens;
+        int cacheCreationTokens;
     }
 
     /**
@@ -162,6 +183,7 @@ public class AnthropicResponseParser {
             usageState.inputTokens =
                     (int) (startUsage.inputTokens() + cacheReadTokens + cacheCreationTokens);
             usageState.cachedTokens = (int) cacheReadTokens;
+            usageState.cacheCreationTokens = (int) cacheCreationTokens;
         }
 
         // Content block delta - text
@@ -220,6 +242,31 @@ public class AnthropicResponseParser {
                                                 .content("")
                                                 .build());
                             });
+
+            // Server tool use start (input arrives via subsequent input_json_delta events
+            // which are accumulated through the regular fragment mechanism)
+            startEvent
+                    .contentBlock()
+                    .serverToolUse()
+                    .ifPresent(
+                            serverToolUse -> {
+                                contentBlocks.add(
+                                        ToolUseBlock.builder()
+                                                .id(serverToolUse.id())
+                                                .name(serverToolUse.name().asString())
+                                                .input(Map.of())
+                                                .content("")
+                                                .metadata(
+                                                        Map.of(
+                                                                ToolUseBlock.METADATA_SERVER_TOOL,
+                                                                true))
+                                                .build());
+                            });
+
+            // Server tool results arrive complete in the start event
+            SERVER_TOOL_HELPER
+                    .toResultParam(startEvent.contentBlock())
+                    .ifPresent(param -> contentBlocks.add(SERVER_TOOL_HELPER.decodeResult(param)));
         }
 
         // Message delta - final usage information; combine the cumulative output tokens with
@@ -228,17 +275,26 @@ public class AnthropicResponseParser {
             var deltaUsage = event.asMessageDelta().usage();
             long cacheReadTokens =
                     deltaUsage.cacheReadInputTokens().orElse((long) usageState.cachedTokens);
+            long cacheCreationTokens =
+                    deltaUsage
+                            .cacheCreationInputTokens()
+                            .orElse((long) usageState.cacheCreationTokens);
             long inputTokens =
                     deltaUsage.inputTokens().isPresent()
-                            ? deltaUsage.inputTokens().get()
-                                    + cacheReadTokens
-                                    + deltaUsage.cacheCreationInputTokens().orElse(0L)
+                            ? deltaUsage.inputTokens().get() + cacheReadTokens + cacheCreationTokens
                             : usageState.inputTokens;
+            long reasoningTokens =
+                    deltaUsage
+                            .outputTokensDetails()
+                            .map(details -> details.thinkingTokens())
+                            .orElse(0L);
             usage =
                     ChatUsage.builder()
                             .inputTokens((int) inputTokens)
                             .cachedTokens((int) cacheReadTokens)
+                            .cacheCreationTokens((int) cacheCreationTokens)
                             .outputTokens((int) deltaUsage.outputTokens())
+                            .reasoningTokens((int) reasoningTokens)
                             .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                             .build();
         }
@@ -249,7 +305,7 @@ public class AnthropicResponseParser {
     /**
      * Parse JsonValue to Map for tool input.
      */
-    private static Map<String, Object> parseJsonInput(JsonValue jsonValue, String toolName) {
+    static Map<String, Object> parseJsonInput(JsonValue jsonValue, String toolName) {
         if (jsonValue == null) {
             return Map.of();
         }

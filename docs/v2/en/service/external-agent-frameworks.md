@@ -1,5 +1,6 @@
 ---
 title: "External frameworks and custom adapters"
+zh_link: /v2/zh/service/external-agent-frameworks
 ---
 
 <Note>
