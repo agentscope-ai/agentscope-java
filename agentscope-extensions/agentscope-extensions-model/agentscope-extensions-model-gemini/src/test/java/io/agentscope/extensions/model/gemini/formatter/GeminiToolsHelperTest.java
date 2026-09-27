@@ -25,8 +25,10 @@ import com.google.genai.types.FunctionCallingConfig;
 import com.google.genai.types.FunctionCallingConfigMode;
 import com.google.genai.types.FunctionDeclaration;
 import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GoogleSearch;
 import com.google.genai.types.Tool;
 import com.google.genai.types.ToolConfig;
+import com.google.genai.types.UrlContext;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
@@ -225,8 +227,14 @@ class GeminiToolsHelperTest {
                 GeminiToolsHelper.mergeServerTools(
                         original,
                         List.of(
-                                GeminiServerTool.googleSearch().build(),
-                                GeminiServerTool.urlContext().build()));
+                                GeminiServerTool.of(
+                                        Tool.builder()
+                                                .googleSearch(GoogleSearch.builder().build())
+                                                .build()),
+                                GeminiServerTool.of(
+                                        Tool.builder()
+                                                .urlContext(UrlContext.builder().build())
+                                                .build())));
 
         assertEquals(1, original.tools().orElseThrow().size());
         assertEquals(3, merged.tools().orElseThrow().size());

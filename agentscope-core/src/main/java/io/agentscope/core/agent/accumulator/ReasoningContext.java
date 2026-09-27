@@ -62,7 +62,6 @@ public class ReasoningContext {
     private double time = 0;
 
     // Provider-specific response metadata to propagate to the final message
-    // (e.g. openai.reasoning.encrypted_content for reasoning replay)
     private final Map<String, Object> responseMetadata = new HashMap<>();
 
     public ReasoningContext(String agentName) {

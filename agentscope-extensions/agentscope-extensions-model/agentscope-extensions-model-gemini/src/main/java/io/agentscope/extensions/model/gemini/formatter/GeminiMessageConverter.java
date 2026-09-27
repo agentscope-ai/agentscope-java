@@ -15,7 +15,9 @@
  */
 package io.agentscope.extensions.model.gemini.formatter;
 
+import com.google.genai.types.CodeExecutionResult;
 import com.google.genai.types.Content;
+import com.google.genai.types.ExecutableCode;
 import com.google.genai.types.FunctionCall;
 import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.Part;
@@ -45,6 +47,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -118,7 +121,9 @@ public class GeminiMessageConverter {
 
                     // Build Part with FunctionCall or ToolCall and optional thought signature
                     Part.Builder partBuilder = null;
-                    if (tub.isServerTool()) {
+                    if (isCodeExecutionToolUse(tub)) {
+                        partBuilder = buildExecutableCodePart(tub);
+                    } else if (tub.isServerTool()) {
                         // Create ToolCall for server-side (built-in) tools
                         ToolCall toolCall =
                                 ToolCall.builder()
@@ -142,21 +147,10 @@ public class GeminiMessageConverter {
                     Map<String, Object> metadata = tub.getMetadata();
                     if (metadata != null
                             && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
-                        Object signature = metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                        if (signature instanceof byte[] bytes) {
-                            // In-memory: signature is already byte[]
-                            partBuilder.thoughtSignature(bytes);
-                        } else if (signature instanceof String base64 && !base64.isEmpty()) {
-                            // Persistence: the codec restores byte[] as a String
-                            try {
-                                partBuilder.thoughtSignature(Base64.getDecoder().decode(base64));
-                            } catch (IllegalArgumentException e) {
-                                log.warn(
-                                        "Skipping invalid thought signature on tool call '{}'",
-                                        tub.getName(),
-                                        e);
-                            }
-                        }
+                        applyThoughtSignature(
+                                partBuilder,
+                                metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE),
+                                tub.getName());
                     }
 
                     parts.add(partBuilder.build());
@@ -164,42 +158,31 @@ public class GeminiMessageConverter {
                 } else if (block instanceof ToolResultBlock trb) {
                     // Server results stay inline in the model Content; local results are queued
                     // for an independent user Content after the current message.
-                    String textOutput = convertToolResultToString(trb.getOutput());
-                    if (trb.isServerTool()) {
-                        // Create ToolResponse for server-side (built-in) tools, the output is
-                        // placed under the "response" key
-                        Map<String, Object> responseMap;
-                        try {
-                            // The parser serializes the tool response map to a JSON string, so
-                            // parse it back rather than converting the raw string value.
-                            responseMap = JsonUtils.getJsonCodec().fromJson(textOutput, Map.class);
-                        } catch (Exception e) {
-                            log.warn(
-                                    "Failed to parse server tool result as JSON, wrapping raw"
-                                            + " text: {}",
-                                    e.getMessage());
-                            responseMap = Map.of("output", textOutput);
-                        }
-
-                        ToolResponse toolResponse =
-                                ToolResponse.builder()
-                                        .id(trb.getId())
-                                        .toolType(trb.getName())
-                                        .response(responseMap)
-                                        .build();
-
-                        Part.Builder partBuilder = Part.builder().toolResponse(toolResponse);
-                        Map<String, Object> metadata = trb.getMetadata();
-                        if (metadata != null
-                                && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
-                            Object signature =
-                                    metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                            if (signature instanceof byte[]) {
-                                partBuilder.thoughtSignature((byte[]) signature);
-                            }
-                        }
-                        parts.add(partBuilder.build());
+                    if (isCodeExecutionResult(trb)) {
+                        buildCodeExecutionResultPart(trb)
+                                .ifPresent(partBuilder -> parts.add(partBuilder.build()));
+                    } else if (trb.isServerTool()) {
+                        restoreServerToolResponse(trb)
+                                .ifPresent(
+                                        toolResponse -> {
+                                            Part.Builder partBuilder =
+                                                    Part.builder().toolResponse(toolResponse);
+                                            Map<String, Object> metadata = trb.getMetadata();
+                                            if (metadata != null
+                                                    && metadata.containsKey(
+                                                            ToolUseBlock
+                                                                    .METADATA_THOUGHT_SIGNATURE)) {
+                                                applyThoughtSignature(
+                                                        partBuilder,
+                                                        metadata.get(
+                                                                ToolUseBlock
+                                                                        .METADATA_THOUGHT_SIGNATURE),
+                                                        trb.getName());
+                                            }
+                                            parts.add(partBuilder.build());
+                                        });
                     } else {
+                        String textOutput = convertToolResultToString(trb.getOutput());
                         // Create FunctionResponse for local function calls, the output is
                         // placed under the "output" key
                         Map<String, Object> responseMap = new HashMap<>();
@@ -215,8 +198,6 @@ public class GeminiMessageConverter {
                         functionResponseParts.add(
                                 Part.builder().functionResponse(functionResponse).build());
                     }
-                    // Skip adding to current message parts
-                    continue;
 
                 } else if (block instanceof ImageBlock ib) {
                     parts.add(mediaConverter.convertToInlineDataPart(ib));
@@ -256,6 +237,93 @@ public class GeminiMessageConverter {
         }
 
         return result;
+    }
+
+    private boolean isCodeExecutionToolUse(ToolUseBlock toolUse) {
+        return toolUse.getMetadata().containsKey(GeminiResponseParser.METADATA_CODE_EXECUTION);
+    }
+
+    private boolean isCodeExecutionResult(ToolResultBlock toolResult) {
+        return toolResult.getMetadata().containsKey(GeminiResponseParser.METADATA_CODE_EXECUTION);
+    }
+
+    private Part.Builder buildExecutableCodePart(ToolUseBlock toolUse) {
+        ExecutableCode.Builder executableCodeBuilder = ExecutableCode.builder().id(toolUse.getId());
+
+        Object code = toolUse.getInput().get("code");
+        if (code instanceof String codeText) {
+            executableCodeBuilder.code(codeText);
+        }
+
+        Object language = toolUse.getInput().get("language");
+        if (language instanceof String languageText && !languageText.isBlank()) {
+            executableCodeBuilder.language(languageText);
+        }
+
+        return Part.builder().executableCode(executableCodeBuilder.build());
+    }
+
+    private Optional<Part.Builder> buildCodeExecutionResultPart(ToolResultBlock toolResult) {
+        return restoreCodeExecutionResult(toolResult)
+                .map(
+                        result -> {
+                            Part.Builder partBuilder = Part.builder().codeExecutionResult(result);
+                            Map<String, Object> metadata = toolResult.getMetadata();
+                            if (metadata != null
+                                    && metadata.containsKey(
+                                            ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
+                                applyThoughtSignature(
+                                        partBuilder,
+                                        metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE),
+                                        toolResult.getName());
+                            }
+                            return partBuilder;
+                        });
+    }
+
+    private Optional<CodeExecutionResult> restoreCodeExecutionResult(ToolResultBlock toolResult) {
+        Object raw =
+                toolResult.getMetadata().get(GeminiResponseParser.METADATA_CODE_EXECUTION_RESULT);
+        if (raw instanceof String json && !json.isBlank()) {
+            try {
+                return Optional.of(CodeExecutionResult.fromJson(json));
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to restore Gemini code execution result {}: {}",
+                        toolResult.getId(),
+                        e.getMessage());
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<ToolResponse> restoreServerToolResponse(ToolResultBlock toolResult) {
+        Object raw =
+                toolResult.getMetadata().get(GeminiResponseParser.METADATA_SERVER_TOOL_RESPONSE);
+        if (raw instanceof String json && !json.isBlank()) {
+            try {
+                return Optional.of(ToolResponse.fromJson(json));
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to restore Gemini server tool response {}: {}",
+                        toolResult.getId(),
+                        e.getMessage());
+            }
+        }
+        return Optional.empty();
+    }
+
+    private void applyThoughtSignature(
+            Part.Builder partBuilder, Object signature, String toolName) {
+        if (signature instanceof byte[] bytes) {
+            partBuilder.thoughtSignature(bytes);
+        } else if (signature instanceof String base64 && !base64.isEmpty()) {
+            try {
+                partBuilder.thoughtSignature(Base64.getDecoder().decode(base64));
+            } catch (IllegalArgumentException e) {
+                log.warn("Skipping invalid thought signature on tool call '{}'", toolName, e);
+            }
+        }
     }
 
     /**

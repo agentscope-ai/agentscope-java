@@ -15,11 +15,15 @@
  */
 package io.agentscope.extensions.model.gemini.formatter;
 
+import com.google.genai.JsonSerializable;
 import com.google.genai.types.Candidate;
+import com.google.genai.types.CodeExecutionResult;
 import com.google.genai.types.Content;
+import com.google.genai.types.ExecutableCode;
 import com.google.genai.types.FunctionCall;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.GenerateContentResponseUsageMetadata;
+import com.google.genai.types.Outcome;
 import com.google.genai.types.Part;
 import com.google.genai.types.ToolCall;
 import com.google.genai.types.ToolResponse;
@@ -34,11 +38,13 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -65,6 +71,24 @@ public class GeminiResponseParser {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiResponseParser.class);
 
+    /** Metadata key carrying Gemini grounding metadata on the final message. */
+    public static final String METADATA_GROUNDING = "gemini.groundingMetadata";
+
+    /** Metadata key carrying Gemini URL context metadata on the final message. */
+    public static final String METADATA_URL_CONTEXT = "gemini.urlContextMetadata";
+
+    /** Metadata key marking a tool block as Gemini code execution. */
+    static final String METADATA_CODE_EXECUTION = "gemini.codeExecution";
+
+    /** Metadata key carrying the Gemini code-execution outcome. */
+    static final String METADATA_CODE_EXECUTION_OUTCOME = "gemini.codeExecution.outcome";
+
+    /** Metadata key preserving the raw Gemini server tool response. */
+    public static final String METADATA_SERVER_TOOL_RESPONSE = "gemini.serverToolResponse";
+
+    /** Metadata key preserving the raw Gemini code-execution result. */
+    public static final String METADATA_CODE_EXECUTION_RESULT = "gemini.codeExecutionResult";
+
     /**
      * Creates a new GeminiResponseParser.
      */
@@ -81,6 +105,7 @@ public class GeminiResponseParser {
         try {
             List<ContentBlock> blocks = new ArrayList<>();
             String finishReason = null;
+            Map<String, Object> responseMetadata = new LinkedHashMap<>();
 
             // Parse content from first candidate
             if (response.candidates().isPresent() && !response.candidates().get().isEmpty()) {
@@ -95,6 +120,18 @@ public class GeminiResponseParser {
                     }
                 }
                 finishReason = candidate.finishMessage().orElse(null);
+
+                candidate
+                        .groundingMetadata()
+                        .ifPresent(
+                                metadata ->
+                                        responseMetadata.put(METADATA_GROUNDING, toMap(metadata)));
+                candidate
+                        .urlContextMetadata()
+                        .ifPresent(
+                                metadata ->
+                                        responseMetadata.put(
+                                                METADATA_URL_CONTEXT, toMap(metadata)));
             }
 
             // Parse usage metadata
@@ -127,6 +164,7 @@ public class GeminiResponseParser {
                     .id(response.responseId().orElse(null))
                     .content(blocks)
                     .usage(usage)
+                    .metadata(responseMetadata.isEmpty() ? null : responseMetadata)
                     .finishReason(finishReason)
                     .build();
 
@@ -144,6 +182,8 @@ public class GeminiResponseParser {
      * @param blocks List to add parsed ContentBlocks to
      */
     protected void parsePartsToBlocks(List<Part> parts, List<ContentBlock> blocks) {
+        String pendingCodeExecutionId = null;
+
         for (Part part : parts) {
             // Check for thinking content first (parts with thought=true flag)
             if (part.thought().isPresent() && part.thought().get() && part.text().isPresent()) {
@@ -162,6 +202,26 @@ public class GeminiResponseParser {
                 }
             }
 
+            // Gemini code execution uses dedicated parts rather than ToolCall/ToolResponse.
+            if (part.executableCode().isPresent()) {
+                ExecutableCode executableCode = part.executableCode().get();
+                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
+                ToolUseBlock codeBlock =
+                        parseExecutableCode(
+                                executableCode, thoughtSignature, pendingCodeExecutionId);
+                blocks.add(codeBlock);
+                pendingCodeExecutionId = codeBlock.getId();
+            }
+
+            if (part.codeExecutionResult().isPresent()) {
+                CodeExecutionResult codeExecutionResult = part.codeExecutionResult().get();
+                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
+                blocks.add(
+                        parseCodeExecutionResult(
+                                codeExecutionResult, thoughtSignature, pendingCodeExecutionId));
+                pendingCodeExecutionId = null;
+            }
+
             // Check for function call (tool use)
             if (part.functionCall().isPresent()) {
                 FunctionCall functionCall = part.functionCall().get();
@@ -173,24 +233,124 @@ public class GeminiResponseParser {
             if (part.toolCall().isPresent()) {
                 ToolCall toolCall = part.toolCall().get();
                 byte[] thoughtSignature = part.thoughtSignature().orElse(null);
-                parseToolCall(toolCall, thoughtSignature, blocks);
+                parseServerToolCall(toolCall, thoughtSignature, blocks);
             }
 
             // Check for tool response (server tool result)
             if (part.toolResponse().isPresent()) {
                 ToolResponse toolResponse = part.toolResponse().get();
                 byte[] thoughtSignature = part.thoughtSignature().orElse(null);
-                parseToolResponse(toolResponse, thoughtSignature, blocks);
+                parseServerToolResponse(toolResponse, thoughtSignature, blocks);
             }
         }
     }
 
     /**
+     * Parses a Gemini executable-code part into a server-tool use block.
+     *
+     * @param executableCode Gemini executable-code part
+     * @param thoughtSignature Thought signature from the Part, or null
+     * @param fallbackId ID of the matching executable-code call when the part has no ID
+     * @return Tool-use block representing generated code
+     */
+    private ToolUseBlock parseExecutableCode(
+            ExecutableCode executableCode, byte[] thoughtSignature, String fallbackId) {
+        String id =
+                executableCode
+                        .id()
+                        .orElseGet(
+                                () ->
+                                        fallbackId != null
+                                                ? fallbackId
+                                                : "code_execution_" + System.currentTimeMillis());
+
+        Map<String, Object> input = new HashMap<>();
+        executableCode
+                .language()
+                .map(language -> language.toString())
+                .ifPresent(language -> input.put("language", language));
+        executableCode.code().ifPresent(code -> input.put("code", code));
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ToolUseBlock.METADATA_SERVER_TOOL, true);
+        metadata.put(METADATA_CODE_EXECUTION, true);
+        if (thoughtSignature != null) {
+            metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+        }
+
+        return ToolUseBlock.builder()
+                .id(id)
+                .name("CODE_EXECUTION")
+                .input(input)
+                .content(input.isEmpty() ? null : JsonUtils.getJsonCodec().toJson(input))
+                .metadata(metadata)
+                .state(ToolCallState.FINISHED)
+                .build();
+    }
+
+    /**
+     * Parses a Gemini code-execution result into a server-tool result block.
+     *
+     * @param codeExecutionResult Gemini code-execution result part
+     * @param thoughtSignature Thought signature from the Part, or null
+     * @param fallbackId ID of the matching executable-code call when the result has no ID
+     * @return Tool-result block representing the execution result
+     */
+    private ToolResultBlock parseCodeExecutionResult(
+            CodeExecutionResult codeExecutionResult, byte[] thoughtSignature, String fallbackId) {
+        String id =
+                codeExecutionResult
+                        .id()
+                        .orElseGet(
+                                () ->
+                                        fallbackId != null
+                                                ? fallbackId
+                                                : "code_execution_" + System.currentTimeMillis());
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ToolResultBlock.METADATA_SERVER_TOOL, true);
+        metadata.put(METADATA_CODE_EXECUTION, true);
+        metadata.put(METADATA_CODE_EXECUTION_RESULT, codeExecutionResult.toJson());
+        codeExecutionResult
+                .outcome()
+                .map(outcome -> outcome.toString())
+                .ifPresent(outcome -> metadata.put(METADATA_CODE_EXECUTION_OUTCOME, outcome));
+        if (thoughtSignature != null) {
+            metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+        }
+
+        ToolResultState resultState =
+                codeExecutionResult
+                        .outcome()
+                        .map(GeminiResponseParser::codeExecutionResultState)
+                        .orElse(ToolResultState.SUCCESS);
+
+        ToolResultBlock.Builder builder =
+                ToolResultBlock.builder()
+                        .id(id)
+                        .name("CODE_EXECUTION")
+                        .state(resultState)
+                        .metadata(metadata);
+        codeExecutionResult
+                .output()
+                .ifPresent(output -> builder.output(TextBlock.builder().text(output).build()));
+
+        return builder.build();
+    }
+
+    private static ToolResultState codeExecutionResultState(Outcome outcome) {
+        return switch (outcome.knownEnum()) {
+            case OUTCOME_FAILED, OUTCOME_DEADLINE_EXCEEDED -> ToolResultState.ERROR;
+            default -> ToolResultState.SUCCESS;
+        };
+    }
+
+    /**
      * Parse Gemini FunctionCall to ToolUseBlock.
      *
-     * @param functionCall     Gemini FunctionCall object
+     * @param functionCall Gemini FunctionCall object
      * @param thoughtSignature Thought signature from the Part (may be null)
-     * @param blocks           List to add parsed ToolUseBlock to
+     * @param blocks List to add parsed ToolUseBlock to
      */
     protected void parseToolCall(
             FunctionCall functionCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
@@ -198,8 +358,7 @@ public class GeminiResponseParser {
             String id = functionCall.id().orElse("tool_call_" + System.currentTimeMillis());
             String name = functionCall.name().orElse("");
 
-            if (name.isEmpty()) {
-                log.warn("FunctionCall with empty name, skipping");
+            if (!ToolValidator.requireNonBlank("Gemini", name, id)) {
                 return;
             }
 
@@ -223,14 +382,13 @@ public class GeminiResponseParser {
      * @param thoughtSignature Thought signature from the Part (may be null)
      * @param blocks           List to add parsed ToolUseBlock to
      */
-    protected void parseToolCall(
+    protected void parseServerToolCall(
             ToolCall toolCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
         try {
             String id = toolCall.id().orElse("tool_call_" + System.currentTimeMillis());
             String name = toolCall.toolType().map(ToolType::toString).orElse("");
 
-            if (name.isEmpty()) {
-                log.warn("ToolCall with empty name, skipping");
+            if (!ToolValidator.requireNonBlank("Gemini", name, id)) {
                 return;
             }
             blocks.add(
@@ -303,19 +461,19 @@ public class GeminiResponseParser {
      * @param thoughtSignature Thought signature from the Part (may be null)
      * @param blocks           List to add parsed ToolResultBlock to
      */
-    protected void parseToolResponse(
+    protected void parseServerToolResponse(
             ToolResponse toolResponse, byte[] thoughtSignature, List<ContentBlock> blocks) {
         try {
             String id = toolResponse.id().orElse("tool_call_" + System.currentTimeMillis());
             String name = toolResponse.toolType().map(ToolType::toString).orElse("");
 
-            if (name.isEmpty()) {
-                log.warn("ToolResponse with empty name, skipping");
+            if (!ToolValidator.requireNonBlank("Gemini", name, id)) {
                 return;
             }
 
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(ToolResultBlock.METADATA_SERVER_TOOL, true);
+            metadata.put(METADATA_SERVER_TOOL_RESPONSE, toolResponse.toJson());
             if (thoughtSignature != null) {
                 metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
             }
@@ -339,6 +497,17 @@ public class GeminiResponseParser {
             blocks.add(toolResultBuilder.build());
         } catch (Exception e) {
             log.warn("Failed to parse tool response: {}", e.getMessage(), e);
+        }
+    }
+
+    private static Map<String, Object> toMap(JsonSerializable serializable) {
+        try {
+            Map<String, Object> result =
+                    JsonUtils.getJsonCodec().fromJson(serializable.toJson(), Map.class);
+            return result != null ? result : Map.of();
+        } catch (Exception e) {
+            log.warn("Failed to normalize Gemini metadata: {}", e.getMessage(), e);
+            return Map.of();
         }
     }
 }

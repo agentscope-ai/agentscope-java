@@ -58,8 +58,7 @@ import reactor.core.scheduler.Schedulers;
  * <ul>
  * <li>Text generation with streaming and non-streaming modes</li>
  * <li>Tool/function calling support</li>
- * <li>Gemini server-side tools, including Google Search, Google Maps, URL Context, and code
- *     execution</li>
+ * <li>Gemini server-side tools</li>
  * <li>Multi-agent conversation with history merging</li>
  * <li>Vision capabilities (images, audio, video)</li>
  * <li>Thinking mode (extended reasoning)</li>
@@ -102,8 +101,7 @@ public class GeminiChatModel extends ChatModelBase {
      * @param defaultOptions default generation options
      * @param formatter      the message formatter to use (null for default Gemini
      *                       formatter)
-     * @param serverTools    Gemini built-in tools executed by the model provider; copied
-     *                       defensively, or empty when null
+     * @param serverTools    Gemini built-in tools executed by the model provider
      */
     public GeminiChatModel(
             String apiKey,
@@ -167,6 +165,56 @@ public class GeminiChatModel extends ChatModelBase {
     }
 
     /**
+     * Creates a new Gemini chat model instance.
+     *
+     * <p>This overload preserves the pre-server-tools API and configures no server-side tools.
+     *
+     * @param apiKey         the API key for authentication (for Gemini API)
+     * @param baseUrl        the custom base URL for Gemini API (null for default)
+     * @param modelName      the model name to use (e.g., "gemini-2.0-flash",
+     *                       "gemini-1.5-pro")
+     * @param streamEnabled  whether streaming should be enabled
+     * @param project        the Google Cloud project ID (for Vertex AI)
+     * @param location       the Google Cloud location (for Vertex AI, e.g.,
+     *                       "us-central1")
+     * @param vertexAI       whether to use Vertex AI APIs (null for auto-detection)
+     * @param httpOptions    HTTP options for the client
+     * @param credentials    Google credentials (for Vertex AI)
+     * @param clientOptions  client options for the API client
+     * @param defaultOptions default generation options
+     * @param formatter      the message formatter to use (null for default Gemini
+     *                       formatter)
+     */
+    public GeminiChatModel(
+            String apiKey,
+            String baseUrl,
+            String modelName,
+            boolean streamEnabled,
+            String project,
+            String location,
+            Boolean vertexAI,
+            HttpOptions httpOptions,
+            GoogleCredentials credentials,
+            ClientOptions clientOptions,
+            GenerateOptions defaultOptions,
+            Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder> formatter) {
+        this(
+                apiKey,
+                baseUrl,
+                modelName,
+                streamEnabled,
+                project,
+                location,
+                vertexAI,
+                httpOptions,
+                credentials,
+                clientOptions,
+                defaultOptions,
+                formatter,
+                null);
+    }
+
+    /**
      * Creates a new Gemini chat model instance using the default endpoint configuration.
      *
      * <p>This overload passes {@code null} for {@code baseUrl}, allowing the SDK to use its
@@ -227,10 +275,7 @@ public class GeminiChatModel extends ChatModelBase {
     }
 
     /**
-     * Builds the provider request configuration independently from network execution.
-     *
-     * <p>Function tools are formatted first, then Gemini server tools are appended as separate
-     * entries so both tool types can coexist in the same request.
+     * Builds the provider request configuration.
      */
     GenerateContentConfig buildGenerateContentConfig(
             List<ToolSchema> tools, GenerateOptions options) {
@@ -524,12 +569,7 @@ public class GeminiChatModel extends ChatModelBase {
         /**
          * Sets the Gemini built-in tools that are executed by the model provider.
          *
-         * <p>Server-side tools are added alongside local function declarations. When at least one
-         * server-side tool is configured, server-side tool invocations are included in the model
-         * response so they can be preserved in conversation history.
-         *
-         * @param serverTools Gemini server-side tools; the list is defensively copied when the
-         *     model is built, or treated as empty when null
+         * @param serverTools Gemini server-side tools
          * @return this builder
          */
         public Builder serverTools(List<GeminiServerTool> serverTools) {

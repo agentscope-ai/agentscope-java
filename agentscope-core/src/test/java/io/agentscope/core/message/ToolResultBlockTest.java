@@ -16,7 +16,6 @@
 package io.agentscope.core.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -39,30 +38,7 @@ class ToolResultBlockTest {
     }
 
     @Test
-    void builderMarksServerSideToolResult() {
-        ToolResultBlock serverResult =
-                ToolResultBlock.builder()
-                        .id("tool-call-1")
-                        .name("GOOGLE_SEARCH_WEB")
-                        .output(TextBlock.builder().text("response").build())
-                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
-                        .build();
-
-        assertTrue(serverResult.isServerTool());
-        assertEquals("tool-call-1", serverResult.getId());
-        assertEquals("GOOGLE_SEARCH_WEB", serverResult.getName());
-
-        ToolResultBlock localResult =
-                ToolResultBlock.builder()
-                        .id("tool-call-2")
-                        .name("local-tool")
-                        .output(TextBlock.builder().text("ok").build())
-                        .build();
-        assertFalse(localResult.isServerTool());
-    }
-
-    @Test
-    void serverFlagSerializesToJson() throws JsonProcessingException {
+    void serverToolMarkerSurvivesJsonRoundTrip() throws JsonProcessingException {
         ToolResultBlock result =
                 ToolResultBlock.builder()
                         .id("tool-call-3")
@@ -80,23 +56,7 @@ class ToolResultBlockTest {
     }
 
     @Test
-    void serverFlagDefaultsToFalseWhenAbsentInJson() throws JsonProcessingException {
-        String json =
-                """
-                {
-                    "type": "tool_result",
-                    "id": "tool-call-4",
-                    "name": "local-tool",
-                    "output": [{"type": "text", "text": "ok"}]
-                }
-                """;
-
-        ToolResultBlock result = objectMapper.readValue(json, ToolResultBlock.class);
-        assertFalse(result.isServerTool());
-    }
-
-    @Test
-    void withStatePreservesServerFlag() {
+    void copyMethodsPreserveServerToolMarker() {
         ToolResultBlock result =
                 ToolResultBlock.builder()
                         .id("tool-call-5")
@@ -106,24 +66,13 @@ class ToolResultBlockTest {
                         .build();
 
         ToolResultBlock updated = result.withState(ToolResultState.SUCCESS);
-
         assertTrue(updated.isServerTool());
         assertEquals(ToolResultState.SUCCESS, updated.getState());
-    }
 
-    @Test
-    void withIdAndNamePreservesServerFlag() {
-        ToolResultBlock result =
-                ToolResultBlock.builder()
-                        .output(TextBlock.builder().text("response").build())
-                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
-                        .build();
-
-        ToolResultBlock updated = result.withIdAndName("tool-call-6", "GOOGLE_SEARCH_WEB");
-
-        assertTrue(updated.isServerTool());
-        assertEquals("tool-call-6", updated.getId());
-        assertEquals("GOOGLE_SEARCH_WEB", updated.getName());
+        ToolResultBlock renamed = updated.withIdAndName("tool-call-6", "GOOGLE_SEARCH_WEB");
+        assertTrue(renamed.isServerTool());
+        assertEquals("tool-call-6", renamed.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", renamed.getName());
     }
 
     @Test

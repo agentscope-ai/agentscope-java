@@ -48,29 +48,36 @@ builder 配置这些工具：
 ```java
 import io.agentscope.extensions.model.gemini.GeminiChatModel;
 import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
+import com.google.genai.types.GoogleSearch;
+import com.google.genai.types.Tool;
+import com.google.genai.types.UrlContext;
 import java.util.List;
 
 GeminiChatModel model = GeminiChatModel.builder()
     .apiKey(System.getenv("GEMINI_API_KEY"))
     .modelName("gemini-2.0-flash")
     .serverTools(List.of(
-        GeminiServerTool.googleSearch()
-            .param("excludeDomains", List.of("example.com"))
-            .build(),
-        GeminiServerTool.urlContext().build()
+        GeminiServerTool.of(Tool.builder()
+            .googleSearch(GoogleSearch.builder()
+                .excludeDomains(List.of("example.com"))
+                .build())
+            .build()),
+        GeminiServerTool.of(Tool.builder()
+            .urlContext(UrlContext.builder())
+            .build())
     ))
     .build();
 ```
 
-| 工具 | 配置方式和支持的参数 |
-| --- | --- |
-| Google Search | `GeminiServerTool.googleSearch()`；`searchTypes`、`blockingConfidence`、`excludeDomains`、`timeRangeFilter` |
-| Google Maps | `GeminiServerTool.googleMap()`；`authConfig`、`enableWidget` |
-| URL Context | `GeminiServerTool.urlContext()`；不支持参数 |
-| Code Execution | `GeminiServerTool.builder().type(GeminiServerTool.CODE_EXECUTION)`；不支持参数 |
+凡是 Google GenAI SDK `Tool` builder 支持的服务端工具，都可以用 `GeminiServerTool.of(...)`
+包装。常见示例包括 Google Search、Google Maps、URL Context、Code Execution、File Search 和
+Enterprise Web Search。
 
 配置至少一个服务端工具后，AgentScope 会自动启用 Gemini 服务端调用上下文，并在对话历史中保留返回的
 工具调用和结果。服务端工具与本地 function tools 相互独立，因此可以在同一次请求中同时提供。
+两者的逻辑名称会作为统一命名空间检查，`ToolChoice.None` 会从请求中移除 Gemini 服务端工具。
+Gemini 无法强制指定某个服务端工具，也无法只要求服务端工具必然调用；它也没有关闭并行工具调用的
+开关。遇到这些不支持的组合时会快速失败，而不是静默忽略。
 
 ## Spring Boot
 

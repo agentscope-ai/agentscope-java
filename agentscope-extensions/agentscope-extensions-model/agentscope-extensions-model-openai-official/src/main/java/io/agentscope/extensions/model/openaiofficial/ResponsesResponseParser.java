@@ -26,6 +26,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -72,7 +73,10 @@ final class ResponsesResponseParser {
             } else if (item.isMessage()) {
                 extractMessage(item.asMessage(), textBuilder, modelName);
             } else if (item.isFunctionCall()) {
-                toolUseBlocks.add(extractFunctionCall(item.asFunctionCall()));
+                ToolUseBlock toolUse = extractFunctionCall(item.asFunctionCall());
+                if (toolUse != null) {
+                    toolUseBlocks.add(toolUse);
+                }
             }
             // Unknown output item types are silently ignored (forward compatibility)
         }
@@ -162,6 +166,9 @@ final class ResponsesResponseParser {
         String callId = call.callId();
         String name = call.name();
         String arguments = call.arguments();
+        if (!ToolValidator.requireNonBlank("OpenAI official", name, callId)) {
+            return null;
+        }
 
         Map<String, Object> input;
         try {

@@ -23,8 +23,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.ClientOptions;
 import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GoogleSearch;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.ProxyOptions;
+import com.google.genai.types.Tool;
+import com.google.genai.types.UrlContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
@@ -39,7 +42,6 @@ import io.agentscope.extensions.model.gemini.formatter.GeminiMultiAgentFormatter
 import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
 import java.lang.reflect.Field;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -203,8 +205,15 @@ class GeminiChatModelTest {
                         .apiKey(mockApiKey)
                         .serverTools(
                                 List.of(
-                                        GeminiServerTool.googleSearch().build(),
-                                        GeminiServerTool.urlContext().build()))
+                                        GeminiServerTool.of(
+                                                Tool.builder()
+                                                        .googleSearch(
+                                                                GoogleSearch.builder().build())
+                                                        .build()),
+                                        GeminiServerTool.of(
+                                                Tool.builder()
+                                                        .urlContext(UrlContext.builder().build())
+                                                        .build())))
                         .build();
         ToolSchema functionTool =
                 ModelTestUtils.createSimpleToolSchema("test_tool", "A test function tool");
@@ -216,21 +225,6 @@ class GeminiChatModelTest {
         assertTrue(config.tools().orElseThrow().get(0).functionDeclarations().isPresent());
         assertTrue(config.tools().orElseThrow().get(1).googleSearch().isPresent());
         assertTrue(config.tools().orElseThrow().get(2).urlContext().isPresent());
-    }
-
-    @Test
-    @DisplayName("Should defensively copy Gemini server tools from builder")
-    void testServerToolsAreDefensivelyCopied() {
-        List<GeminiServerTool> serverTools =
-                new ArrayList<>(List.of(GeminiServerTool.googleSearch().build()));
-        GeminiChatModel model =
-                GeminiChatModel.builder().apiKey(mockApiKey).serverTools(serverTools).build();
-
-        serverTools.clear();
-        GenerateContentConfig config = model.buildGenerateContentConfig(null, null);
-
-        assertEquals(1, config.tools().orElseThrow().size());
-        assertTrue(config.tools().orElseThrow().get(0).googleSearch().isPresent());
     }
 
     @Test
