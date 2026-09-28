@@ -714,6 +714,29 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("a v1 legacy-loaded session persists under the caller's sessionId")
+    void legacyLoadedSessionPersistsUnderCallerSessionId() {
+        RecordingStore store = new RecordingStore();
+        // Seed v1 history: LegacyStateLoader then builds an AgentState whose embedded
+        // sessionId is a generated random hex — it must never own the store key.
+        store.save("u1", "legacySess", "memory_messages", java.util.List.of(userMsg("v1 hello")));
+
+        ReActAgent agent = agent(store);
+        // Drive a real turn so the in-flight save (saveStateToSession, which owns the
+        // CallExecution's ids) runs — the public saveAgentState API takes explicit ids and
+        // would mask the regression this pins.
+        agent.streamEvents(
+                        List.of(userMsg("migrate me")),
+                        RuntimeContext.builder().userId("u1").sessionId("legacySess").build())
+                .collectList()
+                .block(Duration.ofSeconds(30));
+
+        assertTrue(
+                store.getVersioned("u1", "legacySess", "agent_state", AgentState.class).isPresent(),
+                "legacy-migrated state persists under the caller's sessionId after a turn");
+    }
+
+    @Test
     @DisplayName(
             "an anonymous session crosses the store boundary with userId == null, not the sentinel")
     void anonymousSessionRoundTripsStoreBoundaryWithNullUserId() {

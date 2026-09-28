@@ -474,14 +474,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         AgentState toSave = scope.state;
         return Mono.<Void>fromRunnable(
                         () -> {
-                            // The store documents userId == null as the anonymous namespace and
-                            // AgentState carries the caller's original ids, so persist through
-                            // them; the SlotId record is only the in-memory map key and its
-                            // "__anon__" sentinel must never leak across the store boundary.
+                            // The caller's original ids own the store key: userId == null is
+                            // the documented anonymous namespace (never the "__anon__" in-memory
+                            // sentinel), and a legacy-loaded state's embedded sessionId is a
+                            // generated value that must not orphan the persisted row.
                             long newVersion =
                                     persistAgentStateCas(
-                                            toSave.getUserId(),
-                                            toSave.getSessionId(),
+                                            scope.userId,
+                                            scope.sessionId,
                                             scope.slotId,
                                             toSave,
                                             scope.loadedVersion,
@@ -701,7 +701,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     permissionEngineCache.computeIfAbsent(
                             slot, k -> new PermissionEngine(loaded.getPermissionContext()));
         }
-        return new CallExecution(loaded, loadedEngine, slot, loadedVersion);
+        return new CallExecution(loaded, loadedEngine, finalUid, finalSid, slot, loadedVersion);
     }
 
     // ==================== Config assembly helpers ====================
@@ -1724,6 +1724,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         SlotId slotId;
 
         /**
+         * The caller's original ids for store persistence (userId may be null). They, not the
+         * ids embedded in {@link #state}, own the store key: a state loaded from v1 legacy keys
+         * carries a generated sessionId, and persisting under it would orphan the row.
+         */
+        final String userId;
+
+        final String sessionId;
+
+        /**
          * Store version observed when this call loaded {@link #state}. Used for CAS on save.
          * {@link AgentStateStore#UNVERSIONED} when the backend does not version.
          */
@@ -1804,10 +1813,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         CallExecution(
                 AgentState state,
                 PermissionEngine permissionEngine,
+                String userId,
+                String sessionId,
                 SlotId slotId,
                 long loadedVersion) {
             this.state = state;
             this.permissionEngine = permissionEngine;
+            this.userId = userId;
+            this.sessionId = sessionId;
             this.slotId = slotId;
             this.loadedVersion = loadedVersion;
             this.loadedContextSize = state != null ? state.getContext().size() : 0;
