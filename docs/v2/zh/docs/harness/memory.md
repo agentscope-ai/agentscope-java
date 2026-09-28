@@ -231,10 +231,12 @@ HarnessAgent.builder()
 
 ## 给 agent 自己用的记忆工具
 
-启用记忆能力时，agent 自动获得两个工具：
+启用记忆能力时，agent 自动获得四个工具：
 
-- `memory_search query="..."` —— 关键词扫 `MEMORY.md` + `memory/*.md`，最多返回 30 条命中
+- `memory_search query="..."` —— 关键词扫 `MEMORY.md` + `memory/*.md`
 - `memory_get path="memory/2026-06-02.md" startLine=10 endLine=40` —— 读指定行范围
+- `memory_save content="..."` —— 通过 `MEMORY.md` 与每日台账持久化记忆
+- `session_search query="..."` —— 搜索过往会话记录
 
 模型在看到 `MEMORY.md` 已被截断的提示时通常会自己调 `memory_search` 找老内容。
 

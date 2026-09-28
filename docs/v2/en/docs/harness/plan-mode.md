@@ -9,7 +9,7 @@ zh_link: /v2/zh/docs/harness/plan-mode
 
 Plan Mode lets the agent "figure out and write down intent" before executing. While active, the agent is in a **read-only phase**:
 
-- Only **read-only tools** plus 4 whitelisted tools work: `plan_enter` / `plan_write` / `plan_exit` / `todo_write` (the shell can be opted in — see [below](#allowing-the-shell-during-the-plan-phase-opt-in)).
+- Only **read-only tools** plus 9 whitelisted tools work: `plan_enter` / `plan_write` / `plan_exit` / `todo_write` / `agent_spawn` / `agent_send` / `agent_list` / `task_output` / `task_list` (the shell can be opted in — see [below](#allowing-the-shell-during-the-plan-phase-opt-in)).
 - Any other tool call is rejected immediately (the agent sees a "plan-mode denied" note).
 - Exiting Plan Mode requires HITL confirmation (reusing the permission system's ASK), so the model can't unilaterally jump into execution.
 
@@ -66,11 +66,10 @@ sequenceDiagram
     A->>A: enter execution phase: all tools allowed
 ```
 
-Any non-whitelisted tool call (e.g. `write_file`, or `execute` unless you [opt in](#allowing-the-shell-during-the-plan-phase-opt-in)) during the plan phase is rejected immediately with something like:
+Any non-whitelisted tool call (e.g. `write_file`, or `execute` unless you [opt in](#allowing-the-shell-during-the-plan-phase-opt-in)) during the plan phase is rejected immediately. The tool result the model sees is exactly the `PlanModeMiddleware.DENY_MESSAGE` constant:
 
 ```text
-[Tool denied — plan mode is active]
-Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are allowed.
+Blocked: you are in PLAN mode (read-only). You may investigate and run read-only tools, record your plan with plan_write, and call plan_exit when ready to execute. Do not modify files or run mutating commands until the plan is approved.
 ```
 
 Seeing the denial, the model naturally switches back to "write the plan first".
@@ -149,12 +148,9 @@ If you use `agentscope-admin-spring-boot-starter`, the admin HTTP API also expos
 
 ## Interaction with subagents
 
-⚠ Current **known gap**: subagents spawned via `agent_spawn` during Plan Mode **do not automatically inherit the read-only restriction**. To restrict the child:
+Subagents spawned via `agent_spawn` during Plan Mode **automatically inherit the read-only restriction**: the parent's plan-mode context is propagated to the child at spawn time, so the child also runs in a read-only phase until the plan is approved.
 
-- Narrow `tools` in the child's declaration to a read-only set, or
-- Also `enablePlanMode()` on the child's own builder and enter it explicitly
-
-A future release will propagate plan-mode restrictions parent → child automatically.
+Restrictions can still be tightened per child by narrowing the `tools` in the child's declaration to a read-only set.
 
 ## Interaction with `todo_write`
 

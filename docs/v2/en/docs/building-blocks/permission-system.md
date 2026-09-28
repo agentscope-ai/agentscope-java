@@ -204,13 +204,13 @@ PermissionContextState permCtx =
 ```java
 import io.agentscope.core.event.ConfirmResult;
 
-// ASK decisions carry suggestedRules on the ToolUseBlock.
-// Accept them by attaching to the result:
+// ASK decisions carry suggested rules on the PermissionDecision (visible to
+// permission hooks), not on the ToolUseBlock. At the resume layer, accept the
+// call as-is, or pass your own rules to remember a choice for future calls:
 ConfirmResult result =
         new ConfirmResult(
                 /* confirmed = */ true,
-                /* toolCall  = */ toolCall,
-                /* rules     = */ toolCall.getSuggestedRules());
+                /* toolCall  = */ toolCall);
 ```
 
 Runnable examples: `agentscope-examples/documentation/.../tool/PermissionContextExample.java`, `hitl/PermissionHITLExample.java`.
