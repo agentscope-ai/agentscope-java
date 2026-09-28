@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -26,6 +27,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -39,6 +41,7 @@ import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
@@ -95,10 +98,10 @@ class ReActAgentPerSessionStateTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Long> slotVersionsMap(ReActAgent agent) throws Exception {
+    private static Map<?, Long> slotVersionsMap(ReActAgent agent) throws Exception {
         Field field = ReActAgent.class.getDeclaredField("slotVersions");
         field.setAccessible(true);
-        return (Map<String, Long>) field.get(agent);
+        return (Map<?, Long>) field.get(agent);
     }
 
     private static int slotVersionCount(ReActAgent agent) throws Exception {
@@ -631,6 +634,7 @@ class ReActAgentPerSessionStateTest {
 
     private static final class RecordingStore extends InMemoryAgentStateStore {
         final List<Long> unconditionalVersions = new CopyOnWriteArrayList<>();
+        final List<String> savedUserIds = new CopyOnWriteArrayList<>();
 
         @Override
         public long saveIfVersion(String u, String s, String k, State v, long expectedVersion) {
@@ -638,6 +642,7 @@ class ReActAgentPerSessionStateTest {
             if (expectedVersion == AgentStateStore.UNVERSIONED) {
                 unconditionalVersions.add(result);
             }
+            savedUserIds.add(u);
             return result;
         }
     }
@@ -689,6 +694,72 @@ class ReActAgentPerSessionStateTest {
         assertNotSame(slashy, plain);
         slashy.setSummary("only in sess/1");
         assertNotEquals("only in sess/1", plain.getSummary());
+    }
+
+    @Test
+    @DisplayName("the deprecated no-identity interrupt routes to the anonymous slot only")
+    void deprecatedInterruptTargetsAnonymousSlotOnly() throws Exception {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+
+        // A named session is loaded and cached; the deprecated anonymous interrupt
+        // (null userId -> "__anon__" + default session) must not touch its slot.
+        AgentState named = agent.getAgentState("u1", "sessA");
+        named.setSummary("untouched");
+        int slotsBefore = slotVersionCount(agent);
+
+        assertDoesNotThrow(() -> agent.interrupt(InterruptSource.USER));
+
+        assertEquals(slotsBefore, slotVersionCount(agent), "no new slot may appear");
+        assertEquals("untouched", agent.getAgentState("u1", "sessA").getSummary());
+    }
+
+    @Test
+    @DisplayName(
+            "an anonymous session crosses the store boundary with userId == null, not the sentinel")
+    void anonymousSessionRoundTripsStoreBoundaryWithNullUserId() {
+        RecordingStore store = new RecordingStore();
+        ReActAgent agent = agent(store);
+
+        // No userId: the slot normalizes to "__anon__" in memory, but the store must
+        // still see its documented anonymous namespace (null), never the sentinel.
+        AgentState anon = agent.getAgentState(null, "sessAnon");
+        anon.setSummary("anonymous body");
+        agent.saveAgentState(null, "sessAnon");
+
+        assertTrue(store.savedUserIds.contains(null), "store receives the original null userId");
+        assertFalse(
+                store.savedUserIds.contains("__anon__"),
+                "the in-memory sentinel must not leak across the store boundary");
+        assertEquals("anonymous body", agent.getAgentState(null, "sessAnon").getSummary());
+    }
+
+    @Test
+    @DisplayName("shutdown state save persists the interrupted session under its slot version")
+    void shutdownSavePersistsInterruptedSession() throws Exception {
+        RecordingStore store = new RecordingStore();
+        ReActAgent agent = agent(store);
+        AgentState mine = agent.getAgentState("u1", "s1");
+        mine.setSummary("interrupted mid-flight");
+
+        Field managerField = ReActAgent.class.getDeclaredField("shutdownManager");
+        managerField.setAccessible(true);
+        GracefulShutdownManager manager = (GracefulShutdownManager) managerField.get(null);
+        String requestId = manager.registerRequest(agent, null);
+        try {
+            manager.bindRequestState(requestId, mine);
+            manager.saveOnInterruptObserved(requestId);
+        } finally {
+            manager.unregisterRequest(requestId);
+        }
+
+        // The saver CAS-saved the bound (userId, sessionId) and cached the returned version.
+        assertTrue(
+                slotVersionsMap(agent).containsValue(1L),
+                "shutdown save must record the store-returned version under the slot");
+        assertEquals(
+                "interrupted mid-flight",
+                agent.getAgentState("u1", "s1").getSummary(),
+                "the saved session reloads with its content");
     }
 
     @Test

@@ -474,10 +474,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         AgentState toSave = scope.state;
         return Mono.<Void>fromRunnable(
                         () -> {
+                            // The store documents userId == null as the anonymous namespace and
+                            // AgentState carries the caller's original ids, so persist through
+                            // them; the SlotId record is only the in-memory map key and its
+                            // "__anon__" sentinel must never leak across the store boundary.
                             long newVersion =
                                     persistAgentStateCas(
-                                            scope.slotId.userId(),
-                                            scope.slotId.sessionId(),
+                                            toSave.getUserId(),
+                                            toSave.getSessionId(),
                                             scope.slotId,
                                             toSave,
                                             scope.loadedVersion,
@@ -1796,10 +1800,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** Native structured-output format set on the per-call scope for native-path calls. */
         ResponseFormat nativeResponseFormat;
-
-        CallExecution(AgentState state, PermissionEngine permissionEngine, SlotId slotId) {
-            this(state, permissionEngine, slotId, AgentStateStore.UNVERSIONED);
-        }
 
         CallExecution(
                 AgentState state,
