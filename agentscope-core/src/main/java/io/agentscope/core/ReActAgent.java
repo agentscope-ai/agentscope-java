@@ -391,20 +391,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Internal slot identifier — {@code (userId or "__anon__") + "/" + sessionId}.
-     * Not part of the public API.
+     * Internal slot identifier, encoded as {@code userIdLength + ":" + userId + sessionId}.
+     * The length prefix makes the split unambiguous, so a {@code '/'} (or any other character)
+     * inside either id can never make two distinct {@code (userId, sessionId)} pairs collide on
+     * the same slot — the cached state, CAS versions and interrupt routing stay isolated
+     * (#3337, #2475). Not part of the public API.
      */
     private static String slotKey(String userId, String sessionId) {
         Objects.requireNonNull(sessionId, "sessionId must not be null");
-        return (userId == null || userId.isBlank() ? "__anon__" : userId) + "/" + sessionId;
+        String u = userId == null || userId.isBlank() ? "__anon__" : userId;
+        return u.length() + ":" + u + sessionId;
     }
 
     /** Reverse of {@link #slotKey}: the parsed {@code (userId, sessionId)} pair. */
     private record SlotRef(String userId, String sessionId) {
         static SlotRef parse(String slotKey) {
-            int slash = slotKey.lastIndexOf('/');
-            String u = slotKey.substring(0, slash);
-            String s = slotKey.substring(slash + 1);
+            int colon = slotKey.indexOf(':');
+            int userIdLength = Integer.parseInt(slotKey.substring(0, colon));
+            String u = slotKey.substring(colon + 1, colon + 1 + userIdLength);
+            String s = slotKey.substring(colon + 1 + userIdLength);
             return new SlotRef("__anon__".equals(u) ? null : u, s);
         }
     }

@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -110,6 +111,11 @@ class ReActAgentPerSessionStateTest {
 
     private static void clearSlotVersion(ReActAgent agent, String slot) throws Exception {
         slotVersionsMap(agent).remove(slot);
+    }
+
+    /** Mirrors ReActAgent's private slot-key encoding: length-prefixed, '/'-immune. */
+    private static String slot(String userId, String sessionId) {
+        return userId.length() + ":" + userId + sessionId;
     }
 
     @Test
@@ -659,12 +665,40 @@ class ReActAgentPerSessionStateTest {
         // getAgentState seeds slotVersions with 0L for a fresh slot on a versioning store;
         // drop the entry to recreate the "version unknown → unconditional persist" window
         // (e.g. a restart whose version cache is empty), which is the path this fix hardens.
-        clearSlotVersion(agent, "u1/sessA");
+        clearSlotVersion(agent, slot("u1", "sessA"));
         agent.saveAgentState("u1", "sessA");
 
         assertEquals(1, store.unconditionalVersions.size());
         assertEquals(1L, store.unconditionalVersions.get(0));
-        assertEquals(1L, slotVersionOf(agent, "u1/sessA"));
+        assertEquals(1L, slotVersionOf(agent, slot("u1", "sessA")));
+    }
+
+    @Test
+    @DisplayName("distinct (userId, sessionId) pairs never share a slot when ids contain '/'")
+    void slashInIdsNeverCollidesAcrossSlots() throws Exception {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+
+        AgentState a = agent.getAgentState("u1/a", "b");
+        AgentState b = agent.getAgentState("u1", "a/b");
+
+        assertNotSame(
+                a, b, "collision: (\"u1/a\",\"b\") and (\"u1\",\"a/b\") must be distinct slots");
+        a.setSummary("written by u1/a");
+        assertNotEquals("written by u1/a", b.getSummary());
+        assertEquals(2, slotVersionCount(agent));
+    }
+
+    @Test
+    @DisplayName("a sessionId containing '/' keeps its own slot")
+    void sessionIdWithSlashStaysIsolated() {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+
+        AgentState slashy = agent.getAgentState("u1", "sess/1");
+        AgentState plain = agent.getAgentState("u1", "sess");
+
+        assertNotSame(slashy, plain);
+        slashy.setSummary("only in sess/1");
+        assertNotEquals("only in sess/1", plain.getSummary());
     }
 
     @Test
