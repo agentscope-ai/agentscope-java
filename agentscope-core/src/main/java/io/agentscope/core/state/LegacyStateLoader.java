@@ -119,7 +119,12 @@ public final class LegacyStateLoader {
         Optional<ToolkitState> toolkitState =
                 stateStore.get(userId, sessionId, "toolkit_activeGroups", ToolkitState.class);
 
-        AgentState.Builder builder = AgentState.builder().context(msgs);
+        // Stamp the caller's ids onto the reconstructed state: AgentState generates a random
+        // sessionId when none is set, and any consumer that reads the embedded ids (e.g. the
+        // shutdown state saver) would otherwise operate under an identity nothing else can
+        // read back. userId may stay null — that is the documented anonymous namespace.
+        AgentState.Builder builder =
+                AgentState.builder().context(msgs).sessionId(sessionId).userId(userId);
         if (permCtx != null) {
             builder.permissionContext(permCtx);
         }

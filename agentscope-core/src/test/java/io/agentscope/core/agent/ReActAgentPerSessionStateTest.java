@@ -635,6 +635,7 @@ class ReActAgentPerSessionStateTest {
     private static final class RecordingStore extends InMemoryAgentStateStore {
         final List<Long> unconditionalVersions = new CopyOnWriteArrayList<>();
         final List<String> savedUserIds = new CopyOnWriteArrayList<>();
+        final List<String> savedSessionIds = new CopyOnWriteArrayList<>();
 
         @Override
         public long saveIfVersion(String u, String s, String k, State v, long expectedVersion) {
@@ -643,6 +644,7 @@ class ReActAgentPerSessionStateTest {
                 unconditionalVersions.add(result);
             }
             savedUserIds.add(u);
+            savedSessionIds.add(s);
             return result;
         }
     }
@@ -734,6 +736,32 @@ class ReActAgentPerSessionStateTest {
         assertTrue(
                 store.getVersioned("u1", "legacySess", "agent_state", AgentState.class).isPresent(),
                 "legacy-migrated state persists under the caller's sessionId after a turn");
+    }
+
+    @Test
+    @DisplayName(
+            "the shutdown state saver receives a legacy-loaded state stamped with the caller's ids")
+    void shutdownSaverSeesStampedLegacyIds() throws Exception {
+        RecordingStore store = new RecordingStore();
+        store.save("u1", "legacySess", "memory_messages", java.util.List.of(userMsg("v1 body")));
+
+        ReActAgent agent = agent(store);
+        AgentState migrated = agent.getAgentState("u1", "legacySess");
+
+        // The saver lambda can only read the embedded ids — they must be the caller's.
+        Field managerField = ReActAgent.class.getDeclaredField("shutdownManager");
+        managerField.setAccessible(true);
+        GracefulShutdownManager manager = (GracefulShutdownManager) managerField.get(null);
+        String requestId = manager.registerRequest(agent, null);
+        try {
+            manager.bindRequestState(requestId, migrated);
+            manager.saveOnInterruptObserved(requestId);
+        } finally {
+            manager.unregisterRequest(requestId);
+        }
+
+        assertEquals("u1", store.savedUserIds.get(store.savedUserIds.size() - 1));
+        assertEquals("legacySess", store.savedSessionIds.get(store.savedSessionIds.size() - 1));
     }
 
     @Test
