@@ -55,6 +55,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -713,6 +714,51 @@ class ReActAgentPerSessionStateTest {
 
         assertEquals(slotsBefore, slotVersionCount(agent), "no new slot may appear");
         assertEquals("untouched", agent.getAgentState("u1", "sessA").getSummary());
+    }
+
+    @Test
+    @DisplayName("null- and blank-anonymous calls converge on the null store identity")
+    void blankAndNullAnonymousConvergeOnNullStoreIdentity() {
+        RecordingStore store = new RecordingStore();
+        ReActAgent agent = agent(store);
+
+        // Blank and null are the same anonymous slot in memory; both must persist under
+        // the store's documented null namespace, never under the raw blank string.
+        AgentState viaNull = agent.getAgentState(null, "anonSess");
+        viaNull.setSummary("written via null");
+        agent.saveAgentState(null, "anonSess");
+
+        AgentState viaBlank = agent.getAgentState("   ", "anonSess");
+        assertEquals("written via null", viaBlank.getSummary(), "same in-memory slot");
+        agent.saveAgentState("   ", "anonSess");
+
+        assertTrue(store.savedUserIds.stream().allMatch(Objects::isNull));
+        assertTrue(
+                store.getVersioned(null, "anonSess", "agent_state", AgentState.class).isPresent(),
+                "both anonymous spellings converge on the null identity");
+    }
+
+    @Test
+    @DisplayName("a blank-anonymous caller loads v1 data seeded under the null identity")
+    void blankAnonymousCallerLoadsNullSeededLegacyData() {
+        RecordingStore store = new RecordingStore();
+        store.save(
+                null,
+                "legacyAnon",
+                "memory_messages",
+                java.util.List.of(userMsg("anonymous v1 body")));
+
+        ReActAgent agent = agent(store);
+        AgentState migrated = agent.getAgentState("   ", "legacyAnon");
+        assertTrue(
+                migrated.getContext().stream()
+                        .flatMap(m -> m.getContent().stream())
+                        .anyMatch(
+                                b ->
+                                        b instanceof TextBlock
+                                                && "anonymous v1 body"
+                                                        .equals(((TextBlock) b).getText())),
+                "blank-anonymous load reads the null-seeded legacy rows");
     }
 
     @Test

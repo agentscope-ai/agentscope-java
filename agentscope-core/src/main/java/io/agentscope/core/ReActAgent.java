@@ -365,7 +365,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     // On CAS conflict the session was taken over elsewhere — log and skip
                     // overwrite.
                     agentState -> {
-                        String uid = agentState.getUserId();
+                        String uid = storeUserId(agentState.getUserId());
                         String sid = agentState.getSessionId();
                         SlotId slot = SlotId.of(uid, sid);
                         long expected =
@@ -396,6 +396,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * same slot — the cached state, CAS versions and interrupt routing stay isolated (#3337,
      * #2475), with no string encoding/decoding pair to keep in sync. Not part of the public API.
      */
+    /**
+     * Collapses a blank caller userId to {@code null} at the store boundary. The store
+     * documents {@code null} as the anonymous namespace and {@link SlotId#of} already treats
+     * blank as anonymous in memory; persisting blank verbatim would split null- and
+     * blank-anonymous calls into two identities on a store that does not normalize itself.
+     */
+    private static String storeUserId(String userId) {
+        return (userId == null || userId.isBlank()) ? null : userId;
+    }
+
     private record SlotId(String userId, String sessionId) {
         static SlotId of(String userId, String sessionId) {
             Objects.requireNonNull(sessionId, "sessionId must not be null");
@@ -420,6 +430,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             PermissionContextState permCtx,
             String agentId,
             List<String> initialActiveToolGroups) {
+        userId = storeUserId(userId);
         AgentState fresh = freshState(permCtx, agentId, userId, sessionId, initialActiveToolGroups);
         if (stateStore == null) {
             return new VersionedState<>(fresh, AgentStateStore.UNVERSIONED);
@@ -537,6 +548,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             AgentState toSave,
             long expectedVersion,
             int loadedContextSize) {
+        userId = storeUserId(userId);
         if (!stateStore.supportsVersioning() || expectedVersion == AgentStateStore.UNVERSIONED) {
             if (stateStore.supportsVersioning()) {
                 // Unconditional write through the versioning API: the store returns the
