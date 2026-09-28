@@ -461,13 +461,19 @@ class E2bEnvdProcessClientTest {
     }
 
     @Test
-    void protoDeadlineExceededEndFrameMapsToExecTimeout() throws Exception {
+    void protoCodecStillDecodesJsonEndStreamFrame() throws Exception {
+        // Captured from a live envd (envd 0.6.10): with Content-Type
+        // application/connect+proto the end-stream payload is still this exact
+        // 76-byte JSON blob — connect-go hardcodes json.Marshal in MarshalEndStream.
+        // Guards against reintroducing a codec-dispatched (protobuf) decoder.
+        String live =
+                "{\"error\":{\"code\":\"deadline_exceeded\","
+                        + "\"message\":\"context deadline exceeded\"}}";
+        assertEquals(76, live.getBytes(StandardCharsets.UTF_8).length);
         E2bEnvdProcessClient client =
                 clientWithBody(
                         options(E2bCodec.PROTO),
-                        endStreamFrame(
-                                protoEndStreamError(
-                                        "deadline_exceeded", "context deadline exceeded")));
+                        endStreamFrame(live.getBytes(StandardCharsets.UTF_8)));
 
         assertThrows(
                 SandboxException.ExecTimeoutException.class,
@@ -535,22 +541,7 @@ class E2bEnvdProcessClientTest {
     }
 
     @Test
-    void protoEndFrameWithUnknownFieldsStillMaps() throws Exception {
-        byte[] error = protoEndStreamError("deadline_exceeded", "context deadline exceeded");
-        ByteArrayOutputStream frame = new ByteArrayOutputStream();
-        frame.write(0x48);
-        writeVarint(frame, 123);
-        frame.writeBytes(error);
-        E2bEnvdProcessClient client =
-                clientWithBody(options(E2bCodec.PROTO), endStreamFrame(frame.toByteArray()));
-
-        assertThrows(
-                SandboxException.ExecTimeoutException.class,
-                () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
-    }
-
-    @Test
-    void protoEmptyEndFrameStaysStreamError() throws Exception {
+    void emptyEndFrameStaysStreamError() throws Exception {
         E2bEnvdProcessClient client =
                 clientWithBody(options(E2bCodec.PROTO), endStreamFrame(new byte[0]));
 
@@ -560,7 +551,7 @@ class E2bEnvdProcessClientTest {
                         () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
         assertTrue(
                 e.getMessage().contains("before receiving a process exit code"),
-                "clean proto end without exit keeps #2828 semantics: " + e.getMessage());
+                "clean end without exit keeps #2828 semantics: " + e.getMessage());
     }
 
     @Test
@@ -613,32 +604,6 @@ class E2bEnvdProcessClientTest {
         ByteBuffer.wrap(out, 1, 4).order(ByteOrder.BIG_ENDIAN).putInt(payload.length);
         System.arraycopy(payload, 0, out, 5, payload.length);
         return out;
-    }
-
-    private static byte[] protoEndStreamError(String code, String message) {
-        byte[] codeBytes = code.getBytes(StandardCharsets.UTF_8);
-        byte[] messageBytes = message.getBytes(StandardCharsets.UTF_8);
-        ByteArrayOutputStream inner = new ByteArrayOutputStream();
-        inner.write(0x0A);
-        writeVarint(inner, codeBytes.length);
-        inner.writeBytes(codeBytes);
-        inner.write(0x12);
-        writeVarint(inner, messageBytes.length);
-        inner.writeBytes(messageBytes);
-        byte[] innerBytes = inner.toByteArray();
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        out.write(0x0A);
-        writeVarint(out, innerBytes.length);
-        out.writeBytes(innerBytes);
-        return out.toByteArray();
-    }
-
-    private static void writeVarint(ByteArrayOutputStream out, int value) {
-        while ((value & ~0x7F) != 0) {
-            out.write((value & 0x7F) | 0x80);
-            value >>>= 7;
-        }
-        out.write(value);
     }
 
     private static E2bSandboxState state() {

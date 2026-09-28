@@ -20,11 +20,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.InvalidProtocolBufferException;
-import com.google.protobuf.WireFormat;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
@@ -269,14 +267,14 @@ final class E2bEnvdProcessClient {
         }
     }
 
-    private ConnectError parseEndStreamError(byte[] data) {
-        if (codec() == E2bCodec.JSON) {
-            return parseJsonEndStreamError(data);
-        }
-        return parseProtoEndStreamError(data);
-    }
-
-    private static ConnectError parseJsonEndStreamError(byte[] data) {
+    /**
+     * Decodes a Connect end-stream error frame. The payload is always JSON regardless of the
+     * negotiated codec: connect-go hardcodes {@code json.Marshal} in {@code MarshalEndStream}
+     * (the end-stream message is not routed through the codec). Verified against a live envd —
+     * {@code application/connect+proto} and {@code application/connect+json} both return the
+     * identical 76-byte JSON frame {@code {"error":{"code":"deadline_exceeded",...}}}.
+     */
+    private static ConnectError parseEndStreamError(byte[] data) {
         try {
             JsonNode root = JSON.readTree(data);
             JsonNode error = root.path("error");
@@ -289,47 +287,7 @@ final class E2bEnvdProcessClient {
             }
             return new ConnectError(code, error.path("message").asText(""));
         } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static ConnectError parseProtoEndStreamError(byte[] data) {
-        try {
-            CodedInputStream in = CodedInputStream.newInstance(data);
-            int tag;
-            while ((tag = in.readTag()) != 0) {
-                if (WireFormat.getTagFieldNumber(tag) != 1
-                        || WireFormat.getTagWireType(tag) != WireFormat.WIRETYPE_LENGTH_DELIMITED) {
-                    in.skipField(tag);
-                    continue;
-                }
-                int oldLimit = in.pushLimit(in.readRawVarint32());
-                String code = null;
-                String message = "";
-                int inner;
-                while ((inner = in.readTag()) != 0) {
-                    int field = WireFormat.getTagFieldNumber(inner);
-                    if (WireFormat.getTagWireType(inner) != WireFormat.WIRETYPE_LENGTH_DELIMITED) {
-                        in.skipField(inner);
-                        continue;
-                    }
-                    if (field == 1) {
-                        code = in.readString();
-                    } else if (field == 2) {
-                        message = in.readString();
-                    } else {
-                        in.skipField(inner);
-                    }
-                }
-                in.popLimit(oldLimit);
-                if (code != null && !code.isBlank()) {
-                    return new ConnectError(code, message);
-                }
-                return null;
-            }
-            return null;
-        } catch (Exception e) {
-            log.debug("[e2b] unparsable proto end-stream frame, falling through: {}", e.toString());
+            log.debug("[e2b] unparsable end-stream frame, falling through: {}", e.toString());
             return null;
         }
     }
