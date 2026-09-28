@@ -34,15 +34,19 @@
  *   | DDL (abstract)     |   | DDL (abstract)         |   | DDL (abstract)     |
  *   | ANSI SQL (default) |   | ANSI SQL (default)     |   | ANSI SQL (default) |
  *   | base name "store"  |   | base name "sessions"   |   | base name "snaps"  |
- *   +--------+-----------+   +----------+-------------+   +--------+-----------+
+ *   +--------------------+   +------------------------+   +--------------------+
+ *   +--------------------+   +----------------------------+
+ *   | SkillDialect       |   | SkillResourcesDialect      |     base table group: store/sessions/snapshots
+ *   | base name "skills" |   | base name "skill_resources"|     skill table group: skills/skill_resources
+ *   +--------------------+   +----------------------------+
  *            |                          |                          |
  *            v                          v                          v             &lt;- implements (aggregate implements all table-domain interfaces + SandboxLockStrategy)
  *   +--------+--------------------------+--------------------------+-----------+
  *   | AbstractJdbcDialect  aggregate abstract class                                |
- *   | Implements StoreDialect, SessionStateDialect, SnapshotDialect, SandboxLockStrategy |
- *   | Holds tablePrefix + per-table overrides; from(DataSource) returns builder     |
- *   | build() detects DB -> binds DataSource -> assembles names -> auto-creates tables |
- *   | createTableDdls() collects all DDL; tryEnter() default = table-based lock       |
+ *   | Implements all table-domain interfaces + SandboxLockStrategy                |
+ *   | Holds tablePrefix + per-table overrides + table-group flags; from(DataSource) returns builder |
+ *   | build() detects DB -> binds DataSource -> assembles names/groups -> creates or validates tables |
+ *   | createTableDdls() collects the enabled groups' DDL; tryEnter() default = table-based lock    |
  *   | Final name resolution: override > prefix + base                               |
  *   +--------+--------------------------+--------------------------+-----------+
  *            |                          |                          |
@@ -64,8 +68,15 @@
  * <ol>
  *   <li>Create a table-domain interface in {@code table} (methods prefixed with the table short name).</li>
  *   <li>Add it to the aggregate's {@code implements} clause, plus name-override field + final resolver
- *       + builder method + add a line to {@code createTableDdls()}.</li>
+ *       + builder method + a gated line in {@code createTableDdls()}.</li>
  *   <li>Override the abstract DDL in each vendor class.</li>
+ * </ol>
+ *
+ * <h2>Adding a new table group</h2>
+ * <ol>
+ *   <li>Follow "Adding a new table" for each table of the group.</li>
+ *   <li>Add one {@code enableXxxTables(boolean)} builder switch (setter semantics, default off)
+ *       and gate the group's lines in {@code createTableDdls()}.</li>
  * </ol>
  *
  * <h2>Adding a new database</h2>

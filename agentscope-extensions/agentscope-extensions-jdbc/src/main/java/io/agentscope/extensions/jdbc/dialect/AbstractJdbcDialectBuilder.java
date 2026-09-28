@@ -28,14 +28,19 @@ import javax.sql.DataSource;
 /**
  * Builder for {@link AbstractJdbcDialect} — chainable configuration then {@link #build()}.
  *
- * <p>{@code build()} performs three steps: detect DB type via SPI → assemble table names →
- * initialize and validate the schema of all three tables in one connection; schema work
- * happens here and only here. With {@code autoCreateTable = true} (default) it executes
- * {@link AbstractJdbcDialect#createTableDdls()} first ({@code IF NOT EXISTS} is a no-op on
- * existing tables) and validates columns afterwards, catching a pre-existing table silently
- * adopted under the same name; with {@code false} it runs no DDL and goes straight to the
- * same validation. Either way, on normal return the three tables carry exactly the declared
- * columns and no component constructor touches the schema afterwards.
+ * <p>{@code build()} performs three steps: detect DB type via SPI → assemble table names
+ * and table groups → initialize and validate the schema of all enabled tables in one
+ * connection; schema work happens here and only here. With {@code autoCreateTable = true}
+ * (default) it executes {@link AbstractJdbcDialect#createTableDdls()} first ({@code IF NOT
+ * EXISTS} is a no-op on existing tables) and validates columns afterwards, catching a
+ * pre-existing table silently adopted under the same name; with {@code false} it runs no DDL
+ * and goes straight to the same validation. Either way, on normal return the enabled tables
+ * carry exactly the declared columns and no
+ * component constructor touches the schema afterwards.
+ *
+ * <p>Table groups: {@link #enableBaseTables(boolean)} (default on) and {@link
+ * #enableSkillTables(boolean)} (default off) scope which groups the DDL execution and
+ * validation cover; they are orthogonal to {@code autoCreateTable}.
  *
  * <p>Detection uses JDK {@link ServiceLoader} to discover all {@link AbstractJdbcDialect}
  * implementations on the classpath. Candidates are sorted by
@@ -57,7 +62,11 @@ public class AbstractJdbcDialectBuilder {
     private String storeTableName;
     private String sessionStateTableName;
     private String snapshotTableName;
+    private String skillTableName;
+    private String skillResourcesTableName;
     private boolean autoCreateTable = true;
+    private boolean enableBaseTables = true;
+    private boolean enableSkillTables;
 
     AbstractJdbcDialectBuilder(DataSource dataSource) {
         this.dataSource = dataSource;
@@ -87,18 +96,51 @@ public class AbstractJdbcDialectBuilder {
         return this;
     }
 
+    /** Overrides the full skill table name. */
+    public AbstractJdbcDialectBuilder skillTableName(String name) {
+        this.skillTableName = validateIdentifier(name, "skillTableName");
+        return this;
+    }
+
+    /** Overrides the full skill-resources table name. */
+    public AbstractJdbcDialectBuilder skillResourcesTableName(String name) {
+        this.skillResourcesTableName = validateIdentifier(name, "skillResourcesTableName");
+        return this;
+    }
+
     /**
-     * Whether to auto-create tables during {@link #build()} (default true). Either way,
-     * all three tables are validated afterwards: {@code true} executes the idempotent DDL
-     * first; {@code false} runs no DDL, so a missing table or column fails assembly with
-     * the reference DDL in the error message.
+     * Whether the base table group (store, sessions, snapshots) joins this build's schema
+     * work (default true). Group selection is orthogonal to create-vs-validate in
+     * {@link #autoCreateTable(boolean)}; setter semantics — the last call wins and
+     * {@code false} is an idempotent ensure-off, not an error.
+     */
+    public AbstractJdbcDialectBuilder enableBaseTables(boolean enabled) {
+        this.enableBaseTables = enabled;
+        return this;
+    }
+
+    /**
+     * Whether the skill table group (skills, skill_resources) joins this build's schema work
+     * (default false, so opting in is explicit). Semantics as {@link
+     * #enableBaseTables(boolean)}.
+     */
+    public AbstractJdbcDialectBuilder enableSkillTables(boolean enabled) {
+        this.enableSkillTables = enabled;
+        return this;
+    }
+
+    /**
+     * Whether to auto-create tables during {@link #build()} (default true). Either way, all
+     * enabled table groups' tables are validated afterwards: {@code true} executes the
+     * idempotent DDL first; {@code false} runs no DDL, so a missing table or column fails
+     * assembly with the reference DDL in the error message.
      */
     public AbstractJdbcDialectBuilder autoCreateTable(boolean autoCreateTable) {
         this.autoCreateTable = autoCreateTable;
         return this;
     }
 
-    /** Detects the dialect, assembles table names, then creates and validates the schema. */
+    /** Detects the dialect, assembles table names and groups, then creates and validates. */
     public AbstractJdbcDialect build() {
         AbstractJdbcDialect dialect = detectDialect();
         dialect.tablePrefix(this.tablePrefix);
@@ -111,6 +153,14 @@ public class AbstractJdbcDialectBuilder {
         if (this.snapshotTableName != null) {
             dialect.snapshotTableName(this.snapshotTableName);
         }
+        if (this.skillTableName != null) {
+            dialect.skillTableName(this.skillTableName);
+        }
+        if (this.skillResourcesTableName != null) {
+            dialect.skillResourcesTableName(this.skillResourcesTableName);
+        }
+        dialect.baseTablesEnabled(this.enableBaseTables);
+        dialect.skillTablesEnabled(this.enableSkillTables);
         dialect.bindDataSource(this.dataSource);
         initializeAndValidateSchema(dialect);
         return dialect;
