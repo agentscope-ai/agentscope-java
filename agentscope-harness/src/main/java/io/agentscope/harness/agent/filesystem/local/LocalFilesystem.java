@@ -367,16 +367,12 @@ public class LocalFilesystem implements AbstractFilesystem {
         ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, k -> new ReentrantLock());
         lock.lock();
         try {
-            String content =
-                    Files.readString(resolved, StandardCharsets.UTF_8)
-                            .replace("\r\n", "\n")
-                            .replace("\r", "\n");
-            String normalizedOld = oldString.replace("\r\n", "\n").replace("\r", "\n");
-            String normalizedNew = newString.replace("\r\n", "\n").replace("\r", "\n");
+            // Line-ending normalization lives in FilesystemUtils.stringReplacement so every
+            // filesystem agrees on LF semantics; the content is written back accordingly.
+            String content = Files.readString(resolved, StandardCharsets.UTF_8);
 
             FilesystemUtils.ReplacementResult result =
-                    FilesystemUtils.stringReplacement(
-                            content, normalizedOld, normalizedNew, replaceAll);
+                    FilesystemUtils.stringReplacement(content, oldString, newString, replaceAll);
 
             if (!result.isSuccess()) {
                 return EditResult.fail(result.error());

@@ -79,6 +79,82 @@ class FilesystemUtilsTest {
     }
 
     // ================================================================
+    // Line-ending normalization — shared by all filesystem implementations
+    // ================================================================
+
+    @Test
+    void stringReplacement_matchesAcrossCrLf() {
+        FilesystemUtils.ReplacementResult r =
+                FilesystemUtils.stringReplacement("a\r\nb\r\nc", "a\nb", "x", false);
+
+        assertTrue(r.isSuccess(), "a CRLF file must match an LF pattern: " + r.error());
+        assertEquals(1, r.occurrences());
+    }
+
+    @Test
+    void stringReplacement_matchesAcrossLoneCr() {
+        FilesystemUtils.ReplacementResult r =
+                FilesystemUtils.stringReplacement("a\rb\rc", "a\nb", "x", false);
+
+        assertTrue(r.isSuccess());
+        assertEquals(1, r.occurrences());
+    }
+
+    @Test
+    void stringReplacement_normalizesCrlfPatternGivenByCaller() {
+        FilesystemUtils.ReplacementResult r =
+                FilesystemUtils.stringReplacement("a\nb", "a\r\nb", "x", false);
+
+        assertTrue(r.isSuccess(), "a CRLF pattern must match an LF file: " + r.error());
+        assertEquals(1, r.occurrences());
+    }
+
+    @Test
+    void stringReplacement_writesBackLfOnly() {
+        FilesystemUtils.ReplacementResult r =
+                FilesystemUtils.stringReplacement("keep\r\nthis\r\nx\r\n", "x", "y", false);
+
+        assertTrue(r.isSuccess());
+        // CRLF is normalized away on a Unix-style filesystem, matching LocalFilesystem's
+        // long-standing behavior so all three implementations agree.
+        assertEquals("keep\nthis\ny\n", r.content());
+        assertFalse(r.content().contains("\r"));
+    }
+
+    @Test
+    void stringReplacement_replaceAll_countsAcrossMixedLineEndings() {
+        // CRLF, LF and a lone CR in one content: all three must count as the same separator,
+        // so the caller gets the same occurrence count on every filesystem.
+        FilesystemUtils.ReplacementResult r =
+                FilesystemUtils.stringReplacement("a\r\na\ra\na", "a\na", "-", true);
+
+        assertTrue(r.isSuccess());
+        // 4 separators-joined 'a' pairs, but occurrences are counted non-overlapping
+        assertEquals(2, r.occurrences());
+        assertEquals("-\n-", r.content());
+    }
+
+    @Test
+    void stringReplacement_multipleAcrossCrLf_preservesOccurrenceGuard() {
+        // The >1 guard must fire on CRLF content exactly as it does on LF content, otherwise the
+        // same edit would be accepted on one backend and rejected on another.
+        FilesystemUtils.ReplacementResult r =
+                FilesystemUtils.stringReplacement("a\r\na", "a", "x", false);
+
+        assertFalse(r.isSuccess());
+        assertTrue(r.error().contains("2 times"));
+    }
+
+    @Test
+    void stringReplacement_lfOnlyFileIsUnchangedSemantics() {
+        FilesystemUtils.ReplacementResult r =
+                FilesystemUtils.stringReplacement("Hello World", "World", "Java", false);
+
+        assertTrue(r.isSuccess());
+        assertEquals("Hello Java", r.content());
+    }
+
+    // ================================================================
     // Deprecated bridge — the v2.0.1-v2.0.3 Object[] contract
     // ================================================================
 

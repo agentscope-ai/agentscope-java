@@ -50,11 +50,12 @@ import org.slf4j.LoggerFactory;
  * delegating
  * to shell commands via {@link #execute}. File listing, grep, and glob use standard Unix
  * commands. Read uses server-side commands for paginated access. Write delegates content
- * transfer to {@link #uploadFiles}. Edit runs a static inline Python script inside the sandbox
- * ({@code old}/{@code new} cross the boundary as files, the command line carries paths only),
- * falling back to download via {@link #downloadFiles}, Java replacement via
- * {@link io.agentscope.harness.agent.filesystem.util.FilesystemUtils}, and re-upload via
- * {@link #uploadFiles} when {@code python3} is unavailable.
+ * transfer to {@link #uploadFiles}. Edit runs a static inline Python script inside the sandbox,
+ * with {@code old}/{@code new} passed base64-encoded on the command line (that alphabet has no
+ * shell metacharacters, so user content cannot break out of its argument) and the target file
+ * itself never leaving the sandbox; it falls back to download via {@link #downloadFiles}, Java
+ * replacement via {@link FilesystemUtils#stringReplacement(String, String, String, boolean)},
+ * and re-upload via {@link #uploadFiles} when {@code python3} is unavailable.
  *
  * <p>Subclasses must implement:
  * <ul>
@@ -290,7 +291,6 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             # uuid4 keeps the temp name unique per edit even when concurrent edits
             # share a long-lived shell process (os.getpid() would not be unique).
             real = os.path.realpath(target)
-            st = os.stat(real)
             tmp_out = real + ".agentscope-edit-tmp-" + uuid.uuid4().hex
             try:
                 # Failure here (including a read-only directory that forbids creating
@@ -299,6 +299,10 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 # non-atomic copy fallback would reintroduce the truncate-on-failure
                 # risk. Java then retries via the transfer path, whose shell
                 # redirection needs only file write permission.
+                # stat and the write share this try so a target that disappears between
+                # the read above and this point maps to a write_failed result instead of
+                # an uncaught traceback.
+                st = os.stat(real)
                 with open(tmp_out, "wb") as f:
                     f.write(out_bytes)
                 os.chmod(tmp_out, st.st_mode)
@@ -571,7 +575,15 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             boolean replaceAll) {
         List<FileDownloadResponse> downloaded = downloadFiles(runtimeContext, List.of(filePath));
         if (downloaded.isEmpty() || !downloaded.get(0).isSuccess()) {
-            return EditResult.fail("Error: File '" + filePath + "' not found");
+            // Distinguish "the backend could not read the file" (permissions, transport, a
+            // truncated response) from "the path does not exist": reporting a download failure
+            // as file_not_found sends the caller off to re-read a file it already has.
+            String cause = downloaded.isEmpty() ? "no response" : downloaded.get(0).error();
+            return EditResult.fail(
+                    "Error: Could not read file '"
+                            + filePath
+                            + "' for editing: "
+                            + (cause != null ? cause : "unknown error"));
         }
         byte[] contentBytes = downloaded.get(0).content();
         if (contentBytes == null || contentBytes.length == 0) {

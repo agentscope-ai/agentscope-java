@@ -111,12 +111,22 @@ public final class FilesystemUtils {
     /**
      * Perform string replacement with occurrence validation.
      *
+     * <p>Line endings are normalized to {@code \n} on the content and on both patterns first, so
+     * a caller need not care whether the file uses CRLF or lone CR. The returned content is
+     * therefore always LF-terminated: on a Unix-style filesystem CRLF is a defect worth removing,
+     * and every implementation must agree on this or the same edit would match on one backend and
+     * not on another.
+     *
      * @return {@link ReplacementResult#success(String, int)} on success, or
      *         {@link ReplacementResult#error(String)} on failure
      */
     public static ReplacementResult stringReplacement(
             String content, String oldString, String newString, boolean replaceAll) {
-        int occurrences = countOccurrences(content, oldString);
+        String normalizedContent = normalizeLineEndings(content);
+        String normalizedOld = normalizeLineEndings(oldString);
+        String normalizedNew = normalizeLineEndings(newString);
+
+        int occurrences = countOccurrences(normalizedContent, normalizedOld);
 
         if (occurrences == 0) {
             return ReplacementResult.error("Error: String not found in file: '" + oldString + "'");
@@ -135,15 +145,23 @@ public final class FilesystemUtils {
 
         String newContent;
         if (replaceAll) {
-            newContent = content.replace(oldString, newString);
+            newContent = normalizedContent.replace(normalizedOld, normalizedNew);
         } else {
-            int idx = content.indexOf(oldString);
+            int idx = normalizedContent.indexOf(normalizedOld);
             newContent =
-                    content.substring(0, idx)
-                            + newString
-                            + content.substring(idx + oldString.length());
+                    normalizedContent.substring(0, idx)
+                            + normalizedNew
+                            + normalizedContent.substring(idx + normalizedOld.length());
         }
         return ReplacementResult.success(newContent, occurrences);
+    }
+
+    /** Normalize CRLF and lone CR to LF. */
+    private static String normalizeLineEndings(String text) {
+        if (text.indexOf('\r') < 0) {
+            return text;
+        }
+        return text.replace("\r\n", "\n").replace("\r", "\n");
     }
 
     /** Count non-overlapping occurrences of a substring. */

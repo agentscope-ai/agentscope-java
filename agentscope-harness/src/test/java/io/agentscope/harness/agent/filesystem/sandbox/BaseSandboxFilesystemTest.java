@@ -458,7 +458,7 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
-        void edit_pythonMissing_transferDownloadFails_returnsFileNotFound() {
+        void edit_pythonMissing_transferDownloadFails_reportsReadFailureNotMissingFile() {
             EditSpyFilesystem fs = new EditSpyFilesystem();
             fs.withExecuteResult(new ExecuteResponse("python3: command not found", 127, false));
             fs.withDownloadResult(List.of());
@@ -466,7 +466,47 @@ class BaseSandboxFilesystemTest {
             EditResult result = fs.edit(RT, "/workspace/missing.txt", "old", "new", false);
 
             assertFalse(result.isSuccess());
-            assertTrue(result.error().contains("not found"));
+            // a failed download is not evidence that the file is absent
+            assertFalse(result.error().contains("not found"));
+            assertTrue(result.error().contains("Could not read file"));
+        }
+
+        @Test
+        void edit_pythonMissing_transferDownloadError_carriesCause() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("python3: command not found", 127, false));
+            fs.withDownloadResult(
+                    List.of(FileDownloadResponse.fail("/workspace/f.txt", "permission denied")));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("Could not read file"));
+            assertTrue(
+                    result.error().contains("permission denied"), "underlying cause must survive");
+        }
+
+        @Test
+        void edit_native_statFailure_mapsToWriteFailedNotRawTraceback() {
+            // A target that vanishes between the script's read and its stat used to raise an
+            // uncaught OSError, so no __RESULT__ line was printed and Java reported
+            // "unexpected server response" instead of a mapped error.
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(
+                    new ExecuteResponse(
+                            "Traceback (most recent call last):\n  FileNotFoundError: '/gone.txt'"
+                                    + "\n__RESULT__{\"error\": \"write_failed\", \"detail\":"
+                                    + " \"[Errno 2] No such file or directory\"}\n",
+                            0,
+                            false));
+            fs.withDownloadResult(
+                    List.of(FileDownloadResponse.success("/gone.txt", "Hello".getBytes())));
+
+            EditResult result = fs.edit(RT, "/gone.txt", "Hello", "Hi", false);
+
+            // write_failed is treated as "target untouched", so the transfer path retries
+            assertTrue(result.isSuccess(), "write_failed should degrade: " + result.error());
+            assertEquals(1, result.occurrences());
         }
 
         @Test
