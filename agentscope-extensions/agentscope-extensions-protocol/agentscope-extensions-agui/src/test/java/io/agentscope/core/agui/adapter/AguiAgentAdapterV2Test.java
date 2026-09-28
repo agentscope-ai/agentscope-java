@@ -756,6 +756,57 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testEmittedProgressChunksDoNotBecomeTheToolResult() {
+            // ToolEmitter streams progress as deltas, but per its own contract only the tool
+            // method's return value reaches the model. TOOL_CALL_RESULT is what a client stores as
+            // the tool message, so progress text must not end up in it.
+            ToolResultEndEvent end =
+                    new ToolResultEndEvent(
+                            "reply-emitter", "tool-1", "enroll", null, "fingerprint enrolled");
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-emitter", "tool-1", "enroll"),
+                            new ToolCallEndEvent("reply-emitter", "tool-1", "enroll"),
+                            new ToolResultStartEvent("reply-emitter", "tool-1", "enroll"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-emitter", "tool-1", "enroll", "press once"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-emitter", "tool-1", "enroll", "press again"),
+                            end);
+
+            assertEquals(
+                    "fingerprint enrolled",
+                    firstToolCallResult(events).content(),
+                    "the return value replaces the progress buffer, matching what the model saw");
+        }
+
+        @Test
+        void testToolResultWithoutFinalTextMetadataStillUsesDeltaBuffer() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-legacy", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-legacy", "tool-1", "lookup"),
+                            new ToolResultStartEvent("reply-legacy", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-legacy", "tool-1", "lookup", "partial"),
+                            new ToolResultEndEvent("reply-legacy", "tool-1", "lookup", null));
+
+            assertEquals(
+                    "partial",
+                    firstToolCallResult(events).content(),
+                    "producers that do not report a return value keep the previous behaviour");
+        }
+
+        private static AguiEvent.ToolCallResult firstToolCallResult(List<AguiEvent> events) {
+            return events.stream()
+                    .filter(AguiEvent.ToolCallResult.class::isInstance)
+                    .map(AguiEvent.ToolCallResult.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+        }
+
+        @Test
         void testParallelToolResultsUsePerToolMessageIds() {
             List<String> messageIds =
                     runReActEvents(

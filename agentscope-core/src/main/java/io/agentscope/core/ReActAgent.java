@@ -3342,7 +3342,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                                                 .getId(),
                                                                                                         entry.getKey()
                                                                                                                 .getName(),
-                                                                                                        state)
+                                                                                                        state,
+                                                                                                        finalToolResultText(
+                                                                                                                entry
+                                                                                                                        .getValue()))
                                                                                                 .withMetadata(
                                                                                                         entry.getValue()
                                                                                                                 .getMetadata()));
@@ -3497,6 +3500,29 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     .withMetadata(toolResult.getMetadata()));
                 }
             }
+        }
+
+        /**
+         * Join the text blocks of a tool method's return value, reported on {@link
+         * ToolResultEndEvent#getFinalResultText()}.
+         *
+         * <p>Progress chunks emitted through {@link io.agentscope.core.tool.ToolEmitter} travel the
+         * event stream as deltas but are deliberately not what the model receives, so a consumer
+         * rebuilding the tool message from deltas needs the return value from this event instead.
+         *
+         * @return joined text, or {@code null} when the result has no non-empty text blocks
+         */
+        private String finalToolResultText(ToolResultBlock result) {
+            if (result == null || result.getOutput() == null) {
+                return null;
+            }
+            String text =
+                    result.getOutput().stream()
+                            .filter(TextBlock.class::isInstance)
+                            .map(block -> ((TextBlock) block).getText())
+                            .filter(value -> value != null && !value.isEmpty())
+                            .collect(Collectors.joining());
+            return text.isEmpty() ? null : text;
         }
 
         private ToolResultState determineToolResultState(ToolResultBlock result) {

@@ -48,7 +48,7 @@ final class ToolResultEventConverter implements AgentEventConverter {
                 context.markToolCallSuspended(end.getToolCallId());
                 return;
             }
-            context.endToolResult(end.getReplyId(), end.getToolCallId());
+            context.endToolResult(end.getReplyId(), end.getToolCallId(), end.getFinalResultText());
         }
     }
 }
