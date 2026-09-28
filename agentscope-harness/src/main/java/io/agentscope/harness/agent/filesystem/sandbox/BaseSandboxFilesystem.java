@@ -198,9 +198,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 "if [ -e "
                         + escapedPath
                         + " ]; then echo 'EXISTS'; exit 1; fi; "
-                        + "mkdir -p \"$(dirname "
-                        + escapedPath
-                        + ")\" 2>&1";
+                        + FilesystemUtils.mkdirParent(filePath)
+                        + " 2>&1";
 
         ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
         if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
@@ -211,7 +210,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                                 + " because it already exists. Read and then make an"
                                 + " edit, or write to a new path.");
             }
-            return WriteResult.fail("Failed to write file '" + filePath + "'");
+            return WriteResult.fail(executeFailureMessage(checkResult, "writing", filePath));
         }
 
         List<FileUploadResponse> responses =
@@ -255,30 +254,36 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 Base64.getEncoder()
                         .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
+        // The program travels on stdin and the payload as a base64 environment value, so the
+        // generated command contains no double quote at all. Passing it through `python3 -c "..."`
+        // would nest double quotes inside the command and lose them on a Windows host; see
+        // FilesystemUtils#mkdirParent.
         String cmd =
-                "python3 -c \"import sys, os, base64, json\\n"
-                    + "payload ="
-                    + " json.loads(base64.b64decode(sys.stdin.read().strip()).decode('utf-8'))\\n"
-                    + "path, old, new = payload['path'], payload['old'], payload['new']\\n"
-                    + "replace_all = payload.get('replace_all', False)\\n"
-                    + "if not os.path.isfile(path):\\n"
-                    + "    print(json.dumps({'error': 'file_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "with open(path, 'rb') as f: text = f.read().decode('utf-8')\\n"
-                    + "count = text.count(old)\\n"
-                    + "if count == 0:\\n"
-                    + "    print(json.dumps({'error': 'string_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "if count > 1 and not replace_all:\\n"
-                    + "    print(json.dumps({'error': 'multiple_occurrences', 'count': count}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "result = text.replace(old, new) if replace_all else text.replace(old, new,"
-                    + " 1)\\n"
-                    + "with open(path, 'wb') as f: f.write(result.encode('utf-8'))\\n"
-                    + "print(json.dumps({'count': count}))\\n"
-                    + "\" 2>&1 <<'__EDIT_EOF__'\n"
+                "SAA_EDIT_PAYLOAD='"
                         + payloadB64
-                        + "\n__EDIT_EOF__\n";
+                        + "' python3 - 2>&1 <<'__EDIT_PY__'\n"
+                        + "import base64, json, os, sys\n"
+                        + "payload ="
+                        + " json.loads(base64.b64decode(os.environ['SAA_EDIT_PAYLOAD']).decode('utf-8'))\n"
+                        + "path, old, new = payload['path'], payload['old'], payload['new']\n"
+                        + "replace_all = payload.get('replace_all', False)\n"
+                        + "if not os.path.isfile(path):\n"
+                        + "    print(json.dumps({'error': 'file_not_found'}))\n"
+                        + "    sys.exit(0)\n"
+                        + "with open(path, 'rb') as f: text = f.read().decode('utf-8')\n"
+                        + "count = text.count(old)\n"
+                        + "if count == 0:\n"
+                        + "    print(json.dumps({'error': 'string_not_found'}))\n"
+                        + "    sys.exit(0)\n"
+                        + "if count > 1 and not replace_all:\n"
+                        + "    print(json.dumps({'error': 'multiple_occurrences', 'count':"
+                        + " count}))\n"
+                        + "    sys.exit(0)\n"
+                        + "result = text.replace(old, new) if replace_all else text.replace(old,"
+                        + " new, 1)\n"
+                        + "with open(path, 'wb') as f: f.write(result.encode('utf-8'))\n"
+                        + "print(json.dumps({'count': count}))\n"
+                        + "__EDIT_PY__\n";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output().strip() : "";
@@ -430,7 +435,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         AbstractFilesystem.validatePath(toPath);
         String escapedFrom = FilesystemUtils.shellQuote(fromPath);
         String escapedTo = FilesystemUtils.shellQuote(toPath);
-        String cmd = "mkdir -p $(dirname " + escapedTo + ") && mv " + escapedFrom + " " + escapedTo;
+        String cmd =
+                FilesystemUtils.mkdirParent(toPath) + " && mv " + escapedFrom + " " + escapedTo;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         if (result.exitCode() != 0) {
             return WriteResult.fail(
