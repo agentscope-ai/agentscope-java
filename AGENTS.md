@@ -70,7 +70,6 @@ AI coding instructions for AgentScope Java.
 - Keep `call()` and `streamEvents()` terminal results consistent.
 - Use `RuntimeContext` for user/session identity; do not share session state through agent fields.
 - Use the configured state store and Harness workspace abstraction.
-- Keep provider-backed Store implementations and SQL in their extension modules; core exposes storage contracts, not provider-specific SQL.
 - Preserve Reactor cancellation, errors, cleanup, middleware order, and permission checks.
 - Extend agent behavior with `MiddlewareBase`/`MiddlewareChain`; do not fork agent classes.
 - Do not block reactive event-loop threads.
