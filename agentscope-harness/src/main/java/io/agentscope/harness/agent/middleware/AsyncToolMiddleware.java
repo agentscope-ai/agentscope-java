@@ -126,6 +126,8 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                                     // channels, not an exactly-once or deduplicated delivery
                                     // contract:
                                     // a consumer observing both may see the same content twice.
+                                    // Delivery guarantees follow-up:
+                                    // https://github.com/agentscope-ai/agentscope-java/issues/3336
                                     .contextWrite(context -> context.putAll(callerContext))
                                     .subscribe(
                                             event -> {
@@ -189,7 +191,11 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                                                                     ? ctx.getSessionId()
                                                                     : "null");
                                                     emitPlaceholderAndComplete(
-                                                            sink, input.toolCalls(), agent, ctx);
+                                                            sink,
+                                                            input.toolCalls(),
+                                                            agent,
+                                                            ctx,
+                                                            callerContext);
                                                 }
                                             },
                                             offloadTimeout.toMillis(),
@@ -210,7 +216,8 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
             FluxSink<AgentEvent> sink,
             List<ToolUseBlock> toolCalls,
             Agent agent,
-            RuntimeContext ctx) {
+            RuntimeContext ctx,
+            ContextView callerContext) {
         String replyId = UUID.randomUUID().toString().replace("-", "");
         AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
 
@@ -226,7 +233,7 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                                         toolCall.getId(),
                                         AsyncToolRecord.RUNNING,
                                         Instant.now())),
-                        sink.contextView(),
+                        callerContext,
                         "register async tool " + toolCall.getId());
             }
 
