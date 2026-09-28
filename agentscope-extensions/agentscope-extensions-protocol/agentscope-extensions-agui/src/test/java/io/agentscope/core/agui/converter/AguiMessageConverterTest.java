@@ -327,7 +327,28 @@ class AguiMessageConverterTest {
         assertEquals("tc-1", aguiMsg.getToolCallId());
         // The marker core prepends announces the failure in text; the field carries the reason.
         assertEquals("sandbox unavailable", aguiMsg.getError());
-        assertNull(aguiMsg.getContent());
+        // A tool message must still carry `content`: the protocol requires the field and rejects
+        // null, so an empty string stands in for a result with no ordinary output.
+        assertEquals("", aguiMsg.getTextContent());
+    }
+
+    @Test
+    void testToolMessageSerialisesNonNullContent() {
+        Msg failed =
+                Msg.builder()
+                        .id("msg-t13")
+                        .role(MsgRole.TOOL)
+                        .content(ToolResultBlock.error("tc-1", "sandbox unavailable"))
+                        .build();
+
+        String json = JsonUtils.getJsonCodec().toJson(converter.toAguiMessage(failed));
+        Map<?, ?> wire = JsonUtils.getJsonCodec().fromJson(json, Map.class);
+
+        assertNotNull(wire);
+        assertTrue(
+                wire.get("content") instanceof String,
+                "tool message content must be text or parts, never null: " + json);
+        assertEquals("sandbox unavailable", wire.get("error"));
     }
 
     @Test
@@ -772,7 +793,9 @@ class AguiMessageConverterTest {
         AguiMessage aguiMsg = converter.toAguiMessage(msg);
 
         assertEquals("tc-1", aguiMsg.getToolCallId());
-        assertNull(aguiMsg.getContent());
+        // This used to assert null. The protocol requires `content` on a tool message and does
+        // not accept null, so the field is now an empty string when the result has no output.
+        assertEquals("", aguiMsg.getTextContent());
     }
 
     @Test

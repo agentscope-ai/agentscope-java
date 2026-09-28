@@ -144,7 +144,11 @@ public class AguiMessageConverter {
      * <p>Only {@code ERROR} is mirrored. {@link ToolResultState#DENIED} and {@link
      * ToolResultState#INTERRUPTED} results keep travelling as content: the protocol carries a
      * single {@code error} string, so the richer states core distinguishes have no faithful
-     * representation on the wire.
+     * representation on the wire. Coming back in they read as {@code SUCCESS}, which loses the
+     * distinction rather than preserving it.
+     *
+     * <p>A tool message always carries {@code content}, empty when the result has no ordinary
+     * output, because the protocol requires the field and rejects null.
      *
      * @param msg The AgentScope message to convert
      * @return The converted AG-UI message
@@ -190,10 +194,19 @@ public class AguiMessageConverter {
             }
         }
 
+        // The protocol lists `content` as required on a tool message and does not accept null,
+        // so a result with no ordinary output carries an empty string rather than omitting the
+        // field. Other roles keep the previous behaviour.
+        String contentText = content.toString();
+        MessageContent wireContent =
+                contentText.isEmpty() && msg.getRole() != MsgRole.TOOL
+                        ? null
+                        : new MessageContent.Text(contentText);
+
         return new AguiMessage(
                 msg.getId(),
                 role,
-                content.length() > 0 ? new MessageContent.Text(content.toString()) : null,
+                wireContent,
                 toolCalls.isEmpty() ? null : toolCalls,
                 toolCallId,
                 error);

@@ -271,8 +271,11 @@ public class AguiMessage {
     /**
      * Get the error a frontend tool reported, per the AG-UI protocol's {@code error} field.
      *
-     * <p>Only tool messages carry it. When it is present, the inbound conversion reports the
-     * tool result as an error instead of a success.
+     * <p>Only tool messages carry it. The inbound conversion reports the tool result as an error
+     * when this is present <em>and</em> not blank: a blank value is read as no error, so a client
+     * that sends an empty string cannot turn a success into a failure. A result that fails
+     * without any text therefore does not survive a round trip — the protocol has no way to say
+     * "failed, no reason".
      *
      * <p>Excluded from serialization when null, so a successful message keeps the wire shape it
      * had before this field existed. Only this property is affected; the other fields of this
