@@ -123,9 +123,12 @@ final class E2bEnvdProcessClient {
     private ShellCapture runShellCapture(
             E2bSandboxState state, String cwd, String shellCommand, int timeoutSeconds)
             throws Exception {
-        // Deliberately fail fast instead of clamping like daytona/agentrun:
-        // 0/negative is never intentional; clamping to 1s would mask caller bugs.
-        // No command text here: model-generated commands may carry inline tokens.
+        // Deliberately fail fast instead of clamping like daytona/agentrun, and
+        // unlike the official SDKs where 0 means unbounded: this transport cannot
+        // model an unbounded stream (OkHttp needs an explicit callTimeout, and the
+        // base read timeout would otherwise misreport idleness as a 0s exec
+        // timeout), so 0/negative is rejected as a caller bug rather than silently
+        // clamped to 1s, which would mask it.
         if (timeoutSeconds <= 0) {
             throw new IllegalArgumentException(
                     "[e2b] timeoutSeconds must be positive, got "
@@ -143,10 +146,10 @@ final class E2bEnvdProcessClient {
         }
         OkHttpClient callClient =
                 http.newBuilder()
-                        // Server deadline stays exact so the kill lands on time and the
-                        // client observes it via deadline_exceeded; the client backup
-                        // runs slightly later to cover a misbehaving server without
-                        // ever winning the race itself.
+                        // Server deadline stays exact so the kill lands on time; the
+                        // client backup runs CLIENT_TIMEOUT_SLACK_MILLIS later as a
+                        // pure failsafe (mishaving server / hung stream) that never
+                        // wins the race itself in the normal path.
                         .callTimeout(
                                 timeoutSeconds * 1000L + CLIENT_TIMEOUT_SLACK_MILLIS,
                                 TimeUnit.MILLISECONDS)
@@ -229,11 +232,17 @@ final class E2bEnvdProcessClient {
     private static final String CONNECT_DEADLINE_EXCEEDED = "deadline_exceeded";
 
     /**
-     * Head start of the server deadline over the client backup timeout, so the
-     * server-side kill (and its {@code deadline_exceeded} frame) deterministically
-     * wins the race and a retry never overlaps a still-running process.
+     * Fault-grading threshold between the server deadline and the client backup timeout.
+     * Within T: the server kills on time and the client observes it via {@code
+     * deadline_exceeded} — the slack is never consumed. Within T+slack: engineering
+     * tolerance absorbing connect/setup jitter (cold handshakes, weak networks), so the
+     * kill still lands before any retry can overlap a running process. Beyond T+slack:
+     * treated as a network-layer fault (request never arrived, or the server hung) and
+     * the client backup fires to guarantee a local return. 5s covers the connection
+     * setup distribution short of extreme degradation; larger values would approach the
+     * agent retry interval and buy nothing further.
      */
-    private static final long CLIENT_TIMEOUT_SLACK_MILLIS = 500;
+    private static final long CLIENT_TIMEOUT_SLACK_MILLIS = 5000;
 
     private static final Logger log = LoggerFactory.getLogger(E2bEnvdProcessClient.class);
 

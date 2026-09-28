@@ -339,6 +339,29 @@ class E2bEnvdProcessClientTest {
     }
 
     @Test
+    void clientBackupToleratesServerKillMargin() throws Exception {
+        // timeout=1 with a 1.5s stall followed by a clean exit frame: without the
+        // client-side slack the callTimeout would fire first; with it the stalled
+        // call completes normally.
+        byte[] exitFrame = connectFrame(responseJson(null, null, 0));
+        Interceptor stalling =
+                chain -> {
+                    try {
+                        Thread.sleep(1500);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new java.io.InterruptedIOException("interrupted stall");
+                    }
+                    return cannedResponse(chain, exitFrame);
+                };
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(new OkHttpClient.Builder().addInterceptor(stalling).build());
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        client.runShell(state(), "/workspace", "echo hi", 1);
+    }
+
+    @Test
     void interruptionIsRethrownNotWrappedAsTimeout() throws Exception {
         Interceptor interrupting =
                 chain -> {
@@ -396,6 +419,30 @@ class E2bEnvdProcessClientTest {
         assertThrows(
                 SandboxException.ExecTimeoutException.class,
                 () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
+    }
+
+    @Test
+    void timeoutMessageCarriesNoCommandText() throws Exception {
+        byte[] payload =
+                ("{\"error\":{\"code\":\"deadline_exceeded\","
+                                + "\"message\":\"context deadline exceeded\"}}")
+                        .getBytes(StandardCharsets.UTF_8);
+        E2bEnvdProcessClient client =
+                clientWithBody(options(E2bCodec.JSON), endStreamFrame(payload));
+
+        SandboxException.ExecTimeoutException e =
+                assertThrows(
+                        SandboxException.ExecTimeoutException.class,
+                        () ->
+                                client.runShell(
+                                        state(),
+                                        "/workspace",
+                                        "curl -H 'Authorization: Bearer sk-secret' example.test",
+                                        30));
+        assertEquals("Command timed out after 30s", e.getMessage());
+        assertFalse(
+                e.getMessage().contains("sk-secret"),
+                "command text must not leak into the message");
     }
 
     @Test
