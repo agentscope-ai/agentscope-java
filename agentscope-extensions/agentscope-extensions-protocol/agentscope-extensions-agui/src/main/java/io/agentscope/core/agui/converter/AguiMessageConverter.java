@@ -165,14 +165,18 @@ public class AguiMessageConverter {
             } else if (block instanceof ToolUseBlock tub) {
                 toolCalls.add(toAguiToolCall(tub));
             } else if (block instanceof ToolResultBlock trb) {
-                toolCallId = trb.getId();
                 if (trb.getState() == ToolResultState.ERROR) {
                     // A failed result is reported through `error` rather than the content, so a
-                    // round trip does not carry it in both places. The protocol carries one
-                    // `error` per message and `toolCallId` is likewise the last one seen, so
-                    // the last failing result wins to keep the two describing the same call.
+                    // round trip does not carry it in both places. The last failing result wins,
+                    // and it takes `toolCallId` with it: a message may hold more than one result
+                    // and the protocol carries one `error`, so the id has to stay with the error
+                    // it describes. A later successful result must not claim that id.
                     error = stripErrorPrefix(toolResultText(trb));
+                    toolCallId = trb.getId();
                 } else {
+                    if (error == null) {
+                        toolCallId = trb.getId();
+                    }
                     // Extract text content from tool result
                     for (ContentBlock output : trb.getOutput()) {
                         if (output instanceof TextBlock tb) {
@@ -216,11 +220,13 @@ public class AguiMessageConverter {
     }
 
     /**
-     * Strip the {@code [ERROR] } marker {@link ToolResultBlock#error(String, String)} prefixes,
-     * so an error mirrored into the AG-UI {@code error} field carries the reason itself rather
-     * than the marker that already announces it.
+     * Strip the {@code [ERROR] } marker {@link ToolResultBlock#error(String, String)} prefixes.
      *
-     * @param text the tool result text
+     * <p>Applied in both directions: outbound so a mirrored error carries the reason itself
+     * rather than the marker that already announces it, inbound so a client that echoes a
+     * prefixed value back does not end up with the marker twice.
+     *
+     * @param text the tool result text or reported error
      * @return the text without the marker, unchanged if it does not carry one
      */
     private static String stripErrorPrefix(String text) {
@@ -360,8 +366,12 @@ public class AguiMessageConverter {
             if (error != null && !error.isBlank()) {
                 // A frontend tool that failed reports the reason in the AG-UI `error` field
                 // rather than in `content`. Report the failure instead of a success, so the
-                // model can retry, report it, or ask the user.
-                blocks.add(errorResultBlock(aguiMessage.getToolCallId(), error, text));
+                // model can retry, report it, or ask the user. A client may echo back a value
+                // this converter already prefixed, and the marker is added again below, so it
+                // is stripped here to keep both directions symmetric.
+                blocks.add(
+                        errorResultBlock(
+                                aguiMessage.getToolCallId(), stripErrorPrefix(error), text));
                 return;
             }
             String resultText = text != null ? text : "";

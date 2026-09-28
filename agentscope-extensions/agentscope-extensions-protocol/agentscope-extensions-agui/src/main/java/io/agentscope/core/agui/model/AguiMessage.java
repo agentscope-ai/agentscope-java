@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
 import java.util.List;
@@ -273,8 +274,13 @@ public class AguiMessage {
      * <p>Only tool messages carry it. When it is present, the inbound conversion reports the
      * tool result as an error instead of a success.
      *
+     * <p>Excluded from serialization when null, so a successful message keeps the wire shape it
+     * had before this field existed. Only this property is affected; the other fields of this
+     * class already serialize their nulls and are left as they are.
+     *
      * @return The error message, or null if no error was reported
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public String getError() {
         return error;
     }

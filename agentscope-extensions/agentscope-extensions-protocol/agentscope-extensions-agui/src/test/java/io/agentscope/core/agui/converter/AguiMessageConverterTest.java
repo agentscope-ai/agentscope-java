@@ -405,6 +405,46 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertToolMessageWithAlreadyPrefixedErrorDoesNotDoubleTheMarker() {
+        // A client may echo back the value this converter produced, marker included; the inbound
+        // path adds the marker itself, so the incoming one has to come off.
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-t10", "tool", null, null, "tc-1", "[ERROR] sandbox unavailable");
+
+        ToolResultBlock result =
+                converter.toMsg(aguiMsg).getFirstContentBlock(ToolResultBlock.class);
+
+        assertNotNull(result);
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals("[ERROR] sandbox unavailable", resultText(result));
+    }
+
+    @Test
+    void testConvertMixedToolResultsKeepsErrorOnTheSameCallAsToolCallId() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-t9")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.error("tc-1", "first failed"),
+                                ToolResultBlock.builder()
+                                        .id("tc-2")
+                                        .output(TextBlock.builder().text("second ok").build())
+                                        .state(ToolResultState.SUCCESS)
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+
+        // A successful result must not take the `toolCallId` away from the error it does not
+        // describe; its own text still travels as content.
+        assertEquals("tc-1", aguiMsg.getToolCallId());
+        assertEquals("first failed", aguiMsg.getError());
+        assertEquals("second ok", aguiMsg.getTextContent());
+    }
+
+    @Test
     void testConvertSuccessToolResultToAguiMessageKeepsTextInContent() {
         Msg msg =
                 Msg.builder()

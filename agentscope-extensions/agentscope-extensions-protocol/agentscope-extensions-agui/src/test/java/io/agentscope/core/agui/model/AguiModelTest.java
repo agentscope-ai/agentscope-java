@@ -202,6 +202,27 @@ class AguiModelTest {
         }
 
         @Test
+        void testJsonSerializationOmitsErrorWhenAbsent() throws JsonProcessingException {
+            // The field is newer than the wire format it joins: a message that reports no error
+            // must keep the representation it had before the field existed, so a strict client
+            // does not start seeing `"error": null` on every message.
+            AguiMessage withoutError = new AguiMessage("msg-1", "tool", null, null, "tc-1");
+
+            String withoutErrorJson = JsonUtils.getJsonCodec().toJson(withoutError);
+            assertFalse(withoutErrorJson.contains("error"), withoutErrorJson);
+
+            // A reported failure is still carried.
+            AguiMessage withError =
+                    new AguiMessage("msg-2", "tool", null, null, "tc-1", "sandbox unavailable");
+
+            String withErrorJson = JsonUtils.getJsonCodec().toJson(withError);
+            assertTrue(withErrorJson.contains("\"error\""), withErrorJson);
+            assertEquals(
+                    "sandbox unavailable",
+                    JsonUtils.getJsonCodec().fromJson(withErrorJson, AguiMessage.class).getError());
+        }
+
+        @Test
         void testNullContent() {
             AguiMessage msg = new AguiMessage("msg-1", "user", null, null, null);
 
