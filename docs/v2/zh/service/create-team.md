@@ -1,5 +1,6 @@
 ---
 title: "Team：创建与派发协作任务"
+en_link: /v2/en/service/create-team
 ---
 
 <Note>

@@ -1,5 +1,6 @@
 ---
 title: AgentScope Java 1.1 · Harness
+zh_link: /v1/zh/blogs/agentscope-v1-harness
 ---
 
 AgentScope Java 1.1 introduces the first public release of the **Harness Framework**: a production runtime layer for long-running, distributed agents.

@@ -1,5 +1,6 @@
 ---
 title: "Local installation"
+zh_link: /v2/zh/service/quickstart
 ---
 
 <Note>

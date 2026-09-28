@@ -1,6 +1,7 @@
 ---
 title: Release Notes
 description: Per-version change records for AgentScope Java
+zh_link: /v2/zh/docs/others/release-notes
 ---
 
 This page tracks per-version changes for AgentScope Java 2.0. For the overall migration guide from 1.x, see the [V1 Migration Guide](/v2/en/docs/change-log).

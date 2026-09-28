@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -53,8 +52,8 @@ class McpToolMetaExtractionTest {
 
     @BeforeEach
     void setUp() {
-        mockClientWrapper = mock(McpClientWrapper.class);
-        when(mockClientWrapper.getName()).thenReturn("test-client");
+        // McpTool.callAsync reads the connection-level switch live; default it to on.
+        mockClientWrapper = McpClientWrapperTestSupport.mockWrapper("test-client", true);
 
         parameters = new HashMap<>();
         parameters.put("type", "object");

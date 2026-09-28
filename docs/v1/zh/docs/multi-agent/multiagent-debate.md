@@ -1,5 +1,6 @@
 ---
 title: 多智能体辩论
+en_link: /v1/en/docs/multi-agent/multiagent-debate
 ---
 
 多智能体辩论是一种工作流模式，模拟不同智能体之间的多轮讨论。这种模式特别适用于需要多角度思考才能得出更好解决方案的问题求解任务。

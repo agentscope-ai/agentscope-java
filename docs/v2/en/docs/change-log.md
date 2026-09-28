@@ -1,6 +1,7 @@
 ---
 title: V1 Migration Guide
 description: Complete migration guide from AgentScope Java 1.x to 2.0
+zh_link: /v2/zh/docs/change-log
 ---
 
 <Tip>

@@ -1,5 +1,6 @@
 ---
 title: "External Agent: overview and integration"
+zh_link: /v2/zh/service/external-agent
 ---
 
 <Note>

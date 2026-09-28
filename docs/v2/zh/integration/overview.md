@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v2/en/integration/overview
 ---
 
 本节汇总 AgentScope Java 与第三方系统、生态服务的集成扩展。每个扩展都是 `agentscope-extensions/` 下的独立 Maven 模块，按需引入即可。
@@ -13,6 +14,7 @@ title: 概览
 | 提供商 | Maven artifact | `ModelRegistry` id | 标准环境变量 | 文档 |
 |--------|----------------|--------------------|--------------|------|
 | OpenAI | `agentscope-extensions-model-openai` | `openai:<model>` | `OPENAI_API_KEY` | <a class="reference internal" href="/v2/zh/integration/model/openai">OpenAI</a> |
+| OpenAI Official | `agentscope-extensions-model-openai-official` | `openai-official:<model>` | `OPENAI_API_KEY` | <a class="reference internal" href="/v2/zh/integration/model/openai-official">OpenAI Official</a> |
 | DeepSeek | `agentscope-extensions-model-openai` | `deepseek:<model>` | `DEEPSEEK_API_KEY` | <a class="reference internal" href="/v2/zh/integration/model/deepseek">DeepSeek</a> |
 | GLM | `agentscope-extensions-model-openai` | `glm:<model>` | `ZAI_API_KEY` / `GLM_API_KEY` / `ZHIPUAI_API_KEY` | <a class="reference internal" href="/v2/zh/integration/model/glm">GLM</a> |
 | Kimi | `agentscope-extensions-model-openai` | `kimi:<model>` | `MOONSHOT_API_KEY` / `KIMI_API_KEY` | <a class="reference internal" href="/v2/zh/integration/model/kimi">Kimi</a> |

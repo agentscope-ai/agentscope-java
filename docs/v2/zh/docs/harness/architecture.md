@@ -1,6 +1,7 @@
 ---
 title: Harness 架构
 description: HarnessAgent 是什么、各能力如何协作、状态如何在一次 call() 中流转
+en_link: /v2/en/docs/harness/architecture
 ---
 
 `HarnessAgent` 是 `ReActAgent` 的一层薄包装，把长期运行 agent 必备的工程能力打包进单一 builder：工作区驱动的人格、长期记忆、子 agent 编排、沙箱隔离、技能装配、计划模式、Channel 路由。

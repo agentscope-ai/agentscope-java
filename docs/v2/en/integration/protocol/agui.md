@@ -1,5 +1,6 @@
 ---
 title: AG-UI
+zh_link: /v2/zh/integration/protocol/agui
 ---
 
 ## Compatibility Notes
@@ -253,15 +254,15 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 
 ## Frontend Tools And Merge Mode
 
-An AG-UI front end can pass tool schemas through `RunAgentInput.tools`. The adapter injects those tools into the agent toolkit at the start of one run and cleans them up after the run completes or is cancelled.
+An AG-UI front end can pass tool schemas through `RunAgentInput.tools`. The adapter converts them into a run-scoped `ToolRequestConfig` carried by RuntimeContext. It never mutates the agent toolkit, so completion and cancellation require no registry restoration.
 
 | `ToolMergeMode` | Behavior |
 | --- | --- |
-| `FRONTEND_ONLY` | Use only frontend-provided tools and temporarily hide existing agent tools |
+| `EXTERNAL_ONLY` | Use only frontend-provided tools and temporarily hide existing agent tools |
 | `AGENT_ONLY` | Ignore frontend-provided tools and use only the agent toolkit |
-| `MERGE_FRONTEND_PRIORITY` | Merge both sides; frontend tools win on name conflicts |
+| `MERGE_EXTERNAL_PRIORITY` | Merge both sides; frontend tools win on name conflicts |
 
-The default is `MERGE_FRONTEND_PRIORITY`. Injection is run scoped and does not permanently mutate the agent toolkit.
+The default is `MERGE_EXTERNAL_PRIORITY`. Import the enum from `io.agentscope.core.tool.ToolMergeMode`. `EXTERNAL_ONLY` exposes no tools when the external list is empty, regardless of the Toolkit deletion policy: it controls request visibility only.
 
 ## HITL Interrupts
 
@@ -290,6 +291,10 @@ Both use the official AG-UI `reason: "tool_call"` because the interrupt is bound
             "editedArgs": {
               "type": "object",
               "description": "Full replacement of the tool args. Not merged."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Optional explanation supplied when the tool call is denied."
             }
           },
           "required": ["approved"]
@@ -332,6 +337,8 @@ The front end can show an approval or external-execution UI. After the user acts
 `status` supports the official `resolved` and `cancelled` values. For the common approval case where a user rejects a tool request, prefer `resolved` and express the business decision in `payload`, for example `{ "approved": false }`; use `cancelled` when the interrupt itself is cancelled.
 
 For permission confirmations, `payload.approved` must be the boolean `true` to approve the tool. Any missing, non-boolean, or `false` value is treated as denial. `payload.editedArgs`, when present, must be a JSON object and is a **full replacement** of the original tool arguments, not a partial merge. AgentScope Java rebuilds both the `ToolUseBlock.input` and raw JSON `ToolUseBlock.content` from `editedArgs`, so the approved tool executes the edited arguments.
+
+`payload.reason` is an optional string. On denial it becomes `ConfirmResult.reason` and is used as the DENIED tool-result text; when it is missing or blank, AgentScope keeps the default `Permission denied by user` message.
 
 The front end does not need to echo `metadata` in `resume[]`; it only sends `interruptId`, `status`, and `payload`. Through the Spring `AguiRequestProcessor` entry point, AgentScope Java records the latest `RUN_FINISHED.outcome.interrupts[]` server-side, validates that the next `resume[]` covers all open interrupts, and passes the originating interrupts into the adapter for conversion.
 

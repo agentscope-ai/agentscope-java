@@ -88,6 +88,8 @@ logs/
 **/frontend/storybook-static/
 # boba-tea-shop: generated static assets served by the supervisor-agent
 **/boba-tea-shop/supervisor-agent/**/static/
+# copilotkit: frontend-maven-plugin npm build output served from the jar
+agentscope-examples/agentscope-copilotkit/src/main/resources/static/
 
 ##agentscope
 .agentscope/

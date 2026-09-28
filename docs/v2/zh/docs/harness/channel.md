@@ -1,6 +1,7 @@
 ---
 title: Channel
 description: 通过 Channel 路由消息、管理会话、流式传输事件
+en_link: /v2/en/docs/harness/channel
 ---
 
 ## 它们做什么

@@ -1,5 +1,6 @@
 ---
 title: Key Concepts
+zh_link: /v1/zh/docs/quickstart/key-concepts
 ---
 
 This chapter introduces the core concepts in AgentScope from an engineering perspective to help you understand the framework's design philosophy.

@@ -1,5 +1,6 @@
 ---
 title: "Production installation"
+zh_link: /v2/zh/service/kubernetes
 ---
 
 <Note>

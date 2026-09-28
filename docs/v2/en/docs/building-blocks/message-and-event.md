@@ -1,6 +1,7 @@
 ---
 title: Message & Event
 description: The core data abstractions for agent communication and streaming
+zh_link: /v2/zh/docs/building-blocks/message-and-event
 ---
 
 Message and event are the two fundamental data structures in AgentScope.

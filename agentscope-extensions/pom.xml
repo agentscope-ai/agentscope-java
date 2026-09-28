@@ -47,6 +47,7 @@
         <module>agentscope-extensions-nacos</module>
         <module>agentscope-extensions-skills</module>
         <module>agentscope-extensions-studio</module>
+        <module>agentscope-extensions-judge</module>
         <module>agentscope-extensions-scheduler</module>
         <module>agentscope-extensions-training</module>
         <module>agentscope-extensions-channel</module>

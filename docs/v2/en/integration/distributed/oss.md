@@ -1,5 +1,6 @@
 ---
 title: Alibaba Cloud OSS
+zh_link: /v2/zh/integration/distributed/oss
 ---
 
 `agentscope-extensions-oss` provides distributed storage backed by Alibaba Cloud Object Storage Service (OSS), ideal for large-capacity data and Alibaba Cloud ecosystems.

@@ -2,6 +2,7 @@
 title: Quickstart
 description: Get started with AgentScope Java 2.0 — bring up your first long-running
   agent with HarnessAgent
+zh_link: /v2/zh/docs/quickstart
 ---
 
 ## Installation
