@@ -280,10 +280,14 @@ public class QuartzAgentScheduler implements AgentScheduler {
                     TimeZone timeZone = TimeZone.getTimeZone(zoneId);
                     try {
                         ZoneId normalizedZoneId = ZoneId.of(zoneId).normalized();
+                        boolean fellBackToGmt =
+                                "GMT".equals(timeZone.getID()) && !"GMT".equalsIgnoreCase(zoneId);
                         if (normalizedZoneId instanceof ZoneOffset offset
-                                && timeZone.getRawOffset() != offset.getTotalSeconds() * 1000) {
-                            // TimeZone's String overload silently maps bare/prefixed offsets to
-                            // GMT.
+                                && (fellBackToGmt
+                                        || timeZone.getRawOffset()
+                                                != offset.getTotalSeconds() * 1000)) {
+                            // TimeZone's String overload silently maps some valid ZoneIds and
+                            // offsets to GMT.
                             timeZone = TimeZone.getTimeZone(offset);
                         }
                     } catch (DateTimeException e) {

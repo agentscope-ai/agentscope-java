@@ -764,23 +764,38 @@ class QuartzAgentSchedulerTest {
     }
 
     @Test
-    void testScheduleWithGmtZoneIdPreservesIdWhenQuartzReloadsTask() throws SchedulerException {
+    void testScheduleWithUtcZoneAliasesPreserveIdWhenQuartzReloadsTask() throws SchedulerException {
+        for (Map.Entry<String, String> alias :
+                Map.of(
+                                "GMT", "GMT",
+                                "Z", "UTC",
+                                "UT", "UTC",
+                                "+00:00", "UTC",
+                                "UTC+00:00", "UTC")
+                        .entrySet()) {
+            assertZoneIdRoundTrip(alias.getKey(), alias.getValue());
+        }
+    }
+
+    private void assertZoneIdRoundTrip(String zoneId, String expectedTriggerZoneId)
+            throws SchedulerException {
+        String suffix = zoneId.replaceAll("[^A-Za-z0-9]", "_");
         Scheduler quartzScheduler = mock(Scheduler.class);
         QuartzAgentScheduler schedulingScheduler =
                 QuartzAgentScheduler.builder()
                         .scheduler(quartzScheduler)
-                        .schedulerId("gmt-scheduling")
+                        .schedulerId("zone-scheduling-" + suffix)
                         .build();
         QuartzAgentScheduler recoveryScheduler =
                 QuartzAgentScheduler.builder()
                         .scheduler(quartzScheduler)
-                        .schedulerId("gmt-recovery")
+                        .schedulerId("zone-recovery-" + suffix)
                         .build();
         DashScopeModelConfig modelConfig =
                 DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
-                        .name("GmtZoneAgent")
+                        .name("ZoneAliasAgent-" + suffix)
                         .modelConfig(modelConfig)
                         .sysPrompt("Test prompt")
                         .build();
@@ -788,13 +803,14 @@ class QuartzAgentSchedulerTest {
         ScheduleAgentTask scheduled =
                 schedulingScheduler.schedule(
                         agentConfig,
-                        ScheduleConfig.builder().cron("0 0 8 * * ?").zoneId("GMT").build());
+                        ScheduleConfig.builder().cron("0 0 8 * * ?").zoneId(zoneId).build());
         JobKey jobKey = ((QuartzScheduleAgentTask) scheduled).getJobKey();
 
         ArgumentCaptor<Trigger> triggerCaptor = ArgumentCaptor.forClass(Trigger.class);
         verify(quartzScheduler).scheduleJob(any(JobDetail.class), triggerCaptor.capture());
         CronTrigger cronTrigger = (CronTrigger) triggerCaptor.getValue();
-        assertEquals("GMT", cronTrigger.getTimeZone().getID());
+        assertEquals(expectedTriggerZoneId, cronTrigger.getTimeZone().getID());
+        assertEquals(0, cronTrigger.getTimeZone().getRawOffset());
 
         when(quartzScheduler.getJobKeys(any())).thenReturn(Collections.singleton(jobKey));
         when(quartzScheduler.checkExists(jobKey)).thenReturn(true);
@@ -812,7 +828,7 @@ class QuartzAgentSchedulerTest {
 
         assertEquals(1, reloadedTasks.size());
         assertEquals(
-                "GMT",
+                expectedTriggerZoneId,
                 ((QuartzScheduleAgentTask) reloadedTasks.get(0)).getScheduleConfig().getZoneId());
 
         schedulingScheduler.shutdown();

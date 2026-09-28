@@ -18,9 +18,10 @@ package io.agentscope.extensions.scheduler.config;
 import io.agentscope.extensions.scheduler.AgentScheduler;
 import java.time.DateTimeException;
 import java.time.ZoneId;
-import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.TimeZone;
 
 /**
@@ -62,8 +63,27 @@ import java.util.TimeZone;
  */
 public class ScheduleConfig {
 
-    private static final Set<String> LEGACY_TIME_ZONE_IDS =
-            Set.copyOf(Arrays.asList(TimeZone.getAvailableIDs()));
+    private static final Map<String, String> LEGACY_TIME_ZONE_IDS = createLegacyTimeZoneIds();
+
+    private static Map<String, String> createLegacyTimeZoneIds() {
+        Map<String, String> timeZoneIds = new HashMap<>();
+        for (String timeZoneId : TimeZone.getAvailableIDs()) {
+            timeZoneIds.putIfAbsent(timeZoneId.toLowerCase(Locale.ROOT), timeZoneId);
+        }
+        return Map.copyOf(timeZoneIds);
+    }
+
+    private static String canonicalizeZoneId(String zoneId) {
+        if (zoneId == null) {
+            return null;
+        }
+        try {
+            ZoneId.of(zoneId);
+            return zoneId;
+        } catch (DateTimeException e) {
+            return LEGACY_TIME_ZONE_IDS.getOrDefault(zoneId.toLowerCase(Locale.ROOT), zoneId);
+        }
+    }
 
     private final ScheduleMode scheduleMode;
     private final String cronExpression;
@@ -78,7 +98,10 @@ public class ScheduleConfig {
         this.fixedRate = builder.fixedRate;
         this.fixedDelay = builder.fixedDelay;
         this.initialDelay = builder.initialDelay;
-        this.zoneId = builder.zoneId;
+        this.zoneId =
+                builder.scheduleMode == ScheduleMode.CRON
+                        ? canonicalizeZoneId(builder.zoneId)
+                        : builder.zoneId;
         validate();
     }
 
@@ -101,7 +124,7 @@ public class ScheduleConfig {
                         ZoneId.of(zoneId);
                     } catch (DateTimeException e) {
                         // Keep accepting IDs used by existing Quartz triggers (e.g. PST).
-                        if (!LEGACY_TIME_ZONE_IDS.contains(zoneId)) {
+                        if (!LEGACY_TIME_ZONE_IDS.containsKey(zoneId.toLowerCase(Locale.ROOT))) {
                             throw new IllegalArgumentException(
                                     "Invalid time zone ID: " + zoneId, e);
                         }

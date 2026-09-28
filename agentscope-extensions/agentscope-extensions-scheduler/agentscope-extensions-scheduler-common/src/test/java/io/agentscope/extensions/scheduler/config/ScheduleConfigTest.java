@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link ScheduleConfig}. */
@@ -146,6 +147,16 @@ class ScheduleConfigTest {
             ScheduleConfig config =
                     ScheduleConfig.builder().cron("0 0 8 * * ?").zoneId(zoneId).build();
             assertEquals(zoneId, config.getZoneId());
+        }
+    }
+
+    @Test
+    void testLegacyTimeZoneIdsAreCaseInsensitiveAndCanonicalized() {
+        for (Map.Entry<String, String> alias :
+                Map.of("pst", "PST", "pSt", "PST", "gmt", "GMT", "utc", "UTC").entrySet()) {
+            ScheduleConfig config =
+                    ScheduleConfig.builder().cron("0 0 8 * * ?").zoneId(alias.getKey()).build();
+            assertEquals(alias.getValue(), config.getZoneId());
         }
     }
 
