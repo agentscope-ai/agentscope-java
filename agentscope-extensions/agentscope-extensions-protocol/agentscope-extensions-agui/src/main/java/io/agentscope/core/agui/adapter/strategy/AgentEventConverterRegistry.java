@@ -61,6 +61,10 @@ public class AgentEventConverterRegistry {
      * @param emitSubagentEventsAsNative when {@code true}, child events use the same converters as
      *     the parent; when {@code false} (default), events with a non-blank source or task id become
      *     {@code subagent.*} CUSTOM / RAW events
+     *
+     * <p>This compatibility overload leaves text output disposition conversion disabled. Callers
+     * that construct a registry directly and use {@code AgentEventStreams.withTextOutputDisposition}
+     * should use the four-argument constructor with the flag enabled.
      */
     public AgentEventConverterRegistry(
             List<AgentEventConverter> customConverters,

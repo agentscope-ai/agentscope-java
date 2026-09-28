@@ -476,16 +476,15 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertToolMessageWithNullToolCallId() {
-        // Tool message without toolCallId - should still convert properly
+    void testConvertToolMessageWithNullToolCallIdIsRejected() {
         AguiMessage aguiMsg =
                 new AguiMessage("msg-1", "tool", new MessageContent.Text("Result"), null, null);
 
-        Msg msg = converter.toMsg(aguiMsg);
-
-        assertEquals(MsgRole.TOOL, msg.getRole());
-        // Without toolCallId, content is just text
-        assertTrue(msg.hasContentBlocks(TextBlock.class));
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> converter.toMsg(aguiMsg));
+        assertEquals(
+                "AG-UI tool messages must carry toolCallId to wrap their content blocks",
+                exception.getMessage());
     }
 
     @Test
@@ -577,6 +576,7 @@ class AguiMessageConverterTest {
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
         assertNotNull(result);
         assertEquals("tc-1", result.getId());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         assertTrue(result.getOutput().stream().anyMatch(AudioBlock.class::isInstance));
 
         AguiMessage roundTrip = converter.toAguiMessage(msg);

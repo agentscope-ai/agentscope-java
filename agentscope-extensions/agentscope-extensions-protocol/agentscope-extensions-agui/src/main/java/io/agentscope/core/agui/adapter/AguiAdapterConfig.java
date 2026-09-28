@@ -121,6 +121,10 @@ public class AguiAdapterConfig {
      * <p>Default is {@code false} so existing AG-UI event sequences and message IDs remain
      * unchanged.
      *
+     * <p>The opt-in wrapper is applied to ReAct and harness event streams. The legacy 1.x
+     * {@code Agent.stream(...)} fallback does not expose {@link io.agentscope.core.event.AgentEvent}
+     * lifecycle events, so this flag has no effect on that path.
+     *
      * @return true to derive text output disposition events
      */
     public boolean isTextOutputDispositionEnabled() {

@@ -96,6 +96,12 @@ public class AguiMessageConverter {
         MsgRole role = convertRole(aguiMessage.getRole());
         List<ContentBlock> blocks = new ArrayList<>();
 
+        if (aguiMessage.isToolMessage()
+                && (aguiMessage.getToolCallId() == null || aguiMessage.getToolCallId().isBlank())) {
+            throw new IllegalArgumentException(
+                    "AG-UI tool messages must carry toolCallId to wrap their content blocks");
+        }
+
         // Handle content: plain text or structured blocks
         MessageContent content = aguiMessage.getContent();
         if (content instanceof MessageContent.Text text) {
@@ -105,13 +111,17 @@ public class AguiMessageConverter {
             for (InputContent input : blocksContent.parts()) {
                 structuredBlocks.add(toContentBlock(input));
             }
-            if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+            if (aguiMessage.isToolMessage()) {
                 blocks.add(
-                        new ToolResultBlock(aguiMessage.getToolCallId(), null, structuredBlocks));
+                        ToolResultBlock.builder()
+                                .id(aguiMessage.getToolCallId())
+                                .output(structuredBlocks)
+                                .state(ToolResultState.SUCCESS)
+                                .build());
             } else {
                 blocks.addAll(structuredBlocks);
             }
-        } else if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+        } else if (aguiMessage.isToolMessage()) {
             // Tool message with no content (e.g. frontend tool returning nothing): still
             // emit a ToolResultBlock so the pending tool call is resolved downstream.
             addTextBlock(blocks, "", aguiMessage);
