@@ -1869,7 +1869,10 @@ class AguiAgentAdapterV2Test {
             when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                     .thenAnswer(
                             invocation -> {
-                                toolkit.registerAgentTool(replacementTool);
+                                // Intentional same-name replacement (duplicate registration now
+                                // fails fast since #3328); the point is that the adapter never
+                                // reverts it.
+                                toolkit.replaceAgentTool(replacementTool);
                                 return Flux.empty();
                             });
 

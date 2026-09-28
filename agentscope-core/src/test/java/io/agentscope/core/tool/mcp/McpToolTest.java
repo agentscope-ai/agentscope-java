@@ -1130,4 +1130,17 @@ class McpToolTest {
         // Should pass empty map
         verify(mockClientWrapper).callTool(eq("test-tool"), eq(new HashMap<>()), any());
     }
+
+    @Test
+    void isFromSameWrapperComparesClientWrapperIdentity() {
+        McpTool first = new McpTool("same-wrapper", "desc", parameters, mockClientWrapper);
+        McpTool refresh = new McpTool("same-wrapper", "desc", parameters, mockClientWrapper);
+        assertTrue(first.isFromSameWrapper(refresh), "one wrapper instance serves both tools");
+
+        McpClientWrapper distinctWrapper =
+                McpClientWrapperTestSupport.mockWrapper("same-name-other-wrapper", true);
+        McpTool rival = new McpTool("same-wrapper", "desc", parameters, distinctWrapper);
+        assertFalse(first.isFromSameWrapper(rival), "distinct wrappers never match");
+        assertFalse(first.isFromSameWrapper(null), "null is never the same wrapper");
+    }
 }
