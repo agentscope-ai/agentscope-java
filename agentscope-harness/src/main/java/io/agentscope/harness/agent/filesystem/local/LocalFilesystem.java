@@ -351,6 +351,11 @@ public class LocalFilesystem implements AbstractFilesystem {
             String oldString,
             String newString,
             boolean replaceAll) {
+        EditResult invalid = FilesystemUtils.validateEditArguments(filePath, oldString, newString);
+        if (invalid != null) {
+            return invalid;
+        }
+
         Path resolved = resolvePath(runtimeContext, filePath);
 
         if (!Files.exists(resolved) || !Files.isRegularFile(resolved)) {

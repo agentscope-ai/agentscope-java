@@ -286,6 +286,11 @@ public class RemoteFilesystem implements AbstractFilesystem {
             String oldString,
             String newString,
             boolean replaceAll) {
+        EditResult invalid = FilesystemUtils.validateEditArguments(filePath, oldString, newString);
+        if (invalid != null) {
+            return invalid;
+        }
+
         List<String> ns = getNamespace(runtimeContext);
         // Bounded CAS retry loop: re-read the current version on each attempt and retry on
         // version mismatch. After EDIT_MAX_RETRIES failed CAS attempts we surface a conflict

@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem.sandbox;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
@@ -317,6 +318,23 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     private static final String EDIT_RESULT_MARKER = "__RESULT__";
 
+    private static final ObjectMapper NATIVE_RESULT_MAPPER = new ObjectMapper();
+
+    /**
+     * Whether a {@code __RESULT__} payload reports {@code write_failed}, i.e. the atomic write
+     * did not touch the target and the transfer path should retry.
+     */
+    private static boolean isWriteFailed(String payload) {
+        try {
+            NativeScriptResult parsed =
+                    NATIVE_RESULT_MAPPER.readValue(payload.trim(), NativeScriptResult.class);
+            return parsed != null && "write_failed".equals(parsed.error());
+        } catch (Exception e) {
+            // Unparseable payloads are reported by mapNativeResult instead.
+            return false;
+        }
+    }
+
     /**
      * Edits the file by replacing {@code oldString} with {@code newString} in the sandbox.
      *
@@ -333,8 +351,9 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
      *
      * @param runtimeContext per-call agent context; may be {@code null}
      * @param filePath path of the file to edit
-     * @param oldString literal string to find (must be non-empty)
-     * @param newString replacement string; {@code null} is treated as the empty string
+     * @param oldString literal string to find; must be non-empty
+     * @param newString replacement string; must not be {@code null} — pass an empty string to
+     *        delete the matched text (this keeps the normal replacement semantics)
      * @param replaceAll replace every occurrence instead of only the first
      * @return {@link EditResult#ok} with the occurrence count, or {@link EditResult#fail}
      */
@@ -345,12 +364,10 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             String oldString,
             String newString,
             boolean replaceAll) {
-        if (oldString == null || oldString.isEmpty()) {
-            return EditResult.fail("Error: String not found in file: '" + oldString + "'");
+        EditResult invalid = FilesystemUtils.validateEditArguments(filePath, oldString, newString);
+        if (invalid != null) {
+            return invalid;
         }
-        // A null newString means deletion: fallback path inserts "" (previously replaceAll
-        // threw NPE and non-replaceAll inserted the literal "null"). Documented behavior.
-        String safeNew = newString == null ? "" : newString;
 
         String tmpDir = "/tmp/agentscope-edit-" + UUID.randomUUID().toString().substring(0, 8);
         String oldPath = tmpDir + "/old.bin";
@@ -361,7 +378,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         runtimeContext,
                         List.of(
                                 Map.entry(oldPath, oldString.getBytes(StandardCharsets.UTF_8)),
-                                Map.entry(newPath, safeNew.getBytes(StandardCharsets.UTF_8))));
+                                Map.entry(newPath, newString.getBytes(StandardCharsets.UTF_8))));
         if (params.size() < 2 || !params.get(0).isSuccess() || !params.get(1).isSuccess()) {
             String err = "upload returned no response";
             for (FileUploadResponse r : params) {
@@ -372,7 +389,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             }
             log.warn("[sandbox-fs] edit param upload failed ({}), falling back to transfer", err);
             executeCleanup(runtimeContext, tmpDir);
-            return editViaTransfer(runtimeContext, filePath, oldString, safeNew, replaceAll);
+            return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
         }
 
         String cmd =
@@ -399,13 +416,13 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         } catch (Exception e) {
             log.warn("[sandbox-fs] native edit execute failed, falling back to transfer", e);
             executeCleanup(runtimeContext, tmpDir);
-            return editViaTransfer(runtimeContext, filePath, oldString, safeNew, replaceAll);
+            return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
         }
         String output = execResult.output() != null ? execResult.output() : "";
         int marker = output.indexOf(EDIT_RESULT_MARKER);
         if (marker >= 0) {
             String payload = output.substring(marker + EDIT_RESULT_MARKER.length());
-            if ("write_failed".equals(parseErrorToken(payload))) {
+            if (isWriteFailed(payload)) {
                 // The native path writes target only via a same-directory temp + rename,
                 // so a failure here means target is untouched. Retry through the transfer
                 // path, whose shell redirection needs only file write permission and can
@@ -414,13 +431,13 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         "[sandbox-fs] native edit write failed ({}), falling back to transfer",
                         payload.trim());
                 executeCleanup(runtimeContext, tmpDir);
-                return editViaTransfer(runtimeContext, filePath, oldString, safeNew, replaceAll);
+                return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
             }
             return mapNativeResult(filePath, oldString, payload);
         }
         if (isPythonMissing(execResult)) {
             executeCleanup(runtimeContext, tmpDir);
-            return editViaTransfer(runtimeContext, filePath, oldString, safeNew, replaceAll);
+            return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
         }
         executeCleanup(runtimeContext, tmpDir);
         String stripped = output.strip();
@@ -443,20 +460,37 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     }
 
     private static boolean isPythonMissing(ExecuteResponse response) {
-        if (response.exitCode() != null && response.exitCode() == 127) {
+        // 127 = command not found, 126 = found but not executable (e.g. python3 present but
+        // with the execute bit cleared). Both mean the native path cannot run.
+        if (response.exitCode() != null
+                && (response.exitCode() == 127 || response.exitCode() == 126)) {
             return true;
         }
         String out = response.output() != null ? response.output().toLowerCase() : "";
-        return out.contains("python3") && (out.contains("not found") || out.contains("no such"));
+        return out.contains("python3")
+                && (out.contains("not found")
+                        || out.contains("no such")
+                        || out.contains("permission denied")
+                        || out.contains("not executable"));
     }
 
     private static EditResult mapNativeResult(String filePath, String oldString, String json) {
-        // Parse the "error" field exactly: the "detail" value embeds exception text that may
-        // itself contain user-controlled paths, so substring matching on the whole payload can
-        // misclassify (e.g. a path containing "string_not_found").
-        String error = parseErrorToken(json);
+        // Parse with a real JSON parser rather than substring matching: the "detail" value
+        // embeds exception text that may itself contain user-controlled paths, so scanning the
+        // raw payload can misclassify (e.g. a path containing "string_not_found").
+        NativeScriptResult parsed;
+        try {
+            parsed = NATIVE_RESULT_MAPPER.readValue(json.trim(), NativeScriptResult.class);
+        } catch (Exception e) {
+            log.warn("[sandbox-fs] unparseable native edit result: {}", json.trim(), e);
+            return EditResult.fail("Error editing file '" + filePath + "': " + json.trim());
+        }
+        if (parsed == null) {
+            return EditResult.fail("Error editing file '" + filePath + "': " + json.trim());
+        }
+        String error = parsed.error();
         if ("multiple_occurrences".equals(error)) {
-            int count = parseCount(json);
+            int count = parsed.count() != null ? parsed.count() : 1;
             if (count > 1) {
                 return EditResult.fail(
                         "Error: String '"
@@ -482,65 +516,18 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if ("empty".equals(error)) {
             return EditResult.fail("Error: File '" + filePath + "' is empty");
         }
-        if ("read_failed".equals(error) || "write_failed".equals(error)) {
-            return EditResult.fail("Error editing file '" + filePath + "': " + json.trim());
-        }
         if (error != null) {
+            // read_failed / write_failed and any future token, with the script's detail.
             return EditResult.fail("Error editing file '" + filePath + "': " + json.trim());
         }
-        if (json.contains("\"count\"")) {
-            return EditResult.ok(filePath, parseCount(json));
+        if (parsed.count() != null) {
+            return EditResult.ok(filePath, parsed.count());
         }
         return EditResult.fail("Error editing file '" + filePath + "': " + json.trim());
     }
 
-    /** Extract the value of the top-level {@code "error"} field, or {@code null} if absent. */
-    private static String parseErrorToken(String json) {
-        int key = json.indexOf("\"error\"");
-        if (key < 0) {
-            return null;
-        }
-        int colon = json.indexOf(':', key);
-        if (colon < 0) {
-            return null;
-        }
-        int open = json.indexOf('"', colon);
-        if (open < 0) {
-            return null;
-        }
-        int close = json.indexOf('"', open + 1);
-        if (close < 0) {
-            return null;
-        }
-        return json.substring(open + 1, close);
-    }
-
-    private static int parseCount(String json) {
-        int idx = json.indexOf("\"count\"");
-        if (idx < 0) {
-            return 1;
-        }
-        int colon = json.indexOf(':', idx);
-        if (colon < 0) {
-            return 1;
-        }
-        int start = colon + 1;
-        while (start < json.length() && !Character.isDigit(json.charAt(start))) {
-            start++;
-        }
-        int end = start;
-        while (end < json.length() && Character.isDigit(json.charAt(end))) {
-            end++;
-        }
-        if (start >= end) {
-            return 1;
-        }
-        try {
-            return Integer.parseInt(json.substring(start, end));
-        } catch (NumberFormatException e) {
-            return 1;
-        }
-    }
+    /** The {@code __RESULT__} payload the sandbox script prints on a single line. */
+    private record NativeScriptResult(String error, Integer count, String detail) {}
 
     /** Decode bytes as UTF-8, failing on malformed input instead of substituting. */
     private static String decodeUtf8Strict(byte[] bytes) throws CharacterCodingException {

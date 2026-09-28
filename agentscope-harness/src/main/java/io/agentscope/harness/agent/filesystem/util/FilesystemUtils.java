@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem.util;
 
+import io.agentscope.harness.agent.filesystem.model.EditResult;
 import java.util.Set;
 
 /**
@@ -61,6 +62,29 @@ public final class FilesystemUtils {
         public boolean isSuccess() {
             return error == null;
         }
+    }
+
+    /**
+     * Validates {@code edit()} arguments shared by every filesystem implementation.
+     *
+     * <p>Both are rejected uniformly so all implementations behave identically: a {@code null}
+     * {@code newString} is not a deletion (pass {@code ""} for that, which keeps the normal
+     * replacement semantics and occurrence count), and an empty {@code oldString} would make
+     * {@link #countOccurrences} loop forever.
+     *
+     * @return an {@link EditResult#fail} result when the arguments are invalid, otherwise
+     *         {@code null} to signal that the edit may proceed
+     */
+    public static EditResult validateEditArguments(String filePath, String oldStr, String newStr) {
+        if (oldStr == null || oldStr.isEmpty()) {
+            return EditResult.fail("Error: String not found in file: '" + oldStr + "'");
+        }
+        if (newStr == null) {
+            return EditResult.fail(
+                    "Error: newString must not be null; pass an empty string to delete the"
+                            + " matched text");
+        }
+        return null;
     }
 
     /**

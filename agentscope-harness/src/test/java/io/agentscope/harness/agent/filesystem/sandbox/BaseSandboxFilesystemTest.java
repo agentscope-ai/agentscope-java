@@ -567,14 +567,55 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
-        void edit_nullNewString_nativeTreatsAsDeletion() {
+        void edit_nullNewString_isRejected_notTreatedAsDeletion() {
             EditSpyFilesystem fs = new EditSpyFilesystem();
-            fs.withExecuteResult(new ExecuteResponse("__RESULT__{\"count\": 1}\n", 0, false));
 
             EditResult result = fs.edit(RT, "/workspace/f.txt", "World", null, false);
 
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("must not be null"));
+            assertTrue(fs.uploadedFiles.isEmpty(), "nothing should be staged for a rejected call");
+        }
+
+        @Test
+        void edit_emptyNewString_deletesWithNormalSemantics() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("__RESULT__{\"count\": 2}\n", 0, false));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "World", "", false);
+
             assertTrue(result.isSuccess());
+            assertEquals(2, result.occurrences());
             assertEquals(0, fs.uploadedFiles.get(1).getValue().length);
+        }
+
+        @Test
+        void edit_pythonNotExecutable_exit126_fallsBackToTransfer() {
+            // 126 = python3 found but not executable; without this the call would surface as
+            // "unexpected server response" instead of degrading to the transfer path.
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(
+                    new ExecuteResponse("sh: 1: python3: Permission denied\n", 126, false));
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "Hello World!".getBytes())));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "World", "Java", false);
+
+            assertTrue(result.isSuccess(), "126 should fall back: " + result.error());
+            assertEquals(1, result.occurrences());
+        }
+
+        @Test
+        void edit_malformedResultJson_failsWithRawPayload() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("__RESULT__not-json{{", 0, false));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "World", "Java", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("not-json{{"));
         }
     }
 
