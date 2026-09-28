@@ -77,7 +77,7 @@ public final class FilesystemUtils {
      */
     public static EditResult validateEditArguments(String filePath, String oldStr, String newStr) {
         if (oldStr == null || oldStr.isEmpty()) {
-            return EditResult.fail("Error: String not found in file: '" + oldStr + "'");
+            return EditResult.fail("Error: oldString must not be null or empty");
         }
         if (newStr == null) {
             return EditResult.fail(
@@ -90,14 +90,31 @@ public final class FilesystemUtils {
     /**
      * Perform string replacement with occurrence validation.
      *
+     * @return {@code Object[]} of {@code [newContent, occurrenceCount]} on success, or a
+     *         single-element array {@code [errorMessage]} on failure
+     * @deprecated superseded by {@link #stringReplacement(String, String, String, boolean)},
+     *     which returns the same result as a typed value. {@code agentscope-harness} is
+     *     published to Maven Central and this method shipped with the {@code Object[]}
+     *     signature in v2.0.1-v2.0.3, so the old signature is retained as a source/binary
+     *     compatibility bridge for downstream callers.
+     */
+    @Deprecated
+    public static Object[] performStringReplacement(
+            String content, String oldString, String newString, boolean replaceAll) {
+        ReplacementResult result = stringReplacement(content, oldString, newString, replaceAll);
+        if (!result.isSuccess()) {
+            return new Object[] {result.error()};
+        }
+        return new Object[] {result.content(), result.occurrences()};
+    }
+
+    /**
+     * Perform string replacement with occurrence validation.
+     *
      * @return {@link ReplacementResult#success(String, int)} on success, or
      *         {@link ReplacementResult#error(String)} on failure
-     * <p><b>Note:</b> The return type changed from {@code Object[]} to {@link ReplacementResult}
-     *     for type safety. This utility is internal to this repository (all callers live in
-     *     {@code agentscope-harness}); no compatibility bridge is provided and downstream forks
-     *     should adapt call sites directly.
      */
-    public static ReplacementResult performStringReplacement(
+    public static ReplacementResult stringReplacement(
             String content, String oldString, String newString, boolean replaceAll) {
         int occurrences = countOccurrences(content, oldString);
 

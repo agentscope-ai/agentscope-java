@@ -308,8 +308,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
             String content = fileData.content() != null ? fileData.content() : "";
             FilesystemUtils.ReplacementResult result =
-                    FilesystemUtils.performStringReplacement(
-                            content, oldString, newString, replaceAll);
+                    FilesystemUtils.stringReplacement(content, oldString, newString, replaceAll);
 
             if (!result.isSuccess()) {
                 return EditResult.fail(result.error());

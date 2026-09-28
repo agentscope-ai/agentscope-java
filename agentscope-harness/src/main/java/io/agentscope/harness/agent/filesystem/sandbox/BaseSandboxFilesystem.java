@@ -37,9 +37,9 @@ import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -242,14 +242,16 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     }
 
     /**
-     * Static Python helper executed via heredoc. User content never enters the command string:
-     * {@code old}/{@code new} arrive as files, {@code sys.argv} carries paths only. Output is a
-     * single {@code __RESULT__{json}} line so parsing never touches user content.
+     * Static Python helper executed via heredoc. User content never enters the command string
+     * in raw form: {@code old}/{@code new} arrive base64-encoded (an alphabet with no shell
+     * metacharacters), {@code sys.argv} carries the target path plus those encoded blobs, and
+     * the script body is a constant. Output is a single {@code __RESULT__{json}} line so parsing
+     * never touches user content.
      */
     private static final String EDIT_SCRIPT =
             """
-            import os, sys, json, uuid
-            target, old_file, new_file = sys.argv[1], sys.argv[2], sys.argv[3]
+            import base64, os, sys, json, uuid
+            target, old_b64, new_b64 = sys.argv[1], sys.argv[2], sys.argv[3]
             replace_all = sys.argv[4] == "true"
             def result(obj):
                 print("__RESULT__" + json.dumps(obj))
@@ -257,10 +259,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 result({"error": "file_not_found"})
                 sys.exit(0)
             try:
-                with open(old_file, "rb") as f:
-                    old = f.read().decode("utf-8")
-                with open(new_file, "rb") as f:
-                    new = f.read().decode("utf-8")
+                old = base64.b64decode(old_b64).decode("utf-8")
+                new = base64.b64decode(new_b64).decode("utf-8")
             except Exception as e:
                 result({"error": "read_failed", "detail": str(e)})
                 sys.exit(0)
@@ -318,6 +318,17 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     private static final String EDIT_RESULT_MARKER = "__RESULT__";
 
+    /**
+     * Upper bound on the whole command string, in bytes.
+     *
+     * <p>The command is handed to the backend as a single argv element ({@code sh -c '<cmd>'}), so
+     * the kernel's {@code MAX_ARG_STRLEN} (32 pages = 128 KiB on Linux) applies to it in total,
+     * not per argument. The script body, the target path and the quoting all draw from the same
+     * budget as the two base64 payloads, hence the whole-string check. 112 KiB leaves 16 KiB of
+     * headroom below the kernel limit; measured E2BIG starts at 128 KiB.
+     */
+    private static final int MAX_INLINE_COMMAND_BYTES = 112 * 1024;
+
     private static final ObjectMapper NATIVE_RESULT_MAPPER = new ObjectMapper();
 
     /**
@@ -338,9 +349,15 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     /**
      * Edits the file by replacing {@code oldString} with {@code newString} in the sandbox.
      *
-     * <p>Runs a static inline Python script in the sandbox ({@code old}/{@code new} cross the
-     * boundary as files, the command line carries paths only) and falls back to download →
-     * Java replacement → re-upload when {@code python3} is missing or the native write fails.
+     * <p>Runs a static inline Python script in the sandbox, with {@code old}/{@code new} passed
+     * base64-encoded on the command line (the base64 alphabet has no shell metacharacters, so
+     * user content cannot break out of its argument). The file itself never crosses the
+     * boundary. Falls back to download → Java replacement → re-upload when {@code python3} is
+     * missing or the native write fails.
+     *
+     * <p>Arguments so large that the command would exceed {@link #MAX_INLINE_COMMAND_BYTES} are
+     * rejected with a diagnostic instead of being transferred: {@code old}/{@code new} are edit
+     * fragments, so an oversized request is a sign it should be split into several edits.
      *
      * <p>Contract: the edit is performed through the resolved target ({@code realpath}), so
      * editing a symlink writes through to the file it points at and the symlink itself is
@@ -369,53 +386,24 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             return invalid;
         }
 
-        String tmpDir = "/tmp/agentscope-edit-" + UUID.randomUUID().toString().substring(0, 8);
-        String oldPath = tmpDir + "/old.bin";
-        String newPath = tmpDir + "/new.bin";
-
-        List<FileUploadResponse> params =
-                uploadFiles(
-                        runtimeContext,
-                        List.of(
-                                Map.entry(oldPath, oldString.getBytes(StandardCharsets.UTF_8)),
-                                Map.entry(newPath, newString.getBytes(StandardCharsets.UTF_8))));
-        if (params.size() < 2 || !params.get(0).isSuccess() || !params.get(1).isSuccess()) {
-            String err = "upload returned no response";
-            for (FileUploadResponse r : params) {
-                if (!r.isSuccess()) {
-                    err = r.error();
-                    break;
-                }
-            }
-            log.warn("[sandbox-fs] edit param upload failed ({}), falling back to transfer", err);
-            executeCleanup(runtimeContext, tmpDir);
-            return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
+        String cmd = buildNativeEditCommand(filePath, oldString, newString, replaceAll);
+        if (cmd == null) {
+            int kib =
+                    commandSizeBytes(nativeEditCommand(filePath, oldString, newString, replaceAll))
+                            / 1024;
+            return EditResult.fail(
+                    "Error: edit arguments are too large ("
+                            + kib
+                            + " KiB encoded, limit "
+                            + (MAX_INLINE_COMMAND_BYTES / 1024)
+                            + " KiB). Split the edit into smaller pieces.");
         }
-
-        String cmd =
-                "python3 - "
-                        + FilesystemUtils.shellQuote(filePath)
-                        + " "
-                        + FilesystemUtils.shellQuote(oldPath)
-                        + " "
-                        + FilesystemUtils.shellQuote(newPath)
-                        + " "
-                        + (replaceAll ? "true" : "false")
-                        + " <<'"
-                        + EDIT_HEREDOC_DELIMITER
-                        + "'\n"
-                        + EDIT_SCRIPT
-                        + EDIT_HEREDOC_DELIMITER
-                        + "\n__ec=$?; rm -rf "
-                        + FilesystemUtils.shellQuote(tmpDir)
-                        + "; exit $__ec";
 
         ExecuteResponse execResult;
         try {
             execResult = execute(runtimeContext, cmd, null);
         } catch (Exception e) {
             log.warn("[sandbox-fs] native edit execute failed, falling back to transfer", e);
-            executeCleanup(runtimeContext, tmpDir);
             return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
         }
         String output = execResult.output() != null ? execResult.output() : "";
@@ -430,16 +418,13 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 log.warn(
                         "[sandbox-fs] native edit write failed ({}), falling back to transfer",
                         payload.trim());
-                executeCleanup(runtimeContext, tmpDir);
                 return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
             }
             return mapNativeResult(filePath, oldString, payload);
         }
         if (isPythonMissing(execResult)) {
-            executeCleanup(runtimeContext, tmpDir);
             return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
         }
-        executeCleanup(runtimeContext, tmpDir);
         String stripped = output.strip();
         String excerpt = stripped.substring(0, Math.min(200, stripped.length()));
         return EditResult.fail(
@@ -451,12 +436,42 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + excerpt);
     }
 
-    private void executeCleanup(RuntimeContext runtimeContext, String tmpDir) {
-        try {
-            execute(runtimeContext, "rm -rf " + FilesystemUtils.shellQuote(tmpDir), null);
-        } catch (Exception ignored) {
-            // best effort only
-        }
+    /**
+     * Builds the native edit command, or returns {@code null} when it would exceed
+     * {@link #MAX_INLINE_COMMAND_BYTES}. {@code old}/{@code new} travel base64-encoded: the
+     * alphabet has no shell metacharacters, so they need no quoting and cannot break out of the
+     * single-quoted argument.
+     */
+    private static String buildNativeEditCommand(
+            String filePath, String oldString, String newString, boolean replaceAll) {
+        String cmd = nativeEditCommand(filePath, oldString, newString, replaceAll);
+        return commandSizeBytes(cmd) > MAX_INLINE_COMMAND_BYTES ? null : cmd;
+    }
+
+    private static String nativeEditCommand(
+            String filePath, String oldString, String newString, boolean replaceAll) {
+        return "python3 - "
+                + FilesystemUtils.shellQuote(filePath)
+                + " "
+                + FilesystemUtils.shellQuote(encodeBase64(oldString))
+                + " "
+                + FilesystemUtils.shellQuote(encodeBase64(newString))
+                + " "
+                + (replaceAll ? "true" : "false")
+                + " <<'"
+                + EDIT_HEREDOC_DELIMITER
+                + "'\n"
+                + EDIT_SCRIPT
+                + EDIT_HEREDOC_DELIMITER
+                + "\n__ec=$?; exit $__ec";
+    }
+
+    private static String encodeBase64(String value) {
+        return Base64.getEncoder().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static int commandSizeBytes(String cmd) {
+        return cmd.getBytes(StandardCharsets.UTF_8).length;
     }
 
     private static boolean isPythonMissing(ExecuteResponse response) {
@@ -574,7 +589,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         }
 
         FilesystemUtils.ReplacementResult result =
-                FilesystemUtils.performStringReplacement(content, oldString, newString, replaceAll);
+                FilesystemUtils.stringReplacement(content, oldString, newString, replaceAll);
 
         if (!result.isSuccess()) {
             return EditResult.fail(result.error());

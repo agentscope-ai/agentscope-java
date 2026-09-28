@@ -375,7 +375,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             String normalizedNew = newString.replace("\r\n", "\n").replace("\r", "\n");
 
             FilesystemUtils.ReplacementResult result =
-                    FilesystemUtils.performStringReplacement(
+                    FilesystemUtils.stringReplacement(
                             content, normalizedOld, normalizedNew, replaceAll);
 
             if (!result.isSuccess()) {

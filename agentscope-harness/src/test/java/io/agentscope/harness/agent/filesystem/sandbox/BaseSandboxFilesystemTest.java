@@ -47,6 +47,11 @@ class BaseSandboxFilesystemTest {
 
     private static final RuntimeContext RT = RuntimeContext.empty();
 
+    /** Mirrors how {@code edit()} hands user content to the sandbox. */
+    private static String base64(String value) {
+        return java.util.Base64.getEncoder().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
     /**
      * The response {@code SandboxBackedFilesystem.execute} produces when the sandbox backend
      * call itself fails (e.g. HTTP 504): the command never ran.
@@ -268,7 +273,7 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
-        void edit_native_success_uploadsParamsAndRunsInlineScript() {
+        void edit_native_success_encodesParamsAndRunsInlineScript() {
             EditSpyFilesystem fs = new EditSpyFilesystem();
             fs.withExecuteResult(new ExecuteResponse("__RESULT__{\"count\": 1}\n", 0, false));
 
@@ -277,19 +282,14 @@ class BaseSandboxFilesystemTest {
             assertTrue(result.isSuccess());
             assertEquals("/workspace/f.txt", result.path());
             assertEquals(1, result.occurrences());
-            // old/new cross the boundary as files, never in the command string
-            assertEquals(2, fs.uploadedFiles.size());
-            assertEquals(
-                    "World",
-                    new String(fs.uploadedFiles.get(0).getValue(), StandardCharsets.UTF_8));
-            assertEquals(
-                    "Java", new String(fs.uploadedFiles.get(1).getValue(), StandardCharsets.UTF_8));
+            // no staging directory and no file transfer at all
+            assertTrue(fs.uploadedFiles.isEmpty());
             assertTrue(fs.lastCommand.contains("python3 - "));
             assertTrue(fs.lastCommand.contains("'/workspace/f.txt'"));
+            assertTrue(fs.lastCommand.contains("'" + base64("World") + "'"));
+            assertTrue(fs.lastCommand.contains("'" + base64("Java") + "'"));
             assertTrue(fs.lastCommand.contains("__AGENTSCOPE_EDIT_PY__"));
-            // param tmp dir is cleaned up in the chained command
-            assertTrue(fs.lastCommand.contains("rm -rf "));
-            // python's exit status must survive the trailing rm (else 127 never reaches Java)
+            // python's exit status must reach Java (else 127 never surfaces as a fallback)
             assertTrue(
                     fs.lastCommand.contains("exit $__ec"),
                     "exit code passthrough required: " + fs.lastCommand);
@@ -337,11 +337,11 @@ class BaseSandboxFilesystemTest {
             assertTrue(fs.downloadedPaths.contains("/workspace/f.txt"));
             assertEquals(
                     "Hello Java!",
-                    new String(fs.uploadedFiles.get(2).getValue(), StandardCharsets.UTF_8));
+                    new String(fs.uploadedFiles.get(0).getValue(), StandardCharsets.UTF_8));
         }
 
         @Test
-        void edit_native_multilineParams_notInCommandString() {
+        void edit_native_multilineParams_enterCommandOnlyBase64Encoded() {
             EditSpyFilesystem fs = new EditSpyFilesystem();
             fs.withExecuteResult(new ExecuteResponse("__RESULT__{\"count\": 1}\n", 0, false));
             String oldStr = "line2\"quote\\backslash\nline2b";
@@ -350,11 +350,35 @@ class BaseSandboxFilesystemTest {
             EditResult result = fs.edit(RT, "/workspace/f.txt", oldStr, newStr, false);
 
             assertTrue(result.isSuccess());
-            assertEquals(oldStr, new String(fs.uploadedFiles.get(0).getValue()));
-            assertEquals(newStr, new String(fs.uploadedFiles.get(1).getValue()));
+            assertTrue(
+                    fs.lastCommand.contains("'" + base64(oldStr) + "'"),
+                    "old should be present base64-encoded");
+            assertTrue(
+                    fs.lastCommand.contains("'" + base64(newStr) + "'"),
+                    "new should be present base64-encoded");
+            // raw multiline/quoted content must not appear: it would break the single-quoted
+            // argument, and a newline would split the command into extra lines.
             assertFalse(
                     fs.lastCommand.contains(oldStr),
-                    "user content must not leak into the command string");
+                    "raw user content must not leak into the command string");
+            assertFalse(fs.lastCommand.contains("\n" + newStr));
+        }
+
+        @Test
+        void edit_argumentsTooLarge_isRejectedWithoutExecuting() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("__RESULT__{\"count\": 1}\n", 0, false));
+            // 100 KiB of text base64-encodes to ~137 KiB, past the 112 KiB command budget and
+            // also past the kernel's 128 KiB single-argument limit.
+            String huge = "a".repeat(100 * 1024);
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "World", huge, false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("too large"));
+            assertTrue(result.error().contains("Split the edit"));
+            assertEquals(0, fs.executeCalls, "oversized arguments must not reach the sandbox");
+            assertTrue(fs.uploadedFiles.isEmpty());
         }
 
         @Test
@@ -385,9 +409,9 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
-        void edit_native_paramUploadFails_fallsBackToTransfer() {
+        void edit_transferPathReuploaded_contentAfterFallback() {
             EditSpyFilesystem fs = new EditSpyFilesystem();
-            fs.withParamUploadFailure("/tmp not writable");
+            fs.withExecuteResult(new ExecuteResponse("sh: 1: python3: not found\n", 127, false));
             fs.withDownloadResult(
                     List.of(
                             FileDownloadResponse.success(
@@ -395,13 +419,12 @@ class BaseSandboxFilesystemTest {
 
             EditResult result = fs.edit(RT, "/workspace/f.txt", "World", "Java", false);
 
-            assertTrue(
-                    result.isSuccess(),
-                    "param upload failure should degrade to transfer path: " + result.error());
-            assertEquals(1, result.occurrences());
-            assertTrue(fs.downloadedPaths.contains("/workspace/f.txt"));
-            // cleanup ran before fallback download
-            assertTrue(fs.lastCommand.contains("rm -rf "));
+            assertTrue(result.isSuccess(), "fallback should succeed: " + result.error());
+            // the fallback re-uploads exactly one file: the edited content
+            assertEquals(1, fs.uploadedFiles.size());
+            assertEquals(
+                    "Hello Java!",
+                    new String(fs.uploadedFiles.get(0).getValue(), StandardCharsets.UTF_8));
         }
 
         @Test
@@ -411,7 +434,7 @@ class BaseSandboxFilesystemTest {
             EditResult result = fs.edit(RT, "/workspace/f.txt", "", "new", false);
 
             assertFalse(result.isSuccess());
-            assertTrue(result.error().contains("String not found"));
+            assertTrue(result.error().contains("oldString must not be null or empty"));
             assertTrue(fs.uploadedFiles.isEmpty());
         }
 
@@ -429,11 +452,9 @@ class BaseSandboxFilesystemTest {
             assertTrue(result.isSuccess(), "fallback should succeed: " + result.error());
             assertEquals(1, result.occurrences());
             assertTrue(fs.downloadedPaths.contains("/workspace/f.txt"));
-            // 2 param uploads + 1 re-upload of edited content
-            assertEquals(3, fs.uploadedFiles.size());
             assertEquals(
                     "Hello Java!",
-                    new String(fs.uploadedFiles.get(2).getValue(), StandardCharsets.UTF_8));
+                    new String(fs.uploadedFiles.get(0).getValue(), StandardCharsets.UTF_8));
         }
 
         @Test
@@ -461,8 +482,8 @@ class BaseSandboxFilesystemTest {
 
             assertFalse(result.isSuccess());
             assertTrue(result.error().contains("String not found"));
-            // params uploaded, then transfer downloaded without re-upload
-            assertEquals(2, fs.uploadedFiles.size());
+            // transfer downloaded and found no match, so nothing was re-uploaded
+            assertTrue(fs.uploadedFiles.isEmpty());
         }
 
         @Test
@@ -495,7 +516,7 @@ class BaseSandboxFilesystemTest {
             assertEquals(3, result.occurrences());
             assertEquals(
                     "x b x b x",
-                    new String(fs.uploadedFiles.get(2).getValue(), StandardCharsets.UTF_8));
+                    new String(fs.uploadedFiles.get(0).getValue(), StandardCharsets.UTF_8));
         }
 
         @Test
@@ -543,7 +564,7 @@ class BaseSandboxFilesystemTest {
             assertFalse(result.isSuccess());
             assertTrue(result.error().contains("not valid UTF-8"));
             // nothing was re-uploaded
-            assertEquals(2, fs.uploadedFiles.size());
+            assertTrue(fs.uploadedFiles.isEmpty());
         }
 
         @Test
@@ -586,7 +607,8 @@ class BaseSandboxFilesystemTest {
 
             assertTrue(result.isSuccess());
             assertEquals(2, result.occurrences());
-            assertEquals(0, fs.uploadedFiles.get(1).getValue().length);
+            // an empty newString encodes to an empty argv entry: a real deletion
+            assertTrue(fs.lastCommand.contains("''"));
         }
 
         @Test
@@ -792,6 +814,24 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
+        void edit_pathContainingHeredocDelimiter_doesNotTruncateCommand() throws IOException {
+            // A newline inside the single-quoted target argument stays part of the argument: it
+            // does not terminate the command line, and the heredoc body is only read afterwards.
+            // So a path whose own line equals the delimiter cannot close the heredoc early.
+            Path dir = Files.createDirectory(tmpDir.resolve("dir__AGENTSCOPE_EDIT_PY__"));
+            Path file = dir.resolve("f.txt");
+            Files.writeString(file, "Hello World");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "World", "Java", false);
+
+            assertTrue(
+                    result.isSuccess(),
+                    "delimiter-shaped path should still edit: " + result.error());
+            assertEquals("Hello Java", Files.readString(file));
+        }
+
+        @Test
         void edit_symlinkTarget_preservesLinkAndWritesThrough() throws IOException {
             Path real = tmpDir.resolve("real.txt");
             Files.writeString(real, "Hello World");
@@ -883,7 +923,6 @@ class BaseSandboxFilesystemTest {
         private ExecuteResponse cannedExecute =
                 new ExecuteResponse("__RESULT__{\"count\": 1}\n", 0, false);
         private String uploadFailure;
-        private String paramUploadFailure;
         private String transferUploadFailure;
 
         void withDownloadResult(List<FileDownloadResponse> responses) {
@@ -898,12 +937,7 @@ class BaseSandboxFilesystemTest {
             this.uploadFailure = error;
         }
 
-        /** Fail only param uploads (paths under {@code /tmp/agentscope-edit-}). */
-        void withParamUploadFailure(String error) {
-            this.paramUploadFailure = error;
-        }
-
-        /** Fail only non-param uploads (i.e. the transfer-phase re-upload, not old.bin/new.bin). */
+        /** Fail only non-param uploads (i.e. the transfer-phase re-upload of edited content). */
         void withTransferUploadFailure(String error) {
             this.transferUploadFailure = error;
         }
@@ -927,13 +961,9 @@ class BaseSandboxFilesystemTest {
             uploadedFiles.addAll(files);
             List<FileUploadResponse> results = new ArrayList<>();
             for (Map.Entry<String, byte[]> entry : files) {
-                boolean isParam = entry.getKey().startsWith("/tmp/agentscope-edit-");
-                if (uploadFailure != null) {
-                    results.add(FileUploadResponse.fail(entry.getKey(), uploadFailure));
-                } else if (paramUploadFailure != null && isParam) {
-                    results.add(FileUploadResponse.fail(entry.getKey(), paramUploadFailure));
-                } else if (transferUploadFailure != null && !isParam) {
-                    results.add(FileUploadResponse.fail(entry.getKey(), transferUploadFailure));
+                if (uploadFailure != null || transferUploadFailure != null) {
+                    String err = uploadFailure != null ? uploadFailure : transferUploadFailure;
+                    results.add(FileUploadResponse.fail(entry.getKey(), err));
                 } else {
                     results.add(FileUploadResponse.success(entry.getKey()));
                 }
