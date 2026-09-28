@@ -466,6 +466,90 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertSuccessToolResultWithSeveralTextBlocksJoinsThem() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-t14")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-1")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder().text("first").build(),
+                                                        TextBlock.builder().text("second").build()))
+                                        .state(ToolResultState.SUCCESS)
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+
+        assertEquals("first\nsecond", aguiMsg.getTextContent());
+    }
+
+    @Test
+    void testConvertToolResultIgnoresNonTextOutput() {
+        // Only text is projected; a non-text block in the output contributes nothing, in either
+        // state.
+        ImageBlock image =
+                ImageBlock.builder().source(new URLSource("https://example.com/a.png")).build();
+        Msg succeeded =
+                Msg.builder()
+                        .id("msg-t15")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-1")
+                                        .output(
+                                                List.of(
+                                                        image,
+                                                        TextBlock.builder()
+                                                                .text("41 degrees")
+                                                                .build()))
+                                        .state(ToolResultState.SUCCESS)
+                                        .build())
+                        .build();
+        Msg failed =
+                Msg.builder()
+                        .id("msg-t16")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-2")
+                                        .output(
+                                                List.of(
+                                                        image,
+                                                        TextBlock.builder().text("boom").build()))
+                                        .state(ToolResultState.ERROR)
+                                        .build())
+                        .build();
+
+        assertEquals("41 degrees", converter.toAguiMessage(succeeded).getTextContent());
+        assertEquals("boom", converter.toAguiMessage(failed).getError());
+    }
+
+    @Test
+    void testConvertToolMessageWithErrorAndNullTextStillReportsError() {
+        // A client can report an error with a text content whose value is null; the error still
+        // has to reach the model.
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-t17",
+                        "tool",
+                        new MessageContent.Text(null),
+                        null,
+                        "tc-1",
+                        "sandbox unavailable");
+
+        ToolResultBlock result =
+                converter.toMsg(aguiMsg).getFirstContentBlock(ToolResultBlock.class);
+
+        assertNotNull(result);
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals("[ERROR] sandbox unavailable", resultText(result));
+    }
+
+    @Test
     void testConvertSuccessToolResultToAguiMessageKeepsTextInContent() {
         Msg msg =
                 Msg.builder()

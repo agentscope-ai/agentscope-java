@@ -169,6 +169,16 @@ class AguiModelTest {
         }
 
         @Test
+        void testEqualsAccountsForToolCallIdAndError() {
+            AguiMessage base = new AguiMessage("msg-1", "tool", null, null, "tc-1", "boom");
+
+            assertEquals(base, new AguiMessage("msg-1", "tool", null, null, "tc-1", "boom"));
+            // Nothing else differs, so these isolate the two fields the error handling added.
+            assertNotEquals(base, new AguiMessage("msg-1", "tool", null, null, "tc-1", "other"));
+            assertNotEquals(base, new AguiMessage("msg-1", "tool", null, null, "tc-2", "boom"));
+        }
+
+        @Test
         void testHashCode() {
             AguiMessage msg1 = AguiMessage.userMessage("msg-1", "Hello");
             AguiMessage msg2 = AguiMessage.userMessage("msg-1", "Hello");
