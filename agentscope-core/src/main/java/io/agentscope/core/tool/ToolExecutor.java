@@ -155,7 +155,9 @@ class ToolExecutor {
     // ==================== Single Tool Execution ====================
 
     /**
-     * Execute a single tool call with full infrastructure support.
+     * Execute a single tool call (core execution only: Tracer + {@link #executeCore};
+     * no scheduling, timeout, retry, or shutdown guard). Use
+     * {@link #executeWithInfrastructure(ToolCallParam, ExecutionConfig)} for the full-infrastructure path.
      *
      * @param param Tool call parameters
      * @return Mono containing execution result
@@ -171,8 +173,9 @@ class ToolExecutor {
 
     /**
      * Execute a single tool call with a per-call tool request config and a per-call internal chunk
-     * callback. This is the single core entry point; the no-arg {@link #execute(ToolCallParam)}
-     * resolves the request config from its explicit runtime context and uses no internal callback.
+     * callback. This is the single core entry point; the 1-param {@link #execute(ToolCallParam)}
+     * overload resolves the request config from its explicit runtime context and uses no internal
+     * callback.
      */
     Mono<ToolResultBlock> execute(
             ToolCallParam param,
@@ -342,7 +345,10 @@ class ToolExecutor {
     // ==================== Batch Tool Execution ====================
 
     /**
-     * Execute multiple tool calls with concurrency control, timeout, and retry.
+     * Execute multiple tool calls with concurrency control plus full per-call infrastructure
+     * (scheduling, timeout, retry, shutdown guard, id/name stamping). Each single call is routed
+     * through {@link #executeWithInfrastructure(ToolUseBlock, ExecutionConfig, Agent,
+     * RuntimeContext, ToolRequestConfig, BiConsumer)}.
      *
      * @param toolCalls List of tool calls to execute
      * @param parallel Whether to execute in parallel
@@ -449,10 +455,12 @@ class ToolExecutor {
     }
 
     /**
-     * Execute a single tool call with infrastructure (scheduling, timeout, retry).
+     * Execute a single tool call with infrastructure (scheduling, timeout, retry, shutdown
+     * guard), and stamps the result with the tool call's id/name.
      *
-     * <p>This overload is used by the batch path ({@code executeAll}) where only the tool use
-     * block, agent, and runtime context are available.
+     * <p>This overload is used by the batch path ({@link #executeAll(List, boolean,
+     * ExecutionConfig, Agent, RuntimeContext)}) where only the tool use block, agent, and
+     * runtime context are available.
      */
     Mono<ToolResultBlock> executeWithInfrastructure(
             ToolUseBlock toolCall,
