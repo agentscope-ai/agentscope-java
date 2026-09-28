@@ -465,14 +465,18 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + " "
                         + escapedTo;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
-        if (result.exitCode() != 0) {
+        if (result.exitCode() != null && result.exitCode() != 0) {
+            String detail =
+                    result.output() != null && !result.output().isBlank()
+                            ? clampDetail(result.output())
+                            : "exit code " + result.exitCode();
             return WriteResult.fail(
                     "Error moving '"
                             + fromPath
                             + "' to '"
                             + toPath
                             + "': "
-                            + clampDetail(result.output()));
+                            + detail);
         }
         return WriteResult.ok(toPath);
     }
@@ -556,6 +560,6 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String stripped = output.strip();
         return stripped.length() <= MAX_DETAIL_CHARS
                 ? stripped
-                : stripped.substring(0, MAX_DETAIL_CHARS) + "... [output truncated]";
+                : "[output truncated] ..." + stripped.substring(stripped.length() - MAX_DETAIL_CHARS);
     }
 }

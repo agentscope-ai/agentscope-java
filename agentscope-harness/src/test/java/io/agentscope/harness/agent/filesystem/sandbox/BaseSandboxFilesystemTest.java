@@ -404,7 +404,9 @@ class BaseSandboxFilesystemTest {
             WriteResult result = new FixedResponseFilesystem(nullOutput).move(RT, "a.txt", "b.txt");
 
             assertFalse(result.isSuccess());
-            assertTrue(result.error().length() > 0, "failure message should exist");
+            assertTrue(
+                    result.error().contains("124"),
+                    "null output should fall back to the exit code: " + result.error());
         }
 
         @Test
