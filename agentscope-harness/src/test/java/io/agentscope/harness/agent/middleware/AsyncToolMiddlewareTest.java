@@ -19,6 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -31,6 +38,7 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.harness.agent.bus.AsyncToolRegistry;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
@@ -39,9 +47,13 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.test.StepVerifier;
 import reactor.util.context.Context;
 
 class AsyncToolMiddlewareTest {
@@ -129,7 +141,19 @@ class AsyncToolMiddlewareTest {
 
     @Test
     void backgroundExecutionRetainsContextAfterOffload() {
-        AsyncToolMiddleware middleware = new AsyncToolMiddleware(bus, Duration.ofMillis(50));
+        Duration offloadTimeout = Duration.ofSeconds(1);
+        MessageBus contextBus = mock(MessageBus.class);
+        AsyncToolRegistry registry = mock(AsyncToolRegistry.class);
+        List<String> operations = new CopyOnWriteArrayList<>();
+        when(registry.register(any())).thenReturn(observeContext(operations, "register"));
+        when(registry.complete("t1", "background result"))
+                .thenReturn(observeContext(operations, "complete"));
+        when(contextBus.inboxPush(eq("session-1"), anyMap()))
+                .thenReturn(observeContext(operations, "inbox"));
+        when(contextBus.enqueueWakeup("", "session-1", ""))
+                .thenReturn(observeContext(operations, "wakeup"));
+        AsyncToolMiddleware middleware =
+                new AsyncToolMiddleware(contextBus, offloadTimeout, registry);
         ToolUseBlock tool = ToolUseBlock.builder().id("t1").name("context_tool").build();
         ActingInput input = new ActingInput(List.of(tool));
         Sinks.One<String> release = Sinks.one();
@@ -156,28 +180,92 @@ class AsyncToolMiddlewareTest {
                                             return Flux.just(event);
                                         }));
 
-        List<AgentEvent> events =
-                middleware
-                        .onActing(stubAgent(), ctx, input, next -> downstream)
-                        .contextWrite(
-                                Context.of(
-                                        AgentEventEmitter.CONTEXT_KEY,
-                                        emitter,
-                                        "request-id",
-                                        "background-request"))
-                        .collectList()
-                        .block(Duration.ofSeconds(5));
-
-        assertTrue(
-                events.stream()
-                        .anyMatch(
-                                event ->
-                                        event instanceof ToolResultTextDeltaEvent delta
-                                                && delta.getDelta()
-                                                        .contains("running in background")));
+        StepVerifier.withVirtualTime(
+                        () ->
+                                middleware
+                                        .onActing(stubAgent(), ctx, input, next -> downstream)
+                                        .contextWrite(
+                                                Context.of(
+                                                        AgentEventEmitter.CONTEXT_KEY,
+                                                        emitter,
+                                                        "request-id",
+                                                        "background-request"))
+                                        .collectList())
+                .thenAwait(offloadTimeout)
+                .assertNext(
+                        events ->
+                                assertTrue(
+                                        events.stream()
+                                                .anyMatch(
+                                                        event ->
+                                                                event
+                                                                                instanceof
+                                                                                ToolResultTextDeltaEvent
+                                                                                        delta
+                                                                        && delta.getDelta()
+                                                                                .contains(
+                                                                                        "running in"
+                                                                                            + " background"))))
+                .expectComplete()
+                .verify(Duration.ofSeconds(10));
         assertEquals(Sinks.EmitResult.OK, release.tryEmitValue("continue"));
         assertEquals("background-request", observed.asMono().block(Duration.ofSeconds(5)));
         assertEquals(1, forwarded.size());
+        assertEquals(
+                List.of(
+                        "register:background-request",
+                        "complete:background-request",
+                        "inbox:background-request",
+                        "wakeup:background-request"),
+                operations);
+        verify(registry).complete("t1", "background result");
+        verify(contextBus).inboxPush(eq("session-1"), anyMap());
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = "original tool failure")
+    void backgroundFailureRetainsContextAndOriginalError(String message) {
+        Duration offloadTimeout = Duration.ofSeconds(1);
+        AsyncToolRegistry registry = mock(AsyncToolRegistry.class);
+        MessageBus contextBus = mock(MessageBus.class);
+        List<String> operations = new CopyOnWriteArrayList<>();
+        String expectedError = message != null ? message : "IllegalStateException";
+        when(registry.register(any())).thenReturn(observeContext(operations, "register"));
+        when(registry.fail("t1", expectedError)).thenReturn(observeContext(operations, "fail"));
+        AsyncToolMiddleware middleware =
+                new AsyncToolMiddleware(contextBus, offloadTimeout, registry);
+        ToolUseBlock tool = ToolUseBlock.builder().id("t1").name("context_tool").build();
+        ActingInput input = new ActingInput(List.of(tool));
+        Sinks.One<AgentEvent> result = Sinks.one();
+
+        StepVerifier.withVirtualTime(
+                        () ->
+                                middleware
+                                        .onActing(
+                                                stubAgent(),
+                                                ctx,
+                                                input,
+                                                next -> result.asMono().flux())
+                                        .contextWrite(Context.of("request-id", "failed-request")))
+                .thenAwait(offloadTimeout)
+                .expectNextCount(3)
+                .expectComplete()
+                .verify(Duration.ofSeconds(10));
+
+        assertEquals(Sinks.EmitResult.OK, result.tryEmitError(new IllegalStateException(message)));
+        verify(registry).fail("t1", expectedError);
+        verify(registry, never()).complete(any(), any());
+        verify(contextBus, never()).inboxPush(any(), any());
+        assertEquals(List.of("register:failed-request", "fail:failed-request"), operations);
+    }
+
+    private static Mono<Void> observeContext(List<String> operations, String operation) {
+        return Mono.deferContextual(
+                context -> {
+                    operations.add(operation + ":" + context.<String>get("request-id"));
+                    return Mono.empty();
+                });
     }
 
     @Test
