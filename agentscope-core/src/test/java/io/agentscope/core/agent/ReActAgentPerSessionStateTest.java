@@ -105,19 +105,6 @@ class ReActAgentPerSessionStateTest {
         return slotVersionsMap(agent).size();
     }
 
-    private static Long slotVersionOf(ReActAgent agent, String slot) throws Exception {
-        return slotVersionsMap(agent).get(slot);
-    }
-
-    private static void clearSlotVersion(ReActAgent agent, String slot) throws Exception {
-        slotVersionsMap(agent).remove(slot);
-    }
-
-    /** Mirrors ReActAgent's private slot-key encoding: length-prefixed, '/'-immune. */
-    private static String slot(String userId, String sessionId) {
-        return userId.length() + ":" + userId + sessionId;
-    }
-
     @Test
     @DisplayName("fresh slots inherit default tool groups without overriding persisted state")
     void freshSlotsInheritDefaultToolGroupsWithoutOverridingPersistedState() {
@@ -665,12 +652,15 @@ class ReActAgentPerSessionStateTest {
         // getAgentState seeds slotVersions with 0L for a fresh slot on a versioning store;
         // drop the entry to recreate the "version unknown → unconditional persist" window
         // (e.g. a restart whose version cache is empty), which is the path this fix hardens.
-        clearSlotVersion(agent, slot("u1", "sessA"));
+        // Single-slot test, so clearing the whole cache recreates the window without
+        // depending on how the slot key is encoded.
+        slotVersionsMap(agent).clear();
         agent.saveAgentState("u1", "sessA");
 
         assertEquals(1, store.unconditionalVersions.size());
         assertEquals(1L, store.unconditionalVersions.get(0));
-        assertEquals(1L, slotVersionOf(agent, slot("u1", "sessA")));
+        assertEquals(1, slotVersionCount(agent));
+        assertEquals(1L, slotVersionsMap(agent).values().iterator().next());
     }
 
     @Test
