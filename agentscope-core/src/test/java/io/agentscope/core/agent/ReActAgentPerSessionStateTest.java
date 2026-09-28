@@ -341,12 +341,13 @@ class ReActAgentPerSessionStateTest {
                 "agent_state must never be written under a pair re-derived from the slot key");
     }
 
-    @Test
+    @ParameterizedTest(name = "userId={0}, sessionId={1}")
+    @MethodSource("sessionIdsContainingSlash")
     @DisplayName("history of a sessionId containing '/' survives calls and agent restarts")
-    void historySurvivesCallsAndRestartsWhenSessionIdContainsSlash() {
+    void historySurvivesCallsAndRestartsWhenSessionIdContainsSlash(
+            String userId, String sessionId) {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
-        RuntimeContext ctx =
-                RuntimeContext.builder().userId("u1").sessionId(BASE64_SESSION_ID).build();
+        RuntimeContext ctx = RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
         ReActAgent agent = agent(store);
 
         agent.call(List.of(userMsg("first")), ctx).block(Duration.ofSeconds(5));
@@ -356,7 +357,7 @@ class ReActAgentPerSessionStateTest {
         // version instead of hitting a CAS conflict.
         assertEquals(0, agent.getStateConflictCount(), "same-session turns must not conflict");
         // A rebuilt agent starts with an empty cache, so it only sees what the calls persisted.
-        List<String> history = allText(agent(store).getAgentState("u1", BASE64_SESSION_ID));
+        List<String> history = allText(agent(store).getAgentState(userId, sessionId));
         assertTrue(
                 history.containsAll(List.of("first", "second")),
                 "every turn must be replayable from the store; was " + history);
