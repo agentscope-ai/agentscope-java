@@ -1,5 +1,6 @@
 ---
 title: "Team collaboration: delegate, combine and extend"
+zh_link: /v2/zh/service/team-collaboration
 ---
 
 <Note>

@@ -1,5 +1,6 @@
 ---
 title: "Managed task outcomes and failures"
+zh_link: /v2/zh/service/managed-harness-task-outcomes
 ---
 
 <Note>

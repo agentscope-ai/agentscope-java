@@ -248,16 +248,17 @@
                       {
                         "group": "Model Providers",
                         "pages": [
-                          "v2/en/integration/model/index",
-                          "v2/en/integration/model/openai",
-                          "v2/en/integration/model/deepseek",
-                          "v2/en/integration/model/glm",
-                          "v2/en/integration/model/kimi",
-                          "v2/en/integration/model/minimax",
-                          "v2/en/integration/model/dashscope",
-                          "v2/en/integration/model/gemini",
-                          "v2/en/integration/model/anthropic",
-                          "v2/en/integration/model/ollama"
+                         "v2/en/integration/model/index",
+                         "v2/en/integration/model/openai",
+                         "v2/en/integration/model/openai-official",
+                         "v2/en/integration/model/deepseek",
+                         "v2/en/integration/model/glm",
+                         "v2/en/integration/model/kimi",
+                         "v2/en/integration/model/minimax",
+                         "v2/en/integration/model/dashscope",
+                         "v2/en/integration/model/gemini",
+                         "v2/en/integration/model/anthropic",
+                         "v2/en/integration/model/ollama"
                         ]
                       },
                       {
@@ -327,8 +328,8 @@
                         "pages": [
                           "v2/en/integration/ecosystem/index",
                           "v2/en/integration/ecosystem/overview",
-                          "v2/en/integration/ecosystem/chat-completions-web",
-                          "v2/en/integration/ecosystem/studio",
+                         "v2/en/integration/ecosystem/chat-completions-web",
+                         "v2/en/integration/ecosystem/studio",
                           "v2/en/integration/ecosystem/training"
                         ]
                       }
@@ -363,10 +364,12 @@
                   {
                     "group": "Blogs",
                     "pages": [
+                      "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
                       "v2/zh/blogs/how-to-build-agent-harness/03-context-and-state",
                       "v2/zh/blogs/how-to-build-agent-harness/04-controlled-execution",
+                      "v2/zh/blogs/session-execution-control",
                       "v2/en/blogs/agentscope-v2-release",
                       "v2/en/blogs/agentscope-v2-explained",
                       "v2/en/blogs/agentscope-v1-harness",
@@ -388,21 +391,32 @@
                   }
                 ]
               },
-              {
-                "tab": "Community",
-                "groups": [
-                  {
-                    "group": "Community",
-                    "pages": [
-                      "v2/en/community/contributors"
-                    ]
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "version": "v1",
+             {
+               "tab": "Community",
+               "groups": [
+                 {
+                   "group": "Community",
+                   "pages": [
+                     "v2/en/community/contributors"
+                   ]
+                 }
+               ]
+             },
+             {
+               "tab": "JEV",
+               "groups": [
+                 {
+                   "group": "JEV",
+                   "pages": [
+                     "v2/en/jev/index"
+                   ]
+                 }
+               ]
+             }
+           ]
+         },
+         {
+           "version": "v1",
             "tabs": [
               {
                 "tab": "Home",
@@ -741,16 +755,17 @@
                       {
                         "group": "模型提供商",
                         "pages": [
-                          "v2/zh/integration/model/index",
-                          "v2/zh/integration/model/openai",
-                          "v2/zh/integration/model/deepseek",
-                          "v2/zh/integration/model/glm",
-                          "v2/zh/integration/model/kimi",
-                          "v2/zh/integration/model/minimax",
-                          "v2/zh/integration/model/dashscope",
-                          "v2/zh/integration/model/gemini",
-                          "v2/zh/integration/model/anthropic",
-                          "v2/zh/integration/model/ollama"
+                         "v2/zh/integration/model/index",
+                         "v2/zh/integration/model/openai",
+                         "v2/zh/integration/model/openai-official",
+                         "v2/zh/integration/model/deepseek",
+                         "v2/zh/integration/model/glm",
+                         "v2/zh/integration/model/kimi",
+                         "v2/zh/integration/model/minimax",
+                         "v2/zh/integration/model/dashscope",
+                         "v2/zh/integration/model/gemini",
+                         "v2/zh/integration/model/anthropic",
+                         "v2/zh/integration/model/ollama"
                         ]
                       },
                       {
@@ -818,12 +833,12 @@
                       {
                         "group": "生态扩展",
                         "pages": [
-                          "v2/zh/integration/ecosystem/index",
-                          "v2/zh/integration/ecosystem/overview",
-                          "v2/zh/integration/ecosystem/chat-completions-web",
-                          "v2/zh/integration/ecosystem/studio",
-                          "v2/zh/integration/ecosystem/training"
-                        ]
+                         "v2/zh/integration/ecosystem/index",
+                         "v2/zh/integration/ecosystem/overview",
+                         "v2/zh/integration/ecosystem/chat-completions-web",
+                         "v2/zh/integration/ecosystem/studio",
+                         "v2/zh/integration/ecosystem/training"
+                       ]
                       }
                     ]
                   },
@@ -860,6 +875,7 @@
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
                       "v2/zh/blogs/how-to-build-agent-harness/03-context-and-state",
                       "v2/zh/blogs/how-to-build-agent-harness/04-controlled-execution",
+                      "v2/zh/blogs/session-execution-control",
                       "v2/zh/blogs/agentscope-v2-release",
                       "v2/zh/blogs/agentscope-v2-explained",
                       "v2/zh/blogs/agentscope-v1-harness",
@@ -881,21 +897,32 @@
                   }
                 ]
               },
-              {
-                "tab": "社区",
-                "groups": [
-                  {
-                    "group": "社区",
-                    "pages": [
-                      "v2/zh/community/contributors"
-                    ]
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "version": "v1",
+             {
+               "tab": "社区",
+               "groups": [
+                 {
+                   "group": "社区",
+                   "pages": [
+                     "v2/zh/community/contributors"
+                   ]
+                 }
+               ]
+             },
+             {
+               "tab": "JEV",
+               "groups": [
+                 {
+                   "group": "JEV",
+                   "pages": [
+                     "v2/zh/jev/index"
+                   ]
+                 }
+               ]
+             }
+           ]
+         },
+         {
+           "version": "v1",
             "tabs": [
               {
                 "tab": "首页",
@@ -2393,8 +2420,13 @@
       "destination": "/v2/en/integration/ecosystem/index",
       "permanent": true
     },
-    {
-      "source": "/v2/en/integration/ecosystem/overview.html",
+   {
+     "source": "/v2/en/jev/index.html",
+     "destination": "/v2/en/jev/index",
+     "permanent": true
+   },
+   {
+     "source": "/v2/en/integration/ecosystem/overview.html",
       "destination": "/v2/en/integration/ecosystem/overview",
       "permanent": true
     },
@@ -2503,15 +2535,20 @@
       "destination": "/v2/en/integration/model/ollama",
       "permanent": true
     },
-    {
-      "source": "/v2/en/integration/model/openai.html",
-      "destination": "/v2/en/integration/model/openai",
-      "permanent": true
-    },
-    {
-      "source": "/v2/en/integration/overview.html",
-      "destination": "/v2/en/integration/overview",
-      "permanent": true
+   {
+     "source": "/v2/en/integration/model/openai.html",
+     "destination": "/v2/en/integration/model/openai",
+     "permanent": true
+   },
+   {
+     "source": "/v2/en/integration/model/openai-official.html",
+     "destination": "/v2/en/integration/model/openai-official",
+     "permanent": true
+   },
+   {
+     "source": "/v2/en/integration/overview.html",
+     "destination": "/v2/en/integration/overview",
+     "permanent": true
     },
     {
       "source": "/v2/en/integration/protocol/a2a.html",
@@ -2958,8 +2995,13 @@
       "destination": "/v2/zh/integration/ecosystem/index",
       "permanent": true
     },
-    {
-      "source": "/v2/zh/integration/ecosystem/overview.html",
+   {
+     "source": "/v2/zh/jev/index.html",
+     "destination": "/v2/zh/jev/index",
+     "permanent": true
+   },
+   {
+     "source": "/v2/zh/integration/ecosystem/overview.html",
       "destination": "/v2/zh/integration/ecosystem/overview",
       "permanent": true
     },
@@ -3068,15 +3110,20 @@
       "destination": "/v2/zh/integration/model/ollama",
       "permanent": true
     },
-    {
-      "source": "/v2/zh/integration/model/openai.html",
-      "destination": "/v2/zh/integration/model/openai",
-      "permanent": true
-    },
-    {
-      "source": "/v2/zh/integration/overview.html",
-      "destination": "/v2/zh/integration/overview",
-      "permanent": true
+   {
+     "source": "/v2/zh/integration/model/openai.html",
+     "destination": "/v2/zh/integration/model/openai",
+     "permanent": true
+   },
+   {
+     "source": "/v2/zh/integration/model/openai-official.html",
+     "destination": "/v2/zh/integration/model/openai-official",
+     "permanent": true
+   },
+   {
+     "source": "/v2/zh/integration/overview.html",
+     "destination": "/v2/zh/integration/overview",
+     "permanent": true
     },
     {
       "source": "/v2/zh/integration/protocol/a2a.html",

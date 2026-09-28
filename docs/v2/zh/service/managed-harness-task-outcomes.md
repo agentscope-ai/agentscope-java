@@ -1,5 +1,6 @@
 ---
 title: "Managed 任务结果与失败处理"
+en_link: /v2/en/service/managed-harness-task-outcomes
 ---
 
 <Note>

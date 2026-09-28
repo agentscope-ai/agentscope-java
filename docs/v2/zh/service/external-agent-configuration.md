@@ -1,5 +1,6 @@
 ---
 title: "External 注册与连接参数"
+en_link: /v2/en/service/external-agent-configuration
 ---
 
 <Note>

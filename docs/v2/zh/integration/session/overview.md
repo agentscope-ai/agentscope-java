@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v2/en/integration/session/overview
 ---
 
 <Note>

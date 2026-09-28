@@ -17,6 +17,7 @@ package io.agentscope.extensions.jdbc.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.state.State;
@@ -28,6 +29,8 @@ import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
+import java.sql.Connection;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -118,6 +121,31 @@ class PostgresIntegrationTest {
         lease.close();
     }
 
+    @Test
+    @DisplayName("06: build() blocks when a legacy table lacks the version column")
+    void buildBlocksOnLegacyTableMissingColumn() throws Exception {
+        DataSource ds = createDataSource();
+        // Current schema first, then regress the sessions table to the legacy shape the
+        // deprecated postgresql extension created (same table name, no version column).
+        AbstractJdbcDialect.from(ds).build();
+        try (Connection conn = ds.getConnection();
+                Statement stmt = conn.createStatement()) {
+            stmt.execute("ALTER TABLE agentscope_sessions DROP COLUMN version");
+        }
+
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class, () -> AbstractJdbcDialect.from(ds).build());
+
+        assertTrue(exception.getMessage().contains("version"), exception.getMessage());
+        assertTrue(exception.getMessage().contains("agentscope_sessions"), exception.getMessage());
+    }
+
+    /**
+     * A DataSource on the Testcontainers PostgreSQL database.
+     *
+     * @return the live DataSource
+     */
     private DataSource createDataSource() {
         PGSimpleDataSource ds = new PGSimpleDataSource();
         ds.setUrl(postgres.getJdbcUrl());

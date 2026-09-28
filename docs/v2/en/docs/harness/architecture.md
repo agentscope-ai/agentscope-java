@@ -2,6 +2,7 @@
 title: Harness Architecture
 description: What HarnessAgent is, how its capabilities cooperate, and how state flows
   during a call()
+zh_link: /v2/zh/docs/harness/architecture
 ---
 
 `HarnessAgent` is a thin wrapper around `ReActAgent` that packages the engineering capabilities long-running agents need — workspace-driven persona, long-term memory, subagent orchestration, sandbox isolation, skill composition, plan mode, channel routing — into a single builder.

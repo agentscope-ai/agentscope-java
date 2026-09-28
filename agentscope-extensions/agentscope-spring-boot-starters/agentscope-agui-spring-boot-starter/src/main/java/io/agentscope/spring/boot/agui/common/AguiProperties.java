@@ -15,7 +15,7 @@
  */
 package io.agentscope.spring.boot.agui.common;
 
-import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.tool.ToolMergeMode;
 import java.time.Duration;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -33,7 +33,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     cors-allowed-origins:
  *       - "*"
  *     run-timeout: 10m
- *     default-tool-merge-mode: MERGE_FRONTEND_PRIORITY
+ *     default-tool-merge-mode: MERGE_EXTERNAL_PRIORITY
  *     default-agent-id: default
  *     agent-id-header: X-Agent-Id
  *     enable-path-routing: true
@@ -59,7 +59,7 @@ public class AguiProperties {
     private Duration runTimeout = Duration.ofMinutes(10);
 
     /** Default tool merge mode. */
-    private ToolMergeMode defaultToolMergeMode = ToolMergeMode.MERGE_FRONTEND_PRIORITY;
+    private ToolMergeMode defaultToolMergeMode = ToolMergeMode.MERGE_EXTERNAL_PRIORITY;
 
     /** Whether to emit state events. */
     private boolean emitStateEvents = true;

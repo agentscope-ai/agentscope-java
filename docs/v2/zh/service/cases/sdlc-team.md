@@ -1,6 +1,7 @@
 ---
 title: "研发提效：从 GitHub Issue 到 PR 合并"
 description: "使用全 Hosted Team 完成需求分析、实现、Review、CI、返工与审批。"
+en_link: /v2/en/service/cases/sdlc-team
 ---
 
 <Note>

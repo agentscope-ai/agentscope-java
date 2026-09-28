@@ -1,5 +1,6 @@
 ---
 title: 分布式存储（Distributed Store）
+en_link: /v2/en/integration/distributed/index
 ---
 
 AgentScope 将所有需要分布式持久化的组件统一到 `DistributedStore` 接口下。一行配置即可让 Agent 的状态、工作区文件系统、沙箱快照和并发锁全部切到同一个分布式后端。

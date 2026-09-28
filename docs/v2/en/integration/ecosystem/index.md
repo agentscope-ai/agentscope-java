@@ -1,5 +1,6 @@
 ---
 title: Ecosystem
+zh_link: /v2/zh/integration/ecosystem/index
 ---
 
 Choose a guide below to configure and use ecosystem.

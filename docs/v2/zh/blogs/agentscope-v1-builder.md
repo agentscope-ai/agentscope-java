@@ -1,5 +1,6 @@
 ---
 title: AgentScope Builder 发布
+en_link: /v2/en/blogs/agentscope-v1-builder
 ---
 
 在 AgentScope 1.1.0 版本中，我们把 OpenClaw、Coding Agent 那套「工作区即真理 + 自我进化」的体验，沉淀成了 `HarnessAgent` + `AbstractFilesystem` + 内置压缩与双层记忆的Harness Engineering 工程基础设施。当时我们留下了一个承诺：**写一套 Agent 逻辑，按需切换形态，从个人本机一路扩到企业分布式部署**。

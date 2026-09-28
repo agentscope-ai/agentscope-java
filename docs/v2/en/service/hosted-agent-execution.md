@@ -1,5 +1,6 @@
 ---
 title: "How Hosted execution and recovery work"
+zh_link: /v2/zh/service/hosted-agent-execution
 ---
 
 <Note>

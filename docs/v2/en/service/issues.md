@@ -1,5 +1,6 @@
 ---
 title: "Create console Issues and assign tasks"
+zh_link: /v2/zh/service/issues
 ---
 
 <Note>

@@ -1,5 +1,6 @@
 ---
 title: Agent State Store
+zh_link: /v2/zh/integration/session/index
 ---
 
 Choose a guide below to configure and use agent state store.

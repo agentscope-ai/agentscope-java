@@ -18,6 +18,7 @@ package io.agentscope.core.model.transport;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -1079,12 +1080,120 @@ class JdkHttpTransportTest {
                 HttpTransportConfig.builder().httpVersion(HttpVersion.HTTP_1_1).build();
         JdkHttpTransport jdkHttpTransport = JdkHttpTransport.builder().config(defaults).build();
         JdkHttpTransport jdkHttpTransport2 = JdkHttpTransport.builder().config(config).build();
-        assertSame(HttpVersion.HTTP_2, defaults.getHttpVersion());
-        assertEquals(HttpClient.Version.HTTP_2, defaults.getHttpVersion().toJdkHttpVersion());
+        assertNull(defaults.getHttpVersion());
         assertSame(HttpVersion.HTTP_1_1, config.getHttpVersion());
         assertEquals(HttpClient.Version.HTTP_1_1, config.getHttpVersion().toJdkHttpVersion());
+        assertEquals(HttpClient.Version.HTTP_2, HttpVersion.HTTP_2.toJdkHttpVersion());
         assertNotNull(jdkHttpTransport);
         assertNotNull(jdkHttpTransport2);
+    }
+
+    @Test
+    void testResolveRequestVersion() {
+        // auto: cleartext → HTTP/1.1 (no h2c upgrade attempt), https → null (inherit client
+        // version), missing scheme → treated as cleartext
+        assertEquals(
+                HttpClient.Version.HTTP_1_1,
+                JdkHttpTransport.resolveRequestVersion(
+                        null, URI.create("http://localhost:8080/v1/chat/completions")));
+        assertNull(
+                JdkHttpTransport.resolveRequestVersion(
+                        null, URI.create("https://api.example.com/v1/chat/completions")));
+        assertEquals(
+                HttpClient.Version.HTTP_1_1,
+                JdkHttpTransport.resolveRequestVersion(null, URI.create("localhost/v1")));
+        // explicit values win verbatim, including HTTP_2 on cleartext as an h2c opt-in
+        assertEquals(
+                HttpClient.Version.HTTP_1_1,
+                JdkHttpTransport.resolveRequestVersion(
+                        HttpVersion.HTTP_1_1, URI.create("https://api.example.com/v1")));
+        assertEquals(
+                HttpClient.Version.HTTP_1_1,
+                JdkHttpTransport.resolveRequestVersion(
+                        HttpVersion.HTTP_1_1, URI.create("http://localhost:8080/v1")));
+        assertEquals(
+                HttpClient.Version.HTTP_2,
+                JdkHttpTransport.resolveRequestVersion(
+                        HttpVersion.HTTP_2, URI.create("http://localhost:8080/v1")));
+        assertEquals(
+                HttpClient.Version.HTTP_2,
+                JdkHttpTransport.resolveRequestVersion(
+                        HttpVersion.HTTP_2, URI.create("https://api.example.com/v1")));
+    }
+
+    @Test
+    void testRequestHttpVersionAppliedPerRequest() {
+        // default config: cleartext → HTTP/1.1, https → inherit the client-level version
+        assertEquals(
+                Optional.of(HttpClient.Version.HTTP_1_1),
+                executeAndCaptureVersion(
+                        HttpTransportConfig.defaults(),
+                        "http://localhost:8080/v1/chat/completions"));
+        assertEquals(
+                Optional.empty(),
+                executeAndCaptureVersion(
+                        HttpTransportConfig.defaults(),
+                        "https://api.example.com/v1/chat/completions"));
+        // explicit HTTP_2 must win on the request even for an injected, non-reconfigurable client
+        assertEquals(
+                Optional.of(HttpClient.Version.HTTP_2),
+                executeAndCaptureVersion(
+                        HttpTransportConfig.builder().httpVersion(HttpVersion.HTTP_2).build(),
+                        "http://localhost:8080/v1/chat/completions"));
+    }
+
+    /** Executes a POST via a capturing client and returns the built request's version. */
+    private Optional<HttpClient.Version> executeAndCaptureVersion(
+            HttpTransportConfig config, String url) {
+        CapturingHttpClient capturingClient = new CapturingHttpClient();
+        JdkHttpTransport transport = new JdkHttpTransport(capturingClient, config);
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(url)
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        .body("{}")
+                        .build();
+        transport.execute(request);
+        return capturingClient.capturedRequest().version();
+    }
+
+    @Test
+    void testCleartextRequestAvoidsH2cUpgradeOnTheWire() throws Exception {
+        // #1121 regression: the default must not attempt an h2c upgrade on cleartext URLs
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"ok\":true}"));
+
+        transport.execute(
+                HttpRequest.builder()
+                        .url(mockServer.url("/v1/chat/completions").toString())
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        .body("{\"input\": \"test\"}")
+                        .build());
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertNull(recorded.getHeader("Upgrade"));
+        String connection = recorded.getHeader("Connection");
+        assertTrue(connection == null || !connection.contains("HTTP2-Settings"));
+        assertEquals("{\"input\": \"test\"}", recorded.getBody().readUtf8());
+
+        // contrast: explicit HTTP_2 does put the h2c upgrade on the wire
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"ok\":true}"));
+        JdkHttpTransport h2cTransport =
+                new JdkHttpTransport(
+                        HttpTransportConfig.builder().httpVersion(HttpVersion.HTTP_2).build());
+        try {
+            h2cTransport.execute(
+                    HttpRequest.builder()
+                            .url(mockServer.url("/v1/chat/completions").toString())
+                            .method("POST")
+                            .header("Content-Type", "application/json")
+                            .body("{}")
+                            .build());
+        } finally {
+            h2cTransport.close();
+        }
+        assertEquals("h2c", mockServer.takeRequest().getHeader("Upgrade"));
     }
 
     @Test
@@ -1251,6 +1360,124 @@ class JdkHttpTransportTest {
         StepVerifier.create(transport.stream(request))
                 .expectNextCount(5) // Should successfully receive all 5 data chunks
                 .verifyComplete();
+    }
+
+    /** Records the built JDK request for assertions. */
+    private static class CapturingHttpClient extends HttpClient {
+        private final AtomicReference<java.net.http.HttpRequest> capturedRequest =
+                new AtomicReference<>();
+
+        java.net.http.HttpRequest capturedRequest() {
+            return capturedRequest.get();
+        }
+
+        @Override
+        public Optional<CookieHandler> cookieHandler() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<Duration> connectTimeout() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Redirect followRedirects() {
+            return Redirect.NEVER;
+        }
+
+        @Override
+        public Optional<ProxySelector> proxy() {
+            return Optional.empty();
+        }
+
+        @Override
+        public SSLContext sslContext() {
+            return null;
+        }
+
+        @Override
+        public SSLParameters sslParameters() {
+            return new SSLParameters();
+        }
+
+        @Override
+        public Optional<Authenticator> authenticator() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Version version() {
+            return Version.HTTP_2;
+        }
+
+        @Override
+        public Optional<Executor> executor() {
+            return Optional.empty();
+        }
+
+        @Override
+        public <T> java.net.http.HttpResponse<T> send(
+                java.net.http.HttpRequest request,
+                java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler) {
+            capturedRequest.set(request);
+            return new java.net.http.HttpResponse<>() {
+                @Override
+                public int statusCode() {
+                    return 200;
+                }
+
+                @Override
+                public java.net.http.HttpRequest request() {
+                    return request;
+                }
+
+                @Override
+                public Optional<java.net.http.HttpResponse<T>> previousResponse() {
+                    return Optional.empty();
+                }
+
+                @Override
+                public java.net.http.HttpHeaders headers() {
+                    return java.net.http.HttpHeaders.of(Map.of(), (name, value) -> true);
+                }
+
+                @Override
+                public T body() {
+                    return null;
+                }
+
+                @Override
+                public Optional<SSLSession> sslSession() {
+                    return Optional.empty();
+                }
+
+                @Override
+                public URI uri() {
+                    return request.uri();
+                }
+
+                @Override
+                public Version version() {
+                    return Version.HTTP_1_1;
+                }
+            };
+        }
+
+        @Override
+        public <T> CompletableFuture<java.net.http.HttpResponse<T>> sendAsync(
+                java.net.http.HttpRequest request,
+                java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler) {
+            throw new UnsupportedOperationException("sendAsync is not used in this test");
+        }
+
+        @Override
+        public <T> CompletableFuture<java.net.http.HttpResponse<T>> sendAsync(
+                java.net.http.HttpRequest request,
+                java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler,
+                java.net.http.HttpResponse.PushPromiseHandler<T> pushPromiseHandler) {
+            throw new UnsupportedOperationException("sendAsync is not used in this test");
+        }
     }
 
     private static class DeferredBodyHttpClient extends HttpClient {

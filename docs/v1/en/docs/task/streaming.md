@@ -1,5 +1,6 @@
 ---
 title: Streaming
+zh_link: /v1/zh/docs/task/streaming
 ---
 
 `Agent.stream()` returns a reactive `Flux<Event>` that lets callers observe every reasoning step, tool-call result, and final reply **in real time**, rather than waiting for `call()` to return a single `Msg`.

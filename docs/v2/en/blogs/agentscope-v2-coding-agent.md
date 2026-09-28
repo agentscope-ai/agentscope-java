@@ -1,5 +1,6 @@
 ---
 title: 'The Second Half of Coding Agents: From Personal Efficiency to Org-Level Engineering'
+zh_link: /v2/zh/blogs/agentscope-v2-coding-agent
 ---
 
 Developers still hand-writing code the old-fashioned way are practically training to become intangible-cultural-heritage inheritors; the vast majority are already using Coding Agents like Claude Code and Cursor. The direction is right, but the scenario is different, so the solution is different too—installing an AI assistant locally for personal productivity and building an AI-driven engineering collaboration system inside an organization are two entirely different dimensions. The former already has mature products; the latter is just getting started. This post is about the latter.
