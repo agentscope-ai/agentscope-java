@@ -43,7 +43,6 @@ public class MemorySearchTool {
         this.workspaceManager = workspaceManager;
     }
 
-    /** Retains the original Java API and its literal phrase matching behavior. */
     public String memorySearch(RuntimeContext runtimeContext, String query) {
         return memorySearch(runtimeContext, query, null);
     }

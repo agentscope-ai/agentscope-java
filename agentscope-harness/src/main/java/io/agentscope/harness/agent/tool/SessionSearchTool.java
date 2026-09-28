@@ -50,7 +50,6 @@ public class SessionSearchTool {
         this.workspaceManager = workspaceManager;
     }
 
-    /** Retains the original Java API and its literal phrase matching behavior. */
     public String sessionSearch(
             RuntimeContext runtimeContext, String query, String agentId, Integer maxResults) {
         return sessionSearch(runtimeContext, query, agentId, maxResults, null);
@@ -98,14 +97,15 @@ public class SessionSearchTool {
         String effectiveAgentId = agentId != null && !agentId.isBlank() ? agentId : null;
         Predicate<String> matcher;
         try {
-            matcher =
+            Predicate<String> compiled =
                     KeywordMatcher.compile(
                             query,
                             matchMode,
                             term -> {
                                 String lowerTerm = term.toLowerCase();
-                                return text -> text.toLowerCase().contains(lowerTerm);
+                                return text -> text.contains(lowerTerm);
                             });
+            matcher = text -> compiled.test(text.toLowerCase());
         } catch (IllegalArgumentException e) {
             return "Error: " + e.getMessage();
         }
