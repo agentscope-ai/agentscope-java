@@ -19,6 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
@@ -35,8 +39,16 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import okhttp3.Call;
 import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class E2bEnvdProcessClientTest {
 
@@ -536,6 +548,156 @@ class E2bEnvdProcessClientTest {
                 .build();
     }
 
+    // ---- filesystem REST API tests ----
+
+    @Test
+    void uploadFileViaRestApiSendsMultipartPost() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        Response okResponse =
+                new Response.Builder()
+                        .code(200)
+                        .message("OK")
+                        .body(ResponseBody.create("", MediaType.get("application/json")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        client.uploadFile(state, "/tmp/test.txt", "data".getBytes());
+
+        ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
+        verify(mockHttp).newCall(requestCaptor.capture());
+        Request sent = requestCaptor.getValue();
+        assertEquals("POST", sent.method());
+        assertTrue(sent.body() instanceof MultipartBody);
+        assertEquals(1, ((MultipartBody) sent.body()).size());
+        String url = sent.url().toString();
+        assertTrue(url.startsWith("https://49983-test-id.e2b.app/files?path="));
+        assertTrue(url.contains("path=%2Ftmp%2Ftest.txt"));
+        assertTrue(url.contains("username=user"));
+        verify(mockCall).execute();
+    }
+
+    @Test
+    void uploadFileViaRestApiThrowsOnHttpError() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        Response okResponse =
+                new Response.Builder()
+                        .code(500)
+                        .message("Internal Server Error")
+                        .body(ResponseBody.create("server error", MediaType.get("text/plain")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        SandboxException.SandboxRuntimeException ex =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> client.uploadFile(state, "/tmp/test.txt", "data".getBytes()));
+        assertEquals(SandboxErrorCode.WORKSPACE_ARCHIVE_WRITE_ERROR, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("500"));
+    }
+
+    @Test
+    void uploadFileWithDirectoryPathThrowsIllegalArgument() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        E2bSandboxState state = mock(E2bSandboxState.class);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> client.uploadFile(state, "/home/", "data".getBytes()));
+    }
+
+    @Test
+    void downloadFileViaRestApiReturnsBytes() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        byte[] content = "hello world".getBytes(StandardCharsets.UTF_8);
+        Response okResponse =
+                new Response.Builder()
+                        .code(200)
+                        .message("OK")
+                        .body(
+                                ResponseBody.create(
+                                        content, MediaType.get("application/octet-stream")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        byte[] result = client.downloadFile(state, "/tmp/test.txt");
+
+        assertArrayEquals(content, result);
+        ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
+        verify(mockHttp).newCall(requestCaptor.capture());
+        String url = requestCaptor.getValue().url().toString();
+        assertTrue(url.startsWith("https://49983-test-id.e2b.app/files?path="));
+        assertTrue(url.contains("path=%2Ftmp%2Ftest.txt"));
+        assertTrue(url.contains("username=user"));
+        verify(mockCall).execute();
+    }
+
+    @Test
+    void downloadFileViaRestApiThrowsOnHttpError() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        Response okResponse =
+                new Response.Builder()
+                        .code(404)
+                        .message("Not Found")
+                        .body(ResponseBody.create("not found", MediaType.get("text/plain")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        SandboxException.SandboxRuntimeException ex =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> client.downloadFile(state, "/tmp/nonexistent.txt"));
+        assertEquals(SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("404"));
+    }
+
     private static int drainStartStream(
             E2bEnvdProcessClient client,
             byte[] connectFrame,
@@ -665,5 +827,65 @@ class E2bEnvdProcessClientTest {
         E2bSandboxClientOptions options = new E2bSandboxClientOptions();
         options.setCodec(codec);
         return options;
+    }
+
+    // ---- static utility method tests ----
+
+    @Test
+    void envdHostWithCustomDomain() throws Exception {
+        Method method =
+                E2bEnvdProcessClient.class.getDeclaredMethod("envdHost", E2bSandboxState.class);
+        method.setAccessible(true);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("custom.com");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        String result = (String) method.invoke(null, state);
+        assertEquals("https://49983-test-id.custom.com", result);
+    }
+
+    @Test
+    void envdHostWithDefaultDomain() throws Exception {
+        Method method =
+                E2bEnvdProcessClient.class.getDeclaredMethod("envdHost", E2bSandboxState.class);
+        method.setAccessible(true);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn(null);
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        String result = (String) method.invoke(null, state);
+        assertEquals("https://49983-test-id.e2b.app", result);
+    }
+
+    @Test
+    void filenameFromPathWithSlashReturnsBasename() throws Exception {
+        Method method =
+                E2bEnvdProcessClient.class.getDeclaredMethod("filenameFromPath", String.class);
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(null, "/home/user/file.txt");
+        assertEquals("file.txt", result);
+    }
+
+    @Test
+    void filenameFromPathWithoutSlashReturnsInput() throws Exception {
+        Method method =
+                E2bEnvdProcessClient.class.getDeclaredMethod("filenameFromPath", String.class);
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(null, "file.txt");
+        assertEquals("file.txt", result);
+    }
+
+    @Test
+    void filenameFromPathWithTrailingSlashReturnsEmpty() throws Exception {
+        Method method =
+                E2bEnvdProcessClient.class.getDeclaredMethod("filenameFromPath", String.class);
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(null, "/home/");
+        assertEquals("", result);
     }
 }
