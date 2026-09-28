@@ -104,4 +104,38 @@ public final class FilesystemUtils {
         }
         return "'" + s.replace("'", "'\\''") + "'";
     }
+
+    /**
+     * Parent directory of a sandbox path, computed in Java instead of by a shell {@code dirname}.
+     *
+     * <p>Sandbox paths are POSIX-style regardless of host OS, so the split is on {@code '/'} only.
+     */
+    public static String parentDir(String path) {
+        if (path == null || path.isEmpty()) {
+            return ".";
+        }
+        int lastSlash = path.lastIndexOf('/');
+        if (lastSlash < 0) {
+            return ".";
+        }
+        if (lastSlash == 0) {
+            return "/";
+        }
+        return path.substring(0, lastSlash);
+    }
+
+    /**
+     * Build {@code mkdir -p} for the parent of {@code path} using single quotes only.
+     *
+     * <p>A whole shell program reaches the sandbox as a single command-line argument, and on a
+     * Windows host Java must serialize that argument into one {@code CreateProcess} command line
+     * before {@code docker.exe} re-parses it. Single-quoted text survives that round trip, but
+     * nested double quotes are dropped: {@code mkdir -p "$(dirname 'a b.txt')"} arrives as
+     * {@code mkdir -p $(dirname 'a} {@code b.txt')"}, the quoted space becomes an argument
+     * separator, and the shell aborts on an unbalanced parenthesis. Deriving the parent here keeps
+     * the generated command free of double quotes.
+     */
+    public static String mkdirParent(String path) {
+        return "mkdir -p " + shellQuote(parentDir(path));
+    }
 }

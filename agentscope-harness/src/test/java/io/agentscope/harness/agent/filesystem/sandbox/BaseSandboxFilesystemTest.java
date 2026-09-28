@@ -28,6 +28,8 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -363,6 +365,98 @@ class BaseSandboxFilesystemTest {
     // ================================================================
     // Test helpers
     // ================================================================
+
+    /**
+     * Sandbox commands travel to the shell as one command-line argument. Two consequences are
+     * covered here: an unquoted command substitution word-splits on any host, and nested double
+     * quotes do not survive a Windows host serializing that argument for {@code CreateProcess}
+     * (issue #3262 reports {@code 'file1.txt')} arriving intact while the quoting around
+     * {@code $(dirname ...)} is lost).
+     */
+    @Nested
+    class CommandConstructionTests {
+
+        @Test
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void move_destinationParentWithSpace_renamesAndCreatesExactlyThatDirectory()
+                throws IOException {
+            Path root = Files.createTempDirectory("saa-move").toRealPath();
+            Path sourceDir = Files.createDirectories(root.resolve("src dir"));
+            Path source = sourceDir.resolve("a b.txt");
+            Files.writeString(source, "hello");
+            Path destination = root.resolve("dst dir").resolve("c d.txt");
+
+            WriteResult result =
+                    new LocalShellSandboxFilesystem()
+                            .move(RT, source.toString(), destination.toString());
+
+            assertTrue(
+                    result.isSuccess(),
+                    "an unquoted $(dirname ...) word-splits a spaced parent into two words, so mv"
+                            + " aborts and leaves garbage directories behind: "
+                            + result.error());
+            assertEquals("hello", Files.readString(destination));
+            assertFalse(Files.exists(source), "source should have been renamed away");
+            assertFalse(Files.exists(root.resolve("dst")), "no directory may come from splitting");
+            assertFalse(Files.exists(root.resolve("dir")), "no directory may come from splitting");
+        }
+
+        @Test
+        void generatedCommands_avoidNestedDoubleQuotes() {
+            FakeSandboxFilesystem capture = new FakeSandboxFilesystem();
+
+            capture.write(RT, "/workspace/my dir/note.txt", "content");
+            assertFalse(
+                    capture.lastCommand.contains("\""),
+                    "write() must not nest double quotes in the command it transports: "
+                            + capture.lastCommand);
+
+            capture.edit(RT, "/workspace/note.txt", "one", "two", false);
+            assertFalse(
+                    capture.lastCommand.contains("\""),
+                    "edit() must not nest double quotes in the command it transports: "
+                            + capture.lastCommand);
+
+            capture.move(RT, "/workspace/a.txt", "/workspace/new dir/b.txt");
+            assertFalse(
+                    capture.lastCommand.contains("\""),
+                    "move() must not nest double quotes in the command it transports: "
+                            + capture.lastCommand);
+        }
+
+        @Test
+        void write_sandboxFailure_surfacesCommandOutput() {
+            FixedResponseFilesystem failing =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse(
+                                    "sh: syntax error: end of file unexpected (expecting \")\")",
+                                    2,
+                                    false));
+
+            WriteResult result = failing.write(RT, "/workspace/note.txt", "content");
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("syntax error"),
+                    "a failed write must carry the reason rather than only naming the file, got: "
+                            + result.error());
+        }
+
+        @Test
+        void parentDir_coversAbsoluteRelativeBareAndMissingPaths() {
+            assertEquals("/workspace/docs", FilesystemUtils.parentDir("/workspace/docs/a.md"));
+            assertEquals("/workspace", FilesystemUtils.parentDir("/workspace/a.md"));
+            assertEquals("/", FilesystemUtils.parentDir("/a.md"));
+            assertEquals(".", FilesystemUtils.parentDir("a.md"));
+            assertEquals(".", FilesystemUtils.parentDir(""));
+            assertEquals(".", FilesystemUtils.parentDir(null));
+        }
+
+        @Test
+        void mkdirParent_usesOnlySingleQuotes() {
+            assertEquals("mkdir -p 'my dir'", FilesystemUtils.mkdirParent("my dir/file.txt"));
+        }
+    }
 
     private static final class FakeSandboxFilesystem extends BaseSandboxFilesystem {
 
