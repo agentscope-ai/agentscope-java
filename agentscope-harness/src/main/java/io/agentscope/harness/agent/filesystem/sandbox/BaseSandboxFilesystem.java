@@ -274,6 +274,13 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             except Exception as e:
                 result({"error": "read_failed", "detail": str(e)})
                 sys.exit(0)
+            # Same LF normalization as FilesystemUtils.stringReplacement, so the native path
+            # and the transfer fallback accept and reject exactly the same edits. The escapes
+            # are doubled: a text block would otherwise turn them into real CR/LF bytes and
+            # split the Python string literal across lines.
+            def norm(s):
+                return s.replace("\\r\\n", "\\n").replace("\\r", "\\n")
+            text, old, new = norm(text), norm(old), norm(new)
             if len(text) == 0:
                 result({"error": "empty"})
                 sys.exit(0)
@@ -429,15 +436,9 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if (isPythonMissing(execResult)) {
             return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
         }
-        String stripped = output.strip();
-        String excerpt = stripped.substring(0, Math.min(200, stripped.length()));
-        return EditResult.fail(
-                "Error editing file '"
-                        + filePath
-                        + "' (exitCode="
-                        + execResult.exitCode()
-                        + "): unexpected server response: "
-                        + excerpt);
+        // No __RESULT__ line and python3 did run: an execution-layer failure (timeout, transport,
+        // interpreter crash). Same convention as ls/read/grep/glob.
+        return EditResult.fail(executeFailureMessage(execResult, "editing", filePath));
     }
 
     /**

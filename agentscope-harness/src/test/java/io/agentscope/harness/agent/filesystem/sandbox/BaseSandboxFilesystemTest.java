@@ -295,6 +295,52 @@ class BaseSandboxFilesystemTest {
                     "exit code passthrough required: " + fs.lastCommand);
         }
 
+        // ==================== Bug reproduction: edit program collapsed into one line
+        // (#2571) ====================
+
+        @Test
+        void edit_generatedPythonProgram_isSeparatedByRealLineFeeds() {
+            FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
+
+            filesystem.edit(RT, "/workspace/file.txt", "old", "new", false);
+
+            String cmd = filesystem.lastCommand;
+            assertTrue(
+                    cmd.startsWith("python3 - "),
+                    "edit should drive the replacement through a python3 program");
+            // The regression was a program collapsed onto one line, so the invariant is that
+            // statements are separated by real line feeds. A backslash-n may still appear inside
+            // the program's own string literals (the CRLF normalizer), which is harmless.
+            assertTrue(
+                    cmd.contains("import base64, os, sys, json, uuid\ntarget"),
+                    "the python program must be separated by real line feeds");
+            assertTrue(
+                    cmd.contains("\ncount = text.count(old)"),
+                    "every statement must be on its own line, not joined by an escape");
+        }
+
+        @Test
+        void edit_executeFailure_shouldFailWithCause() {
+            EditResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed())
+                            .edit(RT, "/workspace/file.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        @Test
+        void edit_executeFailure_nullOutput_shouldFailWithExitCodeFallback() {
+            EditResult result =
+                    new FixedResponseFilesystem(new ExecuteResponse(null, -1, false))
+                            .edit(RT, "/workspace/file.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
+            assertTrue(
+                    result.error().contains("exit code -1"),
+                    "error should fall back to the exit code when no diagnostic output exists");
+        }
+
         @Test
         void edit_native_writeFailedDetailWithErrorLikePath_notMisclassified() {
             EditSpyFilesystem fs = new EditSpyFilesystem();
@@ -851,6 +897,8 @@ class BaseSandboxFilesystemTest {
 
             assertFalse(result.isSuccess());
             assertTrue(result.error().contains("appears"));
+            // an ambiguous replacement must leave the file untouched
+            assertEquals("foo bar foo baz foo", Files.readString(file));
         }
 
         @Test
@@ -869,6 +917,56 @@ class BaseSandboxFilesystemTest {
                     result.isSuccess(),
                     "delimiter-shaped path should still edit: " + result.error());
             assertEquals("Hello Java", Files.readString(file));
+        }
+
+        @Test
+        void edit_crlfFile_matchesLfPattern() throws IOException {
+            Path file = tmpDir.resolve("crlf.txt");
+            Files.writeString(file, "alpha\r\nbeta\r\ngamma\r\n");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "beta", "BETA", false);
+
+            assertTrue(result.isSuccess(), "CRLF file must match an LF pattern: " + result.error());
+            assertEquals(1, result.occurrences());
+            assertEquals("alpha\nBETA\ngamma\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_crlf_parityBetweenNativeAndFallback() throws IOException {
+            // The native path and the transfer fallback must accept and reject the same edits;
+            // otherwise an edit succeeds only when python3 happens to be present.
+            Path nativeFile = tmpDir.resolve("crlf-native.txt");
+            Files.writeString(nativeFile, "one\r\ntwo\r\n");
+            EditResult nativeResult =
+                    new LocalShellSandboxFilesystem()
+                            .edit(RT, nativeFile.toString(), "two", "2", false);
+
+            Path fallbackFile = tmpDir.resolve("crlf-fallback.txt");
+            Files.writeString(fallbackFile, "one\r\ntwo\r\n");
+            EditResult fallbackResult =
+                    new LocalShellFallbackFilesystem(false)
+                            .edit(RT, fallbackFile.toString(), "two", "2", false);
+
+            assertTrue(nativeResult.isSuccess(), "native: " + nativeResult.error());
+            assertTrue(fallbackResult.isSuccess(), "fallback: " + fallbackResult.error());
+            assertEquals(nativeResult.occurrences(), fallbackResult.occurrences());
+            assertEquals(Files.readString(nativeFile), Files.readString(fallbackFile));
+        }
+
+        @Test
+        void edit_crlf_ambiguousOccurrenceStillRejected() throws IOException {
+            // The >1 guard must fire on CRLF content on the native path too, matching the
+            // shared replacement semantics.
+            Path file = tmpDir.resolve("crlf-multi.txt");
+            Files.writeString(file, "a\r\na\r\n");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "a", "x", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("2 times"));
+            assertEquals("a\r\na\r\n", Files.readString(file), "file must be untouched");
         }
 
         @Test
