@@ -74,17 +74,23 @@ class ReActAgentUnknownVersionPersistTest {
      * version-unknown window (e.g. a restart whose version cache is empty).
      */
     private static long persistUnknownVersion(ReActAgent agent, AgentState state) throws Exception {
+        // The slot parameter is the private nested SlotId record; reach it reflectively.
+        Class<?> slotIdClass = Class.forName("io.agentscope.core.ReActAgent$SlotId");
         Method method =
                 ReActAgent.class.getDeclaredMethod(
                         "persistAgentStateCas",
                         String.class,
                         String.class,
-                        String.class,
+                        slotIdClass,
                         AgentState.class,
                         long.class,
                         int.class);
         method.setAccessible(true);
-        return (long) method.invoke(agent, "u", "s", "u/s", state, AgentStateStore.UNVERSIONED, 0);
+        java.lang.reflect.Constructor<?> slotIdCtor =
+                slotIdClass.getDeclaredConstructor(String.class, String.class);
+        slotIdCtor.setAccessible(true);
+        Object slotId = slotIdCtor.newInstance("u", "s");
+        return (long) method.invoke(agent, "u", "s", slotId, state, AgentStateStore.UNVERSIONED, 0);
     }
 
     @Test
