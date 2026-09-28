@@ -61,9 +61,11 @@ Managed Agents 侧的会话能力与已知缺陷,见 [managed-agents-followups.m
 
 多副本同时写同一会话时,两个副本各自整文件上传,后写覆盖先写;union-merge 只在读取时发生,救不回已被覆盖的条目。
 
-### 2.4 控制面历史依赖活实例
+### 2.4 控制面历史已与活实例解耦
 
-Operate 的 `/api/v1/sessions/{id}/messages` 是实时转发到数据面,受 `message-query` capability 门控。实例不在了,历史就看不到。事件列表则因为事件上报默认关闭而通常为空。
+Operate 现在以控制面持久事件日志为事实源，通过 history tail + resumable SSE 展示会话；
+`message-query` 只在兼容端点中作为 fallback。Java/Python SDK 默认上报完整事件并等待持久化 ACK，
+因此实例退出后仍可查看历史。
 
 ## 3. 改造方案
 
@@ -99,7 +101,7 @@ B3 消除 2.3 的两个病症:字节量从 O(N²) 降为 O(N);并发写者各写
 | 任务 | 内容 | 状态 |
 |---|---|---|
 | C1 | 窄索引表 schema，写入时增量维护条目计数与 token 聚合 | **部分完成** — `session_transcript_index` 迁移 + `upsertObservedSession` / dataplane poller 用 DP snapshot 字段维护；注释标明暂不从事件重算 |
-| C2 | Operate 的 messages 改读 transcript；`message-query` 门控**降级为 fallback 而非移除** | **部分完成** — `TranscriptMessages` hook + `AISTIO_TRANSCRIPT_FS_ROOT` 文件系统读；miss 时回退活实例并保留能力门控 |
+| C2 | Operate 的 messages 改读持久事件；`message-query` 门控降级为兼容 fallback | **完成** — 页面直接从 Level-2 event history + SSE 投影 Message，不依赖活实例 |
 | C3 | 事件读取 API 增加 `before`/`limit`，前端先加载最近 N 条再向上懒加载 | **完成** — `WithEventBefore` / `WithEventBeforeSeq` + newest-first limit |
 | C4 | 控制面改读索引表，poller 不再逐会话回源重算聚合；复核并修复快照列表截断导致的误归档 | **部分完成** — 聚合走 snapshot/index；`ArchiveMissing` 在 probe ≥500 或 `truncated`/`hasMore` 时跳过 |
 
@@ -119,8 +121,9 @@ B3 消除 2.3 的两个病症:字节量从 O(N²) 降为 O(N);并发写者各写
 5. 两个副本并发写同一会话,条目零丢失
 5. 数据面实例下线后,Operate 仍能读到该会话的完整消息历史
 6. 长会话首屏不再拉取全量,反向分页可用
-7. poller 不再逐会话回源重算聚合;快照截断不再导致误归档
-8. `go test ./...` 通过,service-dataplane 与 harness 编译通过
+7. 会话 UI 不轮询 messages/events；SSE 断线按 seq 恢复并自动补洞
+8. poller 不再逐会话回源重算聚合;快照截断不再导致误归档
+9. `go test ./...` 通过,service-dataplane 与 harness 编译通过
 
 ## 5. 依赖与顺序
 

@@ -51,10 +51,10 @@ const (
 
 // Request is an inbound session command.
 type Request struct {
-	Command   string
-	Operator  string
-	Source    string
-	Force     bool
+	Command  string
+	Operator string
+	Source   string
+	Force    bool
 	// Queue controls deferral when the session is busy (busy=true).
 	// nil means default: queue idle-required commands; false forces 409.
 	Queue     *bool

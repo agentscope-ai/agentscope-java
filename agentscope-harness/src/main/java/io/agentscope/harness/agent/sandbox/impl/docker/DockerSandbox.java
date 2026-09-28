@@ -20,6 +20,7 @@ import io.agentscope.harness.agent.sandbox.AbstractBaseSandbox;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
 import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import io.agentscope.harness.agent.sandbox.layout.BindMountEntry;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
@@ -29,6 +30,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -60,9 +64,14 @@ import org.slf4j.LoggerFactory;
  *   <li>Exec: {@code docker exec -w <root> <containerId> sh -c <command>}</li>
  *   <li>PersistWorkspace: {@code docker exec <containerId> tar -cf - -C <root> .}</li>
  *   <li>HydrateWorkspace: {@code docker exec -i <containerId> tar -xf - -C <root>}</li>
+ *   <li>UploadFile / DownloadFile ({@link SandboxFileTransfer}): a host temp file round-tripped
+ *       through {@code docker cp}, so file bytes never pass through exec argv or the stdout
+ *       capture cap. Scoped to the workspace subtree by lexical validation; uploads land with
+ *       mode 0644, matching the archive-hydrate fallback. Symlinks inside the sandbox are not
+ *       resolved — the isolation boundary is the container, not the subtree.</li>
  * </ul>
  */
-public class DockerSandbox extends AbstractBaseSandbox {
+public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTransfer {
 
     private static final Logger log = LoggerFactory.getLogger(DockerSandbox.class);
 
@@ -352,6 +361,124 @@ public class DockerSandbox extends AbstractBaseSandbox {
         return dockerState.getWorkspaceRoot();
     }
 
+    @Override
+    public boolean supportsFileTransfer(String path) {
+        try {
+            requireTransferPath(path);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    @Override
+    public void uploadFile(String path, byte[] content) throws Exception {
+        if (content == null) {
+            throw new IllegalArgumentException("File content must not be null");
+        }
+        String containerPath = requireTransferPath(path);
+        Path temp = Files.createTempFile("agentscope-docker-upload-", ".bin");
+        applyUploadFileMode(temp);
+        try {
+            Files.write(temp, content);
+            int slash = containerPath.lastIndexOf('/');
+            String parent = slash > 0 ? containerPath.substring(0, slash) : "/";
+            runDockerCliBlocking(
+                    30, "docker", "exec", dockerState.getContainerId(), "mkdir", "-p", parent);
+            runDockerCliBlocking(
+                    TAR_TIMEOUT_SECONDS,
+                    "docker",
+                    "cp",
+                    temp.toString(),
+                    dockerState.getContainerId() + ":" + containerPath);
+        } finally {
+            Files.deleteIfExists(temp);
+        }
+    }
+
+    @Override
+    public byte[] downloadFile(String path) throws Exception {
+        String containerPath = requireTransferPath(path);
+        Path temp = Files.createTempFile("agentscope-docker-download-", ".bin");
+        try {
+            runDockerCliBlocking(
+                    TAR_TIMEOUT_SECONDS,
+                    "docker",
+                    "cp",
+                    dockerState.getContainerId() + ":" + containerPath,
+                    temp.toString());
+            return Files.readAllBytes(temp);
+        } finally {
+            Files.deleteIfExists(temp);
+        }
+    }
+
+    private String requireTransferPath(String path) {
+        if (dockerState.getContainerId() == null || dockerState.getContainerId().isBlank()) {
+            throw new IllegalArgumentException("Docker container is unavailable");
+        }
+        String resolved = resolveContainerPath(path);
+        String root = normalizeAbsolutePath(dockerState.getWorkspaceRoot());
+        if (root == null
+                || resolved.equals(root)
+                || !resolved.startsWith("/".equals(root) ? "/" : root + "/")) {
+            throw new IllegalArgumentException("Path is outside the sandbox workspace: " + path);
+        }
+        return resolved;
+    }
+
+    private String resolveContainerPath(String path) {
+        if (path == null || path.isBlank()) {
+            throw new IllegalArgumentException("Path must identify a file");
+        }
+        String normalized = path.replace('\\', '/');
+        while (normalized.startsWith("./")) {
+            normalized = normalized.substring(2);
+        }
+        String[] parts = normalized.split("/", -1);
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i];
+            if (((i > 0 || !normalized.startsWith("/")) && part.isEmpty())
+                    || ".".equals(part)
+                    || "..".equals(part)) {
+                throw new IllegalArgumentException("Path contains traversal segments: " + path);
+            }
+        }
+        if (path.startsWith("/") || normalized.startsWith("/")) {
+            return normalizeAbsolutePath(normalized);
+        }
+        String root = normalizeAbsolutePath(dockerState.getWorkspaceRoot());
+        if (root == null) {
+            throw new IllegalArgumentException("Sandbox workspace root is unavailable");
+        }
+        return "/".equals(root) ? "/" + normalized : root + "/" + normalized;
+    }
+
+    private static String normalizeAbsolutePath(String path) {
+        if (path == null || path.isBlank() || !path.startsWith("/")) {
+            return null;
+        }
+        String normalized = path.replace('\\', '/');
+        while (normalized.endsWith("/") && normalized.length() > 1) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    /**
+     * Gives the upload temp file mode 0644 so {@code docker cp}, which preserves the source
+     * mode, matches the archive fallback's tar default instead of {@code createTempFile}'s
+     * 0600 — uploads must stay readable when the container runs as a non-root user. Skipped on
+     * filesystems without POSIX permissions (e.g. Windows), which carry no mode to preserve.
+     */
+    private static void applyUploadFileMode(Path temp) throws IOException {
+        try {
+            Files.setPosixFilePermissions(temp, PosixFilePermissions.fromString("rw-r--r--"));
+        } catch (UnsupportedOperationException e) {
+            // No POSIX permissions on this filesystem — nothing to align.
+        }
+    }
+
     // -----------------------------------------------------------------
     //  Container management
     // -----------------------------------------------------------------
@@ -581,7 +708,9 @@ public class DockerSandbox extends AbstractBaseSandbox {
      * @param command        command and arguments
      * @throws SandboxException.SandboxRuntimeException if the command fails or times out
      */
-    private void runDockerCliBlocking(int timeoutSeconds, String... command) throws Exception {
+    // Visible for testing so unit tests can intercept the docker CLI round trip
+    // (upload/download temp-file plumbing) without a live Docker daemon.
+    void runDockerCliBlocking(int timeoutSeconds, String... command) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(command);
         Process process = pb.start();
 

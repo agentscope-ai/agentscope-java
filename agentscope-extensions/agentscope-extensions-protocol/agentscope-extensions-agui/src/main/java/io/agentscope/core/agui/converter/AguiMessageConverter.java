@@ -78,6 +78,9 @@ public class AguiMessageConverter {
     /** AG-UI resume payload key: full replacement tool arguments. */
     private static final String RESUME_PAYLOAD_EDITED_ARGS = "editedArgs";
 
+    /** AG-UI resume payload key: optional reason supplied when denying the tool call. */
+    private static final String RESUME_PAYLOAD_REASON = "reason";
+
     /**
      * Creates a new AguiMessageConverter
      */
@@ -470,7 +473,8 @@ public class AguiMessageConverter {
                         .content(toolContent)
                         .build();
 
-        ConfirmResult confirmResult = new ConfirmResult(approved, toolUseBlock);
+        ConfirmResult confirmResult =
+                new ConfirmResult(approved, toolUseBlock, null, reason(resume));
         return Msg.builder()
                 .id("agui-confirm-" + resume.getInterruptId())
                 .role(MsgRole.USER)
@@ -518,6 +522,15 @@ public class AguiMessageConverter {
             result.put(key, entry.getValue());
         }
         return Collections.unmodifiableMap(result);
+    }
+
+    private static String reason(AguiResume resume) {
+        Object payload = resume.getPayload();
+        if (!(payload instanceof Map<?, ?> map)) {
+            return null;
+        }
+        String reason = stringValue(map.get(RESUME_PAYLOAD_REASON));
+        return reason == null || reason.isBlank() ? null : reason;
     }
 
     private static String stringValue(Object value) {

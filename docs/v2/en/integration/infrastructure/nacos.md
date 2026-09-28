@@ -1,4 +1,7 @@
-# Nacos
+---
+title: Nacos
+zh_link: /v2/zh/integration/infrastructure/nacos
+---
 
 `agentscope-extensions-nacos` uses [Nacos](https://nacos.io/) as AgentScope's unified control plane: register and discover A2A Agents, hot-load prompts, and host skills. It contains three sub-modules — pick the ones you need.
 
@@ -103,5 +106,5 @@ Version/label resolution order: `Properties` provided to the constructor → JVM
 
 ## Pairs well with
 
-- [A2A](../protocol/a2a.md): inject a Nacos-backed `AgentRegistry` into `AgentScopeA2aServer.builder().agentRegistry(...)` to publish AgentCards cluster-wide on startup.
-- [Skill repositories](../skill/): coexist with Git/MySQL `AgentSkillRepository` to assemble a Toolkit from multiple sources.
+- [A2A](/v2/en/integration/protocol/a2a): inject a Nacos-backed `AgentRegistry` into `AgentScopeA2aServer.builder().agentRegistry(...)` to publish AgentCards cluster-wide on startup.
+- [Skill repositories](/v2/en/integration/skill/index): coexist with Git/MySQL `AgentSkillRepository` to assemble a Toolkit from multiple sources.

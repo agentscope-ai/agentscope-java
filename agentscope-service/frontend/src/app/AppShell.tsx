@@ -14,273 +14,220 @@
  * limitations under the License.
  */
 
-import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useAccountIdentity } from '@/lib/accountIdentity';
+import { logoutAccount } from '@/api/auth';
+/*
+ * Copyright 2024-2026 the original author or authors.
+ * Licensed under the Apache License, Version 2.0.
+ */
+
+import { useCallback, useEffect, useState, type ComponentType } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { resourceURL } from '@/api/resourceAccess';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bot,
-  ChevronRight,
-  LayoutDashboard,
+  BriefcaseBusiness,
+  CircleGauge,
+  ClipboardCheck,
+  Database,
+  FileStack,
   LogOut,
+  Menu,
+  MessageSquare,
+  Network,
+  Search,
+  Settings2,
+  ShieldCheck,
   UsersRound,
 } from 'lucide-react';
+import { namespaceCan } from '@/lib/namespaceScope';
 import { cn } from '@/lib/utils';
-import { clearToken, getUsername, isAdmin } from '@/lib/auth';
+import { clearToken, getRoles, getUsername, isAdmin } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
-
-type ZoneId = 'dashboard' | 'managed' | 'teams';
+import { useControlPlaneScope } from './ScopeContext';
+import { NamespaceSwitcher } from './NamespaceSwitcher';
+import { CommandPalette, useCommandPaletteShortcut } from './CommandPalette';
+import { useCollaborationEvents } from './useCollaborationEvents';
+import { getInboxSummary } from '@/api/collaboration';
+import { formatAttentionCount, type ApprovalAttentionSummary } from './approvalAttention';
 
 type NavItem = {
   to: string;
   label: string;
+  icon: ComponentType<{ className?: string }>;
   end?: boolean;
   admin?: boolean;
+  operator?: boolean;
+  agentCenter?: boolean;
+  configure?: boolean;
 };
 
-type NavSection = {
-  id: ZoneId;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  match: (pathname: string) => boolean;
-  home: string;
-  items: NavItem[];
-};
+type NavGroup = { label?: string; items: NavItem[] };
 
-const managedPrefixes = [
-  '/agents',
-  '/sessions',
-  '/workspaces',
-  '/environments',
-  '/memory-stores',
-  '/vaults',
-  '/deployments',
-  '/channels',
-];
-
-const navSections: NavSection[] = [
+const navigation: NavGroup[] = [
+  { items: [{ to: '/work/overview', label: 'Overview', icon: CircleGauge, end: true }] },
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    icon: LayoutDashboard,
-    match: (pathname) => pathname.startsWith('/operate'),
-    home: '/operate',
+    label: 'Work',
     items: [
-      { to: '/operate', label: 'Overview', end: true },
-      { to: '/operate/agents', label: 'Agents' },
-      { to: '/operate/sessions', label: 'Sessions' },
-      { to: '/operate/governance', label: 'Governance' },
+      { to: '/work/chat', label: 'Chat', icon: MessageSquare },
+      { to: '/work/issues', label: 'Issues', icon: FileStack },
+      { to: '/work/inbox', label: 'Inbox', icon: ClipboardCheck },
+      { to: '/work/automations', label: 'Automations', icon: BriefcaseBusiness },
     ],
   },
   {
-    id: 'managed',
-    label: 'Managed Agents',
-    icon: Bot,
-    match: (pathname) =>
-      managedPrefixes.some(
-        (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-      ),
-    home: '/agents',
+    label: 'Design',
     items: [
-      { to: '/agents', label: 'Agents' },
-      { to: '/sessions', label: 'Sessions' },
-      { to: '/workspaces', label: 'Workspaces' },
-      { to: '/environments', label: 'Environments' },
-      { to: '/memory-stores', label: 'Memory' },
-      { to: '/vaults', label: 'Vaults' },
-      { to: '/deployments', label: 'Deployments' },
-      { to: '/channels', label: 'Channels', admin: true },
+      { to: '/agent-center/agents', label: 'Agents', icon: Bot, agentCenter: true },
+      { to: '/agent-center/teams', label: 'Teams', icon: UsersRound, agentCenter: true },
+      { to: '/agent-center/workflows', label: 'Workflows', icon: Network, agentCenter: true },
+      { to: '/agent-center/entrypoints', label: 'Channels', icon: Network, agentCenter: true, configure: true },
     ],
   },
   {
-    id: 'teams',
-    label: 'Teams',
-    icon: UsersRound,
-    match: (pathname) => pathname.startsWith('/teams'),
-    home: '/teams',
+    label: 'Resources',
     items: [
-      { to: '/teams', label: 'Overview', end: true },
-      { to: '/teams/list', label: 'Teams' },
-      { to: '/teams/templates', label: 'Templates' },
+      { to: '/agent-center/workspaces', configure: true, label: 'Workspaces', icon: FileStack, agentCenter: true },
+      { to: '/agent-center/environments', configure: true, label: 'Environments', icon: Settings2, agentCenter: true },
+      { to: '/agent-center/memory', configure: true, label: 'Memory', icon: Database, agentCenter: true },
+      { to: '/agent-center/vaults', configure: true, label: 'Vault', icon: ShieldCheck, agentCenter: true },
     ],
   },
 ];
 
-function resolveZone(pathname: string): ZoneId | null {
-  for (const section of navSections) {
-    if (section.match(pathname)) return section.id;
-  }
-  return null;
+const routeLabels: Array<[string, string]> = [
+  ['/work/overview', 'Overview'],
+  ['/work/chat', 'Chat'],
+  ['/work/issues', 'Issues'],
+  ['/work/inbox', 'Inbox'],
+  ['/work/automations', 'Automations'],
+  ['/work/activity', 'Activity'],
+  ['/work/executions', 'Executions'],
+  ['/work/sessions', 'Sessions'],
+  ['/agent-center/agents', 'Agents'],
+  ['/agent-center/teams', 'Teams'],
+  ['/agent-center/workflows', 'Workflows'],
+  ['/agent-center/endpoints', 'API details'],
+  ['/agent-center/entrypoints', 'Channels'],
+  ['/agent-center/workspaces', 'Workspaces'],
+  ['/agent-center/environments', 'Environments'],
+  ['/agent-center/memory', 'Memory'],
+  ['/agent-center/vaults', 'Vault'],
+  ['/managed/profile', 'Profile'],
+  ['/managed/admin/users', 'Users'],
+  ['/settings/namespaces', 'Namespaces'],
+  ['/settings/users', 'Users'],
+  ['/settings/access-log', 'Access log'],
+  ['/settings/profile', 'Profile'],
+];
+
+function matches(pathname: string, to: string, end?: boolean): boolean {
+  if (end) return pathname === to;
+  return pathname === to || pathname.startsWith(`${to}/`);
 }
 
-function SideLink({
-  to,
-  label,
-  end,
-}: {
-  to: string;
-  label: string;
-  end?: boolean;
-}) {
+function SidebarLink({ item, attention }: { item: NavItem; attention?: ApprovalAttentionSummary }) {
+  const { scopedPath } = useControlPlaneScope();
+  const location = useLocation();
+  const Icon = item.icon;
+  const active = matches(location.pathname, item.to, item.end);
   return (
     <NavLink
-      to={to}
-      end={end}
-      className={({ isActive }) =>
-        cn(
-          'relative flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-          isActive
-            ? 'bg-accent text-accent-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-primary'
-            : 'text-slate-600 hover:bg-muted hover:text-foreground',
-        )
-      }
+	  to={scopedPath(item.to)}
+      className={cn(
+        'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+        active
+          ? 'bg-accent text-accent-foreground'
+          : 'text-slate-600 hover:bg-muted hover:text-foreground',
+      )}
     >
-      {label}
+      <Icon className="h-[18px] w-[18px] shrink-0 text-slate-500 group-hover:text-current" />
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {!!attention?.total && (
+        <span
+          className="inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-amber-800"
+          aria-label={`${attention.total} items need attention`}
+          title={`${attention.pending} pending confirmation${attention.pending === 1 ? '' : 's'} · ${attention.unread} unread notification${attention.unread === 1 ? '' : 's'}`}
+        >
+          {formatAttentionCount(attention.total)}
+        </span>
+      )}
     </NavLink>
   );
 }
 
-function NavGroup({
-  section,
-  open,
-  onToggle,
-  admin,
-}: {
-  section: NavSection;
-  open: boolean;
-  onToggle: () => void;
-  admin: boolean;
-}) {
-  const Icon = section.icon;
-  const items = section.items.filter((item) => !item.admin || admin);
-
-  return (
-    <div className="space-y-0.5">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className={cn(
-          'flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors',
-          open
-            ? 'bg-slate-100 text-foreground'
-            : 'text-slate-700 hover:bg-muted hover:text-foreground',
-        )}
-      >
-        <ChevronRight
-          className={cn(
-            'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
-            open && 'rotate-90',
-          )}
-        />
-        <Icon className="h-5 w-5 shrink-0" />
-        <span className="truncate text-left">{section.label}</span>
-      </button>
-
-      {open && (
-        <div className="ml-3 space-y-0.5 border-l border-border pl-2">
-          {items.map((item) => (
-            <SideLink
-              key={item.to}
-              to={item.to}
-              label={item.label}
-              end={item.end}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function AppShell() {
+  useAccountIdentity();
   const location = useLocation();
   const navigate = useNavigate();
   const username = getUsername();
   const admin = isAdmin();
-  const activeZone = resolveZone(location.pathname);
-  const activeHome =
-    navSections.find((s) => s.id === activeZone)?.home ?? '/agents';
-
-  // Default all collapsed; auto-expand the section that owns the current route.
-  const [openSections, setOpenSections] = useState<Record<ZoneId, boolean>>({
-    dashboard: false,
-    managed: false,
-    teams: false,
+  const roles = getRoles().map((role) => role.toLowerCase());
+  const scope = useControlPlaneScope();
+	useCollaborationEvents(scope.tenant, scope.namespace);
+  const inboxSummary = useQuery({
+    queryKey: ['inbox-summary', scope.tenant, scope.namespace],
+    queryFn: () => getInboxSummary(scope.tenant, scope.namespace),
+    refetchInterval: 5_000,
   });
-
-  useEffect(() => {
-    if (!activeZone) return;
-    setOpenSections((prev) => {
-      if (prev[activeZone]) return prev;
-      return { ...prev, [activeZone]: true };
-    });
-  }, [activeZone]);
-
-  const toggleSection = (id: ZoneId) => {
-    setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  const summary = inboxSummary.data?.summary;
+  const approvalAttention = summary ? { total: summary.attentionTotal, unread: summary.unread, pending: summary.pendingApprovals } : undefined;
+  const canAgentCenter = scope.roles.length > 0 || admin || roles.includes('agent_developer') || roles.includes('operator');
+  const visibleNavigation = navigation.map((group) => ({
+    ...group,
+    items: group.items.filter((item) =>
+      (!item.configure || namespaceCan(scope.roles, 'configure')) && (!item.admin || admin) && (!item.operator || admin || roles.includes('operator')) && (!item.agentCenter || canAgentCenter)),
+  })).filter((group) => group.items.length > 0);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const openCommand = useCallback(() => setCommandOpen(true), []);
+  useCommandPaletteShortcut(openCommand);
+  useEffect(() => setMobileNavOpen(false), [location.pathname]);
+  const resourceMatch = location.pathname.match(/^\/agent-center\/(agents|teams|workflows|entrypoints|workspaces)\/([^/]+)/);
+  const accessLink = resourceMatch && resourceMatch[2] !== 'new' && !location.pathname.includes('/manage') ? resourceURL(scope.namespace, ({ agents: 'agent', teams: 'team', workflows: 'workflow', entrypoints: 'channel', workspaces: 'workspace' } as Record<string, string>)[resourceMatch[1]], decodeURIComponent(resourceMatch[2])) : undefined;
+  const context = routeLabels.find(([prefix]) => matches(location.pathname, prefix));
 
   return (
     <div className="flex h-full min-h-0 bg-canvas">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-white">
-        <div className="border-b border-border px-5 py-5">
-          <button className="flex items-center gap-3 text-left" onClick={() => navigate(activeHome)}>
-            <img
-              src="/logo.svg"
-              alt="AgentScope"
-              className="h-9 w-9 shrink-0"
-              width={36}
-              height={36}
-            />
-            <div>
-              <div className="text-lg font-bold tracking-tight text-foreground">aistio</div>
-              <div className="mt-0.5 text-sm text-muted-foreground">Control plane console</div>
+      <a
+        href="#main-content"
+        className="fixed left-3 top-3 z-50 -translate-y-20 rounded-md bg-primary px-3 py-2 text-sm text-white focus:translate-y-0"
+      >
+        Skip to content
+      </a>
+      {mobileNavOpen && <button type="button" aria-label="Close navigation" className="fixed inset-0 z-30 bg-slate-950/35 lg:hidden" onClick={() => setMobileNavOpen(false)} />}
+      <aside className={cn('fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col border-r border-border bg-white transition-transform lg:static lg:z-auto lg:translate-x-0', mobileNavOpen ? 'translate-x-0' : '-translate-x-full')}>
+        <div className="border-b border-border px-4 py-4">
+          <Link className="flex items-center gap-3 rounded-lg" to="/work/overview">
+            <img src="/logo.svg" alt="AgentScope" className="h-9 w-9 shrink-0" width={36} height={36} />
+            <div className="min-w-0">
+              <div className="text-lg font-bold tracking-tight text-foreground">AgentScope Service</div>
+              <div className="truncate text-xs text-muted-foreground">Control plane</div>
             </div>
-          </button>
+          </Link>
         </div>
 
-        <nav className="flex-1 space-y-2 overflow-y-auto p-3">
-          {navSections.map((section) => (
-            <NavGroup
-              key={section.id}
-              section={section}
-              open={openSections[section.id]}
-              onToggle={() => toggleSection(section.id)}
-              admin={admin}
-            />
-          ))}
+        <NamespaceSwitcher />
+
+        <nav aria-label="Primary navigation" className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+          {visibleNavigation.map((group, index) => <div key={group.label || `primary-${index}`} className="space-y-1">
+            {group.label && <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{group.label}</div>}
+            {group.items.map((item) => <SidebarLink key={item.to} item={item} attention={item.to === '/work/inbox' ? approvalAttention : undefined} />)}
+          </div>)}
         </nav>
 
-        <div className="border-t border-border p-4">
-          <div className="mb-2.5 truncate px-2 text-sm text-muted-foreground">
-            {username || 'guest'}
-          </div>
+        <div className="border-t border-border p-3">
+          <div className="mb-2 truncate px-2 text-xs text-muted-foreground">Signed in as {username || 'guest'}</div>
           <div className="flex gap-1">
-            {admin && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex-1 justify-start"
-                onClick={() => navigate('/admin/users')}
-              >
-                Users
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex-1 justify-start"
-              onClick={() => navigate('/profile')}
-            >
-              Profile
-            </Button>
+            <Button variant="ghost" size="sm" className="flex-1 px-2" onClick={() => navigate('/settings/namespaces')}>Access settings</Button>
+            <Button variant="ghost" size="sm" className="flex-1 px-2" onClick={() => navigate('/settings/profile')}>Profile</Button>
             <Button
               variant="ghost"
               size="icon"
+              aria-label="Sign out"
               title="Sign out"
-              onClick={() => {
-                clearToken();
-                navigate('/login');
-              }}
+              onClick={async () => { try { await logoutAccount(); } finally { clearToken(); navigate('/login'); } }}
             >
               <LogOut className="h-4 w-4" />
             </Button>
@@ -288,9 +235,23 @@ export default function AppShell() {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-auto bg-canvas">
-        <Outlet />
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-3 py-2 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Menu className="h-4 w-4" /></Button>
+            <div className="hidden min-w-0 text-sm font-medium text-foreground xl:block">{context?.[1] || 'AgentScope'}</div>
+          </div>
+          <div className="flex items-center gap-3">
+            {accessLink && <Link className="text-xs font-medium text-indigo-600" to={accessLink}>Access & dependencies</Link>}
+            <button type="button" onClick={openCommand} className="flex h-8 items-center gap-2 rounded-lg border border-border bg-muted px-2 text-xs text-muted-foreground hover:bg-slate-100 sm:min-w-52 sm:px-3" aria-label="Search"><Search className="h-3.5 w-3.5" /><span className="hidden flex-1 text-left sm:block">Search</span><kbd className="hidden rounded border bg-white px-1.5 py-0.5 font-mono text-[10px] sm:block">⌘K</kbd></button>
+            {scope.selectorVisible && <div className="hidden font-mono text-xs text-muted-foreground md:block">{scope.tenant} / {scope.namespace}</div>}
+          </div>
+        </header>
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-auto bg-white focus:outline-none">
+          <Outlet />
+        </main>
+      </div>
+      <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
     </div>
   );
 }

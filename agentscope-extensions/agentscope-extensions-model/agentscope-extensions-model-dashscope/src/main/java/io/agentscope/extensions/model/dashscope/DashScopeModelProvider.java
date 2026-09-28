@@ -31,6 +31,8 @@ import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.regex.Pattern;
 
 /** DashScope provider registered through {@link java.util.ServiceLoader}. */
@@ -43,6 +45,7 @@ public final class DashScopeModelProvider implements ModelProvider {
     private static final String OPTION_ENABLE_ENCRYPT = "enableEncrypt";
     private static final String OPTION_ENABLE_SEARCH = "enableSearch";
     private static final String OPTION_ENDPOINT_TYPE = "endpointType";
+    private static final String OPTION_MULTIMODAL_MODEL_PATTERNS = "multimodalModelPatterns";
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT = "nativeStructuredOutput";
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS =
             "nativeStructuredOutputWithTools";
@@ -118,6 +121,11 @@ public final class DashScopeModelProvider implements ModelProvider {
         if (endpointType != null) {
             builder.endpointType(endpointType);
         }
+        Collection<String> multimodalModelPatterns =
+                stringCollectionOption(context, OPTION_MULTIMODAL_MODEL_PATTERNS);
+        if (multimodalModelPatterns != null) {
+            builder.multimodalModelPatterns(multimodalModelPatterns);
+        }
         Boolean enableEncrypt = booleanOption(context, OPTION_ENABLE_ENCRYPT);
         if (enableEncrypt != null) {
             builder.enableEncrypt(enableEncrypt);
@@ -150,5 +158,28 @@ public final class DashScopeModelProvider implements ModelProvider {
         }
         throw new IllegalArgumentException(
                 "ModelCreationContext option " + key + " must be an EndpointType or string");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Collection<String> stringCollectionOption(
+            ModelCreationContext context, String key) {
+        Object value = context.option(key);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Collection<?> raw) {
+            if (raw.isEmpty()) {
+                return null;
+            }
+            Collection<String> result = new ArrayList<>(raw.size());
+            for (Object element : raw) {
+                if (element != null) {
+                    result.add(element.toString());
+                }
+            }
+            return result;
+        }
+        throw new IllegalArgumentException(
+                "ModelCreationContext option " + key + " must be a Collection of strings");
     }
 }

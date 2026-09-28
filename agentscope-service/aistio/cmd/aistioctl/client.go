@@ -15,7 +15,11 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"net/http"
+	"os"
+	"strings"
 )
 
 func newAPIClient() *http.Client {
@@ -25,6 +29,37 @@ func newAPIClient() *http.Client {
 			base:  http.DefaultTransport,
 		},
 	}
+}
+
+func agentTaskToken() string {
+	for _, key := range []string{"AGENTSCOPE_TASK_TOKEN", "AISTIO_AGENT_TASK_TOKEN"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func doTaskAPI(method, path string, body []byte, token string) (*http.Response, error) {
+	if token == "" {
+		return nil, fmt.Errorf("task-scoped authentication is required; run inside a hosted AgentTask or set AGENTSCOPE_TASK_TOKEN")
+	}
+	req, err := http.NewRequest(method, strings.TrimRight(apiEndpoint, "/")+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > 0 {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("X-Agent-Task-Token", token)
+	return http.DefaultClient.Do(req)
+}
+
+func doAgentOrHumanAPI(method, path string, body []byte) (*http.Response, error) {
+	if token := agentTaskToken(); token != "" {
+		return doTaskAPI(method, path, body, token)
+	}
+	return doAPI(method, path, body)
 }
 
 type tokenTransport struct {

@@ -1,8 +1,7 @@
 ---
-hide-toc: true
+title: AIDC 物流：企业级 Agent 开发实践
+en_link: /v2/en/blogs/usecases/aidc-logistics
 ---
-
-# 从配置驱动到业务原生：基于 AgentScope 的企业级 Agent 开发实践
 
 ## 01 背景
 
@@ -291,7 +290,7 @@ return "NEED_CONFIRM: 金额过大，请确认";
 **5. 可观测性与高级推理能力零侵入集成**
 
 - 规则：Trace 埋点、Prompt 缓存、工具调用增强等能力在模型层自动完成，业务代码无需手动处理。
-- 源码分析：`ChatModelBase.stream()` 通过 `TracerRegistry.get().callModel()` 自动包裹调用；cacheControl=true 时 `OpenAIBaseFormatter.applyCacheControl()` 自动添加缓存标记；toolChoice 与 parallelToolCalls 参数直接控制工具行为。
+- 源码分析：`ChatModelBase.stream()` 通过 `TracerRegistry.get().callModel()` 自动包裹调用；cacheControl=true 时 formatter 在格式化消息时自动添加缓存标记；toolChoice 与 parallelToolCalls 参数直接控制工具行为。
 
 ![模型层架构一](https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j2vyuibOsbQibMibMjVQOymQcVxoTOX2VY8z2jHJ6XdAN5A5FCfD8zWgxt5Abdt2sGI95MLD7eJFMF6pKYduAc8jvaMYS0VfMWw8c/640?wx_fmt=png&from=appmsg)
 
@@ -758,7 +757,7 @@ public ProcessResult process(RunAgentInput input, String headerAgentId, String p
 
 **原因一：线程安全。** 复用层底层是异步线程池模型，线程会被多个会话复用。如果通过 `ThreadLocal` 传递请求级数据，线程归还线程池后残留数据可能污染后续其他会话。`RuntimeContext` 由框架绑定到 `AgentBase` 实例上（per-agent-instance），随请求创建、随请求销毁，天然隔离，不存在跨会话串数据的风险。
 
-**原因二：全链路可达。** `RuntimeContext` 贯穿 Agent 从创建到执行的完整生命周期，下游多个链路节点可以直接通过 `agent.getRuntimeContext()` 消费，无需额外传参：
+**原因二：全链路可达。** `RuntimeContext` 贯穿 Agent 从创建到执行的完整生命周期，下游工具和中间件通过方法参数显式接收当次调用的上下文：
 
 ![RuntimeContext 全链路可达](https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j1eicYBIKHufpOPERtSVarFrRCbGAfib3n75RdOUicqaXEomK9zicOGgJbZN98nR3ic4bBFvXKfuIdYBJTkDkNX56CtX0xLmcicak2pQ/640?wx_fmt=png&from=appmsg)
 
@@ -917,7 +916,7 @@ HTTP Header（X-Temperature 等） > DB JSON 字段（modelParams） > DEFAULT �
 
 完整生命周期性能画像表，汇总 `createAgent` → `hasMemory` → `onEnter` → `saveAgent` → `removeSession` 各阶段的耗时与 DB 操作。
 
-这四个方法共同构成了 finance agent 的轻量级运行时：`createAgent` 解决创建轻（< 1ms，零 DB），`hasMemory` 解决探测轻（索引命中），`saveAgent` 解决持久化轻（增量写），`removeSession` 解决清理轻（批量删除）。
+这四个方法共同构成了 finance agent 的轻量级运行时：`createAgent` 解决创建轻（&lt; 1ms，零 DB），`hasMemory` 解决探测轻（索引命中），`saveAgent` 解决持久化轻（增量写），`removeSession` 解决清理轻（批量删除）。
 
 ##### 5.1.4.3 工程级别的 human in the loop（SPI3）
 

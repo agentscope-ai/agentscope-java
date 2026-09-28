@@ -1,0 +1,113 @@
+name: AgentScope Service release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Service SemVer (for example 2.0.3-rc.1)
+        required: true
+      repository:
+        description: Image registry namespace (for example ghcr.io/your-org)
+        required: true
+      publish:
+        description: Push images and Helm Chart after validation (requires a selected Git tag)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  validate-package:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      SERVICE_VERSION: ${{ inputs.version }}
+      IMAGE_REPOSITORY: ${{ inputs.repository }}
+      AISTIO_TEST_POSTGRES_DSN: postgres://postgres:ci-test-only@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agentscope-service/aistio/go.mod
+          cache-dependency-path: agentscope-service/aistio/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+      - run: python -m pip install -r agentscope-service/release/requirements.txt -e 'agentscope-service/aistio/sdk/python[dev]'
+      - run: python agentscope-service/release/release.py verify
+      - run: python agentscope-service/release/release.py package --version "$SERVICE_VERSION" --repository "$IMAGE_REPOSITORY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentscope-service-release
+          path: agentscope-service/release/dist/
+          if-no-files-found: error
+  images:
+    needs: validate-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SERVICE_VERSION: ${{ inputs.version }}
+      IMAGE_REPOSITORY: ${{ inputs.repository }}
+      PUBLISH: ${{ inputs.publish }}
+      REF_TYPE: ${{ github.ref_type }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require a tagged source for publication
+        run: |
+          if [ "$PUBLISH" = true ] && [ "$REF_TYPE" != tag ]; then
+            echo 'Select a Git tag before publishing.' >&2
+            exit 1
+          fi
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+      - uses: docker/login-action@v3
+        if: inputs.publish
+        with:
+          registry: ${{ secrets.SERVICE_REGISTRY_HOST }}
+          username: ${{ secrets.SERVICE_REGISTRY_USER }}
+          password: ${{ secrets.SERVICE_REGISTRY_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: agentscope-service-release
+          path: agentscope-service/release/dist/
+      - name: Authenticate Helm registry
+        if: inputs.publish
+        env:
+          REGISTRY_HOST: ${{ secrets.SERVICE_REGISTRY_HOST }}
+          REGISTRY_USER: ${{ secrets.SERVICE_REGISTRY_USER }}
+          REGISTRY_TOKEN: ${{ secrets.SERVICE_REGISTRY_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | helm registry login "$REGISTRY_HOST" --username "$REGISTRY_USER" --password-stdin
+      - name: Build or publish images
+        run: |
+          if [ "$PUBLISH" = true ]; then
+            python3 agentscope-service/release/release.py images --version "$SERVICE_VERSION" --repository "$IMAGE_REPOSITORY" --platforms linux/amd64,linux/arm64 --push
+            python3 agentscope-service/release/release.py publish-chart --version "$SERVICE_VERSION" --repository "$IMAGE_REPOSITORY"
+          else
+            python3 agentscope-service/release/release.py images --version "$SERVICE_VERSION" --repository "$IMAGE_REPOSITORY" --platforms linux/amd64
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentscope-service-image-metadata
+          path: agentscope-service/release/dist/**/image-*.json

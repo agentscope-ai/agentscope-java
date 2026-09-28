@@ -17,6 +17,7 @@ package io.agentscope.harness.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -68,6 +69,7 @@ import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.io.IOException;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -227,6 +229,51 @@ class HarnessAgentTest {
                         .toList();
         assertFalse(toolNames.contains("read_file"));
         assertFalse(toolNames.contains("list_files"));
+    }
+
+    @Test
+    void disableWebTools_omitsOptionalWebTools() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableWebTools()
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("web_search"));
+        assertFalse(toolNames.contains("web_fetch"));
+    }
+
+    @Test
+    void webHttpClient_injectsCustomClient() throws Exception {
+        Files.createDirectories(workspace);
+        HttpClient custom =
+                HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .build();
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .webHttpClient(custom)
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertTrue(toolNames.contains("web_search"));
+        assertTrue(toolNames.contains("web_fetch"));
     }
 
     @Test
@@ -580,6 +627,60 @@ class HarnessAgentTest {
         }
 
         assertSame(source, seen.get());
+    }
+
+    @Test
+    void executionHandleCancelsTheHarnessAndReleasesItsSandboxBinding() throws Exception {
+        Files.createDirectories(workspace);
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+        AtomicReference<RuntimeContext> active = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("run-control")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .filesystem(spec)
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String prompt) {
+                                        active.set(ctx);
+                                        return Mono.never();
+                                    }
+                                })
+                        .build()) {
+            var cancelledBeforeStart =
+                    agent.prepareRun(
+                            List.of(userText("unused")),
+                            RuntimeContext.builder().sessionId("before-start").build());
+            cancelledBeforeStart.cancel();
+            cancelledBeforeStart.stream().subscribe(event -> {}, failure::set);
+            assertEquals(0, spec.getClient().getCreateCount());
+            var run =
+                    agent.prepareRun(
+                            List.of(userText("hello")),
+                            RuntimeContext.builder().sessionId("active-run").build());
+            var subscription = run.stream().subscribe(event -> {}, failure::set);
+            try {
+                assertEquals(io.agentscope.core.agent.AgentRun.Status.RUNNING, run.status());
+                assertNotNull(
+                        active.get()
+                                .get(
+                                        io.agentscope.harness.agent.sandbox.SandboxAcquireResult
+                                                .class));
+                assertTrue(run.cancel());
+                assertNull(
+                        active.get()
+                                .get(
+                                        io.agentscope.harness.agent.sandbox.SandboxAcquireResult
+                                                .class));
+                assertTrue(failure.get() instanceof java.util.concurrent.CancellationException);
+            } finally {
+                subscription.dispose();
+            }
+        }
     }
 
     @Test
@@ -1465,7 +1566,7 @@ class HarnessAgentTest {
     // =========================================================================
 
     @Test
-    void toolsAllowlist_filtersInheritedParentTools_only() throws Exception {
+    void toolsAllowlist_filtersInheritedAndChildLocalTools() throws Exception {
         Files.createDirectories(workspace);
 
         Toolkit parentToolkit = new Toolkit();
@@ -1503,12 +1604,12 @@ class HarnessAgentTest {
         assertFalse(
                 toolNames.contains("parent_denied"),
                 "non-allowlisted inherited tool should be removed");
-        assertTrue(
+        assertFalse(
                 toolNames.contains("read_file"),
-                "child-local filesystem tools should not be filtered by inherited allowlist");
-        assertTrue(
+                "child-local filesystem tools must respect the declared allowlist");
+        assertFalse(
                 toolNames.contains("memory_search"),
-                "child-local memory tools should not be filtered by inherited allowlist");
+                "child-local memory tools must respect the declared allowlist");
     }
 
     // =========================================================================
@@ -1576,23 +1677,18 @@ class HarnessAgentTest {
 
         String userId = "alice";
         String sessionId = "session-abc";
-        agent.getDelegate().getAgentState(userId, sessionId);
-        agent.getDelegate().getAgentState(userId, "other-session");
-
         agent.interrupt(userId, sessionId);
-
-        assertTrue(
-                agent.getDelegate()
-                        .getAgentState(userId, sessionId)
-                        .interruptControl()
-                        .isInterrupted(),
-                "target session should be interrupted");
-        assertFalse(
-                agent.getDelegate()
-                        .getAgentState(userId, "other-session")
-                        .interruptControl()
-                        .isInterrupted(),
-                "other session should remain unaffected");
+        RuntimeContext ctx = RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
+        Msg reply =
+                agent
+                        .prepareCall(
+                                List.of(new io.agentscope.core.message.UserMessage("hello")), ctx)
+                        .stream()
+                        .single()
+                        .block();
+        assertNotNull(reply);
+        assertNotEquals(
+                io.agentscope.core.message.GenerateReason.INTERRUPTED, reply.getGenerateReason());
     }
 
     @Test
@@ -1608,16 +1704,17 @@ class HarnessAgentTest {
 
         RuntimeContext ctx =
                 RuntimeContext.builder().userId("bob").sessionId("session-ctx").build();
-        agent.getDelegate().getAgentState(ctx.getUserId(), ctx.getSessionId());
-
         agent.interrupt(ctx);
-
-        assertTrue(
-                agent.getDelegate()
-                        .getAgentState(ctx.getUserId(), ctx.getSessionId())
-                        .interruptControl()
-                        .isInterrupted(),
-                "session identified by RuntimeContext should be interrupted");
+        Msg reply =
+                agent
+                        .prepareCall(
+                                List.of(new io.agentscope.core.message.UserMessage("hello")), ctx)
+                        .stream()
+                        .single()
+                        .block();
+        assertNotNull(reply);
+        assertNotEquals(
+                io.agentscope.core.message.GenerateReason.INTERRUPTED, reply.getGenerateReason());
     }
 
     // =========================================================================

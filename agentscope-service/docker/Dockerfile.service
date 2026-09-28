@@ -1,0 +1,22 @@
+FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS build
+ARG MODULE
+WORKDIR /src
+COPY . .
+RUN --mount=type=cache,target=/root/.m2 case "$MODULE" in service-gateway|service-dataplane|service-scheduler) ;; *) exit 1 ;; esac \
+    && mvn -B -ntp -pl agentscope-service/$MODULE -am package -DskipTests \
+    && mkdir /out \
+    && find agentscope-service/$MODULE/target -maxdepth 1 -name "$MODULE-*.jar" \
+       ! -name '*sources*' ! -name '*javadoc*' -exec cp {} /out/app.jar \;
+
+FROM eclipse-temurin:21-jre
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 65532 agentscope \
+    && useradd --uid 65532 --gid 65532 --home-dir /data --no-create-home agentscope \
+    && mkdir -p /data/workspaces /data/artifacts \
+    && chown -R 65532:65532 /data
+COPY --from=build /out/app.jar /app.jar
+ENV BUILDER_WORKSPACE_ROOT=/data/workspaces
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app.jar"]

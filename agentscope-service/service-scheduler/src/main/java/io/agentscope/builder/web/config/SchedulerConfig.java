@@ -32,7 +32,8 @@ import io.agentscope.builder.web.persistence.jpa.CoordWorkerHeartbeatEntityRepos
 import io.agentscope.builder.web.share.AgentAclService;
 import io.agentscope.builder.web.share.AgentVisibilityResolver;
 import io.agentscope.builder.web.share.JpaAgentVisibilityResolver;
-import io.agentscope.extensions.mysql.store.JdbcStore;
+import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
+import io.agentscope.extensions.jdbc.store.JdbcStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.gateway.ChannelManager;
 import javax.sql.DataSource;
@@ -111,7 +112,9 @@ public class SchedulerConfig {
     @Bean
     @ConditionalOnMissingBean(BaseStore.class)
     public BaseStore baseStore(DataSource dataSource) {
-        return JdbcStore.builder(dataSource).initializeSchema(true).build();
+        // The dialect builder creates and validates the schema in one pass.
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource).build();
+        return JdbcStore.builder(dataSource).dialect(dialect).build();
     }
 
     /** Shared coordination store for cron fire leases (and future scheduler coordination). */

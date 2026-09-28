@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -40,11 +41,11 @@ func (s *Server) registerDeployments(r gin.IRouter) {
 }
 
 type createDeployReq struct {
-	Name          string `json:"name"`
-	AgentID       string `json:"agentId"`
-	AgentVersion  *int   `json:"agentVersion"`
-	EnvironmentID string `json:"environmentId"`
-	TriggerType   string `json:"triggerType"`
+	Name           string `json:"name"`
+	AgentID        string `json:"agentId"`
+	AgentVersion   *int   `json:"agentVersion"`
+	EnvironmentID  string `json:"environmentId"`
+	TriggerType    string `json:"triggerType"`
 	CronExpression string `json:"cronExpression"`
 }
 
@@ -57,23 +58,23 @@ type updateDeployReq struct {
 }
 
 type deployRow struct {
-	DeploymentID      string
-	OwnerID           string
-	Name              string
-	AgentID           string
-	AgentVersion      *int
-	EnvironmentID     string
-	TriggerType       string
-	CronExpression    *string
-	WebhookToken      *string
-	Enabled           bool
-	LastRunAt         *int64
-	LastSessionID     *string
-	LastStatus        *string
+	DeploymentID       string
+	OwnerID            string
+	Name               string
+	AgentID            string
+	AgentVersion       *int
+	EnvironmentID      string
+	TriggerType        string
+	CronExpression     *string
+	WebhookToken       *string
+	Enabled            bool
+	LastRunAt          *int64
+	LastSessionID      *string
+	LastStatus         *string
 	LastHandsStatsJSON *string
-	ArchivedAt        *int64
-	CreatedAt         int64
-	UpdatedAt         int64
+	ArchivedAt         *int64
+	CreatedAt          int64
+	UpdatedAt          int64
 }
 
 func (d deployRow) toJSON() gin.H {
@@ -82,23 +83,23 @@ func (d deployRow) toJSON() gin.H {
 		hands = parseJSONRaw(*d.LastHandsStatsJSON)
 	}
 	return gin.H{
-		"id":              d.DeploymentID,
-		"ownerId":         d.OwnerID,
-		"name":            d.Name,
-		"agentId":         d.AgentID,
-		"agentVersion":    d.AgentVersion,
-		"environmentId":   d.EnvironmentID,
-		"triggerType":     d.TriggerType,
-		"cronExpression":  nullStrPtr(d.CronExpression),
-		"webhookToken":    nullStrPtr(d.WebhookToken),
-		"enabled":         d.Enabled,
-		"lastRunAt":       nullMillis(d.LastRunAt),
-		"lastSessionId":   nullStrPtr(d.LastSessionID),
-		"lastStatus":      nullStrPtr(d.LastStatus),
-		"lastHandsStats":  hands,
-		"createdAt":       d.CreatedAt,
-		"updatedAt":       d.UpdatedAt,
-		"archivedAt":      nullMillis(d.ArchivedAt),
+		"id":             d.DeploymentID,
+		"ownerId":        d.OwnerID,
+		"name":           d.Name,
+		"agentId":        d.AgentID,
+		"agentVersion":   d.AgentVersion,
+		"environmentId":  d.EnvironmentID,
+		"triggerType":    d.TriggerType,
+		"cronExpression": nullStrPtr(d.CronExpression),
+		"webhookToken":   nullStrPtr(d.WebhookToken),
+		"enabled":        d.Enabled,
+		"lastRunAt":      nullMillis(d.LastRunAt),
+		"lastSessionId":  nullStrPtr(d.LastSessionID),
+		"lastStatus":     nullStrPtr(d.LastStatus),
+		"lastHandsStats": hands,
+		"createdAt":      d.CreatedAt,
+		"updatedAt":      d.UpdatedAt,
+		"archivedAt":     nullMillis(d.ArchivedAt),
 	}
 }
 
@@ -121,7 +122,7 @@ func (s *Server) loadDeploy(ctx context.Context, id string) (deployRow, error) {
 }
 
 func (s *Server) listDeployments(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	limit, offset, ok := pageParams(c)
 	if !ok {
 		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
@@ -161,18 +162,19 @@ func (s *Server) createDeployment(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "name, agentId, triggerType required")
 		return
 	}
-	owner := currentUserID(c)
-	envID := req.EnvironmentID
+	owner := currentResourceOwner(c)
+	envID := strings.TrimSpace(req.EnvironmentID)
 	if envID == "" {
-		var e envRow
-		err := s.db.Pool.QueryRow(c.Request.Context(),
-			envSelect+` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY created_at LIMIT 1`, owner).Scan(
-			&e.EnvironmentID, &e.OwnerID, &e.Name, &e.Type, &e.ConfigJSON, &e.ArchivedAt, &e.CreatedAt, &e.UpdatedAt)
+		var err error
+		envID, err = s.resolveDefaultEnvironmentID(c.Request.Context(), owner, req.AgentID)
 		if err != nil {
-			writeTextErr(c, http.StatusBadRequest, "environmentId required (no default found)")
+			writeTextErr(c, environmentBindingHTTPStatus(err), err.Error())
 			return
 		}
-		envID = e.EnvironmentID
+	}
+	if _, err := s.validateEnvironmentBinding(c.Request.Context(), owner, envID); err != nil {
+		writeTextErr(c, environmentBindingHTTPStatus(err), err.Error())
+		return
 	}
 	id := shortID("dep_")
 	now := nowMillis()
@@ -196,7 +198,7 @@ func (s *Server) createDeployment(c *gin.Context) {
 
 func (s *Server) getDeployment(c *gin.Context) {
 	d, err := s.loadDeploy(c.Request.Context(), c.Param("id"))
-	if err != nil || d.OwnerID != currentUserID(c) {
+	if err != nil || d.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "deployment not found")
 		return
 	}
@@ -205,7 +207,7 @@ func (s *Server) getDeployment(c *gin.Context) {
 
 func (s *Server) updateDeployment(c *gin.Context) {
 	d, err := s.loadDeploy(c.Request.Context(), c.Param("id"))
-	if err != nil || d.OwnerID != currentUserID(c) {
+	if err != nil || d.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "deployment not found")
 		return
 	}
@@ -228,7 +230,11 @@ func (s *Server) updateDeployment(c *gin.Context) {
 	}
 	envID := d.EnvironmentID
 	if req.EnvironmentID != nil {
-		envID = *req.EnvironmentID
+		envID = strings.TrimSpace(*req.EnvironmentID)
+		if _, err = s.validateEnvironmentBinding(c.Request.Context(), d.OwnerID, envID); err != nil {
+			writeTextErr(c, environmentBindingHTTPStatus(err), err.Error())
+			return
+		}
 	}
 	agentVer := d.AgentVersion
 	if req.AgentVersion != nil {
@@ -248,7 +254,7 @@ func (s *Server) updateDeployment(c *gin.Context) {
 }
 
 func (s *Server) archiveDeployment(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	now := nowMillis()
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`UPDATE deployments SET archived_at=$1, updated_at=$1, enabled=FALSE
@@ -267,7 +273,7 @@ func (s *Server) archiveDeployment(c *gin.Context) {
 }
 
 func (s *Server) deleteDeployment(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM deployments WHERE deployment_id=$1 AND owner_id=$2`, c.Param("id"), owner)
 	if err != nil {
@@ -283,7 +289,7 @@ func (s *Server) deleteDeployment(c *gin.Context) {
 
 func (s *Server) runDeployment(c *gin.Context) {
 	d, err := s.loadDeploy(c.Request.Context(), c.Param("id"))
-	if err != nil || d.OwnerID != currentUserID(c) {
+	if err != nil || d.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "deployment not found")
 		return
 	}
@@ -293,7 +299,7 @@ func (s *Server) runDeployment(c *gin.Context) {
 	_ = c.ShouldBindJSON(&body)
 	out, err := s.fireDeployment(c.Request.Context(), d, body.Text)
 	if err != nil {
-		writeTextErr(c, http.StatusInternalServerError, err.Error())
+		writeTextErr(c, environmentBindingHTTPStatus(err), err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, out.toJSON())
@@ -304,7 +310,18 @@ func (s *Server) unpauseDeployment(c *gin.Context) { s.setDeploymentEnabled(c, t
 
 // setDeploymentEnabled flips the enabled flag; archived deployments stay paused.
 func (s *Server) setDeploymentEnabled(c *gin.Context, enabled bool) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
+	if enabled {
+		d, err := s.loadDeploy(c.Request.Context(), c.Param("id"))
+		if err != nil || d.OwnerID != owner {
+			writeErr(c, http.StatusNotFound, "deployment not found")
+			return
+		}
+		if _, err = s.validateEnvironmentBinding(c.Request.Context(), owner, d.EnvironmentID); err != nil {
+			writeTextErr(c, environmentBindingHTTPStatus(err), err.Error())
+			return
+		}
+	}
 	now := nowMillis()
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`UPDATE deployments SET enabled=$1, updated_at=$2
@@ -344,7 +361,7 @@ func (s *Server) triggerDeploymentWebhook(c *gin.Context) {
 	_ = c.ShouldBindJSON(&body)
 	out, err := s.fireDeployment(c.Request.Context(), d, body.Text)
 	if err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
+		writeErr(c, environmentBindingHTTPStatus(err), err.Error())
 		return
 	}
 	// Deliberately narrow: the full row would leak webhook_token back out.
@@ -357,6 +374,9 @@ func (s *Server) triggerDeploymentWebhook(c *gin.Context) {
 }
 
 func (s *Server) fireDeployment(ctx context.Context, d deployRow, message string) (deployRow, error) {
+	if _, err := s.validateEnvironmentBinding(ctx, d.OwnerID, d.EnvironmentID); err != nil {
+		return d, err
+	}
 	refType := "latest"
 	ver := 0
 	a, err := s.loadAgent(ctx, d.OwnerID, d.AgentID)

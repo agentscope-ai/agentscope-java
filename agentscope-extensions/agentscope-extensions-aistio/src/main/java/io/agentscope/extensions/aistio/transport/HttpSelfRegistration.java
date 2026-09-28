@@ -24,25 +24,40 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Standalone (no-Kubernetes) self-registration against aistiod:
- * {@code POST /api/v1/dataplanes/register} + periodic heartbeats.
+ * v5 external-application registration against aistiod:
+ * {@code POST /api/v1/agent-registrations} + periodic instance heartbeats.
  *
  * <p>The control plane then polls this instance's {@code /agentscope/*} contract at {@code
  * baseUrl}. Failures are swallowed and retried — registration must never disturb the agent.
  */
 public final class HttpSelfRegistration implements AutoCloseable {
 
+    /** Stable identity returned by the Catalog registration transaction. */
+    public record RegisteredIdentity(
+            String agentId,
+            String agentKey,
+            String bindingId,
+            String instanceId,
+            String instanceKey,
+            long generation,
+            String registrationCredential) {}
+
     private static final Logger LOG = Logger.getLogger(HttpSelfRegistration.class.getName());
 
     private final ControlPlaneHttpClient http;
     private final String controlPlaneHttp;
-    private final String agentName;
+    private final String agentKey;
+    private final String configuredRegistrationCredential;
+    private final String tenant;
     private final String namespace;
-    private final String instanceId;
+    private final String instanceKey;
     private final String baseUrl;
     private final String runtime;
     private final String framework;
@@ -51,14 +66,20 @@ public final class HttpSelfRegistration implements AutoCloseable {
     private final long heartbeatIntervalMs;
 
     private final AtomicBoolean registered = new AtomicBoolean(false);
+    private final AtomicReference<String> registeredInstanceId = new AtomicReference<>();
+    private final AtomicLong generation = new AtomicLong();
+    private final AtomicReference<RegisteredIdentity> identity = new AtomicReference<>();
+    private volatile Consumer<RegisteredIdentity> identityListener = ignored -> {};
     private ScheduledExecutorService scheduler;
 
     public HttpSelfRegistration(
             String controlPlaneHttp,
             String internalToken,
-            String agentName,
+            String registrationCredential,
+            String agentKey,
+            String tenant,
             String namespace,
-            String instanceId,
+            String instanceKey,
             String baseUrl,
             String runtime,
             String framework,
@@ -70,9 +91,12 @@ public final class HttpSelfRegistration implements AutoCloseable {
                         Objects.requireNonNull(controlPlaneHttp, "controlPlaneHttp"),
                         Objects.requireNonNull(internalToken, "internalToken"));
         this.controlPlaneHttp = this.http.baseUrl();
-        this.agentName = Objects.requireNonNull(agentName, "agentName");
+        this.configuredRegistrationCredential =
+                registrationCredential == null ? "" : registrationCredential.trim();
+        this.agentKey = Objects.requireNonNull(agentKey, "agentKey");
+        this.tenant = (tenant == null || tenant.isBlank()) ? "default" : tenant;
         this.namespace = (namespace == null || namespace.isBlank()) ? "default" : namespace;
-        this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
+        this.instanceKey = Objects.requireNonNull(instanceKey, "instanceKey");
         this.baseUrl = ControlPlaneHttpClient.trimSlash(Objects.requireNonNull(baseUrl, "baseUrl"));
         this.runtime = runtime == null || runtime.isBlank() ? "agentscope-java" : runtime;
         this.framework = framework == null || framework.isBlank() ? runtime : framework;
@@ -100,6 +124,16 @@ public final class HttpSelfRegistration implements AutoCloseable {
                 TimeUnit.MILLISECONDS);
     }
 
+    /** Returns the last successfully registered stable identity, or {@code null}. */
+    public RegisteredIdentity identity() {
+        return identity.get();
+    }
+
+    /** Receives every successfully refreshed identity, including generation changes. */
+    public void setIdentityListener(Consumer<RegisteredIdentity> listener) {
+        identityListener = listener == null ? ignored -> {} : listener;
+    }
+
     @Override
     public void close() {
         if (scheduler != null) {
@@ -110,12 +144,19 @@ public final class HttpSelfRegistration implements AutoCloseable {
             return;
         }
         try {
-            request("DELETE", "/api/v1/dataplanes/" + instanceId, null);
-            LOG.info(() -> "aistio: unregistered instance " + instanceId);
+            String id = registeredInstanceId.get();
+            if (id != null && !id.isBlank()) {
+                request(
+                        "DELETE",
+                        "/api/v1/dataplanes/" + id,
+                        Map.of("generation", generation.get()));
+            }
+            LOG.info(() -> "aistio: unregistered instance " + instanceKey);
         } catch (Exception e) {
             LOG.log(Level.FINE, "aistio: unregister failed", e);
         } finally {
             registered.set(false);
+            registeredInstanceId.set(null);
         }
     }
 
@@ -125,7 +166,17 @@ public final class HttpSelfRegistration implements AutoCloseable {
                 tryRegister();
                 return;
             }
-            int code = request("POST", "/api/v1/dataplanes/" + instanceId + "/heartbeat", Map.of());
+            String id = registeredInstanceId.get();
+            if (id == null || id.isBlank()) {
+                registered.set(false);
+                tryRegister();
+                return;
+            }
+            int code =
+                    request(
+                            "POST",
+                            "/api/v1/dataplanes/" + id + "/heartbeat",
+                            Map.of("generation", generation.get()));
             if (code == 404) {
                 registered.set(false);
                 tryRegister();
@@ -143,23 +194,61 @@ public final class HttpSelfRegistration implements AutoCloseable {
 
     private void tryRegister() {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("agentName", agentName);
+        body.put("tenant", tenant);
+        body.put("agentKey", agentKey);
         body.put("namespace", namespace);
-        body.put("instanceId", instanceId);
-        body.put("baseUrl", baseUrl);
-        body.put("runtime", runtime);
+        body.put("instanceKey", instanceKey);
+        body.put("routingKey", baseUrl);
         body.put("framework", framework);
-        body.put("contractLevel", contractLevel);
+        body.put("sdkVersion", runtime);
+        body.put("capacity", 1);
         body.put("capabilities", capabilities);
-        body.put("source", "self-register");
         try {
-            int code = request("POST", "/api/v1/dataplanes/register", body);
+            String claimCredential =
+                    identity.get() != null
+                            ? identity.get().registrationCredential()
+                            : configuredRegistrationCredential;
+            Map<String, String> headers =
+                    claimCredential.isBlank()
+                            ? Map.of()
+                            : Map.of("X-Agent-Registration-Credential", claimCredential);
+            ControlPlaneHttpClient.Response response =
+                    http.send("POST", "/api/v1/agent-registrations", body, headers);
+            int code = response.status();
             if (code >= 200 && code < 300) {
+                JsonNode document = ControlPlaneHttpClient.mapper().readTree(response.body());
+                String agentId = document.path("agent").path("id").asText("");
+                String bindingId = document.path("binding").path("id").asText("");
+                String durableId = document.path("instance").path("id").asText("");
+                long currentGeneration = document.path("instance").path("generation").asLong();
+                String issuedCredential =
+                        document.path("registrationCredential").asText(claimCredential);
+                if (agentId.isBlank()
+                        || bindingId.isBlank()
+                        || durableId.isBlank()
+                        || currentGeneration <= 0
+                        || issuedCredential.isBlank()) {
+                    throw new IllegalStateException(
+                            "registration response is missing stable identity or credential");
+                }
+                registeredInstanceId.set(durableId);
+                generation.set(currentGeneration);
+                RegisteredIdentity registeredIdentity =
+                        new RegisteredIdentity(
+                                agentId,
+                                agentKey,
+                                bindingId,
+                                durableId,
+                                instanceKey,
+                                currentGeneration,
+                                issuedCredential);
+                identity.set(registeredIdentity);
+                identityListener.accept(registeredIdentity);
                 registered.set(true);
                 LOG.info(
                         () ->
                                 "aistio: registered "
-                                        + instanceId
+                                        + instanceKey
                                         + " at "
                                         + baseUrl
                                         + " with "

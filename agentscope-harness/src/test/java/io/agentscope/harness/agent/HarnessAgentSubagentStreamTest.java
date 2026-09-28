@@ -38,6 +38,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -384,6 +385,66 @@ class HarnessAgentSubagentStreamTest {
         assertNotNull(reply, "reply must not be null");
         assertTrue(
                 reply.getTextContent().contains("result obtained"),
+                "final reply text mismatch; got: " + reply.getTextContent());
+    }
+
+    /**
+     * A custom {@link java.net.http.HttpClient} configured on the parent builder must be inherited
+     * by spawned subagents: {@code buildDeclaredFactory} captures {@code b.webHttpClient} and
+     * forwards it onto the child builder.
+     */
+    @Test
+    void call_localSubagent_inheritsCustomWebHttpClient() throws Exception {
+        String childId = "webclient-child";
+        Files.createDirectories(workspace.resolve("subagents"));
+        Files.writeString(
+                workspace.resolve("subagents/" + childId + ".md"),
+                """
+                ---
+                description: Web client child
+                ---
+                You are a helper.
+                """);
+
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "p1",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                childId,
+                                                "task",
+                                                "check",
+                                                "timeout_seconds",
+                                                60))))
+                .thenReturn(Flux.just(stopChunk("c1", "child done")))
+                .thenReturn(Flux.just(stopChunk("p2", "parent done")));
+
+        parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .webHttpClient(
+                                HttpClient.newBuilder()
+                                        .version(HttpClient.Version.HTTP_1_1)
+                                        .build())
+                        .build();
+
+        Msg reply =
+                parent.call(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("go").build()),
+                                RuntimeContext.builder().sessionId("sess-webclient").build())
+                        .block();
+
+        assertNotNull(reply, "reply must not be null");
+        assertTrue(
+                reply.getTextContent().contains("parent done"),
                 "final reply text mismatch; got: " + reply.getTextContent());
     }
 

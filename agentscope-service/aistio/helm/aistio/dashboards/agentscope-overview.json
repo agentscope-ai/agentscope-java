@@ -324,7 +324,7 @@
       ]
     },
     {
-      "title": "Team Tasks by State",
+      "title": "AgentTask Transitions",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -346,14 +346,14 @@
       },
       "targets": [
         {
-          "expr": "agentscope_team_tasks_by_state",
+          "expr": "sum by (state) (rate(agentscope_agent_task_transitions_total[5m]))",
           "legendFormat": "{{ team }} - {{ state }}",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Team Messages",
+      "title": "Comment Routes",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -375,7 +375,7 @@
       },
       "targets": [
         {
-          "expr": "rate(agentscope_team_messages_total[5m])",
+          "expr": "sum by (outcome) (rate(agentscope_comment_routes_total[5m]))",
           "legendFormat": "{{ team }} - {{ status }}",
           "refId": "A"
         }

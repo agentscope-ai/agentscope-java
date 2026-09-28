@@ -482,22 +482,6 @@ func (s *Server) buildAgentFromPush(name, namespace string, req *PushAgentReques
 		})
 	}
 
-	// Team templates instantiated by the lead at runtime (not created here).
-	for _, tt := range req.TeamTemplates {
-		tmpl := v1alpha1.TeamTemplateRef{
-			Name:        tt.Name,
-			Description: tt.Description,
-		}
-		for _, m := range tt.Members {
-			tmpl.Members = append(tmpl.Members, v1alpha1.TeamTemplateMember{
-				Role:     m.Role,
-				AgentRef: m.AgentRef,
-				Prompt:   m.Prompt,
-			})
-		}
-		agent.Spec.Declarative.TeamTemplates = append(agent.Spec.Declarative.TeamTemplates, tmpl)
-	}
-
 	return agent
 }
 

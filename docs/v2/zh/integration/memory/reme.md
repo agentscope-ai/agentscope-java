@@ -1,4 +1,7 @@
-# ReMe
+---
+title: ReMe
+en_link: /v2/en/integration/memory/reme
+---
 
 `agentscope-extensions-reme` 接入自托管的 ReMe 记忆服务，特点是基于 **trajectory（对话轨迹）** 抽取长期记忆，并按 **workspace** 隔离。
 

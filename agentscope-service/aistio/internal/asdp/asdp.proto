@@ -35,19 +35,24 @@ message Upstream {
     ConnectRequest   connect        = 10;
     ConfigAck        config_ack     = 11;
     SessionReport    session_report = 12;
-    TeamEventReport  team_event     = 13;
+    ExecutionAttemptReport execution_attempt = 13;
     Heartbeat        heartbeat      = 14;
     EventReport      event_report   = 15;  // Level 2 event stream
     ContextReport    context_report = 16;  // Level 4 effective context
     InventoryReport  inventory      = 17;  // instance inventory (subagents / workspaces / health)
+    ConversationTurnReport conversation_turn = 18;
   }
 }
 
 message UpstreamMeta {
-  string agent_name  = 1;
-  string instance_id = 2;
+  string agent_key   = 1;
+  string instance_key = 2;
   string namespace   = 3;
   int64  timestamp   = 4;
+  string tenant      = 5;
+  string agent_id    = 6;
+  string binding_id  = 7;
+  int64  generation  = 8;
 }
 
 // Handshake (sent on connection establish, analogous to xDS initial DiscoveryRequest)
@@ -79,10 +84,6 @@ message SessionSnapshot {
   int64  prompt_tokens    = 4;
   int64  completion_tokens = 5;
   double context_pressure = 6;
-  TaskSummary task_summary = 7;
-  string team_id          = 8;
-  string team_role        = 9;
-
   // Framework identification (Level 1 extension, see sdk-design.md §3.1)
   string framework         = 10;  // "claude-agent-sdk" | "langchain" | "adk" | ...
   string framework_version = 11;
@@ -93,20 +94,23 @@ message SessionSnapshot {
   int32  effective_message_count = 14;  // effective messages after compaction (!= message_count)
 }
 
-message TaskSummary {
-  int32 total       = 1;
-  int32 pending     = 2;
-  int32 in_progress = 3;
-  int32 completed   = 4;
-}
-
-// Team event report
-message TeamEventReport {
-  string team_id     = 1;
-  string event_type  = 2;
-  string member_name = 3;
-  string task_id     = 4;
-  bytes  detail      = 5;
+// ExecutionAttemptReport is fenced by attempt identity and dispatch generation.
+message ExecutionAttemptReport {
+  string attempt_id      = 1;
+  string agent_task_id   = 2;
+  string run_id          = 3;
+  string node_id         = 4;
+  int64  generation      = 5;
+  string action          = 6; // ack | preparing | start | heartbeat | waiting | progress | respond | complete | fail | cancelled
+  repeated string input_ids = 7;
+  string content         = 8;
+  bytes result           = 9;
+  string error_code      = 10;
+  string error_message   = 11;
+  bytes checkpoint       = 12;
+  bytes usage            = 13;
+  string idempotency_key = 14;
+  string attempt_token   = 15;
 }
 
 // Heartbeat (bidirectional keepalive)
@@ -127,6 +131,24 @@ message InstanceHealth {
 // every 20 events). Written by the control plane into the session_events table.
 message EventReport {
   repeated SessionEventMsg events = 1;
+  // Stable across retries. The control plane acknowledges this report only
+  // after every returned cursor has been durably committed.
+  string report_id = 2;
+}
+
+// EventReportAck is the durable commit acknowledgement for an EventReport.
+// A cursor is emitted only through the highest contiguous sequence committed
+// for that session in this report. Missing cursors remain pending and are
+// retransmitted by the data plane.
+message EventReportAck {
+  string report_id = 1;
+  repeated SessionEventCursor committed = 2;
+  string error = 3;
+}
+
+message SessionEventCursor {
+  string session_id = 1;
+  int32 committed_seq = 2;
 }
 
 message SessionEventMsg {
@@ -135,10 +157,10 @@ message SessionEventMsg {
   string event_type     = 3;   // session_start | message | tool_call | tool_result | session_end | compaction
   int64  occurred_at    = 4;   // unix milliseconds
   string role           = 5;   // user | assistant | system | tool
-  string content        = 6;   // summary (recommended <= 500 chars), not full text
+  string content        = 6;   // complete message/event text for durable replay
   string tool_name      = 7;
-  bytes  tool_input     = 8;   // JSON, may be truncated
-  string tool_output    = 9;   // summary
+  bytes  tool_input     = 8;   // JSON
+  string tool_output    = 9;
   int32  tokens_in      = 10;
   int32  tokens_out     = 11;
   int32  duration_ms    = 12;
@@ -197,8 +219,10 @@ message Downstream {
     ConnectResponse  connect_ack = 10;
     ConfigPush       config_push = 11;
     SessionCommand   session_cmd = 12;
-    TeamEvent        team_event  = 13;
+    ExecutionAttemptCommand execution_attempt = 13;
     Heartbeat        heartbeat   = 14;
+    ConversationTurnCommand conversation_turn = 15;
+    EventReportAck event_ack = 16;
   }
 }
 
@@ -236,11 +260,47 @@ message SessionCommand {
   bytes  params     = 3;
 }
 
-message TeamEvent {
-  string team_id     = 1;
-  string event_type  = 2;
-  string member_name = 3;
-  string task_id     = 4;
-  bytes  payload     = 5;
-  int64  timestamp   = 6;
+// ConversationTurnCommand is the explicit online invocation protocol. It is
+// separate from SessionCommand because user turns require public invocation
+// identity, fencing, acknowledgement, streaming, and a final result.
+message ConversationTurnCommand {
+  string invocation_id = 1;
+  string conversation_id = 2;
+  string turn_id = 3;
+  string session_id = 4;
+  string agent_id = 5;
+  string binding_id = 6;
+  string instance_id = 7;
+  int64 generation = 8;
+  bytes input = 9;
+  int64 deadline = 10;
+  string correlation_id = 11;
+}
+
+message ConversationTurnReport {
+  string invocation_id = 1;
+  string conversation_id = 2;
+  string turn_id = 3;
+  string session_id = 4;
+  int64 generation = 5;
+  string action = 6; // accepted | started | delta | completed | failed | cancelled
+  int64 sequence = 7;
+  bytes payload = 8;
+  string error_code = 9;
+  string error_message = 10;
+}
+
+message ExecutionAttemptCommand {
+  string attempt_id      = 1;
+  string agent_task_id   = 2;
+  string run_id          = 3;
+  string node_id         = 4;
+  int64  generation      = 5;
+  string command         = 6; // dispatch | cancel
+  string context_url     = 7;
+  string task_token      = 8;
+  string attempt_token   = 9;
+  bytes  runtime_binding = 10;
+  bytes  payload         = 11;
+  int64  timestamp       = 12;
 }

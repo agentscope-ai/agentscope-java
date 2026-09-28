@@ -1,9 +1,10 @@
 ---
-title: "沙箱（Sandbox）"
-description: "隔离执行 + 跨调用恢复 + 多副本部署"
+title: 沙箱（Sandbox）
+description: 隔离执行 + 跨调用恢复 + 多副本部署
+en_link: /v2/en/docs/harness/sandbox
 ---
 
-> 三种文件系统模式的对比见 [文件系统](./filesystem.md)。本文专门讲沙箱模式怎么用。
+> 三种文件系统模式的对比见 [文件系统](/v2/zh/docs/harness/filesystem)。本文专门讲沙箱模式怎么用。
 
 ## 沙箱解决什么
 
@@ -72,7 +73,7 @@ agent.call(msg, RuntimeContext.builder()
 | `LocalSnapshotSpec` | 宿主本地文件（单机长期运行） |
 | `OssSnapshotSpec` | OSS / S3 兼容存储（多副本） |
 | `RedisSnapshotSpec` | Redis（低延迟、小工作区） |
-| `JdbcSnapshotSpec` | MySQL / JDBC BLOB（已有关系型数据库） |
+| `JdbcSnapshotSpec` | JDBC BLOB（已有关系型数据库） |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
@@ -294,6 +295,6 @@ Sandbox 内对文件的修改不会反向同步回宿主——你想取沙箱里
 
 ## 相关文档
 
-- [文件系统](./filesystem.md) — 三种声明式模式对比
-- [工作区](./workspace.md) — `workspace/` 下哪些文件会同步进沙箱
-- [架构](./architecture.md) — 沙箱 acquire / release 在 call() 时序中的位置
+- [文件系统](/v2/zh/docs/harness/filesystem) — 三种声明式模式对比
+- [工作区](/v2/zh/docs/harness/workspace) — `workspace/` 下哪些文件会同步进沙箱
+- [架构](/v2/zh/docs/harness/architecture) — 沙箱 acquire / release 在 call() 时序中的位置

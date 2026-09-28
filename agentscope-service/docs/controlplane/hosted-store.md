@@ -294,9 +294,9 @@ RETURNING id, payload;
 | `POST /api/v1/dp/async-tools/{id}/timeout` | `markTimeout` |
 | `GET /api/v1/dp/async-tools/stale?sessionId=&ttlSeconds=` | `findStale` |
 
-**不复用 `team_tasks`**：后者是 team 域、带 `subject` / `blockedBy` / `claim` 语义；
+**不复用 `agent_tasks`**：后者是 Issue 协作域的一次 Agent 工作义务；
 `AsyncToolRegistry` 是 session 域、状态机为 `RUNNING/COMPLETED/FAILED/TIMEOUT`。硬套两边都别扭。
-同理 `MessageBus` 不复用 `team_messages`（team outbox，`delivered` / `attempts`，面向 gRPC 投递成员）。
+同理 `MessageBus` 不复用 Comment discussion 或 durable outbox。
 只复用**约定**：`ErrConflict`、`FOR UPDATE SKIP LOCKED`、409 响应形状。这是对 CR-003 的修订，见 CR-004。
 
 ### 4.7 DB schema（migration `0005_hosted_store`）
