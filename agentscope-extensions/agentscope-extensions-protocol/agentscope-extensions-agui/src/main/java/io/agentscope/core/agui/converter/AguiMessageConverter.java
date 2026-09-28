@@ -141,6 +141,11 @@ public class AguiMessageConverter {
      * tool call from a successful one without parsing the {@code [ERROR] } text prefix. The
      * prefix is stripped from the mirrored value so the field carries the reason itself.
      *
+     * <p>Only {@code ERROR} is mirrored. {@link ToolResultState#DENIED} and {@link
+     * ToolResultState#INTERRUPTED} results keep travelling as content: the protocol carries a
+     * single {@code error} string, so the richer states core distinguishes have no faithful
+     * representation on the wire.
+     *
      * @param msg The AgentScope message to convert
      * @return The converted AG-UI message
      */
@@ -161,18 +166,16 @@ public class AguiMessageConverter {
                 toolCalls.add(toAguiToolCall(tub));
             } else if (block instanceof ToolResultBlock trb) {
                 toolCallId = trb.getId();
-                boolean failed = trb.getState() == ToolResultState.ERROR;
-                // Extract text content from tool result
-                for (ContentBlock output : trb.getOutput()) {
-                    if (output instanceof TextBlock tb) {
-                        if (failed) {
-                            // A failed result is reported through `error` rather than the
-                            // content, so a round trip does not carry it in both places.
-                            // The first failing block wins if a message holds several.
-                            if (error == null) {
-                                error = stripErrorPrefix(tb.getText());
-                            }
-                        } else {
+                if (trb.getState() == ToolResultState.ERROR) {
+                    // A failed result is reported through `error` rather than the content, so a
+                    // round trip does not carry it in both places. The protocol carries one
+                    // `error` per message and `toolCallId` is likewise the last one seen, so
+                    // the last failing result wins to keep the two describing the same call.
+                    error = stripErrorPrefix(toolResultText(trb));
+                } else {
+                    // Extract text content from tool result
+                    for (ContentBlock output : trb.getOutput()) {
+                        if (output instanceof TextBlock tb) {
                             if (content.length() > 0) {
                                 content.append("\n");
                             }
@@ -190,6 +193,26 @@ public class AguiMessageConverter {
                 toolCalls.isEmpty() ? null : toolCalls,
                 toolCallId,
                 error);
+    }
+
+    /**
+     * Join the text blocks of a tool result into a single string, the same way the content of a
+     * successful result is assembled.
+     *
+     * @param trb the tool result block
+     * @return the joined text, empty if the result carries no text
+     */
+    private static String toolResultText(ToolResultBlock trb) {
+        StringBuilder text = new StringBuilder();
+        for (ContentBlock output : trb.getOutput()) {
+            if (output instanceof TextBlock tb) {
+                if (text.length() > 0) {
+                    text.append("\n");
+                }
+                text.append(tb.getText());
+            }
+        }
+        return text.toString();
     }
 
     /**

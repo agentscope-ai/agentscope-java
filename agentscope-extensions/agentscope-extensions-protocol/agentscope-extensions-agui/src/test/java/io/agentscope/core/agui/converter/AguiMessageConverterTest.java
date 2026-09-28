@@ -331,6 +331,80 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertErrorToolResultWithMultipleTextBlocksKeepsAllText() {
+        // `output(ContentBlock)` replaces the list rather than appending, so several outputs
+        // have to be handed over as a list.
+        Msg msg =
+                Msg.builder()
+                        .id("msg-t6")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-1")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("sandbox unavailable")
+                                                                .build(),
+                                                        TextBlock.builder()
+                                                                .text("retry after 30s")
+                                                                .build()))
+                                        .state(ToolResultState.ERROR)
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+
+        assertEquals("sandbox unavailable\nretry after 30s", aguiMsg.getError());
+    }
+
+    @Test
+    void testEmptyTextErrorResultDoesNotSurviveRoundTrip() {
+        // KNOWN LIMITATION, pinned so it is visible rather than silent. An ERROR result whose
+        // text is empty leaves as `error: ""`, and the inbound side reads a blank error as "no
+        // error" so that a client which happens to send an empty string cannot turn a success
+        // into a failure. The two rules are individually right and together lose the state.
+        // Carrying it would need the protocol's `error` field to mean "failed" on presence
+        // rather than on content, which is a decision for the maintainers, not for this fix.
+        Msg msg =
+                Msg.builder()
+                        .id("msg-t8")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-1")
+                                        .state(ToolResultState.ERROR)
+                                        .build())
+                        .build();
+
+        AguiMessage out = converter.toAguiMessage(msg);
+        assertEquals("", out.getError());
+
+        ToolResultBlock back = converter.toMsg(out).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(back);
+        assertEquals(ToolResultState.SUCCESS, back.getState());
+    }
+
+    @Test
+    void testConvertTwoToolResultsKeepsErrorOnTheSameCallAsToolCallId() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-t7")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.error("tc-1", "first failed"),
+                                ToolResultBlock.error("tc-2", "second failed"))
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+
+        // The protocol carries a single `error` and a single `toolCallId` per message, so both
+        // have to describe the same call rather than one call each.
+        assertEquals("tc-2", aguiMsg.getToolCallId());
+        assertEquals("second failed", aguiMsg.getError());
+    }
+
+    @Test
     void testConvertSuccessToolResultToAguiMessageKeepsTextInContent() {
         Msg msg =
                 Msg.builder()
