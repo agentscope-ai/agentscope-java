@@ -313,6 +313,89 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertErrorToolResultToAguiMessageMirrorsError() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-t2")
+                        .role(MsgRole.TOOL)
+                        .content(ToolResultBlock.error("tc-1", "sandbox unavailable"))
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+
+        assertEquals("tool", aguiMsg.getRole());
+        assertEquals("tc-1", aguiMsg.getToolCallId());
+        // The marker core prepends announces the failure in text; the field carries the reason.
+        assertEquals("sandbox unavailable", aguiMsg.getError());
+        assertNull(aguiMsg.getContent());
+    }
+
+    @Test
+    void testConvertSuccessToolResultToAguiMessageKeepsTextInContent() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-t3")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-1")
+                                        .output(TextBlock.builder().text("41 degrees").build())
+                                        .state(ToolResultState.SUCCESS)
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+
+        assertEquals("41 degrees", aguiMsg.getTextContent());
+        assertNull(aguiMsg.getError());
+    }
+
+    @Test
+    void testErrorToolResultRoundTripsThroughBothDirections() {
+        AguiMessage original =
+                new AguiMessage(
+                        "msg-t4",
+                        "tool",
+                        new MessageContent.Text("partial output"),
+                        null,
+                        "tc-1",
+                        "sandbox unavailable");
+
+        AguiMessage roundTripped = converter.toAguiMessage(converter.toMsg(original));
+
+        // The payload sent alongside the error stays part of the error text, so the round trip
+        // carries both rather than dropping the payload.
+        assertEquals("sandbox unavailable\npartial output", roundTripped.getError());
+        assertEquals("tc-1", roundTripped.getToolCallId());
+
+        ToolResultBlock result =
+                converter.toMsg(roundTripped).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals("[ERROR] sandbox unavailable\npartial output", resultText(result));
+    }
+
+    @Test
+    void testErrorOnNonToolRoleIsIgnored() {
+        // `error` is read only for tool messages; on any other role it stays a no-op rather than
+        // turning the message into a failed tool result.
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-t5",
+                        "assistant",
+                        new MessageContent.Text("Calling tool..."),
+                        null,
+                        null,
+                        "sandbox unavailable");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.ASSISTANT, msg.getRole());
+        assertFalse(msg.hasContentBlocks(ToolResultBlock.class));
+        assertEquals("Calling tool...", msg.getFirstContentBlock(TextBlock.class).getText());
+    }
+
+    @Test
     void testConvertToolMessageRoleCaseInsensitive() {
         AguiMessage aguiMsg =
                 new AguiMessage(

@@ -136,6 +136,11 @@ public class AguiMessageConverter {
     /**
      * Convert an AgentScope message to an AG-UI message.
      *
+     * <p>A tool result in {@link ToolResultState#ERROR} is mirrored into the protocol's
+     * {@code error} field instead of being left in the content, so a client can tell a failed
+     * tool call from a successful one without parsing the {@code [ERROR] } text prefix. The
+     * prefix is stripped from the mirrored value so the field carries the reason itself.
+     *
      * @param msg The AgentScope message to convert
      * @return The converted AG-UI message
      */
@@ -144,6 +149,7 @@ public class AguiMessageConverter {
         StringBuilder content = new StringBuilder();
         List<AguiToolCall> toolCalls = new ArrayList<>();
         String toolCallId = null;
+        String error = null;
 
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof TextBlock tb) {
@@ -155,13 +161,23 @@ public class AguiMessageConverter {
                 toolCalls.add(toAguiToolCall(tub));
             } else if (block instanceof ToolResultBlock trb) {
                 toolCallId = trb.getId();
+                boolean failed = trb.getState() == ToolResultState.ERROR;
                 // Extract text content from tool result
                 for (ContentBlock output : trb.getOutput()) {
                     if (output instanceof TextBlock tb) {
-                        if (content.length() > 0) {
-                            content.append("\n");
+                        if (failed) {
+                            // A failed result is reported through `error` rather than the
+                            // content, so a round trip does not carry it in both places.
+                            // The first failing block wins if a message holds several.
+                            if (error == null) {
+                                error = stripErrorPrefix(tb.getText());
+                            }
+                        } else {
+                            if (content.length() > 0) {
+                                content.append("\n");
+                            }
+                            content.append(tb.getText());
                         }
-                        content.append(tb.getText());
                     }
                 }
             }
@@ -172,7 +188,22 @@ public class AguiMessageConverter {
                 role,
                 content.length() > 0 ? new MessageContent.Text(content.toString()) : null,
                 toolCalls.isEmpty() ? null : toolCalls,
-                toolCallId);
+                toolCallId,
+                error);
+    }
+
+    /**
+     * Strip the {@code [ERROR] } marker {@link ToolResultBlock#error(String, String)} prefixes,
+     * so an error mirrored into the AG-UI {@code error} field carries the reason itself rather
+     * than the marker that already announces it.
+     *
+     * @param text the tool result text
+     * @return the text without the marker, unchanged if it does not carry one
+     */
+    private static String stripErrorPrefix(String text) {
+        return text.startsWith(ERROR_TEXT_PREFIX)
+                ? text.substring(ERROR_TEXT_PREFIX.length())
+                : text;
     }
 
     /**
