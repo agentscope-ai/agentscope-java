@@ -86,16 +86,23 @@ class ReturnDirectAguiProjectionTest {
         }
     }
 
-    /** Minimal {@code returnDirect} tool returning a fixed text result. */
+    /** Minimal {@code returnDirect} tool returning a fixed result. */
     private static final class ReturnDirectTool extends ToolBase {
 
+        private final ToolResultBlock result;
+
         ReturnDirectTool(String name) {
+            this(name, ToolResultBlock.text("sunny"));
+        }
+
+        ReturnDirectTool(String name, ToolResultBlock result) {
             super(
                     ToolBase.builder()
                             .name(name)
                             .description(name)
                             .inputSchema(schemaFor())
                             .returnDirect(true));
+            this.result = result;
         }
 
         @Override
@@ -106,7 +113,7 @@ class ReturnDirectAguiProjectionTest {
 
         @Override
         public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-            return Mono.just(ToolResultBlock.text("sunny"));
+            return Mono.just(result);
         }
     }
 
@@ -131,6 +138,12 @@ class ReturnDirectAguiProjectionTest {
                                         .input(Map.of())
                                         .content("{}")
                                         .build()))
+                .build();
+    }
+
+    private static ChatResponse textResponse(String text) {
+        return ChatResponse.builder()
+                .content(List.of(TextBlock.builder().text(text).build()))
                 .build();
     }
 
@@ -180,5 +193,51 @@ class ReturnDirectAguiProjectionTest {
             }
         }
         return -1;
+    }
+
+    @Test
+    void failedToolResultIsNotProjectedAsTheFinalAnswer() {
+        // The shape `AguiMessageConverter` produces when a frontend tool reports a failure
+        // through the protocol's `error` field: an explicit ERROR state carrying the marker.
+        // A tool result in that state must not take the returnDirect short-circuit, or the
+        // failure would be handed back to the caller as the agent's answer with no chance for
+        // the model to react to it.
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "weather")),
+                                () -> Flux.just(textResponse("the weather tool failed"))));
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(
+                new ReturnDirectTool(
+                        "weather", ToolResultBlock.error("tc1", "sandbox unavailable")));
+        ReActAgent agent = ReActAgent.builder().name("asst").model(model).toolkit(toolkit).build();
+        AguiAgentAdapter adapter = new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig());
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-rd-failed")
+                        .runId("run-rd-failed")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "weather?")))
+                        .tools(List.of())
+                        .context(List.of())
+                        .state(Map.of())
+                        .forwardedProps(Map.of())
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+        assertNotNull(events);
+
+        assertEquals(2, model.callCount(), "a failed result must not skip the closing model call");
+        AguiEvent.TextMessageContent content =
+                (AguiEvent.TextMessageContent)
+                        events.get(indexOf(events, AguiEvent.TextMessageContent.class));
+        assertEquals("the weather tool failed", content.delta());
+        assertTrue(
+                events.stream()
+                        .filter(AguiEvent.TextMessageContent.class::isInstance)
+                        .map(AguiEvent.TextMessageContent.class::cast)
+                        .noneMatch(e -> e.delta() != null && e.delta().contains("[ERROR]")),
+                "the failure must never be projected as the final answer");
     }
 }
