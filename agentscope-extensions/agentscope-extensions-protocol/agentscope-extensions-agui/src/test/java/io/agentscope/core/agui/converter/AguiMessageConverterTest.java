@@ -423,6 +423,28 @@ class AguiMessageConverterTest {
         // have to describe the same call rather than one call each.
         assertEquals("tc-2", aguiMsg.getToolCallId());
         assertEquals("second failed", aguiMsg.getError());
+        // The reason the second result displaced is folded into the content rather than dropped,
+        // so it is still on the wire and still reads back as an error.
+        assertEquals("[ERROR] first failed", aguiMsg.getTextContent());
+    }
+
+    @Test
+    void testConvertDisplacedErrorJoinsContentCollectedBeforeIt() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-t18")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.text("ok").withIdAndName("tc-0", "lookup"),
+                                ToolResultBlock.error("tc-1", "first failed"),
+                                ToolResultBlock.error("tc-2", "second failed"))
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+
+        assertEquals("tc-2", aguiMsg.getToolCallId());
+        assertEquals("second failed", aguiMsg.getError());
+        assertEquals("ok\n[ERROR] first failed", aguiMsg.getTextContent());
     }
 
     @Test

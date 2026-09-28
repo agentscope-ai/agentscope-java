@@ -171,10 +171,17 @@ public class AguiMessageConverter {
             } else if (block instanceof ToolResultBlock trb) {
                 if (trb.getState() == ToolResultState.ERROR) {
                     // A failed result is reported through `error` rather than the content, so a
-                    // round trip does not carry it in both places. The last failing result wins,
-                    // and it takes `toolCallId` with it: a message may hold more than one result
-                    // and the protocol carries one `error`, so the id has to stay with the error
-                    // it describes. A later successful result must not claim that id.
+                    // round trip does not carry it in both places. The protocol carries a single
+                    // `error`, so the last failing result takes the field and `toolCallId` with
+                    // it — the id has to stay with the error it describes. A reason it displaces
+                    // is folded into the content instead of being dropped, marker included, so
+                    // it survives the round trip rather than vanishing from the wire.
+                    if (error != null) {
+                        if (content.length() > 0) {
+                            content.append("\n");
+                        }
+                        content.append(ERROR_TEXT_PREFIX).append(error);
+                    }
                     error = stripErrorPrefix(toolResultText(trb));
                     toolCallId = trb.getId();
                 } else {
