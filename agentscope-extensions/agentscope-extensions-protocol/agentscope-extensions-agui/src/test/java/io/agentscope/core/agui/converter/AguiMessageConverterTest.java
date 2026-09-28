@@ -448,6 +448,57 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertToolMessageWithErrorMarkerOnlyInContentReportsError() {
+        // A client that reports a failure as marker text in `content` rather than through the
+        // `error` field. Core consults that marker only for a result whose state is unasserted,
+        // so the converter has to read it here or the failure is recorded as a success.
+        AguiMessage aguiMsg =
+                AguiMessage.toolMessage("msg-t19", "tc-1", "[ERROR] sandbox unavailable");
+
+        ToolResultBlock result =
+                converter.toMsg(aguiMsg).getFirstContentBlock(ToolResultBlock.class);
+
+        assertNotNull(result);
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals("[ERROR] sandbox unavailable", resultText(result));
+    }
+
+    @Test
+    void testConvertToolMessageWithSeparatorlessErrorMarkerReportsError() {
+        // Core's predicate is the marker without a trailing space (ReActAgent:3515), so text like
+        // this counts as a failure there and has to count as one here too.
+        AguiMessage aguiMsg = AguiMessage.toolMessage("msg-t21", "tc-1", "[ERROR]boom");
+
+        ToolResultBlock result =
+                converter.toMsg(aguiMsg).getFirstContentBlock(ToolResultBlock.class);
+
+        assertNotNull(result);
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals("[ERROR]boom", resultText(result));
+    }
+
+    @Test
+    void testConvertErrorToolResultOnAssistantRoleKeepsTextInContent() {
+        // A provider server tool reports its failure as an ERROR result inside the assistant
+        // response. `error` belongs to the protocol's tool message, so for this role the text has
+        // to stay in the content rather than move to a field the role does not define.
+        Msg msg =
+                Msg.builder()
+                        .id("msg-t20")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolResultBlock.error(
+                                        "srv-1", "web search failed: too_many_requests"))
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+
+        assertEquals("assistant", aguiMsg.getRole());
+        assertNull(aguiMsg.getError());
+        assertEquals("[ERROR] web search failed: too_many_requests", aguiMsg.getTextContent());
+    }
+
+    @Test
     void testConvertToolMessageWithAlreadyPrefixedErrorDoesNotDoubleTheMarker() {
         // A client may echo back the value this converter produced, marker included; the inbound
         // path adds the marker itself, so the incoming one has to come off.

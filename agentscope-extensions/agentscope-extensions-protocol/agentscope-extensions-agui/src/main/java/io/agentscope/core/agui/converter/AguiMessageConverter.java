@@ -82,13 +82,19 @@ public class AguiMessageConverter {
     private static final String RESUME_PAYLOAD_REASON = "reason";
 
     /**
-     * Prefix the agent runtime recognises on an error tool result's text.
-     *
-     * <p>Mirrors the literal {@link ToolResultBlock#error(String, String)} emits. Core exposes no
-     * constant for it, so it is repeated here for the case where an error has to be combined with
-     * the payload the client sent alongside it.
+     * The marker itself, matching the predicate core tests when it decides a result failed: {@code
+     * ReActAgent.determineToolResultState} looks for {@code "[ERROR]"} without a trailing space.
+     * Kept separate from the emitted form below so the two cannot drift apart.
      */
-    private static final String ERROR_TEXT_PREFIX = "[ERROR] ";
+    private static final String ERROR_MARKER = "[ERROR]";
+
+    /**
+     * The marker as {@link ToolResultBlock#error(String, String)} emits it, marker plus separator.
+     *
+     * <p>Core exposes no constant for it, so it is repeated here for the cases where an error has
+     * to be combined with the payload the client sent alongside it, or stripped back off.
+     */
+    private static final String ERROR_TEXT_PREFIX = ERROR_MARKER + " ";
 
     /**
      * Creates a new AguiMessageConverter
@@ -141,6 +147,11 @@ public class AguiMessageConverter {
      * tool call from a successful one without parsing the {@code [ERROR] } text prefix. The
      * prefix is stripped from the mirrored value so the field carries the reason itself.
      *
+     * <p>Only a tool message mirrors it. {@code error} is a field of the protocol's tool message,
+     * and an ERROR result also occurs inside an assistant response — provider server tools report
+     * their failures that way — where moving the text out of the content would both take it off
+     * the wire and put it under a field that role does not define.
+     *
      * <p>Only {@code ERROR} is mirrored. {@link ToolResultState#DENIED} and {@link
      * ToolResultState#INTERRUPTED} results keep travelling as content: the protocol carries a
      * single {@code error} string, so the richer states core distinguishes have no faithful
@@ -155,6 +166,7 @@ public class AguiMessageConverter {
      */
     public AguiMessage toAguiMessage(Msg msg) {
         String role = convertRole(msg.getRole());
+        boolean toolMessage = msg.getRole() == MsgRole.TOOL;
         StringBuilder content = new StringBuilder();
         List<AguiToolCall> toolCalls = new ArrayList<>();
         String toolCallId = null;
@@ -169,7 +181,12 @@ public class AguiMessageConverter {
             } else if (block instanceof ToolUseBlock tub) {
                 toolCalls.add(toAguiToolCall(tub));
             } else if (block instanceof ToolResultBlock trb) {
-                if (trb.getState() == ToolResultState.ERROR) {
+                // `error` is a field of the protocol's tool message, so only a tool message may
+                // carry it. An ERROR result also occurs inside an assistant response — provider
+                // server tools report their failures that way — and there the text has to stay
+                // in the content, or it would leave the wire under a field the role does not
+                // define and the failure would be unreadable.
+                if (toolMessage && trb.getState() == ToolResultState.ERROR) {
                     // A failed result is reported through `error` rather than the content, so a
                     // round trip does not carry it in both places. The protocol carries a single
                     // `error`, so the last failing result takes the field and `toolCallId` with
@@ -206,9 +223,7 @@ public class AguiMessageConverter {
         // field. Other roles keep the previous behaviour.
         String contentText = content.toString();
         MessageContent wireContent =
-                contentText.isEmpty() && msg.getRole() != MsgRole.TOOL
-                        ? null
-                        : new MessageContent.Text(contentText);
+                contentText.isEmpty() && !toolMessage ? null : new MessageContent.Text(contentText);
 
         return new AguiMessage(
                 msg.getId(),
@@ -395,11 +410,21 @@ public class AguiMessageConverter {
                 return;
             }
             String resultText = text != null ? text : "";
+            // Core documents the `[ERROR]` marker as the way a result announces failure — see
+            // ToolResultBlock.error(String, String) — and `ReActAgent.determineToolResultState`
+            // only consults that marker for a result whose state is unasserted. A client that
+            // reports a failure purely as marker text in `content` would therefore be recorded as
+            // a success, so the marker is read here rather than left to core. The predicate is
+            // core's own, marker without a separator, so text such as `[ERROR]boom` is caught too.
+            ToolResultState state =
+                    resultText.startsWith(ERROR_MARKER)
+                            ? ToolResultState.ERROR
+                            : ToolResultState.SUCCESS;
             blocks.add(
                     ToolResultBlock.builder()
                             .id(aguiMessage.getToolCallId())
                             .output(TextBlock.builder().text(resultText).build())
-                            .state(ToolResultState.SUCCESS)
+                            .state(state)
                             .build());
             return;
         }
