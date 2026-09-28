@@ -17,19 +17,34 @@ package io.agentscope.extensions.model.gemini.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.Candidate;
+import com.google.genai.types.CodeExecutionResult;
 import com.google.genai.types.Content;
+import com.google.genai.types.ExecutableCode;
 import com.google.genai.types.FunctionCall;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.GenerateContentResponseUsageMetadata;
+import com.google.genai.types.GroundingMetadata;
+import com.google.genai.types.Language;
+import com.google.genai.types.Outcome;
 import com.google.genai.types.Part;
+import com.google.genai.types.ToolCall;
+import com.google.genai.types.ToolResponse;
+import com.google.genai.types.ToolType;
+import com.google.genai.types.UrlContextMetadata;
+import com.google.genai.types.UrlMetadata;
+import com.google.genai.types.UrlRetrievalStatus;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -147,6 +162,7 @@ class GeminiResponseParserTest {
         assertEquals("call-123", toolUse.getId());
         assertEquals("get_weather", toolUse.getName());
         assertEquals("Tokyo", toolUse.getInput().get("city"));
+        assertFalse(toolUse.isServerTool());
     }
 
     @Test
@@ -379,6 +395,61 @@ class GeminiResponseParserTest {
     }
 
     @Test
+    void testParseGroundingAndUrlContextMetadata() {
+        Part textPart = Part.builder().text("Search result").build();
+        Content content = Content.builder().role("model").parts(List.of(textPart)).build();
+
+        GroundingMetadata groundingMetadata =
+                GroundingMetadata.builder()
+                        .webSearchQueries(List.of("agentscope java"))
+                        .googleMapsWidgetContextToken("maps-token")
+                        .build();
+        UrlContextMetadata urlContextMetadata =
+                UrlContextMetadata.builder()
+                        .urlMetadata(
+                                List.of(
+                                        UrlMetadata.builder()
+                                                .retrievedUrl("https://example.com")
+                                                .urlRetrievalStatus(
+                                                        UrlRetrievalStatus.Known
+                                                                .URL_RETRIEVAL_STATUS_SUCCESS)
+                                                .build()))
+                        .build();
+
+        Candidate candidate =
+                Candidate.builder()
+                        .content(content)
+                        .groundingMetadata(groundingMetadata)
+                        .urlContextMetadata(urlContextMetadata)
+                        .build();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-grounding")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertNotNull(chatResponse.getMetadata());
+        Map<String, Object> grounding =
+                assertInstanceOf(
+                        Map.class,
+                        chatResponse.getMetadata().get(GeminiResponseParser.METADATA_GROUNDING));
+        assertEquals(List.of("agentscope java"), grounding.get("webSearchQueries"));
+        assertEquals("maps-token", grounding.get("googleMapsWidgetContextToken"));
+
+        Map<String, Object> urlContext =
+                assertInstanceOf(
+                        Map.class,
+                        chatResponse.getMetadata().get(GeminiResponseParser.METADATA_URL_CONTEXT));
+        List<?> urls = assertInstanceOf(List.class, urlContext.get("urlMetadata"));
+        assertEquals(1, urls.size());
+        Map<?, ?> url = assertInstanceOf(Map.class, urls.get(0));
+        assertEquals("https://example.com", url.get("retrievedUrl"));
+        assertEquals("URL_RETRIEVAL_STATUS_SUCCESS", url.get("urlRetrievalStatus").toString());
+    }
+
+    @Test
     void testParseToolCallWithoutId() {
         // Build function call without explicit ID
         Map<String, Object> args = new HashMap<>();
@@ -535,5 +606,210 @@ class GeminiResponseParserTest {
         ToolUseBlock toolUse2 = (ToolUseBlock) chatResponse.getContent().get(1);
         assertEquals("call-2", toolUse2.getId());
         assertTrue(toolUse2.getMetadata().isEmpty());
+    }
+
+    @Test
+    void testParseMixedServerAndLocalTools() {
+        // Build response mixing server-side tools and local function calls
+        Map<String, Object> searchArgs = new HashMap<>();
+        searchArgs.put("queries", List.of("southernmost city in China"));
+
+        ToolCall toolCall =
+                ToolCall.builder()
+                        .id("search-call")
+                        .toolType(ToolType.Known.GOOGLE_SEARCH_WEB)
+                        .args(searchArgs)
+                        .build();
+        Part toolCallPart =
+                Part.builder()
+                        .toolCall(toolCall)
+                        .thoughtSignature("server-call-signature".getBytes())
+                        .build();
+
+        Map<String, Object> searchResult = new HashMap<>();
+        searchResult.put("search_suggestions", "Sansha");
+        ToolResponse toolResponse =
+                ToolResponse.builder()
+                        .id("search-call")
+                        .toolType(ToolType.Known.GOOGLE_SEARCH_WEB)
+                        .response(searchResult)
+                        .build();
+        Part toolResponsePart =
+                Part.builder()
+                        .toolResponse(toolResponse)
+                        .thoughtSignature("server-result-signature".getBytes())
+                        .build();
+
+        Map<String, Object> weatherArgs = new HashMap<>();
+        weatherArgs.put("location", "Sansha, China");
+        FunctionCall functionCall =
+                FunctionCall.builder()
+                        .id("weather-call")
+                        .name("getWeather")
+                        .args(weatherArgs)
+                        .build();
+        Part functionCallPart = Part.builder().functionCall(functionCall).build();
+
+        Content content =
+                Content.builder()
+                        .role("model")
+                        .parts(List.of(toolCallPart, toolResponsePart, functionCallPart))
+                        .build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-mixed-tools")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify
+        assertNotNull(chatResponse);
+        assertEquals(3, chatResponse.getContent().size());
+
+        // First: server-side tool use
+        ToolUseBlock serverToolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals("search-call", serverToolUse.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", serverToolUse.getName());
+        assertTrue(serverToolUse.isServerTool());
+        assertArrayEquals(
+                "server-call-signature".getBytes(),
+                (byte[]) serverToolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+
+        // Second: server-side tool result
+        ToolResultBlock serverToolResult = (ToolResultBlock) chatResponse.getContent().get(1);
+        assertEquals("search-call", serverToolResult.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", serverToolResult.getName());
+        assertTrue(serverToolResult.isServerTool());
+        assertEquals(ToolResultState.SUCCESS, serverToolResult.getState());
+        assertArrayEquals(
+                "server-result-signature".getBytes(),
+                (byte[])
+                        serverToolResult
+                                .getMetadata()
+                                .get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+        String rawJson =
+                assertInstanceOf(
+                        String.class,
+                        serverToolResult
+                                .getMetadata()
+                                .get(GeminiResponseParser.METADATA_SERVER_TOOL_RESPONSE));
+        assertTrue(rawJson.contains("search-call"));
+        assertTrue(rawJson.contains("Sansha"));
+
+        // Third: local function call
+        ToolUseBlock localToolUse = (ToolUseBlock) chatResponse.getContent().get(2);
+        assertEquals("weather-call", localToolUse.getId());
+        assertEquals("getWeather", localToolUse.getName());
+        assertFalse(localToolUse.isServerTool());
+    }
+
+    @Test
+    void testParseCodeExecutionResponse() {
+        ExecutableCode executableCode =
+                ExecutableCode.builder()
+                        .id("code-execution-1")
+                        .language(Language.Known.PYTHON)
+                        .code("print(1 + 1)")
+                        .build();
+        Part executableCodePart =
+                Part.builder()
+                        .executableCode(executableCode)
+                        .thoughtSignature("code-signature".getBytes())
+                        .build();
+
+        CodeExecutionResult codeExecutionResult =
+                CodeExecutionResult.builder()
+                        .id("code-execution-1")
+                        .outcome(Outcome.Known.OUTCOME_OK)
+                        .output("2")
+                        .build();
+        Part codeExecutionResultPart =
+                Part.builder()
+                        .codeExecutionResult(codeExecutionResult)
+                        .thoughtSignature("result-signature".getBytes())
+                        .build();
+
+        Content content =
+                Content.builder()
+                        .role("model")
+                        .parts(List.of(executableCodePart, codeExecutionResultPart))
+                        .build();
+        Candidate candidate = Candidate.builder().content(content).build();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-code-execution")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertEquals(2, chatResponse.getContent().size());
+
+        ToolUseBlock executableCodeBlock = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals("code-execution-1", executableCodeBlock.getId());
+        assertEquals("CODE_EXECUTION", executableCodeBlock.getName());
+        assertEquals("print(1 + 1)", executableCodeBlock.getInput().get("code"));
+        assertEquals("PYTHON", executableCodeBlock.getInput().get("language"));
+        assertTrue(executableCodeBlock.isServerTool());
+        assertTrue(
+                executableCodeBlock
+                        .getMetadata()
+                        .containsKey(GeminiResponseParser.METADATA_CODE_EXECUTION));
+        assertEquals(ToolCallState.FINISHED, executableCodeBlock.getState());
+        assertArrayEquals(
+                "code-signature".getBytes(),
+                (byte[])
+                        executableCodeBlock
+                                .getMetadata()
+                                .get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+
+        ToolResultBlock resultBlock = (ToolResultBlock) chatResponse.getContent().get(1);
+        assertEquals("code-execution-1", resultBlock.getId());
+        assertEquals("CODE_EXECUTION", resultBlock.getName());
+        assertEquals(ToolResultState.SUCCESS, resultBlock.getState());
+        assertEquals("2", ((TextBlock) resultBlock.getOutput().get(0)).getText());
+        assertTrue(resultBlock.isServerTool());
+        assertEquals(
+                "OUTCOME_OK",
+                resultBlock
+                        .getMetadata()
+                        .get(GeminiResponseParser.METADATA_CODE_EXECUTION_OUTCOME));
+        assertArrayEquals(
+                "result-signature".getBytes(),
+                (byte[]) resultBlock.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+    }
+
+    @Test
+    void testParseFailedCodeExecutionResult() {
+        CodeExecutionResult codeExecutionResult =
+                CodeExecutionResult.builder()
+                        .id("code-execution-failed")
+                        .outcome(Outcome.Known.OUTCOME_FAILED)
+                        .output("NameError")
+                        .build();
+        Part part = Part.builder().codeExecutionResult(codeExecutionResult).build();
+        Content content = Content.builder().role("model").parts(List.of(part)).build();
+        Candidate candidate = Candidate.builder().content(content).build();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-code-execution-failed")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        ToolResultBlock resultBlock = (ToolResultBlock) chatResponse.getContent().get(0);
+        assertEquals(ToolResultState.ERROR, resultBlock.getState());
+        assertEquals(
+                "OUTCOME_FAILED",
+                resultBlock
+                        .getMetadata()
+                        .get(GeminiResponseParser.METADATA_CODE_EXECUTION_OUTCOME));
     }
 }

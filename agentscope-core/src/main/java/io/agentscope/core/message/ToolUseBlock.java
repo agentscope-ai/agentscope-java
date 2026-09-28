@@ -53,7 +53,7 @@ public final class ToolUseBlock extends ContentBlock {
     private final ToolCallState state;
 
     /**
-     * Creates a new tool use block for JSON deserialization.
+     * Creates a new tool use block with metadata (convenience constructor).
      *
      * @param id Unique identifier for this tool call
      * @param name Name of the tool to execute

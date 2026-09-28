@@ -23,9 +23,11 @@ import com.anthropic.models.messages.ServerToolUseBlockParam;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.ToolValidator;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -109,6 +111,9 @@ final class AnthropicServerToolHelper {
      */
     ToolUseBlock decodeUse(ServerToolUseBlock block) {
         String name = block.name().asString();
+        if (!ToolValidator.requireNonBlank("Anthropic", name, block.id())) {
+            return null;
+        }
         Map<String, Object> input = AnthropicResponseParser.parseJsonInput(block._input(), name);
         return ToolUseBlock.builder()
                 .id(block.id())
@@ -116,6 +121,7 @@ final class AnthropicServerToolHelper {
                 .input(input)
                 .content(block._input() != null ? block._input().toString() : "")
                 .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                .state(ToolCallState.FINISHED)
                 .build();
     }
 

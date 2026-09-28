@@ -121,12 +121,6 @@ public class H2Dialect extends AbstractJdbcDialect {
                 stateData);
     }
 
-    @Override
-    public BoundSql sessionStateCheckTableExists(String tableName) {
-        return new BoundSql(
-                "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?", tableName);
-    }
-
     // ------------------------------------------------------------------
     //  SnapshotDialect
     // ------------------------------------------------------------------
