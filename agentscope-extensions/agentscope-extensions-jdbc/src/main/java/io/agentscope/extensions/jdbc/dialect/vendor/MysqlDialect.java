@@ -143,14 +143,6 @@ public class MysqlDialect extends AbstractJdbcDialect {
                 stateData);
     }
 
-    @Override
-    public BoundSql sessionStateCheckTableExists(String tableName) {
-        return new BoundSql(
-                "SELECT 1 FROM INFORMATION_SCHEMA.TABLES"
-                        + " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
-                tableName);
-    }
-
     // ------------------------------------------------------------------
     //  SnapshotDialect
     // ------------------------------------------------------------------

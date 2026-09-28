@@ -36,6 +36,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.ToolValidator;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -176,6 +177,10 @@ final class ResponsesStreamingAssembler {
                 ResponseFunctionToolCall call = item.asFunctionCall();
                 Optional<String> itemIdOpt = call.id();
                 if (itemIdOpt.isPresent()) {
+                    if (!ToolValidator.requireNonBlank(
+                            "OpenAI official", call.name(), call.callId())) {
+                        return;
+                    }
                     itemRegistry.put(itemIdOpt.get(), new ToolCallInfo(call.callId(), call.name()));
                 } else {
                     log.warn(
