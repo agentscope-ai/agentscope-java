@@ -117,6 +117,5 @@ AI coding instructions for AgentScope Java.
 ## 6. Communication
 
 - Lead with the result.
-- Reply in Chinese by default.
 - Include changed files, checks and results, and remaining gaps.
 - Keep unrelated findings brief and separate.

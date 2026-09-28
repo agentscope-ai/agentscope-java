@@ -54,8 +54,6 @@ docs/_build
 # vibe coding
 .claude
 openspec
-# Product documentation must remain tracked on case-insensitive filesystems.
-!/docs/v2/*/service/agents.md
 .omc/
 .qoder/
 .cursor/
