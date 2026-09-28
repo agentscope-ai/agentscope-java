@@ -314,7 +314,10 @@ class ReActAgentPerSessionStateTest {
                 Arguments.of("u1", "tenant/chat/42"),
                 // A trailing '/' used to split into a blank sessionId, which the store rejects.
                 Arguments.of("u1", "conv/"),
-                Arguments.of(null, BASE64_SESSION_ID));
+                // null, blank and "__anon__" all identify the anonymous caller.
+                Arguments.of(null, BASE64_SESSION_ID),
+                Arguments.of("", BASE64_SESSION_ID),
+                Arguments.of("__anon__", BASE64_SESSION_ID));
     }
 
     @ParameterizedTest(name = "userId={0}, sessionId={1}")
