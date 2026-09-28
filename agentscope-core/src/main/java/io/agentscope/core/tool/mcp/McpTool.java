@@ -105,10 +105,42 @@ public class McpTool extends ToolBase {
             Map<String, Object> presetArguments,
             String mcpName,
             boolean readOnly) {
+        this(
+                name,
+                remoteToolName,
+                description,
+                parameters,
+                outputSchema,
+                clientWrapper,
+                presetArguments,
+                mcpName,
+                readOnly,
+                null);
+    }
+
+    /**
+     * As {@link #McpTool(String, String, String, Map, Map, McpClientWrapper, Map, String, boolean)}
+     * additionally carrying the MCP server's human-readable display title, surfaced through
+     * {@link #getTitle()}.
+     *
+     * @param title display name for end users, or {@code null} when the server provides none
+     */
+    public McpTool(
+            String name,
+            String remoteToolName,
+            String description,
+            Map<String, Object> parameters,
+            Map<String, Object> outputSchema,
+            McpClientWrapper clientWrapper,
+            Map<String, Object> presetArguments,
+            String mcpName,
+            boolean readOnly,
+            String title) {
         super(
                 ToolBase.builder()
                         .name(Objects.requireNonNull(name, "name cannot be null"))
                         .description(description != null ? description : "")
+                        .title(title)
                         .inputSchema(parameters != null ? parameters : new HashMap<>())
                         .readOnly(readOnly)
                         .concurrencySafe(false)
@@ -354,6 +386,29 @@ public class McpTool extends ToolBase {
             return Collections.emptyMap();
         }
         return mcpMeta.entries();
+    }
+
+    /**
+     * Resolve the human-readable display title an MCP server provides for a tool.
+     *
+     * <p>The MCP spec keeps {@code Tool.title} for display purposes and allows the same value under
+     * {@code ToolAnnotations.title}; both are optional and neither is the model-facing
+     * {@code description}. Registration uses this so a caller rendering a permission confirmation
+     * can label the operation for an end user instead of showing the programmatic name.
+     *
+     * @param tool the MCP tool definition, may be {@code null}
+     * @return the first non-blank title found, or {@code null} when the server provides none
+     */
+    public static String resolveDisplayTitle(McpSchema.Tool tool) {
+        if (tool == null) {
+            return null;
+        }
+        String title = tool.title();
+        if (title != null && !title.isBlank()) {
+            return title;
+        }
+        String annotationTitle = tool.annotations() != null ? tool.annotations().title() : null;
+        return annotationTitle != null && !annotationTitle.isBlank() ? annotationTitle : null;
     }
 
     /**
