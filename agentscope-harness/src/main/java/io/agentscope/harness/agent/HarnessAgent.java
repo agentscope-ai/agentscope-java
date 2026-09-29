@@ -1748,12 +1748,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * (e.g. {@code [agents, <agentId>, users, <userId>, ...]}) and as {@link #getAgentId()}
          * via the inner agent. When unset, {@link #build()} falls back to {@link #name(String)}
          * for the namespace key and the inner agent keeps its generated UUID. Format contract:
-         * {@link AgentBase#normalizeAgentId(String)}.
-         *
-         * @throws IllegalArgumentException if a non-blank agentId is invalid
+         * {@link AgentBase#normalizeAgentId(String)}, validated at {@code build()} time.
          */
         public Builder agentId(String agentId) {
-            this.agentId = AgentBase.normalizeAgentId(agentId);
+            this.agentId = agentId;
             inner.agentId(agentId);
             return this;
         }
@@ -2393,7 +2391,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 + " filesystem(...) specs");
             }
             Path resolvedWorkspace = workspace != null ? workspace : resolveDefaultWorkspace();
-            // Validate before any component consumes the id (state dirs, filesystem namespaces).
+            // Validate before any component consumes the id (state dirs, filesystem namespaces,
+            // message-bus wake-up keys). Note: the name fallback is not validated — name has
+            // never been constrained, and validating it here would break existing users.
             String normalizedAgentId = AgentBase.normalizeAgentId(agentId);
             String resolvedAgentId =
                     normalizedAgentId != null
@@ -2640,7 +2640,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (teamsModeClient != null && teamsModeContext != null) {
                 TeamsMiddleware teamsMw = new TeamsMiddleware(teamsModeClient, teamsModeContext);
                 if (messageBus != null) {
-                    teamsMw.wireMessageBus(messageBus, agentId != null ? agentId : name);
+                    teamsMw.wireMessageBus(messageBus, resolvedAgentId);
                 }
                 teamsMw.bindSession(teamsModeSessionId);
                 inner.middleware(teamsMw);
@@ -2659,7 +2659,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     if (dynMw != null) {
                         if (messageBus != null) {
                             wireTaskRepositoryMessageBus(
-                                    dynMw.getTaskRepository(), messageBus, agentId);
+                                    dynMw.getTaskRepository(), messageBus, resolvedAgentId);
                         }
                         inner.middleware(dynMw);
                         for (Object t : dynMw.getTools()) {
@@ -2673,7 +2673,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                     this, wsManager, resolvedWorkspace, capturedSandboxFs);
                     if (subagentsMw != null) {
                         if (messageBus != null) {
-                            subagentsMw.wireMessageBus(messageBus, agentId);
+                            subagentsMw.wireMessageBus(messageBus, resolvedAgentId);
                         }
                         inner.middleware(subagentsMw);
                         for (Object t : subagentsMw.getTools()) {
