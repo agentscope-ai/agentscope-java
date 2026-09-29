@@ -107,6 +107,9 @@ public abstract class AgentBase implements Agent {
      */
     private static final Pattern AGENT_ID_PATTERN = Pattern.compile("[A-Za-z0-9._-]+");
 
+    /** Max explicit agent id length: the id becomes a single path segment downstream. */
+    private static final int MAX_AGENT_ID_LENGTH = 255;
+
     /**
      * Per-key call serialization tails. Each entry holds the completion signal of the most recently
      * enqueued call for that key; the next call for the same key chains after it, so calls sharing a
@@ -159,32 +162,48 @@ public abstract class AgentBase implements Agent {
      * @param name Agent name
      * @param description Agent description
      * @param hooks List of hooks for monitoring/intercepting execution
-     * @param agentId explicit agent id; trimmed, and falls back to a random UUID when null or
-     *     blank; must otherwise match {@code [A-Za-z0-9._-]+} and not be {@code "."} or {@code
-     *     ".."} since the id is interpolated into path segments downstream. Should be unique
-     *     among live agents.
-     * @throws IllegalArgumentException if a non-blank agentId contains characters outside {@code
-     *     [A-Za-z0-9._-]} or equals {@code "."} / {@code ".."}
+     * @param agentId explicit agent id; see {@link #normalizeAgentId(String)}. Blank falls back
+     *     to a random UUID. Should be unique among live agents.
+     * @throws IllegalArgumentException if a non-blank agentId is invalid
      */
     public AgentBase(String name, String description, List<Hook> hooks, String agentId) {
-        String normalized = agentId != null ? agentId.trim() : "";
-        if (normalized.isEmpty()) {
-            this.agentId = UUID.randomUUID().toString();
-        } else if (!AGENT_ID_PATTERN.matcher(normalized).matches()
-                || normalized.equals(".")
-                || normalized.equals("..")) {
-            throw new IllegalArgumentException(
-                    "Invalid agentId '"
-                            + normalized
-                            + "': must match [A-Za-z0-9._-]+ and not be '.' or '..'");
-        } else {
-            this.agentId = normalized;
-        }
+        String normalized = normalizeAgentId(agentId);
+        this.agentId = normalized != null ? normalized : UUID.randomUUID().toString();
         this.name = name;
         this.description = description;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
         sortHooks();
+    }
+
+    /**
+     * Trims an explicit agent id and validates it — the id is interpolated into path/namespace
+     * segments downstream, so it must be a single safe segment: {@code [A-Za-z0-9._-]+}, not all
+     * dots, at most {@value #MAX_AGENT_ID_LENGTH} characters. Blank input returns {@code null}
+     * so callers fall back to a generated UUID.
+     *
+     * @param agentId raw id, may be null
+     * @return the trimmed id, or {@code null} when blank
+     * @throws IllegalArgumentException if a non-blank id violates the format
+     */
+    public static String normalizeAgentId(String agentId) {
+        String normalized = agentId != null ? agentId.trim() : "";
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        boolean invalid =
+                normalized.length() > MAX_AGENT_ID_LENGTH
+                        || !AGENT_ID_PATTERN.matcher(normalized).matches()
+                        || normalized.chars().allMatch(c -> c == '.');
+        if (invalid) {
+            throw new IllegalArgumentException(
+                    "Invalid agentId '"
+                            + normalized
+                            + "': must match [A-Za-z0-9._-]+, not be all dots, and be at most "
+                            + MAX_AGENT_ID_LENGTH
+                            + " characters");
+        }
+        return normalized;
     }
 
     @Override

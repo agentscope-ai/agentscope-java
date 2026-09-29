@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
@@ -1744,16 +1745,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         /**
          * Sets the stable identifier used as the agent's namespace key in the composite filesystem
-         * (e.g. {@code [agents, <agentId>, users, <userId>, ...]}). When unset, {@link #build()}
-         * falls back to {@link #name(String)} for the namespace key. Also forwarded to the inner
-         * agent so {@link #getAgentId()} matches: the value is trimmed; when null or blank the
-         * inner agent keeps its generated UUID; otherwise it must match {@code [A-Za-z0-9._-]+}
-         * and not be {@code "."} or {@code ".."}.
+         * (e.g. {@code [agents, <agentId>, users, <userId>, ...]}) and as {@link #getAgentId()}
+         * via the inner agent. When unset, {@link #build()} falls back to {@link #name(String)}
+         * for the namespace key and the inner agent keeps its generated UUID. Format contract:
+         * {@link AgentBase#normalizeAgentId(String)}.
          *
-         * @throws IllegalArgumentException if a non-blank agentId has invalid characters
+         * @throws IllegalArgumentException if a non-blank agentId is invalid
          */
         public Builder agentId(String agentId) {
-            this.agentId = agentId;
+            this.agentId = AgentBase.normalizeAgentId(agentId);
             inner.agentId(agentId);
             return this;
         }
@@ -2393,9 +2393,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 + " filesystem(...) specs");
             }
             Path resolvedWorkspace = workspace != null ? workspace : resolveDefaultWorkspace();
+            // Validate before any component consumes the id (state dirs, filesystem namespaces).
+            String normalizedAgentId = AgentBase.normalizeAgentId(agentId);
             String resolvedAgentId =
-                    agentId != null && !agentId.isBlank()
-                            ? agentId
+                    normalizedAgentId != null
+                            ? normalizedAgentId
                             : (name != null && !name.isBlank() ? name : "ReActAgent");
             // ---- DistributedStore auto-wiring ----
             // distributedStore provides storage components; filesystem mode is user's choice.

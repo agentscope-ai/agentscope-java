@@ -4967,15 +4967,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Sets the agent id. The value is trimmed; when null or blank, a random UUID is generated.
-         * A non-blank value must match {@code [A-Za-z0-9._-]+} and not be {@code "."} or {@code
-         * ".."} — the id is interpolated into path/namespace segments downstream — and should be
-         * unique among live agents (framework internals, e.g. the graceful-shutdown state-saver
-         * registry, key off it).
+         * Sets the agent id (trimmed; null/blank falls back to a generated UUID). Format contract:
+         * {@link AgentBase#normalizeAgentId(String)}, validated at {@code build()} time. The id
+         * should be unique among live agents; framework internals key off it.
          *
          * @param agentId The agent id
          * @return This builder instance for method chaining
-         * @throws IllegalArgumentException if a non-blank agentId has invalid characters
          */
         public Builder agentId(String agentId) {
             this.agentId = agentId;
