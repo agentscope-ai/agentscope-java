@@ -96,10 +96,12 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
 
     /**
      * SQLStates that positively report a unique-constraint violation: {@code 23505} (the
-     * SQL:2003 code — PostgreSQL and its forks, H2, HSQLDB, Derby, DB2) and {@code 23500}
-     * reported by a few MySQL-compatible drivers.
+     * SQL:2003 code — PostgreSQL and its forks, H2, HSQLDB, Derby, DB2). The umbrella {@code
+     * 23500} is deliberately absent — no driver reporting it for duplicates could be named,
+     * and umbrella states cover sibling violations; those stacks' duplicates reach {@link
+     * #DUPLICATE_KEY_VENDOR_CODES} under {@code 23000} instead.
      */
-    private static final Set<String> UNIQUE_SQL_STATES = Set.of("23505", "23500");
+    private static final Set<String> UNIQUE_SQL_STATES = Set.of("23505");
 
     /**
      * Duplicate-key vendor codes under the generic integrity SQLState {@code 23000}, where
@@ -186,6 +188,11 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         }
     }
 
+    /**
+     * Lists the stored names, skipping (with a warning) rows whose name fails the same
+     * read-side validation as {@link #buildSkill} — such a name could never be loaded or
+     * deleted, because {@code getSkill} and {@code delete} validate first.
+     */
     @Override
     public List<String> getAllSkillNames() {
         try (Connection conn = dataSource.getConnection()) {
@@ -193,7 +200,19 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
             forEachRow(
                     conn,
                     skillDialect.skillSelectAllNames(),
-                    rs -> names.add(rs.getString("name")));
+                    rs -> {
+                        String name = rs.getString("name");
+                        try {
+                            validateSkillName(name);
+                        } catch (IllegalArgumentException e) {
+                            LOG.warn(
+                                    "Skipping unloadable skill name '{}': {}",
+                                    name,
+                                    e.getMessage());
+                            return;
+                        }
+                        names.add(name);
+                    });
             return names;
         } catch (SQLException e) {
             throw new RuntimeException("Failed to list skill names", e);
@@ -435,7 +454,9 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
 
     /**
      * Validates every skill name, resource path, and resource content before any
-     * transaction starts.
+     * transaction starts. The other NOT NULL columns need no check: the {@code AgentSkill}
+     * constructor guarantees them non-null — resource values are the only nullable field
+     * that can reach the driver.
      *
      * @throws IllegalArgumentException on a null skill, an invalid name/resource path, or a
      *     null resource content (the column is NOT NULL in every vendor DDL)
@@ -636,7 +657,8 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
      *
      * <p>Rows are re-validated on read — legacy tables were never path-checked on write, and
      * consumers resolve these values onto disk. {@code getSkill} surfaces the rejection;
-     * {@code getAllSkills} skips the row with a warning, as it does for unbuildable rows.
+     * {@code getAllSkills} skips the row and {@code getAllSkillNames} omits the name, both
+     * with a warning, as they do for unbuildable rows.
      *
      * @throws IllegalArgumentException when the row's name or a resource path fails the same
      *     validation as the save path
@@ -869,12 +891,15 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     /**
      * Narrows SQLite's umbrella error 19 to unique violations via the driver's {@code
      * getResultCode()}, reached reflectively to keep the driver off the compile classpath.
-     * Falls back to the umbrella signal if reflection fails.
+     * Compares the enum's {@code name()}, not {@code toString()} — the latter renders the
+     * full message and never equals the bare constant (sqlite-jdbc 3.47.1.0). Falls back to
+     * the umbrella signal if reflection fails.
      */
     private static boolean isSqliteUniqueViolation(SQLException e) {
         try {
             Object resultCode = e.getClass().getMethod("getResultCode").invoke(e);
-            return "SQLITE_CONSTRAINT_UNIQUE".equals(resultCode.toString());
+            return resultCode instanceof Enum<?>
+                    && "SQLITE_CONSTRAINT_UNIQUE".equals(((Enum<?>) resultCode).name());
         } catch (ReflectiveOperationException reflectionFailure) {
             return true;
         }

@@ -204,6 +204,36 @@ class JdbcAgentSkillRepositoryH2Test {
         }
 
         @Test
+        @DisplayName("a database failure during the resource batch rolls the skill insert back")
+        void resourceBatchFailureRollsBack() throws Exception {
+            // The null value the old variant relied on is now pre-rejected, so a CHECK
+            // constraint forces the batch failure instead.
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_batch_failure");
+            JdbcAgentSkillRepository repo = new JdbcAgentSkillRepository(ds, skillDialect(ds));
+            try (Connection conn = ds.getConnection();
+                    Statement stmt = conn.createStatement()) {
+                stmt.execute(
+                        "ALTER TABLE agentscope_skill_resources ADD CONSTRAINT"
+                                + " resource_poison_check CHECK (resource_content <> 'poison')");
+            }
+            Map<String, String> resources = new HashMap<>();
+            resources.put("ok.md", "content");
+            resources.put("broken.md", "poison");
+            AgentSkill skill =
+                    new AgentSkill(
+                            Map.of("name", "batch", "description", "d"), "c", resources, "test");
+
+            RuntimeException failure =
+                    assertThrows(RuntimeException.class, () -> repo.save(List.of(skill), false));
+
+            assertFalse(
+                    failure instanceof IllegalStateException,
+                    "a CHECK violation is not a duplicate conflict: " + failure.getMessage());
+            assertTrue(failure.getCause() instanceof SQLException);
+            assertFalse(repo.skillExists("batch"), "the skill row must be rolled back");
+        }
+
+        @Test
         @DisplayName("clearAllSkills deletes every skill and resource row")
         void clearAllSkills() throws Exception {
             DataSource ds = H2TestSupport.createDataSource("skill_repo_clear");
@@ -328,7 +358,8 @@ class JdbcAgentSkillRepositoryH2Test {
             // Portable unique-violation states.
             assertTrue(
                     JdbcAgentSkillRepository.isUniqueViolation(new SQLException("d", "23505", 0)));
-            assertTrue(
+            // The umbrella 23500 has no named driver and covers sibling violations too.
+            assertFalse(
                     JdbcAgentSkillRepository.isUniqueViolation(new SQLException("d", "23500", 0)));
             // Generic state 23000: the vendor code decides.
             assertTrue(
@@ -460,6 +491,10 @@ class JdbcAgentSkillRepositoryH2Test {
             assertTrue(rejected.getMessage().contains("../../escape.txt"), rejected.getMessage());
 
             assertTrue(repo.getAllSkills().isEmpty(), "the guard must extend to reads");
+            // The name list shares the guard: invalid names are omitted (never loadable or
+            // deletable); valid names stay listed and deletable despite poisoned resources.
+            assertTrue(repo.getAllSkillNames().contains("legacy"));
+            assertFalse(repo.getAllSkillNames().contains("../evil"));
         }
     }
 
