@@ -313,6 +313,7 @@ final class HarnessAgentBuilderSupport {
         final var capturedToolsConfig = b.toolsConfigOverride;
         final var capturedSkillFilter = b.skillFilter;
         final var capturedPermissions = b.permissionContextOverride;
+        final boolean capturedPermissionRulesAuthoritative = b.permissionRulesAuthoritative;
         final var capturedDisableDefaultSkills = b.disableDefaultWorkspaceSkills;
         final var capturedSandboxSpec = b.sandboxFilesystemSpec;
         final var capturedRemoteSpec = b.remoteFilesystemSpec;
@@ -380,6 +381,7 @@ final class HarnessAgentBuilderSupport {
                             .maxContextTokens(capturedMaxContextTokens);
 
             if (capturedPermissions != null) sub.permissionContext(capturedPermissions);
+            sub.permissionRulesAuthoritative(capturedPermissionRulesAuthoritative);
             if (capturedDisableDefaultSkills) sub.disableDefaultWorkspaceSkills();
             if (capturedSkillFilter != null) sub.skillFilter(capturedSkillFilter);
             capturedAdditionalContextFiles.forEach(sub::additionalContextFile);
@@ -439,6 +441,7 @@ final class HarnessAgentBuilderSupport {
         final var capturedToolsConfig = b.toolsConfigOverride;
         final var capturedSkillFilter = b.skillFilter;
         final var capturedPermissions = b.permissionContextOverride;
+        final boolean capturedPermissionRulesAuthoritative = b.permissionRulesAuthoritative;
         final var capturedDisableDefaultSkills = b.disableDefaultWorkspaceSkills;
         final var capturedSandboxSpec = b.sandboxFilesystemSpec;
         final var capturedRemoteSpec = b.remoteFilesystemSpec;
@@ -575,6 +578,7 @@ final class HarnessAgentBuilderSupport {
             }
 
             if (capturedPermissions != null) sub.permissionContext(capturedPermissions);
+            sub.permissionRulesAuthoritative(capturedPermissionRulesAuthoritative);
             if (capturedDisableDefaultSkills) sub.disableDefaultWorkspaceSkills();
             if (capturedSkillFilter != null) sub.skillFilter(capturedSkillFilter);
             List<String> skillAllowlist = decl.getSkills();
