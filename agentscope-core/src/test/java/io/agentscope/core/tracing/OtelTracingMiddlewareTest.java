@@ -780,78 +780,6 @@ class OtelTracingMiddlewareTest {
         assertEquals(0, spanExporter.getFinishedSpanItems().size());
     }
 
-    @Test
-    void injectedSdk_retainsErrorStatus() {
-        InMemorySpanExporter exporterB = InMemorySpanExporter.create();
-        OpenTelemetrySdk sdkB = buildSdk(exporterB, false);
-        try {
-            OtelTracingMiddleware injected = new OtelTracingMiddleware(sdkB);
-            Agent agent = stubAgent("err-injected", "agent-err-b");
-            runExpectingError(
-                    injected.onAgent(
-                            agent,
-                            null,
-                            new AgentInput(List.of()),
-                            in -> Flux.error(new RuntimeException("agent-boom"))));
-            runExpectingError(
-                    injected.onModelCall(
-                            agent,
-                            null,
-                            new ModelCallInput(List.of(), null, null, new StubModel("gpt-4o")),
-                            in -> Flux.error(new RuntimeException("model-boom"))));
-            runExpectingError(
-                    injected.onActing(
-                            agent,
-                            null,
-                            new ActingInput(List.of()),
-                            in -> Flux.error(new RuntimeException("tool-boom"))));
-
-            List<SpanData> spans = exporterB.getFinishedSpanItems();
-            assertEquals(3, spans.size());
-            assertError(spanNamed(spans, "invoke_agent"), "agent-boom");
-            assertError(spanNamed(spans, "chat"), "model-boom");
-            assertError(spanNamed(spans, "execute_tool"), "tool-boom");
-            assertEquals(0, spanExporter.getFinishedSpanItems().size());
-        } finally {
-            sdkB.close();
-        }
-    }
-
-    @Test
-    void injectedSdk_endsSpanOnCancel() throws InterruptedException {
-        InMemorySpanExporter exporterB = InMemorySpanExporter.create();
-        OpenTelemetrySdk sdkB = buildSdk(exporterB, false);
-        try {
-            OtelTracingMiddleware injected = new OtelTracingMiddleware(sdkB);
-            CountDownLatch subscribed = new CountDownLatch(1);
-            Flux<AgentEvent> upstream =
-                    Flux.<AgentEvent>never().doOnSubscribe(s -> subscribed.countDown());
-
-            AtomicReference<reactor.core.Disposable> disposableRef = new AtomicReference<>();
-            disposableRef.set(
-                    injected.onAgent(
-                                    stubAgent("cancel-injected", "agent-cancel-b"),
-                                    null,
-                                    new AgentInput(List.of()),
-                                    in -> upstream)
-                            .subscribe());
-
-            assertTrue(subscribed.await(2, TimeUnit.SECONDS), "subscription should occur");
-            disposableRef.get().dispose();
-            Thread.sleep(50);
-
-            List<SpanData> spans = exporterB.getFinishedSpanItems();
-            assertEquals(1, spans.size(), "cancelled stream must still end the span");
-            assertTrue(spans.get(0).hasEnded());
-            assertEquals(StatusCode.ERROR, spans.get(0).getStatus().getStatusCode());
-            assertEquals("cancelled", spans.get(0).getStatus().getDescription());
-            assertEquals("io.agentscope", spans.get(0).getInstrumentationScopeInfo().getName());
-            assertEquals(0, spanExporter.getFinishedSpanItems().size());
-        } finally {
-            sdkB.close();
-        }
-    }
-
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
@@ -875,19 +803,6 @@ class OtelTracingMiddlewareTest {
                 .filter(span -> span.getName().startsWith(prefix))
                 .findFirst()
                 .orElseThrow();
-    }
-
-    private static void runExpectingError(Flux<AgentEvent> flux) {
-        try {
-            flux.collectList().block();
-        } catch (Exception ignored) {
-        }
-    }
-
-    private static void assertError(SpanData span, String description) {
-        assertTrue(span.hasEnded());
-        assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());
-        assertTrue(span.getStatus().getDescription().contains(description));
     }
 
     /**

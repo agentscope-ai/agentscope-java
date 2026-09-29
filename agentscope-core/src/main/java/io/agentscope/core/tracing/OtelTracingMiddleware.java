@@ -58,25 +58,18 @@ import reactor.util.context.ContextView;
  * breakdown uses an AgentScope-specific attribute because it is not yet defined by the GenAI
  * convention.
  *
- * <p>Context propagation across Reactor's asynchronous chain (including thread
- * hops via {@code publishOn} / {@code subscribeOn}) is handled by
- * {@link ContextPropagationOperator}. The first call to either constructor
- * registers {@code ContextPropagationOperator.registerOnEachOperator()} once
- * for the JVM. From then on, that hook wraps each {@code Flux} and
- * {@code Mono} operator as it is assembled anywhere in the process, independent
- * of which OpenTelemetry SDK records spans, so child spans see the correct
- * parent regardless of which thread the signal lands on. Chains assembled
- * before the hook was registered are not retroactively wrapped.
+ * <p>Context propagation across Reactor's asynchronous chain is handled by
+ * {@link ContextPropagationOperator}. The first constructor call registers that
+ * operator once per JVM; operators assembled after registration are wrapped, while
+ * previously assembled chains are not.
  *
  * <p>When no OTel SDK is configured (only the default no-op provider is
  * active), every hook short-circuits with near-zero overhead.
  *
  * <p>The no-argument constructor reads {@link GlobalOpenTelemetry} lazily when a hook runs.
  * Pass an application-owned SDK to {@link #OtelTracingMiddleware(OpenTelemetry)} when spans must
- * be recorded on that SDK instead. That constructor does not register or replace the global SDK;
- * the caller owns its lifecycle. It still installs the JVM-wide Reactor hook above.
- * {@code ReActAgent.builder().middleware(...)} is the production attachment point for either
- * constructor.
+ * be recorded on that SDK instead. The caller owns that SDK's lifecycle; the global SDK is not
+ * replaced.
  *
  * <p>Usage:
  * <pre>{@code
@@ -104,26 +97,13 @@ public class OtelTracingMiddleware implements MiddlewareBase {
 
     private static volatile boolean hookRegistered = false;
 
-    /**
-     * Application-owned SDK, or {@code null} when hooks should read {@link GlobalOpenTelemetry}
-     * at execution time.
-     */
     private final OpenTelemetry openTelemetry;
 
-    /**
-     * Tracer taken once from {@link #openTelemetry}, or {@code null} on the global path so each
-     * span still resolves {@link GlobalOpenTelemetry} lazily.
-     */
     private final Tracer tracer;
 
     /**
-     * Creates middleware that reads {@link GlobalOpenTelemetry} lazily when a hook runs.
-     *
-     * <p>The SDK may be registered after this middleware is constructed. Spans are created from
-     * the global {@code io.agentscope} tracer at execution time, so a middleware built before
-     * {@code buildAndRegisterGlobal()} still exports to the SDK that is current when the hook
-     * runs. When only the default no-op provider is active, the hooks still run the downstream
-     * chain.
+     * Creates middleware that reads {@link GlobalOpenTelemetry} lazily at hook execution, so the
+     * SDK may be registered after construction.
      */
     public OtelTracingMiddleware() {
         this.openTelemetry = null;
@@ -134,53 +114,9 @@ public class OtelTracingMiddleware implements MiddlewareBase {
     /**
      * Creates middleware that records spans on an application-owned OpenTelemetry SDK.
      *
-     * <p>This is an opt-in path. {@code onAgent}, {@code onModelCall}, and {@code onActing} all
-     * obtain the {@code io.agentscope} tracer from {@code openTelemetry}. The tracer is resolved
-     * once and reused for later spans. The instance is not registered as {@link
-     * GlobalOpenTelemetry}, and this middleware does not shut it down.
-     *
-     * <p>Tracer lookup and the Reactor hook are separate. This constructor still calls {@code
-     * ContextPropagationOperator.registerOnEachOperator()}, a JVM-wide hook that wraps every
-     * operator of every {@code Flux} and {@code Mono} in the process so child spans keep their
-     * parent across {@code publishOn} and {@code subscribeOn} hops. The hook does not depend on
-     * which SDK records spans. It is installed at most once per JVM and is not removed when this
-     * middleware or {@code openTelemetry} is closed. An application that adopts this constructor
-     * to avoid {@link GlobalOpenTelemetry} still gets that instrumentation side effect.
-     *
-     * <p>Build it with {@code OpenTelemetrySdk.builder().setTracerProvider(...).build()} (not
-     * {@code buildAndRegisterGlobal()}), point an OTLP HTTP exporter at the application endpoint,
-     * and close the tracer provider on shutdown. Attach it with the existing agent builder:
-     *
-     * <pre>{@code
-     * String endpoint =
-     *         System.getenv().getOrDefault(
-     *                 "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces");
-     * SdkTracerProvider tracerProvider =
-     *         SdkTracerProvider.builder()
-     *                 .addSpanProcessor(
-     *                         BatchSpanProcessor.builder(
-     *                                         OtlpHttpSpanExporter.builder()
-     *                                                 .setEndpoint(endpoint)
-     *                                                 .build())
-     *                                 .build())
-     *                 .build();
-     * OpenTelemetry appSdk =
-     *         OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build();
-     * Runtime.getRuntime().addShutdownHook(new Thread(tracerProvider::close));
-     *
-     * ReActAgent agent =
-     *         ReActAgent.builder()
-     *                 .name("assistant")
-     *                 .model(model)
-     *                 .middleware(new OtelTracingMiddleware(appSdk))
-     *                 .build();
-     * }</pre>
-     *
-     * <p>{@code StudioManager} still installs deprecated {@code TracerRegistry} tracing on its own
-     * during initialization. Vendor instrumentation that rewrites tracer lookup, and a missing
-     * Studio call-tree expansion control, need separate verification against the deployment that
-     * produces them. Passing {@link OpenTelemetry#noop()} runs the downstream chain and records
-     * no spans.
+     * <p>The tracer is resolved once and reused. The SDK is not registered as {@link
+     * GlobalOpenTelemetry}, and its lifecycle is owned by the caller. This constructor still
+     * installs the JVM-wide Reactor hook.
      *
      * @param openTelemetry application-owned OpenTelemetry instance; must not be null
      * @throws NullPointerException if {@code openTelemetry} is null
