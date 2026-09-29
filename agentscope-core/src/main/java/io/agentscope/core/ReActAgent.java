@@ -326,7 +326,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     // ==================== Constructor ====================
 
     private ReActAgent(Builder builder, Toolkit agentToolkit) {
-        super(builder.name, builder.description, new ArrayList<>(builder.hooks));
+        super(builder.name, builder.description, new ArrayList<>(builder.hooks), builder.agentId);
 
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
         this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
@@ -4873,6 +4873,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @SuppressWarnings("deprecation")
     public static class Builder {
         String name;
+        String agentId;
         String description;
         String sysPrompt;
         Model model;
@@ -4962,6 +4963,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        /**
+         * Sets the agent id. When not set (or blank), a random UUID is generated.
+         *
+         * <p>Note: the agent id should be unique among live agents; framework internals (e.g. the
+         * graceful-shutdown state-saver registry) key off it.
+         *
+         * @param agentId The agent id
+         * @return This builder instance for method chaining
+         */
+        public Builder agentId(String agentId) {
+            this.agentId = agentId;
             return this;
         }
 

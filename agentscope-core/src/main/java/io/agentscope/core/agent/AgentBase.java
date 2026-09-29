@@ -142,7 +142,21 @@ public abstract class AgentBase implements Agent {
      * @param hooks List of hooks for monitoring/intercepting execution
      */
     public AgentBase(String name, String description, List<Hook> hooks) {
-        this.agentId = UUID.randomUUID().toString();
+        this(name, description, hooks, null);
+    }
+
+    /**
+     * Constructor for AgentBase with hooks and an explicit agent id.
+     *
+     * @param name Agent name
+     * @param description Agent description
+     * @param hooks List of hooks for monitoring/intercepting execution
+     * @param agentId Explicit agent id; falls back to a random UUID when null or blank; should be
+     *     unique among live agents
+     */
+    public AgentBase(String name, String description, List<Hook> hooks, String agentId) {
+        this.agentId =
+                agentId != null && !agentId.isBlank() ? agentId : UUID.randomUUID().toString();
         this.name = name;
         this.description = description;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
