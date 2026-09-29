@@ -377,9 +377,9 @@ public class AguiAgentAdapter {
 
     /**
      * Finds the last position in {@code msgs} corresponding to the persisted anchor message,
-     * matching by id first and falling back to role+textual-content equality when the id lookup
-     * misses (client omitted ids, or a proxy / older client rewrote them). Returns {@code -1}
-     * when no anchor match exists (purely incremental input).
+     * matching by id first and falling back to role+content equality when the id lookup misses
+     * (client omitted ids, or a proxy / older client rewrote them). Returns {@code -1} when no
+     * anchor match exists (purely incremental input).
      */
     private static int indexOfAnchor(List<Msg> msgs, Msg anchor) {
         String anchorId = anchor.getId();
@@ -407,9 +407,10 @@ public class AguiAgentAdapter {
     }
 
     /**
-     * Conservative content-based anchor match: same role and identical textual content. Messages
-     * without text (e.g. pure tool-call messages) never match, to avoid stripping on empty-text
-     * collisions.
+     * Conservative content-based anchor match: same role, identical textual content, and the same
+     * block signature (count + types), so a message sharing text but carrying different
+     * attachments (images/files/tool blocks) is treated as a new turn, not the anchor. Messages
+     * without text never match, to avoid stripping on empty-text collisions.
      */
     private static boolean contentMatchesAnchor(Msg candidate, Msg anchor) {
         if (candidate.getRole() != anchor.getRole()) {
@@ -419,7 +420,21 @@ public class AguiAgentAdapter {
         if (anchorText.isEmpty()) {
             return false;
         }
-        return anchorText.equals(candidate.getTextContent());
+        return anchorText.equals(candidate.getTextContent())
+                && sameBlockSignature(candidate.getContent(), anchor.getContent());
+    }
+
+    private static boolean sameBlockSignature(
+            List<ContentBlock> candidate, List<ContentBlock> anchor) {
+        if (candidate.size() != anchor.size()) {
+            return false;
+        }
+        for (int i = 0; i < candidate.size(); i++) {
+            if (candidate.get(i).getClass() != anchor.get(i).getClass()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @SuppressWarnings("unchecked")

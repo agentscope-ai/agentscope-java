@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
@@ -118,7 +119,59 @@ class HarnessAguiMessageMergeTest {
         }
     }
 
+    @Test
+    void builderRegisteredHook_receivesMutableCopyOfImmutableInput_throughDerivation()
+            throws Exception {
+        ChatResponse response =
+                ChatResponse.builder()
+                        .content(List.of(TextBlock.builder().text("done").build()))
+                        .build();
+        when(mockModel.getModelName()).thenReturn("stub");
+        when(mockModel.stream(anyList(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            modelInputs.add(new ArrayList<>(invocation.getArgument(0)));
+                            return Flux.just(response);
+                        });
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("harness-mutable")
+                        .model(mockModel)
+                        .workspace(workspace)
+                        .stateStore(new InMemoryAgentStateStore())
+                        .build()) {
+            RuntimeContext ctx =
+                    RuntimeContext.builder()
+                            .sessionId("s-harness-mutable")
+                            .onAgentStateBound((c, m) -> m.subList(0, 1).clear())
+                            .build();
+            List<Msg> immutableInput = List.copyOf(List.of(userMsg("first"), userMsg("second")));
+
+            agent.streamEvents(immutableInput, ctx).blockLast(TIMEOUT);
+
+            // The strip hit a private mutable copy: the caller's immutable list is untouched and
+            // the model saw only the stripped suffix.
+            assertEquals(2, immutableInput.size());
+            assertEquals(List.of("second"), userTexts(reasoningCalls().get(0)));
+        }
+    }
+
     // ---------- helpers ----------
+
+    private static Msg userMsg(String text) {
+        return Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .content(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    private static List<String> userTexts(List<Msg> msgs) {
+        return msgs.stream()
+                .filter(m -> m.getRole() == MsgRole.USER)
+                .map(Msg::getTextContent)
+                .toList();
+    }
 
     private static RunAgentInput input(String threadId, String runId, AguiMessage... messages) {
         return RunAgentInput.builder()

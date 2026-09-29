@@ -26,10 +26,12 @@ import static org.mockito.Mockito.mock;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.state.AgentState;
@@ -69,14 +71,18 @@ class AguiAgentAdapterMessageMergeTest {
     @DisplayName("callback receives the exact context it was registered on")
     void merge_callbackReceivesSameContext() {
         AgentState state = AgentState.builder().context(List.of(msg("m1"))).build();
-        RuntimeContext ctx = newContextWithState(state);
+        RuntimeContext source = newContextWithState(state);
+        BiConsumer<RuntimeContext, List<Msg>> original = source.getOnAgentStateBound();
         AtomicReference<RuntimeContext> seen = new AtomicReference<>();
-        BiConsumer<RuntimeContext, List<Msg>> original = ctx.getOnAgentStateBound();
-        ctx.setOnAgentStateBound(
-                (c, m) -> {
-                    seen.set(c);
-                    original.accept(c, m);
-                });
+        // Wrapping via a derived context (registration is builder-only).
+        RuntimeContext ctx =
+                RuntimeContext.builder(source)
+                        .onAgentStateBound(
+                                (c, m) -> {
+                                    seen.set(c);
+                                    original.accept(c, m);
+                                })
+                        .build();
 
         fireCallback(ctx, new ArrayList<>(List.of(msg("m1"))));
 
@@ -332,6 +338,57 @@ class AguiAgentAdapterMessageMergeTest {
         assertEquals(List.of("a2", "u2"), idsOf(incoming));
     }
 
+    @Test
+    @DisplayName(
+            "content fallback: same text but different attachments is a new turn, not the anchor")
+    void merge_contentFallback_differentAttachments_notAnchor() {
+        AgentState state =
+                AgentState.builder()
+                        .context(
+                                List.of(
+                                        userMsg("u1", "hello"),
+                                        assistantMsg("a1", "here is the chart")))
+                        .build();
+        RuntimeContext ctx = newContextWithState(state);
+        // Client rewrote ids; the candidate shares the anchor's text but carries an attachment.
+        List<Msg> incoming =
+                new ArrayList<>(
+                        List.of(
+                                userMsg("u1-new", "hello"),
+                                assistantMsgWithImage("a1-new", "here is the chart", "img"),
+                                userMsg("u2", "and now?")));
+
+        fireCallback(ctx, incoming);
+
+        // Block signature mismatch (text-only anchor vs text+image candidate): nothing is
+        // stripped, so the attachment-bearing turn is never silently dropped.
+        assertEquals(List.of("u1-new", "a1-new", "u2"), idsOf(incoming));
+    }
+
+    @Test
+    @DisplayName("content fallback: same block signature with attachments still deduplicates")
+    void merge_contentFallback_sameBlockSignature_stripsOverlap() {
+        AgentState state =
+                AgentState.builder()
+                        .context(
+                                List.of(
+                                        userMsg("u1", "hello"),
+                                        assistantMsgWithImage("a1", "here is the chart", "img")))
+                        .build();
+        RuntimeContext ctx = newContextWithState(state);
+        // Same text and same block signature (image included), different image payload and id.
+        List<Msg> incoming =
+                new ArrayList<>(
+                        List.of(
+                                userMsg("u1", "hello"),
+                                assistantMsgWithImage("a1-new", "here is the chart", "img-2"),
+                                userMsg("u2", "again")));
+
+        fireCallback(ctx, incoming);
+
+        assertEquals(List.of("u2"), idsOf(incoming));
+    }
+
     // ---------- helpers ----------
 
     /**
@@ -365,6 +422,16 @@ class AguiAgentAdapterMessageMergeTest {
 
     private static Msg assistantMsg(String id, String text) {
         return textMsg(id, MsgRole.ASSISTANT, text);
+    }
+
+    private static Msg assistantMsgWithImage(String id, String text, String imageUrl) {
+        return Msg.builder()
+                .id(id)
+                .role(MsgRole.ASSISTANT)
+                .content(
+                        TextBlock.builder().text(text).build(),
+                        ImageBlock.builder().source(new URLSource(imageUrl)).build())
+                .build();
     }
 
     private static Msg textMsg(String id, MsgRole role, String text) {

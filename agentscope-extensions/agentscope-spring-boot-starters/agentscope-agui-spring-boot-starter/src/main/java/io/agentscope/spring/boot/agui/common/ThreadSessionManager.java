@@ -164,7 +164,10 @@ public class ThreadSessionManager {
      *
      * @param runtimeContext The runtime context identifying the user and thread
      * @return true if the session exists and the agent has non-empty memory
+     * @deprecated Existence probe only; the built-in AG-UI pipeline auto-merges incoming messages
+     *     via the {@code onAgentStateBound} callback instead.
      */
+    @Deprecated(since = "2.0.4", forRemoval = false)
     public boolean hasMemory(RuntimeContext runtimeContext) {
         if (runtimeContext == null || runtimeContext.getSessionId() == null) {
             return false;

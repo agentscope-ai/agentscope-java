@@ -63,8 +63,12 @@ public class RuntimeContext {
      * on every call including brand-new sessions. The callback receives this RuntimeContext and
      * the incoming message list (a private mutable copy whenever a callback is registered) — it
      * may modify either in place. {@code null} when no callback is registered.
+     *
+     * <p>Registration is builder-only ({@link Builder#onAgentStateBound}), so the value is stable
+     * for the context's lifetime and the agent's entry-time mutable-copy decision cannot be
+     * invalidated by a late registration.
      */
-    private volatile BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound;
+    private final BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound;
 
     /** String-keyed extras (legacy and generic extension). */
     private final ConcurrentMap<String, Object> stringAttributes;
@@ -164,31 +168,12 @@ public class RuntimeContext {
 
     /**
      * Returns the callback fired after the call-scoped AgentState is bound to this context, or
-     * {@code null} if none is registered.
+     * {@code null} if none is registered. Registration is builder-only; there is deliberately no
+     * setter, so the value cannot change while a call is in flight (see {@link
+     * Builder#onAgentStateBound}).
      */
     public BiConsumer<RuntimeContext, List<Msg>> getOnAgentStateBound() {
         return onAgentStateBound;
-    }
-
-    /**
-     * Registers a callback fired after the call-scoped AgentState is bound (inside {@code
-     * beforeAgentExecution}, right after {@link #setAgentState(AgentState)}), on every call
-     * including brand-new sessions.
-     *
-     * <p>The callback receives this RuntimeContext and the incoming message list. The agent hands
-     * the callback a private mutable copy of the list, so in-place modification (e.g. trimming
-     * messages already persisted in {@link #getAgentState()}) is safe and takes effect for the
-     * rest of the call.
-     *
-     * <p>The callback is entry-call scoped: it is registered per {@code call()} / {@code stream()}
-     * invocation and is deliberately not inherited by contexts derived via {@link
-     * Builder#from(RuntimeContext)} (e.g. subagent or tool-execution contexts) — register it
-     * explicitly where it is needed.
-     *
-     * @param onAgentStateBound the callback, or {@code null} to clear
-     */
-    public void setOnAgentStateBound(BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound) {
-        this.onAgentStateBound = onAgentStateBound;
     }
 
     /**

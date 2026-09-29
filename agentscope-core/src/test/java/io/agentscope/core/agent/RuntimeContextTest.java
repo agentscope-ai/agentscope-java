@@ -212,21 +212,6 @@ class RuntimeContextTest {
     }
 
     @Test
-    @DisplayName("setOnAgentStateBound replaces and clears the callback")
-    void onAgentStateBound_setterReplacesAndClears() {
-        BiConsumer<RuntimeContext, List<Msg>> first = (c, m) -> {};
-        BiConsumer<RuntimeContext, List<Msg>> second = (c, m) -> {};
-        RuntimeContext ctx = RuntimeContext.builder().onAgentStateBound(first).build();
-        assertSame(first, ctx.getOnAgentStateBound());
-
-        ctx.setOnAgentStateBound(second);
-        assertSame(second, ctx.getOnAgentStateBound());
-
-        ctx.setOnAgentStateBound(null);
-        assertNull(ctx.getOnAgentStateBound());
-    }
-
-    @Test
     @DisplayName("builder(source) does not inherit the onAgentStateBound callback")
     void onAgentStateBound_builderCopyDoesNotInheritCallback() {
         BiConsumer<RuntimeContext, List<Msg>> callback = (c, m) -> {};
@@ -241,14 +226,18 @@ class RuntimeContextTest {
     @Test
     @DisplayName("onAgentStateBound callback receives the context and mutable message list")
     void onAgentStateBound_callbackReceivesContextAndMsgs() {
-        RuntimeContext ctx = RuntimeContext.empty();
         AtomicInteger fired = new AtomicInteger();
-        ctx.setOnAgentStateBound(
-                (c, m) -> {
-                    fired.incrementAndGet();
-                    assertSame(c, ctx);
-                    m.clear();
-                });
+        AtomicReference<RuntimeContext> self = new AtomicReference<>();
+        RuntimeContext ctx =
+                RuntimeContext.builder()
+                        .onAgentStateBound(
+                                (c, m) -> {
+                                    fired.incrementAndGet();
+                                    assertSame(c, self.get());
+                                    m.clear();
+                                })
+                        .build();
+        self.set(ctx);
         AgentState state = AgentState.builder().build();
         List<Msg> msgs = new ArrayList<>(List.of(new UserMessage("hi")));
 
