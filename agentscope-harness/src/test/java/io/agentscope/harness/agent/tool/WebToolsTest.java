@@ -130,4 +130,34 @@ class WebToolsTest {
             server.stop(0);
         }
     }
+
+    @Test
+    void nonSuccessfulResponseIncludesBoundedBodyInError() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        String errorBody = "validation failed\n" + "x".repeat(3_000);
+        server.createContext(
+                "/",
+                exchange -> {
+                    byte[] body = errorBody.getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(422, body.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(body);
+                    }
+                });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
+            IllegalStateException error =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> new WebTools.WebFetchTool().webFetch(url, null));
+
+            assertTrue(error.getMessage().contains("HTTP 422"));
+            assertTrue(error.getMessage().contains("validation failed"));
+            assertTrue(error.getMessage().contains("\n...[truncated]"));
+            assertTrue(error.getMessage().length() < 2_100);
+        } finally {
+            server.stop(0);
+        }
+    }
 }
