@@ -34,12 +34,19 @@ public class SandboxExecutionTimeoutException extends RuntimeException {
     private final Duration waited;
 
     public SandboxExecutionTimeoutException(SandboxIsolationKey key, Duration waited) {
+        this(key, waited, -1);
+    }
+
+    public SandboxExecutionTimeoutException(
+            SandboxIsolationKey key, Duration waited, int otherWaiters) {
         super(
                 "Timed out after "
                         + waited
                         + " waiting for sandbox execution slot "
                         + key
-                        + "; the holder may be wedged, or the wait timeout is set too low for the"
+                        + (otherWaiters >= 0 ? "; other waiting calls: " + otherWaiters : "")
+                        + "; tune with SandboxExecutionGuard.inProcess(Duration); the holder may"
+                        + " be wedged, or the wait timeout is set too low for the"
                         + " call duration");
         this.key = key;
         this.waited = waited;

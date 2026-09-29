@@ -405,7 +405,7 @@ agent 可以读写 `/Users/alice/my-project` 和 `/Users/alice/.config` 下的�
 
 ### 沙箱模式下的并发行为
 
-`IsolationScope` 在沙箱模式下是**顺序复用**的共享，不是实时的实例共享。默认的 JVM 本地 `SandboxExecutionGuard.inProcess()` 会串行化 `SESSION`、`USER`、`AGENT` 和 `GLOBAL` 下落到同一 scope key 的并发调用；前一个调用释放并持久化沙箱后，下一个调用才会恢复其状态。不同 key 仍可并行。多副本部署必须提供分布式 guard；显式设置 `SandboxExecutionGuard.noop()` 则会恢复旧的并行、最后写入覆盖行为。
+`IsolationScope` 在沙箱模式下是**顺序复用**的共享，不是实时的实例共享。默认在同一 JVM 内共享的 guard 会串行化 `SESSION`、`USER`、`AGENT` 和 `GLOBAL` 下落到同一 scope key 的并发调用，即使它们使用不同的 `HarnessAgent` 实例；前一个调用释放并持久化沙箱后，下一个调用才会恢复其状态。不同 key 仍可并行。多副本部署必须提供分布式 guard；显式设置 `SandboxExecutionGuard.noop()` 则会恢复旧的并行、最后写入覆盖行为。
 
 ### 示例：用 Scope 组合实现不同业务需求
 

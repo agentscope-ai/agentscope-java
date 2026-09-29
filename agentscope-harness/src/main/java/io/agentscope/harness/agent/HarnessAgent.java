@@ -2523,12 +2523,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     if (sandboxFilesystemSpec.getSnapshotSpecOverride() == null) {
                         sandboxFilesystemSpec.snapshotSpec(distributedStore.sandboxSnapshotSpec());
                     }
-                    // Only adopt the store's guard when it actually supplies one. A store that
-                    // returns null is opting out, NOT requesting a no-op guard — leaving the spec
-                    // null lets the inProcess() default below still serialise same-key calls
-                    // (issue #2800). Injecting a noop here would silently suppress that default.
                     SandboxExecutionGuard storeGuard = distributedStore.sandboxExecutionGuard();
-                    if (sandboxFilesystemSpec.getExecutionGuard() == null && storeGuard != null) {
+                    if (sandboxFilesystemSpec.getExecutionGuard() == null) {
                         sandboxFilesystemSpec.executionGuard(storeGuard);
                     }
                 }
@@ -2608,7 +2604,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 SandboxExecutionGuard executionGuard =
                         sandboxFilesystemSpec.getExecutionGuard() != null
                                 ? sandboxFilesystemSpec.getExecutionGuard()
-                                : SandboxExecutionGuard.inProcess();
+                                : SandboxExecutionGuard.defaultInProcess();
                 SandboxManager sandboxManager =
                         new SandboxManager(
                                 defaultSandboxContext.getClient(),

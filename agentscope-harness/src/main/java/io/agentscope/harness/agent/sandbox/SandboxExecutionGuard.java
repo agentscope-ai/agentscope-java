@@ -22,7 +22,7 @@ import java.time.Duration;
  * Pluggable concurrency guard for sandbox execution slots.
  *
  * <p>A guard controls how many concurrent executions are allowed for a given
- * {@link SandboxIsolationKey}. The built-in default is {@link #inProcess()}, which serialises
+ * {@link SandboxIsolationKey}. The built-in default is {@link #defaultInProcess()}, which serialises
  * same-slot concurrent calls within one JVM; {@link #noop()} disables serialisation entirely.
  *
  * <p>This extension point matters for every scope where two concurrent calls can resolve to the
@@ -31,7 +31,7 @@ import java.time.Duration;
  * per-call binding fix (issue #2490) stops such calls from corrupting each other's <em>live</em>
  * binding, but not from racing on the persisted state (last write wins, issue #2800); a guard
  * closes that window. Supply a distributed implementation when the same slot can be contended
- * across JVMs; the {@link #inProcess()} default only coordinates within one process.
+ * across JVMs; the {@link #defaultInProcess()} guard only coordinates within one process.
  *
  * <p>Implementations may use any backend — JVM semaphores, Redis {@code SET NX} leases,
  * ZooKeeper, database advisory locks, etc. — and must be thread-safe.
@@ -86,12 +86,12 @@ public interface SandboxExecutionGuard {
 
     /**
      * Returns a fresh JVM-local guard that serialises same-slot concurrent calls within one
-     * process. This is the built-in default the harness applies when no guard is configured; it
-     * closes the same-session acquire/persist race (issue #2800) for single-instance deployments.
+     * process. The harness uses {@link #defaultInProcess()} when no guard is configured; it
+     * closes the same-session acquire/persist race (issue #2800) across agent instances in one JVM.
      * Multi-instance deployments should supply a distributed guard instead.
      *
-     * <p>Each call returns an independent guard holding its own per-key state, so callers that need
-     * isolated coordination (e.g. one guard per agent) get it without sharing across agents.
+     * <p>Each call returns an independent guard. When constructing agents, use {@link
+     * #defaultInProcess()} so agents sharing a persisted slot also share coordination.
      *
      * <p>This variant waits up to {@link InProcessSandboxExecutionGuard#DEFAULT_WAIT_TIMEOUT} for a
      * busy slot. Use {@link #inProcess(Duration)} to tune that backstop for the application's
@@ -99,6 +99,17 @@ public interface SandboxExecutionGuard {
      */
     static SandboxExecutionGuard inProcess() {
         return new InProcessSandboxExecutionGuard();
+    }
+
+    /** Returns the process-wide default shared by all harness agents in this JVM. */
+    static SandboxExecutionGuard defaultInProcess() {
+        return DefaultHolder.INSTANCE;
+    }
+
+    final class DefaultHolder {
+        private static final SandboxExecutionGuard INSTANCE = new InProcessSandboxExecutionGuard();
+
+        private DefaultHolder() {}
     }
 
     /**
@@ -112,6 +123,11 @@ public interface SandboxExecutionGuard {
      */
     static SandboxExecutionGuard inProcess(Duration waitTimeout) {
         return new InProcessSandboxExecutionGuard(waitTimeout);
+    }
+
+    /** Returns an independent guard with a custom wait duration and per-key queue capacity. */
+    static SandboxExecutionGuard inProcess(Duration waitTimeout, int maxWaitersPerKey) {
+        return new InProcessSandboxExecutionGuard(waitTimeout, maxWaitersPerKey);
     }
 
     /** Singleton no-op implementation. */

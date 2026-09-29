@@ -19,6 +19,9 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -93,8 +96,34 @@ public class SandboxManager {
 
         SandboxLease lease = SandboxLease.noop();
         if (scopeKey.isPresent()) {
+            HeldKeys heldKeys = runtimeContext != null ? runtimeContext.get(HeldKeys.class) : null;
+            if (heldKeys != null && heldKeys.keys.contains(scopeKey.get())) {
+                throw new SandboxReentrantExecutionException(scopeKey.get());
+            }
             log.debug("[sandbox] Acquiring execution guard for scope {}", scopeKey.get());
-            lease = executionGuard.tryEnter(scopeKey.get());
+            SandboxLease acquired = executionGuard.tryEnter(scopeKey.get());
+            if (heldKeys == null && runtimeContext != null) {
+                heldKeys = new HeldKeys();
+                runtimeContext.put(HeldKeys.class, heldKeys);
+            }
+            if (heldKeys != null) {
+                heldKeys.keys.add(scopeKey.get());
+            }
+            HeldKeys owner = heldKeys;
+            SandboxIsolationKey heldKey = scopeKey.get();
+            AtomicBoolean closed = new AtomicBoolean();
+            lease =
+                    () -> {
+                        if (closed.compareAndSet(false, true)) {
+                            try {
+                                if (owner != null) {
+                                    owner.keys.remove(heldKey);
+                                }
+                            } finally {
+                                acquired.close();
+                            }
+                        }
+                    };
         }
 
         try {
@@ -152,6 +181,11 @@ public class SandboxManager {
             lease.close();
             throw e;
         }
+    }
+
+    /** Copied by derived RuntimeContexts so nested calls can detect their parent's held slot. */
+    private static final class HeldKeys {
+        final Set<SandboxIsolationKey> keys = ConcurrentHashMap.newKeySet();
     }
 
     /**

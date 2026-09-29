@@ -406,7 +406,7 @@ Both mode 1 (shared store) and mode 2 (sandbox) use the same `IsolationScope` co
 
 ### Concurrency in sandbox mode
 
-`IsolationScope` in sandbox mode is **sequential-reuse** sharing, not live-instance sharing. By default, the JVM-local `SandboxExecutionGuard.inProcess()` serializes concurrent calls at the same scope key across `SESSION`, `USER`, `AGENT`, and `GLOBAL`; the next call resumes only after the previous call has released and persisted its sandbox. Different keys still run in parallel. Multi-replica deployments must supply a distributed guard, while `SandboxExecutionGuard.noop()` explicitly restores the old parallel, last-writer-wins behavior.
+`IsolationScope` in sandbox mode is **sequential-reuse** sharing, not live-instance sharing. By default, the shared JVM-local guard serializes concurrent calls at the same scope key across `SESSION`, `USER`, `AGENT`, and `GLOBAL`, even when they use different `HarnessAgent` instances; the next call resumes only after the previous call has released and persisted its sandbox. Different keys still run in parallel. Multi-replica deployments must supply a distributed guard, while `SandboxExecutionGuard.noop()` explicitly restores the old parallel, last-writer-wins behavior.
 
 ### Example: scope combinations for different business needs
 

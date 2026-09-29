@@ -53,7 +53,7 @@ All sandbox configuration lives on the `SandboxFilesystemSpec` (e.g. `DockerFile
     .isolationScope(IsolationScope.SESSION))
 ```
 
-Within one JVM, concurrent calls that resolve to the same slot key are serialized automatically by the default `SandboxExecutionGuard.inProcess()` guard. That includes two calls with the same `sessionId` under `SESSION` scope. Different slot keys still run in parallel. Multi-replica deployments need a distributed guard because the built-in guard cannot coordinate across processes (see "Concurrency control" below).
+Within one JVM, concurrent calls that resolve to the same slot key are serialized automatically by the shared default guard, including calls on different `HarnessAgent` instances. That includes two calls with the same `sessionId` under `SESSION` scope. Different slot keys still run in parallel. Multi-replica deployments need a distributed guard because the built-in guard cannot coordinate across processes (see "Concurrency control" below).
 
 **USER-scope fallback:** when `IsolationScope.USER` is active (either explicitly or by default) but `RuntimeContext.userId` is absent, the framework automatically falls back to `SESSION` scope using `sessionId`. This means you don't need to guard against missing userId — the sandbox degrades gracefully.
 
@@ -113,7 +113,7 @@ If you're using a local `AgentStateStore` (the default `JsonFileAgentStateStore`
 
 ## Concurrency control
 
-When no guard is configured, the harness installs `SandboxExecutionGuard.inProcess()`. It serializes calls with the same `SandboxIsolationKey` inside one JVM and waits up to 30 minutes to acquire a busy slot. A timeout raises `SandboxExecutionTimeoutException`; configure `inProcess(Duration)` with a bound above your maximum realistic call duration if 30 minutes is too short.
+When no guard is configured, the harness installs the shared `SandboxExecutionGuard.defaultInProcess()` guard. It serializes calls with the same `SandboxIsolationKey` inside one JVM and waits up to 30 minutes to acquire a busy slot. A timeout raises `SandboxExecutionTimeoutException`; configure `inProcess(Duration)` with a bound above your maximum realistic call duration if 30 minutes is too short. At most eight callers can wait on one key; additional callers receive `SandboxExecutionQueueFullException`. Use `inProcess(Duration, int)` to set another per-key limit. A nested call attempting its parent's held slot fails promptly with `SandboxReentrantExecutionException`.
 
 This default prevents two same-key calls from restoring the same persisted state and overwriting each other on release. It is a behavior change from the previous unguarded default: same-key calls now queue, so their wall-clock latency can grow with the number of peers ahead of them. To deliberately preserve the old parallel, last-writer-wins behavior, opt out explicitly:
 

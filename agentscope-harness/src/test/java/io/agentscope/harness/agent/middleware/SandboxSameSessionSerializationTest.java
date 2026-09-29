@@ -36,6 +36,7 @@ import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionInterruptedException;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionTimeoutException;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
+import io.agentscope.harness.agent.sandbox.SandboxReentrantExecutionException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
@@ -69,15 +70,54 @@ import org.junit.jupiter.api.Timeout;
 class SandboxSameSessionSerializationTest {
 
     @Test
+    @Timeout(5)
+    void nestedCallOnSameUserSlotFailsPromptlyInsteadOfWaitingForItsParent() {
+        SandboxManager manager =
+                new SandboxManager(
+                        new FakeSandboxClient(),
+                        new SessionSandboxStateStore(new InMemoryAgentStateStore(), "agent"),
+                        "agent",
+                        SandboxExecutionGuard.inProcess());
+        SandboxLifecycleMiddleware mw =
+                new SandboxLifecycleMiddleware(manager, new SandboxBackedFilesystem());
+        SandboxContext sandboxContext =
+                SandboxContext.builder().isolationScope(IsolationScope.USER).build();
+        RuntimeContext parent =
+                RuntimeContext.builder()
+                        .userId("user")
+                        .sessionId("outer")
+                        .put(SandboxContext.class, sandboxContext)
+                        .build();
+        mw.acquireForCall(parent);
+        try {
+            RuntimeContext nested = RuntimeContext.builder(parent).sessionId("inner").build();
+            SandboxReentrantExecutionException ex =
+                    assertThrows(
+                            SandboxReentrantExecutionException.class,
+                            () -> mw.acquireForCall(nested));
+            assertEquals(IsolationScope.USER, ex.getKey().getScope());
+        } finally {
+            mw.releaseForCall(parent);
+        }
+    }
+
+    @Test
     @Timeout(10)
     void sameSessionCallsSerialiseAndHandOffState() throws Exception {
         FakeSandboxClient client = new FakeSandboxClient();
         SessionSandboxStateStore stateStore =
                 new SessionSandboxStateStore(new InMemoryAgentStateStore(), "agent");
         SandboxManager manager =
-                new SandboxManager(client, stateStore, "agent", SandboxExecutionGuard.inProcess());
+                new SandboxManager(
+                        client, stateStore, "agent", SandboxExecutionGuard.defaultInProcess());
         SandboxBackedFilesystem proxy = new SandboxBackedFilesystem();
         SandboxLifecycleMiddleware mw = new SandboxLifecycleMiddleware(manager, proxy);
+        // A second agent instance uses a separate manager and filesystem, but the same state slot.
+        SandboxManager secondManager =
+                new SandboxManager(
+                        client, stateStore, "agent", SandboxExecutionGuard.defaultInProcess());
+        SandboxLifecycleMiddleware secondMw =
+                new SandboxLifecycleMiddleware(secondManager, new SandboxBackedFilesystem());
 
         RuntimeContext ctxA = callContext("s1");
         RuntimeContext ctxB = callContext("s1"); // same session as A
@@ -97,7 +137,7 @@ class SandboxSameSessionSerializationTest {
                 new Thread(
                         () -> {
                             bStarting.countDown();
-                            mw.acquireForCall(ctxB);
+                            secondMw.acquireForCall(ctxB);
                             bDone.countDown();
                         });
         tB.start();
@@ -126,7 +166,7 @@ class SandboxSameSessionSerializationTest {
 
         // B writes on top of A's state and releases.
         ((FakeSandbox) resultB.getSandbox()).content = "written-by-A+B";
-        mw.releaseForCall(ctxB);
+        secondMw.releaseForCall(ctxB);
 
         // A fresh third call sees the fully serialised result of A then B.
         RuntimeContext ctxC = callContext("s1");

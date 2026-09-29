@@ -50,10 +50,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * resource supplier and releases in the corresponding cleanup, which may run on a different thread.
  *
  * <p>Wait timeout: by default {@link #tryEnter} waits up to {@link #DEFAULT_WAIT_TIMEOUT} for a busy
- * slot. The bound prevents a wedged holder from parking every worker in the sandbox-acquire
- * scheduler indefinitely and eventually stalling unrelated keys. On expiry {@link #tryEnter}
- * throws {@link SandboxExecutionTimeoutException}. Supply a different positive timeout when calls
- * can legitimately run longer; pass {@code null} to the duration constructor only when the caller
+ * slot, then throws {@link SandboxExecutionTimeoutException}. By default no more than {@link
+ * #MAX_WAITERS_PER_KEY} calls may queue for one key; excess calls fail immediately with {@link
+ * SandboxExecutionQueueFullException}. Supply a different positive timeout when calls can
+ * legitimately run longer; pass {@code null} to the duration constructor only when the caller
  * deliberately accepts an unbounded wait.
  */
 public final class InProcessSandboxExecutionGuard implements SandboxExecutionGuard {
@@ -61,14 +61,19 @@ public final class InProcessSandboxExecutionGuard implements SandboxExecutionGua
     /** Default upper bound for waiting behind a busy slot. */
     public static final Duration DEFAULT_WAIT_TIMEOUT = Duration.ofMinutes(30);
 
+    /** Maximum queued callers for one key before a new caller fails immediately. */
+    public static final int MAX_WAITERS_PER_KEY = 8;
+
     private final ConcurrentHashMap<SandboxIsolationKey, Slot> slots = new ConcurrentHashMap<>();
 
     /** Maximum time to wait for a busy slot, or {@code null} to wait indefinitely. */
     private final Duration waitTimeout;
 
+    private final int maxWaitersPerKey;
+
     /** Creates a guard that waits up to {@link #DEFAULT_WAIT_TIMEOUT} for a busy slot. */
     public InProcessSandboxExecutionGuard() {
-        this(DEFAULT_WAIT_TIMEOUT);
+        this(DEFAULT_WAIT_TIMEOUT, MAX_WAITERS_PER_KEY);
     }
 
     /**
@@ -78,11 +83,20 @@ public final class InProcessSandboxExecutionGuard implements SandboxExecutionGua
      *     indefinitely; must be strictly positive when non-null
      */
     public InProcessSandboxExecutionGuard(Duration waitTimeout) {
+        this(waitTimeout, MAX_WAITERS_PER_KEY);
+    }
+
+    /** Creates a guard with explicit wait duration and per-key queue capacity. */
+    public InProcessSandboxExecutionGuard(Duration waitTimeout, int maxWaitersPerKey) {
         if (waitTimeout != null && (waitTimeout.isNegative() || waitTimeout.isZero())) {
             throw new IllegalArgumentException(
                     "waitTimeout must be > 0 or null (infinite), got " + waitTimeout);
         }
+        if (maxWaitersPerKey < 1) {
+            throw new IllegalArgumentException("maxWaitersPerKey must be > 0");
+        }
         this.waitTimeout = waitTimeout;
+        this.maxWaitersPerKey = maxWaitersPerKey;
     }
 
     @Override
@@ -94,6 +108,9 @@ public final class InProcessSandboxExecutionGuard implements SandboxExecutionGua
                         key,
                         (k, existing) -> {
                             Slot s = existing != null ? existing : new Slot();
+                            if (s.refs >= maxWaitersPerKey + 1) {
+                                throw new SandboxExecutionQueueFullException(key, maxWaitersPerKey);
+                            }
                             s.refs++;
                             return s;
                         });
@@ -102,8 +119,9 @@ public final class InProcessSandboxExecutionGuard implements SandboxExecutionGua
                 slot.semaphore.acquire();
             } else if (!slot.semaphore.tryAcquire(waitTimeout.toNanos(), TimeUnit.NANOSECONDS)) {
                 // Timed out — drop the reference we just registered before surfacing the failure.
+                int waiting = Math.max(0, slot.semaphore.getQueueLength() - 1);
                 decrementRef(key);
-                throw new SandboxExecutionTimeoutException(key, waitTimeout);
+                throw new SandboxExecutionTimeoutException(key, waitTimeout, waiting);
             }
         } catch (InterruptedException e) {
             // We never obtained the permit — drop the reference we just registered.
@@ -131,6 +149,12 @@ public final class InProcessSandboxExecutionGuard implements SandboxExecutionGua
     /** Number of slots currently tracked; exposed for tests to assert no leak after release. */
     int trackedSlots() {
         return slots.size();
+    }
+
+    /** Approximate number of threads parked for this key, exposed for contention tests. */
+    int waitingCalls(SandboxIsolationKey key) {
+        Slot slot = slots.get(key);
+        return slot != null ? slot.semaphore.getQueueLength() : 0;
     }
 
     /** Configured wait timeout; exposed for tests. A null value means an unbounded wait. */

@@ -102,17 +102,14 @@ public interface DistributedStore {
     /**
      * Creates the {@link SandboxExecutionGuard} for distributed sandbox concurrency control.
      *
-     * <p>Override this when the store supports distributed locking. The default returns {@code
-     * null}, meaning "this store has no cross-node guard" — <em>not</em> "use a no-op guard".
-     * Returning null lets HarnessAgent fall back to its built-in JVM-local {@code inProcess()}
-     * guard, which still serialises same-key calls within one process (issue #2800). Returning
-     * {@link SandboxExecutionGuard#noop()} instead would suppress that default and re-open the
-     * same-slot race, so only do so to deliberately opt out of all serialisation.
+     * <p>Override this when the store supports distributed locking. The default returns the
+     * process-wide in-process guard. Return {@link SandboxExecutionGuard#noop()} only to
+     * deliberately opt out of same-slot serialisation.
      *
-     * @return a sandbox execution guard, or {@code null} to use HarnessAgent's built-in default
+     * @return a sandbox execution guard; never {@code null}
      */
     default SandboxExecutionGuard sandboxExecutionGuard() {
-        return null;
+        return SandboxExecutionGuard.defaultInProcess();
     }
 
     /**
@@ -258,11 +255,11 @@ public interface DistributedStore {
         /**
          * Sets the sandbox execution guard for distributed concurrency control.
          *
-         * @param sandboxExecutionGuard the execution guard to use
+         * @param sandboxExecutionGuard the execution guard to use; must not be {@code null}
          * @return this builder
          */
         public Builder sandboxExecutionGuard(SandboxExecutionGuard sandboxExecutionGuard) {
-            this.sandboxExecutionGuard = sandboxExecutionGuard;
+            this.sandboxExecutionGuard = Objects.requireNonNull(sandboxExecutionGuard);
             return this;
         }
 
@@ -313,9 +310,9 @@ public interface DistributedStore {
                     agentStateStore,
                     baseStore,
                     snap,
-                    // Left null when unset so HarnessAgent falls back to its built-in inProcess()
-                    // guard; coercing to noop() here would suppress that default (issue #2800).
-                    sandboxExecutionGuard,
+                    sandboxExecutionGuard != null
+                            ? sandboxExecutionGuard
+                            : SandboxExecutionGuard.defaultInProcess(),
                     messageBus,
                     asyncToolRegistry,
                     taskRepository,

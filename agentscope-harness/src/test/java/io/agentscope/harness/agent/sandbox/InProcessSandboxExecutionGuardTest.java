@@ -18,12 +18,19 @@ package io.agentscope.harness.agent.sandbox;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -49,6 +56,18 @@ class InProcessSandboxExecutionGuardTest {
                 InProcessSandboxExecutionGuard.DEFAULT_WAIT_TIMEOUT,
                 new InProcessSandboxExecutionGuard().waitTimeout());
         assertNull(new InProcessSandboxExecutionGuard(null).waitTimeout());
+        assertSame(
+                SandboxExecutionGuard.defaultInProcess(), SandboxExecutionGuard.defaultInProcess());
+    }
+
+    @Test
+    void distributedStoreKeepsItsNonNullGuardContract() {
+        DistributedStore store =
+                DistributedStore.builder()
+                        .agentStateStore(new InMemoryAgentStateStore())
+                        .baseStore(mock(BaseStore.class))
+                        .build();
+        assertSame(SandboxExecutionGuard.defaultInProcess(), store.sandboxExecutionGuard());
     }
 
     @Test
@@ -129,6 +148,86 @@ class InProcessSandboxExecutionGuardTest {
     }
 
     @Test
+    @Timeout(10)
+    void hotKeyHasBoundedWaitersAndDoesNotLeakItsSlot() throws Exception {
+        InProcessSandboxExecutionGuard guard = new InProcessSandboxExecutionGuard();
+        SandboxIsolationKey key = key("bounded-queue");
+        SandboxLease held = guard.tryEnter(key);
+        List<Thread> waiters = new ArrayList<>();
+        try {
+            for (int i = 0; i < InProcessSandboxExecutionGuard.MAX_WAITERS_PER_KEY; i++) {
+                Thread waiter =
+                        new Thread(
+                                () -> {
+                                    try (SandboxLease ignored = guard.tryEnter(key)) {
+                                        // Each queued caller releases its lease after entry.
+                                    } catch (InterruptedException e) {
+                                        Thread.currentThread().interrupt();
+                                    }
+                                });
+                waiter.start();
+                waiters.add(waiter);
+            }
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (guard.waitingCalls(key) < InProcessSandboxExecutionGuard.MAX_WAITERS_PER_KEY
+                    && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+            assertEquals(
+                    InProcessSandboxExecutionGuard.MAX_WAITERS_PER_KEY, guard.waitingCalls(key));
+            SandboxExecutionQueueFullException ex =
+                    assertThrows(
+                            SandboxExecutionQueueFullException.class, () -> guard.tryEnter(key));
+            assertEquals(key, ex.getKey());
+            assertEquals(InProcessSandboxExecutionGuard.MAX_WAITERS_PER_KEY, ex.getMaxWaiters());
+            try (SandboxLease otherKey = guard.tryEnter(key("unrelated"))) {
+                assertEquals(2, guard.trackedSlots());
+            }
+        } finally {
+            held.close();
+            for (Thread waiter : waiters) {
+                waiter.join(3000);
+            }
+        }
+        assertEquals(0, guard.trackedSlots());
+    }
+
+    @Test
+    @Timeout(5)
+    void timedOutWaiterDoesNotRecycleSlotWhileNewCallerRegisters() throws Exception {
+        InProcessSandboxExecutionGuard guard =
+                new InProcessSandboxExecutionGuard(Duration.ofMillis(150));
+        SandboxIsolationKey key = key("recycle-race");
+        SandboxLease held = guard.tryEnter(key);
+        assertThrows(SandboxExecutionTimeoutException.class, () -> guard.tryEnter(key));
+
+        AtomicBoolean entered = new AtomicBoolean();
+        Thread newcomer =
+                new Thread(
+                        () -> {
+                            try (SandboxLease ignored = guard.tryEnter(key)) {
+                                entered.set(true);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        });
+        newcomer.start();
+        try {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+            while (guard.waitingCalls(key) == 0 && System.nanoTime() < deadline) {
+                Thread.sleep(5);
+            }
+            assertEquals(1, guard.waitingCalls(key));
+            assertFalse(entered.get(), "new caller must still wait for the original holder");
+        } finally {
+            held.close();
+            newcomer.join(1000);
+        }
+        assertTrue(entered.get());
+        assertEquals(0, guard.trackedSlots());
+    }
+
+    @Test
     @Timeout(5)
     void waitTimeoutThrowsWhenSlotStaysBusyAndRecyclesTheSlot() throws Exception {
         InProcessSandboxExecutionGuard guard =
@@ -142,6 +241,7 @@ class InProcessSandboxExecutionGuardTest {
                         SandboxExecutionTimeoutException.class, () -> guard.tryEnter(key("s1")));
         assertEquals(key("s1"), ex.getKey());
         assertEquals(Duration.ofMillis(100), ex.getWaited());
+        assertTrue(ex.getMessage().contains("other waiting calls:"));
 
         // The timed-out entry must have dropped its reference — only the holder keeps the slot.
         assertEquals(1, guard.trackedSlots(), "timed-out waiter must not leak a slot reference");
@@ -159,6 +259,9 @@ class InProcessSandboxExecutionGuardTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new InProcessSandboxExecutionGuard(Duration.ofMillis(-1)));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new InProcessSandboxExecutionGuard(Duration.ofSeconds(1), 0));
     }
 
     @Test

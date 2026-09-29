@@ -53,7 +53,7 @@ agent.call(msg, RuntimeContext.builder()
     .isolationScope(IsolationScope.SESSION))
 ```
 
-在单个 JVM 内，默认的 `SandboxExecutionGuard.inProcess()` 会自动串行化落到同一 slot key 的并发调用；这也包括 `SESSION` scope 下两个使用相同 `sessionId` 的调用。不同 slot key 仍可并行执行。多副本部署必须使用分布式 guard，因为内置 guard 无法跨进程协调（见下面的“并发控制”）。
+在单个 JVM 内，默认共享的 guard 会自动串行化落到同一 slot key 的并发调用，包括不同 `HarnessAgent` 实例；这也包括 `SESSION` scope 下两个使用相同 `sessionId` 的调用。不同 slot key 仍可并行执行。多副本部署必须使用分布式 guard，因为内置 guard 无法跨进程协调（见下面的“并发控制”）。
 
 **USER 降级逻辑：** 当 `IsolationScope.USER` 生效（不管是默认还是显式设置），但 `RuntimeContext.userId` 缺失时，框架自动降级为按 `sessionId` 隔离。不需要额外处理 userId 为空的情况——沙箱会优雅降级。
 
@@ -113,7 +113,7 @@ HarnessAgent.builder()
 
 ## 并发控制
 
-未显式配置 guard 时，Harness 会安装 `SandboxExecutionGuard.inProcess()`。它在单个 JVM 内串行化具有相同 `SandboxIsolationKey` 的调用，并最多等待 30 分钟获取繁忙 slot；超时会抛出 `SandboxExecutionTimeoutException`。如果正常调用可能超过 30 分钟，请通过 `inProcess(Duration)` 配置一个高于实际最长调用时长的上限。
+未显式配置 guard 时，Harness 会安装共享的 `SandboxExecutionGuard.defaultInProcess()`。它在单个 JVM 内串行化具有相同 `SandboxIsolationKey` 的调用，并最多等待 30 分钟获取繁忙 slot；超时会抛出 `SandboxExecutionTimeoutException`。如果正常调用可能超过 30 分钟，请通过 `inProcess(Duration)` 配置一个高于实际最长调用时长的上限。同一 key 最多允许八个等待者，超出时抛出 `SandboxExecutionQueueFullException`；可通过 `inProcess(Duration, int)` 调整每个 key 的上限。嵌套调用若再次请求父调用持有的 slot，会立即抛出 `SandboxReentrantExecutionException`。
 
 这个默认值可防止两个同 key 调用从同一持久化状态恢复，并在释放时互相覆盖。它改变了之前无 guard 的默认行为：同 key 调用现在会排队，因此单次调用的耗时可能随前方排队数量增长。如需有意保留旧的并行、最后写入覆盖行为，必须显式关闭串行化：
 
