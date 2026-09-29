@@ -147,7 +147,7 @@ Two tables are created: `agentscope_skills` and `agentscope_skill_resources` (co
 Two behaviors to note:
 
 - `metadata_json` is a required column. A table from before the column existed fails startup validation with the reference DDL; add the column as the error suggests and restart — the framework never alters existing tables.
-- `delete` removes a skill's resources explicitly before the row itself, so it behaves the same on SQLite, where the cascade only fires with `PRAGMA foreign_keys` on. Resource paths must be relative without `..` — anything escaping the skill directory is rejected on save.
+- `delete` removes a skill's resources explicitly before the row itself, so it behaves the same on SQLite, where the cascade only fires with `PRAGMA foreign_keys` on. Resource paths must be relative without `..` — anything escaping the skill directory is rejected on save, and rows read back from the table are validated the same way.
 
 ## Migrating from Legacy Modules
 
@@ -163,6 +163,7 @@ Continued use of the legacy modules is discouraged — migrate as early as your 
 Migrating the skill repositories:
 
 - Tables created by the current legacy modules already include `metadata_json` and work as-is; older tables need the column added first — the startup error carries the reference DDL.
+- One caveat to "work as-is": the legacy modules never rejected absolute or `..` resource paths, and the new implementation validates rows on read — `getSkill` refuses such a row, `getAllSkills` skips it with a warning. Audit `resource_path` (and skill names containing separators) before migrating; those values were never safely consumable downstream.
 - The old modules implicitly created an `agentscope` database (MySQL) or schema (PostgreSQL). The new repository puts its tables wherever the connection points — aim the `DataSource` at the existing tables.
 - `databaseName` / `schemaName` have no equivalent — the tables live in whatever database the DataSource points to, same as the base tables. Table names can be overridden via `skillTableName` / `skillResourcesTableName`. Correspondingly, `getSource()` changes from `mysql_<databaseName>_<table>` / `postgresql_<schemaName>_<table>` to `jdbc_<skillTableName>` — consumers keying on it (e.g. the skill staging cache namespace) get a fresh subtree after migration, and the old one is reclaimed by orphan GC.
 

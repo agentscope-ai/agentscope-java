@@ -115,6 +115,12 @@ public class AbstractJdbcDialectBuilder {
      * work (default true). Group selection is orthogonal to create-vs-validate in
      * {@link #autoCreateTable(boolean)}; setter semantics — the last call wins and
      * {@code false} is an idempotent ensure-off, not an error.
+     *
+     * <p>The group flags scope schema work only. The lock table ({@code
+     * <prefix>distributed_locks}) belongs to no group: the default {@code tryEnter} creates
+     * it lazily on first lock use, so a skill-only deployment ({@code
+     * enableBaseTables(false).enableSkillTables(true)}) that takes sandbox locks still
+     * creates and uses it.
      */
     public AbstractJdbcDialectBuilder enableBaseTables(boolean enabled) {
         this.enableBaseTables = enabled;

@@ -29,6 +29,8 @@ import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -181,6 +183,27 @@ class JdbcAgentSkillRepositoryH2Test {
         }
 
         @Test
+        @DisplayName(
+                "a duplicate name inside one save fails on the UNIQUE constraint and rolls back")
+        void duplicateWithinOneSaveFailsOnUniqueConstraint() {
+            JdbcAgentSkillRepository repo = newRepository("skill_repo_self_conflict");
+
+            IllegalStateException conflict =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () ->
+                                    repo.save(
+                                            List.of(sampleSkill("dup"), sampleSkill("dup")),
+                                            false));
+
+            assertTrue(conflict.getMessage().contains("force=false"), conflict.getMessage());
+            assertTrue(
+                    conflict.getCause() instanceof SQLException,
+                    "the driver's error must stay chained as the cause");
+            assertFalse(repo.skillExists("dup"), "the first row must be rolled back");
+        }
+
+        @Test
         @DisplayName("clearAllSkills deletes every skill and resource row")
         void clearAllSkills() throws Exception {
             DataSource ds = H2TestSupport.createDataSource("skill_repo_clear");
@@ -224,7 +247,9 @@ class JdbcAgentSkillRepositoryH2Test {
         }
 
         @Test
-        @DisplayName("save rejects null, empty lists, null elements, and invalid resource paths")
+        @DisplayName(
+                "save rejects null/empty lists, null elements, bad resource paths, and null"
+                        + " resource values")
         void saveInputValidation() {
             JdbcAgentSkillRepository repo = newRepository("skill_repo_save_lists");
             assertFalse(repo.save(null, false));
@@ -260,6 +285,22 @@ class JdbcAgentSkillRepositoryH2Test {
                             Map.of("a".repeat(501), "x"),
                             "test");
             assertThrows(IllegalArgumentException.class, () -> repo.save(List.of(tooLong), false));
+
+            // resource_content is NOT NULL in every vendor DDL.
+            Map<String, String> nullValue = new HashMap<>();
+            nullValue.put("broken.md", null);
+            AgentSkill nullContent =
+                    new AgentSkill(
+                            Map.of("name", "paths", "description", "d"),
+                            "content",
+                            nullValue,
+                            "test");
+            IllegalArgumentException rejected =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> repo.save(List.of(nullContent), false));
+            assertTrue(rejected.getMessage().contains("broken.md"), rejected.getMessage());
+
             assertFalse(repo.skillExists("paths"), "no rejected save may persist anything");
         }
 
@@ -279,6 +320,37 @@ class JdbcAgentSkillRepositoryH2Test {
             repo.setWriteable(true);
             assertTrue(repo.save(List.of(skill), false));
             assertTrue(repo.isWriteable());
+        }
+
+        @Test
+        @DisplayName("unique-violation classification matches only duplicate signals")
+        void narrowsToDuplicateSignals() {
+            // Portable unique-violation states.
+            assertTrue(
+                    JdbcAgentSkillRepository.isUniqueViolation(new SQLException("d", "23505", 0)));
+            assertTrue(
+                    JdbcAgentSkillRepository.isUniqueViolation(new SQLException("d", "23500", 0)));
+            // Generic state 23000: the vendor code decides.
+            assertTrue(
+                    JdbcAgentSkillRepository.isUniqueViolation(
+                            new SQLException("d", "23000", 1062)));
+            assertFalse(
+                    JdbcAgentSkillRepository.isUniqueViolation(
+                            new SQLException("d", "23000", 1048)));
+            assertFalse(
+                    JdbcAgentSkillRepository.isUniqueViolation(
+                            new SQLIntegrityConstraintViolationException("d", "23000", 1048)),
+                    "MySQL raises the JDBC 4 subtype for NOT NULL too — the exact misreport");
+            // Class-23 siblings must fall through as the driver's own error.
+            assertFalse(
+                    JdbcAgentSkillRepository.isUniqueViolation(new SQLException("d", "23502", 0)));
+            assertFalse(
+                    JdbcAgentSkillRepository.isUniqueViolation(new SQLException("d", "23503", 0)));
+            assertFalse(
+                    JdbcAgentSkillRepository.isUniqueViolation(new SQLException("d", "23514", 0)));
+            // State-less vendor duplicate codes.
+            assertTrue(
+                    JdbcAgentSkillRepository.isUniqueViolation(new SQLException("d", null, -239)));
         }
     }
 
@@ -362,20 +434,32 @@ class JdbcAgentSkillRepositoryH2Test {
         }
 
         @Test
-        @DisplayName("a resource batch failure rolls the skill insert back")
-        void resourceBatchFailureRollsBack() {
-            JdbcAgentSkillRepository repo = newRepository("skill_repo_batch_failure");
-            Map<String, String> resources = new HashMap<>();
-            resources.put("ok.md", "content");
-            // The null value violates the NOT NULL column during the batch, failing the save.
-            resources.put("broken.md", null);
-            AgentSkill skill =
-                    new AgentSkill(
-                            Map.of("name", "batch", "description", "d"), "c", resources, "test");
+        @DisplayName(
+                "adopted legacy rows with traversal paths or separator names are refused on read")
+        void legacyTraversalRowsRefusedOnRead() throws Exception {
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_legacy_paths");
+            JdbcAgentSkillRepository repo = new JdbcAgentSkillRepository(ds, skillDialect(ds));
+            try (Connection conn = ds.getConnection();
+                    Statement stmt = conn.createStatement()) {
+                // Legacy repositories accepted absolute and .. paths on write.
+                stmt.execute(
+                        "INSERT INTO agentscope_skills (name, description, skill_content, source)"
+                                + " VALUES ('legacy', 'd', 'c', 'test')");
+                stmt.execute(
+                        "INSERT INTO agentscope_skill_resources (id, resource_path,"
+                                + " resource_content) VALUES"
+                                + " ((SELECT id FROM agentscope_skills WHERE name = 'legacy'),"
+                                + " '../../escape.txt', 'x')");
+                stmt.execute(
+                        "INSERT INTO agentscope_skills (name, description, skill_content, source)"
+                                + " VALUES ('../evil', 'd', 'c', 'test')");
+            }
 
-            assertThrows(RuntimeException.class, () -> repo.save(List.of(skill), false));
+            IllegalArgumentException rejected =
+                    assertThrows(IllegalArgumentException.class, () -> repo.getSkill("legacy"));
+            assertTrue(rejected.getMessage().contains("../../escape.txt"), rejected.getMessage());
 
-            assertFalse(repo.skillExists("batch"), "the skill row must be rolled back");
+            assertTrue(repo.getAllSkills().isEmpty(), "the guard must extend to reads");
         }
     }
 

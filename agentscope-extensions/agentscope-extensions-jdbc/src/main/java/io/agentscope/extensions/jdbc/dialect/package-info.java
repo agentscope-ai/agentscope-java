@@ -95,5 +95,13 @@
  * deliberate: a dialect that cannot create a domain's tables must not assemble silently
  * behind a default that hides the gap. In-tree vendor classes are updated in the same
  * change, so only third-party dialects ever see that compile step.
+ *
+ * <p>On the runtime side, a third-party dialect compiled against the previous artifact is
+ * not recompiled, and the JVM raises {@link AbstractMethodError} only when the missing
+ * abstract method is actually invoked. The only invocation site sits inside the skill-group
+ * gate of {@code createTableDdls()}, so an un-migrated dialect keeps serving the base
+ * tables until somebody opts into the skill group — at which point it fails with an {@code
+ * AbstractMethodError} on the skill DDL methods, the signal to recompile and implement the
+ * skill domains.
  */
 package io.agentscope.extensions.jdbc.dialect;

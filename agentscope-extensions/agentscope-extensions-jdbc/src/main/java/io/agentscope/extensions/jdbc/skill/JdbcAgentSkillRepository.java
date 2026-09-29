@@ -94,6 +94,22 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
      */
     private static final Set<Integer> VENDOR_UNIQUE_VIOLATION_CODES = Set.of(-239, -268);
 
+    /**
+     * SQLStates that positively report a unique-constraint violation: {@code 23505} (the
+     * SQL:2003 code — PostgreSQL and its forks, H2, HSQLDB, Derby, DB2) and {@code 23500}
+     * reported by a few MySQL-compatible drivers.
+     */
+    private static final Set<String> UNIQUE_SQL_STATES = Set.of("23505", "23500");
+
+    /**
+     * Duplicate-key vendor codes under the generic integrity SQLState {@code 23000}, where
+     * the state alone cannot tell a duplicate from sibling violations: MySQL / MariaDB /
+     * TiDB / OceanBase {@code 1062}, MySQL 5.5-era {@code 1022}, Oracle {@code ORA-00001}
+     * = 1, SQL Server {@code 2601} / {@code 2627}.
+     */
+    private static final Set<Integer> DUPLICATE_KEY_VENDOR_CODES =
+            Set.of(1062, 1022, 1, 2601, 2627);
+
     /** The data source holding the skill tables; never closed by this repository. */
     private final DataSource dataSource;
 
@@ -418,9 +434,11 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     // ------------------------------------------------------------------
 
     /**
-     * Validates every skill name and resource path before any transaction starts.
+     * Validates every skill name, resource path, and resource content before any
+     * transaction starts.
      *
-     * @throws IllegalArgumentException on a null skill or an invalid name/resource path
+     * @throws IllegalArgumentException on a null skill, an invalid name/resource path, or a
+     *     null resource content (the column is NOT NULL in every vendor DDL)
      */
     private static void validateForSave(List<AgentSkill> skills) {
         for (AgentSkill skill : skills) {
@@ -430,8 +448,12 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
             validateSkillName(skill.getName());
             Map<String, String> resources = skill.getResources();
             if (resources != null) {
-                for (String path : resources.keySet()) {
-                    validateResourcePath(path);
+                for (Map.Entry<String, String> entry : resources.entrySet()) {
+                    validateResourcePath(entry.getKey());
+                    if (entry.getValue() == null) {
+                        throw new IllegalArgumentException(
+                                "Resource content must not be null: " + entry.getKey());
+                    }
                 }
             }
         }
@@ -494,7 +516,8 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
                         "Cannot save skills: the following skills already exist and"
                                 + " force=false: "
                                 + skill.getName()
-                                + ". Use force=true to overwrite existing skills.");
+                                + ". Use force=true to overwrite existing skills.",
+                        e);
             }
             throw e;
         }
@@ -610,6 +633,13 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     /**
      * Builds an {@link AgentSkill} from row data, restoring full metadata when available and
      * otherwise falling back to the legacy core columns.
+     *
+     * <p>Rows are re-validated on read — legacy tables were never path-checked on write, and
+     * consumers resolve these values onto disk. {@code getSkill} surfaces the rejection;
+     * {@code getAllSkills} skips the row with a warning, as it does for unbuildable rows.
+     *
+     * @throws IllegalArgumentException when the row's name or a resource path fails the same
+     *     validation as the save path
      */
     private AgentSkill buildSkill(
             String name,
@@ -618,6 +648,12 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
             String source,
             String metadataJson,
             Map<String, String> resources) {
+        validateSkillName(name);
+        if (resources != null) {
+            for (String path : resources.keySet()) {
+                validateResourcePath(path);
+            }
+        }
         return new AgentSkill(
                 deserializeMetadata(metadataJson, name, description),
                 skillContent,
@@ -779,50 +815,69 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
 
     /**
      * Whether the exception reports a duplicate-key / unique-constraint violation — the
-     * authoritative conflict signal for the {@code force=false} insert.
+     * authoritative conflict signal for the {@code force=false} insert. Only positive
+     * duplicate signals match, so any other constraint failure surfaces as the driver's own
+     * {@link SQLException} instead of the destructive "use force=true" advice.
      *
      * <p>Signals, in order:
      *
      * <ol>
-     *   <li>{@link SQLIntegrityConstraintViolationException} — the JDBC 4 subtype, thrown by
-     *       MySQL, MariaDB, TiDB, OceanBase, Oracle (ojdbc6+), DB2, H2 2.x, HSQLDB and Derby.
-     *   <li>SQLState class 23 (SQL:2003 integrity-constraint violation) — the portable signal,
-     *       and the only one for the many drivers that throw plain {@code SQLException}
-     *       subclasses: pgjdbc never throws the JDBC 4 subtypes (issue #963 is still open),
-     *       and neither do its forks (KingbaseES, openGauss, GaussDB, Vastbase, HighGo,
-     *       PolarDB), nor Firebird, SQL Server, 达梦, or H2 1.x. All of them report class 23,
-     *       as 23505 (PostgreSQL lineage, DB2, H2, HSQLDB, Derby) or 23000 (the rest); note
-     *       that pgjdbc returns error code 0, so the code cannot stand in for the state.
-     *   <li>Vendor code — only for drivers that report no SQLState. SQLite (xerial) is the
-     *       case that forced this path: it returns 19 with a null state and masks the
-     *       extended 2067 ({@code SQLITE_CONSTRAINT_UNIQUE}) away from {@code getErrorCode()}
-     *       into its own {@code getResultCode()}, so 19 is the only usable signal there. The
-     *       vendor code is additionally guarded by driver class, because small positive codes
-     *       collide across drivers; {@link #VENDOR_UNIQUE_VIOLATION_CODES} holds the
-     *       distinctive remaining values.
+     *   <li>SQLState in {@link #UNIQUE_SQL_STATES} — the portable unique-violation codes.
+     *       pgjdbc and its forks never throw the JDBC 4 subtypes (issue #963 is still open),
+     *       nor do Firebird, SQL Server, 达梦, or H2 1.x; all report 23505, as do H2 2.x,
+     *       HSQLDB, Derby, and DB2 through the subtype. pgjdbc returns error code 0, so the
+     *       code cannot stand in for the state.
+     *   <li>SQLState {@code 23000} plus a code from {@link #DUPLICATE_KEY_VENDOR_CODES} —
+     *       that state is the whole class-23 umbrella for the MySQL family, Oracle, and SQL
+     *       Server, so the vendor code decides.
+     *   <li>SQLite (xerial): error 19 with a null state is every {@code
+     *       SQLITE_CONSTRAINT_*} collapsed; {@link #isSqliteUniqueViolation} narrows it.
+     *   <li>Vendor codes for drivers reporting no SQLState: {@link
+     *       #VENDOR_UNIQUE_VIOLATION_CODES}.
      * </ol>
      *
-     * <p>Deliberately not matched: MySQL {@code ER_DUP_ENTRY_AUTOINCREMENT_CASE} (1569)
-     * reports SQLState {@code HY000} — outside class 23 — but it requires an explicit
-     * auto-increment value, which the skill insert never supplies. ClickHouse has no
-     * duplicate-key error to match: it does not enforce primary-key uniqueness.
+     * <p>Deliberately not matched: the {@link SQLIntegrityConstraintViolationException}
+     * subtype on its own — MySQL Connector/J also raises it for NOT NULL (1048) and foreign
+     * key (1451/1452) violations, which is exactly the misreport this method must avoid —
+     * and the class-23 siblings (23502, 23503, 23514). An unmatched duplicate fails the
+     * save as a plain {@code SQLException} rather than a false conflict.
+     *
+     * <p>Also not matched: MySQL {@code ER_DUP_ENTRY_AUTOINCREMENT_CASE} (1569) reports
+     * SQLState {@code HY000} — outside class 23 — but it requires an explicit auto-increment
+     * value, which the skill insert never supplies. ClickHouse has no duplicate-key error to
+     * match: it does not enforce primary-key uniqueness.
      *
      * @param e the exception thrown by the skill insert
      * @return true when the failure is a duplicate-key conflict rather than any other error
      */
-    private static boolean isUniqueViolation(SQLException e) {
-        if (e instanceof SQLIntegrityConstraintViolationException) {
-            return true;
-        }
+    static boolean isUniqueViolation(SQLException e) {
         String state = e.getSQLState();
-        if (state != null && state.startsWith("23")) {
+        // Null SQLState is real (SQLite reports one) and Set.of rejects null lookups.
+        if (state != null && UNIQUE_SQL_STATES.contains(state)) {
             return true;
         }
-        int code = e.getErrorCode();
-        if (code == SQLITE_CONSTRAINT && e.getClass().getName().startsWith("org.sqlite.")) {
+        if ("23000".equals(state) && DUPLICATE_KEY_VENDOR_CODES.contains(e.getErrorCode())) {
             return true;
         }
-        return VENDOR_UNIQUE_VIOLATION_CODES.contains(code);
+        if (e.getErrorCode() == SQLITE_CONSTRAINT
+                && e.getClass().getName().startsWith("org.sqlite.")) {
+            return isSqliteUniqueViolation(e);
+        }
+        return VENDOR_UNIQUE_VIOLATION_CODES.contains(e.getErrorCode());
+    }
+
+    /**
+     * Narrows SQLite's umbrella error 19 to unique violations via the driver's {@code
+     * getResultCode()}, reached reflectively to keep the driver off the compile classpath.
+     * Falls back to the umbrella signal if reflection fails.
+     */
+    private static boolean isSqliteUniqueViolation(SQLException e) {
+        try {
+            Object resultCode = e.getClass().getMethod("getResultCode").invoke(e);
+            return "SQLITE_CONSTRAINT_UNIQUE".equals(resultCode.toString());
+        } catch (ReflectiveOperationException reflectionFailure) {
+            return true;
+        }
     }
 
     /**

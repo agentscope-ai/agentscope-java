@@ -147,7 +147,7 @@ AgentSkillRepository repo = new JdbcAgentSkillRepository(dataSource, dialect);
 两点行为说明：
 
 - `metadata_json` 是必需列。早于该列的旧表会在启动校验时报错并附参考 DDL，按提示 `ALTER TABLE` 补列后重启即可，框架不会代改已有表。
-- `delete` 会先显式删掉技能的资源行再删技能行，因此在 SQLite（默认不启用级联外键）上行为也一致；资源路径必须是相对路径且不含 `..`，越出技能目录的路径在保存时即被拒绝。
+- `delete` 会先显式删掉技能的资源行再删技能行，因此在 SQLite（默认不启用级联外键）上行为也一致；资源路径必须是相对路径且不含 `..`，越出技能目录的路径在保存时即被拒绝，读取回表中的行时也做同样校验。
 
 ## 从历史模块迁移
 
@@ -163,6 +163,7 @@ AgentSkillRepository repo = new JdbcAgentSkillRepository(dataSource, dialect);
 skill 仓库迁移要点：
 
 - 现行旧模块建的表已包含 `metadata_json`，原样可用；更早的旧表先补上这一列，启动报错里附有参考 DDL。
+- "原样可用"有一个例外：旧模块从不拒绝绝对路径或含 `..` 的资源路径，而新实现对读取的行做同样校验——`getSkill` 会拒绝这类行，`getAllSkills` 会跳过并告警。迁移前请先审计 `resource_path`（以及含分隔符的技能名）并修正；这些值本就无法被下游安全消费。
 - 旧模块会隐式创建 `agentscope` 库（MySQL）/ schema（PostgreSQL）；新实现的表放在连接所指向的库里——把 `DataSource` 指向存量表即可。
 - `databaseName` / `schemaName` 无对应物——表跟随 DataSource 所指向的库，与基础表一致。表名可用 `skillTableName` / `skillResourcesTableName` 覆盖。相应地，`getSource()` 由 `mysql_<库名>_<表名>` / `postgresql_<schema>_<表名>` 变为 `jdbc_<skillTableName>`：以其为键的消费方（如 skill 暂存缓存命名空间）迁移后会使用新的子目录，旧目录由孤儿 GC 回收。
 
