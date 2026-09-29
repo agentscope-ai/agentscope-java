@@ -284,6 +284,109 @@ class ReActAgentPermissionRulesTest {
                 "the session's own ALLOW for a tool the builder does not declare must still apply");
     }
 
+    /**
+     * The gate that decides whether the engine is consulted at all reads the *persisted* context.
+     * A session persisted with no rules at all is trivial, so it stays on the lightweight path and
+     * the declared rules are never examined — the flag would do nothing on exactly those sessions.
+     */
+    @Test
+    @DisplayName(
+            "with the flag: a session persisted with no rules at all still consults the engine")
+    void declaredRulesReachASessionWhosePersistedContextIsTrivial() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext sessA = session("sessA");
+
+        // v1 declares nothing, so the session is persisted with a trivial permission context.
+        agent(model("tc-t1"), PermissionContextState.builder().build(), store)
+                .call(List.of(userMsg("deploy?")), sessA)
+                .block();
+
+        Msg tightened =
+                agent(model("tc-t2"), rules(PermissionBehavior.ASK), store, true)
+                        .call(List.of(userMsg("deploy?")), sessA)
+                        .block();
+
+        assertNotNull(tightened);
+        assertEquals(GenerateReason.PERMISSION_ASKING, tightened.getGenerateReason());
+    }
+
+    /**
+     * Removing a rule has to reach an existing session too. The old build denies the tool; the new
+     * build declares it as ALLOW only, so the stale session DENY must be dropped — if the skip were
+     * keyed per rule table rather than per tool, the stale DENY would survive and, because deny is
+     * evaluated first, keep winning.
+     */
+    @Test
+    @DisplayName("with the flag: dropping a DENY reaches a session that already holds it")
+    void removedDenyDoesNotSurviveWhenTheToolIsStillDeclared() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext sessA = session("sessA");
+
+        Msg denied =
+                agent(model("tc-d1"), rules(PermissionBehavior.DENY), store, true)
+                        .call(List.of(userMsg("deploy?")), sessA)
+                        .block();
+        assertNotNull(denied);
+
+        // The new build declares the tool with ALLOW only.
+        Msg afterRemoval =
+                agent(model("tc-d2"), rules(PermissionBehavior.ALLOW), store, true)
+                        .call(List.of(userMsg("deploy?")), sessA)
+                        .block();
+
+        assertNotNull(afterRemoval);
+        assertEquals(
+                GenerateReason.MODEL_STOP,
+                afterRemoval.getGenerateReason(),
+                "the declared ALLOW replaces the session's stale DENY, which is dropped because the"
+                        + " declaration mentions the tool in one of its tables");
+    }
+
+    /**
+     * Composition replaces the session's *rules* only. Its mode has to survive, or a runtime
+     * {@code setPermissionMode} — and anything a host set at init time for that session — would be
+     * silently reset by enabling the option.
+     */
+    @Test
+    @DisplayName("with the flag: the session's mode still wins over the declared one")
+    void sessionModeSurvivesComposition() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext sessA = session("sessA");
+
+        // The session is created under BYPASS and persists that mode.
+        Msg bypassed =
+                agent(
+                                model("tc-m1"),
+                                PermissionContextState.builder()
+                                        .mode(PermissionMode.BYPASS)
+                                        .build(),
+                                store)
+                        .call(List.of(userMsg("deploy?")), sessA)
+                        .block();
+        assertNotNull(bypassed);
+        assertEquals(GenerateReason.MODEL_STOP, bypassed.getGenerateReason());
+
+        // A later build declares DEFAULT with an ASK for the tool. If the declared mode replaced
+        // the
+        // BYPASS falls through to allow, DEFAULT falls through to ask. A declared ASK could not
+        Msg afterRedeploy =
+                agent(
+                                model("tc-m2"),
+                                PermissionContextState.builder()
+                                        .mode(PermissionMode.DEFAULT)
+                                        .build(),
+                                store,
+                                true)
+                        .call(List.of(userMsg("deploy?")), sessA)
+                        .block();
+
+        assertNotNull(afterRedeploy);
+        assertEquals(
+                GenerateReason.MODEL_STOP,
+                afterRedeploy.getGenerateReason(),
+                "the session kept BYPASS, so the tool is not gated by the declared DEFAULT");
+    }
+
     /** Control: the same v2 declaration does apply to a session created after it. */
     @Test
     @DisplayName("control: the same declaration applies to a session created after it")

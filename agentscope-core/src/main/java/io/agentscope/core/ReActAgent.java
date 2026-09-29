@@ -702,16 +702,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     initialActiveToolGroups)
                                             .value());
         }
-        PermissionContextState engineContext =
-                enginePermissionContext(loaded.getPermissionContext());
         PermissionEngine loadedEngine;
         if (stateStore != null) {
-            loadedEngine = new PermissionEngine(engineContext);
+            loadedEngine =
+                    new PermissionEngine(enginePermissionContext(loaded.getPermissionContext()));
             permissionEngineCache.put(slot, loadedEngine);
         } else {
+            // Without a store the session's context is the declared one on every call, so there is
+            // nothing to compose and the cached engine stays correct.
             loadedEngine =
                     permissionEngineCache.computeIfAbsent(
-                            slot, k -> new PermissionEngine(engineContext));
+                            slot, k -> new PermissionEngine(loaded.getPermissionContext()));
         }
         return new CallExecution(loaded, loadedEngine, slot, loadedVersion);
     }
@@ -3459,7 +3460,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (toolCalls == null || toolCalls.isEmpty()) {
                 return Mono.just(new PermissionGate(List.of(), Set.of()));
             }
-            boolean useEngine = !state.getPermissionContext().isTrivial();
+            // Ask the engine whenever the context it was actually built from is non-trivial, not
+            // the persisted one: with the builder's rules authoritative the engine may carry rules
+            // for a session whose persisted context is empty, and reading the session's context
+            // here would leave that session on the lightweight path where no rule is consulted.
+            boolean useEngine = !permissionEngine.getContext().isTrivial();
             return Flux.fromIterable(toolCalls)
                     .concatMap(use -> evaluateOne(use, useEngine))
                     .collectList()
@@ -5406,6 +5411,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * about. The session's mode and working directories are still the session's, so a runtime
          * {@code setPermissionMode} continues to apply. Nothing about what is persisted changes:
          * existing stores keep working and stay readable by agents that do not set this.
+         *
+         * <p>This only changes behaviour when a state store is configured. Without one the session's
+         * context is the declared one on every call already, so there is nothing for the option to
+         * override.
          *
          * @param authoritative true to make the builder's rules authoritative on every call
          * @return This builder instance for method chaining
