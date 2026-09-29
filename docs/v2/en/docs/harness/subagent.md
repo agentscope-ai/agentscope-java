@@ -106,7 +106,19 @@ behavior. Remote agents and custom factories configure recovery themselves.
 
 ### Built-in `general-purpose`
 
-No spec file needed; always available. Its role is "generic fallback" — it mirrors the parent's capability (same model, tools, skills) and shares the parent's workspace. Useful when the parent wants to isolate context for a sub-task without writing a dedicated spec.
+No spec file needed; always available. Its role is "generic fallback" — it mirrors the parent's capability (same model, backend tools, skills) and shares the parent's workspace. Useful when the parent wants to isolate context for a sub-task without writing a dedicated spec.
+
+### Tool execution boundary
+
+Local subagent calls do not inherit the parent's per-call `ToolRequestConfig`. Client-declared
+frontend tools, including those supplied through AG-UI, require the parent's client to execute
+them. They are not offered to the child, and the parent's tool merge mode does not hide or
+override the child's backend tools. This applies to synchronous, streaming, and background calls.
+
+If a local child still returns `TOOL_SUSPENDED` (for example, its own toolkit contains a
+schema-only tool), `agent_spawn` and `agent_send` report an error naming the pending tools
+instead of a successful empty reply. Background tasks, including tasks promoted after a
+synchronous timeout, fail with the same diagnostic.
 
 ## ISOLATED vs SHARED
 
