@@ -84,7 +84,7 @@ Explicit builder methods (.stateStore(), .snapshotSpec() on FilesystemSpec, etc.
 ## Store Documentation
 
 - [Redis](/v2/en/integration/distributed/redis) — full capability coverage, recommended for multi-replica production
-- [MySQL / JDBC](/v2/en/integration/distributed/mysql) — for existing relational database infrastructure
+- [JDBC](/v2/en/integration/distributed/jdbc) — for existing relational database infrastructure
 - [MongoDB](/v2/en/integration/distributed/mongodb) — document-oriented storage, ideal for large conversation histories
 - [Alibaba Cloud OSS](/v2/en/integration/distributed/oss) — object storage, best for large-capacity snapshots
 

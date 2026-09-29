@@ -135,7 +135,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | Method | Description | Default |
 |--------|-------------|---------|
 | `image(String)` | Docker image | required |
-| `isolationScope(IsolationScope)` | Isolation dimension | `SESSION` |
+| `isolationScope(IsolationScope)` | Isolation dimension | `USER` |
 | `memorySizeBytes(Long)` | Container memory limit | Docker default |
 | `cpuCount(Long)` | CPU limit | Docker default |
 | `network(String)` | Docker network | Docker default |
@@ -235,7 +235,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | Method | Description | Default |
 |--------|-------------|---------|
-| `isolationScope(IsolationScope)` | Isolation dimension | store-specific (usually `SESSION`) |
+| `isolationScope(IsolationScope)` | Isolation dimension | store-specific (defaults to `USER`) |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` |
 | `executionGuard(SandboxExecutionGuard)` | Same-slot concurrency serialization guard | shared `defaultInProcess()` (30-minute wait limit) |
 | `workspaceProjectionEnabled(boolean)` | Project static assets from host to sandbox | `true` |
