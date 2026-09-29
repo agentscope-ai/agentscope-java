@@ -99,7 +99,9 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
      * SQL:2003 code — PostgreSQL and its forks, H2, HSQLDB, Derby, DB2). The umbrella {@code
      * 23500} is deliberately absent — no driver reporting it for duplicates could be named,
      * and umbrella states cover sibling violations; those stacks' duplicates reach {@link
-     * #DUPLICATE_KEY_VENDOR_CODES} under {@code 23000} instead.
+     * #DUPLICATE_KEY_VENDOR_CODES} under {@code 23000} instead. Should such a driver ever
+     * surface, the remedy is widening that gate to its class-23 state, not reinstating the
+     * umbrella.
      */
     private static final Set<String> UNIQUE_SQL_STATES = Set.of("23505");
 
@@ -196,27 +198,38 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     @Override
     public List<String> getAllSkillNames() {
         try (Connection conn = dataSource.getConnection()) {
-            List<String> names = new ArrayList<>();
+            List<String> stored = new ArrayList<>();
             forEachRow(
                     conn,
                     skillDialect.skillSelectAllNames(),
-                    rs -> {
-                        String name = rs.getString("name");
-                        try {
-                            validateSkillName(name);
-                        } catch (IllegalArgumentException e) {
-                            LOG.warn(
-                                    "Skipping unloadable skill name '{}': {}",
-                                    name,
-                                    e.getMessage());
-                            return;
-                        }
-                        names.add(name);
-                    });
-            return names;
+                    rs -> stored.add(rs.getString("name")));
+            return filterUnloadableNames(stored);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to list skill names", e);
         }
+    }
+
+    /**
+     * Drops names failing the read-side validation, warning per name and once in aggregate —
+     * a partial listing must stay visible as such.
+     */
+    private static List<String> filterUnloadableNames(List<String> stored) {
+        List<String> names = new ArrayList<>(stored.size());
+        for (String name : stored) {
+            try {
+                validateSkillName(name);
+            } catch (IllegalArgumentException e) {
+                LOG.warn("Skipping unloadable skill name '{}': {}", name, e.getMessage());
+                continue;
+            }
+            names.add(name);
+        }
+        if (names.size() < stored.size()) {
+            LOG.warn(
+                    "Skill name listing is partial: {} names omitted",
+                    stored.size() - names.size());
+        }
+        return names;
     }
 
     /**
@@ -272,6 +285,7 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     /** Builds the skills, skipping (with a warning) any row the model rejects. */
     private List<AgentSkill> buildAll(Map<Long, LoadedSkillRecord> records) {
         List<AgentSkill> skills = new ArrayList<>(records.size());
+        int omitted = 0;
         for (LoadedSkillRecord record : records.values()) {
             try {
                 skills.add(
@@ -283,8 +297,15 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
                                 record.metadataJson,
                                 record.resources));
             } catch (Exception e) {
+                omitted++;
                 LOG.warn("Failed to build skill '{}': {}", record.name, e.getMessage(), e);
             }
+        }
+        if (omitted > 0) {
+            LOG.warn(
+                    "Skill catalog listing is partial: {} of {} skills omitted",
+                    omitted,
+                    records.size());
         }
         return skills;
     }
