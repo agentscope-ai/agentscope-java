@@ -97,8 +97,12 @@ public class WorkspaceSpec {
      * @return spec with a non-blank root
      */
     public static WorkspaceSpec withDefaultRoot(WorkspaceSpec spec, String defaultRoot) {
+        // A fresh WorkspaceSpec already carries the generic "/workspace" root, so the
+        // null/blank case must be decided from the *input* spec, not from the copy.
+        boolean callerProvidedRoot =
+                spec != null && spec.getRoot() != null && !spec.getRoot().isBlank();
         WorkspaceSpec s = spec != null ? spec.copy() : new WorkspaceSpec();
-        if (s.getRoot() == null || s.getRoot().isBlank()) {
+        if (!callerProvidedRoot) {
             s.setRoot(defaultRoot);
         }
         return s;

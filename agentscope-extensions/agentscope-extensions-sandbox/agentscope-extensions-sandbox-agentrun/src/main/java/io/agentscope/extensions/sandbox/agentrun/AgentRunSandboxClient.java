@@ -71,11 +71,16 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
         String sessionId = UUID.randomUUID().toString();
         String sandboxId = deriveSandboxId(sessionId);
 
+        // Resolve the backend default once: the NAS/OSS mount check must run against the root
+        // the sandbox will actually use, otherwise a null/blank spec makes the check pass and
+        // doDestroyWorkspace() would rm -rf a NAS-backed workspace.
+        WorkspaceSpec resolvedSpec =
+                WorkspaceSpec.withDefaultRoot(
+                        workspaceSpec, AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT);
+
         AgentRunSandboxState state = new AgentRunSandboxState();
         state.setSessionId(sessionId);
-        state.setWorkspaceSpec(
-                WorkspaceSpec.withDefaultRoot(
-                        workspaceSpec, AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT));
+        state.setWorkspaceSpec(resolvedSpec);
         state.setTemplateName(merged.getTemplateName());
         state.setAccountId(merged.getAccountId());
         state.setRegion(merged.getRegion());
@@ -83,9 +88,7 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
         state.setSandboxId(sandboxId);
         state.setSandboxOwned(true);
         state.setWorkspaceRootReady(false);
-        state.setWorkspaceOnNas(
-                isWorkspaceUnderMounts(
-                        merged, workspaceSpec != null ? workspaceSpec.getRoot() : null));
+        state.setWorkspaceOnNas(isWorkspaceUnderMounts(merged, resolvedSpec.getRoot()));
 
         if (snapshotSpec != null) {
             state.setSnapshot(snapshotSpec.build(sessionId));

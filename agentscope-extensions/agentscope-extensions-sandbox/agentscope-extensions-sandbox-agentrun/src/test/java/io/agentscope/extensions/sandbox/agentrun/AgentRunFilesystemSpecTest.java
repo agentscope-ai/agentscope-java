@@ -16,6 +16,7 @@
 package io.agentscope.extensions.sandbox.agentrun;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import org.junit.jupiter.api.Test;
@@ -27,5 +28,52 @@ class AgentRunFilesystemSpecTest {
         AgentRunFilesystemSpec spec = new AgentRunFilesystemSpec();
         WorkspaceSpec ws = spec.workspaceSpec();
         assertEquals(AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT, ws.getRoot());
+    }
+
+    @Test
+    void workspaceSpec_doesNotMutateCallerObject() {
+        WorkspaceSpec caller = new WorkspaceSpec();
+        caller.setRoot("/caller/root");
+
+        new AgentRunFilesystemSpec().workspaceRoot("/explicit/root").workspaceSpec(caller);
+
+        assertEquals("/caller/root", caller.getRoot());
+    }
+
+    @Test
+    void workspaceRootAndWorkspaceSpec_areOrderIndependent() {
+        WorkspaceSpec caller = new WorkspaceSpec();
+        caller.setRoot("/caller/root");
+
+        // workspaceRoot applied last wins
+        WorkspaceSpec specLast =
+                new AgentRunFilesystemSpec()
+                        .workspaceSpec(caller)
+                        .workspaceRoot("/last")
+                        .workspaceSpec();
+        // workspaceSpec applied last wins (its root)
+        WorkspaceSpec specFirst =
+                new AgentRunFilesystemSpec()
+                        .workspaceRoot("/last")
+                        .workspaceSpec(caller)
+                        .workspaceSpec();
+
+        assertEquals("/last", specLast.getRoot());
+        assertEquals("/caller/root", specFirst.getRoot());
+    }
+
+    /**
+     * The mount check inside {@code AgentRunSandboxClient.create()} must run against the
+     * backend-defaulted root, not the raw spec: a NAS mount at the default AgentRun root has to
+     * be recognised so {@code doDestroyWorkspace()} does not rm -rf persistent data.
+     */
+    @Test
+    void defaultRoot_isUnderAgentRunNasMount() {
+        String nasMount = AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT;
+        WorkspaceSpec defaulted =
+                WorkspaceSpec.withDefaultRoot(null, AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT);
+
+        assertEquals(nasMount, defaulted.getRoot());
+        assertTrue(defaulted.getRoot().startsWith(nasMount));
     }
 }

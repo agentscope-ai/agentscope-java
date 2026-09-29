@@ -102,7 +102,11 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     public E2bFilesystemSpec workspaceRoot(String workspaceRoot) {
-        defaultWorkspaceSpec.setRoot(workspaceRoot);
+        // Copy-on-write so the caller's WorkspaceSpec is never mutated and the two builders
+        // stay order-independent regardless of which is applied last.
+        WorkspaceSpec spec = defaultWorkspaceSpec.copy();
+        spec.setRoot(workspaceRoot);
+        this.defaultWorkspaceSpec = spec;
         return this;
     }
 
@@ -112,7 +116,8 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     public E2bFilesystemSpec workspaceSpec(WorkspaceSpec workspaceSpec) {
-        this.defaultWorkspaceSpec = workspaceSpec;
+        this.defaultWorkspaceSpec =
+                workspaceSpec != null ? workspaceSpec.copy() : createDefaultWorkspaceSpec();
         return this;
     }
 

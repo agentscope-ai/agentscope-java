@@ -2896,12 +2896,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 } else if (filesystem instanceof SandboxBackedFilesystem
                         || (filesystem instanceof RoutedSandboxFilesystem routed
                                 && routed.primary() instanceof SandboxBackedFilesystem)) {
-                    String wsPrefix =
-                            defaultSandboxContext != null
-                                            && defaultSandboxContext.getWorkspaceSpec() != null
-                                    ? defaultSandboxContext.getWorkspaceSpec().getRoot()
-                                    : io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
-                                            .SANDBOX_WORKSPACE_PREFIX;
+                    String wsPrefix = resolveSandboxWorkspacePrefix(defaultSandboxContext);
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.sandbox(
                                     wsPrefix);
@@ -2980,5 +2975,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     pathNormalizer,
                     agentToolkit);
         }
+    }
+
+    /**
+     * Returns the workspace root the sandbox shell policy should be rooted at, falling back to
+     * {@link ShellPathPolicy#SANDBOX_WORKSPACE_PREFIX} when the context carries no spec or a
+     * blank root — either would otherwise yield an unusable empty path prefix.
+     */
+    private static String resolveSandboxWorkspacePrefix(SandboxContext sandboxContext) {
+        if (sandboxContext != null && sandboxContext.getWorkspaceSpec() != null) {
+            String root = sandboxContext.getWorkspaceSpec().getRoot();
+            if (root != null && !root.isBlank()) {
+                return root;
+            }
+        }
+        return ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX;
     }
 }
