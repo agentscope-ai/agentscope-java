@@ -1,5 +1,6 @@
 ---
 title: Coding Agent 的下半场：从个人提效到组织级研发体系
+en_link: /v2/en/blogs/agentscope-v2-coding-agent
 ---
 
 当下还在古法手搓代码的开发者都是在奔着非遗传承人的目标去了，绝大多数都已经用上了 Claude Code、Cursor 这类 Coding Agent。方向对了，但场景不同，解法也不同——开发者自己在本地装个 AI 助手提效，和在组织内部搭起一套 AI 驱动的研发协作体系，是完全两个维度的事情。前者已经有成熟的产品了，后者才刚刚开始。本文聊的就是后者。

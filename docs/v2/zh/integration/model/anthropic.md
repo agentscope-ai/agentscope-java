@@ -1,5 +1,6 @@
 ---
 title: Anthropic
+en_link: /v2/en/integration/model/anthropic
 ---
 
 `agentscope-extensions-model-anthropic` 接入 Anthropic Claude Model，并提供 Anthropic 专属 formatter 和请求 DTO 支持。
@@ -38,6 +39,27 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .stream(true)
     .build();
 ```
+
+## 服务端工具
+
+Anthropic 内置工具由 Anthropic 在模型服务端执行，不会进入 AgentScope 本地 Toolkit。使用 SDK
+的强类型工具定义构造 `ToolUnion`，再交给 `AnthropicServerTool.of(...)` 包装：
+
+```java
+import com.anthropic.models.messages.ToolUnion;
+import com.anthropic.models.messages.WebSearchTool20250305;
+import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
+
+AnthropicChatModel model = AnthropicChatModel.builder()
+    .apiKey(System.getenv("ANTHROPIC_API_KEY"))
+    .modelName("claude-sonnet-4.5")
+    .addServerTool(AnthropicServerTool.of(
+        ToolUnion.ofWebSearchTool20250305(WebSearchTool20250305.builder().build())))
+    .build();
+```
+
+服务端工具可以与本地 function tools 同时配置；Anthropic 按工具名称选择工具，因此两者名称冲突时会快速
+失败。`AnthropicServerTool.of(...)` 只接受 SDK 内置工具定义，不接受自定义 client tool。
 
 ### Bearer Token 鉴权
 

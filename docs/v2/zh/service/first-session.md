@@ -1,5 +1,6 @@
 ---
 title: "快速开始"
+en_link: /v2/en/service/first-session
 ---
 
 <Note>

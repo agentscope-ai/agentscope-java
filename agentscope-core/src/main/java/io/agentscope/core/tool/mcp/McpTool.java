@@ -57,6 +57,21 @@ public class McpTool extends ToolBase {
     private final McpClientWrapper clientWrapper;
     private final Map<String, Object> presetArguments;
 
+    /**
+     * Per-tool restriction for request metadata propagation. Effective propagation requires both
+     * this flag and the connection-level {@link McpClientWrapper#isPropagateMeta()} to be {@code
+     * true} (logical AND): the wrapper flag is read live on every tool call, while this flag is
+     * fixed at registration time (from {@code McpClientManager}) and can only further restrict
+     * propagation for this specific tool.
+     *
+     * <p>Note the two switches have different memory: an explicit {@code true} recorded here at
+     * registration time is remembered, so a tool can start propagating again once the operator
+     * re-enables a connection that was built with {@code propagateMeta(false)} — whereas the
+     * connection-level switch is always the live ceiling and cannot be overruled while it is
+     * {@code false}.
+     */
+    private volatile boolean propagateMeta = true;
+
     /** Preferred constructor used by {@link io.agentscope.core.tool.McpClientManager}. */
     public McpTool(
             String name,
@@ -198,6 +213,11 @@ public class McpTool extends ToolBase {
      * calls the remote MCP tool via the client wrapper, and converts the result to a
      * {@link ToolResultBlock}. If an error occurs, it returns an error result instead of failing.
      *
+     * <p>Request metadata (user {@link McpMeta} entries plus the framework tool-call id) is
+     * propagated to the MCP server only when both {@link #isPropagateMeta()} and the
+     * connection-level {@link McpClientWrapper#isPropagateMeta()} are {@code true} (logical AND);
+     * otherwise the {@code meta} field is omitted from the request entirely.
+     *
      * @param param The tool call parameters containing toolUseBlock, input, and agent
      * @return a Mono that emits the tool result when the MCP call completes
      */
@@ -208,12 +228,12 @@ public class McpTool extends ToolBase {
         // Merge preset arguments with input arguments
         Map<String, Object> mergedArgs = mergeArguments(param.getInput());
 
-        // Extract MCP meta from ContextStore by McpMeta type namespace
-        Map<String, Object> metaMap = new HashMap<>(extractMcpMeta(param));
-        if (param.getToolUseBlock() != null && param.getToolUseBlock().getId() != null) {
-            // Transport metadata is not model input and must not alter the tool schema.
-            metaMap.put("io.agentscope/toolCallId", param.getToolUseBlock().getId());
-        }
+        // Propagate request metadata only when both switches allow it; null omits the MCP
+        // `_meta` field entirely so no metadata (user McpMeta entries nor the tool-call id)
+        // leaves the process. The wrapper switch is read live so disabling a connection takes
+        // effect immediately, even for tools registered earlier.
+        boolean propagate = propagateMeta && clientWrapper.isPropagateMeta();
+        Map<String, Object> metaMap = propagate ? buildMetaMap(param) : null;
 
         return clientWrapper
                 .callTool(remoteToolName, mergedArgs, metaMap)
@@ -230,6 +250,34 @@ public class McpTool extends ToolBase {
                                             : e.getClass().getSimpleName();
                             return Mono.just(ToolResultBlock.error("MCP tool error: " + errorMsg));
                         });
+    }
+
+    /**
+     * Checks whether this tool allows request metadata propagation.
+     *
+     * <p>This is a per-tool restriction only: the actual decision also ANDs the connection-level
+     * {@link McpClientWrapper#isPropagateMeta()}, which is read live on every tool call.
+     *
+     * @return true if this tool permits user {@link McpMeta} entries and the tool-call id to be
+     *     included in tool call requests, false otherwise
+     */
+    public boolean isPropagateMeta() {
+        return propagateMeta;
+    }
+
+    /**
+     * Configures whether this tool allows request metadata propagation.
+     *
+     * <p>The initial value is fixed at registration time (registration-level override, or {@code
+     * true} by default). Setting this to {@code false} permanently restricts this tool; setting it
+     * back to {@code true} only re-enables propagation if the connection-level switch on
+     * {@link McpClientWrapper} also allows it.
+     *
+     * @param propagateMeta true to allow metadata propagation for this tool (default), false to
+     *     omit the {@code meta} field entirely from this tool's requests
+     */
+    public void setPropagateMeta(boolean propagateMeta) {
+        this.propagateMeta = propagateMeta;
     }
 
     /**
@@ -254,10 +302,14 @@ public class McpTool extends ToolBase {
      * Merges input arguments with preset arguments.
      * Input arguments take precedence over preset arguments.
      *
+     * <p>Package-private for direct unit testing of the defensive {@code null} branches that
+     * {@link ToolCallParam#getInput()} cannot reach in production.
+     *
      * @param input the input arguments
      * @return merged arguments
      */
-    private Map<String, Object> mergeArguments(Map<String, Object> input) {
+    // Visible for testing; not an extension point for subclasses (see javadoc above).
+    Map<String, Object> mergeArguments(Map<String, Object> input) {
         if (presetArguments == null || presetArguments.isEmpty()) {
             return input != null ? input : new HashMap<>();
         }
@@ -267,6 +319,24 @@ public class McpTool extends ToolBase {
             merged.putAll(input);
         }
         return merged;
+    }
+
+    /**
+     * Builds the request metadata for a tool call.
+     *
+     * <p>Extracts MCP meta from the runtime context by the {@link McpMeta} type namespace and
+     * attaches the framework tool-call id. Transport metadata is not model input and must not
+     * alter the tool schema.
+     *
+     * @param param the tool call parameters
+     * @return the request metadata map, possibly empty but never null
+     */
+    private Map<String, Object> buildMetaMap(ToolCallParam param) {
+        Map<String, Object> meta = new HashMap<>(extractMcpMeta(param));
+        if (param.getToolUseBlock() != null && param.getToolUseBlock().getId() != null) {
+            meta.put("io.agentscope/toolCallId", param.getToolUseBlock().getId());
+        }
+        return meta;
     }
 
     /**

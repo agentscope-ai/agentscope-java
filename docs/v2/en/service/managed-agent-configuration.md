@@ -1,5 +1,6 @@
 ---
 title: "Managed configuration and models"
+zh_link: /v2/zh/service/managed-agent-configuration
 ---
 
 <Note>

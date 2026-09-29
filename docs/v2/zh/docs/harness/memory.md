@@ -1,6 +1,7 @@
 ---
 title: 记忆（Memory）
 description: 双层长期记忆、对话压缩、大工具结果卸载，prompt 与触发策略均可定制
+en_link: /v2/en/docs/harness/memory
 ---
 
 ## 作用
@@ -230,12 +231,28 @@ HarnessAgent.builder()
 
 ## 给 agent 自己用的记忆工具
 
-启用记忆能力时，agent 自动获得两个工具：
+启用记忆能力时，agent 自动获得四个工具：
 
-- `memory_search query="..."` —— 关键词扫 `MEMORY.md` + `memory/*.md`，最多返回 30 条命中
+- `memory_search query="..."` —— 关键词扫 `MEMORY.md` + `memory/*.md`
 - `memory_get path="memory/2026-06-02.md" startLine=10 endLine=40` —— 读指定行范围
+- `memory_save content="..."` —— 通过 `MEMORY.md` 与每日台账持久化记忆
+- `session_search query="..."` —— 搜索过往会话记录
 
 模型在看到 `MEMORY.md` 已被截断的提示时通常会自己调 `memory_search` 找老内容。
+
+`memory_search` 和 `session_search` 支持可选参数 `matchMode`：
+
+| 模式 | 行为 |
+| --- | --- |
+| `phrase`（默认） | 按完整 query 做字面子串匹配，保持原有行为 |
+| `all` | 按空白拆分 query，同一条记录必须包含所有关键词，顺序不限 |
+| `any` | 按空白拆分 query，同一条记录包含任意关键词即可 |
+
+例如，记录为 `部署决定：使用蓝鲸方案` 时，`query="部署 蓝鲸" matchMode="all"` 可以命中，而默认短语模式不会命中。
+Memory 的记录边界为一行，Session 的记录边界为一条 entry，不跨记录组合关键词。
+匹配不区分大小写，关键词中的正则特殊字符按字面值处理；不自动拆分连续中文，也不解析“昨天”等日期表达式。
+`matchMode` 省略或为 `null` 时使用 `phrase`；其他值（包括空字符串）返回错误。多关键词模式忽略多余空白和重复关键词，纯空白查询不会匹配所有记录。
+结果格式、顺序和上限保持不变，`any` 不额外按命中词数排序。原有 Java 方法仍可调用。
 
 ## 后台维护
 

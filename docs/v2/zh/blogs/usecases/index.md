@@ -1,5 +1,6 @@
 ---
 title: 客户实践案例
+en_link: /v2/en/blogs/usecases/index
 ---
 
 来自真实业务场景的 AgentScope 落地实践：金融行业与物流业财团队基于 AgentScope Java 构建企业级智能体平台的完整经验。

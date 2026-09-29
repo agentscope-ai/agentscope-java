@@ -1,5 +1,6 @@
 ---
 title: "External 工作原理与任务派发"
+en_link: /v2/en/service/external-agent-execution
 ---
 
 <Note>

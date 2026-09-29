@@ -1,6 +1,7 @@
 ---
 title: V1 迁移指南
 description: 从 AgentScope Java 1.x 升级到 2.0 的完整迁移指南
+en_link: /v2/en/docs/change-log
 ---
 
 <Tip>

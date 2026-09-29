@@ -2,6 +2,7 @@
 title: Memory
 description: Two-layer long-term memory, conversation compaction, large tool-result
   offloading; prompts and trigger policy are customizable
+zh_link: /v2/zh/docs/harness/memory
 ---
 
 ## Role
@@ -231,12 +232,28 @@ Customize threshold or destination via `ToolResultEvictionConfig.builder()...bui
 
 ## Tools the agent can use itself
 
-When memory is enabled, the agent gets two tools:
+When memory is enabled, the agent gets four tools:
 
-- `memory_search query="..."` — keyword scan over `MEMORY.md` + `memory/*.md`, up to 30 hits
+- `memory_search query="..."` — keyword scan over `MEMORY.md` + `memory/*.md`
 - `memory_get path="memory/2026-06-02.md" startLine=10 endLine=40` — read a specific line range
+- `memory_save content="..."` — persist a memory via `MEMORY.md` and the daily ledger
+- `session_search query="..."` — search past session transcripts
 
 When the model sees a "MEMORY truncated" note in the prompt, it typically calls `memory_search` to look further back.
+
+`memory_search` and `session_search` accept an optional `matchMode`:
+
+| Mode | Behavior |
+| --- | --- |
+| `phrase` (default) | Match the entire query as a literal substring, preserving existing behavior |
+| `all` | Split on whitespace; every keyword must occur in the same record, in any order |
+| `any` | Split on whitespace; at least one keyword must occur in the record |
+
+For example, `query="deploy blue" matchMode="all"` matches `deploy using the blue configuration`, while the default phrase mode does not.
+A record is one line for Memory and one entry for Session; keywords are not combined across records.
+Matching is case-insensitive and regex metacharacters are literal. There is no automatic Chinese word segmentation or date-expression parsing.
+An omitted or `null` mode defaults to `phrase`; other values (including an empty string) return an error. Multi-keyword modes ignore extra whitespace and duplicate terms; whitespace-only queries never match all records.
+Result formatting, ordering and limits are unchanged; `any` does not introduce relevance ranking. Existing Java method signatures remain available.
 
 ## Background maintenance
 

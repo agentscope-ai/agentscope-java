@@ -1,5 +1,6 @@
 ---
 title: Observability & Studio
+zh_link: /v1/zh/docs/task/observability
 ---
 
 AgentScope Java provides multiple mechanisms for observing and debugging agent execution:

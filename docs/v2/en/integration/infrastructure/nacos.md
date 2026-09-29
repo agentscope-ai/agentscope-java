@@ -1,5 +1,6 @@
 ---
 title: Nacos
+zh_link: /v2/zh/integration/infrastructure/nacos
 ---
 
 `agentscope-extensions-nacos` uses [Nacos](https://nacos.io/) as AgentScope's unified control plane: register and discover A2A Agents, hot-load prompts, and host skills. It contains three sub-modules — pick the ones you need.

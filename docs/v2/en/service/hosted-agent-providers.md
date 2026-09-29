@@ -1,5 +1,6 @@
 ---
 title: "Hosted providers and capability differences"
+zh_link: /v2/zh/service/hosted-agent-providers
 ---
 
 <Note>
