@@ -15,9 +15,11 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -36,15 +38,25 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.task.BackgroundTask;
+import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
+import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Mono;
@@ -56,23 +68,26 @@ class AgentSpawnToolSuspensionTest {
             RuntimeContext.builder().sessionId("parent").userId("user").build();
     private final TaskRepository repository = mock(TaskRepository.class);
     private final Agent child = mock(Agent.class);
-    private final AgentSpawnTool tool =
-            new AgentSpawnTool(
-                    new DefaultAgentManager(
-                            List.of(
-                                    new SubagentEntry(
-                                            "worker",
-                                            "Worker",
-                                            rc -> child,
-                                            SubagentDeclaration.builder()
-                                                    .name("worker")
-                                                    .description("Worker")
-                                                    .inlineAgentsBody("Worker")
-                                                    .persistSession(true)
-                                                    .build())),
-                            null),
-                    repository,
-                    0);
+    private final AgentSpawnTool tool = createTool(repository);
+
+    private AgentSpawnTool createTool(TaskRepository repository) {
+        return new AgentSpawnTool(
+                new DefaultAgentManager(
+                        List.of(
+                                new SubagentEntry(
+                                        "worker",
+                                        "Worker",
+                                        rc -> child,
+                                        SubagentDeclaration.builder()
+                                                .name("worker")
+                                                .description("Worker")
+                                                .inlineAgentsBody("Worker")
+                                                .persistSession(true)
+                                                .build())),
+                        null),
+                repository,
+                0);
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {"spawn", "send", "reuse"})
@@ -116,7 +131,73 @@ class AgentSpawnToolSuspensionTest {
         assertTrue(error.getCause().getMessage().contains("choose_x"));
     }
 
+    @ParameterizedTest
+    @CsvSource({"spawn,0", "send,0", "reuse,0", "spawn,1", "send,1", "reuse,1"})
+    void suspendedTaskPersistsFailureVisibleToTaskOutput(
+            String operation, int timeout, @TempDir Path directory) throws Exception {
+        WorkspaceManager workspace = new WorkspaceManager(directory);
+        WorkspaceTaskRepository writer =
+                WorkspaceTaskRepository.forTests(workspace, "parent-agent");
+        WorkspaceTaskRepository reader =
+                WorkspaceTaskRepository.forTests(new WorkspaceManager(directory), "parent-agent");
+        CountDownLatch persisted = new CountDownLatch(1);
+        writer.setCompletionCallback(
+                (rc, taskId, agentId, sessionId, result) -> persisted.countDown());
+        Sinks.One<Msg> completion = Sinks.one();
+        when(child.call(anyList())).thenReturn(completion.asMono());
+        try {
+            String result =
+                    invoke(createTool(writer), operation, timeout).block(Duration.ofSeconds(5));
+            assertNotNull(result);
+            assertTrue(result.contains("task_id:"), result);
+            if (timeout > 0) {
+                assertTrue(result.contains("status: timeout_promoted"), result);
+            }
+            Collection<BackgroundTask> tasks = writer.listTasks(context, "parent", null);
+            assertEquals(1, tasks.size());
+            String taskId = tasks.iterator().next().getTaskId();
+            BackgroundTask live = writer.getTask(context, "parent", taskId);
+            assertNotNull(live);
+
+            completion.tryEmitValue(suspended());
+            assertTrue(persisted.await(5, TimeUnit.SECONDS), "Task completion was not persisted");
+            assertTrue(live.waitForCompletion(5_000));
+            assertEquals(TaskStatus.FAILED, live.getTaskStatus());
+            assertInstanceOf(IllegalStateException.class, live.getError());
+            String diagnostic = "Subagent suspended awaiting external tool execution: [choose_x]";
+            assertEquals(diagnostic, live.getError().getMessage());
+
+            TaskRecord record =
+                    workspace
+                            .readTaskRecord(context, "parent-agent", "parent", taskId)
+                            .orElseThrow();
+            assertEquals(TaskStatus.FAILED, record.getStatus());
+            assertNull(record.getResult());
+            assertEquals(diagnostic, record.getErrorMessage());
+
+            // The second repository has no local future and must recover the persisted failure.
+            for (TaskRepository source : List.of(writer, reader)) {
+                BackgroundTask observed = source.getTask(context, "parent", taskId);
+                assertNotNull(observed);
+                assertEquals(TaskStatus.FAILED, observed.getTaskStatus());
+                assertNull(observed.getResult());
+                String output = new TaskTool(source).taskOutput(context, taskId, false, null);
+                assertTrue(output.contains("status: Failed: " + diagnostic), output);
+                assertTrue(output.contains("Error:\n" + diagnostic), output);
+                assertFalse(output.contains("Result:\n"), output);
+                assertFalse(output.contains("Task completed with no result."), output);
+            }
+        } finally {
+            writer.shutdown();
+            reader.shutdown();
+        }
+    }
+
     private Mono<String> invoke(String operation, int timeout) {
+        return invoke(tool, operation, timeout);
+    }
+
+    private Mono<String> invoke(AgentSpawnTool tool, String operation, int timeout) {
         if (!"spawn".equals(operation)) {
             tool.agentSpawn(context, null, "worker", null, "existing", 30, null)
                     .block(Duration.ofSeconds(5));
