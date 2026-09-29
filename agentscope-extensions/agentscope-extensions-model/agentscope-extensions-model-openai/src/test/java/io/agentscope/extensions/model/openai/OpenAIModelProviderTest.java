@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -79,5 +80,44 @@ class OpenAIModelProviderTest {
     @Test
     void modelRegistryFindsOpenAiProviderFromServiceLoader() {
         assertTrue(ModelRegistry.canResolve("openai:gpt-4o-mini"));
+    }
+
+    @Test
+    void resolveBaseUrlPrefersContextOverDefault() {
+        OpenAIModelProvider provider = new OpenAIModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-openai-key")
+                        .baseUrl("https://ctx.example.com/v1")
+                        .build();
+
+        assertEquals("https://ctx.example.com/v1", provider.resolveBaseUrl(context));
+    }
+
+    @Test
+    void resolveBaseUrlUsesEnvWhenContextEmpty() {
+        assumeTrue(
+                System.getenv("OPENAI_BASE_URL") != null,
+                "OPENAI_BASE_URL is not set; skipping env-fallback assertion");
+        OpenAIModelProvider provider = new OpenAIModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder().apiKey("test-openai-key").build();
+
+        assertEquals(System.getenv("OPENAI_BASE_URL"), provider.resolveBaseUrl(context));
+    }
+
+    @Test
+    void resolveBaseUrlContextWinsOverEnv() {
+        assumeTrue(
+                System.getenv("OPENAI_BASE_URL") != null,
+                "OPENAI_BASE_URL is not set; skipping context-over-env assertion");
+        OpenAIModelProvider provider = new OpenAIModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-openai-key")
+                        .baseUrl("https://ctx.example.com/v1")
+                        .build();
+
+        assertEquals("https://ctx.example.com/v1", provider.resolveBaseUrl(context));
     }
 }
