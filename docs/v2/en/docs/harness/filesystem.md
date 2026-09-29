@@ -145,7 +145,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `additionalRunArgs(String...)` | Extra `docker run` arguments | none |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` (no snapshots) |
 | `workspaceSpec(WorkspaceSpec)` | Workspace mount rules | default |
-| `executionGuard(SandboxExecutionGuard)` | Same-slot concurrency guard | `inProcess()` (30-minute wait limit) |
+| `executionGuard(SandboxExecutionGuard)` | Same-slot concurrency guard | shared `defaultInProcess()` (30-minute wait limit) |
 | `workspaceProjectionEnabled(boolean)` | Enable host → sandbox static asset projection | `true` |
 | `workspaceProjectionRoots(List)` | Root paths included in projection | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
 
@@ -237,7 +237,7 @@ HarnessAgent agent = HarnessAgent.builder()
 |--------|-------------|---------|
 | `isolationScope(IsolationScope)` | Isolation dimension | store-specific (usually `SESSION`) |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` |
-| `executionGuard(SandboxExecutionGuard)` | Same-slot concurrency serialization guard | `inProcess()` (30-minute wait limit) |
+| `executionGuard(SandboxExecutionGuard)` | Same-slot concurrency serialization guard | shared `defaultInProcess()` (30-minute wait limit) |
 | `workspaceProjectionEnabled(boolean)` | Project static assets from host to sandbox | `true` |
 | `workspaceProjectionRoots(List)` | Root paths to include in projection | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
 

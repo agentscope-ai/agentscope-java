@@ -144,7 +144,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `additionalRunArgs(String...)` | 额外的 `docker run` 参数 | 无 |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec`（不快照） |
 | `workspaceSpec(WorkspaceSpec)` | 工作区挂载规则 | 默认 |
-| `executionGuard(SandboxExecutionGuard)` | 同 slot 并发执行守卫 | `inProcess()`（最长等待 30 分钟） |
+| `executionGuard(SandboxExecutionGuard)` | 同 slot 并发执行守卫 | 共享的 `defaultInProcess()`（最长等待 30 分钟） |
 | `workspaceProjectionEnabled(boolean)` | 是否启用宿主→沙箱的静态资产投影 | `true` |
 | `workspaceProjectionRoots(List)` | 投影包含的根路径列表 | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
 
@@ -236,7 +236,7 @@ HarnessAgent agent = HarnessAgent.builder()
 |------|------|-------|
 | `isolationScope(IsolationScope)` | 隔离维度 | 后端默认（通常 `SESSION`） |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec` |
-| `executionGuard(SandboxExecutionGuard)` | 同 slot 并发串行化守卫 | `inProcess()`（最长等待 30 分钟） |
+| `executionGuard(SandboxExecutionGuard)` | 同 slot 并发串行化守卫 | 共享的 `defaultInProcess()`（最长等待 30 分钟） |
 | `workspaceProjectionEnabled(boolean)` | 是否从宿主投影静态资产到沙箱 | `true` |
 | `workspaceProjectionRoots(List)` | 投影的根路径列表 | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
 
