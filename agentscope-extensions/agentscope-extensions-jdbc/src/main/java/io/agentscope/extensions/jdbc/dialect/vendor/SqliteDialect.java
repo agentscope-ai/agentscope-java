@@ -149,6 +149,52 @@ public class SqliteDialect extends AbstractJdbcDialect {
     }
 
     // ------------------------------------------------------------------
+    //  SkillDialect / SkillResourcesDialect
+    // ------------------------------------------------------------------
+
+    /**
+     * Skill tables translated to SQLite types: {@code INTEGER PRIMARY KEY AUTOINCREMENT} id
+     * (required for {@code RETURN_GENERATED_KEYS} via {@code last_insert_rowid()}),
+     * {@code TEXT} payloads, cascading FK. SQLite only enforces foreign keys when the
+     * caller enables {@code PRAGMA foreign_keys} per connection, so repositories delete
+     * resources explicitly; the cascade stays as a second line of defense.
+     */
+    @Override
+    public List<String> skillCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + skillTableName()
+                        + " ("
+                        + "  id            INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        + "  name          TEXT NOT NULL UNIQUE,"
+                        + "  description   TEXT NOT NULL,"
+                        + "  skill_content TEXT NOT NULL,"
+                        + "  source        TEXT NOT NULL,"
+                        + "  metadata_json TEXT NULL,"
+                        + "  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        + ")");
+    }
+
+    @Override
+    public List<String> skillResourcesCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + skillResourcesTableName()
+                        + " ("
+                        + "  id               INTEGER NOT NULL,"
+                        + "  resource_path    TEXT NOT NULL,"
+                        + "  resource_content TEXT NOT NULL,"
+                        + "  created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  PRIMARY KEY (id, resource_path),"
+                        + "  FOREIGN KEY (id) REFERENCES "
+                        + skillTableName()
+                        + "(id) ON DELETE CASCADE"
+                        + ")");
+    }
+
+    // ------------------------------------------------------------------
     //  Detection
     // ------------------------------------------------------------------
 
