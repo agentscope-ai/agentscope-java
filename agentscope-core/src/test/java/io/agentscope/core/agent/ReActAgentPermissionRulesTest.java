@@ -387,6 +387,33 @@ class ReActAgentPermissionRulesTest {
                 "the session kept BYPASS, so the tool is not gated by the declared DEFAULT");
     }
 
+    /**
+     * The flag is only meaningful next to a declaration. Setting it while declaring nothing must
+     * leave the session's own rules alone rather than clearing them.
+     */
+    @Test
+    @DisplayName("with the flag but nothing declared, the session's own rules still apply")
+    void flagWithoutADeclarationLeavesTheSessionAlone() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext sessA = session("sessA");
+
+        agent(model("tc-n1"), rules(PermissionBehavior.ALLOW), store)
+                .call(List.of(userMsg("deploy?")), sessA)
+                .block();
+
+        // The redeploy sets the option but declares no permission context at all.
+        Msg result =
+                agent(model("tc-n2"), null, store, true)
+                        .call(List.of(userMsg("deploy?")), sessA)
+                        .block();
+
+        assertNotNull(result);
+        assertEquals(
+                GenerateReason.MODEL_STOP,
+                result.getGenerateReason(),
+                "with nothing declared the session keeps its own ALLOW");
+    }
+
     /** Control: the same v2 declaration does apply to a session created after it. */
     @Test
     @DisplayName("control: the same declaration applies to a session created after it")
