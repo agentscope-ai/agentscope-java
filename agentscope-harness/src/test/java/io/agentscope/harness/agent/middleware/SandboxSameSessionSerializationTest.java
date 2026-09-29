@@ -102,6 +102,35 @@ class SandboxSameSessionSerializationTest {
     }
 
     @Test
+    @Timeout(5)
+    void explicitNoopGuardAllowsNestedCall() {
+        SandboxManager manager =
+                new SandboxManager(
+                        new FakeSandboxClient(),
+                        new SessionSandboxStateStore(new InMemoryAgentStateStore(), "agent"),
+                        "agent",
+                        SandboxExecutionGuard.noop());
+        SandboxLifecycleMiddleware mw =
+                new SandboxLifecycleMiddleware(manager, new SandboxBackedFilesystem());
+        SandboxContext sandboxContext =
+                SandboxContext.builder().isolationScope(IsolationScope.USER).build();
+        RuntimeContext parent =
+                RuntimeContext.builder()
+                        .userId("user")
+                        .sessionId("outer")
+                        .put(SandboxContext.class, sandboxContext)
+                        .build();
+        mw.acquireForCall(parent);
+        try {
+            RuntimeContext nested = RuntimeContext.builder(parent).sessionId("inner").build();
+            mw.acquireForCall(nested);
+            mw.releaseForCall(nested);
+        } finally {
+            mw.releaseForCall(parent);
+        }
+    }
+
+    @Test
     @Timeout(10)
     void sameSessionCallsSerialiseAndHandOffState() throws Exception {
         FakeSandboxClient client = new FakeSandboxClient();

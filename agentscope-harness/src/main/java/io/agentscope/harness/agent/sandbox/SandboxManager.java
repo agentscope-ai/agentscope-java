@@ -95,7 +95,7 @@ public class SandboxManager {
                         sandboxContext.getIsolationScope(), runtimeContext, agentId);
 
         SandboxLease lease = SandboxLease.noop();
-        if (scopeKey.isPresent()) {
+        if (scopeKey.isPresent() && executionGuard != SandboxExecutionGuard.noop()) {
             HeldKeys heldKeys = runtimeContext != null ? runtimeContext.get(HeldKeys.class) : null;
             if (heldKeys != null && heldKeys.keys.contains(scopeKey.get())) {
                 throw new SandboxReentrantExecutionException(scopeKey.get());
