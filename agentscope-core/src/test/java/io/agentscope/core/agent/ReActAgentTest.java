@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -116,7 +117,8 @@ class ReActAgentTest {
     }
 
     @Test
-    @DisplayName("Should use explicitly set agent id, blank falls back to generated UUID")
+    @DisplayName(
+            "Explicit agent id is trimmed and used, blank falls back to UUID, invalid rejected")
     void testAgentIdOverride() {
         ReActAgent explicit =
                 ReActAgent.builder()
@@ -126,6 +128,18 @@ class ReActAgentTest {
                         .toolkit(mockToolkit)
                         .build();
         assertEquals("custom-agent-id", explicit.getAgentId(), "Explicit agent id should be used");
+
+        ReActAgent padded =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .agentId("  padded-agent-id  ")
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .build();
+        assertEquals(
+                "padded-agent-id",
+                padded.getAgentId(),
+                "Whitespace-padded agent id should be trimmed");
 
         ReActAgent blank =
                 ReActAgent.builder()
@@ -138,6 +152,17 @@ class ReActAgentTest {
         assertDoesNotThrow(
                 () -> UUID.fromString(blank.getAgentId()),
                 "Blank agent id should fall back to a generated UUID");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        ReActAgent.builder()
+                                .name(TestConstants.TEST_REACT_AGENT_NAME)
+                                .agentId("../other-agent")
+                                .model(mockModel)
+                                .toolkit(mockToolkit)
+                                .build(),
+                "Agent id with path traversal characters should be rejected");
     }
 
     @Test

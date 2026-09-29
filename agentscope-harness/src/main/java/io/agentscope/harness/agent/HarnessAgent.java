@@ -1745,10 +1745,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Sets the stable identifier used as the agent's namespace key in the composite filesystem
          * (e.g. {@code [agents, <agentId>, users, <userId>, ...]}). When unset, {@link #build()}
-         * falls back to {@link #name(String)} for the namespace key.
+         * falls back to {@link #name(String)} for the namespace key. Also forwarded to the inner
+         * agent so {@link #getAgentId()} matches: the value is trimmed; when null or blank the
+         * inner agent keeps its generated UUID; otherwise it must match {@code [A-Za-z0-9._-]+}
+         * and not be {@code "."} or {@code ".."}.
+         *
+         * @throws IllegalArgumentException if a non-blank agentId has invalid characters
          */
         public Builder agentId(String agentId) {
             this.agentId = agentId;
+            inner.agentId(agentId);
             return this;
         }
 

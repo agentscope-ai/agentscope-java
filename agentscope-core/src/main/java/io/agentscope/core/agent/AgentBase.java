@@ -37,6 +37,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
@@ -100,6 +101,13 @@ public abstract class AgentBase implements Agent {
     private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(Hook::priority);
 
     /**
+     * Allowed characters for an explicit agent id. The id is interpolated into path/namespace
+     * segments by downstream code (e.g. remote filesystem specs, workspace session indexes), so it
+     * must stay a single safe segment.
+     */
+    private static final Pattern AGENT_ID_PATTERN = Pattern.compile("[A-Za-z0-9._-]+");
+
+    /**
      * Per-key call serialization tails. Each entry holds the completion signal of the most recently
      * enqueued call for that key; the next call for the same key chains after it, so calls sharing a
      * key run one-at-a-time (FIFO) while different keys run concurrently. See {@link
@@ -151,12 +159,27 @@ public abstract class AgentBase implements Agent {
      * @param name Agent name
      * @param description Agent description
      * @param hooks List of hooks for monitoring/intercepting execution
-     * @param agentId Explicit agent id; falls back to a random UUID when null or blank; should be
-     *     unique among live agents
+     * @param agentId explicit agent id; trimmed, and falls back to a random UUID when null or
+     *     blank; must otherwise match {@code [A-Za-z0-9._-]+} and not be {@code "."} or {@code
+     *     ".."} since the id is interpolated into path segments downstream. Should be unique
+     *     among live agents.
+     * @throws IllegalArgumentException if a non-blank agentId contains characters outside {@code
+     *     [A-Za-z0-9._-]} or equals {@code "."} / {@code ".."}
      */
     public AgentBase(String name, String description, List<Hook> hooks, String agentId) {
-        this.agentId =
-                agentId != null && !agentId.isBlank() ? agentId : UUID.randomUUID().toString();
+        String normalized = agentId != null ? agentId.trim() : "";
+        if (normalized.isEmpty()) {
+            this.agentId = UUID.randomUUID().toString();
+        } else if (!AGENT_ID_PATTERN.matcher(normalized).matches()
+                || normalized.equals(".")
+                || normalized.equals("..")) {
+            throw new IllegalArgumentException(
+                    "Invalid agentId '"
+                            + normalized
+                            + "': must match [A-Za-z0-9._-]+ and not be '.' or '..'");
+        } else {
+            this.agentId = normalized;
+        }
         this.name = name;
         this.description = description;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
