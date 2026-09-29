@@ -40,7 +40,9 @@ import javax.sql.DataSource;
  *
  * <p>Table groups: {@link #enableBaseTables(boolean)} (default on) and {@link
  * #enableSkillTables(boolean)} (default off) scope which groups the DDL execution and
- * validation cover; they are orthogonal to {@code autoCreateTable}.
+ * validation cover; they are orthogonal to {@code autoCreateTable}. At least one group must
+ * stay enabled — {@link #build()} fails fast when both are off, since a dialect assembled
+ * with no tables would only fail at first use.
  *
  * <p>Detection uses JDK {@link ServiceLoader} to discover all {@link AbstractJdbcDialect}
  * implementations on the classpath. Candidates are sorted by
@@ -142,6 +144,12 @@ public class AbstractJdbcDialectBuilder {
 
     /** Detects the dialect, assembles table names and groups, then creates and validates. */
     public AbstractJdbcDialect build() {
+        if (!enableBaseTables && !enableSkillTables) {
+            throw new IllegalStateException(
+                    "No table groups enabled: enableBaseTables(false) combined with"
+                            + " enableSkillTables(false) leaves build() nothing to create or"
+                            + " validate. Enable at least one group.");
+        }
         AbstractJdbcDialect dialect = detectDialect();
         dialect.tablePrefix(this.tablePrefix);
         if (this.storeTableName != null) {

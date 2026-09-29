@@ -88,5 +88,12 @@
  *   <li>Register the class in
  *       {@code META-INF/services/io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect}.</li>
  * </ol>
+ *
+ * <p>"Override DDL" means implementing <em>every</em> table domain's abstract create-table
+ * method. Table domains added by framework upgrades arrive as new abstract methods on the
+ * aggregate, so an out-of-tree vendor class fails to compile until it implements them —
+ * deliberate: a dialect that cannot create a domain's tables must not assemble silently
+ * behind a default that hides the gap. In-tree vendor classes are updated in the same
+ * change, so only third-party dialects ever see that compile step.
  */
 package io.agentscope.extensions.jdbc.dialect;

@@ -33,9 +33,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * H2 tests for the builder's table-group switches: default / override / idempotent
- * semantics, the four on-off combinations, orthogonality with {@code autoCreateTable}, the
- * skill-only shape (base tables neither created nor validated), and the repository's
- * misconfiguration guard.
+ * semantics, the on-off combinations (both off rejected at build), orthogonality with
+ * {@code autoCreateTable}, the skill-only shape (base tables neither created nor
+ * validated), and the repository's misconfiguration guard.
  *
  * @author shanhongyu
  */
@@ -100,15 +100,20 @@ class DialectBuilderTableGroupsTest {
     }
 
     @Test
-    @DisplayName("both groups off create nothing; a reverted skill switch stays off")
-    void offGroupsAndRevertedSwitch() throws Exception {
+    @DisplayName("both groups off fail the build; a reverted skill switch stays off")
+    void offGroupsFailBuildAndRevertedSwitch() throws Exception {
         DataSource ds = H2TestSupport.createDataSource("groups_off");
-        assertDoesNotThrow(
-                () ->
-                        AbstractJdbcDialect.from(ds)
-                                .enableBaseTables(false)
-                                .enableSkillTables(false)
-                                .build());
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                AbstractJdbcDialect.from(ds)
+                                        .enableBaseTables(false)
+                                        .enableSkillTables(false)
+                                        .build());
+        // The message must name both switches so the misconfiguration is self-explaining.
+        assertTrue(exception.getMessage().contains("enableBaseTables(false)"));
+        assertTrue(exception.getMessage().contains("enableSkillTables(false)"));
         assertFalse(tableExists(ds, "agentscope_store"));
         assertFalse(tableExists(ds, "agentscope_skills"));
 

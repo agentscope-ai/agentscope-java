@@ -49,13 +49,21 @@ public interface SkillResourcesDialect {
     // ------------------------------------------------------------------
 
     /**
-     * The fixed three-placeholder INSERT template for resource rows — callers bind many rows
-     * onto one prepared statement so a skill's resources insert in a single round-trip.
+     * INSERT of one resource row as a {@link BoundSql} — statement and params are assembled
+     * together, so the column/placeholder order stays the dialect's single concern and no
+     * caller binds positionally against a bare template. Callers batch many rows onto one
+     * prepared statement, so a skill's resources insert in a single round-trip; every row of
+     * one skill must share the same statement shape.
      */
-    default String skillResourcesInsertTemplate() {
-        return "INSERT INTO "
-                + skillResourcesTableName()
-                + " (id, resource_path, resource_content) VALUES (?, ?, ?)";
+    default BoundSql skillResourcesInsert(
+            long skillId, String resourcePath, String resourceContent) {
+        return new BoundSql(
+                "INSERT INTO "
+                        + skillResourcesTableName()
+                        + " (id, resource_path, resource_content) VALUES (?, ?, ?)",
+                skillId,
+                resourcePath,
+                resourceContent);
     }
 
     /** SELECT of one skill's resources. Projection: (resource_path, resource_content). */

@@ -160,8 +160,11 @@ public class H2Dialect extends AbstractJdbcDialect {
     /**
      * Skill tables ported from the deprecated skill-mysql-repository module, translated to
      * H2 types: {@code CLOB} for text payloads, {@code AUTO_INCREMENT} identity id, FK with
-     * cascade delete. {@code metadata_json} stays nullable so validation adopts legacy
-     * tables without it.
+     * cascade delete. {@code metadata_json} is declared nullable so rows written before the
+     * column existed still validate — but the column itself is required: schema validation
+     * compares declared columns, so a legacy table lacking it needs
+     * {@code ALTER TABLE ... ADD COLUMN metadata_json CLOB} first (see {@link
+     * io.agentscope.extensions.jdbc.dialect.table.SkillDialect}).
      */
     @Override
     public List<String> skillCreateTableDdls() {

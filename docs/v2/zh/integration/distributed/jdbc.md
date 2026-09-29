@@ -164,7 +164,7 @@ skill 仓库迁移要点：
 
 - 现行旧模块建的表已包含 `metadata_json`，原样可用；更早的旧表先补上这一列，启动报错里附有参考 DDL。
 - 旧模块会隐式创建 `agentscope` 库（MySQL）/ schema（PostgreSQL）；新实现的表放在连接所指向的库里——把 `DataSource` 指向存量表即可。
-- `databaseName` / `schemaName` 无对应物——表跟随 DataSource 所指向的库，与基础表一致。表名可用 `skillTableName` / `skillResourcesTableName` 覆盖。
+- `databaseName` / `schemaName` 无对应物——表跟随 DataSource 所指向的库，与基础表一致。表名可用 `skillTableName` / `skillResourcesTableName` 覆盖。相应地，`getSource()` 由 `mysql_<库名>_<表名>` / `postgresql_<schema>_<表名>` 变为 `jdbc_<skillTableName>`：以其为键的消费方（如 skill 暂存缓存命名空间）迁移后会使用新的子目录，旧目录由孤儿 GC 回收。
 
 ## 选型建议
 

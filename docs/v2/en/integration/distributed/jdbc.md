@@ -164,7 +164,7 @@ Migrating the skill repositories:
 
 - Tables created by the current legacy modules already include `metadata_json` and work as-is; older tables need the column added first — the startup error carries the reference DDL.
 - The old modules implicitly created an `agentscope` database (MySQL) or schema (PostgreSQL). The new repository puts its tables wherever the connection points — aim the `DataSource` at the existing tables.
-- `databaseName` / `schemaName` have no equivalent — the tables live in whatever database the DataSource points to, same as the base tables. Table names can be overridden via `skillTableName` / `skillResourcesTableName`.
+- `databaseName` / `schemaName` have no equivalent — the tables live in whatever database the DataSource points to, same as the base tables. Table names can be overridden via `skillTableName` / `skillResourcesTableName`. Correspondingly, `getSource()` changes from `mysql_<databaseName>_<table>` / `postgresql_<schemaName>_<table>` to `jdbc_<skillTableName>` — consumers keying on it (e.g. the skill staging cache namespace) get a fresh subtree after migration, and the old one is reclaimed by orphan GC.
 
 ## When to Use
 

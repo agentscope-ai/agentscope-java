@@ -28,12 +28,14 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -79,6 +81,18 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
      * rejecting a POSIX filename such as {@code a:b.txt}, which is not expected in skills.
      */
     private static final Pattern DRIVE_LETTER_PREFIX = Pattern.compile("^[A-Za-z]:.*");
+
+    /** SQLite's {@code SQLITE_CONSTRAINT}; xerial reports it with a null SQLState. */
+    private static final int SQLITE_CONSTRAINT = 19;
+
+    /**
+     * Duplicate-key codes for drivers reporting no SQLState at all and not covered by {@link
+     * #SQLITE_CONSTRAINT}: Informix and GBase 8s — {@code -239} (duplicate value in a unique
+     * index) and {@code -268} (unique constraint violation). Values from the vendor
+     * documentation; those drivers were not available to verify against, unlike every other
+     * entry in {@link #isUniqueViolation}.
+     */
+    private static final Set<Integer> VENDOR_UNIQUE_VIOLATION_CODES = Set.of(-239, -268);
 
     /** The data source holding the skill tables; never closed by this repository. */
     private final DataSource dataSource;
@@ -170,6 +184,11 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         }
     }
 
+    /**
+     * Loads the whole catalog with every skill's full resources — peak memory is O(total
+     * resource bytes), so large catalogs belong behind {@link #getSkill(String)} until a
+     * streaming variant exists (tracked separately).
+     */
     @Override
     public List<AgentSkill> getAllSkills() {
         try (Connection conn = dataSource.getConnection()) {
@@ -255,13 +274,17 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
                     conn,
                     c -> {
                         for (AgentSkill skill : skills) {
-                            if (skillExistsInternal(c, skill.getName())) {
+                            // With force=false the preceding delete is skipped on purpose: a
+                            // concurrent save landing the same name between the pre-check and
+                            // this insert must fail on the UNIQUE constraint, not be
+                            // silently overwritten.
+                            if (force && skillExistsInternal(c, skill.getName())) {
                                 deleteSkillInternal(c, skill.getName());
                                 LOG.debug(
                                         "Deleted existing skill for overwrite: {}",
                                         skill.getName());
                             }
-                            long skillId = insertSkill(c, skill);
+                            long skillId = insertSkill(c, skill, force);
                             insertResources(c, skillId, skill.getResources());
                             LOG.info(
                                     "Successfully saved skill: {} (id={})",
@@ -415,7 +438,10 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     }
 
     /**
-     * Throws when any skill already exists and {@code force=false}.
+     * Fast-fail pre-check when {@code force=false}, listing every conflicting name before
+     * any write starts. Advisory only: the authoritative guarantee is the {@code name}
+     * UNIQUE constraint on the in-transaction insert (see {@link #insertSkill}), which
+     * closes the window a concurrent writer opens between this check and the save.
      *
      * @throws IllegalStateException listing all conflicting skill names
      */
@@ -435,11 +461,16 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     }
 
     /**
-     * Inserts one skill row and returns its generated id.
+     * Inserts one skill row and returns its generated id. With {@code force=false} the row
+     * is inserted without a preceding delete, so the {@code name} UNIQUE constraint is the
+     * authoritative conflict check: a name landed between the pre-check and this insert
+     * surfaces as the same {@link IllegalStateException} the pre-check raises, instead of
+     * being silently overwritten.
      *
      * @throws SQLException when the insert or key retrieval fails
+     * @throws IllegalStateException when {@code force=false} and the name already exists
      */
-    private long insertSkill(Connection conn, AgentSkill skill) throws SQLException {
+    private long insertSkill(Connection conn, AgentSkill skill, boolean force) throws SQLException {
         BoundSql bound =
                 skillDialect.skillInsert(
                         skill.getName(),
@@ -457,11 +488,23 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
                 }
                 throw new SQLException("Failed to get generated id for skill: " + skill.getName());
             }
+        } catch (SQLException e) {
+            if (!force && isUniqueViolation(e)) {
+                throw new IllegalStateException(
+                        "Cannot save skills: the following skills already exist and"
+                                + " force=false: "
+                                + skill.getName()
+                                + ". Use force=true to overwrite existing skills.");
+            }
+            throw e;
         }
     }
 
     /**
-     * Batch-inserts a skill's resources in one round-trip.
+     * Batch-inserts a skill's resources in one round-trip. Each row comes from the dialect
+     * as a {@link BoundSql}, so the statement and its params travel together — no
+     * positional placeholder contract lives in this class; all rows share one statement
+     * shape, prepared from the first row.
      *
      * @throws SQLException when any row fails to insert
      */
@@ -471,13 +514,18 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
             LOG.debug("No resources to insert for id: {}", skillId);
             return;
         }
-        String insertSql = skillResourcesDialect.skillResourcesInsertTemplate();
         List<String> paths = new ArrayList<>(resources.keySet());
+        String firstPath = paths.get(0);
+        String insertSql =
+                skillResourcesDialect
+                        .skillResourcesInsert(skillId, firstPath, resources.get(firstPath))
+                        .sql();
         try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
             for (String path : paths) {
-                stmt.setLong(1, skillId);
-                stmt.setString(2, path);
-                stmt.setString(3, resources.get(path));
+                BoundSql row =
+                        skillResourcesDialect.skillResourcesInsert(
+                                skillId, path, resources.get(path));
+                bindParams(stmt, row.params());
                 stmt.addBatch();
             }
             int[] results = stmt.executeBatch();
@@ -727,6 +775,54 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         for (int i = 0; i < params.size(); i++) {
             ps.setObject(i + 1, params.get(i));
         }
+    }
+
+    /**
+     * Whether the exception reports a duplicate-key / unique-constraint violation — the
+     * authoritative conflict signal for the {@code force=false} insert.
+     *
+     * <p>Signals, in order:
+     *
+     * <ol>
+     *   <li>{@link SQLIntegrityConstraintViolationException} — the JDBC 4 subtype, thrown by
+     *       MySQL, MariaDB, TiDB, OceanBase, Oracle (ojdbc6+), DB2, H2 2.x, HSQLDB and Derby.
+     *   <li>SQLState class 23 (SQL:2003 integrity-constraint violation) — the portable signal,
+     *       and the only one for the many drivers that throw plain {@code SQLException}
+     *       subclasses: pgjdbc never throws the JDBC 4 subtypes (issue #963 is still open),
+     *       and neither do its forks (KingbaseES, openGauss, GaussDB, Vastbase, HighGo,
+     *       PolarDB), nor Firebird, SQL Server, 达梦, or H2 1.x. All of them report class 23,
+     *       as 23505 (PostgreSQL lineage, DB2, H2, HSQLDB, Derby) or 23000 (the rest); note
+     *       that pgjdbc returns error code 0, so the code cannot stand in for the state.
+     *   <li>Vendor code — only for drivers that report no SQLState. SQLite (xerial) is the
+     *       case that forced this path: it returns 19 with a null state and masks the
+     *       extended 2067 ({@code SQLITE_CONSTRAINT_UNIQUE}) away from {@code getErrorCode()}
+     *       into its own {@code getResultCode()}, so 19 is the only usable signal there. The
+     *       vendor code is additionally guarded by driver class, because small positive codes
+     *       collide across drivers; {@link #VENDOR_UNIQUE_VIOLATION_CODES} holds the
+     *       distinctive remaining values.
+     * </ol>
+     *
+     * <p>Deliberately not matched: MySQL {@code ER_DUP_ENTRY_AUTOINCREMENT_CASE} (1569)
+     * reports SQLState {@code HY000} — outside class 23 — but it requires an explicit
+     * auto-increment value, which the skill insert never supplies. ClickHouse has no
+     * duplicate-key error to match: it does not enforce primary-key uniqueness.
+     *
+     * @param e the exception thrown by the skill insert
+     * @return true when the failure is a duplicate-key conflict rather than any other error
+     */
+    private static boolean isUniqueViolation(SQLException e) {
+        if (e instanceof SQLIntegrityConstraintViolationException) {
+            return true;
+        }
+        String state = e.getSQLState();
+        if (state != null && state.startsWith("23")) {
+            return true;
+        }
+        int code = e.getErrorCode();
+        if (code == SQLITE_CONSTRAINT && e.getClass().getName().startsWith("org.sqlite.")) {
+            return true;
+        }
+        return VENDOR_UNIQUE_VIOLATION_CODES.contains(code);
     }
 
     /**
