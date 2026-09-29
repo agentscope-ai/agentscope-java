@@ -21,7 +21,6 @@ import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Formatter for DeepSeek Chat models (deepseek-v4-flash, deepseek-v4-pro).
@@ -30,8 +29,8 @@ import java.util.Map;
  * <ul>
  *   <li>System/user/assistant {@code name} fields are allowed</li>
  *   <li>Omits strict parameter in tool definitions</li>
- *   <li>In thinking mode, reasoning_content is preserved for all assistant messages and
- *       backfilled with an empty value when missing</li>
+ *   <li>reasoning_content is preserved for all assistant messages and backfilled when
+ *       missing</li>
  * </ul>
  *
  * <p>Usage:
@@ -73,7 +72,7 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
     @Override
     protected List<OpenAIMessage> doFormat(List<Msg> msgs, GenerateOptions options) {
         List<OpenAIMessage> messages = super.doFormat(msgs, options);
-        messages = applyDeepSeekFixes(messages, options);
+        messages = applyDeepSeekFixes(messages);
         if (appendEmptyUserIfEndsWithAssistant) {
             messages = appendEmptyUserIfNeeded(messages);
         }
@@ -91,74 +90,18 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
      * <p>DeepSeek API requires (thinking mode, requests carrying tools): reasoning_content
      * must be fully passed back for <b>all</b> assistant turns — even turns without tool
      * calls; otherwise the API returns HTTP 400 ("The reasoning_content in the thinking mode
-     * must be passed back to the API"). Passing reasoning_content is ignored by the API when
-     * not required, so this method never strips it and backfills an empty value for assistant
-     * messages that lack it. Framework-synthesized assistant messages (e.g. subagent
-     * completion notifications) carry no ThinkingBlock and would otherwise be sent without
-     * the field.
-     *
-     * <p>Thinking mode is decided by the request's {@code thinking} option ({@code
-     * thinking={"type": "enabled"|"disabled"}} in the GenerateOptions additional body params,
-     * as encoded by DeepSeekModelProvider). An explicitly disabled option opts out and leaves
-     * the messages untouched. When the option is absent (unknown state) or explicitly
-     * enabled, thinking mode is assumed: DeepSeek enables thinking server-side by default,
-     * and a missing reasoning_content trace usually means the trace was lost (memory
-     * compaction, framework-synthesized assistant turns) rather than that thinking mode is
-     * off.
-     *
-     * <p>Mutation contract: elements of the given list are modified in place (backfilled
-     * reasoning_content) and the very same list instance is returned; callers must own the
-     * list — all production callers pass the freshly converted list produced by
-     * {@code super.doFormat(...)}.
-     *
-     * <p>This method is static to allow sharing with {@link DeepSeekMultiAgentFormatter}.
-     *
-     * @param messages the OpenAI messages to fix in place; must be owned by the caller
-     * @param options the effective generation options (may be null); the {@code thinking}
-     *     additional body param, when present, decides the thinking mode
-     * @return the same list instance with fixes applied
+     * must be passed back to the API").
      * @see <a href="https://api-docs.deepseek.com/guides/thinking_mode#tool-calls">DeepSeek
      *     Thinking Mode / Tool Calls</a>
      */
-    static List<OpenAIMessage> applyDeepSeekFixes(
-            List<OpenAIMessage> messages, GenerateOptions options) {
-        if (Boolean.FALSE.equals(thinkingEnabledFromOptions(options))) {
-            // Explicit opt-out: non-thinking mode has no reasoning_content pass-back
-            // obligation.
-            return messages;
-        }
+    static List<OpenAIMessage> applyDeepSeekFixes(List<OpenAIMessage> messages) {
         for (OpenAIMessage msg : messages) {
-            fixMessage(msg);
+            // Backfill missing reasoning_content
+            if ("assistant".equals(msg.getRole()) && msg.getReasoningContent() == null) {
+                msg.setReasoningContent("");
+            }
         }
         return messages;
-    }
-
-    /**
-     * Reads the request's thinking flag from the GenerateOptions additional body params.
-     *
-     * <p>DeepSeek encodes it as {@code thinking={"type": "enabled"|"disabled"}} (see
-     * DeepSeekModelProvider default options); any other shape is treated as unknown.
-     *
-     * @param options the generation options (may be null)
-     * @return {@code TRUE}/{@code FALSE} when the flag is present, null when unknown
-     */
-    private static Boolean thinkingEnabledFromOptions(GenerateOptions options) {
-        if (options == null) {
-            // GenerateOptions normalizes additionalBodyParams to an empty map, so only a
-            // null options object needs guarding here.
-            return null;
-        }
-        Object thinking = options.getAdditionalBodyParams().get("thinking");
-        if (thinking instanceof Map<?, ?> thinkingMap) {
-            Object type = thinkingMap.get("type");
-            if ("enabled".equals(type)) {
-                return Boolean.TRUE;
-            }
-            if ("disabled".equals(type)) {
-                return Boolean.FALSE;
-            }
-        }
-        return null;
     }
 
     /**
@@ -177,16 +120,5 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
         List<OpenAIMessage> result = new ArrayList<>(messages);
         result.add(OpenAIMessage.builder().role("user").content("").build());
         return result;
-    }
-
-    private static void fixMessage(OpenAIMessage msg) {
-        // Backfill missing reasoning_content (thinking mode) so requests carrying tools do
-        // not fail with HTTP 400. See applyDeepSeekFixes javadoc. The message is mutated in
-        // place: every caller passes a freshly converted list from super.doFormat(...), so
-        // no other code observes the intermediate objects and no field can be dropped by a
-        // manual rebuild drifting out of sync with the DTO.
-        if ("assistant".equals(msg.getRole()) && msg.getReasoningContent() == null) {
-            msg.setReasoningContent("");
-        }
     }
 }

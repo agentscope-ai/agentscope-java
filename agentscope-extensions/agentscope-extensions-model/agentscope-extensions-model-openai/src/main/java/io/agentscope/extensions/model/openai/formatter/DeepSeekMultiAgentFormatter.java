@@ -16,7 +16,6 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import java.util.List;
 
@@ -84,16 +83,8 @@ public class DeepSeekMultiAgentFormatter extends OpenAIMultiAgentFormatter {
 
     @Override
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
-        // Delegate to the two-arg path so the DeepSeek fixes apply exactly once: the parent
-        // one-arg doFormat virtually dispatches to doFormat(msgs, null), which would resolve
-        // back to the overridden two-arg method below and run the fixes twice.
-        return doFormat(msgs, null);
-    }
-
-    @Override
-    protected List<OpenAIMessage> doFormat(List<Msg> msgs, GenerateOptions options) {
-        List<OpenAIMessage> messages = super.doFormat(msgs, options);
-        messages = DeepSeekFormatter.applyDeepSeekFixes(messages, options);
+        List<OpenAIMessage> messages = super.doFormat(msgs);
+        messages = DeepSeekFormatter.applyDeepSeekFixes(messages);
         if (appendEmptyUserIfEndsWithAssistant) {
             messages = DeepSeekFormatter.appendEmptyUserIfNeeded(messages);
         }
