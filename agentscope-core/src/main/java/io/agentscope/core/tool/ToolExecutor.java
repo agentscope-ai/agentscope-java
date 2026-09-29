@@ -17,19 +17,23 @@ package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.MalformedToolCallReason;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
@@ -61,12 +65,19 @@ class ToolExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(ToolExecutor.class);
 
+    /** Maximum number of raw argument characters echoed back for a malformed tool call. */
+    static final int MAX_ECHOED_ARGUMENTS_LENGTH = 512;
+
+    /** Maximum number of schema characters echoed back for a malformed tool call. */
+    static final int MAX_ECHOED_SCHEMA_LENGTH = 2048;
+
     private final Toolkit toolkit;
     private final ToolRegistry toolRegistry;
     private final ToolGroupManager groupManager;
     private final ToolkitConfig config;
     private final ExecutorService executorService;
     private BiConsumer<ToolUseBlock, ToolResultBlock> userChunkCallback;
+    private final AtomicLong malformedToolCallCount = new AtomicLong();
 
     /**
      * Create a tool executor with Reactor Schedulers (recommended).
@@ -108,6 +119,11 @@ class ToolExecutor {
      */
     BiConsumer<ToolUseBlock, ToolResultBlock> getChunkCallback() {
         return this.userChunkCallback;
+    }
+
+    /** Number of malformed tool calls rejected by this executor. */
+    long getMalformedToolCallCount() {
+        return malformedToolCallCount.get();
     }
 
     /**
@@ -206,6 +222,12 @@ class ToolExecutor {
             requestConfig = ToolRequestConfig.NONE;
         }
         ToolUseBlock toolCall = param.getToolUseBlock();
+        Set<MalformedToolCallReason> malformed = detectMalformed(toolCall);
+        // A call without a name can never resolve to a tool (backend or external), so rejecting
+        // it here cannot preempt the external-tool path.
+        if (malformed.contains(MalformedToolCallReason.MISSING_NAME)) {
+            return Mono.just(rejectMalformed(toolCall, malformed, requestConfig));
+        }
         AgentTool tool = resolveTool(toolCall.getName(), requestConfig);
 
         if (tool == null) {
@@ -228,6 +250,13 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
+        // Backend tools only: a malformed call to an external (frontend-owned) tool keeps the
+        // normal validation + suspended-call path, so rejecting it cannot preempt HITL.
+        boolean externalTool = tool instanceof ToolBase tb && tb.isExternalTool();
+        if (!externalTool && malformed.contains(MalformedToolCallReason.INVALID_ARGUMENTS)) {
+            return Mono.just(rejectMalformed(toolCall, malformed, requestConfig));
+        }
+
         // Validate input against schema
         String validationError =
                 ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
@@ -244,7 +273,7 @@ class ToolExecutor {
         // External tool short-circuit: once availability and schema are validated, surface the call
         // without preset injection or local invocation. SchemaOnlyTool and any
         // @Tool(externalTool=true) method end up here.
-        if (tool instanceof ToolBase tb && tb.isExternalTool()) {
+        if (externalTool) {
             return Mono.just(ToolResultBlock.suspended(toolCall));
         }
 
@@ -313,6 +342,77 @@ class ToolExecutor {
                                 ToolResultBlock.error(
                                         "Tool execution failed: Tool completed without returning a"
                                                 + " result")));
+    }
+
+    private static Set<MalformedToolCallReason> detectMalformed(ToolUseBlock toolCall) {
+        Set<MalformedToolCallReason> reasons = MalformedToolCallReason.of(toolCall);
+        if (isBlank(toolCall.getName())) {
+            reasons.add(MalformedToolCallReason.MISSING_NAME);
+        }
+        return reasons;
+    }
+
+    /**
+     * Count and log a malformed tool call, and build a format-correction result that echoes the
+     * (truncated) raw arguments and asks the model to re-issue the call per the JSON schema.
+     */
+    private ToolResultBlock rejectMalformed(
+            ToolUseBlock toolCall,
+            Set<MalformedToolCallReason> reasons,
+            ToolRequestConfig requestConfig) {
+        long total = malformedToolCallCount.incrementAndGet();
+        Object rawValue = toolCall.getMetadata().get(ToolUseBlock.METADATA_MALFORMED_RAW_ARGUMENTS);
+        // The accumulator already bounds what it stores in metadata; the content fallback covers
+        // manually marked calls and gets the same bound.
+        String raw =
+                rawValue instanceof String str
+                        ? str
+                        : truncateWithMarker(toolCall.getContent(), MAX_ECHOED_ARGUMENTS_LENGTH);
+        logger.warn(
+                "Rejected malformed tool call: id={}, name={}, reasons={}, rawArgumentsLength={},"
+                        + " totalMalformed={}",
+                toolCall.getId(),
+                toolCall.getName(),
+                reasons,
+                raw != null ? raw.length() : 0,
+                total);
+
+        StringBuilder feedback = new StringBuilder("Malformed tool call");
+        if (!isBlank(toolCall.getName())) {
+            feedback.append(" to '").append(toolCall.getName()).append("'");
+        }
+        feedback.append(" was not executed:");
+        if (reasons.contains(MalformedToolCallReason.MISSING_NAME)) {
+            feedback.append("\n- The tool name (function.name) is missing.");
+        }
+        if (reasons.contains(MalformedToolCallReason.INVALID_ARGUMENTS)) {
+            feedback.append("\n- The arguments are not a valid JSON object.");
+        }
+        if (raw != null && !raw.isEmpty()) {
+            feedback.append("\nReceived arguments: ").append(raw);
+        }
+        feedback.append(
+                "\nPlease re-issue the tool call with a valid tool name and the arguments as a"
+                        + " single JSON object that conforms to the tool's JSON schema.");
+        AgentTool tool =
+                isBlank(toolCall.getName()) ? null : resolveTool(toolCall.getName(), requestConfig);
+        if (tool != null && tool.getParameters() != null && !tool.getParameters().isEmpty()) {
+            String schema = JsonUtils.getJsonCodec().toJson(tool.getParameters());
+            feedback.append("\nExpected JSON schema: ")
+                    .append(truncateWithMarker(schema, MAX_ECHOED_SCHEMA_LENGTH));
+        }
+        return ToolResultBlock.error(feedback.toString());
+    }
+
+    private static String truncateWithMarker(String text, int max) {
+        if (text == null || text.length() <= max) {
+            return text;
+        }
+        return text.substring(0, max) + "...(truncated, " + text.length() + " chars total)";
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     /**
@@ -441,6 +541,9 @@ class ToolExecutor {
      * ToolBase}, so existing tools keep their pre-2.0 concurrent behaviour.
      */
     private boolean isConcurrencySafe(ToolUseBlock toolCall, ToolRequestConfig requestConfig) {
+        if (isBlank(toolCall.getName())) {
+            return true;
+        }
         AgentTool tool = resolveTool(toolCall.getName(), requestConfig);
         if (tool instanceof ToolBase tb) {
             return tb.isConcurrencySafe();

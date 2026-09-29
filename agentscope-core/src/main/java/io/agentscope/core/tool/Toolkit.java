@@ -533,6 +533,18 @@ public class Toolkit {
     }
 
     /**
+     * Returns how many malformed tool calls (missing tool name or arguments that are not a valid
+     * JSON object) this toolkit has rejected with a format-correction result instead of executing.
+     *
+     * <p>The counter belongs to this toolkit instance; a {@link #copy()} starts from zero.
+     *
+     * @return the number of rejected malformed tool calls
+     */
+    public long getMalformedToolCallCount() {
+        return executor.getMalformedToolCallCount();
+    }
+
+    /**
      * Execute a tool with the given parameters.
      *
      * <p>Example usage:
