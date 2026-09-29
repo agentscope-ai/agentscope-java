@@ -19,7 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -92,6 +95,35 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         String prompt = mw.onSystemPrompt(null, null, "BASE\n").block();
         assertNotNull(prompt);
         assertTrue(prompt.contains("Additional roots: " + shared.toAbsolutePath()));
+    }
+
+    @Test
+    void localOverlay_sessionIsolationAdvertisesEffectiveWorkspace(
+            @TempDir Path project, @TempDir Path workspace) {
+        NamespaceFactory namespaceFactory = IsolationScope.SESSION.toNamespaceFactory();
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec()
+                        .project(project)
+                        .toFilesystem(workspace, namespaceFactory);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs, null, namespaceFactory));
+        WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
+        RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
+
+        String prompt = mw.onSystemPrompt(null, rc, "BASE\n").block();
+
+        assertNotNull(prompt);
+        Path effectiveWorkspace = workspace.resolve("session-1").toAbsolutePath();
+        assertTrue(prompt.contains("The workspace directory is: " + effectiveWorkspace + "\n"));
+        assertTrue(
+                prompt.contains(
+                        "Workspace (your home base — memory, sessions, skills, runtime data): "
+                                + effectiveWorkspace
+                                + "\n"));
+        assertFalse(
+                prompt.contains(
+                        "The workspace directory is: " + workspace.toAbsolutePath() + "\n"));
+        assertTrue(prompt.contains(project.toAbsolutePath().toString()));
+        assertFalse(prompt.contains("Additional roots: " + workspace.toAbsolutePath()));
     }
 
     @Test

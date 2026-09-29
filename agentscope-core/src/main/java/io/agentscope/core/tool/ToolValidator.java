@@ -34,6 +34,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Unified validator for tool-related operations.
@@ -46,6 +48,8 @@ import java.util.stream.Collectors;
  */
 public final class ToolValidator {
 
+    private static final Logger log = LoggerFactory.getLogger(ToolValidator.class);
+
     private static final SchemaRegistry SCHEMA_REGISTRY =
             SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -55,6 +59,31 @@ public final class ToolValidator {
     }
 
     // ==================== Schema Validation ====================
+
+    /**
+     * Validates that a provider response contains a usable tool name.
+     *
+     * <p>Provider parsers use this guard before creating a {@link ToolUseBlock}. A blank name
+     * cannot be dispatched to a local toolkit or echoed back to the provider, so the parser
+     * should skip that individual tool call instead of propagating an invalid block.
+     *
+     * @param provider model provider name used for diagnostics
+     * @param name tool name from the provider response
+     * @param id tool call ID used for diagnostics; may be null or blank
+     * @return true when the name is non-null and non-blank, false otherwise
+     */
+    public static boolean requireNonBlank(String provider, String name, String id) {
+        if (name != null && !name.isBlank()) {
+            return true;
+        }
+
+        String diagnosticId = id == null || id.isBlank() ? "<missing>" : id;
+        log.warn(
+                "Ignoring {} tool call with blank name; id={}",
+                provider != null ? provider : "<unknown>",
+                diagnosticId);
+        return false;
+    }
 
     /**
      * Validate tool input parameters against a JSON Schema using networknt-schema.

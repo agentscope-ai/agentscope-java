@@ -179,8 +179,7 @@ export default function NewManagedSessionForm({
     <form onSubmit={handleSubmit} style={modal ? S.panel : undefined} onClick={ev => ev.stopPropagation()}>
       <h3 style={S.title}>New session</h3>
       <div style={S.hint}>
-        Create a session definition only — no turn starts until the first Chat message.
-        Choose environment, vaults, and memory stores. Agent session defaults prefill the form.
+        Start with the Agent’s default environment and resource bindings. Send a message after creating the session to begin work.
       </div>
       {err && <div style={S.err}>{err}</div>}
       {loading ? (
@@ -190,22 +189,23 @@ export default function NewManagedSessionForm({
           <button type="button" style={S.linkBtn} onClick={applyAgentDefaults}>
             Reset to Agent defaults
           </button>
-          <label style={S.field}>Environment</label>
+          <label style={S.field} htmlFor="session-environment">Environment</label>
           <select
             style={S.input}
+            id="session-environment"
             value={environmentId}
             onChange={e => setEnvironmentId(e.target.value)}
-            required
           >
-            <option value="">Select environment…</option>
+            <option value="">Automatic default</option>
             {environments.map(env => (
               <option key={env.id} value={env.id}>{env.name} ({env.type})</option>
             ))}
           </select>
+          <p style={S.hint}>Use the Agent’s default or choose an environment for this session. The environment type determines whether execution is local, remote, sandbox or self_hosted.</p>
 
           <label style={S.field}>Vaults</label>
           {vaults.length === 0 ? (
-            <div style={S.empty}>No vaults. Create one under Build → Vaults.</div>
+            <div style={S.empty}>No vaults. Create one under Agent Center → Vault.</div>
           ) : (
             <div style={S.checkGrid}>
               {vaults.map(v => {
@@ -228,7 +228,7 @@ export default function NewManagedSessionForm({
 
           <label style={S.field}>Memory stores</label>
           {memoryStores.length === 0 ? (
-            <div style={S.empty}>No memory stores. Create one under Build → Memory.</div>
+            <div style={S.empty}>No memory stores. Create one under Agent Center → Memory.</div>
           ) : (
             <div style={S.checkGrid}>
               {memoryStores.map(m => {

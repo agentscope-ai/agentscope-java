@@ -41,6 +41,7 @@ import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -56,6 +57,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
@@ -225,12 +228,40 @@ class DashScopeHttpClientTest {
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.6-plus"));
     }
 
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "qwen3.8-max",
+                "Qwen3.8-Max",
+                "qwen3.8-max-2026-08-01",
+                "qwen3.8-flash",
+                "Qwen3.8-Flash",
+                "qwen3.8-flash-2026-09-01",
+                "qwen3.8-27b"
+            })
+    void testQwen38MultimodalRouting(String modelName) {
+        assertTrue(DashScopeHttpClient.isMultimodalModel(modelName));
+        assertTrue(client.requiresMultimodalApi(modelName, EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint(modelName, EndpointType.AUTO));
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"qwen3.8-2.4t-a95b", "Qwen3.8-2.4T-A95B", "qwen3.8-2.4t-a95b-2026-09-01"})
+    void testQwen38TextOnlyRouting(String modelName) {
+        assertFalse(DashScopeHttpClient.isMultimodalModel(modelName));
+        assertFalse(client.requiresMultimodalApi(modelName, EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint(modelName, EndpointType.AUTO));
+    }
+
     @Test
-    void testIsMultimodalModelIncludesQwen38MaxFamily() {
-        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.8-max"));
-        assertTrue(DashScopeHttpClient.isMultimodalModel("Qwen3.8-Max"));
-        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.8-max-2026-08-01"));
+    void testQwen38ModelNameWithExtraHyphenDoesNotMatch() {
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.8-max"));
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.8-flash"));
     }
 
     @Test
@@ -248,6 +279,91 @@ class DashScopeHttpClientTest {
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-max"));
         assertFalse(DashScopeHttpClient.isMultimodalModel(null));
         assertFalse(DashScopeHttpClient.isMultimodalModel(""));
+    }
+
+    @Test
+    void testIsMultimodalModelKimiFamily() {
+        // kimi-k variants with vision/multimodal support
+        assertTrue(DashScopeHttpClient.isMultimodalModel("kimi-k2.5"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("kimi-k2.6"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("kimi-k2.7-code"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("kimi-k3"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("kimi/kimi-k2.5"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("Moonshot-Kimi-K2.5"));
+        // Text-only kimi models
+        assertFalse(DashScopeHttpClient.isMultimodalModel("kimi-k2-thinking"));
+        assertFalse(DashScopeHttpClient.isMultimodalModel("Moonshot-Kimi-K2-Instruct"));
+    }
+
+    // ========== User-Extensible Multimodal Model Patterns ==========
+
+    @Test
+    void testUserMultimodalPatternsExtendDetection() {
+        // deepseek-v4.1 is not covered by the built-in whitelist
+        assertFalse(DashScopeHttpClient.isMultimodalModel("deepseek-v4.1"));
+        assertFalse(client.requiresMultimodalApi("deepseek-v4.1", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint("deepseek-v4.1", EndpointType.AUTO));
+
+        DashScopeHttpClient extended =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .multimodalModelPatterns(List.of("deepseek-v4"))
+                        .build();
+
+        assertTrue(extended.requiresMultimodalApi("deepseek-v4.1", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                extended.selectEndpoint("deepseek-v4.1", EndpointType.AUTO));
+        // Explicit TEXT still wins over user patterns
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                extended.selectEndpoint("deepseek-v4.1", EndpointType.TEXT));
+    }
+
+    @Test
+    void testUserMultimodalPatternsAreCaseInsensitiveAndTrimmed() {
+        DashScopeHttpClient extended =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        // List.of rejects null, so use Arrays.asList to cover a null entry
+                        .multimodalModelPatterns(Arrays.asList(" DeepSeek-V4 ", "", null))
+                        .build();
+
+        assertTrue(extended.requiresMultimodalApi("deepseek-v4.1", EndpointType.AUTO));
+        assertTrue(extended.requiresMultimodalApi("DeepSeek-V4.1-max", EndpointType.AUTO));
+        // Patterns are substrings: "deepseek-v4" also matches prefixed model ids
+        assertTrue(extended.requiresMultimodalApi("dashscope:deepseek-v4.1", EndpointType.AUTO));
+        // Non-matching model still falls back to text
+        assertFalse(extended.requiresMultimodalApi("qwen-plus", EndpointType.AUTO));
+    }
+
+    @Test
+    void testUserMultimodalPatternsNullAndEmptyNoEffect() {
+        DashScopeHttpClient noPatterns =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .multimodalModelPatterns(null)
+                        .build();
+        DashScopeHttpClient emptyPatterns =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .multimodalModelPatterns(List.of())
+                        .build();
+
+        for (DashScopeHttpClient c : List.of(noPatterns, emptyPatterns)) {
+            assertFalse(c.requiresMultimodalApi("deepseek-v4.1", EndpointType.AUTO));
+            assertEquals(
+                    DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                    c.selectEndpoint("deepseek-v4.1", EndpointType.AUTO));
+            // Built-in detection is unaffected
+            assertTrue(c.requiresMultimodalApi("qwen-vl-max", EndpointType.AUTO));
+        }
     }
 
     @Test

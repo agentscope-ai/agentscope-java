@@ -6,11 +6,17 @@ Experimental: {{ .Values.experimental.enabled }}
 Webhook:     {{ .Values.webhook.enabled }}
 API auth:    {{ if .Values.api.authToken }}enabled{{ else }}disabled{{ end }}
 Storage:     {{ .Values.storage.driver }}
+Artifacts:   {{ if .Values.artifact.persistence.enabled }}shared persistent volume{{ else }}pod-local filesystem{{ end }}
 {{ if eq .Values.storage.driver "memory" }}
 WARNING: storage.driver=memory is NOT durable. All session, event, and team
 coordination data is lost on every pod restart and is NOT shared across
 replicas. Use the "postgres" profile (-f profiles/postgres.yaml) for any
 deployment beyond local development or testing.
+{{- end }}
+{{ if and (gt (int .Values.replicaCount) 1) (not .Values.artifact.persistence.enabled) }}
+WARNING: replicaCount > 1 requires shared Artifact storage. Set
+artifact.persistence.enabled=true with an RWX StorageClass, or configure
+artifact.persistence.existingClaim with a shared RWX PVC.
 {{- end }}
 
 1. Check the controller is running:
@@ -42,8 +48,6 @@ certs) for richer admission checks.
 {{- if .Values.experimental.enabled }}
 
 EXPERIMENTAL FEATURES ENABLED:
-- ASDP gRPC data plane protocol
-- AgentTeam distributed coordination
 - SandboxClaim (NOT YET IMPLEMENTED - claims will remain in Pending phase)
 
 NOTE: SandboxClaim provisioning requires the agent-sandbox project which is

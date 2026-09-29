@@ -20,6 +20,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.URLSource;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
 import java.util.List;
@@ -141,14 +142,20 @@ public class McpContentConverter {
      * @return the converted ImageBlock
      */
     private static ImageBlock convertImageContent(McpSchema.ImageContent imageContent) {
-        String base64Data = imageContent.data();
+        String data = imageContent.data();
         String mimeType = imageContent.mimeType();
 
-        if (base64Data == null || base64Data.isEmpty()) {
+        if (data == null || data.isEmpty()) {
             return null;
         }
 
-        Base64Source source = new Base64Source(mimeType, base64Data);
+        if (data.startsWith("http://")
+                || data.startsWith("https://")
+                || data.startsWith("file://")) {
+            return new ImageBlock(new URLSource(data, mimeType));
+        }
+
+        Base64Source source = new Base64Source(mimeType, data);
         return new ImageBlock(source);
     }
 

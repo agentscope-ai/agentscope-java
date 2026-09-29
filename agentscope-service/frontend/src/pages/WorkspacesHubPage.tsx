@@ -14,16 +14,26 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ChevronRight, FolderOpen, Plus, Trash2 } from 'lucide-react';
 import { createWorkspace, deleteWorkspace, listWorkspaces, WorkspaceSummary } from '../api/workspaces';
+import { useControlPlaneScope } from '../app/ScopeContext';
+import { EmptyState } from '../components/EmptyState';
+import { Page, PageHeader } from '../components/Page';
+import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
 
 export default function WorkspacesHubPage() {
   const navigate = useNavigate();
+  const scope = useControlPlaneScope();
   const [items, setItems] = useState<WorkspaceSummary[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   async function reload() {
     try {
@@ -44,7 +54,8 @@ export default function WorkspacesHubPage() {
     try {
       const ws = await createWorkspace({ name: name.trim() });
       setName('');
-      navigate(`/workspaces/${encodeURIComponent(ws.id)}`);
+      setCreateOpen(false);
+      navigate(scope.scopedPath(`/agent-center/workspaces/${encodeURIComponent(ws.id)}`));
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Create failed');
     } finally {
@@ -53,88 +64,61 @@ export default function WorkspacesHubPage() {
   }
 
   return (
-    <div style={{ padding: '36px 40px', maxWidth: 960 }}>
-      <h1 style={{ margin: '0 0 8px', fontSize: '1.6rem', fontWeight: 700, color: '#0f172a' }}>
-        Workspaces
-      </h1>
-      <p style={{ margin: '0 0 24px', color: '#64748b', fontSize: '0.95rem', lineHeight: 1.55 }}>
-        Author skills, tools, subagents and AGENTS.md in a reusable workspace, then link agents to it.
-      </p>
-
-      <div style={{
-        display: 'flex', gap: 10, marginBottom: 24, padding: 16,
-        background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12,
-      }}>
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="New workspace name"
-          style={{
-            flex: 1, padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: 8,
-            fontSize: '0.95rem',
-          }}
-        />
-        <button
-          onClick={onCreate}
-          disabled={creating || !name.trim()}
-          style={{
-            padding: '10px 18px', border: 'none', borderRadius: 8, cursor: 'pointer',
-            background: '#6366f1', color: '#fff', fontWeight: 600,
-          }}
-        >
-          Create
-        </button>
-      </div>
-
-      {err && <div style={{ color: '#dc2626', marginBottom: 12 }}>{err}</div>}
-
-      <div style={{ display: 'grid', gap: 12 }}>
-        {items.map(ws => (
-          <div
-            key={ws.id}
-            style={{
-              background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12,
-              padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 12,
-            }}
-          >
-            <button
-              onClick={() => navigate(`/workspaces/${encodeURIComponent(ws.id)}`)}
-              style={{
-                flex: 1, textAlign: 'left', background: 'transparent', border: 'none',
-                cursor: 'pointer', padding: 0,
-              }}
-            >
-              <div style={{ fontWeight: 650, color: '#0f172a', fontSize: '1.05rem' }}>{ws.name}</div>
-              <div style={{ color: '#64748b', fontSize: '0.85rem', marginTop: 4 }}>
-                {ws.description || ws.id} · v{ws.version}
-                {ws.agentsMdExists ? ' · AGENTS.md' : ''}
-                {' · '}skills {ws.skillCount ?? 0}
-                {' · '}subagents {ws.subagentCount ?? 0}
+    <Page className="max-w-[1200px]">
+      <PageHeader
+        title="Workspaces"
+        description="Author skills, tools, subagents, and AGENTS.md in a reusable workspace, then link Agents to it."
+        actions={<Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4" />New workspace</Button>}
+      />
+      {err && <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>}
+      {items.length ? (
+        <Card className="overflow-hidden">
+          <div className="border-b border-slate-100 px-5 py-3 text-xs text-slate-500">{items.length} workspace{items.length === 1 ? '' : 's'}</div>
+          <div className="divide-y divide-slate-100">
+            {items.map((workspace) => (
+              <div key={workspace.id} className="group flex items-center gap-3 px-5 py-4 hover:bg-slate-50/70">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500"><FolderOpen className="h-4 w-4" /></span>
+                <button className="min-w-0 flex-1 text-left" onClick={() => navigate(scope.scopedPath(`/agent-center/workspaces/${encodeURIComponent(workspace.id)}`))}>
+                  <div className="truncate text-sm font-semibold text-slate-900 group-hover:text-indigo-700">{workspace.name}</div>
+                  <div className="mt-1 truncate text-xs text-slate-500">
+                    {workspace.description || workspace.id} · v{workspace.version}{workspace.agentsMdExists ? ' · AGENTS.md' : ''} · {workspace.skillCount ?? 0} skills · {workspace.subagentCount ?? 0} subagents
+                  </div>
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-slate-400 hover:text-red-600"
+                  aria-label={`Delete ${workspace.name}`}
+                  onClick={async () => {
+                    if (!confirm(`Delete workspace ${workspace.name}?`)) return;
+                    try {
+                      await deleteWorkspace(workspace.id);
+                      await reload();
+                    } catch (cause: unknown) {
+                      setErr(cause instanceof Error ? cause.message : 'Delete failed');
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+                <ChevronRight className="h-4 w-4 text-slate-300" />
               </div>
-            </button>
-            <button
-              onClick={async () => {
-                if (!confirm(`Delete workspace ${ws.name}?`)) return;
-                try {
-                  await deleteWorkspace(ws.id);
-                  await reload();
-                } catch (e: unknown) {
-                  setErr(e instanceof Error ? e.message : 'Delete failed');
-                }
-              }}
-              style={{
-                padding: '8px 12px', background: '#fff', border: '1px solid #fecaca',
-                color: '#b91c1c', borderRadius: 8, cursor: 'pointer', fontSize: '0.85rem',
-              }}
-            >
-              Delete
-            </button>
+            ))}
           </div>
-        ))}
-        {items.length === 0 && !err && (
-          <div style={{ color: '#94a3b8', padding: 24 }}>No workspaces yet.</div>
-        )}
-      </div>
-    </div>
+        </Card>
+      ) : !err && <EmptyState title="No workspaces yet" description="Create a workspace to share tools, skills, and operating instructions across Agents." action={<Button size="sm" onClick={() => setCreateOpen(true)}>Create workspace</Button>} />}
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent size="md">
+          <DialogHeader><DialogTitle>Create workspace</DialogTitle><DialogDescription>Start a reusable home for Agent tools, skills, and instructions.</DialogDescription></DialogHeader>
+          <DialogBody>
+            <form onSubmit={(event) => { event.preventDefault(); void onCreate(); }} className="space-y-5">
+              <label className="block space-y-2 text-sm font-medium text-slate-700">Name<Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Research workspace" autoFocus required /></label>
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><Button type="button" variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button><Button type="submit" disabled={creating || !name.trim()}>{creating ? 'Creating…' : 'Create workspace'}</Button></div>
+            </form>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+    </Page>
   );
 }

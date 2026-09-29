@@ -20,11 +20,10 @@ import io.agentscope.extensions.aistio.Aistio;
 import io.agentscope.extensions.aistio.AistioConfig;
 import io.agentscope.extensions.aistio.SessionBridge;
 import io.agentscope.extensions.aistio.adapter.AgentScopeAdapter;
-import io.agentscope.extensions.aistio.adapter.HarnessTeamSessionStarter;
-import io.agentscope.extensions.aistio.store.ControlPlaneTeamClient;
+import io.agentscope.extensions.aistio.adapter.HarnessAgentTaskStarter;
+import io.agentscope.extensions.aistio.transport.CollaborationClient;
 import io.agentscope.extensions.aistio.transport.ControlPlaneHttpClient;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.team.TeamClient;
 import jakarta.annotation.PreDestroy;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,7 +36,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Optional aistio BYO hook: instrument the main HarnessAgent, serve {@code /agentscope/*}, and
- * HTTP self-register with a standalone aistiod ({@code POST /api/v1/dataplanes/register}).
+ * HTTP self-register with a standalone aistiod ({@code POST /api/v1/agent-registrations}).
  *
  * <p>Enable with {@code claw.aistio.enabled=true} (off by default). Local-dev defaults for
  * control URL, internal token, and contract port live in {@code application.yml}.
@@ -51,17 +50,22 @@ import org.springframework.context.annotation.Configuration;
 public class AistioRegistrationConfig {
 
     private static final Logger log = LoggerFactory.getLogger(AistioRegistrationConfig.class);
-
     private final List<SessionBridge> bridges = new ArrayList<>();
 
     @Value("${claw.aistio.control-http:http://localhost:8081}")
     private String controlHttp;
+
+    @Value("${claw.aistio.control-grpc:localhost:15010}")
+    private String controlGrpc;
 
     @Value("${claw.aistio.internal-token:}")
     private String internalToken;
 
     @Value("${claw.aistio.agent-name:agentscope-paw}")
     private String agentName;
+
+    @Value("${claw.aistio.tenant:default}")
+    private String tenant;
 
     @Value("${claw.aistio.namespace:default}")
     private String namespace;
@@ -72,7 +76,7 @@ public class AistioRegistrationConfig {
     @Value("${claw.aistio.public-base-url:}")
     private String publicBaseUrl;
 
-    @Value("${claw.aistio.enable-events:false}")
+    @Value("${claw.aistio.enable-events:true}")
     private boolean enableEvents;
 
     /**
@@ -90,38 +94,29 @@ public class AistioRegistrationConfig {
         AistioConfig.Builder cfg =
                 AistioConfig.builder(agentName)
                         .controlPlaneHttp(controlHttp)
+                        .controlPlane(controlGrpc)
                         .internalToken(internalToken == null ? "" : internalToken)
+                        .tenant(tenant)
                         .namespace(namespace)
                         .contractHttpPort(contractPort)
                         .enableEvents(enableEvents)
-                        .startGrpc(false)
+                        .startGrpc(true)
                         .startHttp(true);
 
         if (publicBaseUrl != null && !publicBaseUrl.isBlank()) {
             cfg.publicBaseUrl(publicBaseUrl);
         }
 
-        if (internalToken == null || internalToken.isBlank()) {
-            // Still serve /agentscope/* so local probing works; skip register.
-            cfg.startHttpRegister(false);
-            log.warn(
-                    "claw.aistio: BUILDER_INTERNAL_TOKEN / claw.aistio.internal-token is blank;"
-                            + " contract HTTP on :{} but not registering with {}",
-                    contractPort,
-                    controlHttp);
-        } else {
-            cfg.startHttpRegister(true);
-        }
+        cfg.startHttpRegister(true);
 
-        // Wire BYO team_join before instrument so register advertises team-coordination.
         String token =
                 internalToken == null || internalToken.isBlank()
                         ? "builder-internal-dev-token"
                         : internalToken;
-        TeamClient teamClient =
-                new ControlPlaneTeamClient(new ControlPlaneHttpClient(controlHttp, token));
-        adapter.setTeamSessionStarter(
-                new HarnessTeamSessionStarter(bootstrap::mainAgent, teamClient));
+        adapter.setAgentTaskStarter(
+                new HarnessAgentTaskStarter(
+                        bootstrap::mainAgent,
+                        new CollaborationClient(new ControlPlaneHttpClient(controlHttp, token))));
 
         SessionBridge bridge = Aistio.instrument(main, cfg.build(), adapter);
         adapter.setHistorySource(new HarnessSessionHistorySource(main));
@@ -129,7 +124,7 @@ public class AistioRegistrationConfig {
         bridges.add(bridge);
         log.info(
                 "claw.aistio: instrumented main agent as '{}' (agentId={}, contract :{}, control"
-                        + " {}, team-coordination=on)",
+                        + " {}, agent-task=on)",
                 agentName,
                 main.getAgentId(),
                 bridge.getContractPort(),
@@ -138,11 +133,10 @@ public class AistioRegistrationConfig {
                 && !main.getAgentId().isBlank()
                 && !main.getAgentId().equals(agentName)) {
             log.warn(
-                    "claw.aistio: registered agent-name '{}' != harness agentId '{}'. Transcript"
-                        + " segments are keyed by agentId; set claw.aistio.agent-name to '{}' (or"
-                        + " CLAW_AISTIO_AGENT_NAME) so Operate FS reads hit the same path.",
+                    "claw.aistio: Catalog agentKey '{}' differs from runtime-local harness agentId"
+                            + " '{}'. Task dispatch is unaffected; Operate transcript lookup still"
+                            + " needs an explicit Catalog-to-runtime identity mapping.",
                     agentName,
-                    main.getAgentId(),
                     main.getAgentId());
         }
         return bridge;

@@ -26,7 +26,6 @@ import io.agentscope.harness.agent.gateway.SessionTurnGate;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
-import io.agentscope.harness.agent.team.TeamClient;
 import java.util.Objects;
 
 /**
@@ -98,7 +97,7 @@ public final class ControlPlaneStores {
         return create(
                 config.controlPlaneHttp(),
                 config.internalToken(),
-                config.agentName(),
+                config.agentKey(),
                 config.namespace());
     }
 
@@ -159,11 +158,6 @@ public final class ControlPlaneStores {
         return new ControlPlaneSessionTurnGate(http, agentName, namespace);
     }
 
-    /** Returns a control-plane backed {@link io.agentscope.harness.agent.team.TeamClient}. */
-    public TeamClient teamClient() {
-        return new ControlPlaneTeamClient(http);
-    }
-
     /**
      * Builds a {@link DistributedStore} by combining hosted components with a user-provided
      * {@link AgentStateStore}.
@@ -182,7 +176,6 @@ public final class ControlPlaneStores {
                 .asyncToolRegistry(asyncToolRegistry())
                 .taskRepository(taskRepository())
                 .sessionTurnGate(sessionTurnGate())
-                .teamClient(teamClient())
                 .build();
     }
 

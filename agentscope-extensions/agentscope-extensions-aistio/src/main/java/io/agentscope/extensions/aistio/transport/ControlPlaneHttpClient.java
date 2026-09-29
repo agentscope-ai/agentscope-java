@@ -113,7 +113,18 @@ public final class ControlPlaneHttpClient {
      */
     public Response sendBytes(String method, String path, String contentType, byte[] body)
             throws IOException, InterruptedException {
-        HttpRequest.Builder b = newRequest(method, path, Map.of());
+        return sendBytes(method, path, contentType, body, Map.of());
+    }
+
+    /** Sends raw bytes with additional request headers. */
+    public Response sendBytes(
+            String method,
+            String path,
+            String contentType,
+            byte[] body,
+            Map<String, String> extraHeaders)
+            throws IOException, InterruptedException {
+        HttpRequest.Builder b = newRequest(method, path, extraHeaders);
         if (contentType != null && !contentType.isBlank()) {
             b.header("Content-Type", contentType);
         }
@@ -136,7 +147,18 @@ public final class ControlPlaneHttpClient {
      */
     public BytesResponse sendForBytes(String method, String path, String contentType, byte[] body)
             throws IOException, InterruptedException {
-        HttpRequest.Builder b = newRequest(method, path, Map.of());
+        return sendForBytes(method, path, contentType, body, Map.of());
+    }
+
+    /** Receives raw bytes with additional request headers. */
+    public BytesResponse sendForBytes(
+            String method,
+            String path,
+            String contentType,
+            byte[] body,
+            Map<String, String> extraHeaders)
+            throws IOException, InterruptedException {
+        HttpRequest.Builder b = newRequest(method, path, extraHeaders);
         if (contentType != null && !contentType.isBlank()) {
             b.header("Content-Type", contentType);
         }

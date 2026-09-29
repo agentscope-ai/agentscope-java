@@ -32,6 +32,9 @@ import java.util.List;
  */
 public interface TaskRepository {
 
+    /** RuntimeContext flag for callers that retain execution ownership and collect results themselves. */
+    String SUPPRESS_COMPLETION_CALLBACK = "harness.suppressTaskCompletionCallback";
+
     /**
      * Retrieve a background task by session and task ID, or {@code null} if not found.
      *
@@ -128,6 +131,9 @@ public interface TaskRepository {
      * to the session inbox and enqueue a wakeup signal. The {@code result} argument is {@code null}
      * for failed tasks.
      *
+     * <p>Callers retaining execution ownership can set {@link #SUPPRESS_COMPLETION_CALLBACK}
+     * in their RuntimeContext to suppress inbox/wakeup callbacks while preserving durable results.
+     * Implementations supporting this callback should honor the flag.
      * <p>Default is a no-op. Implementations that support push delivery should override.
      */
     default void setCompletionCallback(TaskCompletionCallback callback) {

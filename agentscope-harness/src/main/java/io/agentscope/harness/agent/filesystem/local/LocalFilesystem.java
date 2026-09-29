@@ -237,8 +237,11 @@ public class LocalFilesystem implements AbstractFilesystem {
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         Path dirPath = resolvePath(runtimeContext, path);
-        if (!Files.exists(dirPath) || !Files.isDirectory(dirPath)) {
-            return LsResult.success(List.of());
+        if (!Files.exists(dirPath)) {
+            return LsResult.fail("Path does not exist: " + path);
+        }
+        if (!Files.isDirectory(dirPath)) {
+            return LsResult.fail("Not a directory: " + path);
         }
 
         List<FileInfo> results = new ArrayList<>();

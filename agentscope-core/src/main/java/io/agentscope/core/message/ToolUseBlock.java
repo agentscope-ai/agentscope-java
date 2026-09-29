@@ -16,6 +16,7 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.permission.PermissionRule;
 import java.util.ArrayList;
@@ -39,6 +40,14 @@ public final class ToolUseBlock extends ContentBlock {
     /** Metadata key for Gemini thought signature (byte[] value). */
     public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
 
+    /**
+     * Metadata key marking this tool call as a provider server tool (Boolean value). Server tools
+     * (e.g. Anthropic's built-in web_search) are executed on the provider's infrastructure and
+     * must not be dispatched to the local toolkit; their results arrive in the same assistant
+     * message as {@link ToolResultBlock}s carrying the same marker.
+     */
+    public static final String METADATA_SERVER_TOOL = "serverTool";
+
     private final String id;
     private final String name;
     private final Map<String, Object> input;
@@ -48,7 +57,7 @@ public final class ToolUseBlock extends ContentBlock {
     private final List<PermissionRule> suggestedRules; // Rules suggested when gated by ASK
 
     /**
-     * Creates a new tool use block for JSON deserialization.
+     * Creates a new tool use block with metadata (convenience constructor).
      *
      * @param id Unique identifier for this tool call
      * @param name Name of the tool to execute
@@ -220,6 +229,17 @@ public final class ToolUseBlock extends ContentBlock {
     @JsonProperty("suggested_rules")
     public List<PermissionRule> getSuggestedRules() {
         return suggestedRules;
+    }
+
+    /**
+     * Checks whether this tool call is executed by the provider on the server side (marked via
+     * {@link #METADATA_SERVER_TOOL}).
+     *
+     * @return true if this is a server-side tool call
+     */
+    @JsonIgnore
+    public boolean isServerTool() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_SERVER_TOOL));
     }
 
     /**

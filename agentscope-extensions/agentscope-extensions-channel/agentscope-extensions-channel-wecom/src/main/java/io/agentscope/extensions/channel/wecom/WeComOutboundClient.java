@@ -25,8 +25,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -42,8 +40,9 @@ import reactor.core.publisher.Mono;
  */
 public final class WeComOutboundClient {
 
-    private static final Logger log = LoggerFactory.getLogger(WeComOutboundClient.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final int MAX_SNIPPET_LENGTH = 200;
 
     private final WebClient client;
     private final WeComAccessTokenProvider tokenProvider;
@@ -117,27 +116,53 @@ public final class WeComOutboundClient {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(String.class)
+                // A 200 with an empty body completes bodyToMono empty; default it into the
+                // validation below instead of reporting an unvalidated send as delivered.
+                .defaultIfEmpty("")
                 .timeout(Duration.ofSeconds(10))
                 .doOnNext(this::checkSendResponse)
                 .then();
     }
 
+    /**
+     * Validates a WeCom send response body. WeCom reports delivery failures as HTTP 200 with a
+     * non-zero {@code errcode}; such rejections propagate as {@link IllegalStateException} so the
+     * caller's {@code send} stream terminates with {@code onError}. An empty body is rejected as
+     * well. Token-expiry codes invalidate the cached token before failing.
+     */
     private void checkSendResponse(String body) {
+        JsonNode node;
         try {
-            JsonNode node = MAPPER.readTree(body);
-            int errcode = node.path("errcode").asInt(0);
-            if (errcode == 42001 || errcode == 40014) {
-                tokenProvider.invalidate();
-            }
-            if (errcode != 0) {
-                log.warn(
-                        "WeCom send returned errcode={}, errmsg={}",
-                        errcode,
-                        node.path("errmsg").asText());
-            }
+            node = MAPPER.readTree(body);
         } catch (Exception e) {
-            log.warn("Failed to parse WeCom send response: {}", e.getMessage());
+            throw new IllegalStateException("Invalid WeCom send response: " + truncate(body), e);
         }
+        if (!node.path("errcode").isIntegralNumber()) {
+            throw new IllegalStateException(
+                    "WeCom send response errcode missing: " + truncate(body));
+        }
+        int errcode = node.path("errcode").asInt();
+        if (errcode == 42001 || errcode == 40014) {
+            tokenProvider.invalidate();
+        }
+        if (errcode != 0) {
+            throw new IllegalStateException(
+                    "WeCom rejected message with errcode="
+                            + errcode
+                            + ", errmsg="
+                            + node.path("errmsg").asText());
+        }
+    }
+
+    /**
+     * Caps a response-body snippet embedded in an error message. The unparseable path sees
+     * gateway HTML pages or echoed request payloads rather than the expected small JSON, and the
+     * message propagates to the caller's {@code onError} handlers.
+     */
+    private static String truncate(String body) {
+        return body.length() <= MAX_SNIPPET_LENGTH
+                ? body
+                : body.substring(0, MAX_SNIPPET_LENGTH) + "...(" + body.length() + " chars)";
     }
 
     private static PeerTarget parseAddress(OutboundAddress address) {

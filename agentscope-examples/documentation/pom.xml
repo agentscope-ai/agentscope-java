@@ -140,6 +140,12 @@
             <artifactId>agentscope-extensions-model-gemini</artifactId>
         </dependency>
 
+        <!-- Jev extension for example middlewares -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-jev</artifactId>
+        </dependency>
+
         <!-- Git-based Skill Repository -->
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -177,4 +183,15 @@
             <optional>true</optional>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Declared without executions so the spring-boot:run prefix resolves; the default lifecycle is unaffected -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot.version}</version>
+            </plugin>
+        </plugins>
+    </build>
 </project>

@@ -25,13 +25,18 @@ import io.agentscope.dataagent.runtime.session.SessionKind;
 import io.agentscope.dataagent.web.catalog.AgentCatalogService;
 import io.agentscope.dataagent.web.session.SessionReadStateStore;
 import io.agentscope.dataagent.web.session.SessionTurnParser;
+import io.agentscope.dataagent.web.workspace.WorkspaceManagerFactory;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -65,19 +70,24 @@ import reactor.core.publisher.Mono;
 @RequestMapping("/api/agents/{agentId}/sessions")
 public class SessionController {
 
+    private static final Logger log = LoggerFactory.getLogger(SessionController.class);
+
     private final DataAgentBootstrap bootstrap;
     private final SessionAgentManager sessionAgentManager;
     private final SessionReadStateStore readStateStore;
     private final AgentCatalogService catalogService;
+    private final WorkspaceManagerFactory workspaceManagerFactory;
 
     public SessionController(
             DataAgentBootstrap builderBootstrap,
             SessionReadStateStore readStateStore,
-            AgentCatalogService catalogService) {
+            AgentCatalogService catalogService,
+            WorkspaceManagerFactory workspaceManagerFactory) {
         this.bootstrap = builderBootstrap;
         this.sessionAgentManager = builderBootstrap.gateway().sessionAgentManager();
         this.readStateStore = readStateStore;
         this.catalogService = catalogService;
+        this.workspaceManagerFactory = workspaceManagerFactory;
     }
 
     @GetMapping("/inbox")
@@ -287,45 +297,177 @@ public class SessionController {
     }
 
     /**
-     * Reads the chat content for a session. The actual transcript lives at the per-agent workspace
-     * under {@code agents/<innerAgentId>/sessions/<sessionId>.log.jsonl}, written by the harness
-     * memory hooks. The {@link SessionAgentManager} registry stores a stale legacy path
-     * ({@code .json}) keyed by the harness UUID rooted at the main-agent workspace, so its
-     * {@code history(...)} cannot be used here.
+     * Reads the chat content for a session. The transcript lives at {@code
+     * agents/<innerAgentId>/sessions/<sessionId>.log.jsonl}.
      *
-     * <p>Reads go through the per-agent {@link WorkspaceManager}'s composite filesystem (which is
-     * what the harness writes through), so multi-tenant deployments backed by the shared
-     * {@link BaseStore} stay correct. Falls back to
-     * {@link SessionAgentManager#history} only if the WorkspaceManager cannot be resolved
-     * (e.g. the agent has been unloaded).
+     * <p>Order: (1) borrow the per-(user, gatewayAgentId) sandbox via {@link
+     * WorkspaceManagerFactory} — does not require an agent call binding; (2) if empty, read the
+     * same relative path from the Agent's host workspace; (3) fall back to {@link
+     * SessionAgentManager#history}. Never routes through call-scoped sandbox proxies that throw
+     * {@code No active sandbox} outside a turn.
      */
     private String readSessionLogContent(String urlAgentId, SessionEntry entry) {
         String gatewayAgentId = catalogService.peekGatewayAgentId(entry.userId(), urlAgentId);
         HarnessAgent ha =
                 gatewayAgentId != null ? bootstrap.gateway().findAgent(gatewayAgentId) : null;
-        if (ha != null) {
-            WorkspaceManager wm = ha.getWorkspaceManager();
-            String innerAgentId = ha.getName();
-            if (wm != null && innerAgentId != null && !innerAgentId.isBlank()) {
-                String relLog =
-                        "agents/" + innerAgentId + "/sessions/" + entry.sessionId() + ".log.jsonl";
-                String fromLog = wm.readManagedWorkspaceFileUtf8(RuntimeContext.empty(), relLog);
-                if (fromLog != null && !fromLog.isEmpty()) {
-                    return fromLog;
-                }
-                String relCtx =
-                        "agents/" + innerAgentId + "/sessions/" + entry.sessionId() + ".jsonl";
-                String fromCtx = wm.readManagedWorkspaceFileUtf8(RuntimeContext.empty(), relCtx);
-                if (fromCtx != null && !fromCtx.isEmpty()) {
-                    return fromCtx;
-                }
+        String innerAgentId = ha != null ? ha.getName() : null;
+        if (innerAgentId != null && !innerAgentId.isBlank() && entry.sessionId() != null) {
+            String relLog =
+                    "agents/" + innerAgentId + "/sessions/" + entry.sessionId() + ".log.jsonl";
+            String relCtx = "agents/" + innerAgentId + "/sessions/" + entry.sessionId() + ".jsonl";
+
+            String fromSandbox = readViaSharedSandbox(entry.userId(), gatewayAgentId, relLog);
+            String sandboxPathUsed = relLog;
+            if (fromSandbox == null || fromSandbox.isEmpty()) {
+                fromSandbox = readViaSharedSandbox(entry.userId(), gatewayAgentId, relCtx);
+                sandboxPathUsed = relCtx;
             }
+            if (fromSandbox != null && !fromSandbox.isEmpty()) {
+                log.info(
+                        "[session-history] source=sandbox userId={} gatewayAgentId={} sessionId={}"
+                                + " path={} bytes={}",
+                        entry.userId(),
+                        gatewayAgentId,
+                        entry.sessionId(),
+                        sandboxPathUsed,
+                        fromSandbox.length());
+                return fromSandbox;
+            }
+            log.info(
+                    "[session-history] sandbox miss userId={} gatewayAgentId={} sessionId={}"
+                            + " tried=[{}, {}]",
+                    entry.userId(),
+                    gatewayAgentId,
+                    entry.sessionId(),
+                    relLog,
+                    relCtx);
+
+            Path localLog =
+                    resolveAgentLocalPath(
+                            ha, entry.userId(), innerAgentId, entry.sessionId(), true);
+            Path localCtx =
+                    resolveAgentLocalPath(
+                            ha, entry.userId(), innerAgentId, entry.sessionId(), false);
+            String fromLocal = readLocalPath(localLog);
+            Path localPathUsed = localLog;
+            if (fromLocal == null || fromLocal.isEmpty()) {
+                fromLocal = readLocalPath(localCtx);
+                localPathUsed = localCtx;
+            }
+            if (fromLocal != null && !fromLocal.isEmpty()) {
+                log.info(
+                        "[session-history] source=local userId={} gatewayAgentId={} sessionId={}"
+                                + " path={} bytes={}",
+                        entry.userId(),
+                        gatewayAgentId,
+                        entry.sessionId(),
+                        localPathUsed,
+                        fromLocal.length());
+                return fromLocal;
+            }
+            log.info(
+                    "[session-history] local miss userId={} sessionId={} tried=[{}, {}]",
+                    entry.userId(),
+                    entry.sessionId(),
+                    localLog,
+                    localCtx);
+        } else {
+            log.info(
+                    "[session-history] skip sandbox/local (agent unresolved) urlAgentId={}"
+                            + " gatewayAgentId={} sessionId={}",
+                    urlAgentId,
+                    gatewayAgentId,
+                    entry.sessionId());
         }
         HistoryResult raw = sessionAgentManager.history(entry.sessionKey(), 0);
         if (raw == null || raw.error() != null) {
+            log.info(
+                    "[session-history] source=empty sessionKey={} error={}",
+                    entry.sessionKey(),
+                    raw != null ? raw.error() : "null");
             return "";
         }
-        return raw.content() != null ? raw.content() : "";
+        String content = raw.content() != null ? raw.content() : "";
+        log.info(
+                "[session-history] source=sessionAgentManager sessionKey={} bytes={}",
+                entry.sessionKey(),
+                content.length());
+        return content;
+    }
+
+    /**
+     * Reads through the user sandbox registry (same key as chat write / workspace UI for catalog
+     * gateway ids). Failures return empty — never throw into the HTTP layer.
+     */
+    private String readViaSharedSandbox(String userId, String gatewayAgentId, String relativePath) {
+        if (userId == null
+                || userId.isBlank()
+                || gatewayAgentId == null
+                || gatewayAgentId.isBlank()
+                || relativePath == null) {
+            return "";
+        }
+        try {
+            WorkspaceManager wm = workspaceManagerFactory.forAgent(userId, gatewayAgentId);
+            String content = wm.readManagedWorkspaceFileUtf8(RuntimeContext.empty(), relativePath);
+            return content != null ? content : "";
+        } catch (RuntimeException e) {
+            log.warn(
+                    "[session-history] sandbox read failed userId={} gatewayAgentId={} path={}: {}",
+                    userId,
+                    gatewayAgentId,
+                    relativePath,
+                    e.toString());
+            return "";
+        }
+    }
+
+    /**
+     * Resolves the host path for a session transcript. Prefers namespaced
+     * {@link WorkspaceManager#resolveSessionLogFile} (e.g. {@code bob/agents/...}); falls back to
+     * non-namespaced workspace-relative path when the manager has no namespace factory.
+     */
+    private static Path resolveAgentLocalPath(
+            HarnessAgent ha,
+            String userId,
+            String innerAgentId,
+            String sessionId,
+            boolean logFile) {
+        if (ha == null) {
+            return null;
+        }
+        WorkspaceManager wm = ha.getWorkspaceManager();
+        if (wm == null || wm.getWorkspace() == null) {
+            return null;
+        }
+        RuntimeContext rc =
+                userId != null && !userId.isBlank()
+                        ? RuntimeContext.builder().userId(userId).build()
+                        : RuntimeContext.empty();
+        try {
+            return logFile
+                    ? wm.resolveSessionLogFile(rc, innerAgentId, sessionId)
+                    : wm.resolveSessionContextFile(rc, innerAgentId, sessionId);
+        } catch (RuntimeException e) {
+            String rel =
+                    "agents/"
+                            + innerAgentId
+                            + "/sessions/"
+                            + sessionId
+                            + (logFile ? ".log.jsonl" : ".jsonl");
+            return wm.getWorkspace().resolve(rel).normalize();
+        }
+    }
+
+    private static String readLocalPath(Path file) {
+        if (file == null || !Files.isRegularFile(file)) {
+            return "";
+        }
+        try {
+            return Files.readString(file, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     // -----------------------------------------------------------------

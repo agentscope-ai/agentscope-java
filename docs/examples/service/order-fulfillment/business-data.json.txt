@@ -1,0 +1,73 @@
+{
+  "dataset": "fulfillment-demo-v1",
+  "synthetic": true,
+  "orders": [
+    {
+      "orderId": "O-1001",
+      "customerId": "C-17",
+      "sku": "SKU-8",
+      "quantity": 2,
+      "warehouse": "W-A",
+      "status": "awaiting_stock",
+      "promisedDate": "2026-09-15",
+      "version": 7
+    },
+    {
+      "orderId": "O-1002",
+      "customerId": "C-18",
+      "sku": "SKU-8",
+      "quantity": 1,
+      "warehouse": "W-A",
+      "status": "shipped",
+      "promisedDate": "2026-09-15",
+      "version": 3
+    },
+    {
+      "orderId": "O-1003",
+      "customerId": "C-19",
+      "sku": "SKU-9",
+      "quantity": 1,
+      "warehouse": "W-A",
+      "status": "cancelled",
+      "promisedDate": "2026-09-15",
+      "version": 2
+    }
+  ],
+  "inventory": [
+    {
+      "sku": "SKU-8",
+      "warehouse": "W-A",
+      "available": 0
+    },
+    {
+      "sku": "SKU-8",
+      "warehouse": "W-B",
+      "available": 8
+    }
+  ],
+  "logistics": [
+    {
+      "orderId": "O-1001",
+      "trackingId": null,
+      "earliestAlternateArrival": "2026-09-16",
+      "guaranteed": false
+    },
+    {
+      "orderId": "O-1002",
+      "trackingId": "T-22",
+      "latestEvent": "in_transit",
+      "exception": false
+    }
+  ],
+  "policies": {
+    "warehouseChangeRequiresApproval": true,
+    "cancelledOrderCanChange": false,
+    "customerPromiseRequiresConfirmedCapacity": true
+  },
+  "request": {
+    "orderId": "O-1001",
+    "customerId": "C-17",
+    "requestedArrival": "2026-09-15",
+    "instruction": "Investigate the delay and propose a resolution. Do not execute a change during diagnosis."
+  }
+}

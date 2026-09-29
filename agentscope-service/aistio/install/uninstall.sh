@@ -6,10 +6,10 @@
 #
 # By design Helm does NOT remove CRDs (and the custom resources they own) on
 # uninstall. Pass --purge-crds to also delete the CRDs and every Agent/ModelConfig/
-# MCPServer/AgentTeam/SandboxClaim in the cluster.
+# MCPServer/SandboxClaim in the cluster.
 #
-# Note: session, team message, and team task data now live in the runtime
-# Store (memory or PostgreSQL), not as CRDs. Purging that data is a matter of
+# Note: Issue collaboration and Session data live in the runtime Store
+# (memory or PostgreSQL), not as CRDs. Purging that data is a matter of
 # dropping the postgres database/schema (or simply restarting when using the
 # in-memory driver); it is not affected by this script.
 set -euo pipefail

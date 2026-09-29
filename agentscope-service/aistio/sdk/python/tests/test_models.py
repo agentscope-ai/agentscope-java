@@ -23,8 +23,6 @@ from aistio.events import (
     EVENT_MESSAGE,
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
-    MAX_SUMMARY_LEN,
-    MAX_TOOL_INPUT_BYTES,
     MessageItem,
     MessagePage,
     SessionEvent,
@@ -40,21 +38,23 @@ def test_event_defaults_fill_occurred_at():
     assert ev.occurred_at > 0
 
 
-def test_event_truncates_summary_fields():
+def test_event_preserves_complete_history_fields():
+    content = "x" * 20_000
+    tool_output = "y" * 20_000
     ev = SessionEvent(
         session_id="s",
         seq=1,
         event_type=EVENT_MESSAGE,
-        content="x" * (MAX_SUMMARY_LEN + 100),
-        tool_output="y" * (MAX_SUMMARY_LEN + 100),
+        content=content,
+        tool_output=tool_output,
     )
-    assert len(ev.content) == MAX_SUMMARY_LEN
-    assert len(ev.tool_output) == MAX_SUMMARY_LEN
+    assert ev.content == content
+    assert ev.tool_output == tool_output
 
 
-def test_event_encode_tool_input_limits_bytes():
-    data = SessionEvent.encode_tool_input({"k": "v" * MAX_TOOL_INPUT_BYTES})
-    assert len(data) == MAX_TOOL_INPUT_BYTES
+def test_event_encode_tool_input_preserves_bytes():
+    data = SessionEvent.encode_tool_input({"k": "v" * 20_000})
+    assert len(data) > 20_000
     assert SessionEvent.encode_tool_input(None) == b""
     assert SessionEvent.encode_tool_input('{"a":1}') == b'{"a":1}'
 

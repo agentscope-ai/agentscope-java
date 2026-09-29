@@ -32,11 +32,18 @@ type eventRepo struct {
 	pool *pgxpool.Pool
 }
 
+const sessionEventNotifyChannel = "aistio_session_events"
+
 func (r *eventRepo) Append(ctx context.Context, event *store.SessionEvent) error {
 	if event.OccurredAt.IsZero() {
 		event.OccurredAt = time.Now().UTC()
 	}
-	err := r.pool.QueryRow(ctx, `
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("postgres events begin append: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	err = tx.QueryRow(ctx, `
 		INSERT INTO session_events (
 			session_fk, seq, event_type, role, content, tool_name, tool_input,
 			tool_output, tokens_in, tokens_out, duration_ms, framework_meta, occurred_at
@@ -56,7 +63,50 @@ func (r *eventRepo) Append(ctx context.Context, event *store.SessionEvent) error
 		}
 		return fmt.Errorf("postgres events append: %w", err)
 	}
+	if _, err := tx.Exec(ctx, "SELECT pg_notify('"+sessionEventNotifyChannel+"', $1)", event.SessionFK.String()); err != nil {
+		return fmt.Errorf("postgres events notify: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("postgres events commit: %w", err)
+	}
 	return nil
+}
+
+func (r *eventRepo) WaitForNew(ctx context.Context, sessionFK uuid.UUID, afterSeq int) error {
+	conn, err := r.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("postgres events acquire listener: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, "LISTEN "+sessionEventNotifyChannel); err != nil {
+		return fmt.Errorf("postgres events listen: %w", err)
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, _ = conn.Exec(cleanupCtx, "UNLISTEN "+sessionEventNotifyChannel)
+	}()
+
+	// LISTEN is active before this check, closing the race between the last SSE
+	// page read and starting the wait.
+	var available bool
+	if err := conn.QueryRow(ctx,
+		"SELECT EXISTS (SELECT 1 FROM session_events WHERE session_fk=$1 AND seq>$2)",
+		sessionFK, afterSeq).Scan(&available); err != nil {
+		return fmt.Errorf("postgres events check listener cursor: %w", err)
+	}
+	if available {
+		return nil
+	}
+	for {
+		notification, err := conn.Conn().WaitForNotification(ctx)
+		if err != nil {
+			return err
+		}
+		if notification.Payload == sessionFK.String() {
+			return nil
+		}
+	}
 }
 
 func (r *eventRepo) List(ctx context.Context, sessionFK uuid.UUID, opts ...store.EventOption) ([]*store.SessionEvent, error) {
@@ -84,6 +134,10 @@ func (r *eventRepo) List(ctx context.Context, sessionFK uuid.UUID, opts ...store
 	if o.BeforeSeq != nil {
 		args = append(args, *o.BeforeSeq)
 		conds = append(conds, fmt.Sprintf("seq<$%d", len(args)))
+	}
+	if o.AfterSeq != nil {
+		args = append(args, *o.AfterSeq)
+		conds = append(conds, fmt.Sprintf("seq>$%d", len(args)))
 	}
 
 	where := strings.Join(conds, " AND ")

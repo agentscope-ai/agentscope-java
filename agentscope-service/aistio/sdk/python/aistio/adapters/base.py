@@ -23,6 +23,7 @@ capabilities 中声明，控制面据此门控（sdk-design §2.4）。
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Callable, List, Optional
 
 from ..context import ContextSnapshot
@@ -35,6 +36,23 @@ COMMAND_TERMINATE = "terminate"
 COMMAND_ABORT = "abort"
 
 KNOWN_COMMANDS = frozenset({COMMAND_COMPRESS, COMMAND_TERMINATE, COMMAND_ABORT})
+
+
+@dataclass(frozen=True)
+class AgentTaskAssignment:
+    """Immutable fenced execution delivery for one durable AgentTask."""
+
+    attempt_id: str
+    agent_task_id: str
+    run_id: str
+    node_id: str
+    generation: int
+    command: str
+    context_url: str
+    task_token: str
+    attempt_token: str
+    payload: bytes
+    timestamp: int
 
 
 def get_field(obj: Any, name: str, default: Any = None) -> Any:
@@ -115,6 +133,10 @@ class FrameworkAdapter(ABC):
         """
         raise NotImplementedError
 
+    async def handle_agent_task(self, assignment: AgentTaskAssignment) -> None:
+        """Materialize an AgentTask as an isolated framework execution."""
+        raise NotImplementedError
+
     def session_fields(self, session_id: str) -> dict:
         """可选冻结字段，供 session list / state 快照合并。
 
@@ -150,4 +172,6 @@ class FrameworkAdapter(ABC):
             caps.append("session-abort")
         if self.supports("list_tasks"):
             caps.append("task-query")
+        if self.supports("handle_agent_task"):
+            caps.append("agent-task")
         return caps

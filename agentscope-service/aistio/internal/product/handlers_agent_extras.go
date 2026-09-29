@@ -16,6 +16,7 @@ package product
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
@@ -37,8 +38,6 @@ func (s *Server) registerAgentExtras(r gin.IRouter) {
 	r.GET("/api/agents/:id/tools/catalog/builtins", s.toolsBuiltinCatalog)
 	r.GET("/api/agents/:id/tools/catalog/mcp-servers", s.toolsMcpCatalog)
 	r.GET("/api/agents/:id/tools/active", s.toolsActive)
-
-	r.POST("/api/agents/:id/clone", s.cloneAgent)
 
 	r.GET("/api/agents/:id/shares", s.listShares)
 	r.POST("/api/agents/:id/shares", s.addShare)
@@ -100,20 +99,20 @@ func skillInfoFromDir(dir, dirName string) gin.H {
 		return nil
 	})
 	out := gin.H{
-		"dirName":        dirName,
-		"name":           name,
-		"description":    nullStr(desc),
-		"sizeBytes":      size,
-		"resourceCount":  resourceCount,
-		"hasReferences":  hasRefs,
-		"hasScripts":     hasScripts,
-		"origin":         "custom",
+		"dirName":       dirName,
+		"name":          name,
+		"description":   nullStr(desc),
+		"sizeBytes":     size,
+		"resourceCount": resourceCount,
+		"hasReferences": hasRefs,
+		"hasScripts":    hasScripts,
+		"origin":        "custom",
 	}
 	return out
 }
 
 func (s *Server) listWorkspaceSkills(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -143,9 +142,9 @@ func (s *Server) listWorkspaceSkills(c *gin.Context) {
 		if display == "" {
 			display = name
 		}
-		list = append(list, gin.H{
-			"dirName": name, "name": display, "description": nullStr(desc), "origin": "custom",
-		})
+		info := skillSourceInfo(files, name)
+		info["dirName"], info["name"], info["description"] = name, display, nullStr(desc)
+		list = append(list, info)
 	}
 	if len(list) == 0 {
 		dir := filepath.Join(ws, "skills")
@@ -167,7 +166,7 @@ func (s *Server) listWorkspaceSkills(c *gin.Context) {
 }
 
 func (s *Server) getWorkspaceSkill(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -191,7 +190,7 @@ func (s *Server) getWorkspaceSkill(c *gin.Context) {
 		files, _ := s.listWorkspaceFileContents(c.Request.Context(), owner, scopeType, scopeID, "skills/"+name)
 		for path, content := range files {
 			rel := strings.TrimPrefix(path, "skills/"+name+"/")
-			if rel == "" || rel == "SKILL.md" || rel == path {
+			if rel == "" || rel == "SKILL.md" || rel == marketplaceMetadataFile || rel == path {
 				continue
 			}
 			resources[rel] = content
@@ -233,7 +232,7 @@ func (s *Server) getWorkspaceSkill(c *gin.Context) {
 }
 
 func (s *Server) putWorkspaceSkill(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -266,7 +265,7 @@ func (s *Server) putWorkspaceSkill(c *gin.Context) {
 	}
 	for rel, content := range req.Resources {
 		relClean, err := cleanRelPath(rel)
-		if err != nil || relClean == "" || relClean == "SKILL.md" {
+		if err != nil || relClean == "" || relClean == "SKILL.md" || relClean == marketplaceMetadataFile {
 			continue
 		}
 		_ = s.putWorkspaceFile(c.Request.Context(), owner, scopeType, scopeID,
@@ -276,7 +275,7 @@ func (s *Server) putWorkspaceSkill(c *gin.Context) {
 }
 
 func (s *Server) deleteWorkspaceSkill(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -300,7 +299,7 @@ func (s *Server) deleteWorkspaceSkill(c *gin.Context) {
 
 func (s *Server) marketplaceInstallSkill(c *gin.Context) {
 	// Compatibility shim: install into the agent's linked workspace or agent scope.
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -315,14 +314,17 @@ func (s *Server) marketplaceInstallSkill(c *gin.Context) {
 	scopeType, scopeID := a.resolveDefinitionScope()
 	ws, _, _ := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
 	if err := s.installMarketplaceSkill(c.Request.Context(), owner, scopeType, scopeID, ws, req); err != nil {
-		writeErr(c, http.StatusBadRequest, err.Error())
+		writeErr(c, marketplaceInstallStatus(err), err.Error())
 		return
+	}
+	if scopeType == scopeTypeWorkspace {
+		s.rematerializeLinkedAgents(c.Request.Context(), owner, scopeID)
 	}
 	c.JSON(http.StatusOK, gin.H{"installed": req.SkillName, "origin": "marketplace"})
 }
 
 func (s *Server) toolsBuiltinCatalog(c *gin.Context) {
-	if _, err := s.loadAgent(c.Request.Context(), currentUserID(c), c.Param("id")); err != nil {
+	if _, err := s.loadAgent(c.Request.Context(), currentResourceOwner(c), c.Param("id")); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
@@ -330,7 +332,7 @@ func (s *Server) toolsBuiltinCatalog(c *gin.Context) {
 }
 
 func (s *Server) toolsMcpCatalog(c *gin.Context) {
-	if _, err := s.loadAgent(c.Request.Context(), currentUserID(c), c.Param("id")); err != nil {
+	if _, err := s.loadAgent(c.Request.Context(), currentResourceOwner(c), c.Param("id")); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
@@ -338,7 +340,7 @@ func (s *Server) toolsMcpCatalog(c *gin.Context) {
 }
 
 func (s *Server) toolsActive(c *gin.Context) {
-	a, err := s.loadAgent(c.Request.Context(), currentUserID(c), c.Param("id"))
+	a, err := s.loadAgent(c.Request.Context(), currentResourceOwner(c), c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
@@ -413,7 +415,7 @@ func (s *Server) toolsActive(c *gin.Context) {
 }
 
 func (s *Server) cloneAgent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	srcID := c.Param("id")
 	src, err := s.loadAgent(c.Request.Context(), owner, srcID)
 	if err != nil {
@@ -453,6 +455,18 @@ func (s *Server) cloneAgent(c *gin.Context) {
 	if src.WorkspaceID != nil {
 		wsID = *src.WorkspaceID
 	}
+	defaultEnvironmentID, resolveErr := s.defaultEnvironmentForAgentCreate(
+		c.Request.Context(), owner, deref(src.DefaultEnvironmentID))
+	if resolveErr != nil {
+		// A production policy change may make a historical local default
+		// ineligible. Forking remains possible, but the new Agent starts unbound.
+		if errors.Is(resolveErr, ErrLocalEnvironmentDisabled) {
+			defaultEnvironmentID = ""
+		} else {
+			writeTextErr(c, environmentBindingHTTPStatus(resolveErr), resolveErr.Error())
+			return
+		}
+	}
 	_, err = s.db.Pool.Exec(c.Request.Context(),
 		`INSERT INTO agents (owner_id, agent_id, workspace_path, workspace_id, name, description, sys_prompt, model,
 		 max_iters, tools_json, mcp_servers_json, skills_json, multiagent_json,
@@ -462,7 +476,7 @@ func (s *Server) cloneAgent(c *gin.Context) {
 		owner, newID, dstWS, nullStr(wsID), name, src.Description, src.SysPrompt, src.Model,
 		maxIters, deref(src.ToolsJSON), deref(src.McpServersJSON), deref(src.SkillsJSON),
 		deref(src.MultiagentJSON),
-		src.DefaultEnvironmentID, src.DefaultVaultIDsJSON, src.DefaultMemoryStoreIDsJSON,
+		nullStr(defaultEnvironmentID), src.DefaultVaultIDsJSON, src.DefaultMemoryStoreIDsJSON,
 		now)
 	if err != nil {
 		writeTextErr(c, http.StatusInternalServerError, err.Error())
@@ -474,13 +488,18 @@ func (s *Server) cloneAgent(c *gin.Context) {
 		`SELECT snapshot_json FROM agent_versions WHERE owner_id=$1 AND agent_id=$2 AND version=$3`,
 		owner, srcID, src.HeadVersion).Scan(&snap)
 	if err != nil || snap == "" {
-		snap = mustJSON(s.agentSnapshot(owner, newID, name, deref(src.Description), deref(src.SysPrompt),
+		snapshot, snapshotErr := s.agentSnapshot(c.Request.Context(), owner, newID, name, deref(src.Description), deref(src.SysPrompt),
 			deref(src.Model), maxIters, parseJSONRaw(deref(src.ToolsJSON)), parseJSONRaw(deref(src.McpServersJSON)),
 			parseJSONRaw(deref(src.SkillsJSON)), parseJSONRaw(deref(src.MultiagentJSON)), dstWS, wsID,
-			deref(src.DefaultEnvironmentID),
+			defaultEnvironmentID,
 			parseStringSlice(deref(src.DefaultVaultIDsJSON)),
 			parseStringSlice(deref(src.DefaultMemoryStoreIDsJSON)),
-			1, now, now))
+			1, now, now)
+		if snapshotErr != nil {
+			writeErr(c, http.StatusInternalServerError, "Cannot snapshot workspace files")
+			return
+		}
+		snap = mustJSON(snapshot)
 	} else {
 		var m map[string]any
 		if jsonErr := jsonUnmarshal(snap, &m); jsonErr == nil {
@@ -488,6 +507,7 @@ func (s *Server) cloneAgent(c *gin.Context) {
 			m["name"] = name
 			m["workspacePath"] = dstWS
 			m["workspaceId"] = nullStr(wsID)
+			m["defaultEnvironmentId"] = nullStr(defaultEnvironmentID)
 			m["version"] = 1
 			m["createdAt"] = now
 			m["updatedAt"] = now
@@ -517,7 +537,7 @@ func jsonUnmarshalBytes(b []byte, v any) error {
 }
 
 func (s *Server) listShares(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -551,7 +571,7 @@ func (s *Server) listShares(c *gin.Context) {
 }
 
 func (s *Server) addShare(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -585,7 +605,7 @@ func (s *Server) addShare(c *gin.Context) {
 }
 
 func (s *Server) revokeShare(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM agent_shares WHERE owner_id=$1 AND agent_id=$2 AND grantee_type=$3 AND grantee_id=$4`,

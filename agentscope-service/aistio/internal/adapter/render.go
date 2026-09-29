@@ -49,9 +49,6 @@ func RenderAgentConfig(agent *v1alpha1.Agent, tools []ToolConfig) map[string]int
 	if subagents := renderSubagents(decl.Subagents); len(subagents) > 0 {
 		cfg["subagents"] = subagents
 	}
-	if templates := renderTeamTemplates(decl.TeamTemplates); len(templates) > 0 {
-		cfg["teamTemplates"] = templates
-	}
 	return cfg
 }
 
@@ -152,32 +149,6 @@ func renderSubagents(subagents []v1alpha1.SubagentSpec) []map[string]interface{}
 		}
 		if s.URL != "" {
 			entry["url"] = s.URL
-		}
-		out = append(out, entry)
-	}
-	return out
-}
-
-func renderTeamTemplates(templates []v1alpha1.TeamTemplateRef) []map[string]interface{} {
-	if len(templates) == 0 {
-		return nil
-	}
-	out := make([]map[string]interface{}, 0, len(templates))
-	for _, tt := range templates {
-		entry := map[string]interface{}{"name": tt.Name}
-		if tt.Description != "" {
-			entry["description"] = tt.Description
-		}
-		if len(tt.Members) > 0 {
-			members := make([]map[string]interface{}, 0, len(tt.Members))
-			for _, m := range tt.Members {
-				members = append(members, map[string]interface{}{
-					"role":     m.Role,
-					"agentRef": m.AgentRef,
-					"prompt":   m.Prompt,
-				})
-			}
-			entry["members"] = members
 		}
 		out = append(out, entry)
 	}

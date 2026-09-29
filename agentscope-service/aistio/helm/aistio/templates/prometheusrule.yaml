@@ -39,41 +39,36 @@ spec:
             severity: warning
           annotations:
             summary: "P99 probe latency exceeds 5s for {{ "{{" }} $labels.agent {{ "}}" }}"
-        - alert: TeamFailed
-          expr: |
-            count(agentscope_team_members_by_phase{phase="failed"} > 0) > 0
-          for: 1m
+        - alert: AgentTaskFailures
+          expr: increase(agentscope_agent_task_transitions_total{state="failed"}[10m]) > 0
+          for: 0m
           labels:
             severity: warning
           annotations:
-            summary: "Team has failed members"
-            description: "Team {{ "{{" }} $labels.team {{ "}}" }} in namespace {{ "{{" }} $labels.namespace {{ "}}" }} has failed members."
-        - alert: TeamMemberLost
-          expr: |
-            count(agentscope_team_members_by_phase{phase="lost"} > 0) > 0
-          for: 2m
+            summary: "AgentTask failures detected"
+            description: "AgentTasks in namespace {{ "{{" }} $labels.namespace {{ "}}" }} are failing on backend {{ "{{" }} $labels.backend {{ "}}" }}."
+        - alert: CollaborationRoutesBlocked
+          expr: increase(agentscope_comment_routes_total{outcome="blocked"}[10m]) > 0
+          for: 0m
           labels:
             severity: warning
           annotations:
-            summary: "Team member lost"
-            description: "Team {{ "{{" }} $labels.team {{ "}}" }} in namespace {{ "{{" }} $labels.namespace {{ "}}" }} has lost members for more than 2 minutes."
-        - alert: TeamMessageBacklog
-          expr: |
-            rate(agentscope_team_messages_total{status="enqueued"}[5m]) > 0
-              and rate(agentscope_team_messages_total{status="delivered"}[5m]) == 0
+            summary: "Comment routes require human attention"
+            description: "A {{ "{{" }} $labels.target_type {{ "}}" }} route was blocked in namespace {{ "{{" }} $labels.namespace {{ "}}" }}."
+        - alert: AgentTaskInputStale
+          expr: histogram_quantile(0.99, sum by (le,namespace,state) (rate(agentscope_agent_task_input_age_seconds_bucket[10m]))) > 300
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: "Team message delivery stalled"
-            description: "Messages are being enqueued for team {{ "{{" }} $labels.team {{ "}}" }} but none are being delivered."
-        - alert: TeamRecoveryExhausted
-          expr: |
-            increase(agentscope_team_recovery_total{result="exhausted"}[10m]) > 0
+            summary: "AgentTask inputs are stale"
+            description: "P99 input age exceeds five minutes in namespace {{ "{{" }} $labels.namespace {{ "}}" }}."
+        - alert: ExecutionAttemptFailures
+          expr: increase(agentscope_execution_attempt_transitions_total{state="failed"}[10m]) > 0
           for: 0m
           labels:
             severity: critical
           annotations:
-            summary: "Team member recovery exhausted"
-            description: "Team {{ "{{" }} $labels.team {{ "}}" }} in namespace {{ "{{" }} $labels.namespace {{ "}}" }} has exhausted member recovery attempts."
+            summary: "ExecutionAttempt failures detected"
+            description: "Backend {{ "{{" }} $labels.backend {{ "}}" }} failed executions with {{ "{{" }} $labels.failure_code {{ "}}" }}."
 {{- end }}

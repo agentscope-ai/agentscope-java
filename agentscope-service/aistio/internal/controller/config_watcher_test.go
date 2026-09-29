@@ -33,7 +33,7 @@ type fakeDistributor struct {
 	forgets int
 }
 
-func (f *fakeDistributor) PushConfig(namespace, agentName string, configType int32, resources interface{}) error {
+func (f *fakeDistributor) PushConfig(tenant, namespace, agentName string, configType int32, resources interface{}) error {
 	f.pushes = append(f.pushes, recordedPush{namespace, agentName, configType, resources})
 	return nil
 }
