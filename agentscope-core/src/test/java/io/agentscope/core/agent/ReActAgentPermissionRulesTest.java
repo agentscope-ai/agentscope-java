@@ -42,6 +42,7 @@ import io.agentscope.core.tool.Toolkit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -61,8 +62,15 @@ class ReActAgentPermissionRulesTest {
     /** A tool that defers the decision to the engine's rules rather than asserting its own. */
     private static final class DeployTool extends ToolBase {
 
+        private final AtomicInteger calls = new AtomicInteger();
+
         DeployTool() {
             super(ToolBase.builder().name(TOOL).description(TOOL).inputSchema(schema()));
+        }
+
+        /** How many times the tool actually executed, which a turn's reason alone cannot reveal. */
+        int callCount() {
+            return calls.get();
         }
 
         @Override
@@ -73,6 +81,7 @@ class ReActAgentPermissionRulesTest {
 
         @Override
         public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            calls.incrementAndGet();
             return Mono.just(ToolResultBlock.text("deployed"));
         }
     }
@@ -172,6 +181,24 @@ class ReActAgentPermissionRulesTest {
             boolean rulesAuthoritative) {
         Toolkit toolkit = new Toolkit();
         toolkit.registerAgentTool(new DeployTool());
+        return ReActAgent.builder()
+                .name("asst")
+                .model(model)
+                .toolkit(toolkit)
+                .permissionContext(rules)
+                .permissionRulesAuthoritative(rulesAuthoritative)
+                .stateStore(store)
+                .build();
+    }
+
+    private static ReActAgent agent(
+            ChatModelBase model,
+            PermissionContextState rules,
+            AgentStateStore store,
+            boolean rulesAuthoritative,
+            DeployTool tool) {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(tool);
         return ReActAgent.builder()
                 .name("asst")
                 .model(model)
@@ -322,24 +349,24 @@ class ReActAgentPermissionRulesTest {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
         RuntimeContext sessA = session("sessA");
 
-        Msg denied =
-                agent(model("tc-d1"), rules(PermissionBehavior.DENY), store, true)
-                        .call(List.of(userMsg("deploy?")), sessA)
-                        .block();
-        assertNotNull(denied);
+        agent(model("tc-d1"), rules(PermissionBehavior.DENY), store, true)
+                .call(List.of(userMsg("deploy?")), sessA)
+                .block();
 
-        // The new build declares the tool with ALLOW only.
-        Msg afterRemoval =
-                agent(model("tc-d2"), rules(PermissionBehavior.ALLOW), store, true)
-                        .call(List.of(userMsg("deploy?")), sessA)
-                        .block();
+        // The new build declares the tool with ALLOW only, so the session's stale DENY must be
+        // dropped. The count is the evidence rather than the turn's reason: a denied call leaves
+        // the
+        // loop running and the turn still ends with the plain-text reply, so both outcomes report
+        // MODEL_STOP and a reason-based assertion could not tell them apart.
+        DeployTool tool = new DeployTool();
+        agent(model("tc-d2"), rules(PermissionBehavior.ALLOW), store, true, tool)
+                .call(List.of(userMsg("deploy?")), sessA)
+                .block();
 
-        assertNotNull(afterRemoval);
         assertEquals(
-                GenerateReason.MODEL_STOP,
-                afterRemoval.getGenerateReason(),
-                "the declared ALLOW replaces the session's stale DENY, which is dropped because the"
-                        + " declaration mentions the tool in one of its tables");
+                1,
+                tool.callCount(),
+                "the declared ALLOW replaced the session's stale DENY, so the tool ran");
     }
 
     /**
@@ -353,38 +380,30 @@ class ReActAgentPermissionRulesTest {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
         RuntimeContext sessA = session("sessA");
 
-        // The session is created under BYPASS and persists that mode.
-        Msg bypassed =
-                agent(
-                                model("tc-m1"),
-                                PermissionContextState.builder()
-                                        .mode(PermissionMode.BYPASS)
-                                        .build(),
-                                store)
-                        .call(List.of(userMsg("deploy?")), sessA)
-                        .block();
-        assertNotNull(bypassed);
-        assertEquals(GenerateReason.MODEL_STOP, bypassed.getGenerateReason());
+        // The session is created under DONT_ASK and persists that mode.
+        agent(
+                        model("tc-m1"),
+                        PermissionContextState.builder().mode(PermissionMode.DONT_ASK).build(),
+                        store)
+                .call(List.of(userMsg("deploy?")), sessA)
+                .block();
 
-        // A later build declares DEFAULT with an ASK for the tool. If the declared mode replaced
-        // the
-        // BYPASS falls through to allow, DEFAULT falls through to ask. A declared ASK could not
-        Msg afterRedeploy =
-                agent(
-                                model("tc-m2"),
-                                PermissionContextState.builder()
-                                        .mode(PermissionMode.DEFAULT)
-                                        .build(),
-                                store,
-                                true)
-                        .call(List.of(userMsg("deploy?")), sessA)
-                        .block();
+        // A later build declares DEFAULT and no rules at all. The session's DONT_ASK turns the
+        // engine's default ask into a deny, so the tool must not run. A regression that took the
+        // declared mode would leave exactly a trivial context, drop onto the lightweight path and
+        // run it -- and the turn's reason would read MODEL_STOP either way, which is why the count
+        // is what this asserts on.
+        DeployTool tool = new DeployTool();
+        agent(
+                        model("tc-m2"),
+                        PermissionContextState.builder().mode(PermissionMode.DEFAULT).build(),
+                        store,
+                        true,
+                        tool)
+                .call(List.of(userMsg("deploy?")), sessA)
+                .block();
 
-        assertNotNull(afterRedeploy);
-        assertEquals(
-                GenerateReason.MODEL_STOP,
-                afterRedeploy.getGenerateReason(),
-                "the session kept BYPASS, so the tool is not gated by the declared DEFAULT");
+        assertEquals(0, tool.callCount(), "the session kept DONT_ASK, so the tool is denied");
     }
 
     /**
