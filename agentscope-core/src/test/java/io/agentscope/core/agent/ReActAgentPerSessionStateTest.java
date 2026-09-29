@@ -700,6 +700,21 @@ class ReActAgentPerSessionStateTest {
         public boolean exists(String userId, String sessionId) {
             return super.exists(v(userId), sessionId);
         }
+
+        @Override
+        public void delete(String userId, String sessionId) {
+            super.delete(v(userId), sessionId);
+        }
+
+        @Override
+        public void delete(String userId, String sessionId, String key) {
+            super.delete(v(userId), sessionId, key);
+        }
+
+        @Override
+        public java.util.Set<String> listSessionIds(String userId) {
+            return super.listSessionIds(v(userId));
+        }
     }
 
     @Test
@@ -806,9 +821,23 @@ class ReActAgentPerSessionStateTest {
         // empty, so the exists() probe decides whether anything is cleared at all).
         agent.clearContext("   ", "anonClear");
 
-        AgentState cleared = agent.getAgentState(null, "anonClear");
-        assertTrue(cleared.getContext().isEmpty(), "the null-identity row was cleared");
-        assertEquals("", cleared.getSummary());
+        // Read the persisted row directly: the cache was repopulated by clearContext
+        // itself, so asserting through getAgentState would only re-read the in-memory
+        // object it just cleared.
+        assertTrue(
+                store.getVersioned(null, "anonClear", "agent_state", AgentState.class).isPresent(),
+                "the cleared row persists under the null identity");
+        assertTrue(
+                store.getVersioned(null, "anonClear", "agent_state", AgentState.class)
+                        .value()
+                        .getContext()
+                        .isEmpty(),
+                "the null-identity row was cleared");
+        assertEquals(
+                "",
+                store.getVersioned(null, "anonClear", "agent_state", AgentState.class)
+                        .value()
+                        .getSummary());
     }
 
     @Test
