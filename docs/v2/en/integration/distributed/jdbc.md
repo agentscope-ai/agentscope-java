@@ -16,7 +16,7 @@ Currently supported databases:
 
 Support for more relational databases is on the roadmap, including Oracle and domestic Chinese databases such as DM (Dameng), GaussDB, and OceanBase.
 
-> The legacy modules `agentscope-extensions-mysql` and `agentscope-extensions-postgresql` are deprecated and replaced by this module. See [migration](#migrating-from-legacy-modules) below.
+> The legacy modules `agentscope-extensions-mysql`, `agentscope-extensions-postgresql`, `agentscope-extensions-skill-mysql-repository`, and `agentscope-extensions-skill-postgresql-repository` are deprecated and replaced by this module. See [migration](#migrating-from-legacy-modules) below.
 
 ## Dependency
 
@@ -55,7 +55,18 @@ AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource)
 DistributedStore store = JdbcDistributedStore.create(dataSource, dialect);
 ```
 
-Table creation and schema validation happen once, at assembly in `AbstractJdbcDialect.from(ds).build()`: `autoCreateTable` (default true) controls whether DDL is executed, and all three business tables are validated either way — a missing table or column fails fast with the reference DDL (in Spring this surfaces at context startup). Tables created by default: `agentscope_store`, `agentscope_sessions`, `agentscope_snapshots`, `agentscope_distributed_locks`. Table names and prefixes must match `[A-Za-z_][A-Za-z0-9_]*`.
+Table creation and schema validation happen once, at assembly in `AbstractJdbcDialect.from(ds).build()`: `autoCreateTable` (default true) controls whether DDL is executed, and all enabled business tables are validated either way — a missing table or column fails fast with the reference DDL (in Spring this surfaces at context startup). Table names and prefixes must match `[A-Za-z_][A-Za-z0-9_]*`.
+
+**Table groups**: `enableBaseTables` (default on) and `enableSkillTables` (default off) decide which groups `build()` creates and validates. They are independent of `autoCreateTable` and of each other — base tables on MySQL with skills on the git channel is a valid setup.
+
+```java
+AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource)
+    .enableBaseTables(true)      // default: on — store, sessions, snapshots
+    .enableSkillTables(true)     // default: off — opt in to add the skill tables
+    .build();                    // creates agentscope_skills / agentscope_skill_resources
+```
+
+Tables created by default: `agentscope_store`, `agentscope_sessions`, `agentscope_snapshots`; the lock table `agentscope_distributed_locks` is created on first lock use. With the skill group enabled: additionally `agentscope_skills`, `agentscope_skill_resources`.
 
 ## Components Provided
 
@@ -116,6 +127,28 @@ SandboxExecutionGuard guard = JdbcSandboxExecutionGuard.builder(dialect)
 
 > Note: MySQL named locks are server-level, not database-level. Use a unique `keyPrefix` when sharing a MySQL instance.
 
+### 5. JdbcAgentSkillRepository
+
+Skill storage on the same dialects: implements core's `AgentSkillRepository`, so every database this module supports can back the skill channel.
+
+```java
+import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.extensions.jdbc.skill.JdbcAgentSkillRepository;
+
+AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource)
+    .enableSkillTables(true)
+    .build();
+
+AgentSkillRepository repo = new JdbcAgentSkillRepository(dataSource, dialect);
+```
+
+Two tables are created: `agentscope_skills` and `agentscope_skill_resources` (composite PK `(id, resource_path)`, foreign key with `ON DELETE CASCADE`). Like the other components, the repository never touches the schema — enable the group at build; constructing it over a dialect without the group fails fast.
+
+Two behaviors to note:
+
+- `metadata_json` is a required column. A table from before the column existed fails startup validation with the reference DDL; add the column as the error suggests and restart — the framework never alters existing tables.
+- `delete` removes a skill's resources explicitly before the row itself, so it behaves the same on SQLite, where the cascade only fires with `PRAGMA foreign_keys` on. Resource paths must be relative without `..` — anything escaping the skill directory is rejected on save, and rows read back from the table are validated the same way.
+
 ## Migrating from Legacy Modules
 
 Continued use of the legacy modules is discouraged — migrate as early as your schedule allows:
@@ -125,6 +158,14 @@ Continued use of the legacy modules is discouraged — migrate as early as your 
 | `MysqlDistributedStore.create(ds)` / `PostgresDistributedStore.create(ds)` | `JdbcDistributedStore.create(ds)` |
 | `new MysqlAgentStateStore(ds)` | `new JdbcAgentStateStore(ds, AbstractJdbcDialect.from(ds).build())` |
 | `JdbcStore.builder(ds).dialect(mysqlDialect)` | `JdbcStore.builder(ds).dialect(AbstractJdbcDialect.from(ds).build())` |
+| `MysqlSkillRepository` / `PostgresSkillRepository` (skill-mysql / skill-postgresql modules) | `new JdbcAgentSkillRepository(ds, AbstractJdbcDialect.from(ds).enableSkillTables(true).build())` |
+
+Migrating the skill repositories:
+
+- Tables created by the current legacy modules already include `metadata_json` and work as-is; older tables need the column added first — the startup error carries the reference DDL.
+- One caveat to "work as-is": the legacy modules never rejected absolute or `..` resource paths, and the new implementation validates rows on read — `getSkill` refuses such a row; `getAllSkills` / `getAllSkillNames` skip it with a warning. A row whose *name* fails validation cannot be deleted either — `clearAllSkills` or direct SQL is the only remedy. Audit `resource_path` and skill names before migrating; those values were never safely consumable downstream.
+- The old modules implicitly created an `agentscope` database (MySQL) or schema (PostgreSQL). The new repository puts its tables wherever the connection points — aim the `DataSource` at the existing tables.
+- `databaseName` / `schemaName` have no equivalent — the tables live in whatever database the DataSource points to, same as the base tables. Table names can be overridden via `skillTableName` / `skillResourcesTableName`. Correspondingly, `getSource()` changes from `mysql_<databaseName>_<table>` / `postgresql_<schemaName>_<table>` to `jdbc_<skillTableName>` — consumers keying on it (e.g. the skill staging cache namespace) get a fresh subtree after migration, and the old one is reclaimed by orphan GC.
 
 ## When to Use
 
