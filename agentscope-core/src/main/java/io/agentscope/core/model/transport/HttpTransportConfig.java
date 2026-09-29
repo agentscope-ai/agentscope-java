@@ -16,6 +16,9 @@
 package io.agentscope.core.model.transport;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * Configuration for HTTP transport layer.
@@ -43,6 +46,9 @@ public class HttpTransportConfig {
     /** Default write timeout: 30 seconds. */
     public static final Duration DEFAULT_WRITE_TIMEOUT = Duration.ofSeconds(30);
 
+    /** Default maximum number of characters logged per request/response body. */
+    public static final int DEFAULT_LOG_BODY_MAX_LENGTH = 2048;
+
     private final Duration connectTimeout;
     private final Duration responseTimeout;
     private final Duration streamIdleTimeout;
@@ -53,6 +59,11 @@ public class HttpTransportConfig {
     private final boolean ignoreSsl;
     private final ProxyConfig proxyConfig;
     private final HttpVersion httpVersion;
+    private final boolean logRequests;
+    private final boolean logFailures;
+    private final boolean logBodies;
+    private final int logBodyMaxLength;
+    private final List<HttpTransportListener> listeners;
 
     private HttpTransportConfig(Builder builder) {
         this.connectTimeout = builder.connectTimeout;
@@ -65,6 +76,11 @@ public class HttpTransportConfig {
         this.ignoreSsl = builder.ignoreSsl;
         this.proxyConfig = builder.proxyConfig;
         this.httpVersion = builder.httpVersion;
+        this.logRequests = builder.logRequests;
+        this.logFailures = builder.logFailures;
+        this.logBodies = builder.logBodies;
+        this.logBodyMaxLength = builder.logBodyMaxLength;
+        this.listeners = List.copyOf(builder.listeners);
     }
 
     /**
@@ -176,6 +192,84 @@ public class HttpTransportConfig {
     }
 
     /**
+     * Get whether built-in DEBUG request/response logging is enabled.
+     *
+     * <p>Logging is on by default so that every transport is observable out of the box. Log output
+     * is always sanitized by {@link HttpLogSanitizer}: sensitive headers are redacted, URLs and
+     * userinfo are sanitized, and bodies are truncated to {@link #getLogBodyMaxLength()}
+     * characters. Bodies themselves are only included when {@link #isLogBodies()} is enabled.
+     *
+     * <p>This option is consumed by {@link LoggingHttpTransport} only; plain transports such as
+     * {@link JdkHttpTransport} or {@link OkHttpTransport} ignore it — to get a logging transport
+     * from a config, use {@link HttpTransportFactory#createLogging(HttpTransportConfig)}.
+     *
+     * @return true if built-in logging is enabled
+     */
+    public boolean isLogRequests() {
+        return logRequests;
+    }
+
+    /**
+     * Get whether transport <b>failures</b> are logged at WARN level.
+     *
+     * <p>Default is {@code true}. Failure logging is independent of {@link #isLogRequests()}
+     * (which governs the DEBUG request/response traffic lines): failures are WARN-level and not
+     * gated on the logger level, so connection problems stay visible with a default logging
+     * configuration even when DEBUG traffic logging is off — and operators wrapping calls in
+     * retry loops can silence the failure noise via {@code logFailures(false)} without losing
+     * the DEBUG traffic lines (or vice versa). To fully silence the built-in logger, disable
+     * both switches.
+     *
+     * <p>This option is consumed by {@link LoggingHttpTransport} only; plain transports such as
+     * {@link JdkHttpTransport} or {@link OkHttpTransport} ignore it — to get a logging transport
+     * from a config, use {@link HttpTransportFactory#createLogging(HttpTransportConfig)}.
+     *
+     * @return true if failures are logged at WARN
+     */
+    public boolean isLogFailures() {
+        return logFailures;
+    }
+
+    /**
+     * Get whether request/response <b>body contents</b> are included in the built-in DEBUG logs.
+     *
+     * <p>Default is {@code false}: bodies are opt-in. Even when enabled, bodies are first
+     * passed through {@link HttpLogSanitizer#redactBodyFields(String)} (sensitive-looking string
+     * fields are replaced with {@code ***}) and then truncated to {@link #getLogBodyMaxLength()}
+     * characters. URLs, headers and status/duration logging are controlled by {@link
+     * #isLogRequests()} and stay enabled by default.
+     *
+     * @return true if body contents are logged
+     */
+    public boolean isLogBodies() {
+        return logBodies;
+    }
+
+    /**
+     * Get the maximum number of characters logged per request/response body.
+     *
+     * <p>Consumed by {@link LoggingHttpTransport} only.
+     *
+     * @return the maximum body length in characters
+     */
+    public int getLogBodyMaxLength() {
+        return logBodyMaxLength;
+    }
+
+    /**
+     * Get the registered transport listeners.
+     *
+     * <p>Consumed by {@link LoggingHttpTransport} only; listeners attached to a config passed
+     * directly to a plain transport are silently ignored. To obtain a transport that consumes
+     * this config, use {@link HttpTransportFactory#createLogging(HttpTransportConfig)}.
+     *
+     * @return an unmodifiable list of listeners, possibly empty
+     */
+    public List<HttpTransportListener> getListeners() {
+        return listeners;
+    }
+
+    /**
      * Create a new builder for HttpTransportConfig.
      *
      * @return a new Builder instance
@@ -207,6 +301,11 @@ public class HttpTransportConfig {
         private boolean ignoreSsl = false;
         private ProxyConfig proxyConfig = null;
         private HttpVersion httpVersion = null;
+        private boolean logRequests = true;
+        private boolean logFailures = true;
+        private boolean logBodies = false;
+        private int logBodyMaxLength = DEFAULT_LOG_BODY_MAX_LENGTH;
+        private final List<HttpTransportListener> listeners = new ArrayList<>();
 
         /**
          * Set the connect timeout.
@@ -338,6 +437,94 @@ public class HttpTransportConfig {
          */
         public Builder httpVersion(HttpVersion httpVersion) {
             this.httpVersion = httpVersion;
+            return this;
+        }
+
+        /**
+         * Set whether built-in DEBUG request/response logging is enabled.
+         *
+         * <p>Default is {@code true} (logging on). Log output is always sanitized by {@link
+         * HttpLogSanitizer}. This switch controls only the built-in DEBUG logs; registered {@link
+         * HttpTransportListener}s are always notified.
+         *
+         * @param logRequests true to enable built-in DEBUG logging
+         * @return this builder
+         */
+        public Builder logRequests(boolean logRequests) {
+            this.logRequests = logRequests;
+            return this;
+        }
+
+        /**
+         * Set whether transport <b>failures</b> are logged at WARN level.
+         *
+         * <p>Default is {@code true}. This switch is independent of {@link #logRequests(boolean)}:
+         * the failure line is WARN-level and not gated on the logger level, so failures stay
+         * visible even when DEBUG traffic logging is disabled. Applications whose callers wrap
+         * requests in their own retry loops can set this to {@code false} to avoid one WARN per
+         * transient attempt, while keeping (or separately disabling) the DEBUG traffic lines.
+         *
+         * @param logFailures true to log failures at WARN level
+         * @return this builder
+         */
+        public Builder logFailures(boolean logFailures) {
+            this.logFailures = logFailures;
+            return this;
+        }
+
+        /**
+         * Set whether request/response <b>body contents</b> are included in the built-in DEBUG
+         * logs.
+         *
+         * <p>Default is {@code false}: bodies are opt-in, and the logs stay limited to method,
+         * sanitized URL, redacted headers, status and duration. When enabled, bodies are first
+         * passed through {@link HttpLogSanitizer#redactBodyFields(String)} and then truncated to
+         * {@link #logBodyMaxLength(int)} characters — they may still contain prompts and
+         * business data, so only opt in where the log sink is trusted.
+         *
+         * @param logBodies true to include body contents in the built-in DEBUG logs
+         * @return this builder
+         */
+        public Builder logBodies(boolean logBodies) {
+            this.logBodies = logBodies;
+            return this;
+        }
+
+        /**
+         * Set the maximum number of characters logged per request/response body. Longer bodies are
+         * truncated with an explicit marker; default is {@value #DEFAULT_LOG_BODY_MAX_LENGTH}.
+         *
+         * @param logBodyMaxLength the maximum body length in characters (values &lt; 0 are treated
+         *     as 0)
+         * @return this builder
+         */
+        public Builder logBodyMaxLength(int logBodyMaxLength) {
+            this.logBodyMaxLength = logBodyMaxLength;
+            return this;
+        }
+
+        /**
+         * Register one or more transport listeners.
+         *
+         * <p>Listeners observe every request/response passing through a {@link
+         * LoggingHttpTransport} configured with this config. Exceptions thrown by listeners are
+         * caught and never affect the HTTP call. This method appends to previously registered
+         * listeners.
+         *
+         * @param listener the first listener to register (must not be null)
+         * @param more additional listeners; a null array is ignored, null elements are rejected
+         * @return this builder
+         * @throws NullPointerException if {@code listener} or any element of {@code more} is null
+         */
+        public Builder listeners(HttpTransportListener listener, HttpTransportListener... more) {
+            Objects.requireNonNull(listener, "listener must not be null");
+            this.listeners.add(listener);
+            if (more != null) {
+                for (HttpTransportListener l : more) {
+                    Objects.requireNonNull(l, "listener must not be null");
+                    this.listeners.add(l);
+                }
+            }
             return this;
         }
 
