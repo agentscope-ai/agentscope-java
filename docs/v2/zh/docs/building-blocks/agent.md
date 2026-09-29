@@ -152,7 +152,7 @@ ReActAgent agent =
 
 <Tip>
 
-`ModelRegistry` 的字符串形式（`<provider>:<model>`）需要对应的模型扩展模块在 classpath 中。它支持 `dashscope` / `openai` / `openai-official` / `deepseek` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。`openai:` 还会读取 `OPENAI_BASE_URL` 以指向 OpenAI 兼容端点（优先级：`ModelCreationContext.baseUrl` > `OPENAI_BASE_URL` > `https://api.openai.com/v1`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 [`HarnessAgent`](/v2/zh/docs/harness/architecture) —— 它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
+`ModelRegistry` 的字符串形式（`<provider>:<model>`）需要对应的模型扩展模块在 classpath 中。它支持 `dashscope` / `openai` / `openai-official` / `deepseek` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 [`HarnessAgent`](/v2/zh/docs/harness/architecture) —— 它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
 
 </Tip>
 
