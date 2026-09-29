@@ -560,6 +560,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String stripped = output.strip();
         return stripped.length() <= MAX_DETAIL_CHARS
                 ? stripped
-                : "[output truncated] ..." + stripped.substring(stripped.length() - MAX_DETAIL_CHARS);
+                : "[output truncated] ..."
+                        + stripped.substring(stripped.length() - MAX_DETAIL_CHARS);
     }
 }
