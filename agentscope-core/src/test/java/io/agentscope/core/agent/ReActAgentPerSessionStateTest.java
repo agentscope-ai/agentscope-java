@@ -47,6 +47,7 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.state.State;
+import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.state.legacy.ToolkitState;
 import io.agentscope.core.tool.Toolkit;
 import java.lang.reflect.Field;
@@ -56,6 +57,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -650,6 +652,56 @@ class ReActAgentPerSessionStateTest {
         }
     }
 
+    /**
+     * Keys the raw userId verbatim (null and blank land in different buckets), modeling a
+     * third-party store that does not normalize anonymous spellings itself.
+     */
+    private static final class VerbatimStore extends InMemoryAgentStateStore {
+        private static String v(String userId) {
+            return userId == null ? "\u0000null" : "\u0000raw:" + userId;
+        }
+
+        @Override
+        public void save(String userId, String sessionId, String key, State value) {
+            super.save(v(userId), sessionId, key, value);
+        }
+
+        @Override
+        public void save(
+                String userId, String sessionId, String key, List<? extends State> values) {
+            super.save(v(userId), sessionId, key, values);
+        }
+
+        @Override
+        public <T extends State> Optional<T> get(
+                String userId, String sessionId, String key, Class<T> type) {
+            return super.get(v(userId), sessionId, key, type);
+        }
+
+        @Override
+        public <T extends State> List<T> getList(
+                String userId, String sessionId, String key, Class<T> itemType) {
+            return super.getList(v(userId), sessionId, key, itemType);
+        }
+
+        @Override
+        public <T extends State> VersionedState<T> getVersioned(
+                String userId, String sessionId, String key, Class<T> type) {
+            return super.getVersioned(v(userId), sessionId, key, type);
+        }
+
+        @Override
+        public long saveIfVersion(
+                String userId, String sessionId, String key, State value, long expectedVersion) {
+            return super.saveIfVersion(v(userId), sessionId, key, value, expectedVersion);
+        }
+
+        @Override
+        public boolean exists(String userId, String sessionId) {
+            return super.exists(v(userId), sessionId);
+        }
+    }
+
     @Test
     @DisplayName("first unconditional persist caches the store-returned version, not a re-read")
     void firstUnconditionalPersistCachesOwnWriteVersion() throws Exception {
@@ -739,9 +791,33 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("clearContext with a blank userId still clears the null-identity store row")
+    void clearContextBlankUserIdClearsNullIdentityRow() {
+        VerbatimStore store = new VerbatimStore();
+        ReActAgent agent = agent(store);
+        // Seed the anonymous row through the agent so it lands under the null identity.
+        AgentState anon = agent.getAgentState(null, "anonClear");
+        anon.setSummary("to be cleared");
+        anon.contextMutable().add(userMsg("payload"));
+        agent.saveAgentState(null, "anonClear");
+        agent.clearStateCache();
+
+        // Blank spelling must probe and clear the same null-identity row (the cache is
+        // empty, so the exists() probe decides whether anything is cleared at all).
+        agent.clearContext("   ", "anonClear");
+
+        AgentState cleared = agent.getAgentState(null, "anonClear");
+        assertTrue(cleared.getContext().isEmpty(), "the null-identity row was cleared");
+        assertEquals("", cleared.getSummary());
+    }
+
+    @Test
     @DisplayName("a blank-anonymous caller loads v1 data seeded under the null identity")
     void blankAnonymousCallerLoadsNullSeededLegacyData() {
-        RecordingStore store = new RecordingStore();
+        // VerbatimStore keeps null and blank in separate buckets, so this pins the read
+        // boundary: it only passes because ReActAgent normalizes blank to null before
+        // touching the store.
+        VerbatimStore store = new VerbatimStore();
         store.save(
                 null,
                 "legacyAnon",

@@ -396,6 +396,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * same slot — the cached state, CAS versions and interrupt routing stay isolated (#3337,
      * #2475), with no string encoding/decoding pair to keep in sync. Not part of the public API.
      */
+    private record SlotId(String userId, String sessionId) {
+        static SlotId of(String userId, String sessionId) {
+            Objects.requireNonNull(sessionId, "sessionId must not be null");
+            String u = userId == null || userId.isBlank() ? "__anon__" : userId;
+            return new SlotId(u, sessionId);
+        }
+    }
+
     /**
      * Collapses a blank caller userId to {@code null} at the store boundary. The store
      * documents {@code null} as the anonymous namespace and {@link SlotId#of} already treats
@@ -404,14 +412,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private static String storeUserId(String userId) {
         return (userId == null || userId.isBlank()) ? null : userId;
-    }
-
-    private record SlotId(String userId, String sessionId) {
-        static SlotId of(String userId, String sessionId) {
-            Objects.requireNonNull(sessionId, "sessionId must not be null");
-            String u = userId == null || userId.isBlank() ? "__anon__" : userId;
-            return new SlotId(u, sessionId);
-        }
     }
 
     /**
@@ -4648,6 +4648,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     public void clearContext(String userId, String sessionId) {
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        // Normalize once so the exists probe and the eventual save cannot drift apart on a
+        // store that does not normalize blank itself.
+        userId = storeUserId(userId);
         SlotId slot = SlotId.of(userId, sid);
         AgentState state;
         if (stateStore != null) {
