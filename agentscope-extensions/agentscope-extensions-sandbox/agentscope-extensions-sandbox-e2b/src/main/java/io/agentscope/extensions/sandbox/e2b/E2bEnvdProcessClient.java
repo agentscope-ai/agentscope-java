@@ -282,25 +282,28 @@ final class E2bEnvdProcessClient {
     private static EndStreamMessage parseEndStreamResponse(byte[] data) throws IOException {
         JsonNode root = JSON.readTree(data);
         if (root == null || root.isNull()) {
-            return new EndStreamMessage(false, null, null);
+            return new EndStreamMessage(null, null);
         }
         JsonNode errorNode = root.path("error");
         if (errorNode.isMissingNode() || errorNode.isNull()) {
-            return new EndStreamMessage(false, null, null);
+            return new EndStreamMessage(null, null);
         }
-        // Python SDK raises whenever the "error" key is present — mirror that: the mere
-        // presence of the error object signals failure, even without code/message.
+        // Mirror official connectrpc ConnectEnvelopeReader.handle_end_message:
+        //   error = end_stream_message.get("error")
+        //   if error: raise
+        // An empty error object is falsy in Python, i.e. treated as success —
+        // only a non-empty error (code and/or message) signals failure.
         String code = errorNode.path("code").asText(null);
         String message = errorNode.path("message").asText(null);
         if (code == null && message == null) {
-            message = errorNode.toString();
+            return new EndStreamMessage(null, null);
         }
-        return new EndStreamMessage(true, code, message);
+        return new EndStreamMessage(code, message);
     }
 
-    private record EndStreamMessage(boolean errorPresent, String code, String message) {
+    private record EndStreamMessage(String code, String message) {
         boolean hasError() {
-            return errorPresent;
+            return code != null;
         }
     }
 

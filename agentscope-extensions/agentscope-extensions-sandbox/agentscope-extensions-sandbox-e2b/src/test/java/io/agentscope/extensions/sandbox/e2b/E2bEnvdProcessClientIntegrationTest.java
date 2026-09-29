@@ -66,11 +66,12 @@ class E2bEnvdProcessClientIntegrationTest {
         platform.applySandboxFields(state, sandboxNode);
         state.setSandboxDomain(opt.getDomain());
 
+        // Never log the access token itself (bearer credential); presence only.
         log.info(
-                "sandboxId={} domain={} envdAccessToken={}",
+                "sandboxId={} domain={} envdAccessTokenPresent={}",
                 state.getSandboxId(),
                 state.getSandboxDomain(),
-                state.getEnvdAccessToken());
+                state.getEnvdAccessToken() != null && !state.getEnvdAccessToken().isBlank());
 
         try {
             E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
@@ -243,11 +244,12 @@ class E2bEnvdProcessClientIntegrationTest {
         platform.applySandboxFields(state, sandboxNode);
         state.setSandboxDomain(opt.getDomain());
 
+        // Never log the access token itself (bearer credential); presence only.
         log.info(
-                "sandboxId={} domain={} envdAccessToken={}",
+                "sandboxId={} domain={} envdAccessTokenPresent={}",
                 state.getSandboxId(),
                 state.getSandboxDomain(),
-                state.getEnvdAccessToken());
+                state.getEnvdAccessToken() != null && !state.getEnvdAccessToken().isBlank());
 
         try {
             E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);

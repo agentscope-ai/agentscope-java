@@ -230,23 +230,27 @@ class E2bEnvdProcessClientTest {
         assertTrue(ex.getMessage().contains("process crash"));
     }
 
-    // Presence of the "error" key alone signals failure, even without code/message —
-    // mirrors Python SDK ServerStreamParser (if "error" in data → raise).
+    // Mirror official connectrpc ConnectEnvelopeReader.handle_end_message:
+    //   error = end_stream_message.get("error")
+    //   if error: raise
+    // An empty error object is falsy in Python, i.e. treated as success (clean break,
+    // no SandboxRuntimeException). With no EndEvent received, draining then fails with
+    // IOException — same as a "{}\" trailer without preceding events.
     @Test
-    void endStreamResponseWithEmptyErrorObjectThrows() throws Exception {
+    void endStreamResponseWithEmptyErrorObjectBreaksCleanly() throws Exception {
         E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
         byte[] frame = endStreamFrame("{\"error\":{}}");
 
-        SandboxException.SandboxRuntimeException ex =
+        IOException ex =
                 assertThrows(
-                        SandboxException.SandboxRuntimeException.class,
+                        IOException.class,
                         () ->
                                 drainStartStream(
                                         client,
                                         frame,
                                         new ByteArrayOutputStream(),
                                         new ByteArrayOutputStream()));
-        assertEquals(SandboxErrorCode.WORKSPACE_START_ERROR, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("before receiving a process exit code"));
     }
 
     // A corrupt end-stream trailer is untrustworthy: unlike corrupt data frames (skipped),
