@@ -235,7 +235,15 @@ public final class MarketplaceStager {
 
             Path stagedDir = scopeRoot.resolve(ns).resolve(name);
             try {
-                materializeIfChanged(stagedDir, skill.getResources());
+                if (!materializeIfChanged(stagedDir, skill.getResources())) {
+                    // Nothing was materialised, which is what a lazy repository produces:
+                    // it publishes no in-memory resources. Reporting Cached here would
+                    // render a <files-root> for a directory that stays permanently empty,
+                    // so report NONE and let shell-mode rendering omit the skill.
+                    log.debug("Skill '{}' (source-ns={}) staged no resources", name, ns);
+                    roots.put(name, StageResult.NONE);
+                    continue;
+                }
                 // Mark as live before GC runs: this is what stops a concurrent call — or
                 // another replica sharing the volume — from treating it as an orphan.
                 touch(stagedDir);
@@ -269,12 +277,14 @@ public final class MarketplaceStager {
     //  Internals
     // =========================================================================
 
-    private void materializeIfChanged(Path stagedDir, Map<String, String> resources)
+    private boolean materializeIfChanged(Path stagedDir, Map<String, String> resources)
             throws IOException {
-        Files.createDirectories(stagedDir);
         if (resources == null || resources.isEmpty()) {
-            return;
+            // Nothing to write: leave no directory behind, so the caller can tell a
+            // staged skill apart from one whose content is unavailable.
+            return false;
         }
+        Files.createDirectories(stagedDir);
         // Track files we expect; remove any extras under stagedDir afterwards.
         Set<Path> expected = new HashSet<>();
         for (Map.Entry<String, String> e : resources.entrySet()) {
@@ -299,6 +309,7 @@ public final class MarketplaceStager {
         // Remove stale files under the staged dir that no longer correspond to a published
         // resource for this skill. Keeps stage idempotent and self-cleaning per skill.
         removeUnexpected(stagedDir, expected);
+        return !expected.isEmpty();
     }
 
     private void writeIfChanged(Path target, byte[] bytes) throws IOException {
