@@ -79,7 +79,8 @@ public interface MiddlewareBase {
         ON_REASONING,
         ON_ACTING,
         ON_MODEL_CALL,
-        ON_SYSTEM_PROMPT
+        ON_SYSTEM_PROMPT,
+        ON_AGENT_STATE_READY
     }
 
     /**

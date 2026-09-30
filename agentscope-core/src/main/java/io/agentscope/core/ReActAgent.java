@@ -782,13 +782,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Invokes {@link MiddlewareBase#onAgentStateReady} for every middleware in list order (=
-     * {@code order()} descending). No isolation: an exception propagates to the caller unchanged
-     * and the remaining middlewares are not invoked. {@code msgs} is the per-subscription private
-     * mutable copy, so in-place adjustments apply to the rest of the call only.
+     * Invokes {@link MiddlewareBase#onAgentStateReady} for every {@code ON_AGENT_STATE_READY}
+     * participant ({@link #middlewaresAt}) in list order (= {@code order()} descending). No
+     * isolation: an exception propagates to the caller unchanged and the remaining middlewares
+     * are not invoked. {@code msgs} is the per-subscription private mutable copy, so in-place
+     * adjustments apply to the rest of the call only.
      */
     private void onAgentStateReady(RuntimeContext ctx, AgentState state, List<Msg> msgs) {
-        for (MiddlewareBase mw : middlewares) {
+        for (MiddlewareBase mw :
+                middlewaresAt(MiddlewareBase.ExtensionPoint.ON_AGENT_STATE_READY)) {
             mw.onAgentStateReady(this, ctx, state, msgs);
         }
     }
