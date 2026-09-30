@@ -182,21 +182,31 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        RouteResult route = routeForPath(path);
+        // All root spellings are equivalent and take the aggregated root — checked BEFORE
+        // route resolution so a configured "/" route cannot capture ls("/") and make the
+        // spellings diverge (review follow-up, #3253). Non-root paths route as usual; null
+        // matches no route and falls through to the aggregate below.
+        if (!isRootSpelling(path)) {
+            RouteResult route = routeForPath(path);
 
-        if (route.routePrefix() != null) {
-            LsResult result = route.backend().ls(runtimeContext, route.backendPath());
-            if (!result.isSuccess()) {
-                return result;
+            if (route.routePrefix() != null) {
+                LsResult result = route.backend().ls(runtimeContext, route.backendPath());
+                if (!result.isSuccess()) {
+                    return result;
+                }
+                List<FileInfo> remapped = new ArrayList<>();
+                for (FileInfo fi : result.entries()) {
+                    remapped.add(remapFileInfo(fi, route.routePrefix()));
+                }
+                return LsResult.success(remapped);
             }
-            List<FileInfo> remapped = new ArrayList<>();
-            for (FileInfo fi : result.entries()) {
-                remapped.add(remapFileInfo(fi, route.routePrefix()));
-            }
-            return LsResult.success(remapped);
         }
 
-        if ("/".equals(path) || ".".equals(path)) {
+        // Root spellings — null, blank, "/", "." — take the aggregated root instead of
+        // reaching the backend's raw cwd or OS root (#3253). Blank is included because
+        // LocalFilesystem.applyNamespacePrefix early-returns on blank keys, which would
+        // strip the per-user namespace from the anchor and expose sibling tenants.
+        if (isRootSpelling(path)) {
             List<FileInfo> results = new ArrayList<>();
             LsResult defaultResult = defaultBackend.ls(runtimeContext, "/");
             if (defaultResult.isSuccess() && defaultResult.entries() != null) {
@@ -261,7 +271,9 @@ public class CompositeFilesystem implements AbstractFilesystem {
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
-        if (path != null) {
+        // Same ordering as ls: root spellings are checked before routing so a configured
+        // "/" route cannot capture them (review follow-up, #3253).
+        if (!isRootSpelling(path)) {
             RouteResult route = routeForPath(path);
             if (route.routePrefix() != null) {
                 GrepResult result =
@@ -277,9 +289,14 @@ public class CompositeFilesystem implements AbstractFilesystem {
             }
         }
 
-        if (path == null || "/".equals(path) || ".".equals(path)) {
+        // Root spellings take the aggregated root; blank joins null/"/"/"." so it cannot
+        // reach the backend's raw cwd (#3253). grep's documented working-directory form is
+        // null and is forwarded as-is for the backend to interpret; every other root
+        // spelling is canonicalized to the contract spelling "/".
+        if (isRootSpelling(path)) {
             List<GrepMatch> allMatches = new ArrayList<>();
-            GrepResult defaultResult = defaultBackend.grep(runtimeContext, pattern, path, glob);
+            GrepResult defaultResult =
+                    defaultBackend.grep(runtimeContext, pattern, path == null ? null : "/", glob);
             if (!defaultResult.isSuccess()) {
                 return defaultResult;
             }
@@ -324,28 +341,33 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
-        RouteResult route = routeForPath(path);
+        // Same ordering as ls/grep: root spellings are checked before routing (review
+        // follow-up, #3253).
+        if (!isRootSpelling(path)) {
+            RouteResult route = routeForPath(path);
 
-        if (route.routePrefix() != null) {
-            GlobResult result = route.backend().glob(runtimeContext, pattern, route.backendPath());
-            if (!result.isSuccess()) {
-                return result;
+            if (route.routePrefix() != null) {
+                GlobResult result =
+                        route.backend().glob(runtimeContext, pattern, route.backendPath());
+                if (!result.isSuccess()) {
+                    return result;
+                }
+                List<FileInfo> remapped = new ArrayList<>();
+                for (FileInfo fi : result.matches()) {
+                    remapped.add(remapFileInfo(fi, route.routePrefix()));
+                }
+                return GlobResult.success(remapped);
             }
-            List<FileInfo> remapped = new ArrayList<>();
-            for (FileInfo fi : result.matches()) {
-                remapped.add(remapFileInfo(fi, route.routePrefix()));
-            }
-            return GlobResult.success(remapped);
         }
 
         // Non-root path that didn't match any route: delegate to default backend only.
         // Route scanning only makes sense for root-level recursive globs.
-        if (path != null && !"/".equals(path) && !".".equals(path)) {
+        if (!isRootSpelling(path)) {
             return defaultBackend.glob(runtimeContext, pattern, path);
         }
 
         List<FileInfo> results = new ArrayList<>();
-        GlobResult defaultResult = defaultBackend.glob(runtimeContext, pattern, path);
+        GlobResult defaultResult = defaultBackend.glob(runtimeContext, pattern, "/");
         if (defaultResult.isSuccess() && defaultResult.matches() != null) {
             results.addAll(defaultResult.matches());
         }
@@ -514,6 +536,24 @@ public class CompositeFilesystem implements AbstractFilesystem {
         }
         RouteResult route = routeForPath(path);
         return route.backend().exists(runtimeContext, route.backendPath());
+    }
+
+    /**
+     * Root spellings for the enumeration surfaces: {@code null}, blank, {@code "/"}, and
+     * {@code "."} all mean "this filesystem's own root" rather than naming a specific entry
+     * (#3253). The aggregate branches canonicalize them to the contract spelling {@code "/"}
+     * (grep keeps {@code null}, its documented working-directory form) so every backend
+     * receives only documented spellings across the seam. Blank is anchored because {@code
+     * LocalFilesystem.applyNamespacePrefix} early-returns on blank keys, which would strip the
+     * per-user namespace and expose the bare workspace/sibling tenants; {@code "/"} would
+     * otherwise pass through the UNRESTRICTED resolver to the OS root. Each backend owns the
+     * meaning of its own root — namespaced local backends anchor {@code "/"} at {@code
+     * {workspace}/{userId}} via {@code LocalFilesystem#isRootPath}.
+     */
+    private static boolean isRootSpelling(String path) {
+        // Delegates to the shared canonical check so root-equivalent forms ("/.", "//",
+        // "/tmp/..") cannot bypass the root branch and resolve to the OS root (#3253).
+        return AbstractFilesystem.denotesRootPath(path);
     }
 
     /** Returns the default store. */
