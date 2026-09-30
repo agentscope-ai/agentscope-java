@@ -37,19 +37,25 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-@EnabledIfSystemProperty(named = "E2B_API_KEY", matches = ".+")
+// Opt-in live-sandbox diagnostics: runs only when E2B_API_KEY is set in the
+// environment, following the repository E2E-test convention.
+@EnabledIfEnvironmentVariable(named = "E2B_API_KEY", matches = ".+")
 class E2bEnvdProcessClientIntegrationTest {
 
     private static final Logger log =
             LoggerFactory.getLogger(E2bEnvdProcessClientIntegrationTest.class);
 
+    // Opt-in protocol diagnostics (not a behavioral assertion suite): dumps raw
+    // Connect envelopes from a live sandbox so flag layouts and EndStream payloads
+    // can be inspected when envd behavior is in doubt. Asserts only the EndStream
+    // flag contract (bit 1 set, bit 0 unset).
     @Test
     void captureRawConnectFrames() throws Exception {
-        String apiKey = System.getProperty("E2B_API_KEY");
+        String apiKey = System.getenv("E2B_API_KEY");
         String templateId = System.getProperty("E2B_TEMPLATE_ID", "code-interpreter-v1");
 
         E2bSandboxClientOptions opt = new E2bSandboxClientOptions();
@@ -226,7 +232,7 @@ class E2bEnvdProcessClientIntegrationTest {
 
     @Test
     void signalKillViaRunShell() throws Exception {
-        String apiKey = System.getProperty("E2B_API_KEY");
+        String apiKey = System.getenv("E2B_API_KEY");
         String templateId = System.getProperty("E2B_TEMPLATE_ID", "code-interpreter-v1");
 
         E2bSandboxClientOptions opt = new E2bSandboxClientOptions();

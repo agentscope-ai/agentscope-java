@@ -192,7 +192,7 @@ final class E2bEnvdProcessClient {
                             endMsg.message());
                     throw new SandboxException.SandboxRuntimeException(
                             SandboxErrorCode.WORKSPACE_START_ERROR,
-                            "Process start failed: " + endMsg.code() + ": " + endMsg.message());
+                            "Process start failed: " + endMsg.description());
                 }
                 log.debug("drainStartStream: endStream ok, exit={}", exit);
                 break;
@@ -207,53 +207,70 @@ final class E2bEnvdProcessClient {
             if ((flags & 0xFC) != 0) {
                 continue;
             }
+            DynamicMessage sr;
             try {
-                DynamicMessage sr = parseStartResponseFrame(data);
-                if (!sr.hasField(srEventF)) {
-                    log.debug("drainStartStream: frame with no event");
-                    continue;
-                }
-                DynamicMessage pe = (DynamicMessage) sr.getField(srEventF);
-                if (pe.hasField(peDataF)) {
-                    DynamicMessage de = (DynamicMessage) pe.getField(peDataF);
-                    appendDataStream(de, "stdout", stdout);
-                    appendDataStream(de, "stderr", stderr);
-                }
-                if (pe.hasField(peEndF)) {
-                    DynamicMessage end = (DynamicMessage) pe.getField(peEndF);
-                    Descriptors.Descriptor endDesc = end.getDescriptorForType();
-                    // Proto3: scalar sint32 defaults to 0, omitted from wire when 0.
-                    // getField() returns proto3 default (0) when absent; hasField() returns false.
-                    // https://protobuf.dev/programming-guides/proto3/#default
-                    Descriptors.FieldDescriptor ecF = endDesc.findFieldByName("exit_code");
-                    if (ecF != null) {
-                        exit = ((Number) end.getField(ecF)).intValue();
-                    }
-                    // EndEvent.error — populated when cmd.Wait() returns ExitError
-                    // (non-zero exit code or signal). Go handler: ProcessEvent_EndEvent.Error =
-                    // errMsg
-                    // https://github.com/e2b-dev/infra/blob/main/packages/envd/internal/services/process/handler/handler.go
-                    // Python SDK: error=event.event.end.error
-                    // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b/sandbox_sync/commands/command_handle.py#L115
-                    Descriptors.FieldDescriptor errF = endDesc.findFieldByName("error");
-                    if (errF != null && end.hasField(errF)) {
-                        stderr.write(
-                                String.valueOf(end.getField(errF))
-                                        .getBytes(StandardCharsets.UTF_8));
-                    }
-                }
+                sr = parseStartResponseFrame(data);
             } catch (IOException ignored) {
                 // A corrupt data frame must not abort the whole stream: skip it and keep
                 // draining. A missing EndEvent then surfaces as IOException below.
                 // Note: end-stream envelope parse errors (handled above, outside this try)
                 // intentionally propagate as IOException — a corrupt stream trailer means
                 // the stream itself is untrustworthy.
+                continue;
+            }
+            if (!sr.hasField(srEventF)) {
+                log.debug("drainStartStream: frame with no event");
+                continue;
+            }
+            DynamicMessage pe = (DynamicMessage) sr.getField(srEventF);
+            if (pe.hasField(peDataF)) {
+                DynamicMessage de = (DynamicMessage) pe.getField(peDataF);
+                appendDataStream(de, "stdout", stdout);
+                appendDataStream(de, "stderr", stderr);
+            }
+            if (pe.hasField(peEndF)) {
+                DynamicMessage end = (DynamicMessage) pe.getField(peEndF);
+                // Note: no emptiness guard here. On the proto wire, an EndEvent with
+                // exit_code=0 is bit-identical to an EndEvent with no fields (proto3
+                // omits default scalars), so they cannot be distinguished — the official
+                // Python SDK reads end.exit_code directly for the same reason. The JSON
+                // path filters truly-empty end events earlier in parseJsonStartResponse.
+                Descriptors.Descriptor endDesc = end.getDescriptorForType();
+                // Proto3: scalar sint32 defaults to 0, omitted from wire when 0.
+                // getField() returns proto3 default (0) when absent; hasField() returns false.
+                // https://protobuf.dev/programming-guides/proto3/#default
+                Descriptors.FieldDescriptor ecF = endDesc.findFieldByName("exit_code");
+                if (ecF != null) {
+                    exit = ((Number) end.getField(ecF)).intValue();
+                }
+                // EndEvent.error — populated when cmd.Wait() returns ExitError
+                // (non-zero exit code or signal). Go handler: ProcessEvent_EndEvent.Error =
+                // errMsg
+                // https://github.com/e2b-dev/infra/blob/main/packages/envd/internal/services/process/handler/handler.go
+                // Python SDK: error=event.event.end.error
+                // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b/sandbox_sync/commands/command_handle.py#L115
+                Descriptors.FieldDescriptor errF = endDesc.findFieldByName("error");
+                if (errF != null && end.hasField(errF)) {
+                    writeStderrLine(
+                            stderr,
+                            String.valueOf(end.getField(errF)).getBytes(StandardCharsets.UTF_8));
+                }
             }
         }
         if (exit == null) {
             throw new IOException("envd process stream ended before receiving a process exit code");
         }
         return exit;
+    }
+
+    private static void writeStderrLine(ByteArrayOutputStream stderr, byte[] text) {
+        // Keep EndEvent.error visually separate from preceding stderr output that
+        // may not end with a newline ("partial" + "exit status 1" is unreadable).
+        byte[] buffered = stderr.toByteArray();
+        if (buffered.length > 0 && buffered[buffered.length - 1] != '\n') {
+            stderr.write('\n');
+        }
+        stderr.writeBytes(text);
     }
 
     private static void appendDataStream(
@@ -282,28 +299,55 @@ final class E2bEnvdProcessClient {
     private static EndStreamMessage parseEndStreamResponse(byte[] data) throws IOException {
         JsonNode root = JSON.readTree(data);
         if (root == null || root.isNull()) {
-            return new EndStreamMessage(null, null);
+            return new EndStreamMessage(false, null, null);
         }
         JsonNode errorNode = root.path("error");
-        if (errorNode.isMissingNode() || errorNode.isNull()) {
-            return new EndStreamMessage(null, null);
-        }
         // Mirror official connectrpc ConnectEnvelopeReader.handle_end_message:
         //   error = end_stream_message.get("error")
         //   if error: raise
-        // An empty error object is falsy in Python, i.e. treated as success —
-        // only a non-empty error (code and/or message) signals failure.
+        // Python truthiness: missing/null/empty object/empty string/0/false mean success;
+        // anything else (non-empty object, non-empty string, ...) signals failure.
+        if (isFalsy(errorNode)) {
+            return new EndStreamMessage(false, null, null);
+        }
         String code = errorNode.path("code").asText(null);
         String message = errorNode.path("message").asText(null);
         if (code == null && message == null) {
-            return new EndStreamMessage(null, null);
+            message = errorNode.isTextual() ? errorNode.textValue() : errorNode.toString();
         }
-        return new EndStreamMessage(code, message);
+        return new EndStreamMessage(true, code, message);
     }
 
-    private record EndStreamMessage(String code, String message) {
+    private static boolean isFalsy(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return true;
+        }
+        if (node.isObject() || node.isArray()) {
+            return node.isEmpty();
+        }
+        if (node.isTextual()) {
+            return node.textValue().isEmpty();
+        }
+        if (node.isNumber()) {
+            // asDouble(): infinities stay infinite (truthy), NaN becomes 0.0 only if the
+            // codec produced it — decimalValue() would throw NumberFormatException instead.
+            return node.asDouble() == 0.0;
+        }
+        return !node.asBoolean(true);
+    }
+
+    private record EndStreamMessage(boolean errorPresent, String code, String message) {
         boolean hasError() {
-            return code != null;
+            return errorPresent;
+        }
+
+        // Either side may be absent (Connect Error allows code-only or message-only);
+        // never render a literal "null" into the user-visible message.
+        String description() {
+            if (code != null && message != null) {
+                return code + ": " + message;
+            }
+            return message != null ? message : code;
         }
     }
 
@@ -454,7 +498,13 @@ final class E2bEnvdProcessClient {
             if (errorNode.isTextual()) {
                 endBuilder.setField(errorField, errorNode.textValue());
             }
-            event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
+            // Only retain end when it carries an exit code or a textual error.
+            // An end event with neither must not fabricate exit 0: without it the
+            // stream falls through to "ended before receiving a process exit code".
+            // (Real envd always populates exit_code; this guards malformed streams.)
+            if (exitCodeNode.canConvertToInt() || errorNode.isTextual()) {
+                event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
+            }
         }
 
         if (!event.getAllFields().isEmpty()) {
