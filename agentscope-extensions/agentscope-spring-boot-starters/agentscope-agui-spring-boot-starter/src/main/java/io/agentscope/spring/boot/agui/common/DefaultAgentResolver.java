@@ -86,6 +86,7 @@ public class DefaultAgentResolver implements AgentResolver {
     }
 
     @Override
+    @Deprecated(since = "2.0.4", forRemoval = false)
     public boolean hasMemory(RuntimeContext runtimeContext) {
         if (serverSideMemory && sessionManager != null) {
             return sessionManager.hasMemory(runtimeContext);

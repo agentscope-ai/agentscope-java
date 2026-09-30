@@ -15,15 +15,18 @@
  */
 package io.agentscope.core.agent;
 
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ContextStore;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolRequestConfig;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.BiConsumer;
 
 /**
  * Per-call metadata for an agent run: session-scoped fields plus a thread-safe attribute bag and
@@ -54,6 +57,19 @@ public class RuntimeContext {
      */
     private volatile AgentState agentState;
 
+    /**
+     * Callback fired after the call-scoped {@link #agentState} is bound to this context (inside
+     * the agent's {@code beforeAgentExecution}, right after {@link #setAgentState(AgentState)}),
+     * on every call including brand-new sessions. The callback receives this RuntimeContext and
+     * the incoming message list (a private mutable copy whenever a callback is registered) — it
+     * may modify either in place. {@code null} when no callback is registered.
+     *
+     * <p>Registration is builder-only ({@link Builder#onAgentStateBound}), so the value is stable
+     * for the context's lifetime and the agent's entry-time mutable-copy decision cannot be
+     * invalidated by a late registration.
+     */
+    private final BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound;
+
     /** String-keyed extras (legacy and generic extension). */
     private final ConcurrentMap<String, Object> stringAttributes;
 
@@ -82,6 +98,7 @@ public class RuntimeContext {
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
         this.agentState = builder.agentState;
+        this.onAgentStateBound = builder.onAgentStateBound;
         this.toolRequestConfig = builder.toolRequestConfig;
         if (builder.stringExtras != null) {
             this.stringAttributes.putAll(builder.stringExtras);
@@ -147,6 +164,16 @@ public class RuntimeContext {
      */
     public void setAgentState(AgentState agentState) {
         this.agentState = agentState;
+    }
+
+    /**
+     * Returns the callback fired after the call-scoped AgentState is bound to this context, or
+     * {@code null} if none is registered. Registration is builder-only; there is deliberately no
+     * setter, so the value cannot change while a call is in flight (see {@link
+     * Builder#onAgentStateBound}).
+     */
+    public BiConsumer<RuntimeContext, List<Msg>> getOnAgentStateBound() {
+        return onAgentStateBound;
     }
 
     /**
@@ -381,6 +408,7 @@ public class RuntimeContext {
         private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
         private AgentState agentState;
+        private BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound;
         private ToolRequestConfig toolRequestConfig;
 
         public Builder sessionId(String sessionId) {
@@ -405,6 +433,19 @@ public class RuntimeContext {
 
         public Builder agentState(AgentState agentState) {
             this.agentState = agentState;
+            return this;
+        }
+
+        /**
+         * Registers the {@link RuntimeContext#getOnAgentStateBound()} callback on the built
+         * context. The callback is entry-call scoped and not inherited by {@link
+         * #from(RuntimeContext)} — register it explicitly on each context that needs it.
+         *
+         * @param onAgentStateBound the callback, or {@code null} to leave unset
+         * @return this builder
+         */
+        public Builder onAgentStateBound(BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound) {
+            this.onAgentStateBound = onAgentStateBound;
             return this;
         }
 
@@ -449,6 +490,10 @@ public class RuntimeContext {
             // later runId(x) overrides it.
             this.runId = source.runId;
             this.agentState = source.agentState;
+            // Deliberately NOT copying onAgentStateBound: the callback is entry-call scoped
+            // (registered per call/stream invocation) and must not leak into derived contexts
+            // such as subagent or tool-execution contexts, where it would fire against the
+            // child's state. Register it explicitly via onAgentStateBound(...) where needed.
             this.toolExecutionContext = source.toolExecutionContext;
             this.toolRequestConfig = source.toolRequestConfig;
             if (!source.stringAttributes.isEmpty()) {

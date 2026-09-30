@@ -324,7 +324,12 @@ public abstract class AgentBase implements Agent {
             return Mono.error(
                     new java.util.concurrent.CancellationException("Agent run cancelled"));
         }
-        Object scope = beforeAgentExecution(msgs, rc, control);
+        // The onAgentStateBound hook (fired inside beforeAgentExecution) may modify the incoming
+        // message list in place, but callers may pass an immutable list (e.g. List.copyOf). Hand
+        // the whole lifecycle a private mutable copy whenever a hook is registered so the hook's
+        // modifications are safe and visible to every downstream consumer.
+        List<Msg> effectiveMsgs = mutableViewForBoundHook(msgs, rc);
+        Object scope = beforeAgentExecution(effectiveMsgs, rc, control);
         if (gateKey != null) {
             runningCalls.put(gateKey, control);
         }
@@ -336,19 +341,33 @@ public abstract class AgentBase implements Agent {
                 TracerRegistry.get()
                         .callAgent(
                                 this,
-                                msgs,
+                                effectiveMsgs,
                                 () ->
-                                        notifyPreCall(msgs, scope)
+                                        notifyPreCall(effectiveMsgs, scope)
                                                 .flatMap(doCallFn)
                                                 .flatMap(this::notifyPostCall)
                                                 .onErrorResume(
                                                         createErrorHandler(
                                                                 control,
-                                                                msgs.toArray(new Msg[0]))));
+                                                                effectiveMsgs.toArray(
+                                                                        new Msg[0]))));
         Mono<Msg> scoped =
                 scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
         // Nested calls own their own control; only the outer execution receives this handle.
         return scoped.contextWrite(c -> c.delete(RunControl.CONTEXT_KEY));
+    }
+
+    /**
+     * Returns a private mutable copy of {@code msgs} when the {@link
+     * RuntimeContext#getOnAgentStateBound()} hook is registered (it may modify the list in place
+     * and the caller's list may be immutable, e.g. {@code List.copyOf}); otherwise returns {@code
+     * msgs} unchanged so hook-free calls pay no copy.
+     */
+    private static List<Msg> mutableViewForBoundHook(List<Msg> msgs, RuntimeContext rc) {
+        if (msgs == null || rc == null || rc.getOnAgentStateBound() == null) {
+            return msgs;
+        }
+        return new ArrayList<>(msgs);
     }
 
     /**

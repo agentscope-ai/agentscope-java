@@ -101,6 +101,7 @@ class AguiPermissionResumeTest {
                                         }
 
                                         @Override
+                                        @Deprecated
                                         public boolean hasMemory(RuntimeContext context) {
                                             return true;
                                         }
