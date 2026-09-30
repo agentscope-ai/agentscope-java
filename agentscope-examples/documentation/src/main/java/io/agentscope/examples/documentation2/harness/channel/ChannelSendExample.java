@@ -38,7 +38,7 @@ import java.util.List;
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
  *   mvn exec:java -pl agentscope-examples/documentation \
- *       -Dexec.mainClass=io.agentscope.examples.documentation2.harness.GatewayBasicExample
+ *       -Dexec.mainClass=io.agentscope.examples.documentation2.harness.channel.ChannelSendExample
  * </pre>
  */
 public class ChannelSendExample {

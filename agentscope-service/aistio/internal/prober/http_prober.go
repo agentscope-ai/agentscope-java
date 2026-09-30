@@ -26,7 +26,8 @@ import (
 
 // HTTPProber implements DataPlaneProber using HTTP calls to the contract API.
 type HTTPProber struct {
-	client *http.Client
+	client        *http.Client
+	InternalToken string
 }
 
 // NewHTTPProber creates a new HTTP-based data plane prober.
@@ -35,6 +36,12 @@ func NewHTTPProber() *HTTPProber {
 		client: &http.Client{
 			Timeout: 5 * time.Second,
 		},
+	}
+}
+
+func (p *HTTPProber) auth(req *http.Request) {
+	if p != nil && p.InternalToken != "" {
+		req.Header.Set("X-Builder-Internal-Token", p.InternalToken)
 	}
 }
 
@@ -138,6 +145,7 @@ func (p *HTTPProber) SendCompress(ctx context.Context, endpoint string, sessionI
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+	p.auth(req)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -158,6 +166,7 @@ func (p *HTTPProber) SendTerminate(ctx context.Context, endpoint string, session
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+	p.auth(req)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -325,6 +334,7 @@ func (p *HTTPProber) CancelSubagentTask(ctx context.Context, endpoint string, se
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+	p.auth(req)
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("DELETE %s: %w", url, err)
@@ -350,6 +360,7 @@ func (p *HTTPProber) SendPlanMode(ctx context.Context, endpoint string, sessionI
 		return fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	p.auth(req)
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("POST %s: %w", url, err)
@@ -359,4 +370,33 @@ func (p *HTTPProber) SendPlanMode(ctx context.Context, endpoint string, sessionI
 		return fmt.Errorf("POST %s returned status %d", url, resp.StatusCode)
 	}
 	return nil
+}
+
+func (p *HTTPProber) SendUserMessage(ctx context.Context, endpoint string, sessionID string, content string) error {
+	url := fmt.Sprintf("%s/agentscope/sessions/%s/messages", endpoint, sessionID)
+	body, err := json.Marshal(map[string]string{"content": content})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	p.auth(req)
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return ErrNotFoundOnDataPlane
+	case http.StatusConflict:
+		return ErrBusyOnDataPlane
+	default:
+		return fmt.Errorf("POST %s returned status %d", url, resp.StatusCode)
+	}
 }

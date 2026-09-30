@@ -69,6 +69,12 @@ public class SchedulerSecurityConfig {
                         auth ->
                                 auth.pathMatchers("/actuator/health", "/actuator/info")
                                         .permitAll()
+                                        .pathMatchers(
+                                                "/api/channels/feishu/*/callback",
+                                                "/api/channels/wecom/*/callback")
+                                        .permitAll()
+                                        .pathMatchers("/api/internal/**")
+                                        .hasRole("INTERNAL")
                                         .pathMatchers("/api/**")
                                         .authenticated()
                                         .anyExchange()

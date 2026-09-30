@@ -38,17 +38,17 @@ func (s *Server) registerAgents(r gin.IRouter) {
 }
 
 type agentCreateReq struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	System        string `json:"system"`
-	SysPrompt     string `json:"sysPrompt"`
-	Model         string `json:"model"`
-	MaxIters      *int   `json:"maxIters"`
-	Tools         any    `json:"tools"`
-	McpServers    any    `json:"mcpServers"`
-	Skills        any    `json:"skills"`
-	Multiagent    any    `json:"multiagent"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Description   string  `json:"description"`
+	System        string  `json:"system"`
+	SysPrompt     string  `json:"sysPrompt"`
+	Model         string  `json:"model"`
+	MaxIters      *int    `json:"maxIters"`
+	Tools         any     `json:"tools"`
+	McpServers    any     `json:"mcpServers"`
+	Skills        any     `json:"skills"`
+	Multiagent    any     `json:"multiagent"`
 	WorkspacePath string  `json:"workspacePath"`
 	WorkspaceID   *string `json:"workspaceId"`
 	Version       *int    `json:"version"`
@@ -59,26 +59,26 @@ type agentCreateReq struct {
 }
 
 type agentRow struct {
-	OwnerID                    string
-	AgentID                    string
-	WorkspacePath              *string
-	WorkspaceID                *string
-	Name                       string
-	Description                *string
-	SysPrompt                  *string
-	Model                      *string
-	MaxIters                   *int
-	ToolsJSON                  *string
-	McpServersJSON             *string
-	SkillsJSON                 *string
-	MultiagentJSON             *string
-	DefaultEnvironmentID       *string
-	DefaultVaultIDsJSON        *string
-	DefaultMemoryStoreIDsJSON  *string
-	HeadVersion                int
-	ArchivedAt                 *int64
-	CreatedAt                  int64
-	UpdatedAt                  int64
+	OwnerID                   string
+	AgentID                   string
+	WorkspacePath             *string
+	WorkspaceID               *string
+	Name                      string
+	Description               *string
+	SysPrompt                 *string
+	Model                     *string
+	MaxIters                  *int
+	ToolsJSON                 *string
+	McpServersJSON            *string
+	SkillsJSON                *string
+	MultiagentJSON            *string
+	DefaultEnvironmentID      *string
+	DefaultVaultIDsJSON       *string
+	DefaultMemoryStoreIDsJSON *string
+	HeadVersion               int
+	ArchivedAt                *int64
+	CreatedAt                 int64
+	UpdatedAt                 int64
 }
 
 func (a agentRow) toJSON() gin.H {
@@ -103,26 +103,26 @@ func (a agentRow) toJSON() gin.H {
 		wsID = *a.WorkspaceID
 	}
 	out := gin.H{
-		"id":            a.AgentID,
-		"name":          a.Name,
-		"description":   desc,
-		"system":        system,
-		"model":         model,
-		"maxIters":      a.MaxIters,
-		"tools":         parseJSONRaw(deref(a.ToolsJSON)),
-		"mcpServers":    parseJSONRaw(deref(a.McpServersJSON)),
-		"skills":        parseJSONRaw(deref(a.SkillsJSON)),
-		"scope":         "user",
-		"ownerId":       a.OwnerID,
-		"createdAt":     a.CreatedAt,
-		"updatedAt":     a.UpdatedAt,
-		"workspacePath": ws,
-		"workspaceId":   nullStr(wsID),
+		"id":                    a.AgentID,
+		"name":                  a.Name,
+		"description":           desc,
+		"system":                system,
+		"model":                 model,
+		"maxIters":              a.MaxIters,
+		"tools":                 parseJSONRaw(deref(a.ToolsJSON)),
+		"mcpServers":            parseJSONRaw(deref(a.McpServersJSON)),
+		"skills":                parseJSONRaw(deref(a.SkillsJSON)),
+		"scope":                 "user",
+		"ownerId":               a.OwnerID,
+		"createdAt":             a.CreatedAt,
+		"updatedAt":             a.UpdatedAt,
+		"workspacePath":         ws,
+		"workspaceId":           nullStr(wsID),
 		"defaultEnvironmentId":  nullStr(deref(a.DefaultEnvironmentID)),
 		"defaultVaultIds":       parseStringSlice(deref(a.DefaultVaultIDsJSON)),
 		"defaultMemoryStoreIds": parseStringSlice(deref(a.DefaultMemoryStoreIDsJSON)),
-		"version":       a.HeadVersion,
-		"archivedAt":    nullMillis(a.ArchivedAt),
+		"version":               a.HeadVersion,
+		"archivedAt":            nullMillis(a.ArchivedAt),
 	}
 	if a.MultiagentJSON != nil && *a.MultiagentJSON != "" && *a.MultiagentJSON != "null" {
 		out["multiagent"] = parseJSONRaw(*a.MultiagentJSON)
@@ -158,7 +158,8 @@ const agentSelect = `SELECT owner_id, agent_id, workspace_path, workspace_id, na
 	head_version, archived_at, created_at, updated_at FROM agents`
 
 func (s *Server) listAgents(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
+	restricted, allowedIDs := resourceFilter(c)
 	limit, offset, ok := pageParams(c)
 	if !ok {
 		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
@@ -166,13 +167,13 @@ func (s *Server) listAgents(c *gin.Context) {
 	}
 	var total int64
 	if err := s.db.Pool.QueryRow(c.Request.Context(),
-		`SELECT COUNT(*) FROM agents WHERE owner_id=$1 AND archived_at IS NULL`, owner).Scan(&total); err != nil {
+		`SELECT COUNT(*) FROM agents WHERE owner_id=$1 AND (NOT $2::boolean OR agent_id=ANY($3::text[])) AND archived_at IS NULL`, owner, restricted, allowedIDs).Scan(&total); err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeTotalCount(c, total)
-	q := agentSelect + ` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`
-	args := []any{owner}
+	q := agentSelect + ` WHERE owner_id=$1 AND (NOT $2::boolean OR agent_id=ANY($3::text[])) AND archived_at IS NULL ORDER BY updated_at DESC`
+	args := []any{owner, restricted, allowedIDs}
 	q, args = appendPage(q, limit, offset, args)
 	rows, err := s.db.Pool.Query(c.Request.Context(), q, args...)
 	if err != nil {
@@ -198,7 +199,7 @@ func (s *Server) createAgent(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "name required")
 		return
 	}
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := req.ID
 	if agentID == "" {
 		agentID = shortID("ag_")
@@ -256,6 +257,12 @@ func (s *Server) createAgent(c *gin.Context) {
 	if req.DefaultEnvironmentID != nil {
 		defEnv = strings.TrimSpace(*req.DefaultEnvironmentID)
 	}
+	resolvedDefaultEnvironmentID, resolveErr := s.defaultEnvironmentForAgentCreate(c.Request.Context(), owner, defEnv)
+	if resolveErr != nil {
+		writeTextErr(c, environmentBindingHTTPStatus(resolveErr), resolveErr.Error())
+		return
+	}
+	defEnv = resolvedDefaultEnvironmentID
 	defVault := []string{}
 	if req.DefaultVaultIDs != nil {
 		defVault = *req.DefaultVaultIDs
@@ -279,11 +286,19 @@ func (s *Server) createAgent(c *gin.Context) {
 		return
 	}
 
-	snap := s.agentSnapshot(owner, agentID, req.Name, req.Description, sysPrompt, req.Model, maxIters,
+	snap, err := s.agentSnapshot(c.Request.Context(), owner, agentID, req.Name, req.Description, sysPrompt, req.Model, maxIters,
 		toolsAny, mcpAny, skillsAny, req.Multiagent, ws, wsID, defEnv, defVault, defMem, 1, now, now)
-	_, _ = s.db.Pool.Exec(c.Request.Context(),
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "Cannot snapshot workspace files")
+		return
+	}
+	_, err = s.db.Pool.Exec(c.Request.Context(),
 		`INSERT INTO agent_versions (owner_id, agent_id, version, snapshot_json, created_at) VALUES ($1,$2,1,$3,$4)`,
 		owner, agentID, mustJSON(snap), now)
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "Cannot publish agent version")
+		return
+	}
 
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -300,25 +315,72 @@ func nullStr(s string) any {
 	return s
 }
 
-func (s *Server) agentSnapshot(owner, id, name, desc, system, model string, maxIters int,
+func (s *Server) agentSnapshot(ctx context.Context, owner, id, name, desc, system, model string, maxIters int,
 	tools, mcp, skills, multi any, ws, workspaceID, defaultEnv string, defaultVault, defaultMem []string,
-	version int, created, updated int64) gin.H {
+	version int, created, updated int64, bindings ...*WorkspaceBinding) (gin.H, error) {
+	if err := validateManagedTools(tools, mcp); err != nil {
+		return nil, err
+	}
 	if defaultVault == nil {
 		defaultVault = []string{}
 	}
 	if defaultMem == nil {
 		defaultMem = []string{}
 	}
-	return gin.H{
+	var binding *WorkspaceBinding
+	if len(bindings) > 0 {
+		binding = bindings[0]
+	}
+	var files map[string]string
+	workspaceVersion := 0
+	if workspaceID != "" && binding != nil {
+		revision, err := s.workspaceRevision(ctx, owner, workspaceID, binding.Version)
+		if err != nil {
+			return nil, err
+		}
+		files = revision.Files
+		workspaceVersion = revision.Version
+	} else {
+		scopeType, scopeID := scopeTypeAgent, id
+		if workspaceID != "" {
+			scopeType, scopeID = scopeTypeWorkspace, workspaceID
+		}
+		var err error
+		files, err = s.listWorkspaceFileContents(ctx, owner, scopeType, scopeID, "")
+		if err != nil {
+			return nil, err
+		}
+		if workspaceID != "" {
+			w, e := s.loadWorkspace(ctx, owner, workspaceID)
+			if e != nil {
+				return nil, e
+			}
+			workspaceVersion = w.HeadVersion
+		}
+	}
+	for path := range files {
+		if !definitionFile(path) {
+			delete(files, path)
+		}
+	}
+
+	out := gin.H{
 		"id": id, "name": name, "description": desc, "system": system, "model": model,
 		"maxIters": maxIters, "tools": tools, "mcpServers": mcp, "skills": skills,
 		"multiagent": multi, "scope": "user", "ownerId": owner, "workspacePath": ws,
-		"workspaceId":             nullStr(workspaceID),
-		"defaultEnvironmentId":    nullStr(defaultEnv),
-		"defaultVaultIds":         defaultVault,
-		"defaultMemoryStoreIds":   defaultMem,
-		"version":                 version, "createdAt": created, "updatedAt": updated,
+		"definitionFiles":       files,
+		"workspaceVersion":      workspaceVersion,
+		"workspaceId":           nullStr(workspaceID),
+		"defaultEnvironmentId":  nullStr(defaultEnv),
+		"defaultVaultIds":       defaultVault,
+		"defaultMemoryStoreIds": defaultMem,
+		"version":               version, "createdAt": created, "updatedAt": updated,
 	}
+	if binding != nil {
+		out["workspaceBinding"] = binding
+	}
+	out["definitionDigest"] = contentDigest(map[string]any{"system": system, "model": model, "maxIters": maxIters, "tools": tools, "mcpServers": mcp, "skills": skills, "multiagent": multi, "files": files, "workspaceId": workspaceID, "workspaceVersion": workspaceVersion, "defaultEnvironmentId": defaultEnv, "defaultVaultIds": defaultVault, "defaultMemoryStoreIds": defaultMem})
+	return out, nil
 }
 
 func (s *Server) loadAgent(ctx context.Context, owner, agentID string) (agentRow, error) {
@@ -327,7 +389,7 @@ func (s *Server) loadAgent(ctx context.Context, owner, agentID string) (agentRow
 }
 
 func (s *Server) getAgent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	a, err := s.loadAgent(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -342,7 +404,7 @@ func (s *Server) updateAgent(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "name required")
 		return
 	}
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -427,6 +489,12 @@ func (s *Server) updateAgent(c *gin.Context) {
 	defEnv := deref(a.DefaultEnvironmentID)
 	if req.DefaultEnvironmentID != nil {
 		defEnv = strings.TrimSpace(*req.DefaultEnvironmentID)
+		if defEnv != "" {
+			if _, err = s.validateEnvironmentBinding(c.Request.Context(), owner, defEnv); err != nil {
+				writeTextErr(c, environmentBindingHTTPStatus(err), err.Error())
+				return
+			}
+		}
 	}
 	defVault := parseStringSlice(deref(a.DefaultVaultIDsJSON))
 	if req.DefaultVaultIDs != nil {
@@ -458,11 +526,19 @@ func (s *Server) updateAgent(c *gin.Context) {
 		writeTextErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	snap := s.agentSnapshot(owner, agentID, req.Name, req.Description, sysPrompt, req.Model, maxIters,
+	snap, err := s.agentSnapshot(c.Request.Context(), owner, agentID, req.Name, req.Description, sysPrompt, req.Model, maxIters,
 		toolsAny, mcpAny, skillsAny, req.Multiagent, ws, wsID, defEnv, defVault, defMem, newVer, a.CreatedAt, now)
-	_, _ = s.db.Pool.Exec(c.Request.Context(),
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "Cannot snapshot workspace files")
+		return
+	}
+	_, err = s.db.Pool.Exec(c.Request.Context(),
 		`INSERT INTO agent_versions (owner_id, agent_id, version, snapshot_json, created_at) VALUES ($1,$2,$3,$4,$5)`,
 		owner, agentID, newVer, mustJSON(snap), now)
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "Cannot publish agent version")
+		return
+	}
 
 	out, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -473,7 +549,7 @@ func (s *Server) updateAgent(c *gin.Context) {
 }
 
 func (s *Server) deleteAgent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM agents WHERE owner_id=$1 AND agent_id=$2`, owner, c.Param("id"))
 	if err != nil {
@@ -490,7 +566,7 @@ func (s *Server) deleteAgent(c *gin.Context) {
 }
 
 func (s *Server) archiveAgent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	now := nowMillis()
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`UPDATE agents SET archived_at=$1, updated_at=$1 WHERE owner_id=$2 AND agent_id=$3 AND archived_at IS NULL`,
@@ -508,7 +584,7 @@ func (s *Server) archiveAgent(c *gin.Context) {
 }
 
 func (s *Server) listAgentVersions(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	rows, err := s.db.Pool.Query(c.Request.Context(),
 		`SELECT version, snapshot_json, created_at FROM agent_versions
 		 WHERE owner_id=$1 AND agent_id=$2 ORDER BY version DESC`, owner, c.Param("id"))
@@ -534,7 +610,7 @@ func (s *Server) listAgentVersions(c *gin.Context) {
 }
 
 func (s *Server) getAgentVersion(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	ver, err := strconv.Atoi(c.Param("version"))
 	if err != nil {
 		writeErr(c, http.StatusBadRequest, "invalid version")

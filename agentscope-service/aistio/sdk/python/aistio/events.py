@@ -15,8 +15,8 @@
 """Level-2 session event model (mirrors ``asdp.SessionEventMsg``) and the
 Level-3 full-history page (mirrors ``prober.MessagePage``).
 
-事件流只承载摘要（``content`` / ``tool_output`` 截断到 500 字符以内）；完整
-消息内容走 Level 3 HTTP 按需拉取，不主动上报（见 sdk-design.md §2.2 / §3.3）。
+事件流是统一会话页面的持久化事实源，因此保留完整消息和工具内容，不依赖可选的
+Level 3 ``message-query`` 能力。
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
-from ._util import now_ms, rfc3339, truncate
+from ._util import now_ms, rfc3339
 from .proto import asdp_pb2
 
 # ─── Event type vocabulary (aligned with asdp.proto SessionEventMsg.event_type) ───
@@ -52,14 +52,8 @@ ROLE_ASSISTANT = "assistant"
 ROLE_SYSTEM = "system"
 ROLE_TOOL = "tool"
 
-#: 摘要最大长度（sdk-design §3.3：content 摘要建议 ≤ 500 字符）。
-MAX_SUMMARY_LEN = 500
 
-#: tool_input JSON 序列化后的最大字节数（超出截断，避免大 payload 占流）。
-MAX_TOOL_INPUT_BYTES = 4096
-
-
-def _json_bytes(value: Any, limit: int = 0) -> bytes:
+def _json_bytes(value: Any) -> bytes:
     """Best-effort canonical JSON encoding; returns ``b""`` for ``None``."""
     if value is None:
         return b""
@@ -69,8 +63,6 @@ def _json_bytes(value: Any, limit: int = 0) -> bytes:
         data = value.encode("utf-8")
     else:
         data = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    if limit > 0 and len(data) > limit:
-        data = data[:limit]
     return data
 
 
@@ -86,10 +78,10 @@ class SessionEvent:
     event_type: str
     occurred_at: int = 0  # unix ms
     role: str = ""
-    content: str = ""  # 摘要
+    content: str = ""  # 完整内容；控制面事件日志是会话历史事实源
     tool_name: str = ""
-    tool_input: Optional[bytes] = None  # JSON bytes，可截断
-    tool_output: str = ""  # 摘要
+    tool_input: Optional[bytes] = None  # 完整 JSON bytes
+    tool_output: str = ""  # 完整输出
     tokens_in: int = 0
     tokens_out: int = 0
     duration_ms: int = 0
@@ -98,13 +90,11 @@ class SessionEvent:
     def __post_init__(self) -> None:
         if self.occurred_at <= 0:
             self.occurred_at = now_ms()
-        self.content = truncate(self.content, MAX_SUMMARY_LEN)
-        self.tool_output = truncate(self.tool_output, MAX_SUMMARY_LEN)
 
     @staticmethod
     def encode_tool_input(value: Any) -> bytes:
-        """Encode a tool-input payload as (possibly truncated) JSON bytes."""
-        return _json_bytes(value, MAX_TOOL_INPUT_BYTES)
+        """Encode a complete tool-input payload as JSON bytes."""
+        return _json_bytes(value)
 
     @staticmethod
     def encode_meta(meta: Any) -> bytes:

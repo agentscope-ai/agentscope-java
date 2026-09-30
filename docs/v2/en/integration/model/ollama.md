@@ -1,4 +1,7 @@
-# Ollama Model
+---
+title: Ollama
+zh_link: /v2/zh/integration/model/ollama
+---
 
 `agentscope-extensions-model-ollama` integrates locally hosted Ollama models. It is useful for local development, private deployments, and offline model serving.
 
@@ -60,4 +63,4 @@ agentscope:
     # base-url: http://localhost:11434
 ```
 
-Full builder options, formatters, credentials, and registry context details are covered in [Model](../../docs/building-blocks/model.md).
+Full builder options, formatters, credentials, and registry context details are covered in [Model](/v2/en/docs/building-blocks/model).

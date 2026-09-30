@@ -2,7 +2,7 @@
 
 本指南介绍如何在 Kubernetes 集群中安装 AgentScope 控制面（control-plane），并部署第一个 Agent。安装方式参考了 Istio 的使用习惯：提供 **agentscopectl CLI**、**一键脚本**、**Helm** 与 **原始 manifest** 四种路径，并支持安装 **profile**。
 
-> v0.2 说明：默认启用第一期（Declarative / BYO 发现纳管 / REST API / Webhook / 指标）和第二期（会话可观测 / Finalizer 级联清理 / REST TLS / K8s 鉴权 / Grafana Dashboard）能力。ASDP gRPC 运行时协调、分布式 AgentTeam、Sandbox 供给等仍为 **experimental**，默认关闭。
+> 当前版本默认提供 Declarative/BYO 纳管、Issue-first 协作、AgentTask、会话可观测、REST TLS、Kubernetes 鉴权和指标。Runtime Host 与 Sandbox 供给可按部署 profile 开启。
 >
 > 从 v0.1 升级？请参阅 [升级指南](./upgrade-v0.2.md)。
 >

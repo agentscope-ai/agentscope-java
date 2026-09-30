@@ -392,26 +392,23 @@ public class MediaUtils {
             return "";
         }
 
-        Path fileNamePath;
+        String fileName;
         try {
             if (isLocalFile(path)) {
                 // treat as file
-                fileNamePath = Paths.get(path).normalize().getFileName();
+                Path fileNamePath = Paths.get(path).normalize().getFileName();
+                fileName = fileNamePath == null ? "" : fileNamePath.toString();
             } else {
-                // treat as url
+                // URI paths use '/' regardless of the host filesystem (e.g. /C:/ on Windows).
                 URI uri = URI.create(path).normalize();
-                fileNamePath = Paths.get(uri.getPath()).getFileName();
+                String uriPath = uri.getPath();
+                fileName = uriPath.substring(uriPath.lastIndexOf('/') + 1);
             }
         } catch (Exception e) {
             log.warn("Invalid path: {}", path, e);
             return "";
         }
 
-        if (fileNamePath == null) {
-            return "";
-        }
-
-        String fileName = fileNamePath.toString();
         int dotIndex = fileName.lastIndexOf('.');
         // Ensure the dot exists and is not the last character
         if (dotIndex != -1 && dotIndex < fileName.length() - 1) {

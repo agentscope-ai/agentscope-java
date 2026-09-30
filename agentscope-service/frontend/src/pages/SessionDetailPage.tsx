@@ -17,10 +17,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
+  agentTaskDetailPath,
   getManagedSession,
   ManagedSession,
-  parseTeamExternalKey,
-  teamDetailPath,
+  parseAgentTaskExternalKey,
 } from '../api/managedSessions';
 import ChatPanel from '../components/ChatPanel';
 import SessionTranscript from '../components/SessionTranscript';
@@ -105,7 +105,7 @@ export default function SessionDetailPage() {
   }
 
   if (!sessionId) {
-    return <div style={S.err}>Missing session id. <Link to="/sessions">Back to sessions</Link></div>;
+    return <div style={S.err}>Missing session id. <Link to="/managed/sessions">Back to conversations</Link></div>;
   }
 
   if (loading) {
@@ -116,29 +116,32 @@ export default function SessionDetailPage() {
     return (
       <div style={S.err}>
         {err || 'Session not found.'}{' '}
-        <Link to="/sessions">Back to sessions</Link>
+        <Link to="/managed/sessions">Back to conversations</Link>
         {' · '}
-        <Link to="/sessions/new">Create session</Link>
+        <Link to="/managed/sessions/new">Create conversation</Link>
       </div>
     );
   }
 
-  const teamRef = parseTeamExternalKey(session.externalKey);
-  const fromTeam = !!teamRef;
+  const taskRef = parseAgentTaskExternalKey(session.externalKey);
+  const fromTask = !!taskRef;
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <div style={S.bar}>
-        <Link
-          to={`/sessions?agentId=${encodeURIComponent(session.agentId)}`}
-          style={S.back}
+        <button
+          type="button"
+          aria-label="Back to previous page"
+          title="Back to previous page"
+          onClick={() => navigate(-1)}
+          style={{ ...S.back, border: 0, background: 'transparent', padding: 0, cursor: 'pointer' }}
         >
-          ← Sessions
-        </Link>
+          ← Back
+        </button>
         <h1 style={S.title}>Session</h1>
         <span style={S.meta} title={session.id}>{session.id}</span>
-        {fromTeam && (
-          <span style={S.teamTag} title={session.externalKey || undefined}>Team</span>
+        {fromTask && (
+          <span style={S.teamTag} title={session.externalKey || undefined}>AgentTask</span>
         )}
         <span style={{ flex: 1 }} />
         <div style={S.tabs}>
@@ -147,7 +150,7 @@ export default function SessionDetailPage() {
             style={{ ...S.tab, ...(tab === 'chat' ? S.tabActive : {}) }}
             onClick={() => setTab('chat')}
           >
-            {fromTeam ? 'Transcript' : 'Chat'}
+            {fromTask ? 'Transcript' : 'Chat'}
           </button>
           <button
             type="button"
@@ -161,16 +164,12 @@ export default function SessionDetailPage() {
       <div style={tab === 'chat' ? S.bodyChat : S.body}>
         {tab === 'chat' ? (
           <>
-            {teamRef && (
+            {taskRef && (
               <div style={S.banner}>
-                This session was started by Agent Team{' '}
-                <strong>
-                  {teamRef.namespace}/{teamRef.teamName}
-                </strong>{' '}
-                (member <strong>{teamRef.memberName}</strong>). Direct chat here is disabled —
-                continue the conversation from the{' '}
-                <Link to={teamDetailPath(teamRef)} style={S.bannerLink}>
-                  team detail page
+                This session executes AgentTask <strong>{taskRef.agentTaskId}</strong>. Direct
+                chat here is disabled — continue the durable discussion from the{' '}
+                <Link to={agentTaskDetailPath(taskRef)} style={S.bannerLink}>
+                  AgentTask page
                 </Link>
                 .
               </div>
@@ -179,7 +178,7 @@ export default function SessionDetailPage() {
               <ChatPanel
                 sessionId={session.id}
                 agentId={session.agentId}
-                readOnly={fromTeam}
+                readOnly={fromTask}
               />
             </div>
           </>
@@ -188,7 +187,7 @@ export default function SessionDetailPage() {
             agentId={session.agentId}
             sessionId={session.id}
             embedded
-            onDeleted={() => navigate('/sessions', { replace: true })}
+            onDeleted={() => navigate('/managed/sessions', { replace: true })}
           />
         )}
       </div>

@@ -23,6 +23,9 @@ import { Environment, listEnvironments } from '../api/environments';
 import { Vault, listVaults } from '../api/vaults';
 import { MemoryStore, listMemoryStores } from '../api/memoryStores';
 import { getUsername } from '../lib/auth';
+import { canEditAgentDefinition } from '@/features/build/agents/agentAccess';
+import { useControlPlaneScope } from '@/app/ScopeContext';
+import { definitionFormPatch, type DefinitionFormSection } from '@/features/build/agents/agentDefinitionForm';
 
 const S: Record<string, React.CSSProperties> = {
   page: { padding: '32px 36px', maxWidth: 820 },
@@ -85,15 +88,19 @@ const S: Record<string, React.CSSProperties> = {
 export default function AgentSettingsForm({
   agent,
   onSaved,
+  section = 'all',
 }: {
   agent: AgentDefinition;
+  section?: DefinitionFormSection;
   onSaved?: () => void | Promise<unknown>;
 }) {
   const navigate = useNavigate();
+  const scope = useControlPlaneScope();
+  const show = (part: string) => section === 'all' || section === part;
   const isGlobal = agent.scope === 'global';
   const tier = agent.tierForCurrentUser;
   // The backend never populates tierForCurrentUser, so treat the owner as EDIT-capable.
-  const canEdit = !isGlobal && (tier === 'EDIT' || (tier == null && agent.ownerId === getUsername()));
+  const canEdit = scope.roles.some(role => ['admin', 'developer'].includes(role)) && (agent.scope !== 'global');
   const canShare = canEdit; // sharing requires EDIT
   const readOnly = !canEdit;
   const [shareOpen, setShareOpen] = useState(false);
@@ -101,7 +108,7 @@ export default function AgentSettingsForm({
   const [name, setName] = useState(agent.name);
   const [description, setDescription] = useState(agent.description ?? '');
   const [model, setModel] = useState(agent.model ?? '');
-  const [system, setSystem] = useState(agent.system ?? '');
+  const [system, setSystem] = useState(agent.workspaceBinding?.instructions ?? agent.system ?? '');
   const [maxIters, setMaxIters] = useState<string>(String(agent.maxIters ?? 12));
   const [workspaceId, setWorkspaceId] = useState(agent.workspaceId ?? '');
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
@@ -124,7 +131,7 @@ export default function AgentSettingsForm({
     setName(agent.name);
     setDescription(agent.description ?? '');
     setModel(agent.model ?? '');
-    setSystem(agent.system ?? '');
+    setSystem(agent.workspaceBinding?.instructions ?? agent.system ?? '');
     setMaxIters(String(agent.maxIters ?? 12));
     setWorkspaceId(agent.workspaceId ?? '');
     setDefaultEnvironmentId(agent.defaultEnvironmentId ?? '');
@@ -134,8 +141,7 @@ export default function AgentSettingsForm({
   }, [
     agent.id, agent.version, agent.system, agent.name, agent.description, agent.model, agent.maxIters,
     agent.workspaceId, agent.defaultEnvironmentId,
-    JSON.stringify(agent.defaultVaultIds ?? []),
-    JSON.stringify(agent.defaultMemoryStoreIds ?? []),
+    agent.defaultVaultIds, agent.defaultMemoryStoreIds,
   ]);
 
   useEffect(() => {
@@ -158,34 +164,23 @@ export default function AgentSettingsForm({
   }, [workspaceId]);
 
   useEffect(() => {
-    if (agent.scope === 'global' || !agent.ownerId) return;
+    if ((section !== 'all' && section !== 'versions') || agent.scope === 'global' || !agent.ownerId) return;
     let cancelled = false;
     listVersions(agent.id)
       .then(v => { if (!cancelled) { setVersions(v); setVersionsErr(null); } })
       .catch(e => { if (!cancelled) setVersionsErr(e instanceof Error ? e.message : 'Failed to load versions'); });
     return () => { cancelled = true; };
-  }, [agent.id, agent.scope, agent.ownerId, agent.version]);
+  }, [agent.id, agent.scope, agent.ownerId, agent.version, section]);
 
   async function handleSave() {
     setOk(false);
     setErr(null);
     setSaving(true);
     try {
-      if (version == null) throw new Error('Missing agent version for optimistic lock');
-      const iters = Number.parseInt(maxIters, 10);
-      const updated = await updateAgent(agent.id, {
-        name: name.trim() || agent.id,
-        description: description.trim() || undefined,
-        model: model.trim() || undefined,
-        system: system || undefined,
-        maxIters: Number.isFinite(iters) && iters > 0 ? iters : undefined,
-        // Empty string unlinks; omitted would keep previous on some clients — always send.
-        workspaceId: workspaceId || '',
-        defaultEnvironmentId: defaultEnvironmentId || '',
-        defaultVaultIds,
-        defaultMemoryStoreIds,
-        version,
-      });
+      const updated = await updateAgent(agent.id, definitionFormPatch(agent, section, {
+        name, description, model, system, maxIters, workspaceId,
+        defaultEnvironmentId, defaultVaultIds, defaultMemoryStoreIds, version,
+      }));
       setVersion(updated.version);
       setWorkspaceId(updated.workspaceId ?? '');
       setDefaultEnvironmentId(updated.defaultEnvironmentId ?? '');
@@ -204,7 +199,7 @@ export default function AgentSettingsForm({
     if (!confirm(`Delete agent "${agent.name}"? This removes its workspace and sessions.`)) return;
     try {
       await deleteAgent(agent.id);
-      navigate('/agents', { replace: true });
+      navigate(scope.scopedPath('/agent-center/agents'), { replace: true });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Delete failed');
     }
@@ -217,6 +212,7 @@ export default function AgentSettingsForm({
     try {
       await archiveAgent(agent.id);
       await getAgent(agent.id);
+      await onSaved?.();
       setOk(true);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Archive failed');
@@ -226,7 +222,7 @@ export default function AgentSettingsForm({
   }
 
   return (
-    <div style={S.page}>
+    <div style={section === 'all' ? S.page : { padding: 0, width: '100%' }}>
       {isGlobal && (
         <div style={S.banner}>
           Global agents are read-only from the UI. Edit <code>agentscope.json</code> to change them.
@@ -238,7 +234,7 @@ export default function AgentSettingsForm({
         </div>
       )}
 
-      <div style={S.card}>
+      {show('settings') && <div style={S.card}>
         <span style={S.cardLabel}>Identity</span>
 
         <div style={S.row}>
@@ -283,6 +279,10 @@ export default function AgentSettingsForm({
           />
         </div>
 
+      </div>}
+
+      {show('behavior') && <div style={S.card}>
+        <span style={S.cardLabel}>Model</span>
         <div style={S.row}>
           <label style={S.fieldLabel}>Model</label>
           <input
@@ -296,9 +296,9 @@ export default function AgentSettingsForm({
             Provider-qualified model id resolved via ModelRegistry; empty falls back to the data-plane default model.
           </div>
         </div>
-      </div>
+      </div>}
 
-      <div style={S.card}>
+      {show('workspace') && <div style={S.card}>
         <span style={S.cardLabel}>Workspace</span>
         <div style={S.row}>
           <label style={S.fieldLabel}>Linked workspace</label>
@@ -314,7 +314,7 @@ export default function AgentSettingsForm({
             ))}
           </select>
           <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 6, lineHeight: 1.5 }}>
-            Linking rematerializes tools/skills/AGENTS.md into this agent version. Edit shared content under Build → Workspaces.
+            Changing the link publishes and binds the selected Workspace draft. Use Definition → Workspace to select an existing revision and configure inheritance.
           </div>
         </div>
         {linkedSummary && (
@@ -324,7 +324,7 @@ export default function AgentSettingsForm({
           }}>
             <div style={{ fontWeight: 650, color: '#0f172a', marginBottom: 6 }}>
               {linkedSummary.name}{' '}
-              <Link to={`/workspaces/${encodeURIComponent(linkedSummary.id)}`} style={{ color: '#4338ca' }}>
+              <Link to={scope.scopedPath(`/agent-center/workspaces/${encodeURIComponent(linkedSummary.id)}`)} style={{ color: '#4338ca' }}>
                 Open →
               </Link>
             </div>
@@ -339,36 +339,36 @@ export default function AgentSettingsForm({
             )}
           </div>
         )}
-      </div>
+      </div>}
 
-      <div style={S.card}>
+      {show('runtime') && <div style={S.card}>
         <span style={S.cardLabel}>Session defaults</span>
         <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: 14, lineHeight: 1.5 }}>
-          Prefills the New session form and is used when Channel / Deploy omit mounts.
-          Per-session mounts remain the runtime source of truth and can be edited later.
+          These resources are selected by default for new Managed sessions. A session can keep its own explicit bindings.
         </div>
         <div style={S.row}>
-          <label style={S.fieldLabel}>Default environment</label>
+          <label style={S.fieldLabel} htmlFor="agent-default-environment">Default environment</label>
           <select
             style={S.input}
+            id="agent-default-environment"
             value={defaultEnvironmentId}
             onChange={e => setDefaultEnvironmentId(e.target.value)}
             disabled={readOnly}
           >
-            <option value="">None (use owner heuristic / ensure default)</option>
+            <option value="">Automatic default</option>
             {environments.map(env => (
               <option key={env.id} value={env.id}>{env.name} ({env.type})</option>
             ))}
           </select>
           <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 6 }}>
-            Manage environments under Build → Environments.
+            <Link to={scope.scopedPath('/agent-center/environments')} className="text-primary underline">Manage environments</Link> to configure local, remote, sandbox or self_hosted execution.
           </div>
         </div>
         <div style={S.row}>
           <label style={S.fieldLabel}>Default vaults</label>
           {vaults.length === 0 ? (
             <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-              No vaults yet. Create one under Build → Vaults.
+              No vaults yet. Create one under Resources → Vault.
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 8 }}>
@@ -396,7 +396,7 @@ export default function AgentSettingsForm({
           <label style={S.fieldLabel}>Default memory stores</label>
           {memoryStores.length === 0 ? (
             <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-              No memory stores yet. Create one under Build → Memory.
+              No memory stores yet. Create one under Resources → Memory.
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 8 }}>
@@ -420,10 +420,11 @@ export default function AgentSettingsForm({
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
-      <div style={S.card}>
+      {show('behavior') && <div style={S.card}>
         <span style={S.cardLabel}>Behavior</span>
+        <p className="mb-5 text-sm text-muted-foreground">Saved definitions are used for new sessions. Existing sessions keep their own configuration.</p>
 
         <div style={S.row}>
           <label style={S.fieldLabel}>System prompt</label>
@@ -448,22 +449,22 @@ export default function AgentSettingsForm({
             disabled={readOnly}
           />
         </div>
-      </div>
+      </div>}
 
-      {canEdit && (
+      {canEdit && section !== 'versions' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <button style={S.saveBtn} onClick={handleSave} disabled={saving}>
             {saving ? 'Saving…' : 'Save changes'}
           </button>
-          {canShare && (
+          {show('settings') && canShare && (
             <button style={S.shareBtn} onClick={() => setShareOpen(true)}>↗ Share</button>
           )}
-          {!agent.archivedAt && (
+          {show('settings') && !agent.archivedAt && agent.status !== 'archived' && (
             <button style={S.dangerBtn} onClick={handleArchive} disabled={archiving}>
               {archiving ? 'Archiving…' : 'Archive agent'}
             </button>
           )}
-          <button style={S.dangerBtn} onClick={handleDelete}>Delete agent</button>
+          {section === 'all' && <button style={S.dangerBtn} onClick={handleDelete}>Delete agent</button>}
         </div>
       )}
       {ok && <p style={S.success}>Saved.</p>}
@@ -473,7 +474,7 @@ export default function AgentSettingsForm({
         <ShareAgentDialog agent={agent} onClose={() => setShareOpen(false)} />
       )}
 
-      <div style={{ ...S.card, marginTop: 24 }}>
+      {show('versions') && <div style={{ ...S.card, marginTop: 24 }}>
         <span style={S.cardLabel}>Version history</span>
         {versionsErr && <p style={S.error}>{versionsErr}</p>}
         {!versionsErr && versions.length === 0 && (
@@ -506,9 +507,9 @@ export default function AgentSettingsForm({
             )}
           </div>
         ))}
-      </div>
+      </div>}
 
-      <div style={{ ...S.card, marginTop: 24 }}>
+      {show('settings') && <div style={{ ...S.card, marginTop: 24 }}>
         <span style={S.cardLabel}>Metadata</span>
         <div style={S.row}>
           <label style={S.fieldLabel}>Owner</label>
@@ -522,7 +523,7 @@ export default function AgentSettingsForm({
           <label style={S.fieldLabel}>Updated</label>
           <div style={S.meta}>{new Date(agent.updatedAt).toLocaleString()}</div>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

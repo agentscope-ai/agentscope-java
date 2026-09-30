@@ -30,19 +30,17 @@ import (
 // source. ok=false means "not available / miss" — callers fall back to live DP.
 // When fromEnd is true and offset is 0, the page starts at max(0, total-limit)
 // so clients can open a long session on the newest messages.
-type TranscriptMessagesFunc func(ctx context.Context, agentName, namespace, sessionID string, offset, limit int, fromEnd bool) (page *prober.MessagePage, ok bool, err error)
+type TranscriptMessagesFunc func(ctx context.Context, tenant, agentName, namespace, sessionID string, offset, limit int, fromEnd bool) (page *prober.MessagePage, ok bool, err error)
 
 // FilesystemTranscriptMessages reads JSONL segments from a shared filesystem
 // (NAS) layout: {root}/{tenant}/{agent}/{session}/events/*.jsonl
-// Tenant defaults to namespace when present, else "default".
 // Enable via ServerOptions.TranscriptMessages or AISTIO_TRANSCRIPT_FS_ROOT.
 func FilesystemTranscriptMessages(root string) TranscriptMessagesFunc {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return nil
 	}
-	return func(ctx context.Context, agentName, namespace, sessionID string, offset, limit int, fromEnd bool) (*prober.MessagePage, bool, error) {
-		tenant := namespace
+	return func(ctx context.Context, tenant, agentName, _ string, sessionID string, offset, limit int, fromEnd bool) (*prober.MessagePage, bool, error) {
 		if tenant == "" {
 			tenant = "default"
 		}

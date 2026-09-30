@@ -1,3 +1,4 @@
+import { namespaceHeaders } from "@/lib/namespaceScope";
 /*
  * Copyright 2024-2026 the original author or authors.
  *
@@ -21,7 +22,7 @@ import type { WorkspaceSkillDetail, WorkspaceSkillInfo } from './skills';
 
 function authHeaders(): Record<string, string> {
   const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return token ? { Authorization: `Bearer ${token}`, ...namespaceHeaders() } : {};
 }
 
 function jsonHeaders(): Record<string, string> {
@@ -255,4 +256,15 @@ export async function fetchMcpCatalog(): Promise<Record<string, unknown>[]> {
   const res = await fetch('/api/toolsets/mcp-catalog', { headers: authHeaders() });
   if (!res.ok) throw await readError(res, 'Failed to load MCP catalog');
   return res.json();
+}
+
+export interface WorkspaceRevision { skills?: Array<{name?: string; id?: string}>; version: number; draftVersion: number; digest: string; createdAt: number; files: Record<string,string> }
+export async function workspaceRevisions(id: string): Promise<WorkspaceRevision[]> {
+ const res=await fetch(`/api/workspaces/${encodeURIComponent(id)}/revisions`,{headers:authHeaders()});
+ if(!res.ok) throw await readError(res,'Failed to load Workspace revisions');
+ return (await res.json()).items;
+}
+export async function publishWorkspace(id: string): Promise<WorkspaceRevision> {
+ const res=await fetch(`/api/workspaces/${encodeURIComponent(id)}/publish`,{method:'POST',headers:jsonHeaders()});
+ if(!res.ok) throw await readError(res,'Failed to publish Workspace');return res.json();
 }

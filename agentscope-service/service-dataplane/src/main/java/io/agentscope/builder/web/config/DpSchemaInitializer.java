@@ -45,11 +45,29 @@ public class DpSchemaInitializer implements ApplicationRunner {
         try (Connection connection = dataSource.getConnection();
                 Statement statement = connection.createStatement()) {
             statement.execute("CREATE SCHEMA IF NOT EXISTS dp");
+            dropLegacyHitlConstraint(statement);
             log.info("Ensured JDBC schema 'dp' exists");
         } catch (SQLException ex) {
             log.warn(
                     "Could not create schema 'dp' (may be unsupported by driver): {}",
                     ex.getMessage());
+        }
+    }
+
+    private static void dropLegacyHitlConstraint(Statement statement) {
+        try {
+            statement.execute(
+                    "ALTER TABLE dp.builder_coord_hitl DROP CONSTRAINT IF EXISTS"
+                            + " uk_builder_coord_hitl_tool");
+            return;
+        } catch (SQLException ignored) {
+            // MySQL models unique constraints as indexes.
+        }
+        try {
+            statement.execute(
+                    "ALTER TABLE dp.builder_coord_hitl DROP INDEX uk_builder_coord_hitl_tool");
+        } catch (SQLException ignored) {
+            // Fresh installs have no legacy constraint/table; Hibernate owns creation.
         }
     }
 }

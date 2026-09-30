@@ -140,6 +140,41 @@ class TaskRepositoryContractTest {
         terminalStatus_notOverwrittenByNonTerminal(cpRepoA, Backend.CONTROL_PLANE);
     }
 
+    @Test
+    void completionOwnerSuppressesWakeupButRetainsResultsOnBothBackends() throws Exception {
+        for (TaskRepository repo : List.of(workspaceRepo, cpRepoA)) {
+            var wakeups = new java.util.concurrent.atomic.AtomicInteger();
+            repo.setCompletionCallback(
+                    (rc, taskId, agentId, sessionId, result) -> wakeups.incrementAndGet());
+            RuntimeContext context =
+                    RuntimeContext.builder()
+                            .sessionId(SESSION)
+                            .put(TaskRepository.SUPPRESS_COMPLETION_CALLBACK, true)
+                            .build();
+            var owned =
+                    repo.putTask(
+                            context,
+                            "owned-task",
+                            "worker",
+                            SESSION,
+                            new TaskRunSpec.LocalTaskRunSpec(() -> "verified research"));
+            assertTrue(owned.waitForCompletion(5000));
+            assertEquals(0, wakeups.get());
+            assertEquals(
+                    "verified research",
+                    repo.findPendingDeliveries(context, SESSION).get(0).result());
+            var normal =
+                    repo.putTask(
+                            RuntimeContext.empty(),
+                            "normal-task",
+                            "worker",
+                            "normal-session",
+                            new TaskRunSpec.LocalTaskRunSpec(() -> "normal result"));
+            assertTrue(normal.waitForCompletion(5000));
+            assertEquals(1, wakeups.get());
+        }
+    }
+
     private enum Backend {
         WORKSPACE,
         CONTROL_PLANE

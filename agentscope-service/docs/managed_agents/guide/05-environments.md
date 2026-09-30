@@ -38,6 +38,8 @@ X-Builder-Environment-Key: ebk_...
 
 ### local
 
+`local` 直接使用 Data Plane 进程所在主机（容器部署时即 Data Plane 容器）的文件系统与 shell，不提供安全沙箱边界。`aistiod` 默认通过 `BUILDER_ALLOW_LOCAL_ENVIRONMENT=false` 禁止创建或新增绑定；`scripts/dev-up.sh` 与开发用 Docker Compose 会显式开启。开启时，新建 Managed Agent 会自动绑定 owner 共享的 `default-local` Environment，用户之后仍可改绑其他 Environment。生产环境应保持关闭并使用 `sandbox`、`remote` 或 `self_hosted`。
+
 宿主机 `LocalFilesystemSpec`，按隔离范围（默认偏 Session）划分目录。适合单机开发；**不是**生产 Hands 方案。
 
 ### sandbox

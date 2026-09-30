@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -27,8 +28,9 @@ const jwtTTL = 7 * 24 * time.Hour
 
 // Claims is the JWT payload for console users.
 type Claims struct {
-	Username string   `json:"username"`
-	Roles    []string `json:"roles"`
+	AccountVersion int64    `json:"accountVersion,omitempty"`
+	Username       string   `json:"username"`
+	Roles          []string `json:"roles"`
 	jwt.RegisteredClaims
 }
 
@@ -45,15 +47,21 @@ func checkPassword(hash, raw string) bool {
 }
 
 func issueToken(secret, userID, username string, roles []string) (string, error) {
+	return issueAccountToken(secret, userID, username, roles, 0)
+}
+
+func issueAccountToken(secret, userID, username string, roles []string, version int64) (string, error) {
 	if len(secret) < 32 {
 		return "", fmt.Errorf("jwt secret must be at least 32 characters")
 	}
 	now := time.Now()
 	claims := Claims{
-		Username: username,
-		Roles:    roles,
+		AccountVersion: version,
+		Username:       username,
+		Roles:          roles,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
+			ID:        uuid.NewString(),
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(jwtTTL)),
 		},

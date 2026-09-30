@@ -1,6 +1,7 @@
 ---
-title: "Middleware"
-description: "Intercept and extend agent behavior at key lifecycle points"
+title: Middleware
+description: Intercept and extend agent behavior at key lifecycle points
+zh_link: /v2/zh/docs/building-blocks/middleware
 ---
 
 ## Overview
@@ -33,9 +34,13 @@ onAgent/
     └── onActing (per tool call)
 ```
 
-:::{note}
+
+<Note>
+
 `onActing` only wraps tool executions inside the agent runtime. Tools executed outside the agent via external execution are not tracked by `onActing`.
-:::
+
+</Note>
+
 
 ## Equipping middleware
 
@@ -71,12 +76,67 @@ ReActAgent agent =
 
 When no OpenTelemetry SDK is configured (only the default no-op provider), every hook short-circuits to `next.apply(input)` — near-zero overhead.
 
-Initialise the OpenTelemetry SDK in your process (OTLP exporter, `SdkTracerProvider`, `OpenTelemetrySdk.builder().setTracerProvider(...).buildAndRegisterGlobal()`) and then equip the middleware:
+By default, `OtelTracingMiddleware` reads the process-wide `GlobalOpenTelemetry` instance. The no-argument constructor looks that instance up lazily, when a hook runs, so the middleware can be constructed before the global SDK is registered. Applications that export spans themselves need the OpenTelemetry SDK and OTLP exporter in addition to AgentScope. Keep their versions aligned through the OpenTelemetry BOM (the version below matches the one currently used by AgentScope):
+
+```xml
+<properties>
+    <opentelemetry.version>1.61.0</opentelemetry.version>
+</properties>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-bom</artifactId>
+            <version>${opentelemetry.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-sdk</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-exporter-otlp</artifactId>
+    </dependency>
+</dependencies>
+```
+
+Build and register the SDK once per process before constructing the agent. The optional environment variable in this example can contain a value such as `Basic <base64-credentials>` for a backend that requires an `Authorization` header, including Langfuse:
 
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tracing.OtelTracingMiddleware;
-import java.util.List;
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
+
+String endpoint =
+        System.getenv().getOrDefault(
+                "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces");
+String authorization = System.getenv("OTEL_EXPORTER_OTLP_AUTHORIZATION");
+
+var exporterBuilder = OtlpHttpSpanExporter.builder().setEndpoint(endpoint);
+if (authorization != null && !authorization.isBlank()) {
+    exporterBuilder.addHeader("Authorization", authorization);
+}
+
+SdkTracerProvider tracerProvider =
+        SdkTracerProvider.builder()
+                .addSpanProcessor(
+                        BatchSpanProcessor.builder(exporterBuilder.build()).build())
+                .build();
+
+OpenTelemetrySdk.builder()
+        .setTracerProvider(tracerProvider)
+        .buildAndRegisterGlobal();
+Runtime.getRuntime().addShutdownHook(new Thread(tracerProvider::close));
 
 ReActAgent agent =
         ReActAgent.builder()
@@ -84,9 +144,54 @@ ReActAgent agent =
                 .sysPrompt("You are a helpful assistant.")
                 .model(model)
                 .toolkit(toolkit)
-                .middlewares(List.of(new OtelTracingMiddleware()))
+                .middleware(new OtelTracingMiddleware())
                 .build();
 ```
+
+The SDK must be registered before the middleware is used. If your runtime (for example, Spring Boot OpenTelemetry auto-configuration) already registers `GlobalOpenTelemetry`, reuse it and only add the middleware. Do not call the deprecated `TracerRegistry.register(...)` in the new setup. Close the `SdkTracerProvider` during application shutdown so its batch processor can flush pending spans.
+
+To export through an application-owned SDK instead of the process-wide one, build that SDK with `build()` (not `buildAndRegisterGlobal()`), point an OTLP HTTP exporter at the application's endpoint, and attach the middleware explicitly. This is an opt-in middleware path: the caller owns the SDK lifecycle and shuts the provider down. `ReActAgent.builder().middleware(...)` is already the production wiring; no other builder change is required.
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.tracing.OtelTracingMiddleware;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
+
+String endpoint =
+        System.getenv().getOrDefault(
+                "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces");
+
+SdkTracerProvider tracerProvider =
+        SdkTracerProvider.builder()
+                .addSpanProcessor(
+                        BatchSpanProcessor.builder(
+                                        OtlpHttpSpanExporter.builder()
+                                                .setEndpoint(endpoint)
+                                                .build())
+                                .build())
+                .build();
+
+OpenTelemetry appSdk =
+        OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build();
+Runtime.getRuntime().addShutdownHook(new Thread(tracerProvider::close));
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .sysPrompt("You are a helpful assistant.")
+                .model(model)
+                .toolkit(toolkit)
+                .middleware(new OtelTracingMiddleware(appSdk))
+                .build();
+```
+
+Passing `appSdk` does not replace `GlobalOpenTelemetry` and does not change `StudioManager`. `StudioManager` still installs deprecated `TracerRegistry` tracing on its own during `initialize()`. Vendor instrumentation that rewrites tracer lookup, and a missing Studio call-tree expansion control, need separate verification against the deployment that produces them. This middleware selects which OpenTelemetry SDK records the `onAgent`, `onModelCall`, and `onActing` spans. `OpenTelemetry.noop()` is also a valid argument: the downstream chain still runs, and no spans are recorded.
+
+Constructing `OtelTracingMiddleware` — either `new OtelTracingMiddleware()` or `new OtelTracingMiddleware(appSdk)` — also registers a JVM-wide Reactor hook, `ContextPropagationOperator.registerOnEachOperator()`, the first time any instance is created. From then on, the hook wraps each `Flux` and `Mono` operator as it is assembled, in any code in the process, so parent spans survive `publishOn` / `subscribeOn` hops. It cannot reach chains that were assembled before it was registered: a publisher built earlier and reused later does not gain propagation, so construct the middleware before assembling pipelines that need it. It is independent of which SDK records spans: an application-owned SDK isolates tracer lookup from `GlobalOpenTelemetry`, not this instrumentation side effect. The hook is installed at most once per JVM and is not removed when the middleware or the SDK is closed.
 
 Each reply produces a nested span tree with attributes such as agent name, session ID, model name, token counts, tool name, and inputs.
 
@@ -114,6 +219,24 @@ ReActAgent agent =
                 .build();
 ```
 
+### FinalAnswerFilterMiddleware
+
+`FinalAnswerFilterMiddleware` exposes only the text from the final ReAct reasoning round. Text from rounds that produce tool calls is suppressed, while tool and other non-text events continue to stream normally.
+
+```java
+import io.agentscope.core.middleware.FinalAnswerFilterMiddleware;
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model(model)
+                .toolkit(toolkit)
+                .middleware(new FinalAnswerFilterMiddleware())
+                .build();
+```
+
+The middleware buffers each round's text until the model call ends, because it cannot know whether the round is final until no tool call is observed.
+
 ## Custom middleware
 
 Implement `MiddlewareBase` (`io.agentscope.core.middleware`) and override only the hooks you need.
@@ -129,12 +252,23 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /** Observes agent / reasoning / model_call / system_prompt at the same time. */
 public class FullObservabilityMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(
+                ExtensionPoint.ON_AGENT,
+                ExtensionPoint.ON_REASONING,
+                ExtensionPoint.ON_MODEL_CALL,
+                ExtensionPoint.ON_SYSTEM_PROMPT);
+    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -182,7 +316,7 @@ Runnable examples: `agentscope-examples/documentation/.../middleware/CustomizedM
 
 ### Reading RuntimeContext
 
-Every `MiddlewareBase` hook receives the [`RuntimeContext`](./agent.md#runtimecontext-per-call-context) bound for this `call` / `stream` as the second argument — you can read session fields and typed/string attributes, and you can write back to it to forward values to downstream hooks and tools.
+Every `MiddlewareBase` hook receives the [`RuntimeContext`](/v2/en/docs/building-blocks/agent#runtimecontext-per-call-context) bound for this `call` / `stream` as the second argument — you can read session fields and typed/string attributes, and you can write back to it to forward values to downstream hooks and tools.
 
 ```java
 import io.agentscope.core.agent.Agent;
@@ -260,6 +394,44 @@ onAgent
         │     └── onModelCall
         └── onActing (per tool call)
 ```
+
+### Extension point participation (`activePoints()`)
+
+`MiddlewareBase.activePoints()` declares at which extension points the middleware is active. It is a **participation switch**, not a statement about which methods are overridden:
+
+| Declaration | Method overridden | Behavior |
+|-------------|-------------------|----------|
+| Point included | Yes | Participates normally |
+| Point included | No | Runs the default (pass-through) — legal redundancy |
+| Point omitted | Yes | The method is never invoked — an intentional opt-out |
+| Point omitted | No | The middleware does not exist at this point |
+
+Key semantics:
+
+- **Default is active everywhere.** Middlewares that do not override `activePoints()` keep today's behavior unchanged, including at extension points added in future releases.
+- **Overriding means taking over.** Once overridden, the active set is exactly the returned set. A point you forgot to declare is silently inactive even though its method is overridden.
+- **Empty set is legal.** `EnumSet.noneOf(ExtensionPoint.class)` disables the middleware at every point while keeping its registration — useful as a runtime switch.
+- **Frozen at construction.** The agent reads declarations once when it is built; later changes to the returned set have no effect on an already-built agent.
+- **Orthogonal to `order()`.** The declaration only answers *whether* a middleware participates at a point, never *in what order* — participants keep the usual `order()` semantics.
+
+```java
+import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
+
+MiddlewareBase timingOnly =
+        new MiddlewareBase() {
+            @Override
+            public Set<ExtensionPoint> activePoints() {
+                // Active only at onModelCall; skipped at every other point.
+                return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+            }
+        };
+```
+
+**Recommended practice:** define `activePoints()` accurately for every middleware you write. Precise declarations let the framework skip non-participants entirely — an extension point with no participants builds no wrapper at all (zero wrapper layers, no pipeline assembly), which keeps chains short and the effective execution plan visible at build time. Not declaring keeps the fully compatible default (active everywhere), so adding the declaration later never breaks behavior — it only narrows participation.
+
+The same applies when subclassing a built-in middleware: shipped classes declare exactly the points they hook, so a subclass that overrides an additional hook (e.g. adding `onModelCall` to `TaskReminderMiddleware`) must extend the inherited `activePoints()` — otherwise the new hook is silently skipped.
 
 ## Practical examples
 
@@ -394,9 +566,13 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 }
 ```
 
-:::{tip}
-For a simple primary→backup fallback, `ReActAgent.Builder` already exposes `fallbackModel(...)` and `maxRetries(...)` directly — no middleware needed.
-:::
+
+<Tip>
+
+For a simple primary→backup fallback, `ReActAgent.Builder` already exposes `fallbackModel(...)` and `maxRetries(...)` directly — no middleware needed. Observing the switch is the same story: it happens below the `onModelCall` seam, so use `ReActAgent.Builder.failoverListener(...)` rather than a middleware.
+
+</Tip>
+
 
 ### Stop agent when all tools are denied
 
