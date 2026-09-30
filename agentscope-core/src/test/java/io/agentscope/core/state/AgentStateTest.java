@@ -167,17 +167,16 @@ class AgentStateTest {
     }
 
     @Test
-    void updatePermissionContextReplacesAndIgnoresNull() {
+    void setPermissionContextReplacesAndRejectsNull() {
         AgentState state = AgentState.builder().sessionId("s").build();
         PermissionContextState original = state.getPermissionContext();
 
-        // Null is a silent no-op: the existing context is kept.
-        state.updatePermissionContext(null);
-        org.junit.jupiter.api.Assertions.assertSame(original, state.getPermissionContext());
+        org.junit.jupiter.api.Assertions.assertThrows(
+                NullPointerException.class, () -> state.setPermissionContext(null));
 
         PermissionContextState replacement =
                 PermissionContextState.builder().mode(PermissionMode.DONT_ASK).build();
-        state.updatePermissionContext(replacement);
+        state.setPermissionContext(replacement);
         org.junit.jupiter.api.Assertions.assertSame(replacement, state.getPermissionContext());
     }
 }

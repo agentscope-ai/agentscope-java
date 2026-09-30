@@ -149,9 +149,9 @@ public final class PermissionContextState {
         }
         Builder b = builder().mode(mode);
         workingDirectories.forEach(b::addWorkingDirectory);
-        allowRules.forEach((toolName, list) -> list.forEach(r -> b.addAllowRule(toolName, r)));
-        denyRules.forEach((toolName, list) -> list.forEach(r -> b.addDenyRule(toolName, r)));
-        askRules.forEach((toolName, list) -> list.forEach(r -> b.addAskRule(toolName, r)));
+        copyInto(allowRules, b::addAllowRule);
+        copyInto(denyRules, b::addDenyRule);
+        copyInto(askRules, b::addAskRule);
         for (PermissionRule rule : rules) {
             if (rule == null) {
                 continue;

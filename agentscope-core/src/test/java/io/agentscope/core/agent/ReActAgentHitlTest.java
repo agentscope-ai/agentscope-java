@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -1062,20 +1063,67 @@ class ReActAgentHitlTest {
                 store.get(null, "null-rules-asst", "agent_state", AgentState.class).orElse(null);
         assertNotNull(reloaded);
         assertTrue(
-                reloaded
+                reloaded.getPermissionContext()
+                        .getAllowRules()
+                        .getOrDefault("ask", List.of())
+                        .isEmpty(),
+                "no rule may be persisted when nothing was accepted");
+
+        // Re-confirm the identical rule: current semantics append (known
+        // growth, flagged for dedup); pin the persisted table state.
+        agent.call(
+                        List.of(
+                                confirmMsg(
+                                        List.of(
+                                                new ConfirmResult(
+                                                        true,
+                                                        pending,
+                                                        List.of(remembered),
+                                                        null)))))
+                .block();
+        // A stale re-confirm (the accepted call is ALLOWED, not ASKING) is
+        // rejected: no reply is produced and the persisted rule table does
+        // not grow.
+        assertNull(
+                agent.call(List.of(confirmMsg(true, pending))).block(),
+                "stale re-confirm must not produce a reply");
+
+        AgentState afterReconfirm =
+                store.get(null, "persist-asst", "agent_state", AgentState.class).orElse(null);
+        assertNotNull(afterReconfirm);
+        assertEquals(
+                1,
+                afterReconfirm
                         .getPermissionContext()
                         .getAllowRules()
                         .getOrDefault("ask", List.of())
-                        .stream()
-                        .noneMatch(r -> "sentinel".equals(r.ruleContent())),
-                "no rule must be persisted when nothing was accepted");
+                        .size(),
+                "stale re-confirm must not grow the persisted rule table");
 
-        // Call 3: same tool must now run without asking
-        Msg thirdResult = agent.call(List.of()).block();
-        assertNotNull(thirdResult);
+        // Cross-instance persistence: a second agent over the same store
+        // and slot rebuilds its engine from the persisted context, so the
+        // remembered rule suppresses the ask without any re-confirm.
+        ChatModelBase secondModel =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc2", "ask", "pong")),
+                                () -> Flux.just(textResponse("finally done"))));
+        ReActAgent secondAgent =
+                ReActAgent.builder()
+                        .name("persist-asst")
+                        .model(secondModel)
+                        .toolkit(toolkitWith(new AskingTool("ask")))
+                        .stateStore(store)
+                        .build();
+        Msg resumed = secondAgent.call(List.of()).block();
+        assertNotNull(resumed, "persisted rule must allow the tool to run");
         assertNotEquals(
                 GenerateReason.PERMISSION_ASKING,
-                thirdResult.getGenerateReason(),
+                resumed.getGenerateReason(),
                 "remembered rule must suppress the follow-up ask");
+        assertTrue(
+                resumed.getContentBlocks(TextBlock.class).stream()
+                        .anyMatch(b -> "finally done".equals(b.getText())),
+                "the allowed tool call must complete normally");
     }
 }

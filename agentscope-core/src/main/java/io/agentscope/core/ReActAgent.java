@@ -2152,7 +2152,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         // the stored permission context, so engine-only
                         // additions are lost (issue #3369).
                         if (!accepted.isEmpty()) {
-                            state.updatePermissionContext(
+                            state.setPermissionContext(
                                     state.getPermissionContext().withAddedRules(accepted));
                         }
                     }
