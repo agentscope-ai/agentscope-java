@@ -252,12 +252,23 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /** Observes agent / reasoning / model_call / system_prompt at the same time. */
 public class FullObservabilityMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(
+                ExtensionPoint.ON_AGENT,
+                ExtensionPoint.ON_REASONING,
+                ExtensionPoint.ON_MODEL_CALL,
+                ExtensionPoint.ON_SYSTEM_PROMPT);
+    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -383,6 +394,44 @@ onAgent
         │     └── onModelCall
         └── onActing (per tool call)
 ```
+
+### Extension point participation (`activePoints()`)
+
+`MiddlewareBase.activePoints()` declares at which extension points the middleware is active. It is a **participation switch**, not a statement about which methods are overridden:
+
+| Declaration | Method overridden | Behavior |
+|-------------|-------------------|----------|
+| Point included | Yes | Participates normally |
+| Point included | No | Runs the default (pass-through) — legal redundancy |
+| Point omitted | Yes | The method is never invoked — an intentional opt-out |
+| Point omitted | No | The middleware does not exist at this point |
+
+Key semantics:
+
+- **Default is active everywhere.** Middlewares that do not override `activePoints()` keep today's behavior unchanged, including at extension points added in future releases.
+- **Overriding means taking over.** Once overridden, the active set is exactly the returned set. A point you forgot to declare is silently inactive even though its method is overridden.
+- **Empty set is legal.** `EnumSet.noneOf(ExtensionPoint.class)` disables the middleware at every point while keeping its registration — useful as a runtime switch.
+- **Frozen at construction.** The agent reads declarations once when it is built; later changes to the returned set have no effect on an already-built agent.
+- **Orthogonal to `order()`.** The declaration only answers *whether* a middleware participates at a point, never *in what order* — participants keep the usual `order()` semantics.
+
+```java
+import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
+
+MiddlewareBase timingOnly =
+        new MiddlewareBase() {
+            @Override
+            public Set<ExtensionPoint> activePoints() {
+                // Active only at onModelCall; skipped at every other point.
+                return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+            }
+        };
+```
+
+**Recommended practice:** define `activePoints()` accurately for every middleware you write. Precise declarations let the framework skip non-participants entirely — an extension point with no participants builds no wrapper at all (zero wrapper layers, no pipeline assembly), which keeps chains short and the effective execution plan visible at build time. Not declaring keeps the fully compatible default (active everywhere), so adding the declaration later never breaks behavior — it only narrows participation.
+
+The same applies when subclassing a built-in middleware: shipped classes declare exactly the points they hook, so a subclass that overrides an additional hook (e.g. adding `onModelCall` to `TaskReminderMiddleware`) must extend the inherited `activePoints()` — otherwise the new hook is silently skipped.
 
 ## Practical examples
 

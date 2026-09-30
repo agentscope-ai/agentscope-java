@@ -252,12 +252,23 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /** 同时观察 agent / reasoning / model_call / system_prompt 四个位置。 */
 public class FullObservabilityMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(
+                ExtensionPoint.ON_AGENT,
+                ExtensionPoint.ON_REASONING,
+                ExtensionPoint.ON_MODEL_CALL,
+                ExtensionPoint.ON_SYSTEM_PROMPT);
+    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -383,6 +394,44 @@ onAgent
         │     └── onModelCall
         └── onActing（本轮每个工具调用一次）
 ```
+
+### 扩展点参与声明（`activePoints()`）
+
+`MiddlewareBase.activePoints()` 声明 middleware 在哪些扩展点处于激活状态。它是**参与开关**，不是对"覆写了哪些方法"的复述：
+
+| 声明       | 方法实现 | 行为                                     |
+| ---------- | -------- | ---------------------------------------- |
+| 包含该点   | 已覆写   | 正常参与                                 |
+| 包含该点   | 未覆写   | 调用默认实现（直通）——合法冗余           |
+| 不包含该点 | 已覆写   | 方法不会被调用——有意关闭，非错误         |
+| 不包含该点 | 未覆写   | 该 middleware 在此点不存在，链中不占位   |
+
+关键语义：
+
+- **默认全量激活。** 未覆写 `activePoints()` 的 middleware 保持与现状完全一致的行为，包括未来版本新增的扩展点。
+- **覆写即接管。** 一旦覆写，激活集合就是返回的集合本身；忘记声明的扩展点即使覆写了方法也不会生效。
+- **空集合合法。** `EnumSet.noneOf(ExtensionPoint.class)` 让 middleware 在所有扩展点失活，同时保留注册——可用作运行开关。
+- **构造期固化。** agent 构建时读取一次声明；之后修改返回的集合对已构建的 agent 无效。
+- **与 `order()` 正交。** 声明只回答"是否参与"，不回答"什么顺序"——各点参与者保持既有 `order()` 语义。
+
+```java
+import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
+
+MiddlewareBase timingOnly =
+        new MiddlewareBase() {
+            @Override
+            public Set<ExtensionPoint> activePoints() {
+                // 只在 onModelCall 激活，其余扩展点全部跳过。
+                return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+            }
+        };
+```
+
+**推荐实践：** 为你实现的每个 middleware 准确定义 `activePoints()`。精确声明让框架能整体跳过未参与者——某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），链更短，构建期的有效执行计划也更清晰。不声明则保持完全兼容的默认行为（全量激活），因此任何时候补充声明都不会破坏行为，只会收窄参与范围。
+
+继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 会被静默跳过。
 
 ## 实用示例
 
