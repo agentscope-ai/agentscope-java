@@ -30,6 +30,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
@@ -184,7 +185,7 @@ class SessionTranscriptWriterTest {
     }
 
     @Test
-    void resolveContextPath_omitsHostPathForSandboxFilesystem() {
+    void resolveContextPath_keepsRelativePathForSandboxFilesystem() {
         var filesystem =
                 OverlayFilesystem.of(
                         mock(SandboxBackedFilesystem.class), new LocalFilesystem(workspace));
@@ -192,7 +193,109 @@ class SessionTranscriptWriterTest {
             SessionTranscriptWriter writer = new SessionTranscriptWriter(wm);
 
             assertEquals(
+                    "agents/agent-a/sessions/session-1.jsonl",
+                    writer.resolveContextPath(RuntimeContext.empty(), "agent-a", "session-1"));
+        }
+    }
+
+    @Test
+    void resolveContextPath_hidesAbsoluteFallbackForSandboxFilesystem() {
+        Path outside = workspace.resolveSibling("outside-archive").resolve("session-1.jsonl");
+        var filesystem = mock(SandboxBackedFilesystem.class);
+        try (WorkspaceManager wm =
+                new WorkspaceManager(workspace, filesystem) {
+                    @Override
+                    public Path resolveSessionContextFile(
+                            RuntimeContext rc, String agentId, String sessionId) {
+                        return outside;
+                    }
+                }) {
+            SessionTranscriptWriter writer = new SessionTranscriptWriter(wm);
+
+            assertEquals(
                     "", writer.resolveContextPath(RuntimeContext.empty(), "agent-a", "session-1"));
+        }
+    }
+
+    @Test
+    void resolveContextPath_keepsRelativePathWhenSessionRouteIsNotSandbox() {
+        var filesystem =
+                new RoutedSandboxFilesystem(
+                        mock(SandboxBackedFilesystem.class),
+                        Map.of("agents/", new LocalFilesystem(workspace)));
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, filesystem)) {
+            SessionTranscriptWriter writer = new SessionTranscriptWriter(wm);
+
+            assertEquals(
+                    "agents/agent-a/sessions/session-1.jsonl",
+                    writer.resolveContextPath(RuntimeContext.empty(), "agent-a", "session-1"));
+        }
+    }
+
+    @Test
+    void resolveContextPath_keepsAbsoluteFallbackWhenSessionRouteIsNotSandbox() {
+        Path outside = workspace.resolveSibling("outside-archive").resolve("session-1.jsonl");
+        var filesystem =
+                new RoutedSandboxFilesystem(
+                        mock(SandboxBackedFilesystem.class),
+                        Map.of("agents/", new LocalFilesystem(workspace)));
+        try (WorkspaceManager wm =
+                new WorkspaceManager(workspace, filesystem) {
+                    @Override
+                    public Path resolveSessionContextFile(
+                            RuntimeContext rc, String agentId, String sessionId) {
+                        return outside;
+                    }
+                }) {
+            SessionTranscriptWriter writer = new SessionTranscriptWriter(wm);
+
+            assertEquals(
+                    outside.toString(),
+                    writer.resolveContextPath(RuntimeContext.empty(), "agent-a", "session-1"));
+        }
+    }
+
+    @Test
+    void resolveContextPath_hidesAbsoluteFallbackWhenSessionStaysOnSandboxPrimary() {
+        Path outside = workspace.resolveSibling("outside-archive").resolve("session-1.jsonl");
+        var filesystem =
+                new RoutedSandboxFilesystem(
+                        mock(SandboxBackedFilesystem.class),
+                        Map.of("memory-stores/", new LocalFilesystem(workspace)));
+        try (WorkspaceManager wm =
+                new WorkspaceManager(workspace, filesystem) {
+                    @Override
+                    public Path resolveSessionContextFile(
+                            RuntimeContext rc, String agentId, String sessionId) {
+                        return outside;
+                    }
+                }) {
+            SessionTranscriptWriter writer = new SessionTranscriptWriter(wm);
+
+            assertEquals(
+                    "", writer.resolveContextPath(RuntimeContext.empty(), "agent-a", "session-1"));
+        }
+    }
+
+    @Test
+    void resolveContextPath_keepsAbsoluteFallbackWhenOverlayUpperIsLocal() {
+        Path outside = workspace.resolveSibling("outside-archive").resolve("session-1.jsonl");
+        var filesystem =
+                new OverlayFilesystem(
+                        new LocalFilesystem(workspace), mock(SandboxBackedFilesystem.class));
+        try (WorkspaceManager wm =
+                new WorkspaceManager(workspace, filesystem) {
+                    @Override
+                    public Path resolveSessionContextFile(
+                            RuntimeContext rc, String agentId, String sessionId) {
+                        return outside;
+                    }
+                }) {
+            SessionTranscriptWriter writer = new SessionTranscriptWriter(wm);
+
+            assertEquals(
+                    outside.toString(),
+                    writer.resolveContextPath(RuntimeContext.empty(), "agent-a", "session-1"));
         }
     }
 

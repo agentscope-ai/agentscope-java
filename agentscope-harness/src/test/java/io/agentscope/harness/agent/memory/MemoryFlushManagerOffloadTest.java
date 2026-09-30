@@ -44,25 +44,46 @@ class MemoryFlushManagerOffloadTest {
     @TempDir Path workspace;
 
     @Test
-    void resolveOffloadPath_omitsHostPathForSandboxFilesystem() {
+    void resolveOffloadPath_keepsRelativePathForSandboxFilesystem() {
         SandboxBackedFilesystem filesystem = mock(SandboxBackedFilesystem.class);
         try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace, filesystem)) {
             MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, null);
 
             assertEquals(
-                    "",
+                    "agents/agent-a/sessions/session-1.jsonl",
                     flushManager.resolveOffloadPath(
                             RuntimeContext.empty(), "agent-a", "session-1"));
         }
     }
 
     @Test
-    void resolveOffloadPath_omitsHostPathForRoutedSandboxFilesystem() {
+    void resolveOffloadPath_keepsRelativePathWhenSessionRouteIsNotSandbox() {
         RoutedSandboxFilesystem filesystem =
                 new RoutedSandboxFilesystem(
                         mock(SandboxBackedFilesystem.class),
-                        Map.of("memory-stores/", new LocalFilesystem(workspace)));
+                        Map.of("agents/", new LocalFilesystem(workspace)));
         try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace, filesystem)) {
+            MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, null);
+
+            assertEquals(
+                    "agents/agent-a/sessions/session-1.jsonl",
+                    flushManager.resolveOffloadPath(
+                            RuntimeContext.empty(), "agent-a", "session-1"));
+        }
+    }
+
+    @Test
+    void resolveOffloadPath_hidesAbsoluteFallbackForSandboxFilesystem() {
+        Path outside = workspace.resolveSibling("outside-archive").resolve("session-1.jsonl");
+        SandboxBackedFilesystem filesystem = mock(SandboxBackedFilesystem.class);
+        try (WorkspaceManager workspaceManager =
+                new WorkspaceManager(workspace, filesystem) {
+                    @Override
+                    public Path resolveSessionContextFile(
+                            RuntimeContext rc, String agentId, String sessionId) {
+                        return outside;
+                    }
+                }) {
             MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, null);
 
             assertEquals(
