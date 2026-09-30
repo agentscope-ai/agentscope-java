@@ -441,6 +441,19 @@ A JSON file at the workspace root, read once during `build()`:
       "command": "python",
       "args": ["mcp_servers/my_server.py"],
       "env": {"PYTHONUNBUFFERED": "1"}
+    },
+    "untrusted-3p": {
+      // connection-level cut-off: no session metadata ever leaves the process
+      "transport": "http",
+      "url": "https://third-party.example.com/mcp",
+      "propagateMeta": false
+    },
+    "internal": {
+      // registration-level default, with a per-tool re-enable
+      "transport": "http",
+      "url": "https://internal.example.com/mcp",
+      "propagateMetaDefault": false,
+      "propagateMetaOverrides": {"send_callback": true}
     }
   }
 }
@@ -449,6 +462,7 @@ A JSON file at the workspace root, read once during `build()`:
 Behavior notes:
 
 - **MCP servers are registered into the toolkit once at build time**; the agent sees the tools they expose.
+- **Meta propagation to MCP servers is controlled by three optional fields**, mirroring the three-level switches of the core MCP client: `propagateMeta` (connection level — a deployment cut-off; core evaluates it live on every call, but Harness currently exposes no runtime handle to flip it, so treat it as build-time configuration), `propagateMetaDefault` (registration level — every tool from this server is registered silent by default), and `propagateMetaOverrides` (per tool — a tool name that is not registered from this server fails the registration loudly, so an override is never lost; a per-tool `true` cannot overrule a `false` connection-level switch). When all are absent, the core default applies (metadata is propagated).
 - **`allow` / `deny` are applied after every tool has been registered** — including Harness built-ins (`read_file` / `memory_search` / `agent_spawn` / …). **When you use `allow` to whitelist, list the built-ins you want to keep too**, otherwise they get filtered out alongside everything else.
 - `${ENV_VAR}` syntax substitutes environment variables; missing variables warn and substitute the empty string.
 - Don't want a file? Pass `builder.toolsConfig(ToolsConfig.builder()...)` directly, or fully disable reading with `disableToolsConfig()`.
