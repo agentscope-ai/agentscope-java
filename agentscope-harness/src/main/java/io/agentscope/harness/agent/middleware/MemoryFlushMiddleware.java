@@ -151,6 +151,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
         return EnumSet.of(ExtensionPoint.ON_AGENT);

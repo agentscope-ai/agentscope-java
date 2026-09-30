@@ -62,6 +62,7 @@ public final class GracefulShutdownMiddleware implements MiddlewareBase {
         this.manager = manager;
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
         return EnumSet.of(ExtensionPoint.ON_REASONING, ExtensionPoint.ON_ACTING);

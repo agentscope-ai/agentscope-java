@@ -431,6 +431,8 @@ MiddlewareBase timingOnly =
 
 **推荐实践：** 为你实现的每个 middleware 准确定义 `activePoints()`。精确声明让框架能整体跳过未参与者——某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），链更短，构建期的有效执行计划也更清晰。不声明则保持完全兼容的默认行为（全量激活），因此任何时候补充声明都不会破坏行为，只会收窄参与范围。
 
+继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 会被静默跳过。
+
 ## 实用示例
 
 ### 计时 middleware

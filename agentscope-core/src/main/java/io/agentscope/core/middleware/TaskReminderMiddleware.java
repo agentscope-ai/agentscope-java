@@ -66,6 +66,7 @@ public class TaskReminderMiddleware implements MiddlewareBase {
             block as the source of truth for task status.\
             """;
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
         return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT, ExtensionPoint.ON_REASONING);

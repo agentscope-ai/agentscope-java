@@ -45,6 +45,7 @@ import reactor.core.publisher.Flux;
  */
 public class FinalAnswerFilterMiddleware implements MiddlewareBase {
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
         return EnumSet.of(ExtensionPoint.ON_REASONING);

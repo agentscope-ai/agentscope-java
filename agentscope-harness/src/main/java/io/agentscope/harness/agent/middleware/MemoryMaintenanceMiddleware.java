@@ -137,6 +137,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         this(workspaceManager, consolidator, 90, 180, DEFAULT_MIN_GAP);
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
         return EnumSet.of(ExtensionPoint.ON_AGENT);

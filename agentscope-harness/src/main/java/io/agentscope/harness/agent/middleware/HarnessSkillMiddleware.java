@@ -215,6 +215,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         this.runtime.prepareToolkit(toolkit);
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
         return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);

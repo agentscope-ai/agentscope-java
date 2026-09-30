@@ -69,7 +69,10 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         this.filesystemProxy = filesystemProxy;
     }
 
-    /** Session lifecycle is driven explicitly by HarnessAgent; participates at no point. */
+    /**
+     * Session lifecycle is driven explicitly by HarnessAgent; participates at no point.
+     * Subclasses overriding hooks must re-declare.
+     */
     @Override
     public Set<ExtensionPoint> activePoints() {
         return EnumSet.noneOf(ExtensionPoint.class);

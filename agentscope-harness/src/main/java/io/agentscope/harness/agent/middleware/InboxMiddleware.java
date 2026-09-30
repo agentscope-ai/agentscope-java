@@ -81,6 +81,7 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
         this.staleTtl = staleTtl != null ? staleTtl : DEFAULT_STALE_TTL;
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
         return EnumSet.of(ExtensionPoint.ON_REASONING);

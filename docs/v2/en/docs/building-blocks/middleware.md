@@ -431,6 +431,8 @@ MiddlewareBase timingOnly =
 
 **Recommended practice:** define `activePoints()` accurately for every middleware you write. Precise declarations let the framework skip non-participants entirely — an extension point with no participants builds no wrapper at all (zero wrapper layers, no pipeline assembly), which keeps chains short and the effective execution plan visible at build time. Not declaring keeps the fully compatible default (active everywhere), so adding the declaration later never breaks behavior — it only narrows participation.
 
+The same applies when subclassing a built-in middleware: shipped classes declare exactly the points they hook, so a subclass that overrides an additional hook (e.g. adding `onModelCall` to `TaskReminderMiddleware`) must extend the inherited `activePoints()` — otherwise the new hook is silently skipped.
+
 ## Practical examples
 
 ### Timing middleware
