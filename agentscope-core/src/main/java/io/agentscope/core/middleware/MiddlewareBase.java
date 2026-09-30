@@ -18,12 +18,15 @@ package io.agentscope.core.middleware;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.state.AgentState;
+import java.util.List;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Middleware provides interception mechanisms at 5 key execution points
+ * Middleware provides interception mechanisms at 6 key execution points
  * in the Agent lifecycle.
  *
  * <p><b>Onion Pattern</b> (4 hooks — wrap execution with before/after logic):
@@ -39,8 +42,15 @@ import reactor.core.publisher.Mono;
  *   <li>{@link #onSystemPrompt} — transforms the system prompt string</li>
  * </ul>
  *
- * <p>Each hook has a default implementation that delegates directly to
- * {@code next}, so subclasses only need to override the hooks they care about.
+ * <p><b>Notification Pattern</b> (one-way synchronous notification, no {@code next}
+ * delegation):
+ * <ul>
+ *   <li>{@link #onAgentStateReady} — notified once this call's AgentState is ready</li>
+ * </ul>
+ *
+ * <p>Each onion/transformer hook has a default implementation that delegates
+ * directly to {@code next}, so subclasses only need to override the hooks they
+ * care about; {@link #onAgentStateReady} defaults to a no-op.
  *
  * <p><b>Example:</b>
  * <pre>{@code
@@ -158,4 +168,28 @@ public interface MiddlewareBase {
     default Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         return Mono.just(currentPrompt);
     }
+
+    /**
+     * Notified once per lifecycle execution (subscription), right after this call's
+     * {@link AgentState} is bound to the {@link RuntimeContext} — resolved from the
+     * {@code (userId, sessionId)} slot or freshly created for a brand-new session — and
+     * before the input enters the pipeline (memory, reasoning).
+     *
+     * <p>This is a one-way synchronous notification without {@code next} delegation:
+     * middlewares run in {@link #order()} sequence (higher first) and must be non-blocking —
+     * never re-enter the same session's agent, which would deadlock on its call gate. A
+     * thrown exception fails the call: it propagates to the caller unchanged and the
+     * remaining middlewares are not invoked.
+     *
+     * @param agent         the agent instance
+     * @param ctx           per-call runtime context (session, user, attributes)
+     * @param state         this call's just-ready state, same instance as
+     *                      {@code ctx.getAgentState()}, never {@code null}; a brand-new
+     *                      session starts with an empty context
+     * @param inputMessages this call's input (after {@code onAgent} middleware, not yet
+     *                      merged with memory) as a private mutable copy; in-place changes
+     *                      apply to the whole call, the caller's original list is unaffected
+     */
+    default void onAgentStateReady(
+            Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {}
 }

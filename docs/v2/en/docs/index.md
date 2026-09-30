@@ -159,7 +159,7 @@ Text, files, images, audio, video, thinking, tool results — all one `ContentBl
 <Card title="Middleware, not hooks" href="/v2/en/docs/building-blocks/middleware">
 
 
-Five stages (`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt`) replace v1's loose hooks. Each concern stays in its own layer and composes cleanly.
+Six stages (`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` / `onAgentStateReady`) replace v1's loose hooks. Each concern stays in its own layer and composes cleanly.
 
 </Card>
 

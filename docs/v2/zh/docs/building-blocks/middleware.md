@@ -8,7 +8,7 @@ en_link: /v2/en/docs/building-blocks/middleware
 
 Agent middleware 是在不修改 agent 或 model 代码的前提下，向 agent 执行流程中的关键位置注入自定义逻辑（日志、追踪、输入改写、访问控制等）的机制。
 
-AgentScope Java 中，可以在 5 个位置上设置 hook，覆盖了从外层 reply 流程一路下沉到底层模型 API 调用的全链路：
+AgentScope Java 中，可以在 6 个位置上设置 hook，覆盖了从外层 reply 流程一路下沉到底层模型 API 调用的全链路：
 
 | 位置 | 类型 | 说明 |
 |------|------|------|
@@ -17,16 +17,19 @@ AgentScope Java 中，可以在 5 个位置上设置 hook，覆盖了从外层 r
 | `onActing` | Onion | 包裹一次工具调用的执行 |
 | `onModelCall` | Onion | 包裹一次底层 `ChatModel` API 调用，最贴近模型 |
 | `onSystemPrompt` | Transformer | 在每次组装 system prompt 时触发；多个 middleware 串行接力，每一个把上一个的输出再做一次变换 |
+| `onAgentStateReady` | Notification | 每次调用触发一次：本次调用的 `AgentState` 就绪时——早于输入进入流水线（pre-call 钩子、记忆、推理） |
 
-两种类型的差别：
+三种类型的差别：
 
 - **Onion**（洋葱式）—— middleware 包裹下一层 handler，可以在 `next.apply(input)` 前后插入逻辑、观察中间事件流。
 - **Transformer**（变换式）—— middleware 之间串成流水线，前一个的输出作为后一个的输入，不存在「内层」概念。
+- **Notification**（通知式）—— 单向同步通知，没有 `next` 委托；多个 middleware 在固定的生命周期点位按序执行。
 
-下图展示这些 hook 在 agent 生命周期中的嵌套关系。`onSystemPrompt` 嵌入在 `onReasoning` 内部，因为它在 reasoning 步骤组装 system prompt 时被触发：
+下图展示这些 hook 在 agent 生命周期中的嵌套关系。`onSystemPrompt` 嵌入在 `onReasoning` 内部，因为它在 reasoning 步骤组装 system prompt 时被触发；`onAgentStateReady` 在本次调用的 `AgentState` 绑定到 `RuntimeContext` 之后、输入进入流水线之前触发：
 
 ```text
 onAgent/
+├── onAgentStateReady（call 级 AgentState 就绪，输入尚未进入流水线）
 └── ReAct loop（每一轮）/
     ├── onReasoning/
     │   ├── onSystemPrompt（组装 system prompt）
@@ -44,7 +47,7 @@ onAgent/
 
 ## 装备 Middleware
 
-AgentScope 把一组 hook 装在一个 `MiddlewareBase` 实现里 —— 同一个 middleware 类可以同时实现 5 个位置中任意子集的 hook（其余位置默认 `next.apply(input)`）。把实例传给 builder 的 `middlewares(...)` 即可装备：
+AgentScope 把一组 hook 装在一个 `MiddlewareBase` 实现里 —— 同一个 middleware 类可以同时实现 6 个位置中任意子集的 hook（未实现的 Onion / Transformer 位置默认 `next.apply(input)`；通知式位置默认不做任何事）。把实例传给 builder 的 `middlewares(...)` 即可装备：
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -255,10 +258,38 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 | `onActing` | `ActingInput` | `toolCalls: List<ToolUseBlock>` |
 | `onModelCall` | `ModelCallInput` | `messages`, `tools`, `options`, `model: Model` |
 | `onSystemPrompt` | `String` | 当前 prompt |
+| `onAgentStateReady` | —（直接参数） | `state: AgentState`, `inputMessages: List<Msg>` |
 
 需要替换流入下一层的字段时，构造一个新的 input record 后再调用 `next.apply(...)`。
 
 完整可运行示例：`agentscope-examples/documentation/.../middleware/CustomizedMiddlewareExample.java`、`middleware/ModelCallMiddlewareExample.java`、`middleware/SystemPromptMiddlewareExample.java`。
+
+### 状态就绪通知
+
+`onAgentStateReady` 是通知式 hook（没有 `next`）：每次调用同步触发一次，时点在 call 级 `AgentState` 绑定到 `RuntimeContext` 之后、输入进入流水线之前。`state` 与 `ctx.getAgentState()` 是同一实例且永不为 `null`——全新会话拿到的是刚创建、上下文为空的状态。`inputMessages` 是本次调用输入的私有可变副本：就地修改对本次调用全程生效，调用方原始列表不受影响。
+
+```java
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.state.AgentState;
+import java.util.List;
+
+/** 全新会话首次调用时在输入头部注入用户画像提示。 */
+public class SessionBootstrapMiddleware implements MiddlewareBase {
+
+    @Override
+    public void onAgentStateReady(
+            Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {
+        if (state.getContext().isEmpty()) {  // 冷启动：全新会话
+            inputMessages.add(0, loadUserProfilePrompt(ctx.getUserId()));
+        }
+    }
+}
+```
+
+实现必须非阻塞：通知在本次调用的订阅线程上同步执行（流式场景可能是 Reactor 事件循环线程）。触发以每次生命周期执行（订阅）为单位——冷流重订阅会再次触发。抛出的异常原样使本次调用失败，其后的 middleware 不再执行。未覆写该 hook 的 middleware 只是执行默认空调用；固定的开销仅为每次调用一次输入列表浅拷贝，它同时使调用方列表隔离无条件成立。
 
 ### 读取 RuntimeContext
 
@@ -330,10 +361,18 @@ middlewares = [mw1, mw2]
 // originalPrompt → mw1.onSystemPrompt() → mw2.onSystemPrompt() → final
 ```
 
+通知式 hook（`onAgentStateReady`）每次调用按 `order()` 顺序执行一遍——数值大者先执行，与洋葱链的进入方向一致：
+
+```
+middlewares = [mw1(order=2), mw2(order=1)]
+// onAgentStateReady：mw1 → mw2
+```
+
 一次 reply 中各 hook 的整体执行顺序遵循 agent 生命周期：
 
 ```
 onAgent
+  ├── onAgentStateReady（状态绑定到 RuntimeContext，早于输入进入流水线）
   └── 每一轮 ReAct：
         ├── onReasoning
         │     ├── prepare model input → onSystemPrompt
