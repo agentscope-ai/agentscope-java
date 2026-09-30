@@ -23,6 +23,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -237,6 +238,9 @@ public final class MarketplaceStager {
             try {
                 Map<String, String> resources = skill.getResources();
                 if (resources.isEmpty() && skill.getOriginDir().isPresent()) {
+                    // A rejected disk source may itself live in this cache. Failure must not
+                    // make the still-visible skill eligible for orphan GC in this pass.
+                    retained.add(stagedDir);
                     materializeFromOrigin(stagedDir, skill.getOriginDir().get());
                 } else {
                     materializeIfChanged(stagedDir, resources);
@@ -314,13 +318,17 @@ public final class MarketplaceStager {
     private void materializeFromOrigin(Path stagedDir, Path originDir) throws IOException {
         Path source = originDir.toRealPath();
         Path destination = stagedDir.toAbsolutePath().normalize();
-        if (destination.startsWith(source)
-                || source.startsWith(destination)
-                || destination.startsWith(originDir.toAbsolutePath().normalize())
-                || originDir.toAbsolutePath().normalize().startsWith(destination)) {
+        validateOriginTarget(destination);
+        // Resolve workspace/ancestor aliases without creating a potentially overlapping cache.
+        Path existingAncestor = destination;
+        while (!Files.exists(existingAncestor, LinkOption.NOFOLLOW_LINKS)) {
+            existingAncestor = existingAncestor.getParent();
+        }
+        Path realDestination =
+                existingAncestor.toRealPath().resolve(existingAncestor.relativize(destination));
+        if (realDestination.startsWith(source) || source.startsWith(realDestination)) {
             throw new IOException("Skill cache and source directory must not overlap");
         }
-        validateOriginTarget(destination);
         Files.createDirectories(destination);
         Set<Path> expected = new HashSet<>();
         Files.walkFileTree(

@@ -34,6 +34,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class MarketplaceStagerLazyTest {
     @TempDir Path temp;
@@ -176,8 +178,14 @@ class MarketplaceStagerLazyTest {
         Files.writeString(source.resolve("run.py"), "original");
         FileSystemSkillRepository repo =
                 new FileSystemSkillRepository(staged(), false, "fixture", true);
+        Files.setLastModifiedTime(staged(), FileTime.fromMillis(1000));
         assertEquals(StageResult.NONE, stage(repo, repo.getAllSkills().get(0)));
+        assertTrue(Files.exists(source.resolve("SKILL.md")));
         assertEquals("original", Files.readString(source.resolve("run.py")));
+
+        // Protection lasts only while the skill is visible; removed skills still age out.
+        new MarketplaceStager(temp.resolve("workspace")).stage(List.of(), Map.of(), "session");
+        assertFalse(Files.exists(staged()));
     }
 
     @Test
@@ -192,5 +200,91 @@ class MarketplaceStagerLazyTest {
         FileSystemSkillRepository repo = repository(true);
         assertEquals(StageResult.NONE, stage(repo, repo.getAllSkills().get(0)));
         assertFalse(Files.exists(outside.resolve("run.py")));
+    }
+
+    private Path aliasedWorkspace(Path workspace, boolean aliasParent) throws Exception {
+        return aliasParent
+                ? Files.createSymbolicLink(temp.resolve("alias"), workspace.getParent())
+                        .resolve(workspace.getFileName())
+                : Files.createSymbolicLink(temp.resolve("alias"), workspace);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void aliasedWorkspaceRejectsSourceInsideCacheWithoutDeletingFiles(boolean aliasParent)
+            throws Exception {
+        Path workspace = Files.createDirectories(temp.resolve("real-workspace")).toRealPath();
+        Path cache = workspace.resolve(".skills-cache/session/fixture/demo");
+        Path source = Files.createDirectories(cache.resolve("source"));
+        Files.writeString(
+                source.resolve("SKILL.md"), "---\nname: demo\ndescription: demo\n---\nbody\n");
+        Files.writeString(source.resolve("run.py"), "original");
+        FileSystemSkillRepository repo =
+                new FileSystemSkillRepository(cache, false, "fixture", true);
+        Files.setLastModifiedTime(cache, FileTime.fromMillis(1000));
+
+        StageResult result =
+                new MarketplaceStager(aliasedWorkspace(workspace, aliasParent))
+                        .stage(
+                                List.of(new RepoBound(repo.getAllSkills().get(0), repo)),
+                                Map.of(repo, "fixture"),
+                                "session")
+                        .get("demo");
+
+        assertEquals(StageResult.NONE, result);
+        assertTrue(Files.exists(source.resolve("SKILL.md")));
+        assertEquals("original", Files.readString(source.resolve("run.py")));
+        assertFalse(Files.exists(cache.resolve("run.py")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void aliasedWorkspaceRejectsCacheInsideSourceBeforeCreatingCache(boolean aliasParent)
+            throws Exception {
+        Path source = source().toRealPath();
+        Path workspace = Files.createDirectories(source.resolve("workspace"));
+        FileSystemSkillRepository repo = repository(true);
+
+        StageResult result =
+                new MarketplaceStager(aliasedWorkspace(workspace, aliasParent))
+                        .stage(
+                                List.of(new RepoBound(repo.getAllSkills().get(0), repo)),
+                                Map.of(repo, "fixture"),
+                                "session")
+                        .get("demo");
+
+        assertEquals(StageResult.NONE, result);
+        assertFalse(Files.exists(workspace.resolve(".skills-cache")));
+        assertTrue(Files.exists(source.resolve("SKILL.md")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void nonOverlappingAliasedWorkspaceCanCreateCache(boolean aliasParent) throws Exception {
+        Path source = source();
+        Files.writeString(source.resolve("run.py"), "original");
+        // With a parent alias even the workspace itself can be absent at staging time.
+        Path workspace = temp.resolve("real-workspace");
+        if (!aliasParent) {
+            Files.createDirectories(workspace);
+        }
+        FileSystemSkillRepository repo = repository(true);
+
+        StageResult result =
+                new MarketplaceStager(aliasedWorkspace(workspace, aliasParent))
+                        .stage(
+                                List.of(new RepoBound(repo.getAllSkills().get(0), repo)),
+                                Map.of(repo, "fixture"),
+                                "session")
+                        .get("demo");
+
+        assertInstanceOf(StageResult.Cached.class, result);
+        assertEquals(
+                "original",
+                Files.readString(workspace.resolve(".skills-cache/session/fixture/demo/run.py")));
+        assertEquals("original", Files.readString(source.resolve("run.py")));
     }
 }
