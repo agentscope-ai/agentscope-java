@@ -19,6 +19,7 @@ package io.agentscope.extensions.judge.jev.example;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ToolSchema;
@@ -51,17 +52,41 @@ import reactor.core.publisher.Mono;
  * the conversation grows. Tool sets larger than the Jev choice limit are chunked, each chunk's
  * winner is shortlisted, and the shortlist is reranked in a second request. When Jev fails and
  * {@code failOpen} is set (the default), the original tool list is kept.
+ *
+ * <p>The conversation state sent to Jev is controlled by {@link ContextStrategy}. The default,
+ * {@link ContextStrategy#RECENT_WINDOW}, sends only a bounded window of the most recent messages
+ * (capped by {@code maxContextMessages} and {@code maxContextChars}) instead of the complete
+ * conversation, keeping request payloads small on long-running agents.
  */
 public final class JevToolSelectionMiddleware implements MiddlewareBase {
 
     public static final Set<String> DEFAULT_ALWAYS_INCLUDE_TOOLS =
             Set.of("load_skill_through_path", "reset_tools", "generate_response");
 
+    /** Strategy for building the conversation state sent to Jev. */
+    public enum ContextStrategy {
+        /**
+         * Sends a bounded window of the most recent messages as {@code {role, text}} entries,
+         * capped by {@code maxContextMessages} and {@code maxContextChars}.
+         */
+        RECENT_WINDOW,
+        /**
+         * Sends only the latest user message as {@code userRequest}, mirroring {@link
+         * JevModelRouterMiddleware}.
+         */
+        LATEST_USER_MESSAGE,
+        /** Sends the complete message list (the behavior before {@code ContextStrategy} existed). */
+        FULL_CONVERSATION
+    }
+
     private final Function<SystemOneRequest, Mono<SystemOneResult>> jevCall;
     private final Set<String> alwaysIncludeTools;
     private final int maxTools;
     private final double confidenceThreshold;
     private final boolean failOpen;
+    private final ContextStrategy contextStrategy;
+    private final int maxContextMessages;
+    private final int maxContextChars;
 
     private JevToolSelectionMiddleware(Builder builder) {
         this.jevCall = builder.jevCall;
@@ -69,6 +94,9 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
         this.maxTools = builder.maxTools;
         this.confidenceThreshold = builder.confidenceThreshold;
         this.failOpen = builder.failOpen;
+        this.contextStrategy = builder.contextStrategy;
+        this.maxContextMessages = builder.maxContextMessages;
+        this.maxContextChars = builder.maxContextChars;
         validate();
     }
 
@@ -119,7 +147,8 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
             return next.apply(input);
         }
 
-        return selectTools(JevSelectionSupport.messagesState(input.messages()), optionalTools)
+        return Mono.fromCallable(() -> stateFor(input.messages(), userText))
+                .flatMap(state -> selectTools(state, optionalTools))
                 .onErrorResume(
                         error -> {
                             if (!failOpen) {
@@ -132,12 +161,44 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
                             if (selectedNames.isEmpty()) {
                                 return next.apply(input);
                             }
+                            List<ToolSchema> selected = filteredTools(tools, selectedNames);
+                            if (selected.isEmpty()) {
+                                if (!failOpen) {
+                                    return Flux.error(
+                                            new IllegalStateException(
+                                                    "Jev tool selection produced no usable"
+                                                            + " tools: "
+                                                            + selectedNames));
+                                }
+                                return next.apply(input);
+                            }
                             return next.apply(
                                     new ReasoningInput(
-                                            input.messages(),
-                                            filteredTools(tools, selectedNames),
-                                            input.options()));
+                                            input.messages(), selected, input.options()));
                         });
+    }
+
+    private Map<String, Object> stateFor(List<Msg> messages, String userText) {
+        return switch (contextStrategy) {
+            case LATEST_USER_MESSAGE -> JevSelectionSupport.userRequestState(userText);
+            case FULL_CONVERSATION -> JevSelectionSupport.messagesState(messages);
+            case RECENT_WINDOW ->
+                    JevSelectionSupport.recentWindowState(
+                            messages, maxContextMessages, maxContextChars);
+        };
+    }
+
+    private String selectionInstructions() {
+        return contextStrategy == ContextStrategy.LATEST_USER_MESSAGE
+                ? "Which tool, if any, is most useful for the user request in `userRequest`?"
+                : "Which tool, if any, is most useful for the current conversation in"
+                        + " `messages`?";
+    }
+
+    private String rerankInstructions() {
+        return contextStrategy == ContextStrategy.LATEST_USER_MESSAGE
+                ? "Which tool is most useful for the user request in `userRequest`?"
+                : "Which tool is most useful for the current conversation in `messages`?";
     }
 
     private Mono<Set<String>> selectTools(
@@ -150,8 +211,7 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
             questions.put(
                     "tools_" + i,
                     new ChoiceQuestion(
-                            "Which tool, if any, is most useful for the current conversation in"
-                                    + " `messages`?",
+                            selectionInstructions(),
                             JevSelectionSupport.toolCriteria(partitions.get(i))));
         }
 
@@ -179,20 +239,21 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
                                 return Mono.just(Set.of());
                             }
                             if (partitions.size() == 1) {
-                                ChoiceAnswer answer =
-                                        (ChoiceAnswer) result.answers().get("tools_0");
+                                Answer single = result.answers().get("tools_0");
+                                if (!(single instanceof ChoiceAnswer choice)) {
+                                    return Mono.just(Set.of());
+                                }
                                 return Mono.just(
                                         new LinkedHashSet<>(
                                                 JevSelectionSupport.selectedNames(
-                                                        answer, maxTools, confidenceThreshold)));
+                                                        choice, maxTools, confidenceThreshold)));
                             }
 
                             Map<String, Question> rerank = new LinkedHashMap<>();
                             rerank.put(
                                     "tools",
                                     new ChoiceQuestion(
-                                            "Which tool is most useful for the current conversation"
-                                                    + " in `messages`?",
+                                            rerankInstructions(),
                                             JevSelectionSupport.toolCriteria(shortlist)));
                             SystemOneRequest rerankRequest =
                                     SystemOneRequest.builder()
@@ -202,12 +263,13 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
                             return jevCall.apply(rerankRequest)
                                     .map(
                                             rerankResult -> {
-                                                ChoiceAnswer answer =
-                                                        (ChoiceAnswer)
-                                                                rerankResult.answers().get("tools");
+                                                Answer answer = rerankResult.answers().get("tools");
+                                                if (!(answer instanceof ChoiceAnswer choice)) {
+                                                    return Set.<String>of();
+                                                }
                                                 return new LinkedHashSet<>(
                                                         JevSelectionSupport.selectedNames(
-                                                                answer,
+                                                                choice,
                                                                 maxTools,
                                                                 confidenceThreshold));
                                             });
@@ -234,6 +296,15 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
         if (confidenceThreshold < 0 || confidenceThreshold > 1) {
             throw new IllegalArgumentException("confidenceThreshold must be between 0 and 1");
         }
+        if (contextStrategy == null) {
+            throw new IllegalArgumentException("contextStrategy must not be null");
+        }
+        if (maxContextMessages <= 0) {
+            throw new IllegalArgumentException("maxContextMessages must be positive");
+        }
+        if (maxContextChars <= 0) {
+            throw new IllegalArgumentException("maxContextChars must be positive");
+        }
     }
 
     public static final class Builder {
@@ -243,6 +314,9 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
         private int maxTools = 3;
         private double confidenceThreshold = 0.5;
         private boolean failOpen = true;
+        private ContextStrategy contextStrategy = ContextStrategy.RECENT_WINDOW;
+        private int maxContextMessages = 8;
+        private int maxContextChars = 8000;
 
         private Builder(Function<SystemOneRequest, Mono<SystemOneResult>> jevCall) {
             this.jevCall = jevCall;
@@ -268,6 +342,43 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
 
         public Builder failOpen(boolean failOpen) {
             this.failOpen = failOpen;
+            return this;
+        }
+
+        /**
+         * Selects how the conversation state sent to Jev is built. Defaults to {@link
+         * ContextStrategy#RECENT_WINDOW}.
+         *
+         * @param contextStrategy the strategy to use
+         * @return this builder
+         */
+        public Builder contextStrategy(ContextStrategy contextStrategy) {
+            this.contextStrategy = contextStrategy;
+            return this;
+        }
+
+        /**
+         * Maximum number of recent messages kept in the Jev request state when {@link
+         * ContextStrategy#RECENT_WINDOW} is active. Defaults to {@code 8}.
+         *
+         * @param maxContextMessages positive message count
+         * @return this builder
+         */
+        public Builder maxContextMessages(int maxContextMessages) {
+            this.maxContextMessages = maxContextMessages;
+            return this;
+        }
+
+        /**
+         * Total character budget for message text in the Jev request state when {@link
+         * ContextStrategy#RECENT_WINDOW} is active, counted from the newest message backwards.
+         * Defaults to {@code 8000}.
+         *
+         * @param maxContextChars positive character budget
+         * @return this builder
+         */
+        public Builder maxContextChars(int maxContextChars) {
+            this.maxContextChars = maxContextChars;
             return this;
         }
 

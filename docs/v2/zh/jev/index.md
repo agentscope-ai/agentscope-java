@@ -148,9 +148,14 @@ ReActAgent agent =
 - 在 `onReasoning` 阶段、模型调用前执行。
 - 默认保留 `load_skill_through_path`、`reset_tools` 和 `generate_response`。
 - 保留概率高于合成选项 `__none__` 的可选工具，最多保留 `maxTools` 个。
-- 每个 reasoning step 都会重新选择，并把完整 `input.messages()` 状态发给 Jev。
+- 每个 reasoning step 都会重新选择。发给 Jev 的会话状态默认是有界的：
+  `ContextStrategy.RECENT_WINDOW` 以 `{role, text}` 形式发送最近 `maxContextMessages` 条消息
+  （默认 8 条），文本总字符数不超过 `maxContextChars`（默认 8000）；
+  空文本消息会被跳过，不占用窗口名额；
+  `ContextStrategy.LATEST_USER_MESSAGE` 只发送最新一条用户消息；
+  `ContextStrategy.FULL_CONVERSATION` 恢复旧行为，发送完整 `input.messages()` 状态。
 - 超过 254 个工具时先分块，再对每块胜者重排。
-- `failOpen(true)` 时，Jev 失败则保留原始工具列表。
+- `failOpen(true)` 时，Jev 失败或会话状态构建异常则保留原始工具列表。
 
 ### 模型路由
 

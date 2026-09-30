@@ -149,9 +149,16 @@ Behavior:
 - Runs in `onReasoning`, before the model call.
 - Preserves `load_skill_through_path`, `reset_tools`, and `generate_response` by default.
 - Keeps optional tools whose probability is above the synthetic `__none__` option, up to `maxTools`.
-- Re-runs on every reasoning step and sends the full `input.messages()` state to Jev.
+- Re-runs on every reasoning step. The conversation state sent to Jev is bounded by default:
+  `ContextStrategy.RECENT_WINDOW` sends the newest `maxContextMessages` messages (8 by default)
+  as `{role, text}` entries, capped at `maxContextChars` characters in total (8000 by default);
+  blank-text messages are skipped and do not consume window slots.
+  `ContextStrategy.LATEST_USER_MESSAGE` sends only the latest user message, and
+  `ContextStrategy.FULL_CONVERSATION` restores the legacy behavior of sending the full
+  `input.messages()` state.
 - Chunks tool sets larger than 254 tools and reranks the chunk winners.
-- Falls back to the original tool list when Jev fails and `failOpen(true)` is set.
+- Falls back to the original tool list when Jev fails or conversation-state building errors and
+  `failOpen(true)` is set.
 
 ### Route models
 
