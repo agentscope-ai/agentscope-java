@@ -16,7 +16,6 @@
 package io.agentscope.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.Event;
@@ -137,7 +136,10 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -255,6 +257,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final ToolExecutionContext toolExecutionContext;
 
     private final List<MiddlewareBase> middlewares;
+
+    /**
+     * Per-extension-point participants, grouped once at construction from {@link #middlewares}
+     * (stable filter, onion order preserved). Immutable and shared across concurrent calls;
+     * later {@link MiddlewareBase#activePoints()} changes have no effect.
+     */
+    private final Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> groupedMiddlewares;
+
     private final boolean enablePendingToolRecovery;
 
     // ==================== Persistence ====================
@@ -342,6 +352,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         mws.add(new GracefulShutdownMiddleware(shutdownManager));
         mws.addAll(builder.middlewares);
         this.middlewares = List.copyOf(mws);
+        this.groupedMiddlewares = groupMiddlewares(this.middlewares);
 
         this.stateStore = builder.stateStore;
         this.conflictPolicy =
@@ -786,34 +797,46 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return callScope instanceof CallExecution ce ? ce.state : getAgentState();
     }
 
-    private Mono<String> applySystemPromptMiddlewares(String prompt, RuntimeContext ctx) {
-        if (middlewares.isEmpty()) {
-            return Mono.just(prompt);
-        }
-        boolean hasOverride = false;
+    /** Groups middlewares per extension point; {@code null} declarations count as full set. */
+    private static Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> groupMiddlewares(
+            List<MiddlewareBase> middlewares) {
+        Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> grouped =
+                new EnumMap<>(MiddlewareBase.ExtensionPoint.class);
         for (MiddlewareBase mw : middlewares) {
-            try {
-                if (mw.getClass()
-                                .getMethod(
-                                        "onSystemPrompt",
-                                        Agent.class,
-                                        RuntimeContext.class,
-                                        String.class)
-                                .getDeclaringClass()
-                        != MiddlewareBase.class) {
-                    hasOverride = true;
-                    break;
+            Set<MiddlewareBase.ExtensionPoint> active =
+                    Objects.requireNonNullElse(
+                            mw.activePoints(), EnumSet.allOf(MiddlewareBase.ExtensionPoint.class));
+            for (MiddlewareBase.ExtensionPoint point : MiddlewareBase.ExtensionPoint.values()) {
+                if (active.contains(point)) {
+                    grouped.computeIfAbsent(point, p -> new ArrayList<>()).add(mw);
                 }
-            } catch (NoSuchMethodException ignored) {
-                hasOverride = true;
-                break;
             }
         }
-        if (!hasOverride) {
+        grouped.replaceAll((point, participants) -> List.copyOf(participants));
+        return Collections.unmodifiableMap(grouped);
+    }
+
+    /**
+     * Returns the middlewares active at the given extension point, in onion-chain order.
+     *
+     * <p>The list is an immutable construction-time snapshot and is empty when no middleware
+     * participates at this point.
+     *
+     * @param point the extension point
+     * @return immutable participant list, never {@code null}
+     */
+    public List<MiddlewareBase> middlewaresAt(MiddlewareBase.ExtensionPoint point) {
+        return groupedMiddlewares.getOrDefault(point, List.of());
+    }
+
+    private Mono<String> applySystemPromptMiddlewares(String prompt, RuntimeContext ctx) {
+        List<MiddlewareBase> participants =
+                middlewaresAt(MiddlewareBase.ExtensionPoint.ON_SYSTEM_PROMPT);
+        if (participants.isEmpty()) {
             return Mono.just(prompt);
         }
         Mono<String> result = Mono.just(prompt);
-        for (MiddlewareBase mw : middlewares) {
+        for (MiddlewareBase mw : participants) {
             result = result.flatMap(p -> mw.onSystemPrompt(this, ctx, p));
         }
         return result;
@@ -1093,18 +1116,36 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     sink.onCancel(lifecycleDisposable);
                                 },
                                 FluxSink.OverflowStrategy.BUFFER);
-        return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
+        return MiddlewareChain.build(
+                        middlewaresAt(MiddlewareBase.ExtensionPoint.ON_AGENT),
+                        this,
+                        context,
+                        MiddlewareBase::onAgent,
+                        core)
                 .apply(new AgentInput(msgs == null ? List.of() : msgs));
     }
 
-    /** Prepare a single-use event execution handle without starting the call. */
+    /**
+     * Prepare a single-use event execution handle without starting the call. Adopts the context's
+     * runId ({@code run.runId() == ctx.getRunId()}). A null context is equivalent to {@link
+     * RuntimeContext#empty()} for the whole call chain — the reactive context always carries a
+     * (possibly empty) context.
+     */
     public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext context) {
-        return AgentRun.create(getAgentId(), () -> streamEvents(msgs, context));
+        RuntimeContext effective = context != null ? context : RuntimeContext.empty();
+        return AgentRun.create(
+                getAgentId(), effective.getRunId(), () -> streamEvents(msgs, effective));
     }
 
-    /** Prepare a single-use reply execution handle without starting the call. */
+    /**
+     * Prepare a single-use reply execution handle without starting the call. Adopts the context's
+     * runId ({@code run.runId() == ctx.getRunId()}). A null context is equivalent to {@link
+     * RuntimeContext#empty()} for the whole call chain — the reactive context always carries a
+     * (possibly empty) context.
+     */
     public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext context) {
-        return AgentRun.create(getAgentId(), () -> call(msgs, context));
+        RuntimeContext effective = context != null ? context : RuntimeContext.empty();
+        return AgentRun.create(getAgentId(), effective.getRunId(), () -> call(msgs, effective));
     }
 
     // ==================== streamEvents public API ====================
@@ -2462,7 +2503,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         ri.options());
                                 Flux<AgentEvent> stream =
                                         MiddlewareChain.build(
-                                                        middlewares,
+                                                        middlewaresAt(
+                                                                MiddlewareBase.ExtensionPoint
+                                                                        .ON_REASONING),
                                                         ReActAgent.this,
                                                         rc,
                                                         MiddlewareBase::onReasoning,
@@ -2622,7 +2665,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             StringBuilder transformedText = new StringBuilder();
             AtomicBoolean sawTransformedTextDelta = new AtomicBoolean(false);
             return MiddlewareChain.build(
-                            middlewares,
+                            middlewaresAt(MiddlewareBase.ExtensionPoint.ON_MODEL_CALL),
                             ReActAgent.this,
                             rc,
                             MiddlewareBase::onModelCall,
@@ -2737,7 +2780,48 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     toolName,
                                     tub.getContent()));
                 }
+            } else if (withToolEvents
+                    && block instanceof ToolResultBlock trb
+                    && trb.isServerTool()) {
+                blockLifecycle.flushServerToolCall(trb.getId(), events);
+                events.addAll(serverToolResultEvents(trb, blockLifecycle.replyId));
             }
+        }
+
+        /**
+         * Builds the complete tool-result lifecycle for a provider-executed tool result.
+         *
+         * <p>Only the server-tool marker is attached to events; the provider-specific raw result
+         * remains on the final message and is not duplicated into the event stream.
+         */
+        private List<AgentEvent> serverToolResultEvents(ToolResultBlock result, String replyId) {
+            String toolId = result.getId();
+            String toolName = result.getName();
+            Map<String, Object> eventMetadata = Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true);
+
+            List<AgentEvent> events = new ArrayList<>();
+            events.add(
+                    new ToolResultStartEvent(replyId, toolId, toolName)
+                            .withMetadata(eventMetadata));
+
+            for (ContentBlock block : result.getOutput()) {
+                if (block instanceof TextBlock tb) {
+                    events.add(
+                            new ToolResultTextDeltaEvent(replyId, toolId, toolName, tb.getText())
+                                    .withMetadata(eventMetadata));
+                } else {
+                    events.add(
+                            new ToolResultDataDeltaEvent(replyId, toolId, toolName, block)
+                                    .withMetadata(eventMetadata));
+                }
+            }
+
+            events.add(
+                    new ToolResultEndEvent(
+                                    replyId, toolId, toolName, determineToolResultState(result))
+                            .withMetadata(eventMetadata));
+
+            return events;
         }
 
         /**
@@ -2802,6 +2886,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             }
 
+            private void flushServerToolCall(String toolId, List<AgentEvent> events) {
+                String toolName = startedToolCalls.remove(toolId);
+                if (toolName != null) {
+                    events.add(new ToolCallEndEvent(replyId, toolId, toolName));
+                }
+            }
+
             private void flushText(List<AgentEvent> events) {
                 if (textStarted.compareAndSet(true, false)) {
                     String blockId = currentTextBlockId.getAndSet(null);
@@ -2858,6 +2949,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Mono<Msg> acting(int iter) {
             List<ToolUseBlock> pendingToolCalls =
                     MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
+            List<ToolUseBlock> roundToolCalls = extractRecentToolCalls();
 
             if (pendingToolCalls.isEmpty()) {
                 List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
@@ -2882,7 +2974,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         ai -> actingStream(ai.toolCalls(), replyId, resultHolder);
                                 Flux<AgentEvent> stream =
                                         MiddlewareChain.build(
-                                                        middlewares,
+                                                        middlewaresAt(
+                                                                MiddlewareBase.ExtensionPoint
+                                                                        .ON_ACTING),
                                                         ReActAgent.this,
                                                         rc,
                                                         MiddlewareBase::onActing,
@@ -2934,7 +3028,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
 
                                 boolean returnDirect =
-                                        pendingPairs.isEmpty()
+                                        pendingToolCalls.size() == roundToolCalls.size()
+                                                && pendingPairs.isEmpty()
                                                 && !successPairs.isEmpty()
                                                 && successPairs.stream()
                                                         .allMatch(this::isReturnDirectToolCall);
@@ -3963,7 +4058,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     mci -> summaryModelCallStream(context, mci, options);
 
             return MiddlewareChain.build(
-                            middlewares,
+                            middlewaresAt(MiddlewareBase.ExtensionPoint.ON_MODEL_CALL),
                             ReActAgent.this,
                             rc,
                             MiddlewareBase::onModelCall,
@@ -4096,7 +4191,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Check if the ReAct loop should terminate.
          *
-         * <p>A response with tool calls continues to the acting phase. A tool-free response
+         * <p>A response with unfinished or local tool calls continues to the acting phase.
+         * Completed server tool calls do not require local execution. A tool-free response
          * finishes only when it carries visible content: empty or thinking-only responses (the
          * entire answer in the reasoning channel) loop back to reasoning, bounded by {@code
          * maxIters}, instead of silently ending the agent with an empty reply.
@@ -4108,15 +4204,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (msg == null) {
                 return true;
             }
-
-            if (MessageUtils.hasToolCalls(msg)) {
-                return false;
+            List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
+            if (toolCalls.isEmpty()) {
+                return msg.getContentBlocks(TextBlock.class).stream()
+                        .anyMatch(
+                                textBlock ->
+                                        textBlock.getText() != null
+                                                && !textBlock.getText().isBlank());
             }
 
-            return msg.getContentBlocks(TextBlock.class).stream()
-                    .anyMatch(
-                            textBlock ->
-                                    textBlock.getText() != null && !textBlock.getText().isBlank());
+            // Server tool calls are executed by the provider and their results arrive in the
+            // same assistant message: if every tool call is a server tool with its result
+            // present, there is nothing left to act on. A server tool call without a result
+            // (e.g. pause_turn) keeps the loop running so the conversation goes back to the
+            // provider to continue.
+            Set<String> inlineResultIds = MessageUtils.inlineServerToolResultIds(msg);
+            return toolCalls.stream()
+                    .allMatch(
+                            toolCall ->
+                                    toolCall.isServerTool()
+                                            && inlineResultIds.contains(toolCall.getId()));
         }
 
         /**
@@ -4156,7 +4263,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             Flux<AgentEvent> stream =
                     MiddlewareChain.build(
-                                    middlewares,
+                                    middlewaresAt(MiddlewareBase.ExtensionPoint.ON_ACTING),
                                     ReActAgent.this,
                                     rc,
                                     MiddlewareBase::onActing,

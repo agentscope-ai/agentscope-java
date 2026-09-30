@@ -31,9 +31,11 @@ import io.agentscope.extensions.judge.jev.Question;
 import io.agentscope.extensions.judge.jev.SystemOneRequest;
 import io.agentscope.extensions.judge.jev.SystemOneResult;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -66,6 +68,12 @@ public final class JevModelRouterMiddleware implements MiddlewareBase {
         this.confidenceThreshold = builder.confidenceThreshold;
         this.failOpen = builder.failOpen;
         validate();
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_MODEL_CALL);
     }
 
     public static Builder builder(JevClient client) {
