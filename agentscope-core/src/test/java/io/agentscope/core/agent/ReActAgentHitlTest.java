@@ -44,9 +44,12 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -932,5 +935,68 @@ class ReActAgentHitlTest {
                 "Permission denied by user",
                 toolResultText(deniedResult),
                 "default denial text must be preserved for backward compatibility");
+    }
+
+    @Test
+    void confirmedRulesPersistAcrossCallsWithStateStore() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "ping")),
+                                () -> Flux.just(textResponse("done")),
+                                () -> Flux.just(toolUseResponse("tc2", "ask", "pong")),
+                                () -> Flux.just(textResponse("done again"))));
+        Toolkit toolkit = toolkitWith(new AskingTool("ask"));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("persist-asst")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        // Call 1: tool asks, call pauses with PERMISSION_ASKING
+        Msg firstResult = agent.call(List.of()).block();
+        assertNotNull(firstResult);
+        assertEquals(GenerateReason.PERMISSION_ASKING, firstResult.getGenerateReason());
+
+        // Call 2: confirm WITH a rule to remember ("always allow ask")
+        ToolUseBlock pending = firstResult.getContentBlocks(ToolUseBlock.class).get(0);
+        // Null ruleContent = unconditional match (ToolBase.matchRule
+        // convention); a real UI would use tool.generateSuggestions(input).
+        PermissionRule remembered =
+                new PermissionRule("ask", null, PermissionBehavior.ALLOW, "user_confirm");
+        Msg secondResult =
+                agent.call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                pending,
+                                                                List.of(remembered),
+                                                                null)))))
+                        .block();
+        assertNotNull(secondResult);
+
+        // The accepted rule must reach the persisted session state: the next
+        // call rebuilds the engine from the stored permission context, so an
+        // engine-only addition would be lost (issue #3369).
+        AgentState saved =
+                store.get(null, "persist-asst", "agent_state", AgentState.class).orElse(null);
+        assertNotNull(saved, "agent state must be persisted");
+        Map<String, List<PermissionRule>> allowRules = saved.getPermissionContext().getAllowRules();
+        assertTrue(
+                allowRules.getOrDefault("ask", List.of()).contains(remembered),
+                "accepted rule must be persisted into the permission context");
+
+        // Call 3: same tool must now run without asking
+        Msg thirdResult = agent.call(List.of()).block();
+        assertNotNull(thirdResult);
+        assertNotEquals(
+                GenerateReason.PERMISSION_ASKING,
+                thirdResult.getGenerateReason(),
+                "remembered rule must suppress the follow-up ask");
     }
 }

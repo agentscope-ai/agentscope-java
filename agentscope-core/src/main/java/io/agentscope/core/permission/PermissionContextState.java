@@ -132,6 +132,42 @@ public final class PermissionContextState {
         return askRules;
     }
 
+    /**
+     * Returns a copy of this context with the given rules appended to the
+     * matching behavior tables. Used to persist runtime-accepted rules
+     * (e.g. from a {@link io.agentscope.core.event.ConfirmResult}) into the
+     * session's {@code AgentState} so they survive across calls. Null
+     * entries and PASSTHROUGH rules are ignored; this instance is never
+     * mutated.
+     *
+     * @param rules rules to append; may be null or empty
+     * @return a new context containing this context's rules plus {@code rules}
+     */
+    public PermissionContextState withAddedRules(List<PermissionRule> rules) {
+        if (rules == null || rules.isEmpty()) {
+            return this;
+        }
+        Builder b = builder().mode(mode);
+        workingDirectories.forEach(b::addWorkingDirectory);
+        allowRules.forEach((toolName, list) -> list.forEach(r -> b.addAllowRule(toolName, r)));
+        denyRules.forEach((toolName, list) -> list.forEach(r -> b.addDenyRule(toolName, r)));
+        askRules.forEach((toolName, list) -> list.forEach(r -> b.addAskRule(toolName, r)));
+        for (PermissionRule rule : rules) {
+            if (rule == null) {
+                continue;
+            }
+            switch (rule.behavior()) {
+                case ALLOW -> b.addAllowRule(rule.toolName(), rule);
+                case DENY -> b.addDenyRule(rule.toolName(), rule);
+                case ASK -> b.addAskRule(rule.toolName(), rule);
+                case PASSTHROUGH -> {
+                    // PASSTHROUGH rules are not persisted.
+                }
+            }
+        }
+        return b.build();
+    }
+
     public static Builder builder() {
         return new Builder();
     }

@@ -210,6 +210,19 @@ public final class AgentState implements State {
     }
 
     /**
+     * Replaces the persisted permission context. Used by the agent to merge
+     * runtime-accepted permission rules (from {@link io.agentscope.core.event.ConfirmResult})
+     * into the session state so they survive across calls; the next
+     * {@code save} persists the merged tables.
+     *
+     * @param permissionContext the new context; must not be null
+     */
+    public void updatePermissionContext(PermissionContextState permissionContext) {
+        this.permissionContext =
+                permissionContext == null ? this.permissionContext : permissionContext;
+    }
+
+    /**
      * Replaces the permission context for this session. Used to change the evaluation mode at
      * runtime (e.g. switching into {@link io.agentscope.core.permission.PermissionMode#BYPASS}).
      * Callers that cache a {@code PermissionEngine} per session must rebuild it after this call.
