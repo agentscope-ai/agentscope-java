@@ -1,5 +1,6 @@
 ---
 title: "Managed 工作原理与执行生命周期"
+en_link: /v2/en/service/managed-agent-execution
 ---
 
 <Note>

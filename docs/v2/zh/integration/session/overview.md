@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v2/en/integration/session/overview
 ---
 
 <Note>
@@ -23,7 +24,7 @@ title: 概览
 | `InMemoryAgentStateStore` | `agentscope-core` | 单元测试 |
 | `JsonFileAgentStateStore` | `agentscope-core` | 单机开发（**HarnessAgent 默认**） |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | [多副本生产首选](/v2/zh/integration/distributed/redis) |
-| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | [已有数据库的场景](/v2/zh/integration/distributed/mysql) |
+| `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | [已有数据库的场景](/v2/zh/integration/distributed/jdbc) |
 | `OssAgentStateStore` | `agentscope-extensions-oss` | [阿里云生态](/v2/zh/integration/distributed/oss) |
 
 ## 单独配置
@@ -39,5 +40,5 @@ ReActAgent agent = ReActAgent.builder()
 详细用法和代码示例请参阅各后端的文档：
 
 - [Redis](/v2/zh/integration/distributed/redis#1-redisagentstatestore)
-- [MySQL](/v2/zh/integration/distributed/mysql#1-mysqlagentstatestore)
+- [JDBC](/v2/zh/integration/distributed/jdbc#1-jdbcagentstatestore)
 - [OSS](/v2/zh/integration/distributed/oss#1-ossagentstatestore)

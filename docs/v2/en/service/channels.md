@@ -1,5 +1,6 @@
 ---
 title: "Message events: Channel integration and routing"
+zh_link: /v2/zh/service/channels
 ---
 
 <Note>

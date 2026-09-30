@@ -1,5 +1,6 @@
 ---
 title: 工具
+en_link: /v1/en/docs/harness/tool
 ---
 
 ## 作用

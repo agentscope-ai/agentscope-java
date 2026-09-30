@@ -755,9 +755,10 @@ public class PostgresAgentStateStore implements AgentStateStore {
         if (sessionId == null || sessionId.trim().isEmpty()) {
             throw new IllegalArgumentException("AgentStateStore ID cannot be null or empty");
         }
-        if (sessionId.contains("/") || sessionId.contains("\\")) {
-            throw new IllegalArgumentException("AgentStateStore ID cannot contain path separators");
-        }
+        // Path separators are allowed: the slot id is only ever bound as a PreparedStatement
+        // parameter here, never used as a filesystem path, and SessionSandboxStateStore
+        // legitimately generates slash-separated slot ids ("sandbox/session/<id>") — rejecting
+        // them silently dropped all sandbox resume state (#3231).
         if (sessionId.length() > 255) {
             throw new IllegalArgumentException("AgentStateStore ID cannot exceed 255 characters");
         }

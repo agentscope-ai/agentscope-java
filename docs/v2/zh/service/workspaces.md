@@ -1,5 +1,6 @@
 ---
 title: "Workspaces：共享指令与能力文件"
+en_link: /v2/en/service/workspaces
 ---
 
 <Note>

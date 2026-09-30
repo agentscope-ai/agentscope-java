@@ -21,6 +21,9 @@ public final class SessionEventTypes {
     private SessionEventTypes() {}
 
     // ---- Agent (persisted) ----
+    /** Announces the exact SDK execution id for targeted cancellation. */
+    public static final String SESSION_RUN_STARTED = "session.run_started";
+
     public static final String AGENT_MESSAGE = "agent.message";
     public static final String AGENT_THINKING = "agent.thinking";
     public static final String AGENT_TOOL_USE = "agent.tool_use";

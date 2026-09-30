@@ -1,6 +1,7 @@
 ---
 title: "Engineering: from GitHub Issue to merged PR"
 description: "Use an all-Hosted Team for analysis, implementation, review, CI, rework, and approval."
+zh_link: /v2/zh/service/cases/sdlc-team
 ---
 
 <Note>

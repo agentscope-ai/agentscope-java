@@ -17,9 +17,11 @@ package io.agentscope.extensions.model.ollama.formatter;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.ollama.dto.OllamaFunction;
 import io.agentscope.extensions.model.ollama.dto.OllamaMessage;
@@ -48,12 +50,17 @@ public class OllamaResponseParser {
 
         List<ContentBlock> contentBlocks = new ArrayList<>();
 
-        // 1. Handle Text Content
+        // 1. Handle Thinking Content (thinking models with the `think` option enabled)
+        if (msg != null && msg.getThinking() != null && !msg.getThinking().isEmpty()) {
+            contentBlocks.add(ThinkingBlock.builder().thinking(msg.getThinking()).build());
+        }
+
+        // 2. Handle Text Content
         if (msg != null && msg.getContent() != null && !msg.getContent().isEmpty()) {
             contentBlocks.add(TextBlock.builder().text(msg.getContent()).build());
         }
 
-        // 2. Handle Tool Calls
+        // 3. Handle Tool Calls
         if (msg != null) {
             List<OllamaToolCall> toolCalls = msg.getToolCalls();
             if (toolCalls != null && !toolCalls.isEmpty()) {
@@ -66,6 +73,9 @@ public class OllamaResponseParser {
                         // If Ollama doesn't provide ID, we generate a random UUID to satisfy
                         // AgentScope requirement.
                         String callId = UUID.randomUUID().toString();
+                        if (!ToolValidator.requireNonBlank("Ollama", fn.getName(), callId)) {
+                            continue;
+                        }
 
                         // Convert input to JSON string for validation in ToolExecutor
                         // For tools with no parameters, input will be null or an empty map {}
@@ -82,7 +92,7 @@ public class OllamaResponseParser {
             }
         }
 
-        // 3. Map Usage
+        // 4. Map Usage
         int inputTokens = response.getPromptEvalCount() != null ? response.getPromptEvalCount() : 0;
         int outputTokens = response.getEvalCount() != null ? response.getEvalCount() : 0;
         int cachedTokens =
@@ -100,7 +110,7 @@ public class OllamaResponseParser {
                         .time(time)
                         .build();
 
-        // 4. Map Metadata
+        // 5. Map Metadata
         Map<String, Object> metadata = new HashMap<>();
         if (response.getModel() != null) metadata.put("model", response.getModel());
         if (response.getCreatedAt() != null) metadata.put("created_at", response.getCreatedAt());

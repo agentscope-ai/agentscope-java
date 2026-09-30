@@ -52,9 +52,8 @@ class SkillPromoterTest {
     @BeforeEach
     void setUp() {
         fs = new LocalFilesystem(workspace);
-        draftsRepo =
-                new WorkspaceSkillRepository(fs, "skills/_drafts", RuntimeContext::empty, "drafts");
-        mainRepo = new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty, "main");
+        draftsRepo = new WorkspaceSkillRepository(fs, "skills/_drafts", "drafts");
+        mainRepo = new WorkspaceSkillRepository(fs, "skills", "main");
         workspaceManager = new WorkspaceManager(workspace, fs);
         store = new SkillUsageStore(fs);
     }
@@ -217,10 +216,8 @@ class SkillPromoterTest {
         LocalFilesystem userFs =
                 new LocalFilesystem(workspace, false, 64, IsolationScope.USER.toNamespaceFactory());
         WorkspaceSkillRepository userDrafts =
-                new WorkspaceSkillRepository(
-                        userFs, "skills/_drafts", RuntimeContext::empty, "drafts");
-        WorkspaceSkillRepository userMain =
-                new WorkspaceSkillRepository(userFs, "skills", RuntimeContext::empty, "main");
+                new WorkspaceSkillRepository(userFs, "skills/_drafts", "drafts");
+        WorkspaceSkillRepository userMain = new WorkspaceSkillRepository(userFs, "skills", "main");
         WorkspaceManager userWorkspaceManager = new WorkspaceManager(workspace, userFs);
         RuntimeContext alice =
                 RuntimeContext.builder().userId("alice").sessionId("session-a").build();
@@ -278,10 +275,8 @@ class SkillPromoterTest {
         LocalFilesystem userFs =
                 new LocalFilesystem(workspace, false, 64, IsolationScope.USER.toNamespaceFactory());
         WorkspaceSkillRepository userDrafts =
-                new WorkspaceSkillRepository(
-                        userFs, "skills/_drafts", RuntimeContext::empty, "drafts");
-        WorkspaceSkillRepository userMain =
-                new WorkspaceSkillRepository(userFs, "skills", RuntimeContext::empty, "main");
+                new WorkspaceSkillRepository(userFs, "skills/_drafts", "drafts");
+        WorkspaceSkillRepository userMain = new WorkspaceSkillRepository(userFs, "skills", "main");
         WorkspaceManager userWorkspaceManager = new WorkspaceManager(workspace, userFs);
         RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
 

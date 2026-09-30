@@ -2,6 +2,7 @@
 title: Context Compaction
 description: Keep the conversation within the model's token budget without losing
   critical information
+zh_link: /v2/zh/docs/harness/compaction
 ---
 
 <Note>
@@ -51,7 +52,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-`read_file` / `write_file` / `edit_file` / `list_files` / `memory_*` / `session_search` are excluded by default — they either self-paginate or return tiny payloads. `grep_files` and `glob_files` enforce result-count limits, but remain eligible for eviction as a second safety net when individual matches are unusually large. **Shell `execute` is deliberately NOT excluded** because command output can be arbitrarily large.
+`read_file` / `write_file` / `edit_file` / `memory_search` / `memory_get` / `session_search` are excluded by default — they either self-paginate or return tiny payloads. `grep_files` and `glob_files` enforce result-count limits, but remain eligible for eviction as a second safety net when individual matches are unusually large. **Shell `execute` is deliberately NOT excluded** because command output can be arbitrarily large.
 
 Details in [Memory — Large tool-result offloading](/v2/en/docs/harness/memory#large-tool-result-offloading).
 

@@ -3,6 +3,7 @@ title: Going to Production
 description: 'From single-node prototype to multi-replica deployment: component selection
   and configuration for the Agent State Store, Filesystem, Skill, Sandbox, Snapshot,
   and Observability'
+zh_link: /v2/zh/docs/others/going-to-production
 ---
 
 > Running a `HarnessAgent` on your laptop is easy. Shipping it to production is another story — replicas must share sessions, users must stay isolated, untrusted code must be sandboxed, and pods must be able to resume mid-conversation after a restart. This page only covers what **changes between single-node and distributed production**: which components must be swapped, what to swap them with, and why the builder throws `IllegalStateException` when you miss something.
@@ -302,7 +303,7 @@ Sandboxes are ephemeral by default — the next `call()` may land on a different
 | `LocalSnapshotSpec(Path)` | local directory `tar` files | `agentscope-harness` | single-node debugging |
 | `OssSnapshotSpec` | Alibaba Cloud OSS | `agentscope-extensions-oss` | **large objects first choice**; natural fit for object storage |
 | `RedisSnapshotSpec` | Redis | `agentscope-extensions-redis` | small workspaces + short TTL (watch Redis memory cost) |
-| `JdbcSnapshotSpec` | MySQL / JDBC BLOB | `agentscope-extensions-mysql` | existing relational DB, no extra middleware |
+| `JdbcSnapshotSpec` | JDBC BLOB | `agentscope-extensions-jdbc` | existing relational DB, no extra middleware |
 | Custom `RemoteSnapshotClient` → `RemoteSnapshotSpec` | S3 / GCS / MinIO | — | anything not in the built-in list |
 
 ```java

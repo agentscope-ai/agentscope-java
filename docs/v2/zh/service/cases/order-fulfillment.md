@@ -1,6 +1,7 @@
 ---
 title: "企业业务：订单履约异常处理"
 description: "将多个 AgentScope 应用组成 External Team，跨订单、库存、物流和售后系统协同处置。"
+en_link: /v2/en/service/cases/order-fulfillment
 ---
 
 <Note>

@@ -1,5 +1,6 @@
 ---
 title: "Team 协作：委派、汇总与扩展"
+en_link: /v2/en/service/team-collaboration
 ---
 
 <Note>

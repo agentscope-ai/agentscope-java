@@ -1,5 +1,6 @@
 ---
 title: 配置参考
+en_link: /v2/en/service/configuration
 ---
 
 <Note>

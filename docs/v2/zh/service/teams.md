@@ -1,5 +1,6 @@
 ---
 title: "Team：概览与创建"
+en_link: /v2/en/service/teams
 ---
 
 <Note>

@@ -1,5 +1,6 @@
 ---
 title: 基础设施
+en_link: /v2/en/integration/infrastructure/index
 ---
 
 选择下方指南，了解基础设施的配置与使用。

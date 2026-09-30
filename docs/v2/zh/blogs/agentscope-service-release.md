@@ -1,5 +1,6 @@
 ---
 title: AgentScope Service 发布
+en_link: /v2/en/blogs/agentscope-service-release
 ---
 
 今天，社区正式推出了 **AgentScope Service** — 基于 AgentScope Harness 构建的 Agent 管控与治理平台，为企业提供统一的控制面与治理中心！

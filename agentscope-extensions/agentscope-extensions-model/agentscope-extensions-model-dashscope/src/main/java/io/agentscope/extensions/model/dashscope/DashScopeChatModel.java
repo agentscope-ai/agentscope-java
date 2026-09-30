@@ -288,9 +288,10 @@ public class DashScopeChatModel extends ChatModelBase {
         List<DashScopeMessage> dashScopeMessages;
         if (useMultimodal) {
             if (formatter instanceof DashScopeChatFormatter chatFormatter) {
-                dashScopeMessages = chatFormatter.formatMultiModal(messages);
+                dashScopeMessages = chatFormatter.formatMultiModal(messages, effectiveOptions);
             } else if (formatter instanceof DashScopeMultiAgentFormatter multiAgentFormatter) {
-                dashScopeMessages = multiAgentFormatter.formatMultiModal(messages);
+                dashScopeMessages =
+                        multiAgentFormatter.formatMultiModal(messages, effectiveOptions);
             } else {
                 throw new IllegalStateException(
                         "DashScope vision models require DashScopeChatFormatter or"
@@ -298,7 +299,7 @@ public class DashScopeChatModel extends ChatModelBase {
                                 + formatter.getClass().getName());
             }
         } else {
-            dashScopeMessages = formatter.format(messages);
+            dashScopeMessages = formatter.format(messages, effectiveOptions);
         }
 
         // Build request using formatter
@@ -326,15 +327,6 @@ public class DashScopeChatModel extends ChatModelBase {
 
         // Apply thinking mode if enabled
         applyThinkingMode(request, effectiveOptions);
-
-        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
-        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())) {
-            if (formatter instanceof DashScopeChatFormatter chatFmt) {
-                chatFmt.applyCacheControl(request.getInput().getMessages());
-            } else if (formatter instanceof DashScopeMultiAgentFormatter multiFmt) {
-                multiFmt.applyCacheControl(request.getInput().getMessages());
-            }
-        }
 
         // Set endpoint type for endpoint selection
         request.setEndpointType(endpointType);

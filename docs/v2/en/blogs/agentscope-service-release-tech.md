@@ -1,5 +1,6 @@
 ---
 title: 'AgentScope Service Explained: Control Plane, Data Plane & Recoverable Runtime'
+zh_link: /v2/zh/blogs/agentscope-service-release-tech
 ---
 
 If the launch announcement answers "what AgentScope Service can do," this post focuses on "how it is built." We will walk through the product resource model, plane boundaries, the Turn lifecycle, the Brain / Hands split, the Session event contract, and multi-framework integration paths to explain the system design behind the platform.

@@ -385,15 +385,24 @@ class PostgresAgentStateStoreTest {
     }
 
     @Test
-    void rejectsSessionIdWithPathSeparators() {
+    void acceptsSandboxShapedSessionIds() throws SQLException {
+        // Regression for #3231: SessionSandboxStateStore generates slash-separated slot ids
+        // ("sandbox/session/<id>", "sandbox/user/<agentId>/<id>"); they are opaque bind values
+        // here, not paths, and used to be rejected — silently dropping sandbox resume state.
         PostgresAgentStateStore store =
                 PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> store.save("user", "a/b", "key", new TestState("v")));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> store.save("user", "a\\b", "key", new TestState("v")));
+
+        store.save(null, "sandbox/session/01M31AQP7A24X0Y4A12RKADD5P", "key", new TestState("v1"));
+        store.save(
+                null,
+                "sandbox/user/agent-7/01M31AQP7A24X0Y4A12RKADD5P",
+                "key",
+                new TestState("v2"));
+
+        verify(preparedStatement)
+                .setString(1, "__anon__:sandbox/session/01M31AQP7A24X0Y4A12RKADD5P");
+        verify(preparedStatement)
+                .setString(1, "__anon__:sandbox/user/agent-7/01M31AQP7A24X0Y4A12RKADD5P");
     }
 
     @Test
