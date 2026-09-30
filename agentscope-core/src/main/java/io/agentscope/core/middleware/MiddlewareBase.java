@@ -221,6 +221,13 @@ public interface MiddlewareBase {
      * thrown exception fails the call: it propagates to the caller unchanged and the
      * remaining middlewares are not invoked.
      *
+     * <p>Lifecycle window: the notification runs after this call has been admitted and
+     * registered for interruption, but before the request-state binding, the tracing
+     * envelope, and the error-event chain are in place. An interrupt issued while the
+     * notification runs is honored; a thrown exception, however, reaches the caller
+     * directly without ErrorEvent hooks or tracing spans — keep implementations
+     * non-blocking and fast-failing.
+     *
      * @param agent         the agent instance
      * @param ctx           per-call runtime context (session, user, attributes)
      * @param state         this call's just-ready state, same instance as

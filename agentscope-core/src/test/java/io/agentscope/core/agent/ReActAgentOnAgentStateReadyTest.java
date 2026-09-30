@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -42,8 +43,11 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
@@ -52,6 +56,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /** Behavior tests for the {@link MiddlewareBase#onAgentStateReady} notification hook. */
 @DisplayName("ReActAgent onAgentStateReady middleware notification")
@@ -390,5 +395,43 @@ class ReActAgentOnAgentStateReadyTest {
         assertEquals("sA", stateBySession.get("sA").getSessionId());
         assertEquals("sB", stateBySession.get("sB").getSessionId());
         assertNotSame(stateBySession.get("sA"), stateBySession.get("sB"));
+    }
+
+    @Test
+    @DisplayName("an interrupt issued during the notification window is honored, not dropped")
+    void interruptDuringNotificationWindowIsHonored() throws Exception {
+        CountDownLatch hookEntered = new CountDownLatch(1);
+        CountDownLatch releaseHook = new CountDownLatch(1);
+        MiddlewareBase blocker =
+                new MiddlewareBase() {
+                    @Override
+                    public void onAgentStateReady(
+                            Agent agent, RuntimeContext ctx, AgentState state, List<Msg> input) {
+                        hookEntered.countDown();
+                        try {
+                            releaseHook.await(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                };
+        ReActAgent agent = baseBuilder(new CapturingModel()).middleware(blocker).build();
+
+        CompletableFuture<Msg> future =
+                agent.call(List.of(new UserMessage("hello")), rc("u9", "s9"))
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+
+        assertTrue(
+                hookEntered.await(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS),
+                "notification should start");
+        agent.interrupt("u9", "s9");
+        releaseHook.countDown();
+
+        Msg reply = future.get(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        assertEquals(
+                GenerateReason.INTERRUPTED,
+                reply.getGenerateReason(),
+                "interrupt during the notification window must be honored");
     }
 }

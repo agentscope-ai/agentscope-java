@@ -50,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -357,6 +358,8 @@ class MiddlewareActivePointsTest {
     @Test
     void stateReadyParticipantsRunAndUndeclaredOnesDoNot() {
         List<String> trace = new ArrayList<>();
+        AtomicReference<AgentState> stateParam = new AtomicReference<>();
+        AtomicReference<AgentState> boundAtNotify = new AtomicReference<>();
         MiddlewareBase participant =
                 new MiddlewareBase() {
                     @Override
@@ -371,6 +374,8 @@ class MiddlewareActivePointsTest {
                             AgentState state,
                             List<Msg> inputMessages) {
                         trace.add("participant:onAgentStateReady");
+                        stateParam.set(state);
+                        boundAtNotify.set(ctx.getAgentState());
                     }
                 };
         MiddlewareBase overriddenButUndeclared =
@@ -395,6 +400,8 @@ class MiddlewareActivePointsTest {
         agent.streamEvents(List.of()).collectList().block();
 
         assertEquals(List.of("participant:onAgentStateReady"), trace);
+        assertNotNull(boundAtNotify.get(), "state must already be bound to the RuntimeContext");
+        assertSame(stateParam.get(), boundAtNotify.get(), "param state is ctx.getAgentState()");
     }
 
     @Test
