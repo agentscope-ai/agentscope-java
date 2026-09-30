@@ -163,7 +163,8 @@ public abstract class AgentBase implements Agent {
      * @param description Agent description
      * @param hooks List of hooks for monitoring/intercepting execution
      * @param agentId explicit agent id; see {@link #normalizeAgentId(String)}. Blank falls back
-     *     to a random UUID. Should be unique among live agents.
+     *     to a random UUID. Leave null unless ids are managed externally — uniqueness among live
+     *     agents is the caller's responsibility and is not enforced by the framework.
      * @throws IllegalArgumentException if a non-blank agentId is invalid
      */
     public AgentBase(String name, String description, List<Hook> hooks, String agentId) {

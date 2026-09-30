@@ -1749,6 +1749,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * via the inner agent. When unset, {@link #build()} falls back to {@link #name(String)}
          * for the namespace key and the inner agent keeps its generated UUID. Format contract:
          * {@link AgentBase#normalizeAgentId(String)}, validated at {@code build()} time.
+         *
+         * <p>You normally do not need to set this — the generated UUID is unique by default. Only
+         * set it when ids are managed externally (e.g. stable namespace paths across restarts),
+         * and then uniqueness is your responsibility: it is not enforced by the framework, so
+         * keep the id unique among live agents at all times; duplicates can collide in filesystem
+         * namespaces, state storage, and message routing.
          */
         public Builder agentId(String agentId) {
             this.agentId = agentId;
