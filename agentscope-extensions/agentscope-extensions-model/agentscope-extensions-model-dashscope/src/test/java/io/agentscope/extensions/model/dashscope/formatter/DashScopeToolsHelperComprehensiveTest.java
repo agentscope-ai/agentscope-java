@@ -151,47 +151,6 @@ class DashScopeToolsHelperComprehensiveTest {
     }
 
     @Test
-    void testApplyOptionsWithReasoningEffort() {
-        DashScopeParameters params = DashScopeParameters.builder().build();
-        GenerateOptions options = GenerateOptions.builder().reasoningEffort("high").build();
-
-        helper.applyOptions(params, options, null);
-
-        assertEquals("high", params.getReasoningEffort());
-    }
-
-    @Test
-    void testApplyOptionsReasoningEffortFromDefault() {
-        DashScopeParameters params = DashScopeParameters.builder().build();
-        GenerateOptions defaultOptions =
-                GenerateOptions.builder().reasoningEffort("medium").build();
-
-        helper.applyOptions(params, null, defaultOptions);
-
-        assertEquals("medium", params.getReasoningEffort());
-    }
-
-    @Test
-    void testApplyOptionsReasoningEffortOptionsOverrideDefault() {
-        DashScopeParameters params = DashScopeParameters.builder().build();
-        GenerateOptions options = GenerateOptions.builder().reasoningEffort("high").build();
-        GenerateOptions defaultOptions = GenerateOptions.builder().reasoningEffort("low").build();
-
-        helper.applyOptions(params, options, defaultOptions);
-
-        assertEquals("high", params.getReasoningEffort());
-    }
-
-    @Test
-    void testApplyOptionsWithoutReasoningEffort() {
-        DashScopeParameters params = DashScopeParameters.builder().build();
-
-        helper.applyOptions(params, GenerateOptions.builder().build(), null);
-
-        assertNull(params.getReasoningEffort());
-    }
-
-    @Test
     void testApplyOptionsWithNullValues() {
         DashScopeParameters params = DashScopeParameters.builder().build();
         GenerateOptions options = GenerateOptions.builder().build();

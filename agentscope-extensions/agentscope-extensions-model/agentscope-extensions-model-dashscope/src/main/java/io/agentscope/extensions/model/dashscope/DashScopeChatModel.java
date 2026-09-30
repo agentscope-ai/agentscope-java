@@ -379,16 +379,6 @@ public class DashScopeChatModel extends ChatModelBase {
                         + ".defaultOptions(GenerateOptions.builder().thinkingBudget(1000).build())");
         }
 
-        if (options.getReasoningEffort() != null && !Boolean.TRUE.equals(enableThinking)) {
-            throw new IllegalStateException(
-                    "reasoningEffort is set but enableThinking is not enabled. To use reasoning"
-                            + " effort control, you must explicitly enable thinking by calling"
-                            + " .enableThinking(true) on the model builder. Example:"
-                            + " DashScopeChatModel.builder().enableThinking(true)"
-                            + ".defaultOptions(GenerateOptions.builder().reasoningEffort(\"high\")"
-                            + ".build())");
-        }
-
         if (enableThinking != null) {
             // Explicitly assign value for thinking mode
             request.getParameters().setEnableThinking(enableThinking);
