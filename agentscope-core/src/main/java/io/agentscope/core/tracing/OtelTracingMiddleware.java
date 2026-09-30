@@ -33,6 +33,7 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
+import java.util.EnumSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -100,6 +101,12 @@ public class OtelTracingMiddleware implements MiddlewareBase {
                 }
             }
         }
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(
+                ExtensionPoint.ON_AGENT, ExtensionPoint.ON_MODEL_CALL, ExtensionPoint.ON_ACTING);
     }
 
     private Tracer getTracer() {

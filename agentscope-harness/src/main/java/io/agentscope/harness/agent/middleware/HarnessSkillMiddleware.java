@@ -35,10 +35,12 @@ import io.agentscope.harness.agent.skill.runtime.SkillCatalog;
 import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -211,6 +213,11 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
                                 new LinkedHashMap<>(mergeRepositories(RuntimeContext.empty())))
                         : null;
         this.runtime.prepareToolkit(toolkit);
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
     /** Visible for tests / introspection. */

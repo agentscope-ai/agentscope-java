@@ -21,6 +21,7 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.harness.agent.skill.curator.SkillUsageStore;
+import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -57,6 +58,11 @@ public class SkillUsageMiddleware implements HarnessRuntimeMiddleware {
 
     public SkillUsageMiddleware(SkillUsageStore usageStore) {
         this.usageStore = java.util.Objects.requireNonNull(usageStore, "usageStore");
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_ACTING);
     }
 
     @Override

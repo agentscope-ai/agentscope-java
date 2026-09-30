@@ -32,6 +32,8 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -133,6 +135,11 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager, MemoryConsolidator consolidator) {
         this(workspaceManager, consolidator, 90, 180, DEFAULT_MIN_GAP);
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
     }
 
     @Override
