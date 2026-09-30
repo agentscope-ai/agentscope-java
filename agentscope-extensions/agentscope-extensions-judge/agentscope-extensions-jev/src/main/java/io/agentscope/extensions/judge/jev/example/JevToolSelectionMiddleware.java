@@ -30,6 +30,7 @@ import io.agentscope.extensions.judge.jev.Question;
 import io.agentscope.extensions.judge.jev.SystemOneRequest;
 import io.agentscope.extensions.judge.jev.SystemOneResult;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -69,6 +70,12 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
         this.confidenceThreshold = builder.confidenceThreshold;
         this.failOpen = builder.failOpen;
         validate();
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_REASONING);
     }
 
     public static Builder builder(JevClient client) {

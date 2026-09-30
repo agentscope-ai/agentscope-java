@@ -16,7 +16,6 @@
 package io.agentscope.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.Event;
@@ -137,7 +136,10 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -255,6 +257,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final ToolExecutionContext toolExecutionContext;
 
     private final List<MiddlewareBase> middlewares;
+
+    /**
+     * Per-extension-point participants, grouped once at construction from {@link #middlewares}
+     * (stable filter, onion order preserved). Immutable and shared across concurrent calls;
+     * later {@link MiddlewareBase#activePoints()} changes have no effect.
+     */
+    private final Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> groupedMiddlewares;
+
     private final boolean enablePendingToolRecovery;
 
     // ==================== Persistence ====================
@@ -342,6 +352,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         mws.add(new GracefulShutdownMiddleware(shutdownManager));
         mws.addAll(builder.middlewares);
         this.middlewares = List.copyOf(mws);
+        this.groupedMiddlewares = groupMiddlewares(this.middlewares);
 
         this.stateStore = builder.stateStore;
         this.conflictPolicy =
@@ -801,34 +812,46 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return callScope instanceof CallExecution ce ? ce.state : getAgentState();
     }
 
-    private Mono<String> applySystemPromptMiddlewares(String prompt, RuntimeContext ctx) {
-        if (middlewares.isEmpty()) {
-            return Mono.just(prompt);
-        }
-        boolean hasOverride = false;
+    /** Groups middlewares per extension point; {@code null} declarations count as full set. */
+    private static Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> groupMiddlewares(
+            List<MiddlewareBase> middlewares) {
+        Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> grouped =
+                new EnumMap<>(MiddlewareBase.ExtensionPoint.class);
         for (MiddlewareBase mw : middlewares) {
-            try {
-                if (mw.getClass()
-                                .getMethod(
-                                        "onSystemPrompt",
-                                        Agent.class,
-                                        RuntimeContext.class,
-                                        String.class)
-                                .getDeclaringClass()
-                        != MiddlewareBase.class) {
-                    hasOverride = true;
-                    break;
+            Set<MiddlewareBase.ExtensionPoint> active =
+                    Objects.requireNonNullElse(
+                            mw.activePoints(), EnumSet.allOf(MiddlewareBase.ExtensionPoint.class));
+            for (MiddlewareBase.ExtensionPoint point : MiddlewareBase.ExtensionPoint.values()) {
+                if (active.contains(point)) {
+                    grouped.computeIfAbsent(point, p -> new ArrayList<>()).add(mw);
                 }
-            } catch (NoSuchMethodException ignored) {
-                hasOverride = true;
-                break;
             }
         }
-        if (!hasOverride) {
+        grouped.replaceAll((point, participants) -> List.copyOf(participants));
+        return Collections.unmodifiableMap(grouped);
+    }
+
+    /**
+     * Returns the middlewares active at the given extension point, in onion-chain order.
+     *
+     * <p>The list is an immutable construction-time snapshot and is empty when no middleware
+     * participates at this point.
+     *
+     * @param point the extension point
+     * @return immutable participant list, never {@code null}
+     */
+    public List<MiddlewareBase> middlewaresAt(MiddlewareBase.ExtensionPoint point) {
+        return groupedMiddlewares.getOrDefault(point, List.of());
+    }
+
+    private Mono<String> applySystemPromptMiddlewares(String prompt, RuntimeContext ctx) {
+        List<MiddlewareBase> participants =
+                middlewaresAt(MiddlewareBase.ExtensionPoint.ON_SYSTEM_PROMPT);
+        if (participants.isEmpty()) {
             return Mono.just(prompt);
         }
         Mono<String> result = Mono.just(prompt);
-        for (MiddlewareBase mw : middlewares) {
+        for (MiddlewareBase mw : participants) {
             result = result.flatMap(p -> mw.onSystemPrompt(this, ctx, p));
         }
         return result;
@@ -1108,7 +1131,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     sink.onCancel(lifecycleDisposable);
                                 },
                                 FluxSink.OverflowStrategy.BUFFER);
-        return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
+        return MiddlewareChain.build(
+                        middlewaresAt(MiddlewareBase.ExtensionPoint.ON_AGENT),
+                        this,
+                        context,
+                        MiddlewareBase::onAgent,
+                        core)
                 .apply(new AgentInput(msgs == null ? List.of() : msgs));
     }
 
@@ -2490,7 +2518,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         ri.options());
                                 Flux<AgentEvent> stream =
                                         MiddlewareChain.build(
-                                                        middlewares,
+                                                        middlewaresAt(
+                                                                MiddlewareBase.ExtensionPoint
+                                                                        .ON_REASONING),
                                                         ReActAgent.this,
                                                         rc,
                                                         MiddlewareBase::onReasoning,
@@ -2650,7 +2680,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             StringBuilder transformedText = new StringBuilder();
             AtomicBoolean sawTransformedTextDelta = new AtomicBoolean(false);
             return MiddlewareChain.build(
-                            middlewares,
+                            middlewaresAt(MiddlewareBase.ExtensionPoint.ON_MODEL_CALL),
                             ReActAgent.this,
                             rc,
                             MiddlewareBase::onModelCall,
@@ -2959,7 +2989,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         ai -> actingStream(ai.toolCalls(), replyId, resultHolder);
                                 Flux<AgentEvent> stream =
                                         MiddlewareChain.build(
-                                                        middlewares,
+                                                        middlewaresAt(
+                                                                MiddlewareBase.ExtensionPoint
+                                                                        .ON_ACTING),
                                                         ReActAgent.this,
                                                         rc,
                                                         MiddlewareBase::onActing,
@@ -4041,7 +4073,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     mci -> summaryModelCallStream(context, mci, options);
 
             return MiddlewareChain.build(
-                            middlewares,
+                            middlewaresAt(MiddlewareBase.ExtensionPoint.ON_MODEL_CALL),
                             ReActAgent.this,
                             rc,
                             MiddlewareBase::onModelCall,
@@ -4246,7 +4278,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             Flux<AgentEvent> stream =
                     MiddlewareChain.build(
-                                    middlewares,
+                                    middlewaresAt(MiddlewareBase.ExtensionPoint.ON_ACTING),
                                     ReActAgent.this,
                                     rc,
                                     MiddlewareBase::onActing,
