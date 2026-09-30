@@ -156,7 +156,7 @@ class ToolExecutor {
 
     /**
      * Execute a single tool call (core execution only: Tracer + {@link #executeCore};
-     * no scheduling, timeout, retry, or shutdown guard). Use
+     * no scheduling, timeout, retry, shutdown guard, or id/name stamping). Use
      * {@link #executeWithInfrastructure(ToolCallParam, ExecutionConfig)} for the full-infrastructure path.
      *
      * @param param Tool call parameters
@@ -459,8 +459,8 @@ class ToolExecutor {
      * guard), and stamps the result with the tool call's id/name.
      *
      * <p>This overload is used by the batch path ({@link #executeAll(List, boolean,
-     * ExecutionConfig, Agent, RuntimeContext)}) where only the tool use block, agent, and
-     * runtime context are available.
+     * ExecutionConfig, Agent, RuntimeContext)}), which routes each {@link ToolUseBlock} with
+     * the infrastructure config, per-call request config, and chunk callback.
      */
     Mono<ToolResultBlock> executeWithInfrastructure(
             ToolUseBlock toolCall,
