@@ -129,6 +129,48 @@ class FinalAnswerFilterMiddlewareTest {
     }
 
     @Test
+    void childToolEventCannotClearUnflushedParentText() {
+        ToolCallStartEvent childToolCall =
+                (ToolCallStartEvent)
+                        new ToolCallStartEvent(REPLY_ID, "child-tool", "search")
+                                .withSource("parent/worker")
+                                .withMetadataEntry(AgentEvent.METADATA_TASK_ID, "child-task");
+
+        List<AgentEvent> events =
+                apply(
+                        Flux.just(
+                                new ModelCallStartEvent(REPLY_ID),
+                                new TextBlockDeltaEvent(REPLY_ID, "text", "parent answer"),
+                                childToolCall,
+                                new ModelCallEndEvent(REPLY_ID, (ChatUsage) null)));
+
+        assertTrue(
+                textDeltas(events).stream()
+                        .anyMatch(delta -> "parent answer".equals(delta.getDelta())));
+        assertTrue(events.contains(childToolCall));
+    }
+
+    @Test
+    void taskIdOnlyChildEventsAlsoBypassParentReplyTracker() {
+        ToolCallStartEvent childToolCall =
+                (ToolCallStartEvent)
+                        new ToolCallStartEvent(REPLY_ID, "child-tool", "search")
+                                .withMetadataEntry(AgentEvent.METADATA_TASK_ID, "child-task");
+
+        List<AgentEvent> events =
+                apply(
+                        Flux.just(
+                                new ModelCallStartEvent(REPLY_ID),
+                                new TextBlockDeltaEvent(REPLY_ID, "text", "parent answer"),
+                                childToolCall,
+                                new ModelCallEndEvent(REPLY_ID, (ChatUsage) null)));
+
+        assertTrue(
+                textDeltas(events).stream()
+                        .anyMatch(delta -> "parent answer".equals(delta.getDelta())));
+    }
+
+    @Test
     void stateIsolatedAcrossSubscriptions() {
         AtomicInteger subscriptionCount = new AtomicInteger();
         Flux<AgentEvent> events =

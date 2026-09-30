@@ -348,6 +348,51 @@ class AguiAgentAdapterV2Test {
             assertEquals(1, agent.getSeenMessages().size());
             assertTrue(events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageContent));
         }
+
+        @Test
+        void textOutputDispositionConfigIsAppliedToHarnessStreams() {
+            HarnessAgent agent = new HarnessAgent();
+            Msg result =
+                    AssistantMessage.builder()
+                            .id("reply-harness")
+                            .content(TextBlock.builder().text("answer").build())
+                            .generateReason(GenerateReason.MODEL_STOP)
+                            .build();
+            agent.setEvents(
+                    Flux.just(
+                            new AgentStartEvent("thread-v2", "run-v2", "harness"),
+                            new ModelCallStartEvent("reply-harness"),
+                            new TextBlockDeltaEvent("reply-harness", "block-1", "answer"),
+                            new AgentResultEvent(result),
+                            new AgentEndEvent("reply-harness")));
+
+            List<AguiEvent> disabled =
+                    new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                            .run(input())
+                            .collectList()
+                            .block();
+            assertNotNull(disabled);
+            assertFalse(disabled.stream().anyMatch(AguiEvent.Custom.class::isInstance));
+
+            List<AguiEvent> enabled =
+                    new AguiAgentAdapter(
+                                    agent,
+                                    AguiAdapterConfig.builder()
+                                            .textOutputDispositionEnabled(true)
+                                            .build())
+                            .run(input())
+                            .collectList()
+                            .block();
+            assertNotNull(enabled);
+            assertTrue(
+                    enabled.stream()
+                            .filter(AguiEvent.Custom.class::isInstance)
+                            .map(AguiEvent.Custom.class::cast)
+                            .anyMatch(
+                                    event ->
+                                            "agentscope.text_output.disposition"
+                                                    .equals(event.name())));
+        }
     }
 
     @Nested

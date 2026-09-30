@@ -59,6 +59,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -96,12 +97,6 @@ public class AguiMessageConverter {
         MsgRole role = convertRole(aguiMessage.getRole());
         List<ContentBlock> blocks = new ArrayList<>();
 
-        if (aguiMessage.isToolMessage()
-                && (aguiMessage.getToolCallId() == null || aguiMessage.getToolCallId().isBlank())) {
-            throw new IllegalArgumentException(
-                    "AG-UI tool messages must carry toolCallId to wrap their content blocks");
-        }
-
         // Handle content: plain text or structured blocks
         MessageContent content = aguiMessage.getContent();
         if (content instanceof MessageContent.Text text) {
@@ -116,7 +111,7 @@ public class AguiMessageConverter {
                         ToolResultBlock.builder()
                                 .id(aguiMessage.getToolCallId())
                                 .output(structuredBlocks)
-                                .state(ToolResultState.SUCCESS)
+                                .state(resolveToolResultState(aguiMessage))
                                 .build());
             } else {
                 blocks.addAll(structuredBlocks);
@@ -331,7 +326,7 @@ public class AguiMessageConverter {
                     ToolResultBlock.builder()
                             .id(aguiMessage.getToolCallId())
                             .output(TextBlock.builder().text(resultText).build())
-                            .state(ToolResultState.SUCCESS)
+                            .state(resolveToolResultState(aguiMessage))
                             .build());
             return;
         }
@@ -339,6 +334,30 @@ public class AguiMessageConverter {
             return;
         }
         blocks.add(TextBlock.builder().text(text).build());
+    }
+
+    /**
+     * Resolve an optional AG-UI tool status while retaining the historical default.
+     *
+     * <p>AG-UI tool messages traditionally have no status field, so omitted or unknown values are
+     * treated as successful completed results. New clients can send the optional {@code status}
+     * extension to preserve error, interrupted, or denied outcomes.
+     */
+    private ToolResultState resolveToolResultState(AguiMessage aguiMessage) {
+        String status = aguiMessage.getStatus();
+        if (status == null || status.isBlank()) {
+            return ToolResultState.SUCCESS;
+        }
+        try {
+            return ToolResultState.valueOf(status.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            for (ToolResultState state : ToolResultState.values()) {
+                if (state.getValue().equalsIgnoreCase(status.trim())) {
+                    return state;
+                }
+            }
+            return ToolResultState.SUCCESS;
+        }
     }
 
     /**

@@ -62,6 +62,14 @@ class RemoteEventCodecTest {
                 RemoteEventCodec.fromAgentEvent(new AgentEndEvent(null));
         assertTrue(endDto.isPresent());
         assertEquals(RemoteEventType.RUN_FINISHED, endDto.get().getType());
+
+        AgentEndEvent endBack =
+                assertInstanceOf(
+                        AgentEndEvent.class,
+                        RemoteEventCodec.toAgentEvent(endDto.get()).orElseThrow());
+        assertEquals(
+                AgentEndEvent.OUTCOME_SUCCESS,
+                endBack.getMetadata().get(AgentEndEvent.METADATA_INVOCATION_OUTCOME));
     }
 
     @Test

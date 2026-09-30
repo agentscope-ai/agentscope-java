@@ -24,9 +24,12 @@ import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Internal state tracker shared by stream annotators and middleware that reason about model replies.
@@ -39,9 +42,13 @@ import java.util.Objects;
  * io.agentscope.core.middleware}) can share one set of reply/source correlation rules. It is not part
  * of the supported API surface and may change without notice; do not use it outside this project.
  * Instances are scoped to one subscription and must be accessed serially by that stream; the
- * tracker is intentionally not synchronized.
+ * tracker is intentionally not synchronized. When the child-source cap is reached, the least
+ * recently used child is evicted; subsequent events for that source are treated as unclassified
+ * until a new model call starts it again.
  */
 public final class ReplyLifecycleTracker {
+
+    private static final Logger log = LoggerFactory.getLogger(ReplyLifecycleTracker.class);
 
     static final int MAX_TRACKED_CHILD_SOURCES = 4096;
 
@@ -87,13 +94,7 @@ public final class ReplyLifecycleTracker {
     // Keep the active top-level reply outside the child cap so fan-out cannot evict it.
     private ReplyState topLevelState;
 
-    private final Map<SourceKey, ReplyState> childStates =
-            new LinkedHashMap<>() {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<SourceKey, ReplyState> eldest) {
-                    return size() > MAX_TRACKED_CHILD_SOURCES;
-                }
-            };
+    private final Map<SourceKey, ReplyState> childStates = new LinkedHashMap<>();
 
     public SourceKey sourceKey(AgentEvent event) {
         Objects.requireNonNull(event, "event");
@@ -217,6 +218,17 @@ public final class ReplyLifecycleTracker {
             topLevelState = state;
         } else {
             childStates.put(sourceKey, state);
+            if (childStates.size() > MAX_TRACKED_CHILD_SOURCES) {
+                Iterator<Map.Entry<SourceKey, ReplyState>> iterator =
+                        childStates.entrySet().iterator();
+                Map.Entry<SourceKey, ReplyState> evicted = iterator.next();
+                iterator.remove();
+                log.debug(
+                        "Evicted child reply state for {} after reaching cap {}; later events are"
+                                + " unclassified",
+                        evicted.getKey(),
+                        MAX_TRACKED_CHILD_SOURCES);
+            }
         }
     }
 

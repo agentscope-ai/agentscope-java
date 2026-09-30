@@ -180,7 +180,12 @@ public final class RemoteEventCodec {
                                             remote.getAgentId() != null
                                                     ? remote.getAgentId()
                                                     : "remote"));
-                    case RUN_FINISHED -> Optional.of(new AgentEndEvent(null));
+                    case RUN_FINISHED ->
+                            Optional.of(
+                                    new AgentEndEvent(null)
+                                            .withMetadataEntry(
+                                                    AgentEndEvent.METADATA_INVOCATION_OUTCOME,
+                                                    AgentEndEvent.OUTCOME_SUCCESS));
                     case RUN_ERROR -> Optional.empty();
                     case TEXT_DELTA ->
                             Optional.of(
@@ -217,6 +222,14 @@ public final class RemoteEventCodec {
     }
 
     private static AgentEvent stampTaskId(AgentEvent event, RemoteAgentEvent remote) {
+        if (event instanceof AgentEndEvent end
+                && remote.getType() == RemoteEventType.RUN_FINISHED
+                && (end.getMetadata() == null
+                        || !end.getMetadata()
+                                .containsKey(AgentEndEvent.METADATA_INVOCATION_OUTCOME))) {
+            end.withMetadataEntry(
+                    AgentEndEvent.METADATA_INVOCATION_OUTCOME, AgentEndEvent.OUTCOME_SUCCESS);
+        }
         if (remote.getTaskId() != null && !remote.getTaskId().isBlank()) {
             event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, remote.getTaskId());
         }

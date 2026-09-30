@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
 import java.util.List;
@@ -46,6 +47,7 @@ public class AguiMessage {
     private final MessageContent content;
     private final List<AguiToolCall> toolCalls;
     private final String toolCallId;
+    private final String status;
 
     /**
      * Creates a new AguiMessage.
@@ -56,13 +58,24 @@ public class AguiMessage {
      * @param toolCalls Tool calls for assistant messages (optional)
      * @param toolCallId Tool call ID for tool messages (optional)
      */
-    @JsonCreator
     public AguiMessage(
             @JsonProperty("id") String id,
             @JsonProperty("role") String role,
             @JsonProperty("content") MessageContent content,
             @JsonProperty("toolCalls") List<AguiToolCall> toolCalls,
             @JsonProperty("toolCallId") String toolCallId) {
+        this(id, role, content, toolCalls, toolCallId, null);
+    }
+
+    /** Optional tool-result status extension; omitted values preserve legacy behavior. */
+    @JsonCreator
+    public AguiMessage(
+            @JsonProperty("id") String id,
+            @JsonProperty("role") String role,
+            @JsonProperty("content") MessageContent content,
+            @JsonProperty("toolCalls") List<AguiToolCall> toolCalls,
+            @JsonProperty("toolCallId") String toolCallId,
+            @JsonProperty("status") String status) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.role = Objects.requireNonNull(role, "role cannot be null");
         this.content = content;
@@ -71,6 +84,7 @@ public class AguiMessage {
                         ? Collections.unmodifiableList(toolCalls)
                         : Collections.emptyList();
         this.toolCallId = toolCallId;
+        this.status = status;
     }
 
     /**
@@ -244,6 +258,12 @@ public class AguiMessage {
         return toolCallId;
     }
 
+    /** @return optional tool-result status, or null when omitted by the client */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public String getStatus() {
+        return status;
+    }
+
     /**
      * Check if this is a user message.
      *
@@ -301,6 +321,8 @@ public class AguiMessage {
                 + toolCalls
                 + ", toolCallId='"
                 + toolCallId
+                + "', status='"
+                + status
                 + "'}";
     }
 
@@ -313,11 +335,12 @@ public class AguiMessage {
                 && Objects.equals(role, that.role)
                 && Objects.equals(content, that.content)
                 && Objects.equals(toolCalls, that.toolCalls)
-                && Objects.equals(toolCallId, that.toolCallId);
+                && Objects.equals(toolCallId, that.toolCallId)
+                && Objects.equals(status, that.status);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, role, content, toolCalls, toolCallId);
+        return Objects.hash(id, role, content, toolCalls, toolCallId, status);
     }
 }

@@ -476,15 +476,27 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertToolMessageWithNullToolCallIdIsRejected() {
+    void testConvertToolMessageWithoutToolCallIdRemainsBackwardCompatible() {
         AguiMessage aguiMsg =
                 new AguiMessage("msg-1", "tool", new MessageContent.Text("Result"), null, null);
 
-        IllegalArgumentException exception =
-                assertThrows(IllegalArgumentException.class, () -> converter.toMsg(aguiMsg));
-        assertEquals(
-                "AG-UI tool messages must carry toolCallId to wrap their content blocks",
-                exception.getMessage());
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        assertTrue(msg.hasContentBlocks(TextBlock.class));
+        assertEquals("Result", msg.getFirstContentBlock(TextBlock.class).getText());
+    }
+
+    @Test
+    void testConvertToolMessageStatusExtension() {
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-1", "tool", new MessageContent.Text("failed"), null, "tc-1", "error");
+
+        ToolResultBlock result =
+                converter.toMsg(aguiMsg).getFirstContentBlock(ToolResultBlock.class);
+
+        assertEquals(ToolResultState.ERROR, result.getState());
     }
 
     @Test
