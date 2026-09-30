@@ -118,4 +118,73 @@ class PermissionContextStateTest {
         PermissionContextState decoded = mapper.readValue(json, PermissionContextState.class);
         assertEquals(original, decoded);
     }
+
+    @Test
+    void withAddedRulesRoutesByBehaviorAndPreservesContext() {
+        PermissionContextState original =
+                PermissionContextState.builder()
+                        .mode(PermissionMode.ACCEPT_EDITS)
+                        .addWorkingDirectory(
+                                "/tmp/proj",
+                                new AdditionalWorkingDirectory("/tmp/proj", "userSettings"))
+                        .addAskRule(
+                                "Read",
+                                new PermissionRule(
+                                        "Read", "src/**", PermissionBehavior.ASK, "declared"))
+                        .build();
+
+        PermissionRule newAllow =
+                new PermissionRule("Write", null, PermissionBehavior.ALLOW, "user_confirm");
+        PermissionRule newDeny =
+                new PermissionRule("Bash", "rm -rf", PermissionBehavior.DENY, "user_confirm");
+        PermissionRule newAsk =
+                new PermissionRule("Write", "/etc/**", PermissionBehavior.ASK, "user_confirm");
+        PermissionRule passthrough =
+                new PermissionRule("Bash", null, PermissionBehavior.PASSTHROUGH, "user_confirm");
+
+        // Null list and empty list return the same instance.
+        assertSame(original, original.withAddedRules(null));
+        assertSame(original, original.withAddedRules(java.util.List.of()));
+
+        PermissionRule nullEntry = null;
+        PermissionContextState merged =
+                original.withAddedRules(
+                        java.util.Arrays.asList(newAllow, newDeny, newAsk, passthrough, nullEntry));
+
+        // Mode, working directories and the declared ASK rule are preserved.
+        org.junit.jupiter.api.Assertions.assertEquals(
+                PermissionMode.ACCEPT_EDITS, merged.getMode());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                original.getWorkingDirectories(), merged.getWorkingDirectories());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                merged.getAskRules()
+                        .getOrDefault("Read", java.util.List.of())
+                        .contains(
+                                new PermissionRule(
+                                        "Read", "src/**", PermissionBehavior.ASK, "declared")));
+
+        // New rules routed by behavior.
+        org.junit.jupiter.api.Assertions.assertTrue(
+                merged.getAllowRules()
+                        .getOrDefault("Write", java.util.List.of())
+                        .contains(newAllow));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                merged.getDenyRules().getOrDefault("Bash", java.util.List.of()).contains(newDeny));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                merged.getAskRules().getOrDefault("Write", java.util.List.of()).contains(newAsk));
+
+        // PASSTHROUGH rules are not persisted anywhere.
+        org.junit.jupiter.api.Assertions.assertTrue(
+                merged.getAllowRules().values().stream().noneMatch(l -> l.contains(passthrough)));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                merged.getDenyRules().values().stream().noneMatch(l -> l.contains(passthrough)));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                merged.getAskRules().values().stream().noneMatch(l -> l.contains(passthrough)));
+
+        // The original instance is never mutated.
+        org.junit.jupiter.api.Assertions.assertFalse(
+                original.getAllowRules()
+                        .getOrDefault("Write", java.util.List.of())
+                        .contains(newAllow));
+    }
 }

@@ -53,6 +53,7 @@ import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -967,6 +968,12 @@ class ReActAgentHitlTest {
         // convention); a real UI would use tool.generateSuggestions(input).
         PermissionRule remembered =
                 new PermissionRule("ask", null, PermissionBehavior.ALLOW, "user_confirm");
+        PermissionRule sessionDeny =
+                new PermissionRule("bash", "rm -rf", PermissionBehavior.DENY, "user_confirm");
+        PermissionRule sessionAsk =
+                new PermissionRule("write", "/etc/**", PermissionBehavior.ASK, "user_confirm");
+        PermissionRule sessionPassthrough =
+                new PermissionRule("noop", null, PermissionBehavior.PASSTHROUGH, "user_confirm");
         Msg secondResult =
                 agent.call(
                                 List.of(
@@ -975,7 +982,12 @@ class ReActAgentHitlTest {
                                                         new ConfirmResult(
                                                                 true,
                                                                 pending,
-                                                                List.of(remembered),
+                                                                Arrays.asList(
+                                                                        remembered,
+                                                                        sessionDeny,
+                                                                        sessionAsk,
+                                                                        sessionPassthrough,
+                                                                        null),
                                                                 null)))))
                         .block();
         assertNotNull(secondResult);
@@ -990,6 +1002,73 @@ class ReActAgentHitlTest {
         assertTrue(
                 allowRules.getOrDefault("ask", List.of()).contains(remembered),
                 "accepted rule must be persisted into the permission context");
+        assertTrue(
+                saved.getPermissionContext()
+                        .getDenyRules()
+                        .getOrDefault("bash", List.of())
+                        .contains(sessionDeny),
+                "deny rule must be persisted too");
+        assertTrue(
+                saved.getPermissionContext()
+                        .getAskRules()
+                        .getOrDefault("write", List.of())
+                        .contains(sessionAsk),
+                "ask rule must be persisted too");
+        assertTrue(
+                saved.getPermissionContext().getAllowRules().values().stream()
+                        .noneMatch(l -> l.contains(sessionPassthrough)),
+                "passthrough rules must not be persisted");
+
+        // A rules list containing only null entries: nothing accepted, so
+        // the persisted context must not change.
+        ChatModelBase nullRulesModel =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc3", "ask", "again")),
+                                () -> Flux.just(textResponse("done3")),
+                                () -> Flux.just(toolUseResponse("tc4", "ask", "once more")),
+                                () -> Flux.just(textResponse("done4"))));
+        ReActAgent nullRulesAgent =
+                ReActAgent.builder()
+                        .name("null-rules-asst")
+                        .model(nullRulesModel)
+                        .toolkit(toolkitWith(new AskingTool("ask")))
+                        .stateStore(store)
+                        .build();
+
+        Msg nullAsk = nullRulesAgent.call(List.of()).block();
+        assertNotNull(nullAsk);
+        assertEquals(GenerateReason.PERMISSION_ASKING, nullAsk.getGenerateReason());
+
+        PermissionRule sentinel =
+                new PermissionRule("ask", "sentinel", PermissionBehavior.ALLOW, "user_confirm");
+        ToolUseBlock nullPending = nullAsk.getContentBlocks(ToolUseBlock.class).get(0);
+        Msg nullConfirmResult =
+                nullRulesAgent
+                        .call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                nullPending,
+                                                                Arrays.asList(
+                                                                        (PermissionRule) null),
+                                                                null)))))
+                        .block();
+        assertNotNull(nullConfirmResult);
+
+        AgentState reloaded =
+                store.get(null, "null-rules-asst", "agent_state", AgentState.class).orElse(null);
+        assertNotNull(reloaded);
+        assertTrue(
+                reloaded
+                        .getPermissionContext()
+                        .getAllowRules()
+                        .getOrDefault("ask", List.of())
+                        .stream()
+                        .noneMatch(r -> "sentinel".equals(r.ruleContent())),
+                "no rule must be persisted when nothing was accepted");
 
         // Call 3: same tool must now run without asking
         Msg thirdResult = agent.call(List.of()).block();
