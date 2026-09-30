@@ -179,16 +179,7 @@ class ReActAgentPermissionRulesTest {
             PermissionContextState rules,
             AgentStateStore store,
             boolean rulesAuthoritative) {
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerAgentTool(new DeployTool());
-        return ReActAgent.builder()
-                .name("asst")
-                .model(model)
-                .toolkit(toolkit)
-                .permissionContext(rules)
-                .permissionRulesAuthoritative(rulesAuthoritative)
-                .stateStore(store)
-                .build();
+        return agent(model, rules, store, rulesAuthoritative, new DeployTool());
     }
 
     private static ReActAgent agent(
