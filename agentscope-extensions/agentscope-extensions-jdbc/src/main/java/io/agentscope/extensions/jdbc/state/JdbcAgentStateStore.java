@@ -28,7 +28,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Savepoint;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -57,64 +56,15 @@ public class JdbcAgentStateStore implements AgentStateStore {
     private final SessionStateDialect dialect;
 
     /**
-     * Creates a store with auto-schema creation disabled.
+     * Creates a store. Null checks only — tables are created and validated once by {@code
+     * AbstractJdbcDialect.from(dataSource).build()}; this store never touches the schema.
      *
      * @param dataSource the JDBC data source
      * @param dialect the session-state dialect
      */
     public JdbcAgentStateStore(DataSource dataSource, SessionStateDialect dialect) {
-        this(dataSource, dialect, false);
-    }
-
-    /**
-     * Creates a store with optional auto-schema creation.
-     *
-     * @param dataSource the JDBC data source
-     * @param dialect the session-state dialect
-     * @param createIfNotExist when true, auto-creates the sessions table
-     */
-    public JdbcAgentStateStore(
-            DataSource dataSource, SessionStateDialect dialect, boolean createIfNotExist) {
         this.dataSource = requireNonNull(dataSource, "dataSource");
         this.dialect = requireNonNull(dialect, "dialect");
-        if (createIfNotExist) {
-            createTableIfNotExist();
-        } else {
-            verifyTableExists();
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    //  Schema management
-    // -------------------------------------------------------------------------
-
-    private void createTableIfNotExist() {
-        try (Connection conn = dataSource.getConnection();
-                Statement stmt = conn.createStatement()) {
-            for (String ddl : dialect.sessionStateCreateTableDdls()) {
-                stmt.execute(ddl);
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to create session table", e);
-        }
-    }
-
-    private void verifyTableExists() {
-        BoundSql boundSql = dialect.sessionStateCheckTableExists(dialect.sessionStateTableName());
-        try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
-            bindParams(stmt, boundSql.params());
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (!rs.next()) {
-                    throw new IllegalStateException(
-                            "Table does not exist: "
-                                    + dialect.sessionStateTableName()
-                                    + ". Use createIfNotExist=true to auto-create.");
-                }
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to check table existence", e);
-        }
     }
 
     // -------------------------------------------------------------------------

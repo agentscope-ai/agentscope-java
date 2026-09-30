@@ -27,7 +27,9 @@ import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.internal.stream.ReplyLifecycleTracker;
 import io.agentscope.core.internal.stream.ReplyLifecycleTracker.Observation;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -43,6 +45,12 @@ import reactor.core.publisher.Flux;
  * the current round is not emitted until the model call completes or a tool call is detected.
  */
 public class FinalAnswerFilterMiddleware implements MiddlewareBase {
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_REASONING);
+    }
 
     @Override
     public Flux<AgentEvent> onReasoning(

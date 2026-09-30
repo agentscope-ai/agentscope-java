@@ -76,7 +76,7 @@ ReActAgent agent =
 
 未配置 OpenTelemetry SDK（只剩默认的 no-op provider）时，所有 hook 会直接短路到 `next.apply(input)`，几乎零开销。
 
-`OtelTracingMiddleware` 从进程级 `GlobalOpenTelemetry` 实例读取配置。应用如果自行导出 span，除了 AgentScope 之外还需要引入 OpenTelemetry SDK 和 OTLP exporter。使用 OpenTelemetry BOM 保持二者版本一致（下列版本与 AgentScope 当前使用的版本一致）：
+默认情况下，`OtelTracingMiddleware` 从进程级 `GlobalOpenTelemetry` 实例读取配置。无参构造函数在 hook 执行时才惰性查找该实例，因此可以在注册全局 SDK 之前构造 middleware。应用如果自行导出 span，除了 AgentScope 之外还需要引入 OpenTelemetry SDK 和 OTLP exporter。使用 OpenTelemetry BOM 保持二者版本一致（下列版本与 AgentScope 当前使用的版本一致）：
 
 ```xml
 <properties>
@@ -150,6 +150,49 @@ ReActAgent agent =
 
 必须在 middleware 开始工作前注册 SDK。如果运行环境（例如 Spring Boot 的 OpenTelemetry 自动配置）已经注册了 `GlobalOpenTelemetry`，直接复用并只添加 middleware 即可。新配置不再调用已弃用的 `TracerRegistry.register(...)`。应用关闭时应关闭 `SdkTracerProvider`，让 batch processor 刷新尚未导出的 span。
 
+如果要改用应用自己持有的 SDK，而不是进程级实例，请用 `build()`（不要用 `buildAndRegisterGlobal()`）构建 SDK，把 OTLP HTTP exporter 指向应用的 endpoint，并显式挂到 agent 上。这是一条可选的 middleware 路径：调用方拥有 SDK 的生命周期，并负责关闭 provider。生产环境的接入方式仍然是现有的 `ReActAgent.builder().middleware(...)`，不需要改 builder。
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.tracing.OtelTracingMiddleware;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
+
+String endpoint =
+        System.getenv().getOrDefault(
+                "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces");
+
+SdkTracerProvider tracerProvider =
+        SdkTracerProvider.builder()
+                .addSpanProcessor(
+                        BatchSpanProcessor.builder(
+                                        OtlpHttpSpanExporter.builder()
+                                                .setEndpoint(endpoint)
+                                                .build())
+                                .build())
+                .build();
+
+OpenTelemetry appSdk =
+        OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build();
+Runtime.getRuntime().addShutdownHook(new Thread(tracerProvider::close));
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .sysPrompt("You are a helpful assistant.")
+                .model(model)
+                .toolkit(toolkit)
+                .middleware(new OtelTracingMiddleware(appSdk))
+                .build();
+```
+
+传入 `appSdk` 不会替换 `GlobalOpenTelemetry`，也不会改变 `StudioManager`。`StudioManager` 在 `initialize()` 时仍会独立安装已弃用的 `TracerRegistry` 追踪。供应商插桩如果改写了 tracer 查找结果，以及 Studio 调用树缺少展开控件，都需要对照实际部署另行验证。此 middleware 决定 `onAgent`、`onModelCall`、`onActing` 的 span 记到哪一个 OpenTelemetry SDK。传入 `OpenTelemetry.noop()` 同样合法：下游链路仍会执行，且不会记录 span。
+
+构造 `OtelTracingMiddleware`（无论是 `new OtelTracingMiddleware()` 还是 `new OtelTracingMiddleware(appSdk)`）时，第一次创建实例还会注册一个 JVM 范围的 Reactor hook：`ContextPropagationOperator.registerOnEachOperator()`。从注册那一刻起，该 hook 会在进程中任何代码组装 `Flux` 和 `Mono` operator 时对其进行包装，使父 span 在 `publishOn` / `subscribeOn` 跨线程之后仍然成立。它无法作用于注册之前已经组装好的链：提前构建、之后复用的 publisher 不会获得上下文传播，因此请在组装需要传播的管道之前先构造该 middleware。它与 span 记到哪一个 SDK 无关：应用自持的 SDK 只把 tracer 查找从 `GlobalOpenTelemetry` 隔离开，并不能避免这个全局插桩副作用。该 hook 在每个 JVM 中最多安装一次，关闭 middleware 或 SDK 也不会移除它。
+
 每次 reply 会产出一棵嵌套 span 树，关键属性包括 agent 名称、session ID、模型名、token 数、工具名与入参等。
 
 ### TaskReminderMiddleware
@@ -209,12 +252,23 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /** 同时观察 agent / reasoning / model_call / system_prompt 四个位置。 */
 public class FullObservabilityMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(
+                ExtensionPoint.ON_AGENT,
+                ExtensionPoint.ON_REASONING,
+                ExtensionPoint.ON_MODEL_CALL,
+                ExtensionPoint.ON_SYSTEM_PROMPT);
+    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -340,6 +394,44 @@ onAgent
         │     └── onModelCall
         └── onActing（本轮每个工具调用一次）
 ```
+
+### 扩展点参与声明（`activePoints()`）
+
+`MiddlewareBase.activePoints()` 声明 middleware 在哪些扩展点处于激活状态。它是**参与开关**，不是对"覆写了哪些方法"的复述：
+
+| 声明       | 方法实现 | 行为                                     |
+| ---------- | -------- | ---------------------------------------- |
+| 包含该点   | 已覆写   | 正常参与                                 |
+| 包含该点   | 未覆写   | 调用默认实现（直通）——合法冗余           |
+| 不包含该点 | 已覆写   | 方法不会被调用——有意关闭，非错误         |
+| 不包含该点 | 未覆写   | 该 middleware 在此点不存在，链中不占位   |
+
+关键语义：
+
+- **默认全量激活。** 未覆写 `activePoints()` 的 middleware 保持与现状完全一致的行为，包括未来版本新增的扩展点。
+- **覆写即接管。** 一旦覆写，激活集合就是返回的集合本身；忘记声明的扩展点即使覆写了方法也不会生效。
+- **空集合合法。** `EnumSet.noneOf(ExtensionPoint.class)` 让 middleware 在所有扩展点失活，同时保留注册——可用作运行开关。
+- **构造期固化。** agent 构建时读取一次声明；之后修改返回的集合对已构建的 agent 无效。
+- **与 `order()` 正交。** 声明只回答"是否参与"，不回答"什么顺序"——各点参与者保持既有 `order()` 语义。
+
+```java
+import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
+
+MiddlewareBase timingOnly =
+        new MiddlewareBase() {
+            @Override
+            public Set<ExtensionPoint> activePoints() {
+                // 只在 onModelCall 激活，其余扩展点全部跳过。
+                return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+            }
+        };
+```
+
+**推荐实践：** 为你实现的每个 middleware 准确定义 `activePoints()`。精确声明让框架能整体跳过未参与者——某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），链更短，构建期的有效执行计划也更清晰。不声明则保持完全兼容的默认行为（全量激活），因此任何时候补充声明都不会破坏行为，只会收窄参与范围。
+
+继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 会被静默跳过。
 
 ## 实用示例
 
