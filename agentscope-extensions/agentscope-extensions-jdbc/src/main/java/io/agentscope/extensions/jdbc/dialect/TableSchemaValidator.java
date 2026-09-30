@@ -75,7 +75,7 @@ public final class TableSchemaValidator {
 
     /**
      * Validates one table's columns on an existing connection — the builder reuses its
-     * assembly connection for all three tables.
+     * assembly connection for every enabled table.
      *
      * @param connection an open connection; not closed by this method
      * @param tableName the table to validate

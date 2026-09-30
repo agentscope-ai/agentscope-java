@@ -64,6 +64,10 @@ public class DashScopeParameters {
     @JsonProperty("thinking_budget")
     private Integer thinkingBudget;
 
+    /** Reasoning effort level (e.g. "low", "medium", "high", "max", "xhigh"). */
+    @JsonProperty("reasoning_effort")
+    private String reasoningEffort;
+
     /** Enable search mode. */
     @JsonProperty("enable_search")
     private Boolean enableSearch;
@@ -183,6 +187,14 @@ public class DashScopeParameters {
 
     public void setThinkingBudget(Integer thinkingBudget) {
         this.thinkingBudget = thinkingBudget;
+    }
+
+    public String getReasoningEffort() {
+        return reasoningEffort;
+    }
+
+    public void setReasoningEffort(String reasoningEffort) {
+        this.reasoningEffort = reasoningEffort;
     }
 
     public Boolean getEnableSearch() {
@@ -322,6 +334,11 @@ public class DashScopeParameters {
 
         public Builder thinkingBudget(Integer thinkingBudget) {
             params.setThinkingBudget(thinkingBudget);
+            return this;
+        }
+
+        public Builder reasoningEffort(String reasoningEffort) {
+            params.setReasoningEffort(reasoningEffort);
             return this;
         }
 
