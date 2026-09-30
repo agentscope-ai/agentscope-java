@@ -61,6 +61,14 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
     private static final Logger log = LoggerFactory.getLogger(SandboxBackedFilesystem.class);
 
+    /**
+     * Shared message for a missing or already-stopped sandbox. Matches {@link
+     * #requireSandbox(RuntimeContext)} so async mirrors degrade to the same warn text instead of
+     * NPE after {@code stop}/{@code shutdown}.
+     */
+    static final String NO_ACTIVE_SANDBOX_MESSAGE =
+            "No active sandbox — sandbox filesystem used outside of a call context";
+
     private final String fsId;
     private volatile Sandbox sandbox;
 
@@ -122,7 +130,14 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public List<FileUploadResponse> uploadFiles(
             RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
-        Sandbox active = requireSandbox(runtimeContext);
+        Sandbox active = resolveSandboxForTransfer(runtimeContext);
+        if (active == null) {
+            List<FileUploadResponse> failed = new ArrayList<>(files.size());
+            for (Map.Entry<String, byte[]> file : files) {
+                failed.add(FileUploadResponse.fail(file.getKey(), NO_ACTIVE_SANDBOX_MESSAGE));
+            }
+            return failed;
+        }
         List<FileUploadResponse> results = new ArrayList<>(files.size());
 
         for (Map.Entry<String, byte[]> file : files) {
@@ -177,7 +192,14 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public List<FileDownloadResponse> downloadFiles(
             RuntimeContext runtimeContext, List<String> paths) {
-        Sandbox active = requireSandbox(runtimeContext);
+        Sandbox active = resolveSandboxForTransfer(runtimeContext);
+        if (active == null) {
+            List<FileDownloadResponse> failed = new ArrayList<>(paths.size());
+            for (String path : paths) {
+                failed.add(FileDownloadResponse.fail(path, NO_ACTIVE_SANDBOX_MESSAGE));
+            }
+            return failed;
+        }
         List<FileDownloadResponse> results = new ArrayList<>(paths.size());
 
         for (String path : paths) {
@@ -248,10 +270,35 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
             s = sandbox;
         }
         if (s == null) {
-            throw new SandboxException.SandboxConfigurationException(
-                    "No active sandbox — sandbox filesystem used outside of a call context");
+            throw new SandboxException.SandboxConfigurationException(NO_ACTIVE_SANDBOX_MESSAGE);
         }
         return s;
+    }
+
+    /**
+     * Like {@link #requireSandbox}, but when the bound sandbox has already stopped: soft-fail
+     * callers ({@link #softFailWhenStopped()} {@code true}, i.e. pinned async mirrors) get {@code
+     * null} after a warn; hard-fail callers (default sync tool path) still throw.
+     */
+    private Sandbox resolveSandboxForTransfer(RuntimeContext runtimeContext) {
+        Sandbox s = requireSandbox(runtimeContext);
+        if (!s.isRunning()) {
+            if (softFailWhenStopped()) {
+                log.warn("[sandbox-fs] {}", NO_ACTIVE_SANDBOX_MESSAGE);
+                return null;
+            }
+            throw new SandboxException.SandboxConfigurationException(NO_ACTIVE_SANDBOX_MESSAGE);
+        }
+        return s;
+    }
+
+    /**
+     * Whether upload/download should soft-fail when the bound sandbox is present but already
+     * stopped. Default {@code false} keeps synchronous tool calls loud; {@link
+     * PinnedSandboxFilesystem} overrides to {@code true} for async session mirrors.
+     */
+    protected boolean softFailWhenStopped() {
+        return false;
     }
 
     private String shellSingleQuote(String s) {
