@@ -284,7 +284,9 @@ public final class MarketplaceStager {
             // staged skill apart from one whose content is unavailable.
             return false;
         }
-        Files.createDirectories(stagedDir);
+        // The staged directory is created lazily by writeIfChanged, on the first entry that
+        // survives the filter below. Creating it here instead would materialise a directory
+        // for a map whose entries are all rejected, contradicting the contract above.
         // Track files we expect; remove any extras under stagedDir afterwards.
         Set<Path> expected = new HashSet<>();
         for (Map.Entry<String, String> e : resources.entrySet()) {
@@ -590,7 +592,14 @@ public final class MarketplaceStager {
     public sealed interface StageResult {
         StageResult NONE = new None();
 
-        /** No staging applied — skill source has no shell-reachable representation. */
+        /**
+         * No staging applied — skill source has no shell-reachable representation.
+         *
+         * <p>Also returned when a repository published no resources that could be staged. Nothing
+         * was staged and nothing is retained for the skill on this pass, so a directory written by
+         * an earlier call becomes orphan-GC eligible: {@code NONE} does not mean "the files cached
+         * earlier are still there".
+         */
         record None() implements StageResult {}
 
         /** Skill comes from {@link WorkspaceSkillRepository} (already in workspace/skills/). */

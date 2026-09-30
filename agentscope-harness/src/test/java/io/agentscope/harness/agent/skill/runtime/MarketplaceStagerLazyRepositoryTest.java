@@ -16,17 +16,20 @@
 package io.agentscope.harness.agent.skill.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.RepoBound;
 import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -63,6 +66,36 @@ class MarketplaceStagerLazyRepositoryTest {
 
         assertInstanceOf(StageResult.None.class, result);
         assertEquals(0, countRegularFiles(stagedDir(workspace)));
+        assertFalse(
+                Files.exists(stagedDir(workspace)),
+                "nothing was staged, so no staged directory may be left behind");
+    }
+
+    @Test
+    @DisplayName(
+            "a resource map whose entries are all rejected reports NONE and leaves no directory")
+    void allRejectedResourcesReportNone(@TempDir Path tmp) throws IOException {
+        Path workspace = Files.createDirectories(tmp.resolve("workspace"));
+        MarketplaceStager stager = new MarketplaceStager(workspace);
+
+        // Non-empty map: every entry is rejected by the path-safety filter, so nothing is
+        // written. The result must match the empty-map case rather than creating a directory
+        // that no file ever lands in.
+        Map<String, String> rejected = new LinkedHashMap<>();
+        rejected.put("/etc/passwd", "root\n");
+        rejected.put("../escape.sh", "#!/bin/sh\n");
+        AgentSkill skill = new AgentSkill(SKILL_NAME, "demo", "body\n", rejected, SOURCE_NS);
+        AgentSkillRepository repo = new StubRepo(SOURCE_NS);
+
+        StageResult result =
+                stager.stage(List.of(new RepoBound(skill, repo)), Map.of(repo, SOURCE_NS), SCOPE)
+                        .get(SKILL_NAME);
+
+        assertInstanceOf(StageResult.None.class, result);
+        assertEquals(0, countRegularFiles(stagedDir(workspace)));
+        assertFalse(
+                Files.exists(stagedDir(workspace)),
+                "an all-rejected resource map must not leave a staged directory behind");
     }
 
     @Test
@@ -113,6 +146,64 @@ class MarketplaceStagerLazyRepositoryTest {
         }
         try (Stream<Path> walk = Files.walk(dir)) {
             return walk.filter(Files::isRegularFile).count();
+        }
+    }
+
+    /** Minimal repository stub: the stager only reads {@link #getSource()}. */
+    private static final class StubRepo implements AgentSkillRepository {
+
+        private final String source;
+
+        StubRepo(String source) {
+            this.source = source;
+        }
+
+        @Override
+        public AgentSkill getSkill(String name) {
+            return null;
+        }
+
+        @Override
+        public List<String> getAllSkillNames() {
+            return List.of();
+        }
+
+        @Override
+        public List<AgentSkill> getAllSkills() {
+            return List.of();
+        }
+
+        @Override
+        public boolean save(List<AgentSkill> skills, boolean force) {
+            return false;
+        }
+
+        @Override
+        public boolean delete(String skillName) {
+            return false;
+        }
+
+        @Override
+        public boolean skillExists(String skillName) {
+            return false;
+        }
+
+        @Override
+        public AgentSkillRepositoryInfo getRepositoryInfo() {
+            return new AgentSkillRepositoryInfo(source, "", false);
+        }
+
+        @Override
+        public String getSource() {
+            return source;
+        }
+
+        @Override
+        public void setWriteable(boolean writeable) {}
+
+        @Override
+        public boolean isWriteable() {
+            return false;
         }
     }
 }
