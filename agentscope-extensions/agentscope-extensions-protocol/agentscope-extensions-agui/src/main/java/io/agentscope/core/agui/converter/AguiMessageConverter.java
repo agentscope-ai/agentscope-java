@@ -106,7 +106,7 @@ public class AguiMessageConverter {
             for (InputContent input : blocksContent.parts()) {
                 structuredBlocks.add(toContentBlock(input));
             }
-            if (aguiMessage.isToolMessage()) {
+            if (aguiMessage.isToolMessage() && hasToolCallId(aguiMessage)) {
                 blocks.add(
                         ToolResultBlock.builder()
                                 .id(aguiMessage.getToolCallId())
@@ -114,6 +114,8 @@ public class AguiMessageConverter {
                                 .state(resolveToolResultState(aguiMessage))
                                 .build());
             } else {
+                // Keep legacy history messages with missing/blank ids as ordinary TOOL content;
+                // only identified results can resolve a pending tool invocation.
                 blocks.addAll(structuredBlocks);
             }
         } else if (aguiMessage.isToolMessage()) {
@@ -318,7 +320,7 @@ public class AguiMessageConverter {
      * @param aguiMessage the source message (for role/tool-call-id context)
      */
     private void addTextBlock(List<ContentBlock> blocks, String text, AguiMessage aguiMessage) {
-        if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+        if (aguiMessage.isToolMessage() && hasToolCallId(aguiMessage)) {
             // Tool results must always carry a ToolResultBlock, even when the frontend
             // returned empty content.
             String resultText = text != null ? text : "";
@@ -334,6 +336,11 @@ public class AguiMessageConverter {
             return;
         }
         blocks.add(TextBlock.builder().text(text).build());
+    }
+
+    private boolean hasToolCallId(AguiMessage aguiMessage) {
+        String toolCallId = aguiMessage.getToolCallId();
+        return toolCallId != null && !toolCallId.isBlank();
     }
 
     /**

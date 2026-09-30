@@ -488,6 +488,35 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertToolMessageWithBlankToolCallIdRemainsBackwardCompatible() {
+        AguiMessage aguiMsg =
+                new AguiMessage("msg-1", "tool", new MessageContent.Text("Result"), null, "   ");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        assertTrue(msg.hasContentBlocks(TextBlock.class));
+        assertFalse(msg.hasContentBlocks(ToolResultBlock.class));
+    }
+
+    @Test
+    void testConvertStructuredToolMessageWithoutToolCallIdRemainsContent() {
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-1",
+                        "tool",
+                        new MessageContent.Blocks(List.of(new TextInputContent("Result"))),
+                        null,
+                        null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        assertTrue(msg.hasContentBlocks(TextBlock.class));
+        assertFalse(msg.hasContentBlocks(ToolResultBlock.class));
+    }
+
+    @Test
     void testConvertToolMessageStatusExtension() {
         AguiMessage aguiMsg =
                 new AguiMessage(

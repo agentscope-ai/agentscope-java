@@ -40,6 +40,8 @@ import io.agentscope.core.agui.model.AguiContext;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiTool;
+import io.agentscope.core.agui.model.DocumentInputContent;
+import io.agentscope.core.agui.model.InputContentUrlSource;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -97,6 +99,34 @@ class AguiAgentAdapterV2Test {
 
     @Nested
     class RuntimeContextAndLifecycleTests {
+
+        @Test
+        void inputConversionFailureBecomesRunErrorEvent() {
+            ReActAgent agent = mock(ReActAgent.class);
+            RunAgentInput invalidInput =
+                    inputBuilder()
+                            .messages(
+                                    List.of(
+                                            AguiMessage.userMessage(
+                                                    "msg-invalid",
+                                                    List.of(
+                                                            new DocumentInputContent(
+                                                                    new InputContentUrlSource(
+                                                                            "https://example.com/doc.pdf"),
+                                                                    null)))))
+                            .build();
+
+            List<AguiEvent> events =
+                    new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                            .run(invalidInput)
+                            .collectList()
+                            .block();
+
+            assertEquals(
+                    List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR), types(events));
+            AguiEvent.RunError error = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
+            assertEquals("INVALID_INPUT_ERROR", error.code());
+        }
 
         @Test
         void textOutputDispositionConfigIsAppliedToReActStreams() {
