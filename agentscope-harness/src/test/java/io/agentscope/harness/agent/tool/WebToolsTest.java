@@ -213,4 +213,28 @@ class WebToolsTest {
             server.stop(0);
         }
     }
+
+    @Test
+    void truncationDoesNotSplitSurrogatePairs() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    byte[] body = "a😀b".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, body.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(body);
+                    }
+                });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
+            WebTools.WebFetchTool tool = new WebTools.WebFetchTool();
+
+            assertEquals("status=200\n\na\n...[truncated]", tool.webFetch(url, 2));
+            assertEquals("status=200\n\na😀\n...[truncated]", tool.webFetch(url, 3));
+        } finally {
+            server.stop(0);
+        }
+    }
 }

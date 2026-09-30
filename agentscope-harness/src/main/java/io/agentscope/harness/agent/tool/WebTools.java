@@ -124,7 +124,15 @@ public final class WebTools {
 
     private static String truncate(String value, int limit) {
         String body = value == null ? "" : value;
-        return body.length() > limit ? body.substring(0, limit) + "\n...[truncated]" : body;
+        if (body.length() <= limit) {
+            return body;
+        }
+        int end = limit;
+        if (Character.isHighSurrogate(body.charAt(end - 1))
+                && Character.isLowSurrogate(body.charAt(end))) {
+            end--;
+        }
+        return body.substring(0, end) + "\n...[truncated]";
     }
 
     public static final class WebSearchTool {
