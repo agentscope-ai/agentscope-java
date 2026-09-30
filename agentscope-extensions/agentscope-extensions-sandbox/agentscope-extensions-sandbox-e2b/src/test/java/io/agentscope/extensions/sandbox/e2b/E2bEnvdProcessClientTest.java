@@ -463,12 +463,66 @@ class E2bEnvdProcessClientTest {
         assertEquals("partial\nexit status 1", stderr.toString(StandardCharsets.UTF_8));
     }
 
+    // protojson accepts the original proto field name on the wire as well:
+    // {"end":{"exit_code":42}} decodes like {"end":{"exitCode":42}}.
+    @Test
+    void exitCodeSnakeCaseFieldName() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame =
+                concatFrames(
+                        connectFrame("{\"event\":{\"end\":{\"exit_code\":42}}}"),
+                        endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(42, exit);
+    }
+
     // Connect protocol: flags bit 0 = compressed (not supported by this client).
     // https://connectrpc.com/docs/protocol/#streaming-rpcs
     @Test
     void compressedFrameThrowsIOException() throws Exception {
         E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
         byte[] frame = envelope(0x01, "{}".getBytes(StandardCharsets.UTF_8));
+
+        IOException ex =
+                assertThrows(
+                        IOException.class,
+                        () ->
+                                drainStartStream(
+                                        client,
+                                        frame,
+                                        new ByteArrayOutputStream(),
+                                        new ByteArrayOutputStream()));
+        assertTrue(ex.getMessage().contains("Compressed"));
+    }
+
+    // Combined flag values carrying the compressed bit are rejected as compressed
+    // before end-stream handling: 0x03 must not reach the EndStreamMessage parser.
+    @Test
+    void compressedEndStreamFrameThrowsIOException() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame = envelope(0x03, new byte[] {0x1f, (byte) 0x8b, 0x00});
+
+        IOException ex =
+                assertThrows(
+                        IOException.class,
+                        () ->
+                                drainStartStream(
+                                        client,
+                                        frame,
+                                        new ByteArrayOutputStream(),
+                                        new ByteArrayOutputStream()));
+        assertTrue(ex.getMessage().contains("Compressed"));
+    }
+
+    // 0x07 (end-stream + compressed + reserved) likewise rejects on the compressed
+    // bit first, never reaching end-stream or reserved-bit handling.
+    @Test
+    void compressedReservedEndStreamFrameThrowsIOException() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame = envelope(0x07, new byte[] {0x1f, (byte) 0x8b, 0x00});
 
         IOException ex =
                 assertThrows(

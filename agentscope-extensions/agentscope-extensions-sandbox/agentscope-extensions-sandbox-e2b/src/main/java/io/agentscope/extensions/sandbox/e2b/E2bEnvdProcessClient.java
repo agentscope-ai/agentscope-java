@@ -180,6 +180,13 @@ final class E2bEnvdProcessClient {
             if (data.length < len) {
                 break;
             }
+            // Connect protocol: flags bit 0 = compressed. Checked before end_stream so
+            // a combined envelope (e.g. 0x03) is rejected as compressed instead of
+            // feeding compressed bytes to the EndStreamMessage JSON parser.
+            // https://connectrpc.com/docs/protocol/#streaming-rpcs
+            if ((flags & 0x01) != 0) {
+                throw new IOException("Compressed connect frames not supported");
+            }
             // Connect protocol: flags bit 1 = end_stream — final envelope carries EndStreamMessage
             // JSON
             // https://connectrpc.com/docs/protocol/#streaming-rpcs
@@ -194,17 +201,15 @@ final class E2bEnvdProcessClient {
                             SandboxErrorCode.WORKSPACE_START_ERROR,
                             "Process start failed: " + endMsg.description());
                 }
-                log.debug("drainStartStream: endStream ok, exit={}", exit);
+                log.debug("drainStartStream: endStream ok");
                 break;
-            }
-            // Connect protocol: flags bit 0 = compressed
-            // https://connectrpc.com/docs/protocol/#streaming-rpcs
-            if ((flags & 0x01) != 0) {
-                throw new IOException("Compressed connect frames not supported");
             }
             // Connect protocol: flags bits 2-7 reserved for future extensions
             // https://connectrpc.com/docs/protocol/#streaming-rpcs
             if ((flags & 0xFC) != 0) {
+                log.debug(
+                        "drainStartStream: skipping reserved flags=0x{}",
+                        Integer.toHexString(flags));
                 continue;
             }
             DynamicMessage sr;
@@ -216,6 +221,10 @@ final class E2bEnvdProcessClient {
                 // Note: end-stream envelope parse errors (handled above, outside this try)
                 // intentionally propagate as IOException — a corrupt stream trailer means
                 // the stream itself is untrustworthy.
+                log.debug(
+                        "drainStartStream: skipping undecodable frame flags=0x{} len={}",
+                        Integer.toHexString(flags),
+                        len);
                 continue;
             }
             if (!sr.hasField(srEventF)) {
@@ -484,7 +493,14 @@ final class E2bEnvdProcessClient {
             Descriptors.Descriptor endDesc = processEventDesc.findNestedTypeByName("EndEvent");
             DynamicMessage.Builder endBuilder = DynamicMessage.newBuilder(endDesc);
             Descriptors.FieldDescriptor exitCodeField = endDesc.findFieldByName("exit_code");
+            // protojson accepts both the camelCase jsonName ("exitCode") and the
+            // original proto field name ("exit_code") on the wire: prefer jsonName,
+            // fall back to the original. (Single-word fields like error/event/end
+            // are identical in both forms and need no fallback.)
             JsonNode exitCodeNode = endNode.path("exitCode");
+            if (exitCodeNode.isMissingNode() || exitCodeNode.isNull()) {
+                exitCodeNode = endNode.path("exit_code");
+            }
             if (exitCodeNode.canConvertToInt()) {
                 endBuilder.setField(exitCodeField, exitCodeNode.intValue());
             }
