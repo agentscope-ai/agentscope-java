@@ -48,7 +48,6 @@ class DockerSandboxRunCommandTest {
     private static DockerSandboxState minimalState() {
         DockerSandboxState state = new DockerSandboxState();
         state.setImage("ubuntu:22.04");
-        state.setWorkspaceRoot("/workspace");
         state.setWorkspaceSpec(new WorkspaceSpec());
         return state;
     }

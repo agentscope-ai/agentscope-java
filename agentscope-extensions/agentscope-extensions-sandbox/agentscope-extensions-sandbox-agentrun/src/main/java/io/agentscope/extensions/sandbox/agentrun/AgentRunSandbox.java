@@ -137,7 +137,7 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
             // Persistence is handled by the NAS/OSS mount — nothing to archive.
             return InputStream.nullInputStream();
         }
-        String root = arState.getWorkspaceRoot();
+        String root = arState.getWorkspaceSpec().getRoot();
         String cmd = "tar -cf - -C " + shellSingleQuote(root) + " . | base64 -w0";
         AgentRunMcpChannel.ExecResult r = mcp.exec(cmd, null, TAR_TIMEOUT_SECONDS);
         if (r.exitCode != 0) {
@@ -152,7 +152,7 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
 
     @Override
     protected void doHydrateWorkspace(InputStream archive) throws Exception {
-        String root = arState.getWorkspaceRoot();
+        String root = arState.getWorkspaceSpec().getRoot();
         byte[] all = archive.readAllBytes();
         if (all.length == 0) {
             return;
@@ -189,7 +189,7 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
 
     @Override
     protected void doSetupWorkspace() throws Exception {
-        mcp.exec("mkdir -p " + shellSingleQuote(arState.getWorkspaceRoot()), null, 30);
+        mcp.exec("mkdir -p " + shellSingleQuote(arState.getWorkspaceSpec().getRoot()), null, 30);
     }
 
     @Override
@@ -199,15 +199,15 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
             return;
         }
         try {
-            mcp.exec("rm -rf " + shellSingleQuote(arState.getWorkspaceRoot()), null, 30);
+            mcp.exec("rm -rf " + shellSingleQuote(arState.getWorkspaceSpec().getRoot()), null, 30);
         } catch (Exception e) {
             // best-effort
         }
     }
 
     @Override
-    protected String getWorkspaceRoot() {
-        return arState.getWorkspaceRoot();
+    public String getWorkspaceRoot() {
+        return arState.getWorkspaceSpec().getRoot();
     }
 
     private void ensureSandbox() throws Exception {
@@ -238,7 +238,7 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
     }
 
     private String relativeOrAbsoluteCwd() {
-        String root = arState.getWorkspaceRoot();
+        String root = arState.getWorkspaceSpec().getRoot();
         return root != null && !root.isBlank() ? root : null;
     }
 

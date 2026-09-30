@@ -76,7 +76,7 @@ public class DaytonaSandbox extends AbstractBaseSandbox {
                 http.execute(
                         daytonaState.getSandboxId(),
                         command,
-                        relativeCwd(daytonaState.getWorkspaceRoot()),
+                        relativeCwd(daytonaState.getWorkspaceSpec().getRoot()),
                         timeoutSeconds);
         int exit = j.path("exitCode").asInt(-1);
         String out = j.path("result").asText("");
@@ -93,7 +93,7 @@ public class DaytonaSandbox extends AbstractBaseSandbox {
 
     @Override
     protected InputStream doPersistWorkspace() throws Exception {
-        String root = daytonaState.getWorkspaceRoot();
+        String root = daytonaState.getWorkspaceSpec().getRoot();
         String cmd = "tar -cf - -C " + shellSingleQuote(root) + " . | base64 -w0";
         JsonNode j =
                 http.execute(
@@ -111,7 +111,7 @@ public class DaytonaSandbox extends AbstractBaseSandbox {
 
     @Override
     protected void doHydrateWorkspace(InputStream archive) throws Exception {
-        String root = daytonaState.getWorkspaceRoot();
+        String root = daytonaState.getWorkspaceSpec().getRoot();
         String rel = relativeCwd(root);
         byte[] all = archive.readAllBytes();
         String b64 = Base64.getEncoder().encodeToString(all);
@@ -156,21 +156,21 @@ public class DaytonaSandbox extends AbstractBaseSandbox {
 
     @Override
     protected void doSetupWorkspace() throws Exception {
-        exec(null, "mkdir -p " + shellSingleQuote(daytonaState.getWorkspaceRoot()), 30);
+        exec(null, "mkdir -p " + shellSingleQuote(daytonaState.getWorkspaceSpec().getRoot()), 30);
     }
 
     @Override
     protected void doDestroyWorkspace() throws Exception {
         try {
-            exec(null, "rm -rf " + shellSingleQuote(daytonaState.getWorkspaceRoot()), 30);
+            exec(null, "rm -rf " + shellSingleQuote(daytonaState.getWorkspaceSpec().getRoot()), 30);
         } catch (Exception e) {
             // best-effort
         }
     }
 
     @Override
-    protected String getWorkspaceRoot() {
-        return daytonaState.getWorkspaceRoot();
+    public String getWorkspaceRoot() {
+        return daytonaState.getWorkspaceSpec().getRoot();
     }
 
     private void ensureSandbox() throws Exception {

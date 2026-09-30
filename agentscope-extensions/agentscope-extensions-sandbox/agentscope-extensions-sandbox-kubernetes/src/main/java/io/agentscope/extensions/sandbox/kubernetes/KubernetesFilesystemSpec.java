@@ -52,7 +52,11 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     public KubernetesFilesystemSpec workspaceRoot(String workspaceRoot) {
-        options.setWorkspaceRoot(workspaceRoot);
+        // Copy-on-write so the caller's WorkspaceSpec is never mutated and the two builders
+        // stay order-independent regardless of which is applied last.
+        WorkspaceSpec spec = defaultWorkspaceSpec.copy();
+        spec.setRoot(workspaceRoot);
+        this.defaultWorkspaceSpec = spec;
         return this;
     }
 
@@ -92,7 +96,8 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     public KubernetesFilesystemSpec workspaceSpec(WorkspaceSpec workspaceSpec) {
-        this.defaultWorkspaceSpec = workspaceSpec;
+        this.defaultWorkspaceSpec =
+                workspaceSpec != null ? workspaceSpec.copy() : new WorkspaceSpec();
         return this;
     }
 

@@ -29,7 +29,6 @@ class AgentRunSandboxShutdownTest {
         AgentRunSandboxState state = new AgentRunSandboxState();
         state.setSandboxId(id);
         state.setSandboxOwned(owned);
-        state.setWorkspaceRoot(AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT);
         WorkspaceSpec ws = new WorkspaceSpec();
         ws.setRoot(AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT);
         state.setWorkspaceSpec(ws);

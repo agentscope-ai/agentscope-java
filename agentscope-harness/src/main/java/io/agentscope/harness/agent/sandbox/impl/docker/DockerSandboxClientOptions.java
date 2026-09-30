@@ -35,9 +35,6 @@ public class DockerSandboxClientOptions extends SandboxClientOptions {
     /** Docker image to run. Defaults to {@code ubuntu:22.04}. */
     private String image = "ubuntu:22.04";
 
-    /** Workspace root path inside the container. Defaults to {@code /workspace}. */
-    private String workspaceRoot = "/workspace";
-
     /** Environment variables to inject into the container. */
     private Map<String, String> environment = new LinkedHashMap<>();
 
@@ -98,35 +95,6 @@ public class DockerSandboxClientOptions extends SandboxClientOptions {
      */
     public void setImage(String image) {
         this.image = image;
-    }
-
-    /**
-     * Returns the workspace root path inside the container.
-     *
-     * @return workspace root
-     */
-    public String getWorkspaceRoot() {
-        return workspaceRoot;
-    }
-
-    /**
-     * Sets the workspace root path inside the container.
-     *
-     * @param workspaceRoot absolute path inside the container
-     * @return this options instance
-     */
-    public DockerSandboxClientOptions workspaceRoot(String workspaceRoot) {
-        this.workspaceRoot = workspaceRoot;
-        return this;
-    }
-
-    /**
-     * Sets the workspace root path inside the container.
-     *
-     * @param workspaceRoot absolute path inside the container
-     */
-    public void setWorkspaceRoot(String workspaceRoot) {
-        this.workspaceRoot = workspaceRoot;
     }
 
     /**

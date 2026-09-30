@@ -28,7 +28,7 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
     private SandboxClient<?> client;
     private final E2bSandboxClientOptions options = new E2bSandboxClientOptions();
     private SandboxSnapshotSpec snapshotSpec = new NoopSnapshotSpec();
-    private WorkspaceSpec defaultWorkspaceSpec = new WorkspaceSpec();
+    private WorkspaceSpec defaultWorkspaceSpec = createDefaultWorkspaceSpec();
 
     public E2bFilesystemSpec client(SandboxClient<?> client) {
         this.client = client;
@@ -52,11 +52,6 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
 
     public E2bFilesystemSpec templateId(String templateId) {
         options.setTemplateId(templateId);
-        return this;
-    }
-
-    public E2bFilesystemSpec workspaceRoot(String workspaceRoot) {
-        options.setWorkspaceRoot(workspaceRoot);
         return this;
     }
 
@@ -106,14 +101,30 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    public E2bFilesystemSpec workspaceRoot(String workspaceRoot) {
+        // Copy-on-write so the caller's WorkspaceSpec is never mutated and the two builders
+        // stay order-independent regardless of which is applied last.
+        WorkspaceSpec spec = defaultWorkspaceSpec.copy();
+        spec.setRoot(workspaceRoot);
+        this.defaultWorkspaceSpec = spec;
+        return this;
+    }
+
     public E2bFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
         this.snapshotSpec = snapshotSpec;
         return this;
     }
 
     public E2bFilesystemSpec workspaceSpec(WorkspaceSpec workspaceSpec) {
-        this.defaultWorkspaceSpec = workspaceSpec;
+        this.defaultWorkspaceSpec =
+                workspaceSpec != null ? workspaceSpec.copy() : createDefaultWorkspaceSpec();
         return this;
+    }
+
+    private static WorkspaceSpec createDefaultWorkspaceSpec() {
+        WorkspaceSpec spec = new WorkspaceSpec();
+        spec.setRoot(E2bSandboxState.DEFAULT_WORKSPACE_ROOT);
+        return spec;
     }
 
     @Override

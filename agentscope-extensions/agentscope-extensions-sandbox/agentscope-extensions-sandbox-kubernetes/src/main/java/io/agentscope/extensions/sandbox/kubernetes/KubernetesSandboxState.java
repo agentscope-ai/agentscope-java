@@ -20,13 +20,15 @@ import io.agentscope.harness.agent.sandbox.SandboxState;
 /** Serializable state for an agent-sandbox-backed Kubernetes sandbox. */
 public class KubernetesSandboxState extends SandboxState {
 
+    /** Default workspace root inside Kubernetes sandboxes. */
+    public static final String DEFAULT_WORKSPACE_ROOT = "/workspace";
+
     private String namespace;
     private String claimName;
     private String sandboxName;
     private String warmPoolName;
     private String podName;
     private String podIP;
-    private String workspaceRoot = "/workspace";
 
     /**
      * Base directory of the runtime file API ({@code /upload}, {@code /download}); paths sent
@@ -82,14 +84,6 @@ public class KubernetesSandboxState extends SandboxState {
 
     public void setPodIP(String podIP) {
         this.podIP = podIP;
-    }
-
-    public String getWorkspaceRoot() {
-        return workspaceRoot;
-    }
-
-    public void setWorkspaceRoot(String workspaceRoot) {
-        this.workspaceRoot = workspaceRoot;
     }
 
     public String getFileApiBaseDir() {

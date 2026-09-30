@@ -28,7 +28,7 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
     private SandboxClient<?> client;
     private final AgentRunSandboxClientOptions options = new AgentRunSandboxClientOptions();
     private SandboxSnapshotSpec snapshotSpec = new NoopSnapshotSpec();
-    private WorkspaceSpec defaultWorkspaceSpec = new WorkspaceSpec();
+    private WorkspaceSpec defaultWorkspaceSpec = createDefaultWorkspaceSpec();
 
     public AgentRunFilesystemSpec client(SandboxClient<?> client) {
         this.client = client;
@@ -86,7 +86,11 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     public AgentRunFilesystemSpec workspaceRoot(String workspaceRoot) {
-        options.setWorkspaceRoot(workspaceRoot);
+        // Copy-on-write so the caller's WorkspaceSpec is never mutated and the two builders
+        // stay order-independent regardless of which is applied last.
+        WorkspaceSpec spec = defaultWorkspaceSpec.copy();
+        spec.setRoot(workspaceRoot);
+        this.defaultWorkspaceSpec = spec;
         return this;
     }
 
@@ -111,8 +115,15 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     public AgentRunFilesystemSpec workspaceSpec(WorkspaceSpec workspaceSpec) {
-        this.defaultWorkspaceSpec = workspaceSpec;
+        this.defaultWorkspaceSpec =
+                workspaceSpec != null ? workspaceSpec.copy() : createDefaultWorkspaceSpec();
         return this;
+    }
+
+    private static WorkspaceSpec createDefaultWorkspaceSpec() {
+        WorkspaceSpec spec = new WorkspaceSpec();
+        spec.setRoot(AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT);
+        return spec;
     }
 
     @Override

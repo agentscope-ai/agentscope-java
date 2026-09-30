@@ -29,7 +29,6 @@ class AgentRunSandboxStateSerializationTest {
         AgentRunSandboxState state = new AgentRunSandboxState();
         state.setSessionId("session-42");
         state.setSandboxId("01KE8DAJ35JC8SKP9CNFRZ8CW7");
-        state.setWorkspaceRoot("/mnt/nas/workspace");
         state.setTemplateName("agentscope-default");
         state.setAccountId("123456789012");
         state.setRegion("cn-hangzhou");
@@ -50,7 +49,6 @@ class AgentRunSandboxStateSerializationTest {
         AgentRunSandboxState r = (AgentRunSandboxState) read;
         Assertions.assertEquals("session-42", r.getSessionId());
         Assertions.assertEquals("01KE8DAJ35JC8SKP9CNFRZ8CW7", r.getSandboxId());
-        Assertions.assertEquals("/mnt/nas/workspace", r.getWorkspaceRoot());
         Assertions.assertEquals("agentscope-default", r.getTemplateName());
         Assertions.assertEquals("123456789012", r.getAccountId());
         Assertions.assertEquals("cn-hangzhou", r.getRegion());
@@ -78,7 +76,6 @@ class AgentRunSandboxStateSerializationTest {
         SandboxState read = client.deserializeState(json);
         Assertions.assertInstanceOf(AgentRunSandboxState.class, read);
         AgentRunSandboxState r = (AgentRunSandboxState) read;
-        Assertions.assertEquals(AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT, r.getWorkspaceRoot());
         Assertions.assertFalse(r.isWorkspaceOnNas());
         Assertions.assertTrue(r.isSandboxOwned());
         Assertions.assertFalse(r.isWorkspaceRootReady());

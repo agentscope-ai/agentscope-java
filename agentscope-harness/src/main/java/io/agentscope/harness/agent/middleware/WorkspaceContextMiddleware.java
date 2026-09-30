@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
@@ -30,8 +31,14 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -127,6 +134,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private static final int DEFAULT_MAX_CONTEXT_TOKENS = 8000;
 
+    private static final Logger log = LoggerFactory.getLogger(WorkspaceContextMiddleware.class);
+
     private final WorkspaceManager workspaceManager;
     private final String agentName;
     private final String environmentMemory;
@@ -135,6 +144,22 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private final boolean disableMemoryHooks;
     private List<String> additionalContextFiles = List.of();
     private boolean artifactDeliveryEnabled = false;
+
+    /**
+     * Cache for sandbox OS/TMPDIR probe results, keyed by {@code sandbox id + command}. The
+     * sandbox platform does not change across restarts, so one successful probe per sandbox is
+     * enough — this keeps the per-call prompt build down to zero extra execs after the first
+     * one. Bounded LRU (1024 entries) so a long-lived multi-tenant process cannot grow it
+     * without limit.
+     */
+    private final Map<String, String> sandboxProbeCache =
+            Collections.synchronizedMap(
+                    new LinkedHashMap<>(64, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                            return size() > 1024;
+                        }
+                    });
 
     public WorkspaceContextMiddleware(WorkspaceManager workspaceManager) {
         this(workspaceManager, "HarnessAgent", null, DEFAULT_MAX_CONTEXT_TOKENS, false, false);
@@ -240,7 +265,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
         String workspaceParagraph =
                 buildWorkspaceParagraph(
-                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled);
+                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled, rc);
         String loadedContext =
                 buildLoadedContextSection(
                         agentsContent, memoryContent, knowledgeBlock, additionalBlock);
@@ -320,11 +345,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
      *       don't recognize.
      * </ul>
      */
-    private static String buildWorkspaceParagraph(
+    private String buildWorkspaceParagraph(
             Path workspace,
             Path effectiveWorkspace,
             AbstractFilesystem fs,
-            boolean artifactDeliveryEnabled) {
+            boolean artifactDeliveryEnabled,
+            RuntimeContext rc) {
         StringBuilder sb = new StringBuilder("## Workspace\n");
         LocalFilesystemWithShell localUpper = detectLocalUpper(fs);
         Path project = localUpper != null ? localUpper.getShellCwd() : null;
@@ -365,7 +391,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             sb.append("Shell commands run with `pwd` set to the project directory.\n");
         } else if (fs instanceof AbstractSandboxFilesystem sandbox
                 && !(fs instanceof OverlayFilesystem)) {
-            sb.append("Sandbox root: /workspace (container id: ")
+            sb.append("Sandbox root: ")
+                    .append(sandbox.getWorkspaceRoot())
+                    .append(" (container id: ")
                     .append(sandbox.id())
                     .append(")\n");
             if (artifactDeliveryEnabled) {
@@ -379,6 +407,15 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                                 + " accessible and there is no mechanism for moving files across"
                                 + " the boundary.\n");
             }
+            appendHostPlatformInfo(
+                    sb,
+                    querySandbox(
+                            sandbox,
+                            rc,
+                            "cat /etc/os-release 2>/dev/null | grep ^PRETTY_NAME | cut -d="
+                                    + " -f2 | tr -d '\"'",
+                            querySandbox(sandbox, rc, "uname -srm", "Linux")),
+                    querySandbox(sandbox, rc, "echo \"${TMPDIR:-/tmp}\"", "/tmp"));
         } else if (fs instanceof CompositeFilesystem) {
             sb.append("Distributed workspace template root: ")
                     .append(workspace.toAbsolutePath())
@@ -423,6 +460,54 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                             + " cannot access your container's filesystem directly.\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * Executes a shell command in the sandbox and returns the stripped output, or the given
+     * fallback string if execution fails. Successful results are cached per sandbox so the
+     * per-call prompt build issues no repeated execs; failures are logged at debug level and
+     * fall back every time (a transient failure must not poison later prompts).
+     */
+    private String querySandbox(
+            AbstractSandboxFilesystem sandbox, RuntimeContext rc, String command, String fallback) {
+        String cacheKey = sandbox.id() + "\0" + command;
+        String cached = sandboxProbeCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        Optional<String> probed = probeSandbox(sandbox, rc, command);
+        probed.ifPresent(value -> sandboxProbeCache.put(cacheKey, value));
+        return probed.orElse(fallback);
+    }
+
+    private static Optional<String> probeSandbox(
+            AbstractSandboxFilesystem sandbox, RuntimeContext rc, String command) {
+        try {
+            ExecuteResponse result = sandbox.execute(rc, command, null);
+            if (result.exitCode() != null && result.exitCode() == 0 && result.output() != null) {
+                String out = result.output().strip();
+                if (!out.isEmpty()) {
+                    return Optional.of(out);
+                }
+            }
+            log.debug(
+                    "[workspace-context] sandbox probe returned non-zero/empty output"
+                            + " (container id: {}, command: {})",
+                    sandbox.id(),
+                    command);
+        } catch (Exception e) {
+            log.debug(
+                    "[workspace-context] sandbox probe failed (container id: {}, command: {}): {}",
+                    sandbox.id(),
+                    command,
+                    e.getMessage());
+        }
+        return Optional.empty();
+    }
+
+    private static void appendHostPlatformInfo(StringBuilder sb, String osInfo, String tmpdir) {
+        sb.append("My operating system is: ").append(osInfo).append("\n");
+        sb.append("Temporary files directory: ").append(tmpdir).append("\n");
     }
 
     /**
@@ -579,7 +664,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         }
 
         if (!knowledgeFiles.isEmpty()) {
-            if (sb.length() > 0) {
+            if (!sb.isEmpty()) {
                 sb.append("\n");
             }
             sb.append("Knowledge files:\n");

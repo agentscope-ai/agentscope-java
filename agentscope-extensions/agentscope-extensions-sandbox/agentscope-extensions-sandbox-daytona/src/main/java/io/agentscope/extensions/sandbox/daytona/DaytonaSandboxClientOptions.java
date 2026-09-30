@@ -31,7 +31,6 @@ public class DaytonaSandboxClientOptions extends SandboxClientOptions {
     private Integer cpu = 1;
     private Integer memory = 1;
     private Integer disk = 3;
-    private String workspaceRoot = DaytonaSandboxState.DEFAULT_WORKSPACE_ROOT;
     private int connectTimeoutSeconds = 30;
     private int readTimeoutSeconds = 120;
     private int maxRetries = 3;
@@ -116,15 +115,6 @@ public class DaytonaSandboxClientOptions extends SandboxClientOptions {
 
     public void setDisk(Integer disk) {
         this.disk = disk;
-    }
-
-    public String getWorkspaceRoot() {
-        return workspaceRoot;
-    }
-
-    public void setWorkspaceRoot(String workspaceRoot) {
-        this.workspaceRoot =
-                workspaceRoot != null ? workspaceRoot : DaytonaSandboxState.DEFAULT_WORKSPACE_ROOT;
     }
 
     public int getConnectTimeoutSeconds() {
