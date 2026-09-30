@@ -106,8 +106,9 @@ public final class GracefulShutdownManager {
     /**
      * Register a {@link ShutdownStateSaver} for the given agent.
      *
-     * <p>The saver is invoked during shutdown to persist the agent's {@link AgentState}
-     * (with {@code shutdownInterrupted} set to {@code true}).
+     * <p>The saver is invoked during shutdown to persist the agent's {@link AgentState}. Legacy
+     * agent-level savers receive a state with {@code shutdownInterrupted} set; request-scoped savers
+     * decide whether to set that flag or defer to an existing terminal write.
      */
     public void bindStateSaver(Agent agent, ShutdownStateSaver saver) {
         if (agent == null || saver == null) {
@@ -205,6 +206,11 @@ public final class GracefulShutdownManager {
         getActiveRequest(requestId).ifPresent(ctx -> ctx.bindState(state));
     }
 
+    /** Bind a saver to one request so shutdown checkpoints share that call's save ordering. */
+    public void bindRequestSaver(String requestId, ShutdownStateSaver saver) {
+        getActiveRequest(requestId).ifPresent(ctx -> ctx.bindSaver(saver));
+    }
+
     public void unregisterRequest(String requestId) {
         if (requestId == null || requestId.isEmpty()) {
             return;
@@ -232,7 +238,7 @@ public final class GracefulShutdownManager {
 
     /**
      * Called from agent's handleInterrupt when a SYSTEM interrupt is observed.
-     * Always saves because memory may have been updated after the previous safe-point/timeout save.
+     * Ensures the latest state is saved, unless a terminal write already owns that state.
      */
     public void saveOnInterruptObserved(String requestId) {
         getActiveRequest(requestId).ifPresent(ActiveRequestContext::saveState);

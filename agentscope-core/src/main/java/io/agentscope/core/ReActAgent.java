@@ -112,6 +112,7 @@ import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.shutdown.PartialReasoningPolicy;
+import io.agentscope.core.shutdown.ShutdownStateSaver;
 import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillFilter;
@@ -473,26 +474,141 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * store supports versioning.
      */
     private Mono<Void> saveStateToSession(CallExecution scope) {
+        return saveStateToSession(scope, false);
+    }
+
+    private Mono<Void> saveStateToSession(CallExecution scope, boolean cancelled) {
         if (stateStore == null) {
             return Mono.empty();
         }
-        SlotRef ref = SlotRef.parse(scope.slotKey);
-        AgentState toSave = scope.state;
-        return Mono.<Void>fromRunnable(
-                        () -> {
-                            long newVersion =
-                                    persistAgentStateCas(
-                                            ref.userId,
-                                            ref.sessionId,
-                                            scope.slotKey,
-                                            toSave,
-                                            scope.loadedVersion,
-                                            scope.loadedContextSize);
-                            if (newVersion != AgentStateStore.UNVERSIONED) {
-                                scope.loadedVersion = newVersion;
-                            }
-                        })
-                .subscribeOn(Schedulers.boundedElastic());
+        synchronized (scope) {
+            if (scope.terminalSave != null) {
+                return scope.terminalSave;
+            }
+            // cache() keeps an already-started write alive when its subscriber cancels. The
+            // cancellation cleanup joins that same write instead of racing a second CAS.
+            AtomicReference<Mono<Void>> created = new AtomicReference<>();
+            Mono<Void> save =
+                    Mono.<Void>fromRunnable(
+                                    () -> {
+                                        synchronized (scope.saveLock) {
+                                            AgentState toSave =
+                                                    cancelled
+                                                            ? AgentState.fromJsonString(
+                                                                    scope.state.toJson())
+                                                            : scope.state;
+                                            if (cancelled) {
+                                                reconcileCancelledTools(toSave);
+                                            }
+                                            SlotRef ref = SlotRef.parse(scope.slotKey);
+                                            long newVersion =
+                                                    persistAgentStateCas(
+                                                            ref.userId,
+                                                            ref.sessionId,
+                                                            scope.slotKey,
+                                                            toSave,
+                                                            scope.loadedVersion,
+                                                            scope.loadedContextSize);
+                                            if (newVersion != AgentStateStore.UNVERSIONED) {
+                                                scope.loadedVersion = newVersion;
+                                            }
+                                        }
+                                    })
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .doOnError(
+                                    error -> {
+                                        // The shared write has finished. A later cancellation
+                                        // cleanup may need to retry a transient store failure.
+                                        synchronized (scope) {
+                                            if (scope.terminalSave == created.get()) {
+                                                scope.terminalSave = null;
+                                            }
+                                        }
+                                    })
+                            .cache();
+            created.set(save);
+            scope.terminalSave = save;
+            return save;
+        }
+    }
+
+    @Override
+    protected ShutdownStateSaver shutdownStateSaverForCall(Object callScope) {
+        if (stateStore == null) {
+            // The constructor also skips bindStateSaver when there is no state store.
+            return null;
+        }
+        CallExecution scope = (CallExecution) callScope;
+        return state -> {
+            // A terminal write owns the final state. The request remains registered until that
+            // write completes, so a shutdown checkpoint must not block or overwrite it.
+            Mono<Void> terminal;
+            synchronized (scope) {
+                terminal = scope.terminalSave;
+            }
+            if (terminal != null) {
+                return;
+            }
+            synchronized (scope.saveLock) {
+                synchronized (scope) {
+                    terminal = scope.terminalSave;
+                }
+                if (terminal == null) {
+                    state.setShutdownInterrupted(true);
+                    SlotRef ref = SlotRef.parse(scope.slotKey);
+                    long expected = scope.loadedVersion;
+                    long version =
+                            stateStore.saveIfVersion(
+                                    ref.userId, ref.sessionId, "agent_state", state, expected);
+                    if (version == AgentStateStore.UNVERSIONED
+                            && stateStore.supportsVersioning()
+                            && expected != AgentStateStore.UNVERSIONED) {
+                        stateConflictCount.incrementAndGet();
+                        log.warn(
+                                "Shutdown state save skipped due to concurrent modification"
+                                        + " (userId={}, sessionId={}, expectedVersion={})",
+                                ref.userId,
+                                ref.sessionId,
+                                expected);
+                    } else if (version != AgentStateStore.UNVERSIONED) {
+                        scope.loadedVersion = version;
+                        slotVersions.put(scope.slotKey, version);
+                    }
+                    return;
+                }
+            }
+            // The terminal write was installed while we waited for saveLock. Its call lifecycle
+            // keeps the request active until the write finishes.
+        };
+    }
+
+    @Override
+    protected Mono<Void> afterAgentCancellation(Object callScope) {
+        CallExecution scope = (CallExecution) callScope;
+        return Mono.defer(() -> saveStateToSession(scope, true))
+                .onErrorResume(error -> saveStateToSession(scope, true))
+                .onErrorResume(
+                        error -> {
+                            log.warn("Failed to persist agent state after cancellation", error);
+                            return Mono.empty();
+                        });
+    }
+
+    private void reconcileCancelledTools(AgentState snapshot) {
+        for (ToolUseBlock tool :
+                MessageUtils.extractPendingToolCalls(snapshot.getContext(), getName())) {
+            if (tool.getState() != ToolCallState.PENDING
+                    && tool.getState() != ToolCallState.ALLOWED) {
+                continue;
+            }
+            snapshot.contextMutable()
+                    .add(
+                            ToolResultMessageBuilder.buildToolResultMsg(
+                                    ToolResultBlock.error(
+                                            tool.getId(), "Tool execution was cancelled."),
+                                    tool,
+                                    getName()));
+        }
     }
 
     /**
@@ -1359,6 +1475,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             ctx.remove(ctx.size() - 1);
                                         }
                                         scope.nativeResponseFormat = null;
+                                        // The native attempt has terminated with an error. Its
+                                        // fallback is a new attempt and may need its own save.
+                                        synchronized (scope) {
+                                            scope.terminalSave = null;
+                                        }
                                     });
                 });
     }
@@ -1733,6 +1854,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** Context size at load time; used by {@link ConflictPolicy#APPEND_MERGE}. */
         int loadedContextSize;
+
+        /** Shared terminal write, including cancellation while a normal save is in flight. */
+        Mono<Void> terminalSave;
+
+        /**
+         * Serializes forced-shutdown checkpoints with terminal writes across blocking store I/O.
+         * A slow checkpoint can delay cancellation cleanup and release of the same-session gate.
+         * Lock order is saveLock then this CallExecution monitor; never acquire saveLock while
+         * holding the CallExecution monitor.
+         */
+        final Object saveLock = new Object();
 
         /**
          * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
