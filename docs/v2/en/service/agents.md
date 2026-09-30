@@ -1,5 +1,6 @@
 ---
 title: "Register or create an Agent"
+zh_link: /v2/zh/service/agents
 ---
 
 <Note>

@@ -1,5 +1,6 @@
 ---
 title: "本地安装"
+en_link: /v2/en/service/quickstart
 ---
 
 <Note>

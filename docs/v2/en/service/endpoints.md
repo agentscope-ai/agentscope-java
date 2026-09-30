@@ -1,5 +1,6 @@
 ---
 title: "Application integration: Endpoint and SSE"
+zh_link: /v2/zh/service/endpoints
 ---
 
 <Note>

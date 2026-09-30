@@ -1,5 +1,6 @@
 ---
 title: Troubleshooting
+zh_link: /v2/zh/service/troubleshooting
 ---
 
 <Note>

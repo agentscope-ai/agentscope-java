@@ -281,9 +281,20 @@ public class DataSessionApiController {
                 yield recorded != null ? recorded : eventLog.append(sessionId, type, payload);
             }
             case SessionEventTypes.USER_INTERRUPT -> {
-                turnRunner.interrupt(sessionId);
-                sessionService.updateStatus(
-                        userId, sessionId, DataSessionService.STATUS_IDLE, payload);
+                if (payload.containsKey("run_id")) {
+                    Object value = payload.get("run_id");
+                    if (!(value instanceof String runId) || runId.isBlank()) {
+                        throw ApiException.invalidRequest(
+                                "invalid_run_id",
+                                "run_id must be a non-blank string",
+                                "events[].payload.run_id");
+                    }
+                    turnRunner.interruptRun(userId, sessionId, runId);
+                } else {
+                    turnRunner.interrupt(sessionId);
+                    sessionService.updateStatus(
+                            userId, sessionId, DataSessionService.STATUS_IDLE, payload);
+                }
                 yield eventLog.append(sessionId, type, payload);
             }
             case SessionEventTypes.USER_TOOL_CONFIRMATION -> {

@@ -1,5 +1,6 @@
 ---
 title: "Console Inbox: notifications, approvals and reviews"
+zh_link: /v2/zh/service/inbox
 ---
 
 <Note>

@@ -1,5 +1,6 @@
 ---
 title: A2A
+zh_link: /v2/zh/integration/protocol/a2a
 ---
 
 `agentscope-extensions-a2a` implements the [A2A protocol](https://a2aproject.github.io/A2A/) and ships two sub-modules:

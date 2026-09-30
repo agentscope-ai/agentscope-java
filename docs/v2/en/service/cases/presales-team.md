@@ -1,6 +1,7 @@
 ---
 title: "Managed and mixed Teams: from customer needs to a proposal"
 description: "Create a Managed Team for a proposal and PoC plan, then add External queries and Hosted implementation."
+zh_link: /v2/zh/service/cases/presales-team
 ---
 
 <Note>

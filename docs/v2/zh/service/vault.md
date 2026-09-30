@@ -1,5 +1,6 @@
 ---
 title: "Vault：为工具提供凭据"
+en_link: /v2/en/service/vault
 ---
 
 <Note>

@@ -1,5 +1,6 @@
 ---
 title: Agent Protocol
+zh_link: /v2/zh/integration/protocol/agent-protocol
 ---
 
 `agentscope-extensions-agent-protocol` exposes AgentScope's [Harness Agent](/v2/en/docs/harness/architecture) as a standard [Agent Protocol](https://agentprotocol.ai/) HTTP API, letting external systems (CI, other agent platforms, automation jobs) submit "tasks" using a uniform contract — no need to know the implementation details.

@@ -1,5 +1,6 @@
 ---
 title: "Environments: execution locations"
+zh_link: /v2/zh/service/environments
 ---
 
 <Note>

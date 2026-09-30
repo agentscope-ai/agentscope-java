@@ -1,5 +1,6 @@
 ---
 title: "How Team coordination and completion work"
+zh_link: /v2/zh/service/team-execution
 ---
 
 <Note>

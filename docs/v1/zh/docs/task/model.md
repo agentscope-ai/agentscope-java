@@ -1,5 +1,6 @@
 ---
 title: 模型集成
+en_link: /v1/en/docs/task/model
 ---
 
 本指南介绍 AgentScope Java 支持的 LLM 模型及其配置方法。

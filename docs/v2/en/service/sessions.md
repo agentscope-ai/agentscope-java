@@ -1,5 +1,6 @@
 ---
 title: "Execution reference: Sessions, Runs and Attempts"
+zh_link: /v2/zh/service/sessions
 ---
 
 <Note>

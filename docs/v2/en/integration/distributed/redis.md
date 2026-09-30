@@ -1,5 +1,6 @@
 ---
 title: Redis
+zh_link: /v2/zh/integration/distributed/redis
 ---
 
 `agentscope-extensions-redis` provides full-stack Redis distributed storage — the recommended store for multi-replica production deployments.

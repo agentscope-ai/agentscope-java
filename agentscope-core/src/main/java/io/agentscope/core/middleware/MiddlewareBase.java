@@ -18,6 +18,8 @@ package io.agentscope.core.middleware;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -57,6 +59,43 @@ import reactor.core.publisher.Mono;
  * }</pre>
  */
 public interface MiddlewareBase {
+
+    /**
+     * Middleware extension points. Adding a point adds one constant here; the
+     * grouping mechanism stays unchanged.
+     */
+    enum ExtensionPoint {
+        ON_AGENT,
+        ON_REASONING,
+        ON_ACTING,
+        ON_MODEL_CALL,
+        ON_SYSTEM_PROMPT
+    }
+
+    /**
+     * Returns the extension points where this middleware is active. This is
+     * a participation switch, not a statement about which methods are
+     * overridden: a point declared active but not overridden simply runs
+     * its default (pass-through / no-op), and a point omitted is never
+     * invoked — even if overridden.
+     *
+     * <p>The default is active at every extension point, including ones
+     * added in future releases, so middlewares that do not override this
+     * method keep today's behavior unchanged. Once overridden, the active
+     * set is exactly the returned set; an empty set disables this
+     * middleware at every point while keeping its registration.
+     *
+     * <p>Activation is decided once at agent construction; mutating the
+     * returned set (or changing later results) has no effect on an
+     * already-built agent.
+     *
+     * @return the set of extension points this middleware participates in;
+     *         {@code null} is treated as the full set; elements that do not equal
+     *         an {@link ExtensionPoint} constant never activate any point
+     */
+    default Set<ExtensionPoint> activePoints() {
+        return EnumSet.allOf(ExtensionPoint.class);
+    }
 
     /**
      * Returns this middleware's execution order.

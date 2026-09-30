@@ -1,5 +1,6 @@
 ---
 title: Skill Repository
+zh_link: /v2/zh/integration/skill/index
 ---
 
 Choose a guide below to configure and use skill repository.

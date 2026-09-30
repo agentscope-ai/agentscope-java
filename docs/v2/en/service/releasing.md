@@ -1,5 +1,6 @@
 ---
 title: Publishing components
+zh_link: /v2/zh/service/releasing
 ---
 
 <Note>

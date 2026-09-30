@@ -1,5 +1,6 @@
 ---
 title: "应用接入：Endpoint 与 SSE"
+en_link: /v2/en/service/endpoints
 ---
 
 <Note>
