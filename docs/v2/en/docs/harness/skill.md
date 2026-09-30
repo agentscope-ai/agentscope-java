@@ -326,6 +326,8 @@ Marketplace skill resources start as in-memory bytes. For shell execution to wor
 - Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass
 - In sandbox mode, `.skills-cache` is in the default workspace projection roots, so the staged tree is hydrated into the sandbox alongside `workspace/skills/` at sandbox start time (and on content change)
 
+For a lazy host repository with an empty resource map and an `originDir`, staging reads support files from that directory one file at a time. Nested scripts and binary files are included; `SKILL.md`, hidden files/directories, and source symlinks are excluded. Changed files are refreshed and deleted files are removed from the cache. Existing cache symlinks are rejected, and an unreadable or missing source causes staging to fail without advertising a cached files root. A non-empty in-memory resource map remains authoritative.
+
 Workspace skills (Layer 3 / Layer 4) need no staging — they already live in the workspace tree.
 
 If two repositories report the same `getSource()`, the second is auto-suffixed (`<source>_2`, `<source>_3`, …) with a warning log, so paths and skill-ids never collide.

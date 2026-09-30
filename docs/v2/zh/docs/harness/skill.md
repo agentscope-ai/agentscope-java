@@ -326,6 +326,8 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 - 已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录，会在同一轮顺手清掉
 - Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱
 
+对于资源映射为空、且提供了 `originDir` 的宿主侧懒加载仓库，stage 会逐文件读取该目录中的支持文件，包括嵌套脚本和二进制文件；不复制 `SKILL.md`、隐藏文件或目录，以及源目录中的符号链接。文件变化时更新缓存，文件删除时清除对应缓存。缓存路径中已有的符号链接会被拒绝；源目录缺失或读取失败时，stage 失败，不会宣称存在缓存的文件根目录。非空的内存资源映射仍作为权威数据。
+
 工作区 skill（Layer 3 / Layer 4）不需要 stage——它们本来就在工作区目录里。
 
 如果两个仓库返回了相同的 `getSource()`，第二个会自动加后缀（`<source>_2`、`<source>_3` …），并打 warning log，所以路径和 skill-id 不会撞。
