@@ -130,6 +130,17 @@ class DeepSeekModelProviderTest {
     }
 
     @Test
+    @DisplayName("Reports a context window of 0 for a model id the table does not key")
+    void createReportsZeroContextWindowForUnknownModelId() {
+        ModelCreationContext context =
+                ModelCreationContext.builder().apiKey("test-deepseek-key").build();
+
+        Model model = new DeepSeekModelProvider().create("deepseek:deepseek-chat", context);
+
+        assertEquals(0, model.getContextWindowSize());
+    }
+
+    @Test
     @DisplayName("Creates model from context and applies default request settings")
     void createUsesModelCreationContextAndDefaultDeepSeekRequestSettings() throws Exception {
         CapturingTransport transport = new CapturingTransport();
