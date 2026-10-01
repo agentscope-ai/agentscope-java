@@ -37,8 +37,8 @@ public final class FilesystemUtils {
      * backend; pass the workspace-relative path to {@link #isSandboxBacked(AbstractFilesystem,
      * String)} when a prefix route may serve that path from a different backend.
      *
-     * <p>Unwraps at most eight wrappers. A deeper chain is treated as not sandbox-backed so a
-     * cycle cannot hang the caller.
+     * <p>Unwraps at most eight wrappers. A deeper chain is treated as sandbox-backed so a cycle or
+     * unexpectedly deep composition cannot expose a host path.
      */
     public static boolean isSandboxBacked(AbstractFilesystem filesystem) {
         return isSandboxBacked(filesystem, null);
@@ -70,7 +70,7 @@ public final class FilesystemUtils {
             }
             return filesystem instanceof BaseSandboxFilesystem;
         }
-        return false;
+        return true;
     }
 
     private static final Set<String> BINARY_EXTENSIONS =
