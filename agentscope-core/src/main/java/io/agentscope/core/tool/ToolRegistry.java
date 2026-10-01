@@ -127,8 +127,20 @@ class ToolRegistry {
      * Atomically remove a tool only if the current instance matches the expected one.
      * Uses {@link ConcurrentHashMap#remove(Object, Object)} to avoid TOCTOU races.
      *
+     * <p><b>Identity semantics</b>: The expected tool is compared by reference ({@code ==}),
+     * not via {@link Object#equals}. Two {@code AgentTool} instances that are
+     * {@link Object#equals equal} but not the same reference will not match. This is
+     * intentional — this method guards against accidental removal of a tool that was
+     * re-registered under the same name by another caller. The CAS at
+     * {@link ConcurrentHashMap#remove(Object, Object)} additionally depends on the
+     * {@link Entry} record's {@link Object#equals}, which compares both the
+     * {@code AgentTool} and {@code RegisteredToolFunction} fields; callers that
+     * rebuild {@code Entry} objects (e.g. via {@code copyTo}) must ensure
+     * {@code RegisteredToolFunction} equality remains stable across rebuilds.
+     *
      * @param toolName Tool name to remove
-     * @param expected The expected AgentTool instance (identity comparison)
+     * @param expected The expected {@link AgentTool} instance, compared by reference
+     *        ({@code ==}), not by {@link Object#equals}
      * @return true if the tool was removed, false if it was already replaced or absent
      */
     boolean removeToolIfSame(String toolName, AgentTool expected) {
