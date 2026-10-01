@@ -1446,4 +1446,34 @@ class ToolkitTest {
         assertEquals("add", result.getName());
         assertEquals("300", ToolTestUtils.extractContent(result));
     }
+
+    @Test
+    @DisplayName(
+            "callTool single with param.input but no ToolUseBlock.content should fail"
+                    + " schema validation (validation reads content, not merged input)")
+    void testCallToolSingleOnlyParamInputNoContentFailsValidation() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> paramInput = Map.of("a", 100, "b", 200);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-no-content")
+                        .name("add")
+                        .input(paramInput)
+                        .build();
+
+        ToolCallParam param =
+                ToolCallParam.builder().toolUseBlock(toolCall).input(paramInput).build();
+
+        ToolResultBlock result = toolkit.callTool(param).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-no-content", result.getId());
+        assertEquals("add", result.getName());
+        assertTrue(
+                isErrorResult(result), "Expected validation error, got: " + getResultText(result));
+        assertTrue(
+                getResultText(result).contains("Parameter validation failed"),
+                "Expected 'Parameter validation failed', got: " + getResultText(result));
+    }
 }
