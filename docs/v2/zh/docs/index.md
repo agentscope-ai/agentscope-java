@@ -158,7 +158,7 @@ AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部�
 <Card title="Middleware 取代松散 Hook" href="/v2/zh/docs/building-blocks/middleware">
 
 
-`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` 五个阶段取代 v1 的扁平 hook。每个关注点各居其层，组合干净利落。
+`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` / `onAgentStateReady` 六个阶段取代 v1 的扁平 hook。每个关注点各居其层，组合干净利落。
 
 </Card>
 
