@@ -177,7 +177,7 @@ Detail → [Skill](/v2/en/docs/harness/skill)
 
 The entire `io.agentscope.core.hook` package — the `Hook` interface, `HookEvent`, `HookEventType`, and all `*Event` classes — is `@Deprecated(forRemoval = true, since = "2.0.0")`. Existing imports still compile, and `Builder.hook(...)` / `.hooks(...)` are kept callable via `LegacyHookDispatcher` so v1 code does not break overnight. The recommended extension surface is now `io.agentscope.core.middleware`:
 
-- `MiddlewareBase` exposes five stages: the onion-shaped `onAgent` / `onReasoning` / `onActing` / `onModelCall`, and the pipeline-shaped `onSystemPrompt`.
+- `MiddlewareBase` exposes six stages: the onion-shaped `onAgent` / `onReasoning` / `onActing` / `onModelCall`, the pipeline-shaped `onSystemPrompt`, and the notification-shaped `onAgentStateReady`.
 - Builder methods: `.middleware(MiddlewareBase)` and `.middlewares(List<? extends MiddlewareBase>)`.
 - Built-in: `TaskReminderMiddleware` (pairs with `TodoTools`, re-injects the task list before each reasoning step).
 

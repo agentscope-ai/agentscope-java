@@ -31,6 +31,7 @@ import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.harness.agent.tool.PlanModeTools;
 import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -139,6 +140,12 @@ public class PlanModeMiddleware implements HarnessRuntimeMiddleware {
                 additionalAllowed == null || additionalAllowed.isEmpty()
                         ? Set.of()
                         : new LinkedHashSet<>(additionalAllowed);
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT, ExtensionPoint.ON_ACTING);
     }
 
     @Override
