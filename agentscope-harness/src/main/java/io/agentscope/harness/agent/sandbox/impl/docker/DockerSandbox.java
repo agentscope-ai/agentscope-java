@@ -143,11 +143,24 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
     }
 
     /**
+     * Writes the script to the process stdin and closes the stream (EOF tells non-interactive
+     * {@code sh} to run the buffered script). Package-private seam so the stdin transport —
+     * the actual #2924 fix — is testable without a Docker daemon.
+     */
+    static void writeScriptTo(java.io.OutputStream stdin, String command)
+            throws java.io.IOException {
+        try (OutputStream out = stdin) {
+            out.write(command.getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
      * Builds the {@code docker exec} argument list for a shell command. On Windows the script
-     * travels via stdin ({@code -i} + plain {@code sh}, no {@code -c}): {@link ProcessBuilder}
-     * funnels arguments through {@code cmd.exe}, which strips the nested double quotes that
-     * sandbox commands rely on (e.g. {@code "$(dirname ...)"}), while a Linux/macOS host
-     * passes them through untouched (#2924).
+     * travels via stdin ({@code -i} + plain {@code sh}, no {@code -c}): Java's {@link
+     * ProcessBuilder} quotes argv into a single command line for {@code CreateProcess}, and a
+     * native child (docker.exe) re-parses that line with MSVCRT-style rules, which strips the
+     * nested double quotes sandbox commands rely on (e.g. {@code "$(dirname ...)"}); a
+     * Linux/macOS host passes them through untouched (#2924).
      *
      * <p>Package-private for tests.
      */
@@ -185,14 +198,6 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         ProcessBuilder pb = new ProcessBuilder(cmd);
         Process process = pb.start();
 
-        if (windows) {
-            // The script travels via stdin (-i, no -c): write it, then close so sh runs the
-            // buffered script to completion and exits with its status (#2924).
-            try (OutputStream stdin = process.getOutputStream()) {
-                stdin.write(command.getBytes(StandardCharsets.UTF_8));
-            }
-        }
-
         ExecutorService drainer =
                 Executors.newFixedThreadPool(
                         2,
@@ -209,6 +214,34 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                 drainer.submit(() -> readStream(process.getInputStream(), OUTPUT_TRUNCATE_BYTES));
         Future<String> stderrFuture =
                 drainer.submit(() -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
+
+        if (windows) {
+            // The script travels via stdin (-i, no -c): write it, then close so sh runs the
+            // buffered script to completion and exits with its status (#2924). Written from
+            // the drainer pool AFTER the output drainers started, so early child output can
+            // never fill the stdout pipe and deadlock the write before waitFor() arms the
+            // timeout (#2924 review).
+            Future<?> stdinWrite =
+                    drainer.submit(
+                            () -> {
+                                try {
+                                    writeScriptTo(process.getOutputStream(), command);
+                                    return null;
+                                } catch (IOException e) {
+                                    throw new java.util.concurrent.CompletionException(e);
+                                }
+                            });
+            try {
+                stdinWrite.get(timeoutSeconds, TimeUnit.SECONDS);
+            } catch (Exception stdinFailure) {
+                process.destroyForcibly();
+                drainer.shutdownNow();
+                throw new SandboxException(
+                        SandboxErrorCode.EXEC_NONZERO,
+                        "Failed to write script to docker exec stdin",
+                        stdinFailure);
+            }
+        }
         drainer.shutdown();
 
         boolean exited = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);

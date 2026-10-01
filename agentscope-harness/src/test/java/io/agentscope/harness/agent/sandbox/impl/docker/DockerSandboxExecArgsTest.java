@@ -17,7 +17,10 @@ package io.agentscope.harness.agent.sandbox.impl.docker;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -55,14 +58,28 @@ class DockerSandboxExecArgsTest {
     }
 
     @Test
-    void windowsStdin_scriptSurvivesNestedDoubleQuotes() {
-        // The contract being pinned: the script is identical on both paths — only the
-        // transport differs. A caller feeds `buildExecArgs(..., true)` the same command string
-        // it writes to stdin, so nested double quotes never cross cmd.exe.
-        List<String> args = DockerSandbox.buildExecArgs(CMD, "/workspace", "container-1", true);
-        assertEquals(
-                -1,
-                String.join(" ", args).indexOf("\"$(dirname"),
-                "the script body must not appear in the args on Windows");
+    void windowsStdin_writeScriptTo_writesAndCloses() throws Exception {
+        // Behavioral pin of the actual #2924 fix: the seam writes the full script bytes and
+        // closes the stream (EOF tells non-interactive sh to run the buffered script).
+        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+        OutputStream counted =
+                new OutputStream() {
+                    @Override
+                    public void write(int b) {
+                        sink.write(b);
+                    }
+
+                    @Override
+                    public void close() {
+                        closed = true;
+                    }
+                };
+
+        DockerSandbox.writeScriptTo(counted, CMD);
+
+        assertEquals(CMD, sink.toString("UTF-8"), "the script bytes must reach stdin verbatim");
+        assertTrue(closed, "stdin must be closed so sh sees EOF");
     }
+
+    private volatile boolean closed;
 }
