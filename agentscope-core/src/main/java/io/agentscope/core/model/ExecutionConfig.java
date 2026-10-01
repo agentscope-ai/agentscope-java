@@ -153,6 +153,17 @@ public class ExecutionConfig {
                     .build();
 
     /**
+     * Sentinel value for {@link #timeout} meaning "no timeout". A negative duration is never
+     * produced by normal usage and is recognised by {@code applyTimeout} / {@code applyTimeout}
+     * as "skip the timeout operator entirely".
+     *
+     * <p>This is the only way to opt out of the timeout that {@link #TOOL_DEFAULTS} and {@link
+     * #MODEL_DEFAULTS} always carry, because {@link #mergeConfigs} treats {@code null} as
+     * "inherit from fallback".
+     */
+    public static final Duration NO_TIMEOUT = Duration.ofNanos(-1);
+
+    /**
      * Standard defaults for tool executions.
      *
      * <ul>
@@ -302,11 +313,21 @@ public class ExecutionConfig {
         /**
          * Sets the timeout duration for a single execution.
          *
-         * @param timeout the timeout duration, or null for no timeout
+         * @param timeout the timeout duration, or null to inherit from fallback
          * @return this builder instance
          */
         public Builder timeout(Duration timeout) {
             this.timeout = timeout;
+            return this;
+        }
+
+        /**
+         * Opt out of timeout entirely for this call. Equivalent to {@code timeout(NO_TIMEOUT)}.
+         * This is the only way to prevent the timeout inherited from {@link #TOOL_DEFAULTS} /
+         * {@link #MODEL_DEFAULTS}, because {@link #mergeConfigs} treats {@code null} as inherit.
+         */
+        public Builder noTimeout() {
+            this.timeout = NO_TIMEOUT;
             return this;
         }
 

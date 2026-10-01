@@ -596,18 +596,15 @@ public class Toolkit {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        ExecutionConfig effectiveConfig =
-                ExecutionConfig.mergeConfigs(
-                        config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS);
-
-        return executor.executeWithInfrastructure(param, effectiveConfig);
+        return executor.executeWithInfrastructure(param, resolveToolExecutionConfig(null));
     }
 
     /**
      * Execute a tool with a per-call {@link ExecutionConfig} override. Use this when the
      * toolkit-level defaults are inappropriate for a single invocation — for example, a
      * long-running approval tool that needs a 30-minute timeout, or a tool that should run
-     * without any timeout (supply a {@link ExecutionConfig} with {@code timeout(null)}).
+     * without any timeout (supply {@code ExecutionConfig.builder().noTimeout().build()} — see
+     * {@link ExecutionConfig#NO_TIMEOUT}).
      *
      * @param param Tool call parameters containing execution information
      * @param perCallConfig Execution config to use for this call; takes precedence over the
@@ -616,13 +613,27 @@ public class Toolkit {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param, ExecutionConfig perCallConfig) {
-        ExecutionConfig effectiveConfig =
-                ExecutionConfig.mergeConfigs(
-                        perCallConfig,
-                        ExecutionConfig.mergeConfigs(
-                                config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
+        return executor.executeWithInfrastructure(param, resolveToolExecutionConfig(perCallConfig));
+    }
 
-        return executor.executeWithInfrastructure(param, effectiveConfig);
+    /**
+     * Resolve the effective execution config for a tool call: per-call &gt; toolkit-level &gt;
+     * {@link ExecutionConfig#TOOL_DEFAULTS}. A {@code perCallConfig} of {@code null} means
+     * "no per-call override" and the toolkit-level config is used directly (still falling back
+     * to TOOL_DEFAULTS for unset fields).
+     *
+     * <p>Tool-specific, unlike {@link #callTools}'s resolution which also layers agent-level
+     * config — {@code callTool} does not see {@code agentExecutionConfig} and callers that
+     * need to override agent-level values should supply them here explicitly.
+     */
+    private ExecutionConfig resolveToolExecutionConfig(ExecutionConfig perCallConfig) {
+        ExecutionConfig base =
+                ExecutionConfig.mergeConfigs(
+                        config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS);
+        if (perCallConfig == null) {
+            return base;
+        }
+        return ExecutionConfig.mergeConfigs(perCallConfig, base);
     }
 
     /**
