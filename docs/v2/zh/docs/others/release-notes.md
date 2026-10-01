@@ -157,7 +157,7 @@ AgentScope Java 2.0 围绕"让智能体稳定完成任务"这一目标进行了�
 
 **Middleware 扩展机制**
 
-五阶段洋葱 + 管道混合模型（`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt`），在保持核心框架稳定的同时，为日志追踪、安全检查、业务策略、上下文注入等提供灵活的扩展点
+六阶段洋葱、管道与通知模型（`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` / `onAgentStateReady`），在保持核心框架稳定的同时，为日志追踪、安全检查、业务策略、上下文注入等提供灵活的扩展点
 
 **上下文工程**
 

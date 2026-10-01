@@ -40,6 +40,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -49,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -351,6 +353,55 @@ class MiddlewareActivePointsTest {
         agent.streamEvents(List.of()).collectList().block();
 
         assertEquals(List.of("A:onActing"), trace);
+    }
+
+    @Test
+    void stateReadyParticipantsRunAndUndeclaredOnesDoNot() {
+        List<String> trace = new ArrayList<>();
+        AtomicReference<AgentState> stateParam = new AtomicReference<>();
+        AtomicReference<AgentState> boundAtNotify = new AtomicReference<>();
+        MiddlewareBase participant =
+                new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY);
+                    }
+
+                    @Override
+                    public void onAgentStateReady(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            AgentState state,
+                            List<Msg> inputMessages) {
+                        trace.add("participant:onAgentStateReady");
+                        stateParam.set(state);
+                        boundAtNotify.set(ctx.getAgentState());
+                    }
+                };
+        MiddlewareBase overriddenButUndeclared =
+                new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_REASONING);
+                    }
+
+                    @Override
+                    public void onAgentStateReady(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            AgentState state,
+                            List<Msg> inputMessages) {
+                        trace.add("undeclared:onAgentStateReady");
+                    }
+                };
+        ReActAgent agent =
+                buildAgent(new CapturingModel(), List.of(participant, overriddenButUndeclared));
+
+        agent.streamEvents(List.of()).collectList().block();
+
+        assertEquals(List.of("participant:onAgentStateReady"), trace);
+        assertNotNull(boundAtNotify.get(), "state must already be bound to the RuntimeContext");
+        assertSame(stateParam.get(), boundAtNotify.get(), "param state is ctx.getAgentState()");
     }
 
     @Test

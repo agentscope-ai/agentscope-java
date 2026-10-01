@@ -763,6 +763,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
         // rather than agent.getAgentState() (not call-scoped under concurrency).
         ctx.setAgentState(scope.state);
+        // State is ready: invoke the onAgentStateReady extension point while this call's input can
+        // still be adjusted before it enters the pipeline (pre-call hooks, memory, reasoning).
+        onAgentStateReady(ctx, scope.state, msgs);
         // Seed per-call state onto the active execution scope. The system message is initialised
         // by consumeSystemMsgAfterPreCall; the event sink (if any) is bound in doCall() from the
         // per-subscription Reactor Context carried by streamEvents.
@@ -776,6 +779,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         scope.systemMsg = null;
         scope.interruption = control.interruption();
         return scope;
+    }
+
+    /**
+     * Invokes {@link MiddlewareBase#onAgentStateReady} for every {@code ON_AGENT_STATE_READY}
+     * participant ({@link #middlewaresAt}) in list order (= {@code order()} descending). No
+     * isolation: an exception propagates to the caller unchanged and the remaining middlewares
+     * are not invoked. {@code msgs} is the per-subscription private mutable copy, so in-place
+     * adjustments apply to the rest of the call only.
+     */
+    private void onAgentStateReady(RuntimeContext ctx, AgentState state, List<Msg> msgs) {
+        for (MiddlewareBase mw :
+                middlewaresAt(MiddlewareBase.ExtensionPoint.ON_AGENT_STATE_READY)) {
+            mw.onAgentStateReady(this, ctx, state, msgs);
+        }
     }
 
     @Override
