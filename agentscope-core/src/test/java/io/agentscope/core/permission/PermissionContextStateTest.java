@@ -21,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class PermissionContextStateTest {
@@ -209,5 +212,67 @@ class PermissionContextStateTest {
                 1, merged.getAllowRules().get("Write").size());
         org.junit.jupiter.api.Assertions.assertEquals(
                 merged, original.withAddedRules(java.util.List.of(duplicate)));
+    }
+
+    @Test
+    void withAddedRulesTreatsNullAndEmptyContentAsEquivalent() {
+        PermissionContextState original =
+                PermissionContextState.builder()
+                        .addAllowRule(
+                                "Write",
+                                new PermissionRule(
+                                        "Write", null, PermissionBehavior.ALLOW, "user_confirm"))
+                        .build();
+
+        // "" ruleContent is evaluation-equivalent to null: re-accepting it
+        // must not grow the table even though record equality would differ.
+        PermissionContextState merged =
+                original.withAddedRules(
+                        java.util.List.of(
+                                new PermissionRule(
+                                        "Write", "", PermissionBehavior.ALLOW, "user_confirm")));
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                1, merged.getAllowRules().get("Write").size());
+
+        // A rule differing only in source is a different rule: it appends.
+        PermissionContextState mergedWithSuggested =
+                original.withAddedRules(
+                        java.util.List.of(
+                                new PermissionRule(
+                                        "Write", null, PermissionBehavior.ALLOW, "suggested")));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                2, mergedWithSuggested.getAllowRules().get("Write").size());
+    }
+
+    @Test
+    void addIfAbsentAppendsOnlyWhenEveryComparisonDiffers() {
+        // Direct unit test of the dedup comparison on a synthetic table:
+        // the behavior-routed merge cannot produce bucket entries whose
+        // toolName or behavior differ from the candidate (routing keys on
+        // both), so those short-circuit arms are exercised here.
+        PermissionRule candidate =
+                new PermissionRule("Write", null, PermissionBehavior.ALLOW, "user_confirm");
+        Map<String, java.util.List<PermissionRule>> table = new LinkedHashMap<>();
+        table.put(
+                "Write",
+                new ArrayList<>(
+                        java.util.List.of(
+                                new PermissionRule(
+                                        "Write", "x", PermissionBehavior.DENY, "suggested"),
+                                new PermissionRule(
+                                        "Other", "x", PermissionBehavior.ALLOW, "suggested"),
+                                new PermissionRule(
+                                        "Write", "x", PermissionBehavior.ALLOW, "imported"),
+                                new PermissionRule(
+                                        "Write", "z", PermissionBehavior.ALLOW, "user_confirm"))));
+
+        PermissionContextState.addIfAbsent(table, candidate);
+        org.junit.jupiter.api.Assertions.assertEquals(
+                5, table.get("Write").size(), "every entry differs from the candidate");
+
+        PermissionContextState.addIfAbsent(table, candidate);
+        org.junit.jupiter.api.Assertions.assertEquals(
+                5, table.get("Write").size(), "exact duplicate must not append");
     }
 }

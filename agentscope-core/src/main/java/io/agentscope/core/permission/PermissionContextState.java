@@ -148,7 +148,8 @@ public final class PermissionContextState {
             return this;
         }
         // Merge into mutable copies of the current tables, skipping rules
-        // already present — re-accepting an identical rule (record equals)
+        // already present — re-accepting an equivalent rule (including a
+        // null vs empty ruleContent, which ruleMatches treats the same)
         // must not grow the persisted tables without bound.
         Map<String, List<PermissionRule>> allow = mutableCopy(allowRules);
         Map<String, List<PermissionRule>> deny = mutableCopy(denyRules);
@@ -158,9 +159,9 @@ public final class PermissionContextState {
                 continue;
             }
             switch (rule.behavior()) {
-                case ALLOW -> mergeRule(allow, rule);
-                case DENY -> mergeRule(deny, rule);
-                case ASK -> mergeRule(ask, rule);
+                case ALLOW -> addIfAbsent(allow, rule);
+                case DENY -> addIfAbsent(deny, rule);
+                case ASK -> addIfAbsent(ask, rule);
                 case PASSTHROUGH -> {
                     // PASSTHROUGH rules are not persisted.
                 }
@@ -174,12 +175,33 @@ public final class PermissionContextState {
         return b.build();
     }
 
-    private static void mergeRule(Map<String, List<PermissionRule>> table, PermissionRule rule) {
+    /**
+     * Appends the rule to its behavior table unless the table already
+     * contains an equivalent rule. Equivalence normalizes a null
+     * {@code ruleContent} to the empty string: the two are equivalent at
+     * evaluation time ({@code ruleMatches} treats both as unconditional),
+     * so the de-duplication bound must treat them as identical too.
+     */
+    static void addIfAbsent(Map<String, List<PermissionRule>> table, PermissionRule rule) {
         List<PermissionRule> bucket =
                 table.computeIfAbsent(rule.toolName(), k -> new ArrayList<>());
-        if (!bucket.contains(rule)) {
-            bucket.add(rule);
+        for (PermissionRule existing : bucket) {
+            if (sameRule(existing, rule)) {
+                return;
+            }
         }
+        bucket.add(rule);
+    }
+
+    private static boolean sameRule(PermissionRule a, PermissionRule b) {
+        return a.toolName().equals(b.toolName())
+                && a.behavior() == b.behavior()
+                && a.source().equals(b.source())
+                && normalizedContent(a).equals(normalizedContent(b));
+    }
+
+    private static String normalizedContent(PermissionRule rule) {
+        return rule.ruleContent() == null ? "" : rule.ruleContent();
     }
 
     private static Map<String, List<PermissionRule>> mutableCopy(

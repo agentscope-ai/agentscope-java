@@ -1066,19 +1066,6 @@ class ReActAgentHitlTest {
                         .isEmpty(),
                 "no rule may be persisted when nothing was accepted");
 
-        // Re-confirm the identical rule: current semantics append (known
-        // growth, flagged for dedup); pin the persisted table state.
-        agent.call(
-                        List.of(
-                                confirmMsg(
-                                        List.of(
-                                                new ConfirmResult(
-                                                        true,
-                                                        pending,
-                                                        List.of(remembered),
-                                                        null)))))
-                .block();
-
         // Cross-instance persistence: a second agent over the same store
         // and slot rebuilds its engine from the persisted context, so the
         // remembered rule suppresses the ask without any re-confirm.
