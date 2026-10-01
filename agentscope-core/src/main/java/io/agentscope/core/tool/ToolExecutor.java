@@ -503,11 +503,12 @@ class ToolExecutor {
      * the error-to-result conversion live here so that both entry points (batch and single)
      * stay in sync when a new layer is added.
      *
-     * <p><b>Retry semantics</b>: {@link #applyRetry} only fires for exceptions emitted by the
-     * infrastructure layers themselves — {@link #applyTimeout} and {@link #applyShutdownGuard}.
-     * Tool failures are converted to normal {@link ToolResultBlock#error} completions inside
-     * {@link #executeCore} before this pipeline runs, so {@code retryWhen} never sees them.
-     * "Retry" here means "retry on timeout or shutdown signal", never "retry on tool failure".
+     * <p><b>Retry semantics</b>: {@link #applyRetry} only fires for the timeout
+     * {@code RuntimeException} emitted by {@link #applyTimeout}. Tool failures are converted
+     * to normal {@link ToolResultBlock#error} completions inside {@link #executeCore} before
+     * this pipeline runs, and {@link #applyShutdownGuard} runs <em>after</em> retry so
+     * shutdown signals are never seen by {@code retryWhen} either. "Retry" here means
+     * "retry on timeout", nothing else.
      */
     private Mono<ToolResultBlock> applyInfrastructure(
             Mono<ToolResultBlock> execution,

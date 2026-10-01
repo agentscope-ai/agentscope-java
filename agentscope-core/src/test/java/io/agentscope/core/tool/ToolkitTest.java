@@ -29,6 +29,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.mcp.McpClientWrapperTestSupport;
@@ -38,6 +39,7 @@ import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.Type;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -1475,5 +1477,90 @@ class ToolkitTest {
         assertTrue(
                 getResultText(result).contains("Parameter validation failed"),
                 "Expected 'Parameter validation failed', got: " + getResultText(result));
+    }
+
+    @Test
+    @DisplayName("callTool(ToolCallParam, null) should behave same as single-arg callTool")
+    void testCallToolPerCallConfigNullIsSameAsSingleArg() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> input = Map.of("a", 3, "b", 4);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-null-config")
+                        .name("add")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
+
+        ToolResultBlock result = toolkit.callTool(param, null).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-null-config", result.getId());
+        assertEquals("add", result.getName());
+        assertEquals("7", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    @DisplayName("callTool(ToolCallParam, ExecutionConfig) should respect per-call config")
+    void testCallToolPerCallConfigTakesEffect() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> input = Map.of("a", 10, "b", 20);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-percall-config")
+                        .name("add")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
+
+        ExecutionConfig perCallConfig =
+                ExecutionConfig.builder().timeout(Duration.ofMinutes(10)).maxAttempts(1).build();
+
+        ToolResultBlock result = toolkit.callTool(param, perCallConfig).block();
+
+        assertNotNull(result);
+        assertEquals("call-percall-config", result.getId());
+        assertEquals("add", result.getName());
+        assertEquals("30", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    @DisplayName(
+            "callTool(ToolCallParam, ExecutionConfig) with noTimeout() should execute without"
+                    + " timeout")
+    void testCallToolPerCallConfigNoTimeout() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> input = Map.of("a", 1, "b", 2);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-notimeout")
+                        .name("add")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
+
+        ExecutionConfig perCallConfig =
+                ExecutionConfig.builder().noTimeout().maxAttempts(1).build();
+
+        ToolResultBlock result = toolkit.callTool(param, perCallConfig).block();
+
+        assertNotNull(result);
+        assertEquals("call-notimeout", result.getId());
+        assertEquals("add", result.getName());
+        assertEquals("3", ToolTestUtils.extractContent(result));
+
+        assertEquals(
+                ExecutionConfig.NO_TIMEOUT,
+                perCallConfig.getTimeout(),
+                "noTimeout() should set the sentinel value");
     }
 }

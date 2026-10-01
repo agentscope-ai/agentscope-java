@@ -546,12 +546,13 @@ public class Toolkit {
      * delegation) must configure a longer timeout on the toolkit, or supply a per-call
      * {@link ExecutionConfig} via {@link #callTool(ToolCallParam, ExecutionConfig)}.
      *
-     * <p><b>Retry semantics</b>: retry only fires on timeout or shutdown signals, never on tool
-     * failures. Tool exceptions are caught and converted into a normal
-     * {@link ToolResultBlock#error} completion before the retry layer runs, so
-     * {@code maxAttempts > 1} has no effect on a failing tool — only on infrastructure-level
-     * aborts. Callers that depend on exactly-once execution should still note that
-     * non-idempotent tools may be re-invoked when a timeout fires.
+     * <p><b>Retry semantics</b>: retry only fires on the timeout {@code RuntimeException}
+     * emitted by the timeout layer, never on tool failures. Tool exceptions are caught and
+     * converted into a normal {@link ToolResultBlock#error} completion before the retry layer
+     * runs, and the shutdown guard runs <em>after</em> retry so shutdown signals bypass
+     * {@code retryWhen} as well. {@code maxAttempts > 1} has no effect on a failing tool —
+     * only on a timeout. Callers that depend on exactly-once execution should still note that
+     * non-idempotent tools may be re-invoked when a configured timeout fires.
      *
      * <p><b>Scheduling hop</b>: Execution subscribes on the toolkit's executor (or
      * {@code Schedulers.boundedElastic()} when none is configured) via {@code subscribeOn}. The
