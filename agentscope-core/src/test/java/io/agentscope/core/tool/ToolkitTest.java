@@ -1454,6 +1454,11 @@ class ToolkitTest {
             "callTool single with param.input but no ToolUseBlock.content should fail"
                     + " schema validation (validation reads content, not merged input)")
     void testCallToolSingleOnlyParamInputNoContentFailsValidation() {
+        // Pins current behavior, not a desired end state: executeCore validates
+        // ToolUseBlock.content while execution merges ToolCallParam.input, so a
+        // call with only param.input and no content is rejected. When executeCore
+        // is fixed to validate against the merged input, this test must be updated
+        // to assert success instead of failure.
         toolkit.registerTool(sampleTools);
 
         Map<String, Object> paramInput = Map.of("a", 100, "b", 200);
