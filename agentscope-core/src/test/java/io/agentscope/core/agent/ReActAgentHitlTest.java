@@ -123,7 +123,7 @@ class ReActAgentHitlTest {
         return ChatResponse.builder().content(List.copyOf(toolUses)).build();
     }
 
-    private static final class AskingTool extends ToolBase {
+    private static class AskingTool extends ToolBase {
         AskingTool(String name) {
             super(name, "asks for permission", schemaFor(), false, true, false, null, false, false);
         }
@@ -149,6 +149,19 @@ class ReActAgentHitlTest {
         public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
             Object q = param.getInput() == null ? "" : param.getInput().get("query");
             return Mono.just(ToolResultBlock.text("executed:" + q));
+        }
+    }
+
+    /** AskingTool whose matchRule honors an exact query match, so a remembered
+     * conditional rule can fail to cover a later, differently-parameterized ask. */
+    private static final class QueryScopedTool extends AskingTool {
+        QueryScopedTool(String name) {
+            super(name);
+        }
+
+        @Override
+        public boolean matchRule(String ruleContent, Map<String, Object> toolInput) {
+            return ruleContent != null && ruleContent.equals(toolInput.get("query"));
         }
     }
 
@@ -1091,5 +1104,78 @@ class ReActAgentHitlTest {
                 resumed.getContentBlocks(TextBlock.class).stream()
                         .anyMatch(b -> "finally done".equals(b.getText())),
                 "the allowed tool call must complete normally");
+    }
+
+    @Test
+    void confirmedIdenticalRuleTwiceKeepsSinglePersistedEntry() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("dc1", "ask", "foo")),
+                                () -> Flux.just(textResponse("ran foo")),
+                                () -> Flux.just(toolUseResponse("dc2", "ask", "bar")),
+                                () -> Flux.just(textResponse("ran bar"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("dedup-asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new QueryScopedTool("ask")))
+                        .stateStore(store)
+                        .build();
+
+        // First ask: query=foo pauses; the user remembers an ALLOW rule
+        // scoped to exactly that query.
+        Msg firstAsk = agent.call(List.of()).block();
+        assertNotNull(firstAsk);
+        assertEquals(GenerateReason.PERMISSION_ASKING, firstAsk.getGenerateReason());
+        PermissionRule scoped =
+                new PermissionRule("ask", "foo", PermissionBehavior.ALLOW, "user_confirm");
+        Msg ranFoo =
+                agent.call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                firstAsk.getContentBlocks(
+                                                                                ToolUseBlock.class)
+                                                                        .get(0),
+                                                                List.of(scoped),
+                                                                null)))))
+                        .block();
+        assertNotNull(ranFoo);
+
+        // A different query is not covered by the scoped rule: it asks
+        // again, and the user confirms with the identical rule a second
+        // time — the real integration path for a repeated accept.
+        Msg secondAsk = agent.call(List.of()).block();
+        assertNotNull(secondAsk);
+        assertEquals(GenerateReason.PERMISSION_ASKING, secondAsk.getGenerateReason());
+        Msg ranBar =
+                agent.call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                secondAsk
+                                                                        .getContentBlocks(
+                                                                                ToolUseBlock.class)
+                                                                        .get(0),
+                                                                List.of(scoped),
+                                                                null)))))
+                        .block();
+        assertNotNull(ranBar);
+
+        // Both accepts carried the identical rule: the persisted context
+        // must hold exactly one entry, not one per accept.
+        AgentState saved =
+                store.get(null, "dedup-asst", "agent_state", AgentState.class).orElse(null);
+        assertNotNull(saved, "agent state must be persisted");
+        List<PermissionRule> persisted =
+                saved.getPermissionContext().getAllowRules().getOrDefault("ask", List.of());
+        assertEquals(1, persisted.size(), "identical re-accept must not grow the persisted table");
+        assertTrue(persisted.contains(scoped), "the accepted rule must be persisted");
     }
 }
