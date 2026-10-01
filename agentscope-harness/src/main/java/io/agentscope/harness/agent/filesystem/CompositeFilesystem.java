@@ -36,6 +36,8 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Routes file operations to different {@link AbstractFilesystem} stores by path prefix.
@@ -62,6 +64,8 @@ import java.util.Map;
  * }</pre>
  */
 public class CompositeFilesystem implements AbstractFilesystem {
+
+    private static final Logger LOG = LoggerFactory.getLogger(CompositeFilesystem.class);
 
     @Override
     public io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext rc) {
@@ -99,6 +103,18 @@ public class CompositeFilesystem implements AbstractFilesystem {
             AbstractFilesystem journalBackend) {
         if (defaultBackend == null) {
             throw new IllegalArgumentException("defaultBackend must not be null");
+        }
+        // A route registered exactly at "/" is unreachable on the enumeration surfaces (root
+        // spellings take the aggregated view before routing) while mutation surfaces still
+        // honour it — warn so the divergence is not configured silently (review follow-up,
+        // #3253). Normal prefixes ("/memories/", ...) are unaffected: they name a subtree.
+        if (routes != null
+                && routes.keySet().stream().anyMatch(AbstractFilesystem::denotesRootPath)) {
+            LOG.warn(
+                    "A route registered at the root ({}) is ignored by ls/grep/glob root scans"
+                            + " and only honoured by mutation surfaces; register subtree prefixes"
+                            + " (e.g. \"/memories/\") instead",
+                    routes.keySet().stream().filter(AbstractFilesystem::denotesRootPath).toList());
         }
         this.defaultBackend = defaultBackend;
 
@@ -251,7 +267,9 @@ public class CompositeFilesystem implements AbstractFilesystem {
             return LsResult.success(results);
         }
 
-        return defaultBackend.ls(runtimeContext, path);
+        // Normalize .. segments before delegation (#3378).
+        return defaultBackend.ls(
+                runtimeContext, AbstractFilesystem.normalizeEnumerationSegments(path));
     }
 
     @Override
@@ -360,7 +378,13 @@ public class CompositeFilesystem implements AbstractFilesystem {
             return GrepResult.success(allMatches);
         }
 
-        return defaultBackend.grep(runtimeContext, pattern, path, glob);
+        // Normalize .. segments before delegation so a crafted ".." cannot pop the
+        // namespace anchor off an absolute path (#3378).
+        return defaultBackend.grep(
+                runtimeContext,
+                pattern,
+                AbstractFilesystem.normalizeEnumerationSegments(path),
+                glob);
     }
 
     @Override
