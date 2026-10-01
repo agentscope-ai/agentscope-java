@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -49,8 +50,10 @@ public interface AbstractFilesystem {
      * denotes the root — {@code "/"}, {@code "."}, {@code "/."}, {@code "//"}, {@code
      * "/tmp/.."} — after collapsing duplicate separators and resolving {@code .}/{@code ..}
      * segments textually. Shared by {@link CompositeFilesystem} and the concrete backends so
-     * root-equivalent forms cannot slip past textual four-string checks and reach the OS root
-     * (#3253).
+     * absolute root spellings cannot slip past textual checks and reach the OS root (#3253).
+     * Scope note: this closes root spellings only — relative {@code ./}/{@code ..} forms and
+     * {@code ..} segments inside non-root absolute paths are a separate escape class, tracked
+     * in #3378.
      */
     static boolean denotesRootPath(String path) {
         if (path == null || path.isBlank()) {
@@ -77,6 +80,49 @@ public interface AbstractFilesystem {
             segments.push(segment);
         }
         return segments.isEmpty();
+    }
+
+    /**
+     * Resolves {@code .}/{@code ..} segments and duplicate separators textually, for
+     * enumeration paths that are NOT root spellings: {@code "/alice/../bob"} is forwarded as
+     * {@code "/bob"} instead of raw, so a namespaced backend's absolute-path passthrough
+     * cannot be popped out of the namespace anchor by a crafted {@code ..} (#3378). Relative
+     * input stays relative — a leading or unresolvable {@code ..} is kept literal so the
+     * backend's traversal guard (SecurityException) still fires.
+     */
+    static String normalizeEnumerationSegments(String path) {
+        if (path == null) {
+            return null;
+        }
+        String p = path.replace('\\', '/');
+        boolean absolute = p.startsWith("/");
+        List<String> parts = new ArrayList<>();
+        String[] rawSegments = (absolute ? p.substring(1) : p).split("/");
+        for (String segment : rawSegments) {
+            if (segment.isEmpty() || segment.equals(".")) {
+                continue;
+            }
+            if (segment.equals("..")) {
+                if (!parts.isEmpty() && !parts.get(parts.size() - 1).equals("..")) {
+                    parts.remove(parts.size() - 1);
+                } else if (!absolute) {
+                    // Relative and escaping: keep it literal so the backend's traversal
+                    // guard still fires.
+                    parts.add("..");
+                }
+                // Absolute root ".." simply drops — the root cannot go higher.
+                continue;
+            }
+            parts.add(segment);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            sb.append('/').append(part);
+        }
+        if (absolute) {
+            return sb.length() == 0 ? "/" : sb.toString();
+        }
+        return sb.length() == 0 ? "." : sb.substring(1);
     }
 
     /**
