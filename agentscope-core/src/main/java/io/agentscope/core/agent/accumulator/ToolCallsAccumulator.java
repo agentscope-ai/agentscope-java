@@ -72,8 +72,11 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                 this.toolId = block.getId();
             }
 
-            // Update name (ignore placeholders)
-            if (block.getName() != null && !isPlaceholder(block.getName())) {
+            // Update name (ignore placeholders and empty continuation names —
+            // empty is a common wire shape and must not clobber a captured name)
+            if (block.getName() != null
+                    && !block.getName().isEmpty()
+                    && !isPlaceholder(block.getName())) {
                 this.name = block.getName();
             }
 
@@ -225,8 +228,9 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      *
      * <ol>
      *   <li>Use tool ID if available (non-empty)
-     *   <li>Use tool name if available (non-placeholder)
-     *   <li>If this is a fragment (placeholder name), reuse the last tool call key
+     *   <li>Use tool name if available (non-placeholder, non-empty)
+     *   <li>If this is a fragment (placeholder or empty continuation name) and a last tool
+     *       call key exists, reuse it
      *   <li>Otherwise, use index for chunks without any identifier
      * </ol>
      */
@@ -241,15 +245,20 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             return key;
         }
 
-        // 2. Use tool name (non-placeholder)
-        if (block.getName() != null && !isPlaceholder(block.getName())) {
+        // 2. Use tool name (non-placeholder, non-empty — an empty name is a
+        //    continuation shape and must not become the constant key "name:")
+        if (block.getName() != null
+                && !block.getName().isEmpty()
+                && !isPlaceholder(block.getName())) {
             String key = "name:" + block.getName();
             lastToolCallKey = key;
             return key;
         }
 
-        // 3. If this is a fragment (placeholder name) and we have a last key, reuse it
-        if (isPlaceholder(block.getName()) && lastToolCallKey != null) {
+        // 3. If this is a fragment (placeholder or empty continuation name) and we
+        //    have a last key, reuse it
+        boolean emptyContinuationName = block.getName() != null && block.getName().isEmpty();
+        if ((isPlaceholder(block.getName()) || emptyContinuationName) && lastToolCallKey != null) {
             return lastToolCallKey;
         }
 
@@ -311,6 +320,10 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
     /**
      * Get accumulated tool call by ID.
+     *
+     * <p>Mid-stream accessor: malformed prefixes are expected here, so no parse warning is
+     * emitted. The sanitized warn-once only fires at the {@link #buildAllToolCalls()}
+     * finalization boundary.
      *
      * <p>If the ID is null or empty, or if no builder is found for the given ID,
      * this method falls back to using the lastToolCallKey.

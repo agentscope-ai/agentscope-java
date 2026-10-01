@@ -7,10 +7,6 @@
             <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
-    <!-- Accumulator WARNs are expected test fixtures (asserted through a
-         ListAppender attached directly to the logger); additivity=false
-         keeps them off stderr without gating the events themselves. -->
-    <logger name="io.agentscope.core.agent.accumulator" additivity="false"/>
     <root level="WARN">
         <appender-ref ref="STDERR"/>
     </root>

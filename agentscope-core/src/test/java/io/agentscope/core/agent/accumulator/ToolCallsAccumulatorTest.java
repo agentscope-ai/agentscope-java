@@ -473,4 +473,50 @@ class ToolCallsAccumulatorTest {
         assertEquals("a.md", result.get(0).getInput().get("file_path"));
         assertEquals("hello", result.get(0).getInput().get("content"));
     }
+
+    @Test
+    @DisplayName("Empty continuation name must not clobber a captured real name")
+    void testEmptyContinuationNameDoesNotOverwriteRealName() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("run_query")
+                        .content("{\"q\": \"se")
+                        .build());
+        // OpenAI-style continuation deltas commonly carry an empty-string name
+        accumulator.add(
+                ToolUseBlock.builder().id("call_1").name("").content("lect * from t\"}").build());
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        assertEquals(
+                "run_query",
+                result.get(0).getName(),
+                "an empty continuation name must not overwrite the captured name");
+    }
+
+    @Test
+    @DisplayName("Id-less empty-name chunk attaches to the pending call, not a new builder")
+    void testIdlessEmptyNameChunkReusesPendingCallKey() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("run_query")
+                        .content("{\"q\": \"se")
+                        .build());
+        // No id, empty name: must be treated as a fragment of call_1 (via
+        // lastToolCallKey), not as a fresh "name:" builder
+        accumulator.add(ToolUseBlock.builder().name("").content("lect * from t\"}").build());
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(
+                1,
+                result.size(),
+                "an empty-name chunk without id is a continuation of the pending call");
+        assertEquals("run_query", result.get(0).getName());
+        assertEquals(
+                "{\"q\": \"select * from t\"}",
+                result.get(0).getContent(),
+                "the continuation content must merge into the pending call");
+    }
 }
