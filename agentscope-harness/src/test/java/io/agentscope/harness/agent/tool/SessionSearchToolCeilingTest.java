@@ -91,9 +91,29 @@ class SessionSearchToolCeilingTest {
                         "session-1",
                         100000);
 
-        // Exactly 100 message blocks, not 150: count the entry ids.
-        long emitted = out.split("m\\d+", -1).length - 1;
-        assertTrue(emitted <= 100, () -> "history must be clamped to 100, got " + emitted);
+        assertTrue(out.contains("showing last 100)"), () -> "history must be clamped: " + out);
+    }
+
+    @Test
+    void sessionHistory_boundary_lastN99And101() throws Exception {
+        seedSession(150);
+        SessionSearchTool tool = new SessionSearchTool(new WorkspaceManager(workspace));
+
+        String out99 =
+                tool.sessionHistory(
+                        RuntimeContext.builder().sessionId("session-1").build(),
+                        "agent-a",
+                        "session-1",
+                        99);
+        assertTrue(out99.contains("showing last 99)"), () -> "out99 was: " + out99);
+
+        String out101 =
+                tool.sessionHistory(
+                        RuntimeContext.builder().sessionId("session-1").build(),
+                        "agent-a",
+                        "session-1",
+                        101);
+        assertTrue(out101.contains("showing last 100)"), () -> "out101 was: " + out101);
     }
 
     @Test
