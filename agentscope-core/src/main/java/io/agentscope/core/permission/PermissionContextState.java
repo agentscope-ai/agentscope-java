@@ -147,25 +147,46 @@ public final class PermissionContextState {
         if (rules == null || rules.isEmpty()) {
             return this;
         }
-        Builder b = builder().mode(mode);
-        workingDirectories.forEach(b::addWorkingDirectory);
-        copyInto(allowRules, b::addAllowRule);
-        copyInto(denyRules, b::addDenyRule);
-        copyInto(askRules, b::addAskRule);
+        // Merge into mutable copies of the current tables, skipping rules
+        // already present — re-accepting an identical rule (record equals)
+        // must not grow the persisted tables without bound.
+        Map<String, List<PermissionRule>> allow = mutableCopy(allowRules);
+        Map<String, List<PermissionRule>> deny = mutableCopy(denyRules);
+        Map<String, List<PermissionRule>> ask = mutableCopy(askRules);
         for (PermissionRule rule : rules) {
             if (rule == null) {
                 continue;
             }
             switch (rule.behavior()) {
-                case ALLOW -> b.addAllowRule(rule.toolName(), rule);
-                case DENY -> b.addDenyRule(rule.toolName(), rule);
-                case ASK -> b.addAskRule(rule.toolName(), rule);
+                case ALLOW -> mergeRule(allow, rule);
+                case DENY -> mergeRule(deny, rule);
+                case ASK -> mergeRule(ask, rule);
                 case PASSTHROUGH -> {
                     // PASSTHROUGH rules are not persisted.
                 }
             }
         }
+        Builder b = builder().mode(mode);
+        workingDirectories.forEach(b::addWorkingDirectory);
+        copyInto(allow, b::addAllowRule);
+        copyInto(deny, b::addDenyRule);
+        copyInto(ask, b::addAskRule);
         return b.build();
+    }
+
+    private static void mergeRule(Map<String, List<PermissionRule>> table, PermissionRule rule) {
+        List<PermissionRule> bucket =
+                table.computeIfAbsent(rule.toolName(), k -> new ArrayList<>());
+        if (!bucket.contains(rule)) {
+            bucket.add(rule);
+        }
+    }
+
+    private static Map<String, List<PermissionRule>> mutableCopy(
+            Map<String, List<PermissionRule>> source) {
+        Map<String, List<PermissionRule>> out = new LinkedHashMap<>();
+        source.forEach((k, v) -> out.put(k, new ArrayList<>(v)));
+        return out;
     }
 
     public static Builder builder() {

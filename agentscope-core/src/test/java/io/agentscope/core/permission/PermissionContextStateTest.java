@@ -187,4 +187,27 @@ class PermissionContextStateTest {
                         .getOrDefault("Write", java.util.List.of())
                         .contains(newAllow));
     }
+
+    @Test
+    void withAddedRulesDeduplicatesIdenticalRules() {
+        PermissionContextState original =
+                PermissionContextState.builder()
+                        .addAllowRule(
+                                "Write",
+                                new PermissionRule(
+                                        "Write", null, PermissionBehavior.ALLOW, "user_confirm"))
+                        .build();
+
+        PermissionRule duplicate =
+                new PermissionRule("Write", null, PermissionBehavior.ALLOW, "user_confirm");
+
+        // The same rule accepted twice must not grow the persisted table.
+        PermissionContextState merged =
+                original.withAddedRules(java.util.List.of(duplicate, duplicate));
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                1, merged.getAllowRules().get("Write").size());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                merged, original.withAddedRules(java.util.List.of(duplicate)));
+    }
 }

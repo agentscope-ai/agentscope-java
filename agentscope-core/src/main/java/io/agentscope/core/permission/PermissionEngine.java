@@ -94,14 +94,26 @@ public final class PermissionEngine {
     public void addRule(PermissionRule rule) {
         Objects.requireNonNull(rule, "rule must not be null");
         switch (rule.behavior()) {
-            case ALLOW ->
-                    allowRules.computeIfAbsent(rule.toolName(), k -> new ArrayList<>()).add(rule);
-            case DENY ->
-                    denyRules.computeIfAbsent(rule.toolName(), k -> new ArrayList<>()).add(rule);
-            case ASK -> askRules.computeIfAbsent(rule.toolName(), k -> new ArrayList<>()).add(rule);
+            case ALLOW -> addUnique(allowRules, rule);
+            case DENY -> addUnique(denyRules, rule);
+            case ASK -> addUnique(askRules, rule);
             case PASSTHROUGH -> {
                 // PASSTHROUGH rules are not stored; they signal "defer to engine".
             }
+        }
+    }
+
+    /**
+     * Appends the rule to its behavior table unless an equal rule is already
+     * present. {@code PermissionRule} is a record, so {@code equals} compares
+     * toolName/ruleContent/behavior/source — re-accepting an identical rule
+     * (e.g. the same suggestion confirmed twice) must not grow the table.
+     */
+    private static void addUnique(Map<String, List<PermissionRule>> table, PermissionRule rule) {
+        List<PermissionRule> bucket =
+                table.computeIfAbsent(rule.toolName(), k -> new ArrayList<>());
+        if (!bucket.contains(rule)) {
+            bucket.add(rule);
         }
     }
 

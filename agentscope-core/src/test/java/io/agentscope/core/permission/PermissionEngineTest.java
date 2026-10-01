@@ -372,4 +372,27 @@ class PermissionEngineTest {
                     .verifyComplete();
         }
     }
+
+    @Test
+    void addRuleIgnoresExactDuplicates() {
+        PermissionContextState context =
+                PermissionContextState.builder()
+                        .addAskRule(
+                                "Bash",
+                                new PermissionRule(
+                                        "Bash", "rm -rf", PermissionBehavior.ASK, "test"))
+                        .build();
+        PermissionEngine engine = new PermissionEngine(context);
+
+        PermissionRule accepted =
+                new PermissionRule("Bash", null, PermissionBehavior.ALLOW, "user_confirm");
+        engine.addRule(accepted);
+        engine.addRule(accepted);
+        engine.addRule(accepted);
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                1,
+                engine.getAllowRules().get("Bash").size(),
+                "identical re-accept must not grow the engine table");
+    }
 }

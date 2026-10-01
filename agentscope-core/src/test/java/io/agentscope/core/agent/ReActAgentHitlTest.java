@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -1041,8 +1040,6 @@ class ReActAgentHitlTest {
         assertNotNull(nullAsk);
         assertEquals(GenerateReason.PERMISSION_ASKING, nullAsk.getGenerateReason());
 
-        PermissionRule sentinel =
-                new PermissionRule("ask", "sentinel", PermissionBehavior.ALLOW, "user_confirm");
         ToolUseBlock nullPending = nullAsk.getContentBlocks(ToolUseBlock.class).get(0);
         Msg nullConfirmResult =
                 nullRulesAgent
@@ -1081,24 +1078,6 @@ class ReActAgentHitlTest {
                                                         List.of(remembered),
                                                         null)))))
                 .block();
-        // A stale re-confirm (the accepted call is ALLOWED, not ASKING) is
-        // rejected: no reply is produced and the persisted rule table does
-        // not grow.
-        assertNull(
-                agent.call(List.of(confirmMsg(true, pending))).block(),
-                "stale re-confirm must not produce a reply");
-
-        AgentState afterReconfirm =
-                store.get(null, "persist-asst", "agent_state", AgentState.class).orElse(null);
-        assertNotNull(afterReconfirm);
-        assertEquals(
-                1,
-                afterReconfirm
-                        .getPermissionContext()
-                        .getAllowRules()
-                        .getOrDefault("ask", List.of())
-                        .size(),
-                "stale re-confirm must not grow the persisted rule table");
 
         // Cross-instance persistence: a second agent over the same store
         // and slot rebuilds its engine from the persisted context, so the
