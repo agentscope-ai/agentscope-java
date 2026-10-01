@@ -170,11 +170,12 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         private void warnIfMalformedOnce() {
             if (parseFailure != null && !parseWarned) {
                 parseWarned = true;
+                String displayName = name != null ? name : (toolId != null ? toolId : "<unnamed>");
                 LOG.warn(
                         "Tool call '{}' arguments are not valid JSON after the stream ended"
                                 + " (raw length: {}); using partially accumulated arguments"
                                 + " instead. Cause: {}",
-                        name,
+                        displayName,
                         rawContent.length(),
                         parseFailure);
             }

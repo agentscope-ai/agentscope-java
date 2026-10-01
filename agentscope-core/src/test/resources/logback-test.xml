@@ -7,7 +7,10 @@
             <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
-    <root level="WARN">
+    <!-- INFO root keeps unrelated log assertions live; the accumulator
+         package is pinned to WARN so parse-warning tests stay quiet. -->
+    <root level="INFO">
         <appender-ref ref="STDERR"/>
     </root>
+    <logger name="io.agentscope.core.agent.accumulator" level="WARN"/>
 </configuration>
