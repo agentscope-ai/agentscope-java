@@ -478,21 +478,7 @@ class ToolExecutor {
 
         Mono<ToolResultBlock> execution = execute(param, requestConfig, internalChunkCallback);
 
-        execution = applyScheduling(execution);
-        execution = applyTimeout(execution, executionConfig, toolCall);
-        execution = applyRetry(execution, executionConfig, toolCall);
-        execution = applyShutdownGuard(execution);
-
-        return execution
-                .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()))
-                .onErrorResume(
-                        e -> {
-                            logger.warn("Tool call failed: {}", toolCall.getName(), e);
-                            String errorMsg = ExceptionUtils.getErrorMessage(e);
-                            return Mono.just(
-                                    ToolResultBlock.error("Tool execution failed: " + errorMsg)
-                                            .withIdAndName(toolCall.getId(), toolCall.getName()));
-                        });
+        return applyInfrastructure(execution, executionConfig, toolCall);
     }
 
     /**
@@ -508,6 +494,25 @@ class ToolExecutor {
 
         Mono<ToolResultBlock> execution = execute(param);
 
+        return applyInfrastructure(execution, executionConfig, toolCall);
+    }
+
+    /**
+     * Applies the shared infrastructure pipeline (scheduling, timeout, retry, shutdown guard)
+     * and stamps the result with the tool call's id/name. The four infrastructure layers and
+     * the error-to-result conversion live here so that both entry points (batch and single)
+     * stay in sync when a new layer is added.
+     *
+     * <p><b>Retry semantics</b>: {@link #applyRetry} only fires for exceptions emitted by the
+     * infrastructure layers themselves — {@link #applyTimeout} and {@link #applyShutdownGuard}.
+     * Tool failures are converted to normal {@link ToolResultBlock#error} completions inside
+     * {@link #executeCore} before this pipeline runs, so {@code retryWhen} never sees them.
+     * "Retry" here means "retry on timeout or shutdown signal", never "retry on tool failure".
+     */
+    private Mono<ToolResultBlock> applyInfrastructure(
+            Mono<ToolResultBlock> execution,
+            ExecutionConfig executionConfig,
+            ToolUseBlock toolCall) {
         execution = applyScheduling(execution);
         execution = applyTimeout(execution, executionConfig, toolCall);
         execution = applyRetry(execution, executionConfig, toolCall);

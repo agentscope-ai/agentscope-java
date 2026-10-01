@@ -535,31 +535,44 @@ public class Toolkit {
     /**
      * Execute a tool with the given parameters.
      *
-     * <p><b>Execution semantics</b>: This method routes through the same
-     * infrastructure as {@code callTools}, so it inherits the toolkit's
-     * {@link ExecutionConfig} (timeout and retry) and participates in the
-     * global {@code GracefulShutdownManager} shutdown guard. Previously
-     * this overload had no timeout, retry, or shutdown participation.
-     * Callers that depend on exactly-once execution should note that
-     * non-idempotent tools may be re-invoked on timeout when a custom
-     * {@code ToolkitConfig.executionConfig()} sets {@code maxAttempts > 1}.
-     * The default {@code TOOL_DEFAULTS} uses {@code maxAttempts(1)}, which
-     * is a no-op for retry.
+     * <p><b>Execution semantics</b>: This method routes through the same infrastructure as
+     * {@code callTools} — scheduling, timeout, retry, and the global
+     * {@code GracefulShutdownManager} shutdown guard. Previously this overload ran synchronously
+     * on the caller's thread with no timeout or retry.
      *
-     * <p><b>Scheduling hop</b>: Execution now subscribes on the toolkit's
-     * executor (or {@code Schedulers.boundedElastic()} when none is
-     * configured) via {@code subscribeOn}. The previous implementation ran
-     * directly on the caller's thread. Callers that rely on
-     * thread-local state or security context propagated from the calling
-     * thread should migrate those values into the {@code ToolCallParam}
-     * or toolkit configuration, as they will no longer be visible on the
-     * execution thread.
+     * <p><b>Default timeout</b>: when no {@code ToolkitConfig.executionConfig()} is set (or it
+     * sets no timeout), {@link ExecutionConfig#TOOL_DEFAULTS} applies a 5-minute per-call
+     * timeout. Tools that legitimately run longer (human approval, external execution, sub-agent
+     * delegation) must configure a longer timeout on the toolkit, or supply a per-call
+     * {@link ExecutionConfig} via {@link #callTool(ToolCallParam, ExecutionConfig)}.
      *
-     * <p><b>Exception-as-result contract</b>: Any exception thrown by the
-     * tool, timeouts after retry is exhausted, or the shutdown guard
-     * firing — all are caught and materialised as a normal
-     * {@link ToolResultBlock} with {@link ToolResultBlock#error(String)},
-     * never propagated upstream.
+     * <p><b>Retry semantics</b>: retry only fires on timeout or shutdown signals, never on tool
+     * failures. Tool exceptions are caught and converted into a normal
+     * {@link ToolResultBlock#error} completion before the retry layer runs, so
+     * {@code maxAttempts > 1} has no effect on a failing tool — only on infrastructure-level
+     * aborts. Callers that depend on exactly-once execution should still note that
+     * non-idempotent tools may be re-invoked when a timeout fires.
+     *
+     * <p><b>Scheduling hop</b>: Execution subscribes on the toolkit's executor (or
+     * {@code Schedulers.boundedElastic()} when none is configured) via {@code subscribeOn}. The
+     * previous implementation ran directly on the caller's thread. Callers that rely on
+     * thread-local state or security context propagated from the calling thread should migrate
+     * those values into the {@code ToolCallParam} or toolkit configuration, as they will no
+     * longer be visible on the execution thread.
+     *
+     * <p><b>Exception-as-result contract</b>: Any exception thrown by the tool, timeouts after
+     * retry is exhausted, or the shutdown guard firing — all are caught and materialised as a
+     * normal {@link ToolResultBlock} with {@link ToolResultBlock#error(String)}, never
+     * propagated upstream.
+     *
+     * <p><b>Content/input contract</b>: Schema validation reads {@code ToolUseBlock.content},
+     * while execution merges {@code ToolCallParam.input} (if set) over {@code ToolUseBlock.input}.
+     * When you build a {@code ToolCallParam} with only {@code input} populated, also set
+     * {@code ToolUseBlock.content} to the JSON form of that input, or schema validation will
+     * reject the call.
+     *
+     * <p>Unlike {@code callTools}, this path never sees an agent-level {@code ExecutionConfig}
+     * or runtime context — only the toolkit-level and per-call configs apply.
      *
      * <p>Example usage:
      *
@@ -586,6 +599,28 @@ public class Toolkit {
         ExecutionConfig effectiveConfig =
                 ExecutionConfig.mergeConfigs(
                         config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS);
+
+        return executor.executeWithInfrastructure(param, effectiveConfig);
+    }
+
+    /**
+     * Execute a tool with a per-call {@link ExecutionConfig} override. Use this when the
+     * toolkit-level defaults are inappropriate for a single invocation — for example, a
+     * long-running approval tool that needs a 30-minute timeout, or a tool that should run
+     * without any timeout (supply a {@link ExecutionConfig} with {@code timeout(null)}).
+     *
+     * @param param Tool call parameters containing execution information
+     * @param perCallConfig Execution config to use for this call; takes precedence over the
+     *     toolkit-level config on a field-by-field basis (see {@link
+     *     ExecutionConfig#mergeConfigs})
+     * @return Mono containing execution result
+     */
+    public Mono<ToolResultBlock> callTool(ToolCallParam param, ExecutionConfig perCallConfig) {
+        ExecutionConfig effectiveConfig =
+                ExecutionConfig.mergeConfigs(
+                        perCallConfig,
+                        ExecutionConfig.mergeConfigs(
+                                config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
 
         return executor.executeWithInfrastructure(param, effectiveConfig);
     }
