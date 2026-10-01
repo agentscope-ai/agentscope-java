@@ -35,6 +35,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -141,24 +142,56 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         }
     }
 
+    /**
+     * Builds the {@code docker exec} argument list for a shell command. On Windows the script
+     * travels via stdin ({@code -i} + plain {@code sh}, no {@code -c}): {@link ProcessBuilder}
+     * funnels arguments through {@code cmd.exe}, which strips the nested double quotes that
+     * sandbox commands rely on (e.g. {@code "$(dirname ...)"}), while a Linux/macOS host
+     * passes them through untouched (#2924).
+     *
+     * <p>Package-private for tests.
+     */
+    static List<String> buildExecArgs(
+            String command, String workspaceRoot, String containerId, boolean windows) {
+        List<String> cmd = new ArrayList<>();
+        cmd.add("docker");
+        cmd.add("exec");
+        if (windows) {
+            cmd.add("-i");
+        }
+        cmd.add("-w");
+        cmd.add(workspaceRoot);
+        cmd.add(containerId);
+        cmd.add("sh");
+        if (windows) {
+            // no "-c": sh executes the whole stdin as the script
+        } else {
+            cmd.add("-c");
+            cmd.add(command);
+        }
+        return cmd;
+    }
+
     @Override
     protected ExecResult doExec(RuntimeContext runtimeContext, String command, int timeoutSeconds)
             throws Exception {
         String containerId = dockerState.getContainerId();
         String workspaceRoot = dockerState.getWorkspaceRoot();
 
-        List<String> cmd = new ArrayList<>();
-        cmd.add("docker");
-        cmd.add("exec");
-        cmd.add("-w");
-        cmd.add(workspaceRoot);
-        cmd.add(containerId);
-        cmd.add("sh");
-        cmd.add("-c");
-        cmd.add(command);
+        boolean windows =
+                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        List<String> cmd = buildExecArgs(command, workspaceRoot, containerId, windows);
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
         Process process = pb.start();
+
+        if (windows) {
+            // The script travels via stdin (-i, no -c): write it, then close so sh runs the
+            // buffered script to completion and exits with its status (#2924).
+            try (OutputStream stdin = process.getOutputStream()) {
+                stdin.write(command.getBytes(StandardCharsets.UTF_8));
+            }
+        }
 
         ExecutorService drainer =
                 Executors.newFixedThreadPool(
