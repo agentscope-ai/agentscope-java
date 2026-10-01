@@ -50,6 +50,10 @@ class ToolCallsAccumulatorParseWarningTest {
     @BeforeEach
     void attachAppender() {
         logger = (Logger) LoggerFactory.getLogger(ToolCallsAccumulator.class);
+        // Pin the level here rather than relying on logback-test.xml: the
+        // assertions depend on WARN events reaching this appender, so the
+        // test must not silently break if the XML level is tightened later.
+        logger.setLevel(Level.WARN);
         appender = new ListAppender<>();
         appender.start();
         logger.addAppender(appender);
@@ -58,6 +62,8 @@ class ToolCallsAccumulatorParseWarningTest {
     @AfterEach
     void detachAppender() {
         logger.detachAppender(appender);
+        // null restores the inherited effective level
+        logger.setLevel(null);
     }
 
     private List<ILoggingEvent> warnings() {
@@ -143,5 +149,35 @@ class ToolCallsAccumulatorParseWarningTest {
         // A repeated finalization stays silent (warn-once per tool call)
         accumulator.buildAllToolCalls();
         assertEquals(1, warnings().size(), "warning repeated on second finalization");
+    }
+
+    @Test
+    @DisplayName("Empty-string name falls back to the tool id in the parse warning")
+    void emptyStringNameFallsBackToToolId() {
+        // OpenAI-style continuation deltas commonly carry an empty-string
+        // name on the id-bearing first chunk; the warning must still be
+        // correlatable, so it falls back to the id instead of rendering ''.
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call-empty-name")
+                        .name("")
+                        .content("{\"q\": \"sel")
+                        .build());
+        accumulator.add(
+                ToolUseBlock.builder().name("__fragment__").content("ect * from t\"").build());
+
+        ToolUseBlock result = accumulator.buildAllToolCalls().get(0);
+        assertEquals("{}", result.getContent());
+
+        List<ILoggingEvent> warns = warnings();
+        assertEquals(1, warns.size(), "expected exactly one warning, got: " + warns);
+        String message = warns.get(0).getFormattedMessage();
+        assertTrue(
+                message.contains("call-empty-name"),
+                "warning must fall back to the tool id for an empty name: " + message);
+        assertTrue(
+                !message.contains("Tool call ''"),
+                "warning must not render the empty name: " + message);
+        assertNull(warns.get(0).getThrowableProxy());
     }
 }

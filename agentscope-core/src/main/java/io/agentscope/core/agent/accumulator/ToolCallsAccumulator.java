@@ -170,7 +170,13 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         private void warnIfMalformedOnce() {
             if (parseFailure != null && !parseWarned) {
                 parseWarned = true;
-                String displayName = name != null ? name : (toolId != null ? toolId : "<unnamed>");
+                // Continuation deltas commonly carry an empty-string name, so
+                // fall back to the id (then a marker) the same way for "" as
+                // for null — otherwise the warning is not correlatable.
+                String displayName =
+                        name != null && !name.isEmpty()
+                                ? name
+                                : (toolId != null && !toolId.isEmpty() ? toolId : "<unnamed>");
                 LOG.warn(
                         "Tool call '{}' arguments are not valid JSON after the stream ended"
                                 + " (raw length: {}); using partially accumulated arguments"
