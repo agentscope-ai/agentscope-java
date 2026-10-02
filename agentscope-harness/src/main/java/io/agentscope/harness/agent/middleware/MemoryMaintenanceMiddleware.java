@@ -186,10 +186,22 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                                     .doFinally(signal -> MemoryBackgroundTasks.end())
                                     .subscribe(
                                             null,
-                                            e ->
+                                            e -> {
+                                                if (e
+                                                        instanceof
+                                                        java.util.concurrent.TimeoutException) {
+                                                    log.warn(
+                                                            "Memory maintenance timed out after"
+                                                                    + " {}; the run was abandoned"
+                                                                    + " and its throttle slot was"
+                                                                    + " consumed",
+                                                            maintenanceTimeout);
+                                                } else {
                                                     log.warn(
                                                             "Memory maintenance failed: {}",
-                                                            e.getMessage()));
+                                                            e.getMessage());
+                                                }
+                                            });
                         });
     }
 

@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -220,6 +221,61 @@ class MemoryBackgroundHardeningTest {
     }
 
     /**
+     * The maintenance timeout bounds the reactive stages; a blocking retention sweep already
+     * running cannot be interrupted by the Reactor cancel. The timeout's doFinally releases the
+     * in-flight slot, so quiescence can report clean while the sweep is still blocked — pinned
+     * here so the documented contract (see {@code MemoryBackgroundTasks} javadoc) stays honest.
+     */
+    @Test
+    void maintenanceTimeoutWhileSweeping_releasesSlotButSweepCannotBeInterrupted()
+            throws Exception {
+        CountDownLatch sweepStarted = new CountDownLatch(1);
+        CountDownLatch releaseSweep = new CountDownLatch(1);
+        CountDownLatch sweepFinished = new CountDownLatch(1);
+        RecordingThreadFs blockingFs =
+                new RecordingThreadFs() {
+                    @Override
+                    public io.agentscope.harness.agent.filesystem.model.GlobResult glob(
+                            RuntimeContext rc, String pattern, String path) {
+                        sweepStarted.countDown();
+                        try {
+                            releaseSweep.await();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        sweepFinished.countDown();
+                        return io.agentscope.harness.agent.filesystem.model.GlobResult.success(
+                                List.of());
+                    }
+                };
+        WorkspaceManager wsm = mock(WorkspaceManager.class);
+        when(wsm.getFilesystem()).thenReturn(blockingFs);
+        MemoryConsolidator consolidator = mock(MemoryConsolidator.class);
+        when(consolidator.consolidate(any())).thenReturn(Mono.empty());
+
+        MemoryMaintenanceMiddleware mw = new MemoryMaintenanceMiddleware(wsm, consolidator);
+        mw.setMaintenanceTimeoutForTests(Duration.ofMillis(200));
+        AgentInput input = new AgentInput(List.of(userMsg("hi")));
+
+        mw.onAgent((Agent) null, RuntimeContext.empty(), input, in -> Flux.<AgentEvent>empty())
+                .collectList()
+                .block(Duration.ofSeconds(5));
+
+        assertTrue(sweepStarted.await(5, TimeUnit.SECONDS), "the expire sweep must start");
+        assertTrue(
+                pollQuiescence(Duration.ofSeconds(5)),
+                "the timeout must release the in-flight slot even though the blocking sweep"
+                        + " cannot be interrupted");
+        assertEquals(
+                1L,
+                sweepFinished.getCount(),
+                "the sweep is still running after the timeout released the slot — a Reactor"
+                        + " cancel cannot interrupt a blocking filesystem call");
+        releaseSweep.countDown();
+        assertTrue(sweepFinished.await(5, TimeUnit.SECONDS), "the sweep finishes once released");
+    }
+
+    /**
      * F1 thread placement: the {@code then(...)} continuation subscribes on the thread that
      * emitted the previous stage's terminal signal — for {@code consolidate()} that is the
      * model HTTP client's I/O thread. The retention sweeps are blocking filesystem work and
@@ -270,7 +326,7 @@ class MemoryBackgroundHardeningTest {
     }
 
     /** Records the calling thread of each retention glob; matches nothing, sweeps no files. */
-    private static final class RecordingThreadFs
+    private static class RecordingThreadFs
             implements io.agentscope.harness.agent.filesystem.AbstractFilesystem {
         volatile String expireThread;
         volatile String pruneThread;

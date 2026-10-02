@@ -32,9 +32,12 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Quiescence waiting deliberately <em>abandons</em> rather than cancels: a task that is
  * still running when the caller's budget elapses keeps running and typically completes, so a
- * close during an in-flight extraction does not silently drop the last turn's memories. Genuinely
- * hung work is bounded — and cancelled — by the per-pipeline timeouts in
- * {@code MemoryFlushMiddleware} / {@code MemoryMaintenanceMiddleware}, not here.
+ * close during an in-flight extraction does not silently drop the last turn's memories. The
+ * per-pipeline timeouts in {@code MemoryFlushMiddleware} / {@code MemoryMaintenanceMiddleware}
+ * bound and cancel the <em>reactive</em> stages (the model round-trips). A blocking retention
+ * sweep already running when its budget elapses is released from the in-flight count by the
+ * timeout but cannot be interrupted — it may still be touching the workspace after
+ * {@code awaitQuiescence} returns {@code true}.
  */
 public final class MemoryBackgroundTasks {
 
