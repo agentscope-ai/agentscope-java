@@ -160,7 +160,8 @@ public class H2Dialect extends AbstractJdbcDialect {
     /**
      * Skill tables ported from the deprecated skill-mysql-repository module, translated to
      * H2 types: {@code CLOB} for text payloads, {@code AUTO_INCREMENT} identity id, FK with
-     * cascade delete. {@code metadata_json} is declared nullable so rows written before the
+     * cascade delete. The {@code namespace} column partitions names through
+     * {@code UNIQUE(namespace, name)}. {@code metadata_json} is declared nullable so rows written before the
      * column existed still validate — but the column itself is required: schema validation
      * compares declared columns, so a legacy table lacking it needs
      * {@code ALTER TABLE ... ADD COLUMN metadata_json CLOB} first (see {@link
@@ -173,14 +174,16 @@ public class H2Dialect extends AbstractJdbcDialect {
                         + skillTableName()
                         + " ("
                         + "  id            BIGINT AUTO_INCREMENT PRIMARY KEY,"
-                        + "  name          VARCHAR(255) NOT NULL UNIQUE,"
+                        + "  namespace     VARCHAR(64) NOT NULL DEFAULT 'default',"
+                        + "  name          VARCHAR(255) NOT NULL,"
                         + "  description   CLOB         NOT NULL,"
                         + "  skill_content CLOB         NOT NULL,"
                         + "  source        VARCHAR(255) NOT NULL,"
                         + "  metadata_json CLOB,"
                         + "  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
                         + "  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                        + "    ON UPDATE CURRENT_TIMESTAMP"
+                        + "    ON UPDATE CURRENT_TIMESTAMP,"
+                        + "  CONSTRAINT uk_namespace_name UNIQUE (namespace, name)"
                         + ")");
     }
 
@@ -191,6 +194,7 @@ public class H2Dialect extends AbstractJdbcDialect {
                         + skillResourcesTableName()
                         + " ("
                         + "  id               BIGINT       NOT NULL,"
+                        + "  namespace        VARCHAR(64)  NOT NULL DEFAULT 'default',"
                         + "  resource_path    VARCHAR(500) NOT NULL,"
                         + "  resource_content CLOB         NOT NULL,"
                         + "  created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"

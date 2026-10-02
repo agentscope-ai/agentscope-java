@@ -176,6 +176,7 @@ public class PostgresDialect extends AbstractJdbcDialect {
      * resolved through the dialect instead of a hard-coded {@code schema.table} prefix —
      * tables now live in the connection's current schema, like the base tables.
      */
+    /** Skill table with the {@code namespace} column and {@code UNIQUE(namespace, name)}. */
     @Override
     public List<String> skillCreateTableDdls() {
         return List.of(
@@ -183,13 +184,15 @@ public class PostgresDialect extends AbstractJdbcDialect {
                         + skillTableName()
                         + " ("
                         + "  id            BIGSERIAL PRIMARY KEY,"
-                        + "  name          VARCHAR(255) NOT NULL UNIQUE,"
+                        + "  namespace     VARCHAR(64) NOT NULL DEFAULT 'default',"
+                        + "  name          VARCHAR(255) NOT NULL,"
                         + "  description   TEXT NOT NULL,"
                         + "  skill_content TEXT NOT NULL,"
                         + "  source        VARCHAR(255) NOT NULL,"
                         + "  metadata_json TEXT NULL,"
                         + "  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
-                        + "  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        + "  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  CONSTRAINT uk_namespace_name UNIQUE (namespace, name)"
                         + ")");
     }
 
@@ -200,6 +203,7 @@ public class PostgresDialect extends AbstractJdbcDialect {
                         + skillResourcesTableName()
                         + " ("
                         + "  id               BIGINT NOT NULL,"
+                        + "  namespace        VARCHAR(64)  NOT NULL DEFAULT 'default',"
                         + "  resource_path    VARCHAR(500) NOT NULL,"
                         + "  resource_content TEXT NOT NULL,"
                         + "  created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"

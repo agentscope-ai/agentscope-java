@@ -149,6 +149,63 @@ AgentSkillRepository repo = new JdbcAgentSkillRepository(dataSource, dialect);
 - `metadata_json` 是必需列。早于该列的旧表会在启动校验时报错并附参考 DDL，按提示 `ALTER TABLE` 补列后重启即可，框架不会代改已有表。
 - `delete` 会先显式删掉技能的资源行再删技能行，因此在 SQLite（默认不启用级联外键）上行为也一致；资源路径必须是相对路径且不含 `..`，越出技能目录的路径在保存时即被拒绝，读取回表中的行时也做同样校验。
 
+#### 作用域隔离（namespace）
+
+技能名跨团队重名是常态，`agentscope_skills` 用 `namespace` 列做作用域隔离：唯一键为 **`UNIQUE(namespace, name)`**，namespace 内唯一、跨 namespace 可重名。`skill_resources` 同样带 `namespace` 列，与技能行同一事务写入。这也是 `AgentSkillRepository` 作用域隔离契约在关系型存储上的落地：**一个实例绑定一个 namespace，无参方法全部作用于绑定值**。
+
+```sql
+namespace VARCHAR(64) NOT NULL DEFAULT 'default'   -- 存量行自动落入 default
+CONSTRAINT uk_namespace_name UNIQUE (namespace, name)
+```
+
+```java
+JdbcAgentSkillRepository teamA =
+    new JdbcAgentSkillRepository(dataSource, dialect, "team-a", true);
+JdbcAgentSkillRepository teamB =
+    new JdbcAgentSkillRepository(dataSource, dialect, "team-b", true);
+
+teamA.save(List.of(skill), false);                 // 团队 A 保存
+teamB.save(List.of(skill), false);                 // 同名技能在另一 namespace，互不影响
+teamA.getSkill("code-review");
+teamA.delete("code-review");                       // 只作用于绑定的 namespace
+
+// 同一实例上显式指定 namespace 的便捷方法
+teamA.save("team-b", List.of(otherSkill), false);
+```
+
+- 不指定 namespace 的构造器都绑定 `"default"`。
+- `force=true` 的覆盖只发生在同一 namespace 内，不会跨 namespace 删旧写新。
+- namespace 在构造与便捷方法入口都校验：1–64 字符、`[A-Za-z0-9._-]`，非法抛 `IllegalArgumentException`。
+- MySQL 下 `namespace` 沿用表默认 collation，与 `name` 列一致为大小写不敏感；PostgreSQL / H2 / SQLite 为大小写敏感。
+
+**存量升级**（框架不会代改已有表，需人工执行一次）：
+
+```sql
+-- 1. 加列（瞬时完成，存量行自动归入 default；两张表都要）
+ALTER TABLE agentscope_skills
+  ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 'default';
+ALTER TABLE agentscope_skill_resources
+  ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 'default';
+
+-- 2. 重建唯一索引（建议低峰执行：先删旧的单列唯一，再建复合唯一）
+ALTER TABLE agentscope_skills DROP INDEX name;
+ALTER TABLE agentscope_skills
+  ADD UNIQUE KEY uk_namespace_name (namespace, name);
+```
+
+PostgreSQL 变体：
+
+```sql
+ALTER TABLE agentscope_skills ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 'default';
+ALTER TABLE agentscope_skill_resources ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 'default';
+ALTER TABLE agentscope_skills DROP CONSTRAINT agentscope_skills_name_key;
+ALTER TABLE agentscope_skills ADD CONSTRAINT uk_namespace_name UNIQUE (namespace, name);
+```
+
+H2 的旧唯一约束可以按名字 `ALTER TABLE agentscope_skills DROP CONSTRAINT <约束名>` 后重建。SQLite 不同：内联 `UNIQUE` 产生的隐式索引删不掉，需要按"建新表 → 拷数据 → 删旧表 → 改名"的标准表重建流程处理（两张表都在建新表时写好 `namespace` 列，skills 表同时写 `UNIQUE(namespace, name)`）。
+
+启动校验只比对列不比对索引，**两步都要做**：跳过第 2 步时旧的全局 `UNIQUE(name)` 仍在，跨 namespace 保存同名技能会撞唯一约束。
+
 ## 从历史模块迁移
 
 历史模块不建议继续使用，请按自身节奏尽早迁移：

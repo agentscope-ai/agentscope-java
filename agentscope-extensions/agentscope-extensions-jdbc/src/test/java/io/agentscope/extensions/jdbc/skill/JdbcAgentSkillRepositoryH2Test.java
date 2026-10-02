@@ -263,9 +263,163 @@ class JdbcAgentSkillRepositoryH2Test {
     }
 
     @Nested
+    @DisplayName("Namespace isolation")
+    class NamespaceTests {
+
+        @Test
+        @DisplayName(
+                "the same name coexists in two namespaces and each namespace only sees its own")
+        void sameNameCoexistsAcrossNamespaces() {
+            JdbcAgentSkillRepository repo = newRepository("skill_repo_ns_coexist");
+            AgentSkill teamA = sampleSkill("code-review");
+            AgentSkill teamB =
+                    new AgentSkill(
+                            Map.of("name", "code-review", "description", "team-b flavor"),
+                            "Content of team-b",
+                            Map.of("docs/team-b.md", "b"),
+                            "test");
+
+            assertTrue(repo.save("team-a", List.of(teamA), false));
+            assertTrue(repo.save("team-b", List.of(teamB), false));
+
+            assertEquals(List.of("code-review"), repo.getAllSkillNames("team-a"));
+            assertEquals(List.of("code-review"), repo.getAllSkillNames("team-b"));
+            assertEquals(
+                    "Content of code-review",
+                    repo.getSkill("team-a", "code-review").getSkillContent());
+            assertEquals(
+                    "Content of team-b", repo.getSkill("team-b", "code-review").getSkillContent());
+            assertEquals(
+                    "b",
+                    repo.getSkill("team-b", "code-review").getResource("docs/team-b.md"),
+                    "resources must be stitched to the owning namespace's row");
+
+            assertTrue(repo.skillExists("team-a", "code-review"));
+            assertFalse(repo.skillExists("team-a", "never-saved"));
+
+            assertTrue(repo.getAllSkillNames().isEmpty(), "the default namespace stays empty");
+        }
+
+        @Test
+        @DisplayName("getAllSkills loads one namespace only, resources included")
+        void getAllSkillsIsNamespaced() {
+            JdbcAgentSkillRepository repo = newRepository("skill_repo_ns_list_all");
+            AgentSkill teamA = sampleSkill("alpha");
+            AgentSkill teamB =
+                    new AgentSkill(
+                            Map.of("name", "beta", "description", "team-b skill"),
+                            "Content of beta",
+                            Map.of("docs/team-b.md", "b"),
+                            "test");
+            repo.save("team-a", List.of(teamA), false);
+            repo.save("team-b", List.of(teamB), false);
+
+            List<AgentSkill> teamASkills = repo.getAllSkills("team-a");
+
+            assertEquals(List.of("alpha"), teamASkills.stream().map(AgentSkill::getName).toList());
+            assertEquals(
+                    "hello",
+                    teamASkills.get(0).getResource("docs/readme.md"),
+                    "resources of the loaded namespace must be stitched");
+            assertEquals("Content of alpha", teamASkills.get(0).getSkillContent());
+            assertTrue(
+                    repo.getAllSkills("ghost").isEmpty(), "an unknown namespace is simply empty");
+        }
+
+        @Test
+        @DisplayName("force=true overwrites only within the namespace, never across")
+        void forceIsNamespaced() {
+            JdbcAgentSkillRepository repo = newRepository("skill_repo_ns_force");
+            repo.save("team-a", List.of(sampleSkill("shared")), false);
+            repo.save("team-b", List.of(sampleSkill("shared")), false);
+
+            AgentSkill replacement =
+                    new AgentSkill(
+                            Map.of("name", "shared", "description", "replaced"),
+                            "replaced content",
+                            Map.of("docs/new.md", "new"),
+                            "test");
+            assertTrue(repo.save("team-a", List.of(replacement), true));
+
+            assertEquals("replaced content", repo.getSkill("team-a", "shared").getSkillContent());
+            assertNull(repo.getSkill("team-a", "shared").getResource("docs/readme.md"));
+            assertEquals(
+                    "Content of shared",
+                    repo.getSkill("team-b", "shared").getSkillContent(),
+                    "the other namespace's same-name skill must stay untouched");
+            assertEquals(
+                    "hello",
+                    repo.getSkill("team-b", "shared").getResource("docs/readme.md"),
+                    "the other namespace's resources must stay untouched");
+        }
+
+        @Test
+        @DisplayName("a duplicate within one namespace is rejected by UNIQUE(namespace, name)")
+        void duplicateWithinOneNamespaceRejected() {
+            JdbcAgentSkillRepository repo = newRepository("skill_repo_ns_unique");
+            repo.save("team-a", List.of(sampleSkill("dup")), false);
+
+            IllegalStateException conflict =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> repo.save("team-a", List.of(sampleSkill("dup")), false));
+            assertTrue(conflict.getMessage().contains("force=false"), conflict.getMessage());
+        }
+
+        @Test
+        @DisplayName("delete and clearAllSkills stay within the namespace")
+        void deleteAndClearAreNamespaced() throws Exception {
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_ns_delete");
+            JdbcAgentSkillRepository repo = new JdbcAgentSkillRepository(ds, skillDialect(ds));
+            repo.save("team-a", List.of(sampleSkill("gone"), sampleSkill("kept")), false);
+            repo.save("team-b", List.of(sampleSkill("gone")), false);
+
+            assertTrue(repo.delete("team-a", "gone"));
+            assertFalse(repo.skillExists("team-a", "gone"));
+            assertTrue(repo.skillExists("team-b", "gone"), "the other namespace keeps its row");
+            assertEquals(List.of("kept"), repo.getAllSkillNames("team-a"));
+
+            assertEquals(1, repo.clearAllSkills("team-a"));
+            assertTrue(repo.getAllSkillNames("team-a").isEmpty());
+            assertTrue(repo.skillExists("team-b", "gone"));
+            assertEquals(
+                    2,
+                    countRows(ds, "agentscope_skill_resources"),
+                    "only team-b's resources must remain");
+        }
+
+        @Test
+        @DisplayName("invalid namespaces are rejected at the entry points")
+        void invalidNamespacesRejected() {
+            JdbcAgentSkillRepository repo = newRepository("skill_repo_ns_invalid");
+            for (String bad :
+                    Arrays.asList(null, "", "   ", "team a", "team/a", "..", ".", "a".repeat(65))) {
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> repo.skillExists(bad, "any"),
+                        "namespace must be rejected: " + bad);
+            }
+        }
+
+        @Test
+        @DisplayName("a repository constructed with a namespace binds it as the default")
+        void boundNamespaceConstructor() {
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_ns_bound");
+            JdbcAgentSkillRepository repo =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "team-a", true);
+
+            assertEquals("team-a", repo.getNamespace());
+            assertTrue(repo.save(List.of(sampleSkill("bound")), false));
+            assertTrue(repo.skillExists("bound"));
+            assertTrue(repo.skillExists("team-a", "bound"));
+            assertFalse(repo.skillExists("team-b", "bound"));
+            assertEquals(List.of("bound"), repo.getAllSkillNames());
+        }
+    }
+
+    @Nested
     @DisplayName("Validation and read-only")
     class ValidationTests {
-
         @Test
         @DisplayName("getSkill rejects null, empty, over-length, and traversal names")
         void skillNameValidation() {
@@ -401,6 +555,14 @@ class JdbcAgentSkillRepositoryH2Test {
             assertTrue(info.isWritable());
             assertEquals("jdbc_agentscope_skills", repo.getSource());
             assertDoesNotThrow(repo::close);
+        }
+
+        @Test
+        @DisplayName("the no-arg constructor binds the default namespace constant")
+        void defaultNamespaceConstant() {
+            JdbcAgentSkillRepository repo = newRepository("skill_repo_default_ns");
+
+            assertEquals("default", repo.getNamespace());
         }
 
         @Test

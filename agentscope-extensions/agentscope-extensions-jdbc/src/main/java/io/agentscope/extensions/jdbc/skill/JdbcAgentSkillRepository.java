@@ -51,6 +51,12 @@ import org.slf4j.LoggerFactory;
  * missing a declared column such as {@code metadata_json} fails at the check phase with the
  * reference DDL.
  *
+ * <p>Skills are partitioned by namespace ({@code UNIQUE(namespace, name)}), implementing
+ * the scope-isolation contract every {@link AgentSkillRepository} carries: one instance
+ * is bound to one namespace at construction and its no-argument methods address exactly
+ * that scope. The namespace-aware methods are a class-specific convenience for tooling
+ * that must touch several namespaces through one instance.
+ *
  * <p>Example:
  * <pre>{@code
  * AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource)
@@ -68,6 +74,9 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
 
     /** Repository type reported by {@link #getRepositoryInfo()}. */
     private static final String REPOSITORY_TYPE = "jdbc";
+
+    /** The namespace the namespace-less constructors bind; matches the DDL column default. */
+    private static final String DEFAULT_NAMESPACE = "default";
 
     /** Maximum length for a skill name, matching the legacy repositories. */
     private static final int MAX_SKILL_NAME_LENGTH = 255;
@@ -123,6 +132,9 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     /** The skill-resources table domain supplying the resources table SQL. */
     private final SkillResourcesDialect skillResourcesDialect;
 
+    /** The namespace bound at construction; every no-argument method addresses it. */
+    private final String namespace;
+
     /** Whether write operations are allowed; toggled via {@link #setWriteable(boolean)}. */
     private volatile boolean writeable;
 
@@ -135,7 +147,7 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
      * @param dialect the assembled dialect providing the skill table dialects
      */
     public JdbcAgentSkillRepository(DataSource dataSource, AbstractJdbcDialect dialect) {
-        this(dataSource, dialect, true);
+        this(dataSource, dialect, DEFAULT_NAMESPACE, true);
     }
 
     /**
@@ -149,31 +161,99 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
      */
     public JdbcAgentSkillRepository(
             DataSource dataSource, AbstractJdbcDialect dialect, boolean writeable) {
+        this(dataSource, dialect, DEFAULT_NAMESPACE, writeable);
+    }
+
+    /**
+     * Creates a repository bound to one namespace — the instance addresses exactly that
+     * scope (see {@link AgentSkillRepository}'s isolation contract); the
+     * namespace-aware methods additionally let one instance address another scope.
+     *
+     * @param dataSource the JDBC data source
+     * @param dialect the assembled dialect providing the skill table dialects
+     * @param namespace the namespace this instance is bound to
+     * @param writeable whether write operations are allowed
+     * @throws IllegalArgumentException when {@code dataSource} or {@code dialect} is null,
+     *     or {@code namespace} is invalid
+     * @throws IllegalStateException when the skill table group was not enabled at build
+     */
+    public JdbcAgentSkillRepository(
+            DataSource dataSource,
+            AbstractJdbcDialect dialect,
+            String namespace,
+            boolean writeable) {
         this.dataSource = requireNonNull(dataSource, "dataSource");
         requireNonNull(dialect, "dialect");
+        validateNamespace(namespace);
         // The aggregate is needed only for the group-enabled check below; CRUD runs on the
         // two table domains, like JdbcStore on StoreDialect.
         this.skillDialect = dialect;
         this.skillResourcesDialect = dialect;
+        this.namespace = namespace;
         this.writeable = writeable;
         requireSkillTablesEnabled(dialect);
         LOG.info(
-                "JdbcAgentSkillRepository initialized: skills table '{}', resources table '{}'",
+                "JdbcAgentSkillRepository initialized: skills table '{}', resources table"
+                        + " '{}', namespace '{}'",
                 skillDialect.skillTableName(),
-                skillResourcesDialect.skillResourcesTableName());
+                skillResourcesDialect.skillResourcesTableName(),
+                namespace);
+    }
+
+    /**
+     * The namespace bound at construction; every no-argument method addresses it.
+     *
+     * @return the bound namespace (never null)
+     */
+    public String getNamespace() {
+        return namespace;
     }
 
     @Override
     public AgentSkill getSkill(String name) {
+        return getSkill(namespace, name);
+    }
+
+    @Override
+    public List<String> getAllSkillNames() {
+        return getAllSkillNames(namespace);
+    }
+
+    @Override
+    public List<AgentSkill> getAllSkills() {
+        return getAllSkills(namespace);
+    }
+
+    @Override
+    public boolean save(List<AgentSkill> skills, boolean force) {
+        return save(namespace, skills, force);
+    }
+
+    @Override
+    public boolean delete(String skillName) {
+        return delete(namespace, skillName);
+    }
+
+    @Override
+    public boolean skillExists(String skillName) {
+        return skillExists(namespace, skillName);
+    }
+
+    public AgentSkill getSkill(String namespace, String name) {
+        validateNamespace(namespace);
         validateSkillName(name);
         try (Connection conn = dataSource.getConnection()) {
             LoadedSkillRecord row =
                     query(
                             conn,
-                            skillDialect.skillSelectByName(name),
+                            skillDialect.skillSelectByName(namespace, name),
                             rs -> {
                                 if (!rs.next()) {
-                                    throw new IllegalArgumentException("Skill not found: " + name);
+                                    throw new IllegalArgumentException(
+                                            "Skill not found in namespace '"
+                                                    + namespace
+                                                    + "': "
+                                                    + name);
                                 }
                                 return LoadedSkillRecord.fromResultSet(rs);
                             });
@@ -195,13 +275,13 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
      * read-side validation as {@link #buildSkill} — such a name could never be loaded or
      * deleted, because {@code getSkill} and {@code delete} validate first.
      */
-    @Override
-    public List<String> getAllSkillNames() {
+    public List<String> getAllSkillNames(String namespace) {
+        validateNamespace(namespace);
         try (Connection conn = dataSource.getConnection()) {
             List<String> stored = new ArrayList<>();
             forEachRow(
                     conn,
-                    skillDialect.skillSelectAllNames(),
+                    skillDialect.skillSelectAllNames(namespace),
                     rs -> stored.add(rs.getString("name")));
             return filterUnloadableNames(stored);
         } catch (SQLException e) {
@@ -233,15 +313,15 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     }
 
     /**
-     * Loads the whole catalog with every skill's full resources — peak memory is O(total
-     * resource bytes), so large catalogs belong behind {@link #getSkill(String)} until a
-     * streaming variant exists (tracked separately).
+     * Loads the whole catalog of one namespace with every skill's full resources — peak
+     * memory is O(that namespace's resource bytes), so large catalogs belong behind {@link
+     * #getSkill(String, String)} until a streaming variant exists (tracked separately).
      */
-    @Override
-    public List<AgentSkill> getAllSkills() {
+    public List<AgentSkill> getAllSkills(String namespace) {
+        validateNamespace(namespace);
         try (Connection conn = dataSource.getConnection()) {
-            Map<Long, LoadedSkillRecord> records = loadSkillRecords(conn);
-            stitchResources(conn, records);
+            Map<Long, LoadedSkillRecord> records = loadSkillRecords(conn, namespace);
+            stitchResources(conn, namespace, records);
             return buildAll(records);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load all skills", e);
@@ -249,14 +329,15 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     }
 
     /**
-     * Loads all skill rows ordered by name. A {@link LinkedHashMap} keeps that order while
-     * resources are stitched on separately.
+     * Loads the skill rows of one namespace ordered by name. A {@link LinkedHashMap} keeps
+     * that order while resources are stitched on separately.
      */
-    private Map<Long, LoadedSkillRecord> loadSkillRecords(Connection conn) throws SQLException {
+    private Map<Long, LoadedSkillRecord> loadSkillRecords(Connection conn, String namespace)
+            throws SQLException {
         Map<Long, LoadedSkillRecord> records = new LinkedHashMap<>();
         forEachRow(
                 conn,
-                skillDialect.skillSelectAll(),
+                skillDialect.skillSelectAll(namespace),
                 rs -> {
                     LoadedSkillRecord record = LoadedSkillRecord.fromResultSet(rs);
                     records.put(record.id, record);
@@ -264,12 +345,13 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         return records;
     }
 
-    /** Attaches every resource row to its skill; orphaned rows are logged and skipped. */
-    private void stitchResources(Connection conn, Map<Long, LoadedSkillRecord> records)
+    /** Attaches the namespace's resource rows to their skills; orphaned rows are logged and skipped. */
+    private void stitchResources(
+            Connection conn, String namespace, Map<Long, LoadedSkillRecord> records)
             throws SQLException {
         forEachRow(
                 conn,
-                skillResourcesDialect.skillResourcesSelectAll(),
+                skillResourcesDialect.skillResourcesSelectAll(namespace),
                 rs -> {
                     long skillId = rs.getLong("id");
                     LoadedSkillRecord record = records.get(skillId);
@@ -310,8 +392,8 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         return skills;
     }
 
-    @Override
-    public boolean save(List<AgentSkill> skills, boolean force) {
+    public boolean save(String namespace, List<AgentSkill> skills, boolean force) {
+        validateNamespace(namespace);
         if (skills == null || skills.isEmpty()) {
             return false;
         }
@@ -323,7 +405,7 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         try (Connection conn = dataSource.getConnection()) {
             validateForSave(skills);
             if (!force) {
-                requireNoConflicts(conn, skills);
+                requireNoConflicts(conn, namespace, skills);
             }
 
             return runInTransaction(
@@ -334,14 +416,14 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
                             // concurrent save landing the same name between the pre-check and
                             // this insert must fail on the UNIQUE constraint, not be
                             // silently overwritten.
-                            if (force && skillExistsInternal(c, skill.getName())) {
-                                deleteSkillInternal(c, skill.getName());
+                            if (force && skillExistsInternal(c, namespace, skill.getName())) {
+                                deleteSkillInternal(c, namespace, skill.getName());
                                 LOG.debug(
                                         "Deleted existing skill for overwrite: {}",
                                         skill.getName());
                             }
-                            long skillId = insertSkill(c, skill, force);
-                            insertResources(c, skillId, skill.getResources());
+                            long skillId = insertSkill(c, namespace, skill, force);
+                            insertResources(c, namespace, skillId, skill.getResources());
                             LOG.info(
                                     "Successfully saved skill: {} (id={})",
                                     skill.getName(),
@@ -355,8 +437,8 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         }
     }
 
-    @Override
-    public boolean delete(String skillName) {
+    public boolean delete(String namespace, String skillName) {
+        validateNamespace(namespace);
         if (!writeable) {
             LOG.warn("Cannot delete skill: repository is read-only");
             return false;
@@ -364,14 +446,14 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         validateSkillName(skillName);
 
         try (Connection conn = dataSource.getConnection()) {
-            if (!skillExistsInternal(conn, skillName)) {
+            if (!skillExistsInternal(conn, namespace, skillName)) {
                 LOG.warn("Skill does not exist: {}", skillName);
                 return false;
             }
             runInTransaction(
                     conn,
                     c -> {
-                        deleteSkillInternal(c, skillName);
+                        deleteSkillInternal(c, namespace, skillName);
                         return true;
                     });
             LOG.info("Successfully deleted skill: {}", skillName);
@@ -382,13 +464,13 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         }
     }
 
-    @Override
-    public boolean skillExists(String skillName) {
+    public boolean skillExists(String namespace, String skillName) {
+        validateNamespace(namespace);
         if (skillName == null || skillName.isEmpty()) {
             return false;
         }
         try (Connection conn = dataSource.getConnection()) {
-            return skillExistsInternal(conn, skillName);
+            return skillExistsInternal(conn, namespace, skillName);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to check skill existence: " + skillName, e);
         }
@@ -422,11 +504,22 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     }
 
     /**
-     * Deletes every skill and its resources.
+     * Deletes every skill and its resources in the namespace bound at construction.
      *
      * @return the number of deleted skill rows
      */
     public int clearAllSkills() {
+        return clearAllSkills(getNamespace());
+    }
+
+    /**
+     * Deletes every skill and its resources in the given namespace; skills of other
+     * namespaces are untouched.
+     *
+     * @return the number of deleted skill rows
+     */
+    public int clearAllSkills(String namespace) {
+        validateNamespace(namespace);
         if (!writeable) {
             LOG.warn("Cannot clear skills: repository is read-only");
             return 0;
@@ -436,10 +529,14 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
                     runInTransaction(
                             conn,
                             c -> {
-                                executeUpdate(c, skillResourcesDialect.skillResourcesDeleteAll());
-                                return executeUpdate(c, skillDialect.skillDeleteAll());
+                                // Two scoped statements; the resources table carries the
+                                // owning skill's namespace, so no join is needed.
+                                executeUpdate(
+                                        c,
+                                        skillResourcesDialect.skillResourcesDeleteAll(namespace));
+                                return executeUpdate(c, skillDialect.skillDeleteAll(namespace));
                             });
-            LOG.info("Cleared all skills, {} skills deleted", deleted);
+            LOG.info("Cleared namespace '{}': {} skills deleted", namespace, deleted);
             return deleted;
         } catch (SQLException e) {
             throw new RuntimeException("Failed to clear skills", e);
@@ -503,16 +600,18 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
 
     /**
      * Fast-fail pre-check when {@code force=false}, listing every conflicting name before
-     * any write starts. Advisory only: the authoritative guarantee is the {@code name}
-     * UNIQUE constraint on the in-transaction insert (see {@link #insertSkill}), which
-     * closes the window a concurrent writer opens between this check and the save.
+     * any write starts. Advisory only: the authoritative guarantee is the {@code
+     * (namespace, name)} UNIQUE constraint on the in-transaction insert (see {@link
+     * #insertSkill}), which closes the window a concurrent writer opens between this check
+     * and the save.
      *
      * @throws IllegalStateException listing all conflicting skill names
      */
-    private void requireNoConflicts(Connection conn, List<AgentSkill> skills) throws SQLException {
+    private void requireNoConflicts(Connection conn, String namespace, List<AgentSkill> skills)
+            throws SQLException {
         List<String> existing = new ArrayList<>();
         for (AgentSkill skill : skills) {
-            if (skillExistsInternal(conn, skill.getName())) {
+            if (skillExistsInternal(conn, namespace, skill.getName())) {
                 existing.add(skill.getName());
             }
         }
@@ -526,17 +625,19 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
 
     /**
      * Inserts one skill row and returns its generated id. With {@code force=false} the row
-     * is inserted without a preceding delete, so the {@code name} UNIQUE constraint is the
-     * authoritative conflict check: a name landed between the pre-check and this insert
-     * surfaces as the same {@link IllegalStateException} the pre-check raises, instead of
-     * being silently overwritten.
+     * is inserted without a preceding delete, so the {@code (namespace, name)} UNIQUE
+     * constraint is the authoritative conflict check: a name landed between the pre-check
+     * and this insert surfaces as the same {@link IllegalStateException} the pre-check
+     * raises, instead of being silently overwritten.
      *
      * @throws SQLException when the insert or key retrieval fails
      * @throws IllegalStateException when {@code force=false} and the name already exists
      */
-    private long insertSkill(Connection conn, AgentSkill skill, boolean force) throws SQLException {
+    private long insertSkill(Connection conn, String namespace, AgentSkill skill, boolean force)
+            throws SQLException {
         BoundSql bound =
                 skillDialect.skillInsert(
+                        namespace,
                         skill.getName(),
                         skill.getDescription(),
                         skill.getSkillContent(),
@@ -573,7 +674,8 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
      *
      * @throws SQLException when any row fails to insert
      */
-    private void insertResources(Connection conn, long skillId, Map<String, String> resources)
+    private void insertResources(
+            Connection conn, String namespace, long skillId, Map<String, String> resources)
             throws SQLException {
         if (resources == null || resources.isEmpty()) {
             LOG.debug("No resources to insert for id: {}", skillId);
@@ -583,13 +685,14 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         String firstPath = paths.get(0);
         String insertSql =
                 skillResourcesDialect
-                        .skillResourcesInsert(skillId, firstPath, resources.get(firstPath))
+                        .skillResourcesInsert(
+                                namespace, skillId, firstPath, resources.get(firstPath))
                         .sql();
         try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
             for (String path : paths) {
                 BoundSql row =
                         skillResourcesDialect.skillResourcesInsert(
-                                skillId, path, resources.get(path));
+                                namespace, skillId, path, resources.get(path));
                 bindParams(stmt, row.params());
                 stmt.addBatch();
             }
@@ -626,20 +729,21 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     // ------------------------------------------------------------------
 
     /**
-     * Deletes a skill and its resources. Resources are deleted explicitly for portability —
-     * SQLite only enforces the cascading FK with {@code PRAGMA foreign_keys} on — so the
-     * cascade stays a second line of defense.
+     * Deletes a skill and its resources within one namespace. Resources are deleted
+     * explicitly for portability — SQLite only enforces the cascading FK with {@code
+     * PRAGMA foreign_keys} on — so the cascade stays a second line of defense.
      */
-    private void deleteSkillInternal(Connection conn, String skillName) throws SQLException {
+    private void deleteSkillInternal(Connection conn, String namespace, String skillName)
+            throws SQLException {
         Long skillId =
                 query(
                         conn,
-                        skillDialect.skillSelectIdByName(skillName),
+                        skillDialect.skillSelectIdByName(namespace, skillName),
                         rs -> rs.next() ? rs.getLong("id") : null);
         if (skillId != null) {
             executeUpdate(conn, skillResourcesDialect.skillResourcesDeleteBySkillId(skillId));
         }
-        executeUpdate(conn, skillDialect.skillDeleteByName(skillName));
+        executeUpdate(conn, skillDialect.skillDeleteByName(namespace, skillName));
     }
 
     /** Runs an update-type {@link BoundSql}, returning the affected-row count. */
@@ -668,8 +772,9 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     }
 
     /** Existence probe on an open connection. */
-    private boolean skillExistsInternal(Connection conn, String skillName) throws SQLException {
-        return query(conn, skillDialect.skillExists(skillName), ResultSet::next);
+    private boolean skillExistsInternal(Connection conn, String namespace, String skillName)
+            throws SQLException {
+        return query(conn, skillDialect.skillExists(namespace, skillName), ResultSet::next);
     }
 
     /**
@@ -741,6 +846,43 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     // ------------------------------------------------------------------
     //  Validation and JDBC utilities
     // ------------------------------------------------------------------
+
+    /**
+     * Validates a namespace: 1–64 characters (the DDL column width) from {@code
+     * [A-Za-z0-9._-]}, excluding the path-relative names {@code .} and {@code ..}.
+     *
+     * @throws IllegalArgumentException when null/empty, over-length, "." / "..", or
+     *     containing characters outside the allowed set
+     */
+    private static void validateNamespace(String namespace) {
+        if (namespace == null || namespace.isEmpty()) {
+            throw new IllegalArgumentException("Namespace cannot be null or empty");
+        }
+        if (".".equals(namespace) || "..".equals(namespace)) {
+            throw new IllegalArgumentException("Namespace must not be '.' or '..': " + namespace);
+        }
+        if (namespace.length() > 64) {
+            throw new IllegalArgumentException("Namespace cannot exceed 64 characters");
+        }
+        for (int i = 0; i < namespace.length(); i++) {
+            if (!isNamespaceCharacter(namespace.charAt(i))) {
+                throw new IllegalArgumentException(
+                        "Namespace contains illegal character '"
+                                + namespace.charAt(i)
+                                + "'; allowed charset is [A-Za-z0-9._-]: "
+                                + namespace);
+            }
+        }
+    }
+
+    private static boolean isNamespaceCharacter(char c) {
+        return (c >= 'a' && c <= 'z')
+                || (c >= 'A' && c <= 'Z')
+                || (c >= '0' && c <= '9')
+                || c == '.'
+                || c == '_'
+                || c == '-';
+    }
 
     /**
      * Validates a skill name.

@@ -149,6 +149,61 @@ Two behaviors to note:
 - `metadata_json` is a required column. A table from before the column existed fails startup validation with the reference DDL; add the column as the error suggests and restart — the framework never alters existing tables.
 - `delete` removes a skill's resources explicitly before the row itself, so it behaves the same on SQLite, where the cascade only fires with `PRAGMA foreign_keys` on. Resource paths must be relative without `..` — anything escaping the skill directory is rejected on save, and rows read back from the table are validated the same way.
 
+#### Scope isolation (namespaces)
+
+Reusing a skill name across teams is normal; `agentscope_skills` isolates scopes with a `namespace` column whose unique key is **`UNIQUE(namespace, name)`** — unique within a namespace, free to repeat across them. `skill_resources` carries the `namespace` column too, written with the skill row in one transaction. This is the `AgentSkillRepository` scope-isolation contract realized on a relational store: **one instance binds one namespace, and every no-argument method addresses the bound value**.
+
+```sql
+namespace VARCHAR(64) NOT NULL DEFAULT 'default'   -- existing rows fall into default
+CONSTRAINT uk_namespace_name UNIQUE (namespace, name)
+```
+
+```java
+JdbcAgentSkillRepository teamA =
+    new JdbcAgentSkillRepository(dataSource, dialect, "team-a", true);
+JdbcAgentSkillRepository teamB =
+    new JdbcAgentSkillRepository(dataSource, dialect, "team-b", true);
+
+teamA.save(List.of(skill), false);                 // team A saves
+teamB.save(List.of(skill), false);                 // the same name in another namespace, independent
+teamA.getSkill("code-review");
+teamA.delete("code-review");                       // scoped to the bound namespace
+
+// Convenience overloads addressing another namespace on one instance
+teamA.save("team-b", List.of(otherSkill), false);
+```
+
+- The constructors without a namespace bind `"default"`.
+- A `force=true` overwrite stays inside one namespace; it never deletes across namespaces.
+- Namespaces are validated at construction and on every convenience call: 1–64 characters from `[A-Za-z0-9._-]`, anything else throws `IllegalArgumentException`.
+- On MySQL the `namespace` column keeps the table's default collation and is case-insensitive like `name`; PostgreSQL / H2 / SQLite compare case-sensitively.
+
+**Upgrading an existing table** (the framework never alters existing tables — run this once by hand):
+
+```sql
+-- 1. Add the column (instant; existing rows fall into default; both tables)
+ALTER TABLE agentscope_skills
+  ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 'default';
+ALTER TABLE agentscope_skill_resources
+  ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 'default';
+
+-- 2. Rebuild the unique index (prefer an off-peak window: drop the old single-column one, then add the composite)
+ALTER TABLE agentscope_skills DROP INDEX name;
+ALTER TABLE agentscope_skills
+  ADD UNIQUE KEY uk_namespace_name (namespace, name);
+```
+
+PostgreSQL variant:
+
+```sql
+ALTER TABLE agentscope_skills ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 'default';
+ALTER TABLE agentscope_skill_resources ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 'default';
+ALTER TABLE agentscope_skills DROP CONSTRAINT agentscope_skills_name_key;
+ALTER TABLE agentscope_skills ADD CONSTRAINT uk_namespace_name UNIQUE (namespace, name);
+```
+
+H2 can drop the old constraint by name (`ALTER TABLE agentscope_skills DROP CONSTRAINT <name>`) and add the new one. SQLite differs: the implicit index behind an inline `UNIQUE` cannot be dropped, so rebuild the table instead (create both new tables with the `namespace` column and the skills table with `UNIQUE(namespace, name)`, copy the rows, drop the old tables, rename). Startup validation compares columns only, never indexes, so **both steps are required**: skipping step 2 leaves the global `UNIQUE(name)` in place, and saving the same name into another namespace fails on the constraint.
+
 ## Migrating from Legacy Modules
 
 Continued use of the legacy modules is discouraged — migrate as early as your schedule allows:

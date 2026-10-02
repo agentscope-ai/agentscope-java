@@ -21,10 +21,15 @@ import java.util.List;
 /**
  * Table-domain dialect interface for the skill table.
  *
- * <p>One row per skill: the lookup columns ({@code name}, {@code description}), content,
+ * <p>One row per skill: the lookup columns ({@code namespace}, {@code name}), content,
  * source, and the metadata tree in {@code metadata_json}. The structure mirrors the
  * deprecated skill mysql/postgresql modules; {@code metadata_json} is required — a legacy
  * table without it fails schema validation with the reference DDL.
+ *
+ * <p>The namespace column partitions names: {@code UNIQUE(namespace, name)} allows the
+ * same skill name once per namespace. Every statement addresses exactly one namespace;
+ * the column is {@code NOT NULL DEFAULT 'default'}: every row carries a concrete
+ * namespace and vendor-specific NULL comparison semantics never apply.
  *
  * <p>Method names are prefixed with {@code skill}; all business SQL is ANSI-standard, so
  * vendors override only the create-table DDL.
@@ -41,36 +46,49 @@ public interface SkillDialect {
     /** DDL statements (one or more) to create the skill table. Must be idempotent. */
     List<String> skillCreateTableDdls();
 
-    /** SELECT of one skill by name. Projection includes {@code metadata_json}. */
-    default BoundSql skillSelectByName(String name) {
+    /** SELECT of one skill by name within a namespace. Projection includes {@code metadata_json}. */
+    default BoundSql skillSelectByName(String namespace, String name) {
         return new BoundSql(
                 "SELECT id, name, description, skill_content, source, metadata_json FROM "
                         + skillTableName()
-                        + " WHERE name = ?",
+                        + " WHERE namespace = ? AND name = ?",
+                namespace,
                 name);
     }
 
-    /** SELECT of all skills ordered by name. Projection includes {@code metadata_json}. */
-    default BoundSql skillSelectAll() {
+    /** SELECT of all skills of one namespace ordered by name. Projection includes {@code metadata_json}. */
+    default BoundSql skillSelectAll(String namespace) {
         return new BoundSql(
                 "SELECT id, name, description, skill_content, source, metadata_json FROM "
                         + skillTableName()
-                        + " ORDER BY name");
+                        + " WHERE namespace = ? ORDER BY name",
+                namespace);
     }
 
-    /** SELECT of all skill names ordered by name. Projection: (name). */
-    default BoundSql skillSelectAllNames() {
-        return new BoundSql("SELECT name FROM " + skillTableName() + " ORDER BY name");
+    /** SELECT of all skill names of one namespace ordered by name. Projection: (name). */
+    default BoundSql skillSelectAllNames(String namespace) {
+        return new BoundSql(
+                "SELECT name FROM " + skillTableName() + " WHERE namespace = ? ORDER BY name",
+                namespace);
     }
 
-    /** Existence probe for one skill name; {@code name} is UNIQUE, so no {@code LIMIT} is needed. */
-    default BoundSql skillExists(String skillName) {
-        return new BoundSql("SELECT 1 FROM " + skillTableName() + " WHERE name = ?", skillName);
+    /**
+     * Existence probe for one skill name within a namespace; {@code (namespace, name)} is
+     * UNIQUE, so no {@code LIMIT} is needed.
+     */
+    default BoundSql skillExists(String namespace, String skillName) {
+        return new BoundSql(
+                "SELECT 1 FROM " + skillTableName() + " WHERE namespace = ? AND name = ?",
+                namespace,
+                skillName);
     }
 
-    /** SELECT of one skill's id by name. Projection: (id). */
-    default BoundSql skillSelectIdByName(String skillName) {
-        return new BoundSql("SELECT id FROM " + skillTableName() + " WHERE name = ?", skillName);
+    /** SELECT of one skill's id by name within a namespace. Projection: (id). */
+    default BoundSql skillSelectIdByName(String namespace, String skillName) {
+        return new BoundSql(
+                "SELECT id FROM " + skillTableName() + " WHERE namespace = ? AND name = ?",
+                namespace,
+                skillName);
     }
 
     /**
@@ -78,6 +96,7 @@ public interface SkillDialect {
      * {@link java.sql.Statement#RETURN_GENERATED_KEYS} to read the auto-increment id.
      */
     default BoundSql skillInsert(
+            String namespace,
             String name,
             String description,
             String skillContent,
@@ -86,8 +105,9 @@ public interface SkillDialect {
         return new BoundSql(
                 "INSERT INTO "
                         + skillTableName()
-                        + " (name, description, skill_content, source, metadata_json)"
-                        + " VALUES (?, ?, ?, ?, ?)",
+                        + " (namespace, name, description, skill_content, source, metadata_json)"
+                        + " VALUES (?, ?, ?, ?, ?, ?)",
+                namespace,
                 name,
                 description,
                 skillContent,
@@ -95,13 +115,16 @@ public interface SkillDialect {
                 metadataJson);
     }
 
-    /** DELETE of one skill by name. */
-    default BoundSql skillDeleteByName(String skillName) {
-        return new BoundSql("DELETE FROM " + skillTableName() + " WHERE name = ?", skillName);
+    /** DELETE of one skill by name within a namespace. */
+    default BoundSql skillDeleteByName(String namespace, String skillName) {
+        return new BoundSql(
+                "DELETE FROM " + skillTableName() + " WHERE namespace = ? AND name = ?",
+                namespace,
+                skillName);
     }
 
-    /** DELETE of every skill row. */
-    default BoundSql skillDeleteAll() {
-        return new BoundSql("DELETE FROM " + skillTableName());
+    /** DELETE of every skill row of one namespace. */
+    default BoundSql skillDeleteAll(String namespace) {
+        return new BoundSql("DELETE FROM " + skillTableName() + " WHERE namespace = ?", namespace);
     }
 }

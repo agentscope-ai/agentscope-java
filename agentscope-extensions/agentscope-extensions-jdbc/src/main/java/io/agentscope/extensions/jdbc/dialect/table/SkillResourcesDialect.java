@@ -22,8 +22,10 @@ import java.util.List;
  * Table-domain dialect interface for the skill-resources table.
  *
  * <p>One row per skill resource, keyed by {@code (id, resource_path)} with a foreign key to
- * the skill table and {@code ON DELETE CASCADE}; the structure mirrors the deprecated skill
- * mysql/postgresql modules. This table must be created after the skill table it references.
+ * the skill table and {@code ON DELETE CASCADE}. The row carries the owning skill's
+ * {@code namespace}, written in the same transaction, so bulk reads and deletes scope by
+ * namespace without joining the skill table. This table must be created after the skill
+ * table it references.
  *
  * <p>Method names are prefixed with {@code skillResources}; all business SQL is
  * ANSI-standard, so vendors override only the create-table DDL.
@@ -56,14 +58,31 @@ public interface SkillResourcesDialect {
      * one skill must share the same statement shape.
      */
     default BoundSql skillResourcesInsert(
-            long skillId, String resourcePath, String resourceContent) {
+            String namespace, long skillId, String resourcePath, String resourceContent) {
         return new BoundSql(
                 "INSERT INTO "
                         + skillResourcesTableName()
-                        + " (id, resource_path, resource_content) VALUES (?, ?, ?)",
+                        + " (namespace, id, resource_path, resource_content)"
+                        + " VALUES (?, ?, ?, ?)",
+                namespace,
                 skillId,
                 resourcePath,
                 resourceContent);
+    }
+
+    /** SELECT of every resource row of one namespace. Projection: (id, resource_path, resource_content). */
+    default BoundSql skillResourcesSelectAll(String namespace) {
+        return new BoundSql(
+                "SELECT id, resource_path, resource_content FROM "
+                        + skillResourcesTableName()
+                        + " WHERE namespace = ?",
+                namespace);
+    }
+
+    /** DELETE of every resource row of one namespace; pairs with {@link SkillDialect#skillDeleteAll(String)}. */
+    default BoundSql skillResourcesDeleteAll(String namespace) {
+        return new BoundSql(
+                "DELETE FROM " + skillResourcesTableName() + " WHERE namespace = ?", namespace);
     }
 
     /** SELECT of one skill's resources. Projection: (resource_path, resource_content). */
@@ -73,12 +92,6 @@ public interface SkillResourcesDialect {
                         + skillResourcesTableName()
                         + " WHERE id = ?",
                 skillId);
-    }
-
-    /** SELECT of every resource row. Projection: (id, resource_path, resource_content). */
-    default BoundSql skillResourcesSelectAll() {
-        return new BoundSql(
-                "SELECT id, resource_path, resource_content FROM " + skillResourcesTableName());
     }
 
     /**
@@ -91,10 +104,5 @@ public interface SkillResourcesDialect {
      */
     default BoundSql skillResourcesDeleteBySkillId(long skillId) {
         return new BoundSql("DELETE FROM " + skillResourcesTableName() + " WHERE id = ?", skillId);
-    }
-
-    /** DELETE of every resource row; pairs with {@link SkillDialect#skillDeleteAll()}. */
-    default BoundSql skillResourcesDeleteAll() {
-        return new BoundSql("DELETE FROM " + skillResourcesTableName());
     }
 }

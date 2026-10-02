@@ -321,6 +321,58 @@ class DialectSqlTests {
     }
 
     // ------------------------------------------------------------------
+    //  SkillDialect — namespace-scoped statements
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("skill statements scope every operation to one namespace")
+    void skillSqlIsNamespaceScoped() {
+        var d = new H2Dialect();
+
+        BoundSql select = d.skillSelectByName("team-a", "code-review");
+        assertEquals(
+                "SELECT id, name, description, skill_content, source, metadata_json FROM"
+                        + " agentscope_skills WHERE namespace = ? AND name = ?",
+                select.sql());
+        assertEquals(List.of("team-a", "code-review"), select.params());
+
+        assertTrue(d.skillSelectAll("team-a").sql().endsWith("WHERE namespace = ? ORDER BY name"));
+        assertTrue(
+                d.skillSelectAllNames("team-a")
+                        .sql()
+                        .contains("WHERE namespace = ? ORDER BY name"));
+        assertTrue(d.skillExists("team-a", "s").sql().contains("WHERE namespace = ? AND name = ?"));
+        assertEquals(
+                "SELECT id FROM agentscope_skills WHERE namespace = ? AND name = ?",
+                d.skillSelectIdByName("team-a", "s").sql());
+
+        BoundSql insert = d.skillInsert("team-a", "s", "d", "c", "src", null);
+        assertTrue(
+                insert.sql()
+                        .contains(
+                                "(namespace, name, description, skill_content, source,"
+                                        + " metadata_json)"));
+        assertEquals(
+                java.util.Arrays.asList("team-a", "s", "d", "c", "src", null), insert.params());
+
+        assertTrue(
+                d.skillDeleteByName("team-a", "s")
+                        .sql()
+                        .contains("WHERE namespace = ? AND name = ?"));
+        assertTrue(d.skillDeleteAll("team-a").sql().contains("WHERE namespace = ?"));
+
+        assertEquals(
+                "SELECT id, resource_path, resource_content FROM agentscope_skill_resources"
+                        + " WHERE namespace = ?",
+                d.skillResourcesSelectAll("team-a").sql());
+        assertTrue(d.skillResourcesDeleteAll("team-a").sql().endsWith("WHERE namespace = ?"));
+        assertTrue(
+                d.skillResourcesInsert("team-a", 1L, "docs/a.md", "a")
+                        .sql()
+                        .contains("(namespace, id, resource_path, resource_content)"));
+    }
+
+    // ------------------------------------------------------------------
     //  InnoDB utf8mb4 index limit (ported from MysqlJdbcStoreDialectTest)
     // ------------------------------------------------------------------
 
