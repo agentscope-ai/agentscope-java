@@ -198,9 +198,12 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         ProcessBuilder pb = new ProcessBuilder(cmd);
         Process process = pb.start();
 
+        // 3 threads on Windows: stdout drainer + stderr drainer + the stdin writer — the
+        // drainers only finish at process EOF, which never comes while sh waits for stdin,
+        // so a 2-thread pool would starve the write into a guaranteed deadlock (#2924 review).
         ExecutorService drainer =
                 Executors.newFixedThreadPool(
-                        2,
+                        windows ? 3 : 2,
                         r -> {
                             Thread t =
                                     new Thread(
