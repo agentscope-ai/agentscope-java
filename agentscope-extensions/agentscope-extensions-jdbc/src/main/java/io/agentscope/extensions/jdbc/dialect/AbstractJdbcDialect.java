@@ -16,6 +16,8 @@
 package io.agentscope.extensions.jdbc.dialect;
 
 import io.agentscope.extensions.jdbc.dialect.table.SessionStateDialect;
+import io.agentscope.extensions.jdbc.dialect.table.SkillDialect;
+import io.agentscope.extensions.jdbc.dialect.table.SkillResourcesDialect;
 import io.agentscope.extensions.jdbc.dialect.table.SnapshotDialect;
 import io.agentscope.extensions.jdbc.dialect.table.StoreDialect;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
@@ -26,8 +28,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
-import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -62,7 +65,12 @@ import org.slf4j.LoggerFactory;
  * @author shanhongyu
  */
 public abstract class AbstractJdbcDialect
-        implements StoreDialect, SessionStateDialect, SnapshotDialect, SandboxLockStrategy {
+        implements StoreDialect,
+                SessionStateDialect,
+                SnapshotDialect,
+                SkillDialect,
+                SkillResourcesDialect,
+                SandboxLockStrategy {
 
     private static final Logger LOG = LoggerFactory.getLogger(AbstractJdbcDialect.class);
 
@@ -70,6 +78,14 @@ public abstract class AbstractJdbcDialect
     private String storeTableNameOverride;
     private String sessionStateTableNameOverride;
     private String snapshotTableNameOverride;
+    private String skillTableNameOverride;
+    private String skillResourcesTableNameOverride;
+
+    /** Whether the base table group (store, sessions, snapshots) joins schema work; default true. */
+    private boolean baseTablesEnabled = true;
+
+    /** Whether the skill table group (skills, skill_resources) joins schema work; default false. */
+    private boolean skillTablesEnabled;
 
     private DataSource dataSource;
 
@@ -109,24 +125,68 @@ public abstract class AbstractJdbcDialect
                 () -> tablePrefix + SnapshotDialect.super.snapshotTableName());
     }
 
+    @Override
+    public final String skillTableName() {
+        return Objects.requireNonNullElseGet(
+                skillTableNameOverride, () -> tablePrefix + SkillDialect.super.skillTableName());
+    }
+
+    @Override
+    public final String skillResourcesTableName() {
+        return Objects.requireNonNullElseGet(
+                skillResourcesTableNameOverride,
+                () -> tablePrefix + SkillResourcesDialect.super.skillResourcesTableName());
+    }
+
     // ------------------------------------------------------------------
     //  All-table DDL collection (centralized for builder)
     // ------------------------------------------------------------------
 
     /**
-     * Collects create-schema DDL for all table-domain interfaces, executed by the builder
-     * in a single connection during {@code build()}. Each table-domain method may return
+     * Collects each enabled table's create-schema DDL keyed by resolved table name — the
+     * single source the builder both executes and validates against, so a table added here
+     * is created and checked without further wiring. Each table-domain method may return
      * one or more statements (e.g. {@code CREATE TABLE} plus a secondary {@code CREATE
      * INDEX}), so no vendor is constrained to a single SQL statement per table.
      *
-     * @return all DDL statements, in store → sessions → snapshots order
+     * <p>Insertion-ordered (store → sessions → snapshots → skills → skill_resources, minus
+     * disabled groups); overrides should preserve that (e.g. {@link LinkedHashMap}) so DDL
+     * execution stays deterministic — the resources table must follow the skill table it
+     * references.
+     *
+     * @return resolved table name → that table's DDL statements
      */
-    protected List<String> createTableDdls() {
-        List<String> ddls = new ArrayList<>();
-        ddls.addAll(storeCreateTableDdls());
-        ddls.addAll(sessionStateCreateTableDdls());
-        ddls.addAll(snapshotCreateTableDdls());
+    protected Map<String, List<String>> createTableDdls() {
+        Map<String, List<String>> ddls = new LinkedHashMap<>();
+        if (baseTablesEnabled) {
+            putDdls(ddls, storeTableName(), storeCreateTableDdls());
+            putDdls(ddls, sessionStateTableName(), sessionStateCreateTableDdls());
+            putDdls(ddls, snapshotTableName(), snapshotCreateTableDdls());
+        }
+        if (skillTablesEnabled) {
+            putDdls(ddls, skillTableName(), skillCreateTableDdls());
+            putDdls(ddls, skillResourcesTableName(), skillResourcesCreateTableDdls());
+        }
         return ddls;
+    }
+
+    /**
+     * Puts one domain's DDL, refusing a table name already claimed by another domain — a
+     * collision would silently drop one domain's creation and validation.
+     *
+     * @param ddls the map under construction
+     * @param tableName the domain's resolved table name
+     * @param statements the domain's DDL statements
+     * @throws IllegalStateException when another domain already uses {@code tableName}
+     */
+    private static void putDdls(
+            Map<String, List<String>> ddls, String tableName, List<String> statements) {
+        if (ddls.put(tableName, statements) != null) {
+            throw new IllegalStateException(
+                    "Duplicate JDBC table name '"
+                            + tableName
+                            + "': each table domain needs a distinct table name");
+        }
     }
 
     // ------------------------------------------------------------------
@@ -147,6 +207,32 @@ public abstract class AbstractJdbcDialect
 
     final void snapshotTableName(String tableName) {
         this.snapshotTableNameOverride = tableName;
+    }
+
+    final void skillTableName(String tableName) {
+        this.skillTableNameOverride = tableName;
+    }
+
+    final void skillResourcesTableName(String tableName) {
+        this.skillResourcesTableNameOverride = tableName;
+    }
+
+    final void baseTablesEnabled(boolean enabled) {
+        this.baseTablesEnabled = enabled;
+    }
+
+    final void skillTablesEnabled(boolean enabled) {
+        this.skillTablesEnabled = enabled;
+    }
+
+    /** Whether the base table group is enabled for this instance's schema work. */
+    public boolean isBaseTablesEnabled() {
+        return baseTablesEnabled;
+    }
+
+    /** Whether the skill table group is enabled for this instance's schema work. */
+    public boolean isSkillTablesEnabled() {
+        return skillTablesEnabled;
     }
 
     /**

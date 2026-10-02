@@ -22,9 +22,11 @@ import com.anthropic.models.messages.RawMessageStreamEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.time.Instant;
@@ -64,6 +66,10 @@ public class AnthropicResponseParser {
             block.toolUse()
                     .ifPresent(
                             toolUse -> {
+                                if (!ToolValidator.requireNonBlank(
+                                        "Anthropic", toolUse.name(), toolUse.id())) {
+                                    return;
+                                }
                                 Map<String, Object> input =
                                         parseJsonInput(toolUse._input(), toolUse.name());
                                 contentBlocks.add(
@@ -90,8 +96,12 @@ public class AnthropicResponseParser {
             // Server tool use block (e.g. web_search executed on Anthropic's side)
             block.serverToolUse()
                     .ifPresent(
-                            serverToolUse ->
-                                    contentBlocks.add(SERVER_TOOL_HELPER.decodeUse(serverToolUse)));
+                            serverToolUse -> {
+                                ToolUseBlock decoded = SERVER_TOOL_HELPER.decodeUse(serverToolUse);
+                                if (decoded != null) {
+                                    contentBlocks.add(decoded);
+                                }
+                            });
 
             // Server tool result blocks (results of tools executed on Anthropic's side)
             SERVER_TOOL_HELPER
@@ -234,6 +244,10 @@ public class AnthropicResponseParser {
                     .toolUse()
                     .ifPresent(
                             toolUse -> {
+                                if (!ToolValidator.requireNonBlank(
+                                        "Anthropic", toolUse.name(), toolUse.id())) {
+                                    return;
+                                }
                                 contentBlocks.add(
                                         ToolUseBlock.builder()
                                                 .id(toolUse.id())
@@ -250,6 +264,12 @@ public class AnthropicResponseParser {
                     .serverToolUse()
                     .ifPresent(
                             serverToolUse -> {
+                                if (!ToolValidator.requireNonBlank(
+                                        "Anthropic",
+                                        serverToolUse.name().asString(),
+                                        serverToolUse.id())) {
+                                    return;
+                                }
                                 contentBlocks.add(
                                         ToolUseBlock.builder()
                                                 .id(serverToolUse.id())
@@ -260,6 +280,7 @@ public class AnthropicResponseParser {
                                                         Map.of(
                                                                 ToolUseBlock.METADATA_SERVER_TOOL,
                                                                 true))
+                                                .state(ToolCallState.FINISHED)
                                                 .build());
                             });
 
