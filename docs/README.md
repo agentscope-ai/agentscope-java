@@ -31,7 +31,85 @@ has a title, local images/links/anchors exist, and redirects have valid targets.
 `npm run validate` also runs Mintlify's strict build validation. The GitHub Actions
 workflow runs these checks on documentation PRs and pushes to `main` or `Mintlify`.
 
+## Refresh Service screenshots
+
+Agent and task management guides, including resource pages, share screenshots under `imgs/service/`. They are
+captured from the current React console with synthetic API fixtures; names, task
+results, channel status and credential metadata are examples, not a live deployment
+or an end-to-end execution result. Keep this distinction in each page's caption.
+
+From the repository root, with Node.js 22 installed:
+
+```bash
+cd agentscope-service/frontend
+npm ci
+npx playwright install chromium
+npm run docs:screenshots
+```
+
+The script starts Vite on `127.0.0.1:5188`, opens a fresh Chromium context, captures
+13 images of 12 pages at 1440 pixels wide (960 or 1120 pixels high, depending on
+the page), then stops both processes. Port 5188 must be available.
+It intercepts backend API calls with fixed documentation fixtures, so PostgreSQL,
+Java services, model credentials and an existing console login are unnecessary.
+It does not read or write your running Service database. Screenshot text retains
+the current console's English control labels; both documentation languages reuse
+the same images with translated explanations and alternative text.
+
+Capture steps and readiness assertions live in
+`agentscope-service/frontend/scripts/docs/capture.mjs`; example API responses live
+beside it in `fixtures.mjs`. Update these when the UI or API changes. An unexpected
+API call, page exception or visible alert fails the capture. Images are staged in
+a temporary directory and copied to the documentation only after all captures
+succeed. Review every image for loading states, clipping and readable text before
+submitting it; never substitute screenshots containing real credentials or private
+work. Playwright/Chromium and platform font updates may change the rendered pixels.
+
+After capture, run the documentation checks above and inspect the Chinese and
+English guides with `npm run dev` from `docs/`. Commit the PNG files with the
+corresponding guides and script changes; do not commit browser traces or caches.
+
 ## Authoring
+
+### Service content and scenario standards
+
+Service guides should explain the user goal, prerequisites, exact console or API
+steps, observable success criteria, failure recovery, and the next relevant guide.
+Reference pages should describe defaults, allowed values, configuration scope,
+when changes take effect, and limits that affect the documented operation. Check
+these against the current console, control plane, and runtime implementation.
+Avoid adding identical sections to every page when a precise cross-link suffices.
+
+Scenario tutorials live in `v2/{en,zh}/service/cases/`; downloadable inputs live in
+`examples/service/`. Code and JSON inputs use a final `.txt` extension so Mintlify
+serves them as static downloads; guides specify the executable or JSON filename
+to use after saving. Each case must have fixed inputs, explicit acceptance criteria,
+and a distinction between expected output and observed execution. Keep both
+languages and the functional-guide links aligned. Current cases cover an all-Hosted GitHub development cycle, an External
+fulfillment Team built with AgentScope, and a Managed presales Team with mixed
+execution extensions.
+
+From `docs/`, validate the local code and JSON fixtures with Python 3 and JDK 17+:
+
+```bash
+python3 scripts/check-service-examples.py
+```
+
+The order-query starting file intentionally fails three of five acceptance checks.
+The checker compiles it in a temporary directory with `javac --release 17`, verifies
+that baseline, applies a reference repair only in the copy, and checks the repaired
+result. It also checks the fulfillment JSON and presales source paths. Do not fix
+the published starting file or commit generated classes and logs. This check does
+not run GitHub, models, enterprise APIs, or Service scenarios. The fulfillment
+fixture is data for application tool development, not a bundled business server.
+
+For an actual scenario walkthrough, record Service and SDK/provider versions,
+configuration choices, input data, Issue/Run/Invocation IDs, artifacts, observed
+results, deviations, and cleanup. Include the idempotency/filtering or failure
+branch described by the case. Preserve logs from real execution; generated prose
+and fixture-based screenshots do not establish end-to-end success.
+
+### Site conventions
 
 - `docs.json` is the single source of truth for navigation, versions, languages,
   branding and redirects. Default navigation is English v2.

@@ -379,7 +379,8 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                                 call.getId(),
                                 call.getName(),
                                 call.getInput());
-                confirmations.add(new ConfirmResult(decision.allow(), call));
+                confirmations.add(
+                        new ConfirmResult(decision.allow(), call, null, decision.denyMessage()));
             }
             response =
                     agent.call(

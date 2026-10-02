@@ -1,5 +1,6 @@
 ---
 title: 'AgentScope Service Explained: Control Plane, Data Plane & Recoverable Runtime'
+zh_link: /v2/zh/blogs/agentscope-service-release-tech
 ---
 
 If the launch announcement answers "what AgentScope Service can do," this post focuses on "how it is built." We will walk through the product resource model, plane boundaries, the Turn lifecycle, the Brain / Hands split, the Session event contract, and multi-framework integration paths to explain the system design behind the platform.
@@ -240,7 +241,7 @@ It is recommended to validate at least three paths:
 2. HITL: trigger Ask Policy, continue after confirmation, and verify the history is complete;
 3. `self_hosted`: Worker poll / ack / heartbeat / return `tool_result`, and confirm the Turn recovers correctly.
 
-See [`docs/guide/14-validation.md`](/v2/en/service/first-session) and the architecture notes in [`docs/guide/02-architecture.md`](/v2/en/service/concepts).
+See [`docs/guide/14-validation.md`](/v2/en/service/first-session) and the architecture notes in [`docs/guide/02-architecture.md`](/v2/en/service/index).
 
 ## Implementation Pitfalls Worth Avoiding Early
 

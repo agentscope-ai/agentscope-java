@@ -90,10 +90,11 @@ public class InMemoryAgentStateStore implements AgentStateStore {
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
         if (expectedVersion == UNVERSIONED) {
-            save(userId, sessionId, key, value);
-            SessionData data = lookup(userId, sessionId);
-            VersionedEntry entry = data != null ? data.getVersionedSingleState(key) : null;
-            return entry != null ? entry.version() : UNVERSIONED;
+            // Write and version read in one synchronized section — save() plus a separate
+            // lookup could leak a concurrent writer's version when one instance is shared.
+            // Does not delegate to the overridable save() (mirrors JDBC #3220).
+            SessionData data = lookupOrCreate(userId, sessionId);
+            return data.setSingleStateReturningVersion(key, value);
         }
         SessionData data = lookupOrCreate(userId, sessionId);
         return data.casSingleState(key, value, expectedVersion);
@@ -216,9 +217,19 @@ public class InMemoryAgentStateStore implements AgentStateStore {
         private final Map<String, List<State>> listStates = new ConcurrentHashMap<>();
 
         synchronized void setSingleState(String key, State value) {
+            setSingleStateReturningVersion(key, value);
+        }
+
+        /**
+         * Unconditional write returning the version assigned to this write, atomic with it.
+         * Used by {@code saveIfVersion(..., UNVERSIONED)} so the caller never observes a
+         * concurrent writer's version.
+         */
+        synchronized long setSingleStateReturningVersion(String key, State value) {
             VersionedEntry prev = singleStates.get(key);
             long next = prev == null ? 1L : prev.version() + 1L;
             singleStates.put(key, new VersionedEntry(value, next));
+            return next;
         }
 
         synchronized long casSingleState(String key, State value, long expectedVersion) {

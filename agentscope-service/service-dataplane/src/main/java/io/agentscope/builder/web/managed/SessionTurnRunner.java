@@ -26,6 +26,7 @@ import io.agentscope.builder.web.coord.TurnLeaseService;
 import io.agentscope.builder.web.managed.service.DeletedSessionRegistry;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
 import io.agentscope.builder.web.toolbus.ToolConfirmationCoordinator;
+import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
@@ -83,8 +84,9 @@ public class SessionTurnRunner {
     private final DeletedSessionRegistry deletedSessions;
     private final ControlPlaneClient controlPlaneClient;
     private final ToolConfirmationCoordinator confirmationCoordinator;
-    private final ConcurrentHashMap<String, Disposable> activeTurns = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, HarnessAgent> activeAgents = new ConcurrentHashMap<>();
+    private final AgentRunRegistry runRegistry;
+    private final ConcurrentHashMap<String, AgentRun<AgentEvent>> activeTurns =
+            new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, TurnLeaseService.TurnLease> activeTurnLeases =
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, java.util.concurrent.CountDownLatch> activeTurnDone =
@@ -109,7 +111,8 @@ public class SessionTurnRunner {
             CoordinationStore coordinationStore,
             DeletedSessionRegistry deletedSessions,
             ControlPlaneClient controlPlaneClient,
-            @Lazy ToolConfirmationCoordinator confirmationCoordinator) {
+            @Lazy ToolConfirmationCoordinator confirmationCoordinator,
+            AgentRunRegistry runRegistry) {
         this.agentBuildService = agentBuildService;
         this.sessionService = sessionService;
         this.eventLog = eventLog;
@@ -122,6 +125,7 @@ public class SessionTurnRunner {
         this.deletedSessions = deletedSessions;
         this.controlPlaneClient = controlPlaneClient;
         this.confirmationCoordinator = confirmationCoordinator;
+        this.runRegistry = runRegistry;
     }
 
     /** Runs a turn asynchronously so inbound HTTP handlers can return quickly. */
@@ -182,7 +186,27 @@ public class SessionTurnRunner {
                                     return;
                                 }
                                 ManagedExecutionScope expectedScope = admittedScopeRef.get();
-                                if (request.fenceToken() == null) {
+                                if (request.fenceToken() != null
+                                        && request.fenceToken().startsWith("run:")) {
+                                    AgentRun<AgentEvent> run = activeTurns.get(session.id());
+                                    if (run != null
+                                            && request.fenceToken().equals("run:" + run.runId())
+                                            && runRegistry
+                                                    .find(
+                                                            session.ownerId(),
+                                                            session.id(),
+                                                            run.runId())
+                                                    .isPresent()) {
+                                        if (activeTurnLeases.get(session.id()) == expectedLease) {
+                                            interruptLocalLocked(session.id(), request.reason());
+                                        } else {
+                                            // An old heartbeat can race lease replacement. Preserve
+                                            // a valid request for the replacement's own heartbeat.
+                                            requeueInterrupt(session.id(), request);
+                                        }
+                                    }
+                                    // A stale run ticket never falls back to session interruption.
+                                } else if (request.fenceToken() == null) {
                                     boolean interruptedExpected =
                                             interruptExpected(
                                                     session.id(),
@@ -391,6 +415,28 @@ public class SessionTurnRunner {
     }
 
     /**
+     * Cancels an exact run after the caller has authorized access to the session. The registry
+     * additionally checks local ownership. Remote tickets carry the runId as a fence, never a
+     * session-wide fallback, so a late request cannot cancel the next turn.
+     */
+    public void interruptRun(String ownerId, String sessionId, String runId) {
+        if (runId == null || runId.isBlank()) {
+            throw new IllegalArgumentException("runId is required");
+        }
+        synchronized (turnMutex(sessionId)) {
+            AgentRun<AgentEvent> current = activeTurns.get(sessionId);
+            if (current != null) {
+                if (current.runId().equals(runId)
+                        && runRegistry.find(ownerId, sessionId, runId).isPresent()) {
+                    interruptLocalLocked(sessionId, "run.interrupt");
+                }
+                return;
+            }
+        }
+        coordinationStore.requestFencedTurnInterrupt(sessionId, "run.interrupt", "run:" + runId);
+    }
+
+    /**
      * Performs local turn cancellation when this JVM holds the active agent. Returns {@code true}
      * when a local turn was interrupted.
      */
@@ -408,17 +454,9 @@ public class SessionTurnRunner {
         if (interrupted != null) {
             interrupted.set(true);
         }
-        Disposable disposable = activeTurns.remove(sessionId);
-        if (disposable != null) {
-            disposable.dispose();
-        }
-        HarnessAgent agent = activeAgents.remove(sessionId);
-        if (agent != null) {
-            try {
-                agent.interrupt();
-            } catch (Exception ex) {
-                log.warn("Harness interrupt failed for {}: {}", sessionId, ex.getMessage());
-            }
+        AgentRun<AgentEvent> run = activeTurns.remove(sessionId);
+        if (run != null) {
+            run.cancel();
         }
         confirmationCoordinator.cancelSession(sessionId, source);
         java.util.concurrent.CountDownLatch done = activeTurnDone.remove(sessionId);
@@ -427,8 +465,7 @@ public class SessionTurnRunner {
         }
         boolean active =
                 interrupted != null
-                        || disposable != null
-                        || agent != null
+                        || run != null
                         || done != null
                         || activeTurnLeases.containsKey(sessionId);
         if (!active) {
@@ -558,6 +595,7 @@ public class SessionTurnRunner {
                         done.countDown();
                     }
                 };
+        AgentRun<AgentEvent> run = agent.prepareRun(inputMsgs, rc);
         synchronized (turnMutex(session.id())) {
             // A stale turn may finish agent construction after a replacement was admitted. Never
             // let its late registrations overwrite the replacement's cancellation handles.
@@ -569,28 +607,33 @@ public class SessionTurnRunner {
             }
             previewIdsBySession.put(session.id(), previewIds);
             startedPreviewTypes.put(session.id(), startedPreviews);
-            activeAgents.put(session.id(), agent);
             activeTurnDone.put(session.id(), done);
-            activeTurns.put(session.id(), subscription);
+            runRegistry.register(session.ownerId(), session.id(), run);
+            activeTurns.put(session.id(), run);
         }
-        // The subscriber itself was registered under the turn mutex. If cancellation won before
-        // this call, BaseSubscriber cancels immediately from onSubscribe and no middleware/tool
-        // demand is issued. subscribe() is intentionally outside the mutex because always_ask may
-        // synchronously block until a human decision.
+        // Register the handle before subscribing, so cancellation during setup is not lost.
+        // Subscribe outside the mutex: confirmation middleware can block awaiting a decision.
         try {
-            agent.streamEvents(inputMsgs, rc).subscribe(subscription);
+            appendTurnEvent(
+                    session.id(),
+                    SessionEventTypes.SESSION_RUN_STARTED,
+                    Map.of("run_id", run.runId()),
+                    null,
+                    executionScope);
+            run.stream().subscribe(subscription);
         } catch (RuntimeException ex) {
-            activeTurns.remove(session.id(), subscription);
-            activeAgents.remove(session.id(), agent);
+            activeTurns.remove(session.id(), run);
             activeTurnDone.remove(session.id(), done);
             persistRemainingThinking(session.id(), previewIds, executionScope);
             previewIdsBySession.remove(session.id(), previewIds);
             startedPreviewTypes.remove(session.id(), startedPreviews);
+            run.cancel();
             subscription.dispose();
             handsLeaseService.release(session.id(), lease.coordinationId());
             throw ex;
         }
         if (interrupted.get()) {
+            run.cancel();
             subscription.dispose();
             done.countDown();
         }
@@ -635,11 +678,11 @@ public class SessionTurnRunner {
             }
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
+            run.cancel();
             subscription.dispose();
             failTurn(session, ie, "interrupted", executionScope, lease.coordinationId());
         } finally {
-            activeTurns.remove(session.id(), subscription);
-            activeAgents.remove(session.id(), agent);
+            activeTurns.remove(session.id(), run);
             activeTurnDone.remove(session.id(), done);
             persistRemainingThinking(session.id(), previewIds, executionScope);
             previewIdsBySession.remove(session.id(), previewIds);

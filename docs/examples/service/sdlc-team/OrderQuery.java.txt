@@ -1,0 +1,13 @@
+import java.util.List;
+
+public class OrderQuery {
+    public record Order(String id, String status) {}
+
+    public static List<Order> query(List<Order> orders, String status, int page, int size) {
+        if (page < 1 || size < 1 || size > 100) {
+            throw new IllegalArgumentException("invalid pagination");
+        }
+        // Exercise starting point: filtering and pagination are not implemented.
+        return List.copyOf(orders);
+    }
+}
