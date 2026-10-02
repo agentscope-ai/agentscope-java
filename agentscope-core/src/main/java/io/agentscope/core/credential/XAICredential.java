@@ -61,7 +61,8 @@ public final class XAICredential extends CredentialBase {
     public Class<? extends ChatModelBase> getChatModelClass() {
         throw new UnsupportedOperationException(
                 "XAIChatModel is not implemented in agentscope-core yet."
-                        + " Use the OpenAIChatModel against the xAI base URL instead.");
+                        + " Use io.agentscope.extensions.model.openai.OpenAIChatModel against the"
+                        + " xAI base URL instead.");
     }
 
     @Override

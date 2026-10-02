@@ -215,6 +215,7 @@ class SubagentDeliveryTest {
         AtomicReference<ReasoningInput> forwarded = new AtomicReference<>();
         mw.onReasoning(
                         agent,
+                        null,
                         new ReasoningInput(new ArrayList<>(), List.of(), null),
                         in -> {
                             forwarded.set(in);
@@ -253,11 +254,13 @@ class SubagentDeliveryTest {
 
         mw.onReasoning(
                         agent,
+                        null,
                         new ReasoningInput(new ArrayList<>(), List.of(), null),
                         in -> Flux.<AgentEvent>empty())
                 .blockLast();
         mw.onReasoning(
                         agent,
+                        null,
                         new ReasoningInput(new ArrayList<>(), List.of(), null),
                         in -> Flux.<AgentEvent>empty())
                 .blockLast();
@@ -287,6 +290,7 @@ class SubagentDeliveryTest {
                         (io.agentscope.harness.agent.workspace.WorkspaceManager) null);
         mw.onReasoning(
                         agent,
+                        null,
                         new ReasoningInput(new ArrayList<>(), List.of(), null),
                         in -> Flux.<AgentEvent>empty())
                 .blockLast();

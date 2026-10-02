@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.tool.Toolkit;
 
 /**
  * Complete agent interface combining all capabilities.
@@ -94,6 +95,20 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
      * {@code AgentState} parameter at invocation time.
      */
     default io.agentscope.core.state.AgentState getAgentState() {
+        return null;
+    }
+
+    /**
+     * Returns the agent's live {@link Toolkit}, or {@code null} if this agent type does not
+     * maintain one.
+     *
+     * <p>This is the <em>runtime</em> toolkit — the same instance the agent uses when listing
+     * available tools for the model and dispatching tool calls. Middleware that needs to register
+     * tools dynamically (e.g., skill loaders) must use this accessor rather than any toolkit
+     * reference captured at build time, because agents may deep-copy the toolkit during
+     * construction.
+     */
+    default Toolkit getToolkit() {
         return null;
     }
 }

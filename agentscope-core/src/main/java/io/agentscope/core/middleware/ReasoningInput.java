@@ -21,7 +21,7 @@ import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 
 /**
- * Input context for {@link Middleware#onReasoning}.
+ * Input context for {@link MiddlewareBase#onReasoning}.
  *
  * @param messages  the messages to send to the model
  * @param tools     the tool schemas available to the model

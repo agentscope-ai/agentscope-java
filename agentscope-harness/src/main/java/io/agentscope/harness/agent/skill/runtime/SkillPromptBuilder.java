@@ -128,8 +128,8 @@ public final class SkillPromptBuilder {
         boolean anyWithFilesRoot = false;
 
         for (HarnessSkillEntry entry : catalog.all()) {
-            String id = entry.skill().getSkillId();
-            if (!effective.isAllowed(id)) {
+            String skillName = entry.skill().getName();
+            if (!effective.isAllowed(skillName)) {
                 continue;
             }
             if (!any) {

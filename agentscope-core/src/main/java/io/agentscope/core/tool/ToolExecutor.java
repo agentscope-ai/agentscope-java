@@ -453,7 +453,10 @@ class ToolExecutor {
                         .doBeforeRetry(
                                 signal ->
                                         logger.warn(
-                                                "Retrying tool call (attempt {}/{}) due to: {}",
+                                                "Retrying tool call '{}' (attempt {}/{}) due to:"
+                                                    + " {}. The previous attempt is cancelled and"
+                                                    + " may still be consuming resources.",
+                                                toolCall.getName(),
                                                 signal.totalRetriesInARow() + 1,
                                                 maxAttempts - 1,
                                                 signal.failure().getMessage(),

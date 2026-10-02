@@ -17,17 +17,11 @@ package io.agentscope.builder.runtime;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.agentscope.builder.runtime.channel.Channel;
-import io.agentscope.builder.runtime.channel.ChannelConfig;
-import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.builder.runtime.config.AgentConfigEntry;
 import io.agentscope.builder.runtime.config.AgentscopeConfig;
 import io.agentscope.builder.runtime.config.ChannelConfigEntry;
-import io.agentscope.builder.runtime.config.ChannelFactory;
 import io.agentscope.builder.runtime.config.ChannelTypeRegistry;
 import io.agentscope.builder.runtime.config.SkillRepositorySupport;
-import io.agentscope.builder.runtime.gateway.ChannelManager;
-import io.agentscope.builder.runtime.gateway.Gateway;
 import io.agentscope.builder.runtime.gateway.HarnessGateway;
 import io.agentscope.builder.runtime.outbound.OutboundTool;
 import io.agentscope.builder.runtime.session.AgentManagerConfig;
@@ -38,10 +32,16 @@ import io.agentscope.builder.runtime.session.tool.SessionsTool;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.Gateway;
+import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.ChannelFactory;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -572,7 +572,7 @@ public final class BuilderBootstrap {
 
             ChannelManager channelMgr = new ChannelManager();
             HarnessGateway gateway = HarnessGateway.create(sam, channelMgr);
-            TaskRepository taskRepo = new DefaultTaskRepository();
+            TaskRepository taskRepo = new WorkspaceTaskRepository(wsManager, main);
             SessionsTool sessionsTool = new SessionsTool(sam, taskRepo, null, 0);
             OutboundTool outboundTool = new OutboundTool(channelMgr);
 

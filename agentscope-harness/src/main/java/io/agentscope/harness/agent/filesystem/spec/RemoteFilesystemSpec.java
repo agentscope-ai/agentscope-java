@@ -22,8 +22,8 @@ import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
-import io.agentscope.harness.agent.store.BaseStore;
-import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -57,6 +57,7 @@ import java.util.Set;
  *   <li>{@code skills/} → segment {@code skills}
  *   <li>{@code subagents/} → segment {@code subagents}
  *   <li>{@code knowledge/} → segment {@code knowledge}
+ *   <li>{@code plans/} → segment {@code plans}
  *   <li>{@code agents/<agentId>/sessions/} → segment {@code sessions}
  *   <li>{@code agents/<agentId>/tasks/} → segment {@code tasks}
  * </ul>
@@ -73,17 +74,45 @@ import java.util.Set;
  */
 public class RemoteFilesystemSpec {
 
-    private final BaseStore store;
+    private BaseStore store;
     private final Set<String> extraSharedPrefixes = new LinkedHashSet<>();
     private String anonymousUserId = "_default";
     private IsolationScope isolationScope = IsolationScope.USER;
     private WorkspaceIndex workspaceIndex = null;
+
+    /**
+     * Creates a remote filesystem spec that defers store resolution to
+     * {@link io.agentscope.harness.agent.DistributedStore#baseStore()}.
+     *
+     * <p>When used with {@code HarnessAgent.builder().distributedStore(store)},
+     * the store is injected automatically during build. Without a distributed store,
+     * an {@link IllegalStateException} is thrown at build time.
+     */
+    public RemoteFilesystemSpec() {
+        this.store = null;
+    }
 
     public RemoteFilesystemSpec(BaseStore store) {
         if (store == null) {
             throw new IllegalArgumentException("store must not be null");
         }
         this.store = store;
+    }
+
+    /**
+     * Returns whether the store has been set (either via constructor or injection).
+     */
+    public boolean hasStore() {
+        return store != null;
+    }
+
+    /**
+     * Injects the store if not already set. Called by the builder during auto-wiring.
+     */
+    public void injectStoreIfAbsent(BaseStore store) {
+        if (this.store == null) {
+            this.store = store;
+        }
     }
 
     /**
@@ -126,6 +155,10 @@ public class RemoteFilesystemSpec {
         return this;
     }
 
+    public IsolationScope getIsolationScope() {
+        return isolationScope;
+    }
+
     /**
      * Sets the workspace index for accelerating remote filesystem reads (ls/glob/exists/grep).
      * If not set, the remote filesystem falls back to full store scans.
@@ -140,7 +173,8 @@ public class RemoteFilesystemSpec {
      * <ul>
      *   <li>default backend: {@link LocalFilesystem} (no shell), per-user namespaced
      *   <li>shared <b>prefix</b> routes ({@code memory/}, {@code skills/}, {@code subagents/},
-     *       {@code knowledge/}, {@code agents/<id>/sessions/}, {@code agents/<id>/tasks/}, plus
+     *       {@code knowledge/}, {@code plans/}, {@code agents/<id>/sessions/},
+     *       {@code agents/<id>/tasks/}, plus
      *       any {@code addSharedPrefix} extras): wrapped in an {@link OverlayFilesystem} where
      *       the <em>upper</em> layer is the {@link RemoteFilesystem} (per-user, persisted in the
      *       {@link BaseStore}) and the <em>lower</em> layer is a read-only {@link LocalFilesystem}
@@ -159,6 +193,11 @@ public class RemoteFilesystemSpec {
      */
     public AbstractFilesystem toFilesystem(
             Path workspace, String agentId, NamespaceFactory localNamespaceFactory) {
+        if (store == null) {
+            throw new IllegalStateException(
+                    "RemoteFilesystemSpec has no BaseStore. Either pass one via the constructor"
+                            + " or configure a DistributedStore on the HarnessAgent builder.");
+        }
         String effectiveAgentId = agentId == null || agentId.isBlank() ? "HarnessAgent" : agentId;
         AbstractFilesystem local = new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
 
@@ -181,6 +220,7 @@ public class RemoteFilesystemSpec {
         routes.put(
                 "knowledge/",
                 overlayRoute(workspace.resolve("knowledge"), "knowledge", effectiveAgentId));
+        routes.put("plans/", overlayRoute(workspace.resolve("plans"), "plans", effectiveAgentId));
         routes.put(
                 "agents/" + effectiveAgentId + "/sessions/",
                 overlayRoute(

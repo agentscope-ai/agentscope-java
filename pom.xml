@@ -286,6 +286,15 @@
 
                     <!-- Ignore missing test patterns -->
                     <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
+
+                    <!--
+                        Phase 0: redirect HarnessAgent's default JsonSession root into the
+                        build directory so test runs don't pollute (or get polluted by)
+                        ~/.agentscope/state/. Production callers ignore this property.
+                    -->
+                    <systemPropertyVariables>
+                        <agentscope.state.home>${project.build.directory}/test-state-home</agentscope.state.home>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>

@@ -15,7 +15,7 @@
  */
 package io.agentscope.spring.boot.admin.controller;
 
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.spring.boot.admin.audit.AdminAuditLogger;
 import io.agentscope.spring.boot.admin.dto.AgentTaskView;
 import io.agentscope.spring.boot.admin.dto.CompactRequest;
@@ -54,13 +54,13 @@ public class SessionAdminController {
     private static final String TOKEN_HEADER = "X-Agentscope-Admin-Token";
 
     private final SessionOperations ops;
-    private final ObjectProvider<Session> sessions;
+    private final ObjectProvider<AgentStateStore> sessions;
     private final AdminAuditLogger audit;
     private final WriteGuard writeGuard;
 
     public SessionAdminController(
             SessionOperations ops,
-            ObjectProvider<Session> sessions,
+            ObjectProvider<AgentStateStore> sessions,
             AdminAuditLogger audit,
             AdminProperties properties) {
         this.ops = ops;
@@ -72,8 +72,8 @@ public class SessionAdminController {
     @GetMapping("${agentscope.admin.base-path:/v1/admin}/sessions")
     public Mono<List<String>> listSessions(
             @RequestHeader(value = OPERATOR_HEADER, required = false) String operator) {
-        Session session = sessions.getIfAvailable();
-        return ops.listSessions(session)
+        AgentStateStore stateStore = sessions.getIfAvailable();
+        return ops.listSessions(stateStore)
                 .doOnSuccess(
                         list ->
                                 audit.record(

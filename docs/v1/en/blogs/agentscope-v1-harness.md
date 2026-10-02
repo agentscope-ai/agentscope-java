@@ -16,7 +16,7 @@ Many agent stacks work well for personal assistants, but hit real limits in prod
 
 1. **Distributed workspace state**: local directory assumptions break in multi-replica deployments.
 2. **Execution safety**: user-driven shell/code execution must be isolated from host processes.
-3. **Storage abstraction**: agent logic should not be coupled to one storage backend.
+3. **Storage abstraction**: agent logic should not be coupled to one storage store.
 4. **Subagent orchestration**: task delegation and lifecycle management become complex quickly.
 5. **Memory governance**: context growth and cross-session fact retention need first-class support.
 
@@ -47,7 +47,7 @@ Harness decouples logical file operations (`read`, `write`, `ls`, `grep`) from p
 - local disk
 - remote storage
 - sandbox filesystem
-- composite routing across backends
+- composite routing across stores
 
 This lets teams move from local prototypes to distributed production without rewriting business-agent logic.
 

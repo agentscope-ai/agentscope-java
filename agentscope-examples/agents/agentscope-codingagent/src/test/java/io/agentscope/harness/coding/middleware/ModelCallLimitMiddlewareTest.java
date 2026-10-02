@@ -56,6 +56,6 @@ class ModelCallLimitMiddlewareTest {
     private static Flux<AgentEvent> invoke(ModelCallLimitMiddleware mw) {
         ReasoningInput input = new ReasoningInput(List.of(), List.of(), null);
         Function<ReasoningInput, Flux<AgentEvent>> next = i -> Flux.empty();
-        return mw.onReasoning(mock(Agent.class), input, next);
+        return mw.onReasoning(mock(Agent.class), null, input, next);
     }
 }

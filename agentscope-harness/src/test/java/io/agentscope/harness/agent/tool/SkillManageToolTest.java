@@ -492,7 +492,7 @@ class SkillManageToolTest {
         assertTrue(text(r).contains("pruning"));
     }
 
-    // ---- sidecar integration (M2 telemetry) ----
+    // ---- sidecar integration (telemetry) ----
 
     @org.junit.jupiter.api.Nested
     class SidecarIntegration {

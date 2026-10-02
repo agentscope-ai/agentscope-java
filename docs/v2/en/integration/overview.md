@@ -4,6 +4,25 @@ This section collects the AgentScope Java extensions that connect to third-party
 
 The extensions are grouped by topic:
 
+## Distributed Storage (Distributed Store)
+
+Full-stack distributed storage components for multi-replica production deployments. Configure agent state, workspace filesystem, sandbox snapshots, and concurrency locks with a single `DistributedStore`.
+
+- [Distributed Storage Overview](distributed/index.md) — `DistributedStore` API, capability matrix, mixed stores
+- [Redis](distributed/redis.md) — `AgentStateStore` + `BaseStore` + `SandboxSnapshotSpec` + `SandboxExecutionGuard`
+- [MySQL / JDBC](distributed/mysql.md) — `AgentStateStore` + `JdbcStore` + `JdbcSnapshotSpec` + `JdbcSandboxExecutionGuard`
+- [Alibaba Cloud OSS](distributed/oss.md) — `AgentStateStore` + `OssBaseStore` + `OssSnapshotSpec`
+
+## Sandbox Execution Environments
+
+Isolated code execution stores. Docker is built-in; the rest are standalone extension modules.
+
+- Docker — built-in default, no extra dependency
+- [Kubernetes](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-kubernetes`
+- [AgentRun (Alibaba Cloud)](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-agentrun`
+- [Daytona](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-daytona`
+- [E2B](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-e2b`
+
 ## Memory
 
 Persist user preferences and facts across sessions. All implementations satisfy the `LongTermMemory` interface.
@@ -12,16 +31,9 @@ Persist user preferences and facts across sessions. All implementations satisfy 
 - [Bailian Memory](memory/bailian.md)
 - [ReMe](memory/reme.md)
 
-## Session
-
-Persist runtime state (Memory, Workspace, Plan, ...) into a database or cache.
-
-- [MySQL Session](session/mysql.md)
-- [Redis Session](session/redis.md)
-
 ## RAG Knowledge Base
 
-Plug different retrieval backends behind the unified `Knowledge` interface.
+Plug different retrieval stores behind the unified `Knowledge` interface.
 
 - [Simple (DIY embedding + vector store)](rag/simple.md)
 - [Bailian Knowledge](rag/bailian.md)
@@ -35,7 +47,18 @@ Multiple storage implementations of `AgentSkillRepository`.
 
 - [Git Skill Repository](skill/git-repository.md)
 - [MySQL Skill Repository](skill/mysql-repository.md)
+- [PostgreSQL Skill Repository](skill/postgresql-repository.md)
 - See also [Nacos Skill Repository](infrastructure/nacos.md#skill-repository)
+
+## Channel Adapters
+
+Connect your Agent to messaging platforms through the Harness Channel interface.
+
+- [DingTalk](channel/dingtalk.md)
+- [Feishu / Lark](channel/feishu.md)
+- [GitHub](channel/github.md)
+- [GitLab](channel/gitlab.md)
+- [WeCom](channel/wecom.md)
 
 ## Agent Protocols
 
@@ -51,7 +74,6 @@ Plug Agents into your enterprise infrastructure.
 
 - [Higress AI Gateway](infrastructure/higress.md)
 - [Nacos](infrastructure/nacos.md)
-- [RocketMQ](infrastructure/rocketmq.md)
 - [Scheduler (Quartz / XXL-Job)](infrastructure/scheduler.md)
 
 ## Ecosystem
@@ -59,7 +81,6 @@ Plug Agents into your enterprise infrastructure.
 Runtime, language, debugging, and training extensions.
 
 - [Chat Completions Web](ecosystem/chat-completions-web.md)
-- [Kotlin Extensions](ecosystem/kotlin.md)
 - [AgentScope Studio](ecosystem/studio.md)
 - [Online Training](ecosystem/training.md)
 

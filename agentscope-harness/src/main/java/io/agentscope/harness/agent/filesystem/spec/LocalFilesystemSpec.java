@@ -15,11 +15,14 @@
  */
 package io.agentscope.harness.agent.filesystem.spec;
 
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
-import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.nio.file.Path;
@@ -57,6 +60,8 @@ public class LocalFilesystemSpec {
      */
     private LocalFsMode mode = LocalFsMode.ROOTED;
 
+    private IsolationScope isolationScope;
+
     /**
      * User project root (lower layer of the resulting {@link OverlayFilesystem}). The agent reads
      * project-authored content (e.g. {@code AGENTS.md}, {@code knowledge/}, {@code skills/}) from
@@ -75,6 +80,17 @@ public class LocalFilesystemSpec {
      * {@code --add-dir} flag.
      */
     private final List<Path> additionalRoots = new ArrayList<>();
+
+    /**
+     * When {@code true}, the agent's file-write operations for non-workspace paths (i.e. paths
+     * that are not workspace metadata like {@code MEMORY.md}, {@code agents/}, {@code skills/})
+     * are routed to the project directory instead of the workspace. Workspace metadata paths
+     * continue to be written to the workspace.
+     *
+     * <p>Defaults to {@code false}, preserving the original overlay behaviour where all writes
+     * land in the workspace.
+     */
+    private boolean projectWritable = false;
 
     /**
      * Sets the default command execution timeout in seconds.
@@ -161,6 +177,24 @@ public class LocalFilesystemSpec {
     }
 
     /**
+     * Sets the isolation scope controlling how file paths are namespaced per user, session, or
+     * agent. Defaults to {@link IsolationScope#USER} (consistent with
+     * {@link RemoteFilesystemSpec} and sandbox specs).
+     *
+     * @param scope isolation scope
+     * @return this spec
+     */
+    public LocalFilesystemSpec isolationScope(IsolationScope scope) {
+        this.isolationScope = scope;
+        return this;
+    }
+
+    /** Returns the configured isolation scope, or {@code null} to use the default. */
+    public IsolationScope getIsolationScope() {
+        return isolationScope;
+    }
+
+    /**
      * Adds an extra host directory the agent is allowed to access by absolute path under
      * {@link LocalFsMode#ROOTED}. {@code null} entries are ignored.
      *
@@ -172,6 +206,23 @@ public class LocalFilesystemSpec {
             this.additionalRoots.add(root);
         }
         return this;
+    }
+
+    /**
+     * Enables or disables project-writable mode. When {@code true}, the agent's file-write
+     * operations for non-workspace paths are routed to the project directory.
+     *
+     * @param writable whether non-workspace writes go to the project directory
+     * @return this spec
+     */
+    public LocalFilesystemSpec projectWritable(boolean writable) {
+        this.projectWritable = writable;
+        return this;
+    }
+
+    /** Returns whether project-writable mode is enabled. */
+    public boolean isProjectWritable() {
+        return projectWritable;
     }
 
     /**
@@ -254,6 +305,13 @@ public class LocalFilesystemSpec {
                         localNamespaceFactory,
                         effectiveProject);
         LocalFilesystem lower = new LocalFilesystem(effectiveProject, true, 10, null);
+        if (projectWritable) {
+            LocalFilesystem projectFs =
+                    new LocalFilesystem(
+                            effectiveProject, mode, pathPolicy, 10, localNamespaceFactory);
+            return new ProjectAwareOverlay(
+                    (AbstractSandboxFilesystem) upper, lower, projectFs, workspace);
+        }
         return OverlayFilesystem.of(upper, lower);
     }
 }

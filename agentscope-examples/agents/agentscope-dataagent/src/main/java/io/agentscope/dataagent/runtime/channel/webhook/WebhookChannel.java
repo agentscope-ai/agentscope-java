@@ -16,15 +16,15 @@
 package io.agentscope.dataagent.runtime.channel.webhook;
 
 import io.agentscope.core.message.Msg;
-import io.agentscope.dataagent.runtime.channel.Channel;
-import io.agentscope.dataagent.runtime.channel.ChannelConfig;
-import io.agentscope.dataagent.runtime.channel.ChannelRouter;
-import io.agentscope.dataagent.runtime.channel.InboundMessage;
-import io.agentscope.dataagent.runtime.channel.OutboundAddress;
-import io.agentscope.dataagent.runtime.channel.RouteResult;
-import io.agentscope.dataagent.runtime.channel.common.BotLoopGuard;
-import io.agentscope.dataagent.runtime.channel.common.IdempotencyStore;
-import io.agentscope.dataagent.runtime.gateway.Gateway;
+import io.agentscope.extensions.channel.common.BotLoopGuard;
+import io.agentscope.extensions.channel.common.IdempotencyStore;
+import io.agentscope.harness.agent.gateway.Gateway;
+import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.ChannelRouter;
+import io.agentscope.harness.agent.gateway.channel.InboundMessage;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
+import io.agentscope.harness.agent.gateway.channel.RouteResult;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;

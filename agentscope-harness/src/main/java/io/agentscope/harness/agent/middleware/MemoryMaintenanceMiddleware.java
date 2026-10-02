@@ -16,11 +16,10 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -30,16 +29,19 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Middleware that performs periodic memory maintenance after each agent call.
  *
- * <p>Fires on the agent invocation completion (via {@code onAgent doOnComplete}, after
+ * <p>Fires on the agent invocation completion (via {@code onAgent concatWith}, after
  * {@link MemoryFlushMiddleware}) and is throttled by a configurable minimum gap so it
  * does not run on every single call.
  *
@@ -51,8 +53,17 @@ import reactor.core.publisher.Flux;
  *       consolidator is configured.</li>
  *   <li>Prune session log files older than {@code sessionRetentionDays}.</li>
  * </ol>
+ *
+ * <p>The throttle window is tracked per <em>isolation key</em>, which matches the memory data
+ * isolation in use:
+ * <ul>
+ *   <li>{@link IsolationScope#USER} (default) — one window per {@code userId}.</li>
+ *   <li>{@link IsolationScope#SESSION} — one window per {@code sessionId}.</li>
+ *   <li>{@link IsolationScope#AGENT} / {@link IsolationScope#GLOBAL} — one shared window for
+ *       the whole agent instance (prevents concurrent maintenance races on shared memory files).</li>
+ * </ul>
  */
-public class MemoryMaintenanceMiddleware implements MiddlewareBase {
+public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryMaintenanceMiddleware.class);
 
@@ -64,8 +75,27 @@ public class MemoryMaintenanceMiddleware implements MiddlewareBase {
     private final int dailyFileRetentionDays;
     private final int sessionRetentionDays;
     private final Duration minGap;
+    private final IsolationScope isolationScope;
 
-    private final AtomicReference<Instant> lastRunAt = new AtomicReference<>(Instant.EPOCH);
+    /**
+     * Process-wide per-isolation-key maintenance timestamps. Static so that the throttle window
+     * survives across {@code HarnessAgent.Builder.build()} calls — each rebuild creates a new
+     * middleware instance, and an instance-level map would reset to {@link Instant#EPOCH} on
+     * every request, defeating the gap-based throttle.
+     *
+     * <p>The key is a composite of {@link IsolationScope} name and the per-call identity
+     * (see {@link #timerKeyFor(RuntimeContext)}) so the shared map correctly isolates throttle
+     * windows across scope dimensions.
+     */
+    static final ConcurrentHashMap<String, AtomicReference<Instant>> SHARED_LAST_RUN_AT =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Entries in {@link #SHARED_LAST_RUN_AT} whose timestamp is older than this threshold
+     * are considered stale and removed on the next cleanup sweep. This bounds the map size
+     * in long-running services with high user/session churn.
+     */
+    static final Duration STALE_ENTRY_MAX_AGE = Duration.ofMinutes(60);
 
     public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager,
@@ -73,11 +103,28 @@ public class MemoryMaintenanceMiddleware implements MiddlewareBase {
             int dailyFileRetentionDays,
             int sessionRetentionDays,
             Duration minGap) {
+        this(
+                workspaceManager,
+                consolidator,
+                dailyFileRetentionDays,
+                sessionRetentionDays,
+                minGap,
+                IsolationScope.USER);
+    }
+
+    public MemoryMaintenanceMiddleware(
+            WorkspaceManager workspaceManager,
+            MemoryConsolidator consolidator,
+            int dailyFileRetentionDays,
+            int sessionRetentionDays,
+            Duration minGap,
+            IsolationScope isolationScope) {
         this.workspaceManager = workspaceManager;
         this.consolidator = consolidator;
         this.dailyFileRetentionDays = dailyFileRetentionDays;
         this.sessionRetentionDays = sessionRetentionDays;
         this.minGap = minGap != null ? minGap : DEFAULT_MIN_GAP;
+        this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
     }
 
     public MemoryMaintenanceMiddleware(
@@ -87,21 +134,32 @@ public class MemoryMaintenanceMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onAgent(
-            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
-        final RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
-        return next.apply(input).doOnComplete(() -> maybeRunMaintenance(rc));
+            Agent agent,
+            RuntimeContext ctx,
+            AgentInput input,
+            Function<AgentInput, Flux<AgentEvent>> next) {
+        final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        return next.apply(input)
+                .concatWith(
+                        Mono.<AgentEvent>fromRunnable(() -> maybeRunMaintenance(rc))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .onErrorResume(
+                                        e -> {
+                                            log.warn(
+                                                    "Memory maintenance failed: {}",
+                                                    e.getMessage());
+                                            return Mono.empty();
+                                        }));
     }
 
     private void maybeRunMaintenance(RuntimeContext rc) {
         Instant now = Instant.now();
-        Instant last = lastRunAt.get();
+        AtomicReference<Instant> ref = lastRunAtFor(rc);
+        Instant last = ref.get();
         if (Duration.between(last, now).compareTo(minGap) < 0) {
             return;
         }
-        if (!lastRunAt.compareAndSet(last, now)) {
+        if (!ref.compareAndSet(last, now)) {
             return;
         }
         try {
@@ -109,6 +167,54 @@ public class MemoryMaintenanceMiddleware implements MiddlewareBase {
         } catch (Exception e) {
             log.warn("Memory maintenance failed: {}", e.getMessage());
         }
+    }
+
+    private AtomicReference<Instant> lastRunAtFor(RuntimeContext rc) {
+        return SHARED_LAST_RUN_AT.computeIfAbsent(
+                compositeTimerKey(rc), k -> new AtomicReference<>(Instant.EPOCH));
+    }
+
+    /**
+     * Removes entries whose timestamp is older than {@link #STALE_ENTRY_MAX_AGE} from
+     * {@link #SHARED_LAST_RUN_AT}. This bounds the map size in long-running services with
+     * high user/session churn — stale entries represent keys that have not run maintenance
+     * recently and are safe to re-create on demand.
+     *
+     * <p>Package-private for unit testing.
+     */
+    static void cleanupStaleEntries() {
+        Instant cutoff = Instant.now().minus(STALE_ENTRY_MAX_AGE);
+        SHARED_LAST_RUN_AT.entrySet().removeIf(e -> e.getValue().get().isBefore(cutoff));
+    }
+
+    /**
+     * Builds a composite key from {@link IsolationScope} name and the per-call identity returned
+     * by {@link #timerKeyFor(RuntimeContext)}. The scope prefix ensures that the shared
+     * {@link #SHARED_LAST_RUN_AT} map never conflates throttle windows from different
+     * isolation dimensions.
+     */
+    private String compositeTimerKey(RuntimeContext rc) {
+        return isolationScope.name() + ":" + timerKeyFor(rc);
+    }
+
+    /**
+     * Derives the per-call identity portion of the composite timer key from the configured
+     * {@link IsolationScope} and the {@link RuntimeContext}, mirroring the memory data
+     * namespace. See {@link MemoryFlushMiddleware#timerKeyFor(RuntimeContext)} for the
+     * identical logic.
+     */
+    String timerKeyFor(RuntimeContext rc) {
+        return switch (isolationScope) {
+            case USER -> {
+                String uid = rc != null ? rc.getUserId() : null;
+                yield (uid != null && !uid.isBlank()) ? uid : "";
+            }
+            case SESSION -> {
+                String sid = rc != null ? rc.getSessionId() : null;
+                yield (sid != null && !sid.isBlank()) ? sid : "";
+            }
+            case AGENT, GLOBAL -> "";
+        };
     }
 
     private void runMaintenance(RuntimeContext rc) {

@@ -244,7 +244,7 @@ toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
 
 ```java
 import io.agentscope.core.tool.multimodal.DashScopeMultiModalTool;
-import io.agentscope.core.tool.multimodal.OpenAIMultiModalTool;
+import io.agentscope.extensions.model.openai.tool.OpenAIMultiModalTool;
 
 toolkit.registerTool(new DashScopeMultiModalTool(System.getenv("DASHSCOPE_API_KEY")));
 toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));

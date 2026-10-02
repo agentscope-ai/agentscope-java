@@ -170,9 +170,13 @@ class ToolMethodInvoker {
             else if (param.getType() == Agent.class) {
                 args[i] = agent;
             }
-            // Special handling: inject AgentState (matches @Tool(stateInjected=true))
+            // Special handling: inject AgentState (matches @Tool(stateInjected=true)). Prefer the
+            // call-scoped state carried on the RuntimeContext (concurrency-safe) and fall back to
+            // the agent's current state only when the context does not carry one.
             else if (param.getType() == AgentState.class) {
-                args[i] = agent != null ? agent.getAgentState() : null;
+                AgentState rcState = runtimeContext != null ? runtimeContext.getAgentState() : null;
+                args[i] =
+                        rcState != null ? rcState : (agent != null ? agent.getAgentState() : null);
             }
             // Inject RuntimeContext directly
             else if (param.getType() == RuntimeContext.class) {

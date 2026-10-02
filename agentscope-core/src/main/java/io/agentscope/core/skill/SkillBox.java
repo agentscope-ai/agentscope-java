@@ -473,7 +473,7 @@ public class SkillBox {
          *     .subAgent(
          *         () -> ReActAgent.builder().name("Assistant").model(model).build(),
          *         SubAgentConfig.builder()
-         *             .session(new JsonSession(Path.of("sessions")))
+         *             .stateStore(new JsonFileAgentStateStore(Path.of("sessions")))
          *             .forwardEvents(true)
          *             .build())
          *     .apply();
@@ -481,7 +481,7 @@ public class SkillBox {
          *
          * @param provider Factory for creating agent instances (called for each session)
          * @param config Configuration for the sub-agent tool, or null to use defaults (tool name
-         *     derived from agent name, InMemorySession for state, events forwarded)
+         *     derived from agent name, InMemoryAgentStateStore for state, events forwarded)
          * @return This builder for chaining
          * @see SubAgentConfig
          * @see SubAgentConfig#defaults()
@@ -657,6 +657,32 @@ public class SkillBox {
     }
 
     /**
+     * Sets a stable working directory for resource uploads and code execution. Callers can use
+     * this to share one workDir across multiple SkillBox instances (e.g. {@code
+     * DynamicSkillMiddleware} rebuilds the box every call, but the workDir lives for the agent's
+     * lifetime so {@code uploadSkillFiles} no longer mints a fresh {@code agentscope-code-execution-*}
+     * tempdir each round).
+     *
+     * @param workDir the directory under which {@code skills/<skillId>/} subtrees are written;
+     *                {@code null} (the default) preserves the legacy per-instance tempdir behavior
+     */
+    public void setWorkDir(Path workDir) {
+        this.workDir = workDir;
+        // The uploadDir derives from workDir lazily in ensureUploadDirExists(); clear the
+        // cached subdir so the next ensureUploadDirExists() recomputes against the new workDir.
+        this.uploadDir = null;
+    }
+
+    /**
+     * Exposes the skill prompt provider so callers (e.g. {@code DynamicSkillMiddleware}) can
+     * toggle {@code codeExecutionEnable}, swap the instruction template, or query the resolved
+     * uploadDir without re-walking the SkillBox internals.
+     */
+    public AgentSkillPromptProvider getSkillPromptProvider() {
+        return skillPromptProvider;
+    }
+
+    /**
      * Gets the upload directory for skill files.
      *
      * @return The upload directory path, or null if not configured
@@ -741,6 +767,14 @@ public class SkillBox {
 
         for (String skillId : getAllSkillIds()) {
             AgentSkill skill = getSkill(skillId);
+
+            // Skills with a populated originDir already live on disk at a known absolute path,
+            // which the prompt provider exposes as <files-root>. Re-materialising them under
+            // workDir would just be a redundant copy that the LLM never sees referenced.
+            if (skill.getOriginDir().isPresent()) {
+                continue;
+            }
+
             Set<String> resourcePaths = skill.getResourcePaths();
 
             if (resourcePaths.isEmpty()) {

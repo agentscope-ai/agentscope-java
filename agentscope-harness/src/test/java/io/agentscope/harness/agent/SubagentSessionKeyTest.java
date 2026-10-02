@@ -19,16 +19,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.state.SessionKey;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import org.junit.jupiter.api.Test;
 
 /**
- * Phase B-0 — composed child {@code SessionKey} algorithm. Lives in
+ * Phase B-0 — composed child session ID algorithm. Lives in
  * {@code io.agentscope.harness.agent} so it can reach the package-private
- * {@link HarnessAgentBuilderSupport#deriveChildSessionKey}. The derivation works the same way
- * regardless of which {@link io.agentscope.core.session.Session} backend (Workspace, Redis,
+ * {@link HarnessAgentBuilderSupport#deriveChildSessionId}. The derivation works the same way
+ * regardless of which {@link io.agentscope.core.state.AgentStateStore} backend (Workspace, Redis,
  * InMemory, custom) the agent uses.
  */
 class SubagentSessionKeyTest {
@@ -50,66 +49,60 @@ class SubagentSessionKeyTest {
                 .build();
     }
 
-    private static String id(SessionKey k) {
-        return k.toIdentifier();
-    }
-
     @Test
     void nullParentRc_legacyBucket() {
-        SessionKey k = HarnessAgentBuilderSupport.deriveChildSessionKey(decl("worker"), null);
-        assertEquals("worker", id(k));
+        String id = HarnessAgentBuilderSupport.deriveChildSessionId(decl("worker"), null);
+        assertEquals("worker", id);
     }
 
     @Test
     void emptyParentRc_legacyBucket() {
-        SessionKey k =
-                HarnessAgentBuilderSupport.deriveChildSessionKey(
+        String id =
+                HarnessAgentBuilderSupport.deriveChildSessionId(
                         decl("worker"), RuntimeContext.empty());
-        assertEquals("worker", id(k));
+        assertEquals("worker", id);
     }
 
     @Test
     void onlySessionId_appendsAtSegment() {
         RuntimeContext rc = RuntimeContext.builder().sessionId("s1").build();
-        SessionKey k = HarnessAgentBuilderSupport.deriveChildSessionKey(decl("worker"), rc);
-        assertEquals("worker@s1", id(k));
+        String id = HarnessAgentBuilderSupport.deriveChildSessionId(decl("worker"), rc);
+        assertEquals("worker@s1", id);
     }
 
     @Test
     void onlyUserId_appendsHashSegment() {
         RuntimeContext rc = RuntimeContext.builder().userId("alice").build();
-        SessionKey k = HarnessAgentBuilderSupport.deriveChildSessionKey(decl("worker"), rc);
-        assertEquals("worker#alice", id(k));
+        String id = HarnessAgentBuilderSupport.deriveChildSessionId(decl("worker"), rc);
+        assertEquals("worker#alice", id);
     }
 
     @Test
     void bothIds_composedInOrder() {
         RuntimeContext rc = RuntimeContext.builder().sessionId("s1").userId("alice").build();
-        SessionKey k = HarnessAgentBuilderSupport.deriveChildSessionKey(decl("worker"), rc);
-        // Order is fixed: declName then @sid then #uid — keeps the format greppable.
-        assertEquals("worker@s1#alice", id(k));
+        String id = HarnessAgentBuilderSupport.deriveChildSessionId(decl("worker"), rc);
+        assertEquals("worker@s1#alice", id);
     }
 
     @Test
     void sharedMode_alwaysLegacyBucket() {
         RuntimeContext rc = RuntimeContext.builder().sessionId("s1").userId("alice").build();
-        SessionKey k = HarnessAgentBuilderSupport.deriveChildSessionKey(sharedDecl("worker"), rc);
-        // SHARED subagents intentionally share the parent's bucket; do NOT segment by parent rc.
-        assertEquals("worker", id(k));
+        String id = HarnessAgentBuilderSupport.deriveChildSessionId(sharedDecl("worker"), rc);
+        assertEquals("worker", id);
     }
 
     @Test
     void slashesInIds_areSanitised() {
         RuntimeContext rc = RuntimeContext.builder().sessionId("a/b/c").userId("dom\\user").build();
-        SessionKey k = HarnessAgentBuilderSupport.deriveChildSessionKey(decl("worker"), rc);
-        assertEquals("worker@a_b_c#dom_user", id(k));
+        String id = HarnessAgentBuilderSupport.deriveChildSessionId(decl("worker"), rc);
+        assertEquals("worker@a_b_c#dom_user", id);
     }
 
     @Test
     void blankSessionId_treatedAsAbsent() {
         RuntimeContext rc = RuntimeContext.builder().sessionId("   ").userId("alice").build();
-        SessionKey k = HarnessAgentBuilderSupport.deriveChildSessionKey(decl("worker"), rc);
-        assertEquals("worker#alice", id(k));
+        String id = HarnessAgentBuilderSupport.deriveChildSessionId(decl("worker"), rc);
+        assertEquals("worker#alice", id);
     }
 
     @Test
@@ -117,13 +110,13 @@ class SubagentSessionKeyTest {
         RuntimeContext alice = RuntimeContext.builder().sessionId("s1").userId("alice").build();
         RuntimeContext bob = RuntimeContext.builder().sessionId("s1").userId("bob").build();
         assertNotEquals(
-                id(HarnessAgentBuilderSupport.deriveChildSessionKey(decl("worker"), alice)),
-                id(HarnessAgentBuilderSupport.deriveChildSessionKey(decl("worker"), bob)));
+                HarnessAgentBuilderSupport.deriveChildSessionId(decl("worker"), alice),
+                HarnessAgentBuilderSupport.deriveChildSessionId(decl("worker"), bob));
 
         RuntimeContext sessA = RuntimeContext.builder().sessionId("A").build();
         RuntimeContext sessB = RuntimeContext.builder().sessionId("B").build();
         assertNotEquals(
-                id(HarnessAgentBuilderSupport.deriveChildSessionKey(decl("worker"), sessA)),
-                id(HarnessAgentBuilderSupport.deriveChildSessionKey(decl("worker"), sessB)));
+                HarnessAgentBuilderSupport.deriveChildSessionId(decl("worker"), sessA),
+                HarnessAgentBuilderSupport.deriveChildSessionId(decl("worker"), sessB));
     }
 }

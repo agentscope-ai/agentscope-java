@@ -248,6 +248,82 @@ public class MyTool extends ToolBase {
 | 凭证 | `.env`、`.env.local`、`.npmrc`、`.pypirc`、`.aws/credentials` |
 | 目录 | `.git/`、`.ssh/`、`.aws/`、`.kube/` |
 
+## 结合 HITL
+
+当权限引擎对某个工具调用返回 ASK 决策时，agent 不会直接执行，而是暂停并返回一个 `GenerateReason.PERMISSION_ASKING` 的响应。调用方据此向用户展示待确认的操作，收集决策后恢复 agent。
+
+### 交互流程
+
+1. 配置 ASK 规则，标记需要人工确认的工具
+2. Agent 遇到 ASK 工具时暂停，返回 `PERMISSION_ASKING`
+3. 调用方检查 `getGenerateReason()`，向用户展示待执行的工具调用
+4. 用户确认后，发送新消息恢复 agent 继续执行
+
+```java
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.permission.PermissionRule;
+
+// 1. 配置权限：safe_read 自动放行，dangerous_delete 需要确认
+PermissionContextState permCtx =
+        PermissionContextState.builder()
+                .mode(PermissionMode.DEFAULT)
+                .addAllowRule(
+                        "safe_read",
+                        new PermissionRule(
+                                "safe_read", null, PermissionBehavior.ALLOW, "policy"))
+                .addAskRule(
+                        "dangerous_delete",
+                        new PermissionRule(
+                                "dangerous_delete", null, PermissionBehavior.ASK, "policy"))
+                .build();
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("GuardedAgent")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .permissionContext(permCtx)
+                .build();
+
+// 2. 调用 agent
+Msg result = agent.call(new UserMessage("Delete /tmp/important.txt")).block();
+
+// 3. 检查是否需要用户确认
+if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+    // 向用户展示待确认的工具调用
+    result.getContent().forEach(block -> System.out.println("Pending: " + block));
+
+    // 4. 收集用户决策后恢复 agent
+    boolean approved = askUser();
+    String resumeText = approved ? "yes, proceed" : "no, cancel";
+    Msg finalResult = agent.call(new UserMessage(resumeText)).block();
+}
+```
+
+### 无人值守模式
+
+在 CI 或定时任务等无人值守场景下，把 mode 设为 `DONT_ASK`，所有 ASK 决策会自动降级为 DENY：
+
+```java
+PermissionContextState headless =
+        PermissionContextState.builder()
+                .mode(PermissionMode.DONT_ASK)
+                .addAllowRule(
+                        "safe_read",
+                        new PermissionRule(
+                                "safe_read", null, PermissionBehavior.ALLOW, "policy"))
+                .build();
+// ASK 规则命中时自动拒绝，不会阻塞等待
+```
+
+完整可运行示例：`agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`。
+
 ## 常见配方
 
 下面的示例展示了如何为常见部署场景配置 `permissionContext`。每个配方把一种 mode 与一组规则结合，匹配特定的使用场景。

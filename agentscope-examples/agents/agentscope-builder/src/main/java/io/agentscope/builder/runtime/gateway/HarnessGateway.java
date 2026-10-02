@@ -15,7 +15,6 @@
  */
 package io.agentscope.builder.runtime.gateway;
 
-import io.agentscope.builder.runtime.channel.OutboundAddress;
 import io.agentscope.builder.runtime.session.PendingCompletion;
 import io.agentscope.builder.runtime.session.SessionAgentManager;
 import io.agentscope.builder.runtime.session.SessionConstants;
@@ -30,6 +29,11 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.Gateway;
+import io.agentscope.harness.agent.gateway.MsgContext;
+import io.agentscope.harness.agent.gateway.SessionTurnGate;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,12 +51,12 @@ import reactor.core.scheduler.Schedulers;
  * completion announces as new {@link HarnessAgent} runs on the root requester (OpenClaw gateway
  * analogue).
  *
- * <p>Session management is delegated to {@link SessionAgentManager}. The gateway wires itself as
+ * <p>AgentStateStore management is delegated to {@link SessionAgentManager}. The gateway wires itself as
  * the {@link SessionAgentManager.AnnounceDispatcher} and {@link
  * SessionAgentManager.SpawnInterceptor} on creation, so subagent spawns and announces flow through
  * the correct channel gates.
  *
- * <h2>Session routing</h2>
+ * <h2>AgentStateStore routing</h2>
  *
  * On the first {@link #run} call for a given {@link MsgContext#canonicalKey()}, a MAIN session is
  * registered in the {@link SessionAgentManager}. Subsequent calls for the same key reuse that
@@ -307,7 +311,7 @@ public final class HarnessGateway implements Gateway {
             lastRouteBySessionKey.put(sessionKey, outboundAddress);
         }
 
-        // Session routing (gateKey) is per-caller so each user keeps their own conversation
+        // AgentStateStore routing (gateKey) is per-caller so each user keeps their own conversation
         // thread, but the filesystem-namespacing user id is owner-pinned for shared agents via
         // {@link #fsUserIdResolver}. Defaults to identity when no resolver is installed.
         String routedAgentId = resolveAgentId(ha);
@@ -470,7 +474,7 @@ public final class HarnessGateway implements Gateway {
                             return existingSessionKey;
                         }
                         log.info(
-                                "Session stale, rolling over: gateKey={}, oldSessionKey={}",
+                                "AgentStateStore stale, rolling over: gateKey={}, oldSessionKey={}",
                                 gateKey,
                                 existingSessionKey);
                     }

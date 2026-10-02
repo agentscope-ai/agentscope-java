@@ -48,7 +48,7 @@ import reactor.core.publisher.Mono;
  * </em> session-related state and concurrency controls:
  *
  * <ul>
- *   <li>Session registry ({@code sessionsByKey}, labels, parent-child)
+ *   <li>AgentStateStore registry ({@code sessionsByKey}, labels, parent-child)
  *   <li>Lane management (semaphores for bounded concurrency, per-session locks)
  *   <li>{@link SubagentRunRegistry} for run lifecycle tracking
  *   <li>{@link #registerSession} / {@link #registerMainSession} — session creation
@@ -56,7 +56,7 @@ import reactor.core.publisher.Mono;
  *   <li>Pending completions queue (announce) — {@link #drainPendingCompletions}
  *   <li>Announce dispatch — {@link AnnounceDispatcher}
  *   <li>Full {@link SessionView}, {@link HistoryResult} views
- *   <li>Session listing with kind/time filters
+ *   <li>AgentStateStore listing with kind/time filters
  * </ul>
  *
  * <p>Uses {@link DefaultAgentManager} only for agent creation ({@link
@@ -90,7 +90,7 @@ public class SessionAgentManager {
     private final SubagentRunRegistry runRegistry;
     private final SessionStore sessionStore;
 
-    // Session registry
+    // AgentStateStore registry
     private final ConcurrentHashMap<String, SessionEntry> sessionsByKey = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> labelToSessionKey = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, List<String>> childrenByParent =
@@ -202,7 +202,7 @@ public class SessionAgentManager {
     }
 
     // -----------------------------------------------------------------
-    //  Session registry
+    //  AgentStateStore registry
     // -----------------------------------------------------------------
 
     public Optional<String> resolveSessionKey(String keyOrLabel) {
@@ -515,7 +515,7 @@ public class SessionAgentManager {
             }
         } catch (RuntimeException e) {
             String err = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            log.warn("Session execute failed: sessionKey={}", entry.sessionKey(), e);
+            log.warn("AgentStateStore execute failed: sessionKey={}", entry.sessionKey(), e);
             finishRun(entry, "failed", null, err);
             return new SendResult(entry.sessionKey(), "error", null, err);
         }
@@ -552,7 +552,7 @@ public class SessionAgentManager {
     }
 
     // -----------------------------------------------------------------
-    //  Session reset (auto-reset and /new, /reset commands)
+    //  AgentStateStore reset (auto-reset and /new, /reset commands)
     // -----------------------------------------------------------------
 
     /**
@@ -599,7 +599,7 @@ public class SessionAgentManager {
         }
         agentCache.remove(sessionKey);
         log.info(
-                "Session reset: sessionKey={}, newSessionId={}, agentId={}",
+                "AgentStateStore reset: sessionKey={}, newSessionId={}, agentId={}",
                 sessionKey,
                 newSessionId,
                 e.agentId());
@@ -639,7 +639,7 @@ public class SessionAgentManager {
     }
 
     // -----------------------------------------------------------------
-    //  Session maintenance
+    //  AgentStateStore maintenance
     // -----------------------------------------------------------------
 
     /**
@@ -682,7 +682,7 @@ public class SessionAgentManager {
         }
 
         if (removed > 0) {
-            log.info("Session maintenance: removed {} sessions", removed);
+            log.info("AgentStateStore maintenance: removed {} sessions", removed);
         }
         return removed;
     }
@@ -716,7 +716,7 @@ public class SessionAgentManager {
     }
 
     // -----------------------------------------------------------------
-    //  Session query / observability
+    //  AgentStateStore query / observability
     // -----------------------------------------------------------------
 
     public List<SessionView> list(Set<String> kinds, int limit, int activeMinutes) {

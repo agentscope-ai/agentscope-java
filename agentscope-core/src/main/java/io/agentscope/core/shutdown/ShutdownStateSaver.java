@@ -23,7 +23,7 @@ import io.agentscope.core.state.AgentState;
  * <p>Implementations are registered via
  * {@link GracefulShutdownManager#bindStateSaver(io.agentscope.core.agent.Agent, ShutdownStateSaver)}
  * so the shutdown manager can checkpoint agent state without depending on the legacy
- * {@link io.agentscope.core.session.Session} API.
+ * {@link io.agentscope.core.state.AgentStateStore} API.
  */
 @FunctionalInterface
 public interface ShutdownStateSaver {

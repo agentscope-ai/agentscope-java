@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -381,6 +382,32 @@ class ToolGroupManager {
         Set<String> activeTools = new HashSet<>();
         for (ToolGroup group : toolGroups.values()) {
             if (group.isActive()) {
+                activeTools.addAll(group.getTools());
+            }
+        }
+        return activeTools;
+    }
+
+    /**
+     * Compute the active tool names for an explicitly supplied set of active group names,
+     * independent of the shared per-group {@code active} flags.
+     *
+     * <p>This is the per-call / stateless variant of {@link #getActiveToolNames()}: it lets a
+     * caller (e.g. {@code ReActAgent} during a {@code call}) resolve the tool surface from its own
+     * {@code (userId, sessionId)} slot's activated groups without mutating or reading the shared
+     * activation flags, so concurrent calls on different slots do not interfere.
+     *
+     * @param activeGroups the group names to treat as active (null/empty yields only ungrouped tools)
+     * @return the set of tool names belonging to at least one of the supplied groups
+     */
+    public Set<String> getActiveToolNames(Collection<String> activeGroups) {
+        Set<String> activeTools = new HashSet<>();
+        if (activeGroups == null) {
+            return activeTools;
+        }
+        for (String groupName : activeGroups) {
+            ToolGroup group = toolGroups.get(groupName);
+            if (group != null) {
                 activeTools.addAll(group.getTools());
             }
         }

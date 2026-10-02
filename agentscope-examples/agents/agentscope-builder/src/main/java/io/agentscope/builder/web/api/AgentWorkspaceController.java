@@ -772,8 +772,8 @@ public class AgentWorkspaceController {
 
     /**
      * Normalizes a {@link FileInfo} path coming out of an {@link AbstractFilesystem} into a
-     * workspace-relative path: strips leading/trailing slashes. Local backends in namespaced mode
-     * already return relative paths, but virtual-mode backends and composite routes prepend
+     * workspace-relative path: strips leading/trailing slashes. Local stores in namespaced mode
+     * already return relative paths, but virtual-mode stores and composite routes prepend
      * {@code /}; this collapses both forms.
      */
     private static String relPath(String fsPath) {
@@ -938,9 +938,9 @@ public class AgentWorkspaceController {
         int subagentCount = countLs(fs, "/subagents", false, ".md");
         int dailyMemoryCount = countLs(fs, "/memory", false, ".md");
         // {@code exists} historically meant "the workspace directory is present on disk". With
-        // composite/remote backends the per-caller workspace is logical, not physical — so use
+        // composite/remote stores the per-caller workspace is logical, not physical — so use
         // "any expected file or directory present" as a proxy. This keeps the UI's empty-state
-        // behavior consistent across backends.
+        // behavior consistent across stores.
         boolean exists =
                 agentsMdExists
                         || memoryMdExists

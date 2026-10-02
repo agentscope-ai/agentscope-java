@@ -22,6 +22,7 @@ public class ToolResultTextDeltaEvent extends AgentEvent {
 
     private final String replyId;
     private final String toolCallId;
+    private final String toolCallName;
     private final String delta;
 
     @JsonCreator
@@ -30,16 +31,20 @@ public class ToolResultTextDeltaEvent extends AgentEvent {
             @JsonProperty("createdAt") String createdAt,
             @JsonProperty("replyId") String replyId,
             @JsonProperty("toolCallId") String toolCallId,
+            @JsonProperty("toolCallName") String toolCallName,
             @JsonProperty("delta") String delta) {
         super(id, createdAt);
         this.replyId = replyId;
         this.toolCallId = toolCallId;
+        this.toolCallName = toolCallName;
         this.delta = delta;
     }
 
-    public ToolResultTextDeltaEvent(String replyId, String toolCallId, String delta) {
+    public ToolResultTextDeltaEvent(
+            String replyId, String toolCallId, String toolCallName, String delta) {
         this.replyId = replyId;
         this.toolCallId = toolCallId;
+        this.toolCallName = toolCallName;
         this.delta = delta;
     }
 
@@ -54,6 +59,10 @@ public class ToolResultTextDeltaEvent extends AgentEvent {
 
     public String getToolCallId() {
         return toolCallId;
+    }
+
+    public String getToolCallName() {
+        return toolCallName;
     }
 
     public String getDelta() {

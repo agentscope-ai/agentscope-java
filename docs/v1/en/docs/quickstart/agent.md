@@ -46,7 +46,7 @@ Using DashScope API as an example, we create an agent as follows:
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;

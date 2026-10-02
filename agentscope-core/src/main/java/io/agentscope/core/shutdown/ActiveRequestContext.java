@@ -24,6 +24,12 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Runtime context for a single active request.
+ *
+ * <p>When the owning {@code call()} resolves its per-(userId, sessionId) {@link AgentState} slot,
+ * it is bound here via {@link #bindState(AgentState)} so shutdown interruption and state-saving
+ * target that exact session — concurrency-safe even when an agent instance serves multiple
+ * sessions. Until a session is bound (or for agents that keep no per-session state), the context
+ * falls back to the agent's no-arg interrupt / {@link AgentBase#getAgentState()} accessors.
  */
 final class ActiveRequestContext {
 
@@ -35,6 +41,13 @@ final class ActiveRequestContext {
 
     private final ShutdownStateSaver saver;
 
+    /**
+     * The per-call session state this request is running against, bound once {@code call()} has
+     * resolved its slot. {@code null} until bound, in which case the no-arg agent accessors are
+     * used as a fallback.
+     */
+    private volatile AgentState boundState;
+
     ActiveRequestContext(String requestId, AgentBase agent, ShutdownStateSaver saver) {
         this.requestId = requestId;
         this.agent = agent;
@@ -45,8 +58,24 @@ final class ActiveRequestContext {
         return requestId;
     }
 
+    /**
+     * Bind the per-call session state resolved for this request so interrupt and save target the
+     * exact {@code (userId, sessionId)} session. Called by {@code AgentBase} once the call's slot
+     * has been activated.
+     */
+    void bindState(AgentState state) {
+        if (state != null) {
+            this.boundState = state;
+        }
+    }
+
+    private AgentState resolveState() {
+        AgentState bound = boundState;
+        return bound != null ? bound : agent.getAgentState();
+    }
+
     void saveState() {
-        AgentState state = agent.getAgentState();
+        AgentState state = resolveState();
         if (saver == null || state == null) {
             return;
         }
@@ -62,7 +91,14 @@ final class ActiveRequestContext {
         if (!shutdownInterruptIssued.compareAndSet(false, true)) {
             return false;
         }
-        agent.interrupt(InterruptSource.SYSTEM);
+        AgentState bound = boundState;
+        if (bound != null) {
+            // Precise per-session interrupt: signal exactly this session's in-flight call so other
+            // concurrent calls on the same agent instance are unaffected.
+            bound.interruptControl().trigger(InterruptSource.SYSTEM, null);
+        } else {
+            agent.interrupt(InterruptSource.SYSTEM);
+        }
         return true;
     }
 }

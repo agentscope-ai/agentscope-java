@@ -45,12 +45,12 @@ try (MsgHub hub = MsgHub.builder()
 
 ```java
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.pipeline.MsgHub;
 
 // 创建模型，使用 MultiAgentFormatter

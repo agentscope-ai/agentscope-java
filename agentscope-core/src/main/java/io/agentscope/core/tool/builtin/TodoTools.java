@@ -40,7 +40,7 @@ import java.util.Map;
  * {@code TaskReminderMiddleware}).
  *
  * <p>The list is persisted automatically: {@code AgentState.tasksContext} is part of the agent
- * state that {@code ReActAgent} flushes to its {@code Session} after every call.
+ * state that {@code ReActAgent} flushes to its {@code AgentStateStore} after every call.
  *
  * <p>This tool is independent from the harness {@code TaskTool} ({@code task_output} /
  * {@code task_cancel} / {@code task_list}), which manages background <i>subagent</i> runs — a

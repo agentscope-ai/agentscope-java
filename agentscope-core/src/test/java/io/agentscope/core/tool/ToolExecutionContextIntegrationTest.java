@@ -148,7 +148,7 @@ class ToolExecutionContextIntegrationTest {
 
             return ToolResultBlock.text(
                     String.format(
-                            "Environment: %s, Version: %s, Session: %s",
+                            "Environment: %s, Version: %s, AgentStateStore: %s",
                             envConfig.getEnvironment(),
                             envConfig.getVersion(),
                             userCtx.getSessionId()));

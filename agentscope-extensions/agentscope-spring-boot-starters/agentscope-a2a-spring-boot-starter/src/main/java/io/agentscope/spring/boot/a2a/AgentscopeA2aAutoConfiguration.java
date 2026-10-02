@@ -25,15 +25,12 @@ import io.agentscope.core.a2a.server.executor.runner.ReActAgentWithBuilderRunner
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.CustomTransportProperties;
 import io.agentscope.core.a2a.server.transport.DeploymentProperties;
-import io.agentscope.extensions.rocketmq.a2a.config.RocketMQA2aConfig;
-import io.agentscope.extensions.rocketmq.a2a.server.RocketMQA2aServer;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
 import io.agentscope.spring.boot.a2a.controller.A2aJsonRpcController;
 import io.agentscope.spring.boot.a2a.controller.AgentCardController;
 import io.agentscope.spring.boot.a2a.listener.ServerReadyListener;
 import io.agentscope.spring.boot.a2a.properties.A2aAgentCardProperties;
 import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
-import io.agentscope.spring.boot.a2a.properties.A2aRocketMQProperties;
 import io.agentscope.spring.boot.a2a.properties.Constants;
 import io.agentscope.spring.boot.a2a.properties.JSONRPCProperties;
 import io.agentscope.spring.boot.a2a.runner.ReActAgentWithStarterRunner;
@@ -59,10 +56,9 @@ import org.springframework.core.env.Environment;
 @EnableConfigurationProperties({
     A2aCommonProperties.class,
     A2aAgentCardProperties.class,
-    A2aRocketMQProperties.class,
     JSONRPCProperties.class
 })
-@ConditionalOnClass({AgentScopeA2aServer.class, RocketMQA2aServer.class})
+@ConditionalOnClass({AgentScopeA2aServer.class})
 @ConditionalOnWebApplication
 @ConditionalOnProperty(
         prefix = Constants.A2A_SERVER_PREFIX,
@@ -114,19 +110,6 @@ public class AgentscopeA2aAutoConfiguration {
 
     @Bean
     @ConditionalOnBean(AgentScopeA2aServer.class)
-    @ConditionalOnProperty(
-            prefix = Constants.A2A_ROCKETMQ_SERVER_PREFIX,
-            name = "enabled",
-            havingValue = "true",
-            matchIfMissing = false)
-    public RocketMQA2aServer rocketMQA2AServer(
-            AgentScopeA2aServer agentScopeA2aServer, A2aRocketMQProperties a2aRocketMQProperties) {
-        return new RocketMQA2aServer(
-                agentScopeA2aServer, buildRocketMQConfig(a2aRocketMQProperties));
-    }
-
-    @Bean
-    @ConditionalOnBean(AgentScopeA2aServer.class)
     public AgentCardController agentCardController(AgentScopeA2aServer agentScopeA2aServer) {
         return new AgentCardController(agentScopeA2aServer);
     }
@@ -149,19 +132,6 @@ public class AgentscopeA2aAutoConfiguration {
     @ConditionalOnBean(AgentScopeA2aServer.class)
     public ServerReadyListener serverReadyConfiguration(AgentScopeA2aServer agentScopeA2aServer) {
         return new ServerReadyListener(agentScopeA2aServer);
-    }
-
-    private RocketMQA2aConfig buildRocketMQConfig(A2aRocketMQProperties a2aRocketMQProperties) {
-        return new RocketMQA2aConfig.Builder()
-                .rocketMQEndpoint(a2aRocketMQProperties.getRocketMQEndpoint())
-                .rocketMQNamespace(a2aRocketMQProperties.getRocketMQNamespace())
-                .bizTopic(a2aRocketMQProperties.getBizTopic())
-                .bizConsumerGroup(a2aRocketMQProperties.getBizConsumerGroup())
-                .accessKey(a2aRocketMQProperties.getAccessKey())
-                .secretKey(a2aRocketMQProperties.getSecretKey())
-                .workAgentResponseTopic(a2aRocketMQProperties.getWorkAgentResponseTopic())
-                .workAgentResponseGroupId(a2aRocketMQProperties.getWorkAgentResponseGroupId())
-                .build();
     }
 
     private ConfigurableAgentCard buildConfigurableAgentCard(

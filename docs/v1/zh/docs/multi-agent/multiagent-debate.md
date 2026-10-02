@@ -37,9 +37,9 @@
 
 ```java
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 
 // 定义辩论主题
 String topic = """
@@ -202,12 +202,12 @@ public void runDebate() {
 package io.agentscope.examples;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.pipeline.MsgHub;
 
 public class MultiAgentDebateExample {

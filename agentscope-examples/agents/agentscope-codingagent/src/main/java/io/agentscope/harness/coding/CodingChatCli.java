@@ -19,7 +19,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.harness.coding.channel.chatui.ChatUiChannel;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.coding.tools.FetchUrlTool;
 import io.agentscope.harness.coding.tools.GitHubApiTool;
 import io.agentscope.harness.coding.tools.HttpRequestTool;

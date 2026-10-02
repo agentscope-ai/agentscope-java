@@ -16,9 +16,9 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.skill.curator.SkillCurator;
 import java.time.Instant;
 import java.util.concurrent.Executors;
@@ -34,7 +34,7 @@ import reactor.core.publisher.Flux;
  * {@code MemoryMaintenanceMiddleware}: gates on idle-time + interval, runs on a single-thread
  * daemon executor so the agent loop is never blocked.
  */
-public class SkillCuratorMiddleware implements MiddlewareBase {
+public class SkillCuratorMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(SkillCuratorMiddleware.class);
 
@@ -56,7 +56,10 @@ public class SkillCuratorMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onAgent(
-            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            AgentInput input,
+            Function<AgentInput, Flux<AgentEvent>> next) {
         return next.apply(input)
                 .doOnComplete(
                         () -> {

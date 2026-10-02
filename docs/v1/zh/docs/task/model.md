@@ -64,7 +64,7 @@
 ```java
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelRegistry;
-import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.harness.agent.HarnessAgent;
 
 Model tuned = OpenAIChatModel.builder()

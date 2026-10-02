@@ -80,14 +80,14 @@ class CompositeFilesystemTest {
 
     @Test
     void uploadFiles_propagatesBackendSuccess() {
-        AbstractFilesystem backend = mock(AbstractFilesystem.class);
-        when(backend.uploadFiles(any(), anyList()))
+        AbstractFilesystem store = mock(AbstractFilesystem.class);
+        when(store.uploadFiles(any(), anyList()))
                 .thenReturn(List.of(FileUploadResponse.success("/notes.md")));
 
         AbstractFilesystem defaultBackend = mock(AbstractFilesystem.class);
 
         CompositeFilesystem composite =
-                new CompositeFilesystem(defaultBackend, Map.of("/memories/", backend));
+                new CompositeFilesystem(defaultBackend, Map.of("/memories/", store));
 
         List<FileUploadResponse> resp =
                 composite.uploadFiles(
@@ -109,7 +109,7 @@ class CompositeFilesystemTest {
      * uploads under {@code "skills/foo/SKILL.md"}), then immediately reads back through the
      * {@link AbstractFilesystem} contract with a leading slash ({@code "/skills/foo/SKILL.md"}).
      * Both calls must route to the same backend regardless of leading-slash convention; if not,
-     * the read falls through to the default backend, returns failure, the Mono emits no value,
+     * the read falls through to the default store, returns failure, the Mono emits no value,
      * and the frontend chokes on an empty response body.
      */
     @Test
@@ -136,7 +136,7 @@ class CompositeFilesystemTest {
                                         "hello".getBytes(StandardCharsets.UTF_8))));
         assertTrue(upload.get(0).isSuccess(), "upload should succeed via prefix route");
 
-        // Read via the AbstractFilesystem contract (leading slash) — must hit the same backend.
+        // Read via the AbstractFilesystem contract (leading slash) — must hit the same store.
         ReadResult viaSlash = composite.read(CTX, "/skills/foo/SKILL.md", 0, Integer.MAX_VALUE);
         assertTrue(viaSlash.isSuccess(), "leading-slash read must route to skills backend");
         assertEquals("hello", viaSlash.fileData().content());

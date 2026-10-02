@@ -28,8 +28,8 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
-import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.BufferedReader;
@@ -359,7 +359,10 @@ public class LocalFilesystem implements AbstractFilesystem {
         ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, k -> new ReentrantLock());
         lock.lock();
         try {
-            String content = Files.readString(resolved, StandardCharsets.UTF_8);
+            String content =
+                    Files.readString(resolved, StandardCharsets.UTF_8)
+                            .replace("\r\n", "\n")
+                            .replace("\r", "\n");
             String normalizedOld = oldString.replace("\r\n", "\n").replace("\r", "\n");
             String normalizedNew = newString.replace("\r\n", "\n").replace("\r", "\n");
 
@@ -448,14 +451,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                             Path rel = searchPath.relativize(file);
                             if (matcher.matches(rel) || directMatcher.matches(rel)) {
-                                String filePath;
-                                if (mode == LocalFsMode.SANDBOXED) {
-                                    filePath = toVirtualPath(file);
-                                } else if (hasNamespace(runtimeContext)) {
-                                    filePath = stripNamespacePrefix(runtimeContext, file);
-                                } else {
-                                    filePath = file.toAbsolutePath().toString();
-                                }
+                                String filePath = resolveEntryPath(runtimeContext, file);
                                 String modifiedAt =
                                         Instant.ofEpochMilli(attrs.lastModifiedTime().toMillis())
                                                 .toString();
@@ -661,12 +657,40 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (namespaceFactory == null || key == null || key.isBlank()) {
             return key;
         }
+        // Absolute paths identify specific host locations and must not be namespace-scoped.
+        // Prepending a namespace prefix would turn them into relative paths, causing them to
+        // resolve incorrectly under the workspace root (e.g. /abs/path → ns//abs/path).
+        // On Windows, absolute paths start with a drive letter ("C:\") or UNC prefix ("\\"),
+        // not "/", so we must check for those forms explicitly.
+        if (isAbsolutePathString(key)) {
+            return key;
+        }
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
             return key;
         }
         String prefix = String.join("/", ns);
         return prefix + "/" + key;
+    }
+
+    /**
+     * Returns {@code true} when {@code key} looks like an absolute path on any supported OS:
+     * Unix ({@code /...}), Windows drive-letter ({@code C:\} or {@code C:/}), or Windows UNC
+     * ({@code \\server\share}).
+     */
+    private static boolean isAbsolutePathString(String key) {
+        if (key.startsWith("/")) {
+            return true;
+        }
+        // Windows drive-letter: "X:\" or "X:/"
+        if (key.length() >= 3
+                && Character.isLetter(key.charAt(0))
+                && key.charAt(1) == ':'
+                && (key.charAt(2) == '\\' || key.charAt(2) == '/')) {
+            return true;
+        }
+        // Windows UNC: "\\server\share"
+        return key.startsWith("\\\\");
     }
 
     protected String toVirtualPath(Path path) {
@@ -694,14 +718,15 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (hasNamespace(rc)) {
             return stripNamespacePrefix(rc, entry);
         }
-        return entry.toAbsolutePath().toString();
+        return toCwdRelativePath(entry);
+    }
+
+    private String toCwdRelativePath(Path path) {
+        return cwd.relativize(path.toAbsolutePath().normalize()).toString().replace('\\', '/');
     }
 
     private String stripNamespacePrefix(RuntimeContext rc, Path absolutePath) {
-        String relPath =
-                cwd.relativize(absolutePath.toAbsolutePath().normalize())
-                        .toString()
-                        .replace('\\', '/');
+        String relPath = toCwdRelativePath(absolutePath);
         String nsPrefix = String.join("/", namespaceFactory.getNamespace(rc));
         if (relPath.startsWith(nsPrefix + "/")) {
             return relPath.substring(nsPrefix.length() + 1);
@@ -766,14 +791,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             if (pathText == null || lineNumStr == null) {
                 return null;
             }
-            String filePath;
-            if (mode == LocalFsMode.SANDBOXED) {
-                filePath = toVirtualPath(Path.of(pathText));
-            } else if (hasNamespace(rc)) {
-                filePath = stripNamespacePrefix(rc, Path.of(pathText));
-            } else {
-                filePath = pathText;
-            }
+            String filePath = resolveEntryPath(rc, Path.of(pathText));
             int lineNum = Integer.parseInt(lineNumStr.trim());
             String text = linesText != null ? linesText.replaceAll("[\r\n]+$", "") : "";
             return new GrepMatch(filePath, lineNum, text);
@@ -856,14 +874,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                                             Files.readAllLines(file, StandardCharsets.UTF_8);
                                     for (int i = 0; i < lines.size(); i++) {
                                         if (compiledPattern.matcher(lines.get(i)).find()) {
-                                            String filePath;
-                                            if (mode == LocalFsMode.SANDBOXED) {
-                                                filePath = toVirtualPath(file);
-                                            } else if (hasNamespace(rc)) {
-                                                filePath = stripNamespacePrefix(rc, file);
-                                            } else {
-                                                filePath = file.toAbsolutePath().toString();
-                                            }
+                                            String filePath = resolveEntryPath(rc, file);
                                             matches.add(
                                                     new GrepMatch(filePath, i + 1, lines.get(i)));
                                         }

@@ -18,12 +18,11 @@ package io.agentscope.examples.documentation2.structuredoutput;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import java.util.List;
 import reactor.core.publisher.Flux;
 
@@ -44,12 +43,15 @@ public class StructuredOutputExample {
      * @throws Exception if an I/O error occurs
      */
     public static void main(String[] args) throws Exception {
-        ExampleUtils.printWelcome(
-                "Structured Output Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Structured Output Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "This example demonstrates how to generate structured output from agents.\n"
                         + "The agent will analyze user queries and return structured data.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         ReActAgent agent =
                 ReActAgent.builder()

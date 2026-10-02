@@ -42,6 +42,7 @@ public enum AgentEventType {
     AGENT_START("AGENT_START"),
     @JsonAlias({"RUN_FINISHED", "REPLY_END"})
     AGENT_END("AGENT_END"),
+    AGENT_RESULT("AGENT_RESULT"),
 
     @JsonAlias({"MODEL_CALL_STARTED"})
     MODEL_CALL_START("MODEL_CALL_START"),
@@ -79,7 +80,13 @@ public enum AgentEventType {
     REQUIRE_EXTERNAL_EXECUTION("REQUIRE_EXTERNAL_EXECUTION"),
     USER_CONFIRM_RESULT("USER_CONFIRM_RESULT"),
     EXTERNAL_EXECUTION_RESULT("EXTERNAL_EXECUTION_RESULT"),
-    REQUEST_STOP("REQUEST_STOP");
+    REQUEST_STOP("REQUEST_STOP"),
+
+    @JsonAlias({"THREAD_EXPOSED"})
+    SUBAGENT_EXPOSED("SUBAGENT_EXPOSED"),
+
+    HINT_BLOCK("HINT_BLOCK"),
+    CUSTOM("CUSTOM");
 
     private final String value;
 
@@ -122,6 +129,7 @@ public enum AgentEventType {
             case "BINARY_BLOCK_DELTA" -> DATA_BLOCK_DELTA;
             case "BINARY_BLOCK_END" -> DATA_BLOCK_END;
             case "TOOL_RESULT_BINARY_DELTA" -> TOOL_RESULT_DATA_DELTA;
+            case "THREAD_EXPOSED" -> SUBAGENT_EXPOSED;
             default -> throw new IllegalArgumentException("Unknown AgentEventType value: " + raw);
         };
     }

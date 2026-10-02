@@ -22,10 +22,8 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -37,13 +35,13 @@ import org.junit.jupiter.api.io.TempDir;
 @DisplayName("InMemoryMemory New StateModule API Tests")
 class InMemoryMemoryNewApiTest {
 
-    private InMemorySession session;
-    private SessionKey sessionKey;
+    private InMemoryAgentStateStore stateStore;
+    private String sessionId;
 
     @BeforeEach
     void setUp() {
-        session = new InMemorySession();
-        sessionKey = SimpleSessionKey.of("test_session");
+        stateStore = new InMemoryAgentStateStore();
+        sessionId = "test_session";
     }
 
     @Nested
@@ -57,10 +55,10 @@ class InMemoryMemoryNewApiTest {
             memory.addMessage(createUserMsg("Hello"));
             memory.addMessage(createAssistantMsg("Hi there!"));
 
-            memory.saveTo(session, sessionKey);
+            memory.saveTo(stateStore, null, sessionId);
 
             InMemoryMemory loadedMemory = new InMemoryMemory();
-            loadedMemory.loadFrom(session, sessionKey);
+            loadedMemory.loadFrom(stateStore, null, sessionId);
 
             assertEquals(2, loadedMemory.getMessages().size());
             assertEquals("Hello", getTextContent(loadedMemory.getMessages().get(0)));
@@ -71,10 +69,10 @@ class InMemoryMemoryNewApiTest {
         @DisplayName("Should handle empty memory")
         void testEmptyMemory() {
             InMemoryMemory memory = new InMemoryMemory();
-            memory.saveTo(session, sessionKey);
+            memory.saveTo(stateStore, null, sessionId);
 
             InMemoryMemory loadedMemory = new InMemoryMemory();
-            loadedMemory.loadFrom(session, sessionKey);
+            loadedMemory.loadFrom(stateStore, null, sessionId);
 
             assertTrue(loadedMemory.getMessages().isEmpty());
         }
@@ -84,14 +82,14 @@ class InMemoryMemoryNewApiTest {
         void testIncrementalSave() {
             InMemoryMemory memory = new InMemoryMemory();
             memory.addMessage(createUserMsg("Message 1"));
-            memory.saveTo(session, sessionKey);
+            memory.saveTo(stateStore, null, sessionId);
 
             memory.addMessage(createUserMsg("Message 2"));
             memory.addMessage(createUserMsg("Message 3"));
-            memory.saveTo(session, sessionKey);
+            memory.saveTo(stateStore, null, sessionId);
 
             InMemoryMemory loadedMemory = new InMemoryMemory();
-            loadedMemory.loadFrom(session, sessionKey);
+            loadedMemory.loadFrom(stateStore, null, sessionId);
 
             assertEquals(3, loadedMemory.getMessages().size());
             assertEquals("Message 1", getTextContent(loadedMemory.getMessages().get(0)));
@@ -104,11 +102,11 @@ class InMemoryMemoryNewApiTest {
         void testLoadFromReplacesContents() {
             InMemoryMemory memory = new InMemoryMemory();
             memory.addMessage(createUserMsg("Original message"));
-            memory.saveTo(session, sessionKey);
+            memory.saveTo(stateStore, null, sessionId);
 
             InMemoryMemory loadedMemory = new InMemoryMemory();
             loadedMemory.addMessage(createUserMsg("Pre-existing message"));
-            loadedMemory.loadFrom(session, sessionKey);
+            loadedMemory.loadFrom(stateStore, null, sessionId);
 
             assertEquals(1, loadedMemory.getMessages().size());
             assertEquals("Original message", getTextContent(loadedMemory.getMessages().get(0)));
@@ -120,38 +118,38 @@ class InMemoryMemoryNewApiTest {
     class LoadIfExistsTests {
 
         @Test
-        @DisplayName("Should load when session exists via loadFrom")
+        @DisplayName("Should load when stateStore exists via loadFrom")
         void testLoadFromExisting() {
             InMemoryMemory memory = new InMemoryMemory();
             memory.addMessage(createUserMsg("Test message"));
-            memory.saveTo(session, sessionKey);
+            memory.saveTo(stateStore, null, sessionId);
 
             InMemoryMemory loadedMemory = new InMemoryMemory();
-            loadedMemory.loadFrom(session, sessionKey);
+            loadedMemory.loadFrom(stateStore, null, sessionId);
 
             assertEquals(1, loadedMemory.getMessages().size());
         }
     }
 
     @Nested
-    @DisplayName("Integration with JsonSession")
+    @DisplayName("Integration with JsonFileAgentStateStore")
     class JsonSessionIntegrationTests {
 
         @TempDir Path tempDir;
 
         @Test
-        @DisplayName("Should work with JsonSession for persistence")
+        @DisplayName("Should work with JsonFileAgentStateStore for persistence")
         void testWithJsonSession() {
-            JsonSession jsonSession = new JsonSession(tempDir);
-            SessionKey key = SimpleSessionKey.of("json_session_test");
+            JsonFileAgentStateStore jsonSession = new JsonFileAgentStateStore(tempDir);
+            String key = "json_session_test";
 
             InMemoryMemory memory = new InMemoryMemory();
             memory.addMessage(createUserMsg("Hello from JSON"));
             memory.addMessage(createAssistantMsg("Response from JSON"));
-            memory.saveTo(jsonSession, key);
+            memory.saveTo(jsonSession, null, key);
 
             InMemoryMemory loadedMemory = new InMemoryMemory();
-            loadedMemory.loadFrom(jsonSession, key);
+            loadedMemory.loadFrom(jsonSession, null, key);
 
             assertEquals(2, loadedMemory.getMessages().size());
             assertEquals("Hello from JSON", getTextContent(loadedMemory.getMessages().get(0)));
@@ -159,23 +157,23 @@ class InMemoryMemoryNewApiTest {
         }
 
         @Test
-        @DisplayName("Should handle incremental saves with JsonSession")
+        @DisplayName("Should handle incremental saves with JsonFileAgentStateStore")
         void testIncrementalWithJsonSession() {
-            JsonSession jsonSession = new JsonSession(tempDir);
-            SessionKey key = SimpleSessionKey.of("incremental_test");
+            JsonFileAgentStateStore jsonSession = new JsonFileAgentStateStore(tempDir);
+            String key = "incremental_test";
 
             InMemoryMemory memory = new InMemoryMemory();
             memory.addMessage(createUserMsg("First message"));
-            memory.saveTo(jsonSession, key);
+            memory.saveTo(jsonSession, null, key);
 
             memory.addMessage(createUserMsg("Second message"));
-            memory.saveTo(jsonSession, key);
+            memory.saveTo(jsonSession, null, key);
 
             memory.addMessage(createUserMsg("Third message"));
-            memory.saveTo(jsonSession, key);
+            memory.saveTo(jsonSession, null, key);
 
             InMemoryMemory loadedMemory = new InMemoryMemory();
-            loadedMemory.loadFrom(jsonSession, key);
+            loadedMemory.loadFrom(jsonSession, null, key);
 
             assertEquals(3, loadedMemory.getMessages().size());
         }

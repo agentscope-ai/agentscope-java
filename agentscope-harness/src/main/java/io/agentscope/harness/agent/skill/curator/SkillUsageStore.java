@@ -49,7 +49,7 @@ import org.slf4j.LoggerFactory;
  * <p><b>Concurrency</b>: a {@link ReentrantLock} serialises in-process read-modify-write cycles.
  * For cross-process safety on a {@code LocalFilesystem} a future milestone will add
  * {@link java.nio.channels.FileLock} on a sibling {@code .usage.json.lock} file; for
- * {@code RemoteFilesystem} a KV CAS path is required. Both are tracked TODO and not part of M2.
+ * {@code RemoteFilesystem} a KV CAS path is required. Both are tracked as TODO.
  *
  * <p><b>Provenance gate</b>: counter mutators (bumpView/bumpUse/bumpPatch) silently skip skills
  * that are not agent-created. This avoids polluting telemetry for bundled / hub-installed /

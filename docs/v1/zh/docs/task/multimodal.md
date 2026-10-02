@@ -114,8 +114,8 @@ Msg multiImageMsg = Msg.builder()
 
 ```java
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 
 ReActAgent agent = ReActAgent.builder()
     .name("VisionAssistant")
@@ -145,10 +145,10 @@ System.out.println(response.getTextContent());
 package io.agentscope.examples;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.*;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 

@@ -15,7 +15,7 @@
  */
 package io.agentscope.spring.boot.admin.endpoint;
 
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.spring.boot.admin.properties.AdminProperties;
 import io.agentscope.spring.boot.admin.service.AgentInventory;
 import java.util.ArrayList;
@@ -38,12 +38,12 @@ public class AgentscopeDoctorEndpoint {
 
     private final AdminProperties properties;
     private final AgentInventory inventory;
-    private final ObjectProvider<Session> sessions;
+    private final ObjectProvider<AgentStateStore> sessions;
 
     public AgentscopeDoctorEndpoint(
             AdminProperties properties,
             AgentInventory inventory,
-            ObjectProvider<Session> sessions) {
+            ObjectProvider<AgentStateStore> sessions) {
         this.properties = properties;
         this.inventory = inventory;
         this.sessions = sessions;
@@ -65,14 +65,16 @@ public class AgentscopeDoctorEndpoint {
                         "write token configured or writes disabled",
                         "write operations are enabled without a token; consider setting "
                                 + "agentscope.admin.write-token in production"));
-        Session session = sessions.getIfAvailable();
+        AgentStateStore stateStore = sessions.getIfAvailable();
         checks.add(
                 check(
-                        "session.bean",
-                        session != null,
-                        "found Session bean: "
-                                + (session == null ? "<none>" : session.getClass().getSimpleName()),
-                        "no Session bean found — /sessions listing will be empty"));
+                        "stateStore.bean",
+                        stateStore != null,
+                        "found AgentStateStore bean: "
+                                + (stateStore == null
+                                        ? "<none>"
+                                        : stateStore.getClass().getSimpleName()),
+                        "no AgentStateStore bean found — /sessions listing will be empty"));
         checks.add(
                 check(
                         "agents.registered",

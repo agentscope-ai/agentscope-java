@@ -16,16 +16,15 @@
 package io.agentscope.examples.documentation2.tool;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
-import io.agentscope.examples.documentation2.common.MsgUtils;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 
 /**
  * RoutingByToolCallsExample - Demonstrates routing user requests to sub-agents via tool calls.
@@ -57,7 +56,7 @@ public class RoutingByToolCallsExample {
                                         + " the right follow-up task.")
                         .model(
                                 DashScopeChatModel.builder()
-                                        .apiKey(ExampleUtils.getDashScopeApiKey())
+                                        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
                                         .modelName("qwen-max")
                                         .stream(true)
                                         .enableThinking(true)
@@ -68,6 +67,7 @@ public class RoutingByToolCallsExample {
                                                         .build())
                                         .build())
                         .toolkit(toolkit)
+                        .middleware(new AgentTraceMiddleware())
                         .build();
 
         Msg userMsg = new UserMessage("Help me to generate a quick sort function in Python");
@@ -75,7 +75,7 @@ public class RoutingByToolCallsExample {
         try {
             Msg response = routerAgent.call(userMsg).block();
             if (response != null) {
-                System.out.println("Agent> " + MsgUtils.getTextContent(response) + "\n");
+                System.out.println("Agent> " + response.getTextContent() + "\n");
             } else {
                 System.out.println("Agent> [No response]\n");
             }
@@ -109,7 +109,7 @@ public class RoutingByToolCallsExample {
                                             + " demand.")
                             .model(
                                     DashScopeChatModel.builder()
-                                            .apiKey(ExampleUtils.getDashScopeApiKey())
+                                            .apiKey(System.getenv("DASHSCOPE_API_KEY"))
                                             .modelName("qwen-max")
                                             .stream(true)
                                             .enableThinking(true)
@@ -142,7 +142,7 @@ public class RoutingByToolCallsExample {
                             .sysPrompt("You're a poet. Generate poems based on the demand.")
                             .model(
                                     DashScopeChatModel.builder()
-                                            .apiKey(ExampleUtils.getDashScopeApiKey())
+                                            .apiKey(System.getenv("DASHSCOPE_API_KEY"))
                                             .modelName("qwen-max")
                                             .stream(true)
                                             .enableThinking(true)

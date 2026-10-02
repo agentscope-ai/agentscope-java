@@ -17,8 +17,8 @@ package io.agentscope.harness.agent.filesystem.local;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
-import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.IOException;
@@ -318,8 +318,11 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
         try {
             Path workDir = resolveExecuteCwd(runtimeContext);
+            String osName = System.getProperty("os.name").toLowerCase();
             ProcessBuilder pb =
-                    new ProcessBuilder("sh", "-c", command)
+                    (osName.contains("win")
+                                    ? new ProcessBuilder("cmd.exe", "/c", command)
+                                    : new ProcessBuilder("sh", "-c", command))
                             .directory(workDir.toFile())
                             .redirectErrorStream(false);
 

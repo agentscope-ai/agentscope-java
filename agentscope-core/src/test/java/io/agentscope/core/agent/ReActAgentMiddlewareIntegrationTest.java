@@ -22,12 +22,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.Middleware;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
@@ -36,6 +37,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Toolkit;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -74,7 +76,7 @@ class ReActAgentMiddlewareIntegrationTest {
     }
 
     /** Records entry/exit at every middleware hook to a shared trace list. */
-    private static final class RecordingMiddleware implements Middleware {
+    private static final class RecordingMiddleware implements MiddlewareBase {
         private final String tag;
         private final List<String> trace;
 
@@ -85,7 +87,10 @@ class ReActAgentMiddlewareIntegrationTest {
 
         @Override
         public Flux<AgentEvent> onAgent(
-                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":reply:enter");
             return next.apply(input).doOnComplete(() -> trace.add(tag + ":reply:exit"));
         }
@@ -93,6 +98,7 @@ class ReActAgentMiddlewareIntegrationTest {
         @Override
         public Flux<AgentEvent> onReasoning(
                 Agent agent,
+                RuntimeContext ctx,
                 ReasoningInput input,
                 Function<ReasoningInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":reasoning:enter");
@@ -102,6 +108,7 @@ class ReActAgentMiddlewareIntegrationTest {
         @Override
         public Flux<AgentEvent> onModelCall(
                 Agent agent,
+                RuntimeContext ctx,
                 ModelCallInput input,
                 Function<ModelCallInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":modelCall:enter");
@@ -110,19 +117,22 @@ class ReActAgentMiddlewareIntegrationTest {
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":acting:enter");
             return next.apply(input).doOnComplete(() -> trace.add(tag + ":acting:exit"));
         }
 
         @Override
-        public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+        public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
             trace.add(tag + ":systemPrompt");
             return Mono.just(currentPrompt);
         }
     }
 
-    private static ReActAgent buildAgent(ChatModelBase model, List<Middleware> middlewares) {
+    private static ReActAgent buildAgent(ChatModelBase model, List<MiddlewareBase> middlewares) {
         return ReActAgent.builder()
                 .name("asst")
                 .sysPrompt("hello-system")
@@ -182,5 +192,70 @@ class ReActAgentMiddlewareIntegrationTest {
                 reasoningEnters,
                 modelCallEnters,
                 "reasoning and modelCall enter counts must match");
+    }
+
+    /**
+     * Verifies that the serializeOnKey gate is properly released when a middleware
+     * throws an {@link Error} (not {@code Exception}) during event stream processing.
+     *
+     * <p>Without the fix, the first call's lifecycle Mono subscription survives the
+     * external Flux cancellation, holding the per-session serialization gate open
+     * indefinitely. The second same-session call then blocks forever, receiving only
+     * {@code AgentStartEvent} with no further events.
+     *
+     * <p>With the fix ({@code sink.onCancel(disposable)}), the internal lifecycle
+     * subscription is disposed when the external Flux is cancelled, so the gate is
+     * released immediately and the second call proceeds normally.
+     */
+    @Test
+    void serializeOnKeyGateReleasedAfterMiddlewareError() {
+        // Faulty middleware that throws RuntimeException on AgentStart — only on the first call.
+        java.util.concurrent.atomic.AtomicBoolean failed =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        MiddlewareBase faulty =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onAgent(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            AgentInput input,
+                            Function<AgentInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .concatMap(
+                                        event -> {
+                                            if (event instanceof AgentStartEvent
+                                                    && failed.compareAndSet(false, true)) {
+                                                throw new RuntimeException(
+                                                        "Simulated middleware failure");
+                                            }
+                                            return Flux.just(event);
+                                        });
+                    }
+                };
+
+        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(faulty));
+
+        RuntimeContext rc = RuntimeContext.builder().userId("u").sessionId("gate-test").build();
+
+        // First call: middleware throws RuntimeException on AgentStart → stream errors,
+        // onErrorResume swallows it and returns an empty Flux.
+        List<AgentEvent> first =
+                agent.streamEvents(List.of(), rc)
+                        .onErrorResume(t -> Flux.empty())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(first, "first call should return empty list after error");
+        assertEquals(0, first.size(), "first call must yield empty list on error");
+
+        // Second call: same session — must complete within timeout, proving
+        // the serializeOnKey gate was released after the first call's error.
+        List<AgentEvent> second =
+                agent.streamEvents(List.of(), rc).collectList().block(Duration.ofSeconds(10));
+        assertNotNull(second, "second call must complete without hanging");
+        assertTrue(
+                second.size() >= 2,
+                "second call must contain at least AgentStart + AgentEnd; got " + second.size());
+        assertTrue(second.get(0) instanceof AgentStartEvent);
+        assertTrue(second.get(second.size() - 1) instanceof AgentEndEvent);
     }
 }

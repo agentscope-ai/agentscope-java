@@ -26,7 +26,9 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -43,13 +45,14 @@ import reactor.core.scheduler.Schedulers;
  * {@code activatedGroups}) participate in JSON serialization. The in-memory LRU cache itself is
  * runtime state and is reconstructed empty on deserialization.
  */
-@JsonPropertyOrder({"max_cache_files", "max_cache_bytes", "activated_groups"})
+@JsonPropertyOrder({"max_cache_files", "max_cache_bytes", "activated_groups", "spawn_registry"})
 public final class ToolContextState {
 
     private final int maxCacheFiles;
     private final double maxCacheBytes;
     private final List<ReadCacheEntry> readFileCache = new ArrayList<>();
     private final List<String> activatedGroups;
+    private final Map<String, SpawnEntry> spawnRegistry;
 
     private ToolContextState(Builder builder) {
         if (builder.maxCacheFiles <= 1) {
@@ -61,13 +64,15 @@ public final class ToolContextState {
         this.maxCacheFiles = builder.maxCacheFiles;
         this.maxCacheBytes = builder.maxCacheBytes;
         this.activatedGroups = new ArrayList<>(builder.activatedGroups);
+        this.spawnRegistry = new LinkedHashMap<>(builder.spawnRegistry);
     }
 
     @JsonCreator
     static ToolContextState fromJson(
             @JsonProperty("max_cache_files") Integer maxCacheFiles,
             @JsonProperty("max_cache_bytes") Double maxCacheBytes,
-            @JsonProperty("activated_groups") List<String> activatedGroups) {
+            @JsonProperty("activated_groups") List<String> activatedGroups,
+            @JsonProperty("spawn_registry") Map<String, SpawnEntry> spawnRegistry) {
         Builder b = builder();
         if (maxCacheFiles != null) {
             b.maxCacheFiles(maxCacheFiles);
@@ -77,6 +82,9 @@ public final class ToolContextState {
         }
         if (activatedGroups != null) {
             activatedGroups.forEach(b::addActivatedGroup);
+        }
+        if (spawnRegistry != null) {
+            b.spawnRegistry.putAll(spawnRegistry);
         }
         return b.build();
     }
@@ -113,6 +121,59 @@ public final class ToolContextState {
         this.activatedGroups.clear();
         if (groups != null) {
             this.activatedGroups.addAll(groups);
+        }
+    }
+
+    @JsonProperty("spawn_registry")
+    public Map<String, SpawnEntry> getSpawnRegistry() {
+        return Map.copyOf(spawnRegistry);
+    }
+
+    /**
+     * Register a spawned subagent entry so it survives session restore and cross-replica routing.
+     *
+     * @param key the agent key (e.g. {@code agent:general-purpose:uuid})
+     * @param entry the serializable spawn metadata
+     */
+    public void putSpawnEntry(String key, SpawnEntry entry) {
+        if (key != null && entry != null) {
+            this.spawnRegistry.put(key, entry);
+        }
+    }
+
+    /**
+     * Remove a spawn entry by key.
+     */
+    public void removeSpawnEntry(String key) {
+        if (key != null) {
+            this.spawnRegistry.remove(key);
+        }
+    }
+
+    /**
+     * Serializable metadata for a spawned subagent, persisted alongside the parent agent's state
+     * so that {@code agent_send} can lazily rebuild the live {@code Agent} instance after session
+     * restore or on a different replica.
+     */
+    public record SpawnEntry(
+            @JsonProperty("key") String key,
+            @JsonProperty("agent_id") String agentId,
+            @JsonProperty("session_id") String sessionId,
+            @JsonProperty("label") String label,
+            @JsonProperty("depth") int depth) {
+
+        @JsonCreator
+        public SpawnEntry(
+                @JsonProperty("key") String key,
+                @JsonProperty("agent_id") String agentId,
+                @JsonProperty("session_id") String sessionId,
+                @JsonProperty("label") String label,
+                @JsonProperty("depth") int depth) {
+            this.key = key;
+            this.agentId = agentId;
+            this.sessionId = sessionId;
+            this.label = label;
+            this.depth = depth;
         }
     }
 
@@ -205,6 +266,7 @@ public final class ToolContextState {
         private int maxCacheFiles = 100;
         private double maxCacheBytes = 25_000;
         private final List<String> activatedGroups = new ArrayList<>();
+        private final Map<String, SpawnEntry> spawnRegistry = new LinkedHashMap<>();
 
         private Builder() {}
 

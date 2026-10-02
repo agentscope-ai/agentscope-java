@@ -73,7 +73,8 @@ public final class DeepSeekCredential extends CredentialBase {
     public Class<? extends ChatModelBase> getChatModelClass() {
         throw new UnsupportedOperationException(
                 "DeepSeekChatModel is not implemented in agentscope-core yet."
-                        + " Use the OpenAIChatModel against the DeepSeek base URL instead.");
+                        + " Use io.agentscope.extensions.model.openai.OpenAIChatModel against the"
+                        + " DeepSeek base URL instead.");
     }
 
     @Override

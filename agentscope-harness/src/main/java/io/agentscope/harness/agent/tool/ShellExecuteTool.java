@@ -26,6 +26,9 @@ import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
  */
 public class ShellExecuteTool {
 
+    /** Registered tool name (derived from the {@link #execute} method name). */
+    public static final String NAME = "execute";
+
     private final AbstractSandboxFilesystem sandbox;
 
     public ShellExecuteTool(AbstractSandboxFilesystem sandbox) {
@@ -52,7 +55,12 @@ public class ShellExecuteTool {
                     int timeout) {
         String effectiveCommand = command;
         if (workingDirectory != null && !workingDirectory.isBlank()) {
-            effectiveCommand = "cd " + workingDirectory + " && " + command;
+            String wd = workingDirectory.strip();
+            if (wd.startsWith("/") || wd.startsWith("~") || wd.contains("..")) {
+                return "Error: working_directory must be a relative path within the workspace"
+                        + " (absolute paths, '~', and '..' are not allowed).";
+            }
+            effectiveCommand = "cd '" + wd.replace("'", "'\\''") + "' && " + command;
         }
 
         ExecuteResponse result =

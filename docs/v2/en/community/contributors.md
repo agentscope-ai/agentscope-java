@@ -9,6 +9,8 @@ See the full history on [GitHub Contributors](https://github.com/agentscope-ai/a
 |                ![Chickenlj](https://github.com/chickenlj.png)              | [Chickenlj](https://github.com/chickenlj)       | [github.com/chickenlj](https://github.com/chickenlj)       | Core contributor   |
 |  ![LearningGp](https://avatars.githubusercontent.com/u/38268859?s=64&v=4)  | [LearningGp](https://github.com/LearningGp)     | [github.com/LearningGp](https://github.com/LearningGp)     | Core contributor   |
 |  ![fang-tech](https://avatars.githubusercontent.com/u/141339556?s=64&v=4)  | [fang-tech](https://github.com/fang-tech)       | [github.com/fang-tech](https://github.com/fang-tech)       | Active contributor |
+|                 ![flystar32](https://github.com/flystar32.png)             | [flystar32](https://github.com/flystar32)       | [github.com/flystar32](https://github.com/flystar32)       | Active contributor |
+|                 ![albumenj](https://github.com/albumenj.png)               | [albumenj](https://github.com/albumenj)         | [github.com/albumenj](https://github.com/albumenj)         | Active contributor |
 |   ![guanxuc](https://avatars.githubusercontent.com/u/86234262?s=64&v=4)    | [guanxuc](https://github.com/guanxuc)           | [github.com/guanxuc](https://github.com/guanxuc)           | Active contributor |
 |    ![JGoP-L](https://avatars.githubusercontent.com/u/52067013?s=64&v=4)    | [JGoP-L](https://github.com/JGoP-L)             | [github.com/JGoP-L](https://github.com/JGoP-L)             | Active contributor |
 | ![shiyiyue1102](https://avatars.githubusercontent.com/u/20452676?s=64&v=4) | [shiyiyue1102](https://github.com/shiyiyue1102) | [github.com/shiyiyue1102](https://github.com/shiyiyue1102) | Active contributor |

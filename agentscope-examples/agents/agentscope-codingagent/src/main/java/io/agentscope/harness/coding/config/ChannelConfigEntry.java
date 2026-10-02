@@ -18,9 +18,9 @@ package io.agentscope.harness.coding.config;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.DmScope;
 import io.agentscope.harness.coding.CodingBootstrap;
-import io.agentscope.harness.coding.channel.ChannelConfig;
-import io.agentscope.harness.coding.channel.DmScope;
 import java.util.Map;
 
 /**
@@ -28,7 +28,7 @@ import java.util.Map;
  *
  * <p>Defines routing configuration for a channel adapter. The built-in {@code chatui} channel is
  * automatically created from this entry if no programmatic {@link
- * CodingBootstrap.Builder#channel(io.agentscope.harness.coding.channel.Channel...)} registration exists for
+ * CodingBootstrap.Builder#channel(io.agentscope.harness.agent.gateway.channel.Channel...)} registration exists for
  * it. For other channel types, this entry provides the {@link ChannelConfig} routing rules that are
  * applied at bootstrap time.
  *

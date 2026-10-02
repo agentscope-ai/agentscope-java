@@ -166,6 +166,24 @@ public interface StreamableAgent {
     Flux<Event> stream(List<Msg> msgs, StreamOptions options);
 
     /**
+     * Stream execution events with a caller-supplied per-call runtime context.
+     *
+     * <p>Implementations that do not consume {@link RuntimeContext} can rely on this default
+     * bridge and continue using the original two-argument stream method.
+     *
+     * @param msgs Input messages
+     * @param options Stream configuration options
+     * @param context Runtime metadata for this call
+     * @return Flux of events emitted during execution
+     * @deprecated since 2.0.0, for removal. Use {@code ReActAgent#streamEvents(...)} for the
+     *     fine-grained {@code AgentEvent} stream.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    default Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext context) {
+        return stream(msgs, options);
+    }
+
+    /**
      * Stream execution events with structured output support.
      *
      * @param msgs Input messages

@@ -16,6 +16,7 @@
 package io.agentscope.harness.coding.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
@@ -48,7 +49,10 @@ public class ModelCallLimitMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onReasoning(
-            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next) {
         long count = totalCalls.incrementAndGet();
         if (count > globalLimit) {
             log.warn(

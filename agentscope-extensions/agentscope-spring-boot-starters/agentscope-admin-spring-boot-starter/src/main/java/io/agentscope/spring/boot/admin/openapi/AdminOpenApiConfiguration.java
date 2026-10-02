@@ -45,7 +45,7 @@ import org.springframework.context.annotation.Configuration;
  *       routes, so the admin surface shows up as a separate tab in Swagger UI.
  *   <li>An {@link OpenAPI} bean (when none is present) sets sensible title / description /
  *       version metadata and registers one OpenAPI {@link Tag} per {@code AdminCommand}
- *       {@code category} — so Swagger UI groups routes by Session / Agent / System.
+ *       {@code category} — so Swagger UI groups routes by AgentStateStore / Agent / System.
  * </ul>
  *
  * <p>Loaded lazily by {@link io.agentscope.spring.boot.admin.AgentscopeAdminAutoConfiguration};
@@ -70,7 +70,7 @@ public class AdminOpenApiConfiguration {
 
     /**
      * Provide a default top-level {@link OpenAPI} bean if the consumer has not declared one.
-     * Tags are seeded from the {@link AdminCommandRegistry} so each category Session/Agent/System
+     * Tags are seeded from the {@link AdminCommandRegistry} so each category AgentStateStore/Agent/System
      * gets its own labelled group in Swagger UI.
      */
     @Bean

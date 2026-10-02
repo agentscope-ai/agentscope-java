@@ -553,6 +553,32 @@ class ReActAgentTest {
     }
 
     @Test
+    @DisplayName("Should switch to fallback model when primary fails")
+    void testFallbackModel() {
+        String errorMessage = "Primary model unavailable";
+        MockModel primaryModel = new MockModel("").withError(errorMessage);
+        MockModel fallbackModel = new MockModel("Fallback response");
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .fallbackModel(fallbackModel)
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals("Fallback response", TestUtils.extractTextContent(response));
+        assertEquals(1, primaryModel.getCallCount(), "Primary model should be tried once");
+        assertEquals(1, fallbackModel.getCallCount(), "Fallback model should be called once");
+    }
+
+    @Test
     @DisplayName("Should support streaming responses")
     void testStreaming() {
         // Setup model with multiple response chunks
@@ -636,13 +662,18 @@ class ReActAgentTest {
     @Test
     @DisplayName("Should have interrupt API methods")
     void testInterruptAfterToolCompletion() {
-        // Verify ReActAgent inherits interrupt API from AgentBase
-        assertNotNull(agent.getInterruptFlag(), "Should have interrupt flag");
-        assertFalse(agent.getInterruptFlag().get(), "Interrupt flag should be false initially");
+        // ReActAgent routes interrupts to the active session's per-session InterruptControl
+        // (on its AgentState) rather than a shared instance flag, so concurrent sessions are
+        // isolated.
+        assertFalse(
+                agent.getAgentState().interruptControl().isInterrupted(),
+                "Session should not be interrupted initially");
 
         // Test interrupt() method
         agent.interrupt();
-        assertTrue(agent.getInterruptFlag().get(), "Interrupt flag should be set");
+        assertTrue(
+                agent.getAgentState().interruptControl().isInterrupted(),
+                "Session interrupt control should be set");
     }
 
     @Test
@@ -650,12 +681,15 @@ class ReActAgentTest {
     void testInterruptRecoveryMessage() {
         Msg interruptMsg = TestUtils.createUserMessage("User", "Stop processing");
 
-        // Test interrupt(Msg) method
+        // Test interrupt(Msg) method: routed to the active session's InterruptControl
         agent.interrupt(interruptMsg);
-        assertTrue(agent.getInterruptFlag().get(), "Interrupt flag should be set");
-
-        // Note: The interrupt message is stored but only added to memory during handleInterrupt
-        // This test just verifies the API accepts the message and sets the flag
+        assertTrue(
+                agent.getAgentState().interruptControl().isInterrupted(),
+                "Session interrupt control should be set");
+        assertEquals(
+                interruptMsg,
+                agent.getAgentState().interruptControl().getUserMessage(),
+                "User message should be stored on the session interrupt control");
     }
 
     @Test

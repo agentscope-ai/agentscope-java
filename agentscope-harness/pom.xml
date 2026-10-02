@@ -58,35 +58,6 @@
             <version>1.27.1</version>
         </dependency>
 
-        <!-- Redis snapshot backend -->
-        <dependency>
-            <groupId>redis.clients</groupId>
-            <artifactId>jedis</artifactId>
-        </dependency>
-
-        <!-- Alibaba Cloud OSS snapshot backend -->
-        <dependency>
-            <groupId>com.aliyun.oss</groupId>
-            <artifactId>aliyun-sdk-oss</artifactId>
-            <version>3.18.5</version>
-        </dependency>
-
-        <!-- Optional sandbox backends (io.agentscope.harness.agent.sandbox.impl.*) -->
-        <dependency>
-            <groupId>io.fabric8</groupId>
-            <artifactId>kubernetes-client</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.google.protobuf</groupId>
-            <artifactId>protobuf-java</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>io.fabric8</groupId>
-            <artifactId>kubernetes-server-mock</artifactId>
-            <scope>test</scope>
-        </dependency>
-
         <!-- SQLite for best-effort local workspace index -->
         <dependency>
             <groupId>org.xerial</groupId>

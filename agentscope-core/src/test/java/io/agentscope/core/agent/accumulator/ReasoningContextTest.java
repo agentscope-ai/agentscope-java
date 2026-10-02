@@ -75,6 +75,36 @@ class ReasoningContextTest {
     }
 
     @Test
+    @DisplayName("Should propagate cached tokens from chunk usage")
+    void testCachedTokensPropagation() {
+        ChatUsage usage =
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(50)
+                        .cachedTokens(80)
+                        .time(1.5)
+                        .build();
+
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .usage(usage)
+                        .build();
+
+        context.processChunk(chunk);
+
+        Msg msg = context.buildFinalMessage();
+        assertNotNull(msg);
+        assertNotNull(msg.getChatUsage());
+        assertEquals(80, msg.getChatUsage().getCachedTokens());
+
+        ChatUsage resultUsage = context.getChatUsage();
+        assertNotNull(resultUsage);
+        assertEquals(80, resultUsage.getCachedTokens());
+    }
+
+    @Test
     @DisplayName("Should accumulate ChatUsage from multiple chunks")
     void testMultipleChunksUsageAccumulation() {
         // First chunk

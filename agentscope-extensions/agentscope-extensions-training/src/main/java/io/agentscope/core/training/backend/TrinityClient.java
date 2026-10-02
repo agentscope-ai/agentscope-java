@@ -35,7 +35,7 @@ import reactor.core.publisher.Mono;
  *
  * <p>Simplified Trinity client that only encapsulates Feedback and Commit APIs.
  *
- * <p>Chat API is no longer called through this client, but uses AgentScope's {@link io.agentscope.core.model.OpenAIChatModel} directly,
+ * <p>Chat API is no longer called through this client, but uses AgentScope's {@link io.agentscope.extensions.model.openai.OpenAIChatModel} directly,
  * because Trinity's Chat API is fully compatible with OpenAI format.
  *
  * <p>This client is only responsible for Trinity-specific training APIs:

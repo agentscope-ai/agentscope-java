@@ -33,23 +33,21 @@ agentscope:
 
 随后会自动注册 `/tasks` 系列 REST 接口（基于 Agent Protocol 规范）。
 
-## 并发执行的注意事项
+## 并发执行
 
-`HarnessAgent` 默认是单例的，但 Agent Protocol 协议下每个任务可能并行运行。两种处理方式：
+Agent 在调用之间是无状态的——单例即可服务多个并发任务。每个任务通过 `RuntimeContext` 携带独立的 `(userId, sessionId)`，状态完全隔离：
 
 ```java
-// 方式 1：把 HarnessAgent 注册成 prototype scope，每个任务一个新实例
 @Bean
-@Scope("prototype")
 public HarnessAgent harnessAgent() {
-    return HarnessAgent.builder().build();
+    return HarnessAgent.builder()
+            .name("protocol-agent")
+            .model("dashscope:qwen-plus")
+            .build();
 }
-
-// 方式 2：单例 + 关闭运行检查（仅当并发执行确实安全时使用）
-HarnessAgent.builder()
-    .checkRunning(false)
-    .build();
 ```
+
+同一 session 的并发请求会自动串行化；不同 session 完全并行。
 
 ## 配置项
 

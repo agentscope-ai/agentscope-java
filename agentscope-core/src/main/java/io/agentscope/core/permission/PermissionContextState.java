@@ -136,6 +136,28 @@ public final class PermissionContextState {
         return new Builder();
     }
 
+    /**
+     * Returns a copy of this context with the {@link PermissionMode} replaced and every working
+     * directory and rule preserved. Used to switch the evaluation mode at runtime (e.g. flipping a
+     * session into {@link PermissionMode#BYPASS}) without losing the configured rules.
+     *
+     * @param newMode the mode the returned context should use
+     * @return a new context identical to this one except for its mode (returns {@code this} when the
+     *     mode is unchanged)
+     */
+    public PermissionContextState withMode(PermissionMode newMode) {
+        Objects.requireNonNull(newMode, "newMode must not be null");
+        if (newMode == this.mode) {
+            return this;
+        }
+        Builder b = builder().mode(newMode);
+        workingDirectories.forEach(b::addWorkingDirectory);
+        copyInto(allowRules, b::addAllowRule);
+        copyInto(denyRules, b::addDenyRule);
+        copyInto(askRules, b::addAskRule);
+        return b.build();
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {

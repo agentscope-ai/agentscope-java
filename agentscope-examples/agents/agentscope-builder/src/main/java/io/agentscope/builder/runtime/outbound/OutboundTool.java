@@ -15,9 +15,9 @@
  */
 package io.agentscope.builder.runtime.outbound;
 
-import io.agentscope.builder.runtime.gateway.ChannelManager;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.harness.agent.gateway.ChannelManager;
 import java.util.Objects;
 
 /**

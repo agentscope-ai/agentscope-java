@@ -18,31 +18,30 @@ package io.agentscope.harness.coding;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.Model;
+import io.agentscope.extensions.channel.dingtalk.DingTalkChannel;
+import io.agentscope.extensions.channel.feishu.FeishuChannel;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
-import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.Gateway;
+import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
-import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
-import io.agentscope.harness.agent.store.BaseStore;
+import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import io.agentscope.harness.coding.agent.CodingAgentFactory;
 import io.agentscope.harness.coding.agent.ReviewerAgentFactory;
-import io.agentscope.harness.coding.channel.Channel;
-import io.agentscope.harness.coding.channel.ChannelConfig;
-import io.agentscope.harness.coding.channel.chatui.ChatUiChannel;
-import io.agentscope.harness.coding.channel.dingtalk.DingtalkChannel;
-import io.agentscope.harness.coding.channel.feishu.FeishuChannel;
 import io.agentscope.harness.coding.config.AgentConfigEntry;
 import io.agentscope.harness.coding.config.AgentscopeConfig;
 import io.agentscope.harness.coding.config.ChannelConfigEntry;
 import io.agentscope.harness.coding.config.SkillRepositorySupport;
-import io.agentscope.harness.coding.gateway.ChannelManager;
-import io.agentscope.harness.coding.gateway.Gateway;
 import io.agentscope.harness.coding.gateway.HarnessGateway;
 import io.agentscope.harness.coding.middleware.MessageQueueMiddleware;
 import io.agentscope.harness.coding.middleware.ModelCallLimitMiddleware;
@@ -288,10 +287,10 @@ public final class CodingBootstrap {
             }
             if (ChatUiChannel.CHANNEL_ID.equals(channelId)) {
                 merged.put(channelId, ChatUiChannel.create(ce.toChannelConfig(channelId)));
-            } else if (DingtalkChannel.TYPE.equals(channelId)) {
+            } else if (DingTalkChannel.TYPE.equals(channelId)) {
                 merged.put(
                         channelId,
-                        DingtalkChannel.fromProperties(
+                        DingTalkChannel.fromProperties(
                                 channelId, ce.toChannelConfig(channelId), ce.getProperties()));
             } else if (FeishuChannel.TYPE.equals(channelId)) {
                 merged.put(
@@ -524,11 +523,6 @@ public final class CodingBootstrap {
                 spec.workspaceRoot(CodingAgentFactory.resolveSandboxWorkingDir());
                 spec.isolationScope(IsolationScope.SESSION);
                 b.filesystem(spec);
-                // Single-node deployment: SqliteBaseStore is local, so a distributed Session
-                // would be inconsistent. Switch to RedisSession + a distributed store together
-                // if this ever runs multi-replica.
-                b.sandboxDistributed(
-                        SandboxDistributedOptions.builder().requireDistributed(false).build());
             }
         }
 
@@ -654,7 +648,7 @@ public final class CodingBootstrap {
 
             ChannelManager channelMgr = new ChannelManager();
             HarnessGateway gateway = HarnessGateway.create(sam, channelMgr);
-            TaskRepository taskRepo = new DefaultTaskRepository();
+            TaskRepository taskRepo = new WorkspaceTaskRepository(wsManager, main);
             SessionsTool sessionsTool = new SessionsTool(sam, taskRepo, null, 0);
 
             // ---- Phase 2: Build agents with SessionsTool injected ----

@@ -37,7 +37,7 @@ Agent as Tool 允许将一个智能体注册为工具，供其他智能体调用
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 
 // 创建模型
 DashScopeChatModel model = DashScopeChatModel.builder()

@@ -53,7 +53,7 @@ class SkillUsageMiddlewareTest {
                 new ActingInput(
                         List.of(callOf("load_skill_through_path", Map.of("skillId", "csv-sum"))));
 
-        mw.onActing(null, in, x -> Flux.empty()).blockLast();
+        mw.onActing(null, null, in, x -> Flux.empty()).blockLast();
 
         assertEquals(1, store.get("csv-sum").orElseThrow().viewCount());
     }
@@ -67,7 +67,7 @@ class SkillUsageMiddlewareTest {
                                         "load_skill_through_path",
                                         Map.of("skillId", "external-skill"))));
 
-        mw.onActing(null, in, x -> Flux.empty()).blockLast();
+        mw.onActing(null, null, in, x -> Flux.empty()).blockLast();
 
         // No record was created (provenance gate refuses to track unknown skills).
         assertTrue(store.get("external-skill").isEmpty());
@@ -78,7 +78,7 @@ class SkillUsageMiddlewareTest {
         store.markAgentDraft("csv-sum", null);
         ActingInput in = new ActingInput(List.of(callOf("read_file", Map.of("path", "/tmp/x"))));
 
-        mw.onActing(null, in, x -> Flux.empty()).blockLast();
+        mw.onActing(null, null, in, x -> Flux.empty()).blockLast();
         assertEquals(0, store.get("csv-sum").orElseThrow().viewCount());
     }
 
@@ -93,7 +93,7 @@ class SkillUsageMiddlewareTest {
                                 callOf("load_skill_through_path", Map.of("skillId", "b")),
                                 callOf("read_file", Map.of("path", "/tmp/x"))));
 
-        mw.onActing(null, in, x -> Flux.empty()).blockLast();
+        mw.onActing(null, null, in, x -> Flux.empty()).blockLast();
         assertEquals(1, store.get("a").orElseThrow().viewCount());
         assertEquals(1, store.get("b").orElseThrow().viewCount());
     }
@@ -103,7 +103,7 @@ class SkillUsageMiddlewareTest {
         store.markAgentDraft("workflow", null);
         ActingInput in = new ActingInput(List.of(callOf("use_skill", Map.of("name", "workflow"))));
 
-        mw.onActing(null, in, x -> Flux.empty()).blockLast();
+        mw.onActing(null, null, in, x -> Flux.empty()).blockLast();
         assertEquals(1, store.get("workflow").orElseThrow().useCount());
         assertEquals(0, store.get("workflow").orElseThrow().viewCount());
     }
@@ -112,7 +112,7 @@ class SkillUsageMiddlewareTest {
     void missingSkillIdParam_isToleratedSilently() {
         ActingInput in =
                 new ActingInput(List.of(callOf("load_skill_through_path", Map.of("foo", "bar"))));
-        mw.onActing(null, in, x -> Flux.empty()).blockLast();
+        mw.onActing(null, null, in, x -> Flux.empty()).blockLast();
         // No exception, no records created.
         assertTrue(store.load().isEmpty());
     }

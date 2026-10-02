@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
@@ -40,7 +39,7 @@ import org.slf4j.LoggerFactory;
  * <h2>doFinally</h2>
  * <ol>
  *   <li>Persist sandbox session state via {@link SandboxManager} and
- *       {@link io.agentscope.harness.agent.sandbox.SandboxStateStore}</li>
+ *       {@link io.agentscope.harness.agent.sandbox.SessionSandboxStateStore}</li>
  *   <li>Release the session via {@link SandboxManager} (stop + optional shutdown)</li>
  *   <li>Clear the session reference from the filesystem proxy</li>
  * </ol>
@@ -48,7 +47,7 @@ import org.slf4j.LoggerFactory;
  * <p>Post-call failures (persist, release) are logged but do not propagate — this ensures
  * the agent call result is always returned to the caller even if sandbox cleanup fails.
  */
-public class SandboxLifecycleMiddleware implements MiddlewareBase {
+public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(SandboxLifecycleMiddleware.class);
 

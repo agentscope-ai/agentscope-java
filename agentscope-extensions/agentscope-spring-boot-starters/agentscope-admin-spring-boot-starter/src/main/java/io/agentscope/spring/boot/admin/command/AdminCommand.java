@@ -26,7 +26,7 @@ import java.util.List;
  *
  * @param id stable internal id, e.g. {@code session.compact}
  * @param title human-friendly label, e.g. "Compact session"
- * @param category coarse grouping, e.g. {@code Session}, {@code Agent}, {@code System}
+ * @param category coarse grouping, e.g. {@code AgentStateStore}, {@code Agent}, {@code System}
  * @param plane DATA = per-session REST; CONTROL = Actuator
  * @param httpMethod HTTP verb the command is reached with, e.g. {@code GET}, {@code POST}
  * @param httpPath full route from the application root, e.g.

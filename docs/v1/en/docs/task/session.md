@@ -195,7 +195,7 @@ public class SessionExample {
 
 ## Custom Session
 
-Implement the `Session` interface to create custom storage backends:
+Implement the `Session` interface to create custom storage stores:
 
 ```java
 import io.agentscope.core.session.Session;

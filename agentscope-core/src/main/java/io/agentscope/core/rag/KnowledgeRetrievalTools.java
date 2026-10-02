@@ -17,6 +17,7 @@ package io.agentscope.core.rag;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
@@ -133,17 +134,21 @@ public class KnowledgeRetrievalTools {
                             description = "Maximum number of documents to retrieve (default: 5)",
                             required = false)
                     Integer limit,
-            Agent agent) {
+            Agent agent,
+            RuntimeContext ctx) {
 
         // Set default value
         if (limit == null) {
             limit = 5;
         }
 
-        // Extract conversation history from agent if available
+        // Extract conversation history from the call-scoped state if available
         List<Msg> conversationHistory = null;
-        if (agent instanceof ReActAgent reActAgent) {
-            conversationHistory = reActAgent.getAgentState().getContext();
+        if (agent instanceof ReActAgent) {
+            var state = RuntimeContext.resolveAgentState(ctx, agent);
+            if (state != null) {
+                conversationHistory = state.getContext();
+            }
         }
 
         // Build retrieval config with conversation history

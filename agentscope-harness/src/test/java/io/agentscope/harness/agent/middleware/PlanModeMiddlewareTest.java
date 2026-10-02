@@ -91,6 +91,7 @@ class PlanModeMiddlewareTest {
         List<AgentEvent> events =
                 mw.onActing(
                                 agent,
+                                null,
                                 new ActingInput(calls),
                                 ai -> {
                                     forwarded.set(ai);
@@ -123,6 +124,7 @@ class PlanModeMiddlewareTest {
         AtomicReference<ActingInput> forwarded = new AtomicReference<>();
         mw.onActing(
                         agent,
+                        null,
                         new ActingInput(calls),
                         ai -> {
                             forwarded.set(ai);
@@ -142,13 +144,83 @@ class PlanModeMiddlewareTest {
         StubAgent agent = new StubAgent("tester", state);
         PlanModeMiddleware mw = new PlanModeMiddleware(manager, READ_ONLY);
 
-        String inactive = mw.onSystemPrompt(agent, "base").block();
+        String inactive = mw.onSystemPrompt(agent, null, "base").block();
         assertFalse(inactive.contains("PLAN MODE"));
 
         manager.enter(state);
-        String active = mw.onSystemPrompt(agent, "base").block();
+        String active = mw.onSystemPrompt(agent, null, "base").block();
         assertTrue(active.contains("PLAN MODE"));
         assertTrue(active.startsWith("base"));
+        // Banner includes the plan file path
+        assertTrue(active.contains("plans/PLAN.md"), "banner should include plan file path");
+    }
+
+    @Test
+    void buildModeHintSurfacesPlanFilePath(@TempDir Path project, @TempDir Path workspace) {
+        PlanModeManager manager = manager(project, workspace);
+        AgentState state = AgentState.builder().build();
+        StubAgent agent = new StubAgent("tester", state);
+        PlanModeMiddleware mw = new PlanModeMiddleware(manager, READ_ONLY);
+
+        // Enter then exit plan mode — simulates plan_enter → plan_write → plan_exit
+        manager.enter(state);
+        manager.exit(state);
+        assertFalse(state.getPlanModeContext().isPlanActive());
+
+        String prompt = mw.onSystemPrompt(agent, null, "base").block();
+        // BUILD mode should surface the plan file path
+        assertTrue(prompt.contains("plans/PLAN.md"), "build mode should hint plan path");
+        assertFalse(prompt.contains("PLAN MODE is active"), "should not show plan mode banner");
+    }
+
+    @Test
+    void buildModeNoHintWhenNoPlanFile(@TempDir Path project, @TempDir Path workspace) {
+        PlanModeManager manager = manager(project, workspace);
+        AgentState state = AgentState.builder().build();
+        StubAgent agent = new StubAgent("tester", state);
+        PlanModeMiddleware mw = new PlanModeMiddleware(manager, READ_ONLY);
+
+        // Never entered plan mode — no plan file recorded
+        String prompt = mw.onSystemPrompt(agent, null, "base").block();
+        assertEquals("base", prompt);
+    }
+
+    @Test
+    void allowsSubagentToolsInPlanMode(@TempDir Path project, @TempDir Path workspace) {
+        PlanModeManager manager = manager(project, workspace);
+        AgentState state = AgentState.builder().build();
+        manager.enter(state);
+        StubAgent agent = new StubAgent("tester", state);
+        PlanModeMiddleware mw = new PlanModeMiddleware(manager, READ_ONLY);
+
+        List<ToolUseBlock> calls =
+                List.of(
+                        call("1", "agent_spawn"),
+                        call("2", "agent_send"),
+                        call("3", "agent_list"),
+                        call("4", "task_output"),
+                        call("5", "task_list"));
+
+        AtomicReference<ActingInput> forwarded = new AtomicReference<>();
+        List<AgentEvent> events =
+                mw.onActing(
+                                agent,
+                                null,
+                                new ActingInput(calls),
+                                ai -> {
+                                    forwarded.set(ai);
+                                    return Flux.empty();
+                                })
+                        .collectList()
+                        .block();
+
+        // All subagent/task tools should pass through without denial.
+        List<String> forwardedNames =
+                forwarded.get().toolCalls().stream().map(ToolUseBlock::getName).toList();
+        assertEquals(
+                List.of("agent_spawn", "agent_send", "agent_list", "task_output", "task_list"),
+                forwardedNames);
+        assertTrue(events.isEmpty(), "no denied events expected");
     }
 
     /** Minimal Agent stub exposing only name + state. */

@@ -36,7 +36,7 @@ or a company, that's Builder.
 | **Self-evolution** | ✅ Same as claw — but inside each user's own workspace |
 | **Sharing** | ✅ With specific users, groups, or globally — and with run / edit / fork tiers |
 | **Distribution** | ✅ Horizontally scalable once the remote filesystem and a distributed session backend are configured |
-| **Filesystem** | `CompositeFilesystem` — composes per-user namespaced storage with optional sandbox / remote backends |
+| **Filesystem** | `CompositeFilesystem` — composes per-user namespaced storage with optional sandbox / remote stores |
 
 ### Architecture
 
@@ -204,7 +204,7 @@ builder:
     fs-spec: remote
 ```
 
-Both agent runtime and workspace management use a distributed `BaseStore` backend. Agent filesystem operations go through `RemoteFilesystem` / `CompositeFilesystem`, and the web API workspace store also uses `RemoteFilesystem`.
+Both agent runtime and workspace management use a distributed `BaseStore` store. Agent filesystem operations go through `RemoteFilesystem` / `CompositeFilesystem`, and the web API workspace store also uses `RemoteFilesystem`.
 
 **Prerequisites:**
 - A `BaseStore` Spring bean must be provided (e.g. Redis, OSS, or a custom implementation)

@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent.tool;
 
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.permission.PermissionContextState;
@@ -55,8 +54,7 @@ public final class PlanModeTools {
     private PlanModeTools() {}
 
     private static AgentState stateOf(ToolCallParam param) {
-        Agent agent = param.getAgent();
-        return agent == null ? null : agent.getAgentState();
+        return RuntimeContext.resolveAgentState(param.getRuntimeContext(), param.getAgent());
     }
 
     private static ToolResultBlock result(ToolCallParam param, String text) {

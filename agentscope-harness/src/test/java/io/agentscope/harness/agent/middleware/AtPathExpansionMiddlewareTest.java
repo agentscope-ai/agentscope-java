@@ -182,6 +182,7 @@ class AtPathExpansionMiddlewareTest {
         List<Msg> captured = new ArrayList<>();
         mw.onAgent(
                         (Agent) null,
+                        null,
                         input,
                         in -> {
                             captured.addAll(in.msgs());

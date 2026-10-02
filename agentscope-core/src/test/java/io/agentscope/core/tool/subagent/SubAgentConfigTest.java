@@ -23,8 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -47,8 +47,8 @@ class SubAgentConfigTest {
             assertNull(config.getDescription());
             assertTrue(config.isForwardEvents());
             assertNull(config.getStreamOptions());
-            assertNotNull(config.getSession());
-            assertInstanceOf(InMemorySession.class, config.getSession());
+            assertNotNull(config.getStateStore());
+            assertInstanceOf(InMemoryAgentStateStore.class, config.getStateStore());
         }
 
         @Test
@@ -59,10 +59,10 @@ class SubAgentConfigTest {
         }
 
         @Test
-        @DisplayName("Should use InMemorySession by default")
+        @DisplayName("Should use InMemoryAgentStateStore by default")
         void testDefaultSession() {
             SubAgentConfig config = SubAgentConfig.defaults();
-            assertInstanceOf(InMemorySession.class, config.getSession());
+            assertInstanceOf(InMemoryAgentStateStore.class, config.getStateStore());
         }
     }
 
@@ -111,21 +111,21 @@ class SubAgentConfigTest {
         }
 
         @Test
-        @DisplayName("Should build config with custom Session")
+        @DisplayName("Should build config with custom AgentStateStore")
         void testCustomSession() {
-            Session customSession = new InMemorySession();
+            AgentStateStore customSession = new InMemoryAgentStateStore();
 
-            SubAgentConfig config = SubAgentConfig.builder().session(customSession).build();
+            SubAgentConfig config = SubAgentConfig.builder().stateStore(customSession).build();
 
-            assertNotNull(config.getSession());
-            assertEquals(customSession, config.getSession());
+            assertNotNull(config.getStateStore());
+            assertEquals(customSession, config.getStateStore());
         }
 
         @Test
         @DisplayName("Should build config with all custom values")
         void testAllCustomValues() {
             StreamOptions streamOptions = StreamOptions.builder().incremental(false).build();
-            Session customSession = new InMemorySession();
+            AgentStateStore customSession = new InMemoryAgentStateStore();
 
             SubAgentConfig config =
                     SubAgentConfig.builder()
@@ -133,18 +133,18 @@ class SubAgentConfigTest {
                             .description("Ask the expert")
                             .forwardEvents(true)
                             .streamOptions(streamOptions)
-                            .session(customSession)
+                            .stateStore(customSession)
                             .build();
 
             assertEquals("expert_agent", config.getToolName());
             assertEquals("Ask the expert", config.getDescription());
             assertTrue(config.isForwardEvents());
             assertEquals(streamOptions, config.getStreamOptions());
-            assertEquals(customSession, config.getSession());
+            assertEquals(customSession, config.getStateStore());
         }
 
         @Test
-        @DisplayName("Should use InMemorySession when session not specified")
+        @DisplayName("Should use InMemoryAgentStateStore when session not specified")
         void testDefaultSessionWhenNotSpecified() {
             SubAgentConfig config =
                     SubAgentConfig.builder()
@@ -152,8 +152,8 @@ class SubAgentConfigTest {
                             .description("Test description")
                             .build();
 
-            assertNotNull(config.getSession());
-            assertInstanceOf(InMemorySession.class, config.getSession());
+            assertNotNull(config.getStateStore());
+            assertInstanceOf(InMemoryAgentStateStore.class, config.getStateStore());
         }
 
         @Test
@@ -167,7 +167,7 @@ class SubAgentConfigTest {
                             .description("desc")
                             .forwardEvents(true)
                             .streamOptions(null)
-                            .session(new InMemorySession())
+                            .stateStore(new InMemoryAgentStateStore())
                             .build();
 
             assertNotNull(config);
@@ -200,13 +200,14 @@ class SubAgentConfigTest {
         }
 
         @Test
-        @DisplayName("getSession() should never return null")
+        @DisplayName("getStateStore() should never return null")
         void testGetSessionNeverNull() {
             SubAgentConfig config = SubAgentConfig.builder().build();
-            assertNotNull(config.getSession());
+            assertNotNull(config.getStateStore());
 
-            SubAgentConfig configWithNullSession = SubAgentConfig.builder().session(null).build();
-            assertNotNull(configWithNullSession.getSession());
+            SubAgentConfig configWithNullSession =
+                    SubAgentConfig.builder().stateStore(null).build();
+            assertNotNull(configWithNullSession.getStateStore());
         }
     }
 

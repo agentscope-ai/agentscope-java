@@ -248,6 +248,82 @@ The `ToolBase` dangerous-path list is maintained in `ToolDangerousPathConstants`
 | Credentials | `.env`, `.env.local`, `.npmrc`, `.pypirc`, `.aws/credentials` |
 | Directories | `.git/`, `.ssh/`, `.aws/`, `.kube/` |
 
+## HITL integration
+
+When the permission engine returns an ASK decision for a tool call, the agent pauses instead of executing and returns a response with `GenerateReason.PERMISSION_ASKING`. The caller inspects this, presents the pending operation to the user, and resumes the agent after collecting a decision.
+
+### Interaction flow
+
+1. Configure ASK rules for tools that require human confirmation
+2. Agent pauses on ASK tools, returning `PERMISSION_ASKING`
+3. Caller checks `getGenerateReason()` and shows the pending tool calls to the user
+4. After user confirms, send a new message to resume the agent
+
+```java
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.permission.PermissionRule;
+
+// 1. Configure permissions: safe_read auto-allowed, dangerous_delete requires confirmation
+PermissionContextState permCtx =
+        PermissionContextState.builder()
+                .mode(PermissionMode.DEFAULT)
+                .addAllowRule(
+                        "safe_read",
+                        new PermissionRule(
+                                "safe_read", null, PermissionBehavior.ALLOW, "policy"))
+                .addAskRule(
+                        "dangerous_delete",
+                        new PermissionRule(
+                                "dangerous_delete", null, PermissionBehavior.ASK, "policy"))
+                .build();
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("GuardedAgent")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .permissionContext(permCtx)
+                .build();
+
+// 2. Call the agent
+Msg result = agent.call(new UserMessage("Delete /tmp/important.txt")).block();
+
+// 3. Check whether user confirmation is needed
+if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+    // Show the pending tool calls to the user
+    result.getContent().forEach(block -> System.out.println("Pending: " + block));
+
+    // 4. Collect the user's decision and resume the agent
+    boolean approved = askUser();
+    String resumeText = approved ? "yes, proceed" : "no, cancel";
+    Msg finalResult = agent.call(new UserMessage(resumeText)).block();
+}
+```
+
+### Unattended mode
+
+In CI or cron-job scenarios with no human operator, set the mode to `DONT_ASK` so that all ASK decisions degrade to DENY automatically:
+
+```java
+PermissionContextState headless =
+        PermissionContextState.builder()
+                .mode(PermissionMode.DONT_ASK)
+                .addAllowRule(
+                        "safe_read",
+                        new PermissionRule(
+                                "safe_read", null, PermissionBehavior.ALLOW, "policy"))
+                .build();
+// ASK-rule hits are auto-denied — no blocking wait
+```
+
+Full runnable example: `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`.
+
 ## Common recipes
 
 The examples below show how to configure `permissionContext` for typical deployment scenarios. Each recipe combines a mode with a rule set tuned for one use case.

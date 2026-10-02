@@ -48,6 +48,35 @@ class MsgUsageSerializationTest {
     }
 
     @Test
+    void cachedTokensRoundTripViaJson() {
+        ChatUsage usage =
+                ChatUsage.builder().inputTokens(100).outputTokens(50).cachedTokens(30).build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .textContent("hello")
+                        .usage(usage)
+                        .build();
+
+        assertEquals(30, msg.getUsage().getCachedTokens());
+
+        String json = JsonUtils.getJsonCodec().toJson(msg);
+        Msg deserialized = JsonUtils.getJsonCodec().fromJson(json, Msg.class);
+
+        assertNotNull(deserialized.getUsage());
+        assertEquals(100, deserialized.getUsage().getInputTokens());
+        assertEquals(50, deserialized.getUsage().getOutputTokens());
+        assertEquals(30, deserialized.getUsage().getCachedTokens());
+    }
+
+    @Test
+    void cachedTokensDefaultsToZeroForLegacyConstructor() {
+        ChatUsage usage = new ChatUsage(100, 50, 1.5);
+        assertEquals(0, usage.getCachedTokens());
+    }
+
+    @Test
     void usageNullByDefault() {
         Msg msg = Msg.builder().name("user").role(MsgRole.USER).textContent("hi").build();
 

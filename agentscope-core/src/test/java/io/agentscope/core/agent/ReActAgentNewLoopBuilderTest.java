@@ -91,7 +91,7 @@ class ReActAgentNewLoopBuilderTest {
         List<MiddlewareBase> registered = agent.getMiddlewares();
         assertTrue(registered.stream().anyMatch(m -> m instanceof GracefulShutdownMiddleware));
         assertTrue(registered.containsAll(mw));
-        assertNotNull(agent.getState());
+        assertNotNull(agent.getAgentState());
         assertNotNull(agent.getModelConfig());
         assertNotNull(agent.getReactConfig());
         assertNotNull(agent.getPermissionEngine());
@@ -111,6 +111,29 @@ class ReActAgentNewLoopBuilderTest {
     }
 
     @Test
+    void fromAgentCopiesModelResilienceConfig() {
+        ChatModelBase model = newFakeModel();
+        ChatModelBase fallback = newFakeModel();
+
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("source")
+                        .sysPrompt("sys")
+                        .model(model)
+                        .fallbackModel(fallback)
+                        .maxRetries(7)
+                        .toolkit(new Toolkit())
+                        .build();
+
+        ReActAgent copy = ReActAgent.Builder.fromAgent(source).build();
+
+        assertNotNull(copy.getModelConfig());
+        assertEquals(7, copy.getModelConfig().maxRetries());
+        assertSame(fallback, copy.getModelConfig().fallbackModel());
+        assertSame(model, copy.getModel());
+    }
+
+    @Test
     void observeAddsMessagesToState() {
         ReActAgent agent =
                 ReActAgent.builder().name("a").model(newFakeModel()).toolkit(new Toolkit()).build();
@@ -121,6 +144,6 @@ class ReActAgentNewLoopBuilderTest {
         StepVerifier.create(agent.observe(m1)).verifyComplete();
         StepVerifier.create(agent.observe(List.of(m2))).verifyComplete();
 
-        assertEquals(2, agent.getState().getContext().size());
+        assertEquals(2, agent.getAgentState().getContext().size());
     }
 }

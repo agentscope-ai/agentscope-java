@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.skill.runtime;
 
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.util.MarkdownSkillParser;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.harness.agent.skill.SkillResources;
@@ -170,6 +171,13 @@ public final class SkillLoadTool implements AgentTool {
     //  Formatting helpers
     // ---------------------------------------------------------------------
 
+    /**
+     * Wrapping fence used to demarcate file content from the surrounding tool-result header.
+     * Four backticks so it stays unambiguous even when the wrapped body contains the more common
+     * triple-backtick code fences.
+     */
+    private static final String CONTENT_FENCE = "````";
+
     private String formatSkillMarkdown(HarnessSkillEntry entry) {
         AgentSkill skill = entry.skill();
         StringBuilder sb = new StringBuilder();
@@ -180,9 +188,19 @@ public final class SkillLoadTool implements AgentTool {
         if (entry.filesRoot() != null && !entry.filesRoot().isBlank()) {
             sb.append("Files root: ").append(entry.filesRoot()).append("\n");
         }
-        sb.append("\nContent:\n---\n");
-        sb.append(skill.getSkillContent());
-        sb.append("\n---\n");
+        // Emit the full SKILL.md document (YAML frontmatter + body) so the view the LLM reads
+        // matches the bytes that skill_manage(action=patch) operates on. Returning body-only
+        // (the previous behaviour) drove patch failures whenever the LLM tried to old_string
+        // anything near the frontmatter boundary, since the parser eats that whitespace.
+        String fullMarkdown =
+                MarkdownSkillParser.generate(skill.getMetadata(), skill.getSkillContent());
+        sb.append("\nContent (").append("SKILL.md").append("):\n");
+        sb.append(CONTENT_FENCE).append("markdown\n");
+        sb.append(fullMarkdown);
+        if (!fullMarkdown.endsWith("\n")) {
+            sb.append("\n");
+        }
+        sb.append(CONTENT_FENCE).append("\n");
         return sb.toString();
     }
 
@@ -195,9 +213,13 @@ public final class SkillLoadTool implements AgentTool {
         if (entry.filesRoot() != null && !entry.filesRoot().isBlank()) {
             sb.append("Files root: ").append(entry.filesRoot()).append("\n");
         }
-        sb.append("\nContent:\n---\n");
+        sb.append("\nContent (").append(path).append("):\n");
+        sb.append(CONTENT_FENCE).append("\n");
         sb.append(content);
-        sb.append("\n---\n");
+        if (content == null || !content.endsWith("\n")) {
+            sb.append("\n");
+        }
+        sb.append(CONTENT_FENCE).append("\n");
         return sb.toString();
     }
 

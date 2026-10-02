@@ -71,7 +71,7 @@ toolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
 ```
 
 :::{note}
-Toolkit 在出现额外 tool group 或 skill 时会自动注册名为 `reset_tools` 的 meta tool 与 `Skill` 查看器，开发者无需手动实例化。详见 [自我管理 Tool](#自我管理-tool) 与 [Skill](#skill)。
+Toolkit 在出现额外 tool group 或 skill 时会自动注册 `reset_tools` meta tool 与 skill 查看器工具 `load_skill_through_path`，开发者无需手动实例化。详见 [自我管理 Tool](#自我管理-tool) 与 [Skill](#skill)。
 :::
 
 ### 自定义 Tool（注解式）
@@ -227,7 +227,7 @@ public class HumanApprovalTool extends ToolBase {
 |---------|---------|
 | `ToolEmitter` | 流式中间产物 emitter（无配置时为 no-op） |
 | `Agent` | 当前 agent 实例 |
-| `AgentState` | `agent.getAgentState()`（也对应 `@Tool(stateInjected = true)`） |
+| `AgentState` | 当前 call 的 per-session 状态（通过 `RuntimeContext.getAgentState()` 获取） |
 | `RuntimeContext` | 当前 per-call 上下文 |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()`（兼容层，已 deprecated） |
 | 其它用户自定义 POJO 类型 | `runtimeContext.get(ParamType.class)` —— 即调用方在 `RuntimeContext.builder().put(ParamType.class, value)` 注册的对象 |
@@ -371,7 +371,7 @@ toolkit.registerMcpClient(search).block();
 
 Skill 是基于 markdown 的指令集，无需写新工具代码即可拓展 agent 能力。每个 skill 是一个目录，包含一个带 frontmatter 元数据与详细指令的 `SKILL.md` 文件。
 
-与 tool 不同，skill 不能被直接调用。Agent 通过自动注册的 `Skill` 查看器读取 skill 指令，再用现有的 tool 按指令执行。
+与 tool 不同，skill 不能被直接调用。Agent 通过自动注册的查看器工具 `load_skill_through_path` 读取 skill 指令，再用现有的 tool 按指令执行。
 
 ### 注册 Skill
 
@@ -402,18 +402,101 @@ ReActAgent agent =
 初始化阶段：
 
 - Toolkit 扫描所有注册的 skill 来源，收集每个 skill 的名称、描述与目录。
-- 自动注册内置的 `Skill` 查看器。
-- 组装一段 system prompt 片段，列出可用 skill（仅名称与描述），并指示 agent 通过 `Skill` 查看器读取完整内容。
+- 自动把内置查看器工具 `load_skill_through_path`（实现位于 `io.agentscope.core.skill.SkillToolFactory`）注册到 `skill-build-in-tools` 这个 tool group。
+- 组装一段 system prompt 片段，列出可用 skill（仅名称与描述），并指示 agent 通过 `load_skill_through_path` 读取完整内容。
 
-运行时阶段：
+运行时阶段，agent 用两个必填参数调用查看器：
 
-- Agent 按名字选定一个 skill，调用 `Skill` 查看器。
-- 查看器读取对应 `SKILL.md`，返回完整 markdown。
-- Agent 用已装备的 tool 按这些指令执行。
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `skillId` | `string`（枚举：已注册的 skill ID） | 要加载的 skill。 |
+| `path` | `string` | 传 `"SKILL.md"` 取该 skill 的 markdown 指令；或传 skill 声明过的精确资源路径，例如 `"references/guide.md"`、`"scripts/run.py"`。不要传 `"."`、`"./"`、目录或绝对路径。 |
+
+调用示例：
+
+```json
+{
+  "name": "load_skill_through_path",
+  "input": { "skillId": "pdf-extractor", "path": "SKILL.md" }
+}
+```
+
+每次成功调用产生两件事：
+
+1. 返回请求的内容（`SKILL.md` markdown，或指定的资源文件）。
+2. **激活该 skill** —— Toolkit 中与之绑定的 tool group 被启用，本轮对话余下时段都可调用 skill 自带的工具。如果 `path` 不存在，查看器会返回错误并列出可用资源路径（`SKILL.md` 始终排在第一位），便于 agent 重试。
 
 :::{note}
-Skill 不是 tool —— agent 不能直接调用 skill。它必须先用 `Skill` 查看器读取指令，再用其他 tool 按描述的步骤执行。
+Skill 不是 tool —— agent 不能直接调用 skill。它必须先用 `load_skill_through_path` 读取指令，再用其他 tool 按描述的步骤执行。
 :::
+
+### Skill 执行脚本：配置 Shell 工具
+
+Skill 只提供指令，真正的执行依赖 agent 已有的 tool。如果 skill 指令涉及脚本执行（例如 `scripts/run.py`），agent 需要拥有 shell 执行能力：
+
+- **`ReActAgent`** —— 注册 `ShellCommandTool` 到 toolkit：
+
+```java
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.coding.ShellCommandTool;
+import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
+
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new ShellCommandTool());
+toolkit.registerTool(new ReadFileTool("/path/to/base/dir"));
+toolkit.registerTool(new WriteFileTool("/path/to/base/dir"));
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("SkillAgent")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .skillRepository(skillRepo)
+                .build();
+```
+
+- **`HarnessAgent`** —— harness 模块自带 workspace 感知的 shell 与文件工具（`execute`、`read_file`、`write_file` 等），无需额外注册。
+
+### Skill + ToolGroup：按需披露工具
+
+`SkillToolGroup` 把一组 tool 绑定到某个 skill name —— agent 加载该 skill 时 tool group 自动激活，未加载时 tool 不出现在模型 schema 中，减少上下文噪音。
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.tool.Toolkit;
+
+Toolkit toolkit = new Toolkit();
+
+// 1. 创建与 skill 绑定的 tool group（初始不激活）
+toolkit.createSkillToolGroup(
+        "analysis-tools",                // group 名
+        "Data analysis tools",           // 描述
+        false,                           // 初始不激活
+        "data-analysis");                // 绑定的 skill name
+
+// 2. 把 tool 注册到该 group
+toolkit.registration()
+        .tool(new AnalysisTools())
+        .group("analysis-tools")
+        .apply();
+
+// 3. 构建 agent，启用 meta tool 支持模型主动切换 group
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("AnalysisAgent")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .skillRepository(skillRepo)
+                .enableMetaTool(true)
+                .build();
+```
+
+当 agent 通过 `load_skill_through_path` 加载名为 `data-analysis` 的 skill 时，`analysis-tools` group 自动激活，其中的 tool 立即可用。配合 `enableMetaTool(true)`，模型还可以通过 `reset_tools` 主动管理 tool group 的激活状态。
+
+参考实现：`agentscope-examples/documentation/.../skill/SkillWithToolGroupExample.java`。
 
 ## 自我管理 Tool
 

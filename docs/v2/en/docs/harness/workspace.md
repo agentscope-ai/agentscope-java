@@ -1,27 +1,70 @@
 ---
 title: "Workspace"
-description: "HarnessAgent's foundation: directory layout, loading model, behavior across filesystem modes, isolation & overrides, deep dive on key contents"
+description: "Source of truth for agent definition and evolution: directory layout, workspace-vs-API parity, native multi-tenant isolation, filesystem modes, and deep dive on key contents"
 ---
 
 ## Design philosophy
 
-The workspace is `HarnessAgent`'s foundation. **Everything that needs to survive a call or restart is expressed as a directory of plain Markdown / JSON files**, not scattered in code, not pinned to a particular database table.
+The workspace is `HarnessAgent`'s **source of truth for agent definition and evolution**. Everything that defines what the agent is, and everything the agent learns over time, lives here as a directory of plain Markdown / JSON files — not scattered in code, not pinned to a particular database table.
 
-Three guiding ideas:
+Four guiding ideas:
 
-**1. Directories and files are the source of truth.** Persona (`AGENTS.md`), long-term memory (`MEMORY.md` + `memory/`), domain knowledge (`knowledge/`), subagent declarations (`subagents/`), skills (`skills/`), plan files (`plans/`), tool allowlist + MCP (`tools.json`) — all files. You can `cat` them, `git diff` them, send them to a human for review, have another process consume them.
+**1. Source of truth for both agent definition and long-term evolution.**
+
+Agent *definition* — who the agent is and how it behaves — can be declared entirely in the workspace:
+
+| What to define | File |
+|----------------|------|
+| Persona, behavior rules, system instructions | `AGENTS.md` |
+| Domain knowledge | `knowledge/KNOWLEDGE.md` + reference files |
+| Skills (reusable capability packages) | `skills/<skill-name>/SKILL.md` |
+| Subagent declarations | `subagents/<agent-id>.md` |
+| Tool allowlist + MCP servers | `tools.json` |
+
+> **All workspace config files are optional.** Every file has a fully equivalent API counterpart: you can pass the same configuration via builder methods (`.systemPrompt(...)`, `.skill(SkillDeclaration...)`, `.subagent(SubagentDeclaration...)`, `.toolsConfig(...)`, etc.). The workspace and the API are always in parity — which one you use is entirely your choice.
+>
+> **Why the workspace, then?** Because expressing definition as files (rather than code) is what makes one agent natively multi-tenant: the *same* agent logic can carry a *different* persona, knowledge base, and skill set per user, just by dropping a per-user override directory — no code branches, no separate deployments. See [One agent logic, customized per user](#one-agent-logic-customized-per-user) below.
+
+Agent *evolution* — everything the agent learns or accumulates across sessions — is stored automatically in the workspace with no explicit lifecycle management required:
+
+- **Long-term memory** (`MEMORY.md` + `memory/`) — facts extracted from conversations, maintained and compacted by background tasks, injected each turn.
+- **Self-learning skills** (`skills/`) — the agent drafts new skills from successful patterns; after an optional review gate they become reusable capabilities, then a background curator ages out / archives the unused ones.
+- **Plans** (`plans/`) — plans written during Plan Mode persist and survive across calls, keeping "figure it out" decoupled from "do it".
+- **Offloaded tool results** (compaction) — oversized tool outputs are written to disk and replaced in-context with a head/tail preview + a `read_file` pointer, so the agent can re-read them later without bloating the prompt.
+- **Session logs** (`agents/<agentId>/sessions/`) — the full never-compacted conversation log, queryable at any time.
+
+Evolution data is long-lived by default: memory accumulates indefinitely, session logs are append-only and never purged automatically. How each channel is produced and maintained is detailed in [How the agent evolves](#how-the-agent-evolves) below.
+
+(The volatile per-call *runtime context* — `AgentState` — is **not** part of this list: it is the resume snapshot for an in-flight conversation, persisted separately in the `AgentStateStore`, never in the workspace. See the callout under idea 2 below.)
 
 **2. Content splits into three lifecycles, kept distinct.**
 
 | Kind | Written by | Read by | Examples |
 |------|------------|---------|----------|
 | **Static assets** (engineer-edited) | You / your team | Framework injects into the system prompt each turn, or reads on demand at call time | `AGENTS.md`, `knowledge/`, `skills/`, `subagents/`, `tools.json` |
-| **Runtime state** (rewritten on every call) | Framework / agent | Framework restores it on the next call | `agents/<agentId>/context/`, `agents/<agentId>/sessions/`, `agents/<agentId>/tasks/`, `plans/` |
+| **Runtime files** (rewritten on every call) | Framework / agent | Framework restores them on the next call | `agents/<agentId>/sessions/`, `agents/<agentId>/tasks/`, `plans/` |
 | **Long-term memory** (accumulated across sessions) | Agent + background tasks | Framework injects into the system prompt + agent queries via tools | `MEMORY.md`, `memory/YYYY-MM-DD.md` |
 
 They live in one tree purely for deployment convenience (copy a directory, get a complete agent). Inside the framework they travel different read/write paths.
 
-**3. Workspace decouples from filesystem.** The same directory layout lands in one of three places: local disk, shared KV store (Redis / JDBC), or sandbox container. This decoupling is what lets you switch deployment shape without touching agent code. See [Filesystem](./filesystem) for the three modes.
+> **`AgentState` is not workspace content — don't conflate the two.** The in-flight context an agent needs to resume mid-conversation (conversation buffer, rolling summary, permission / tool / task / Plan-Mode sub-contexts, plus the *metadata* pointing at workspace artifacts such as the active plan file) is serialized as a single `AgentState` document into the **`AgentStateStore`**, a separate subsystem (default `~/.agentscope/state/<agentId>/`, fully outside the workspace tree). The split is deliberate: the workspace holds the durable *file artifacts* (the never-compacted session log, plan markdown, task records, memory), while `AgentState` holds the volatile *runtime context + workspace metadata*. Two stores, two lifecycles — see [Context](./context).
+
+**3. Natively multi-tenant.** Workspace data (memory, sessions, tasks, skills, sandbox state) is bucketed by a single `IsolationScope` — no application-level partitioning code. The scope decides who shares one bucket:
+
+| `IsolationScope` | Who shares one bucket | Typical use |
+|------------------|----------------------|-------------|
+| `SESSION` | each `sessionId` is fully isolated | per-conversation isolation; disposable sandboxes |
+| `USER` (default) | all sessions of the same `userId` | a user's sessions share long-term memory / skills (falls back to `SESSION` when `userId` is absent) |
+| `AGENT` | all users & sessions of this agent | shared-knowledge-base agent |
+| `GLOBAL` | one bucket for the whole store instance | use with care — every agent/user competes for the same slot |
+
+The chosen scope materializes differently per filesystem mode (path prefix on local disk, KV namespace in a shared store, sandbox state slot in a sandbox). Full semantics, fallback rules, and concurrency notes in [Filesystem — IsolationScope](./filesystem#isolationscope--bucketing-across-users-and-replicas).
+
+> `IsolationScope` governs the **workspace/filesystem** buckets above. `AgentState` has its own, orthogonal addressing: it is always keyed by `(userId, sessionId)` in the `AgentStateStore`, regardless of scope.
+
+A single `HarnessAgent` instance can serve thousands of concurrent users with zero cross-user data leakage.
+
+**4. Workspace decouples from filesystem.** The same directory layout lands in one of three places: local disk, shared KV store (Redis / JDBC), or sandbox container. This decoupling is what lets you switch deployment shape without touching agent code. See [Filesystem](./filesystem) for the three modes.
 
 ## Workspace directory layout
 
@@ -42,13 +85,14 @@ They live in one tree purely for deployment convenience (copy a directory, get a
 ├── plans/                       ← runtime: plan files written in Plan Mode
 │   └── PLAN.md
 └── agents/<agentId>/            ← runtime: each agent's runtime root
-    ├── context/<sessionId>/     ← runtime: session snapshots (serialized AgentState)
     ├── sessions/                ← runtime: session index + never-compacted log
     │   ├── sessions.json
     │   └── <sessionId>.log.jsonl
     └── tasks/                   ← runtime: subagent background task records
         └── <sessionId>.json
 ```
+
+> **This tree is a *logical* layout, not a fixed on-disk path.** It is drawn as `.agentscope/workspace/...`, but that is only the default local placement. The exact same layout can physically live on **local disk**, in a **remote distributed store** (Redis / JDBC / OSS, via `RemoteFilesystemSpec`), or be **projected into a sandbox container** (`SandboxFilesystemSpec`) — the relative paths below are identical across all three, only the backing store changes, and your agent code does not. Pick the backing store with [Filesystem](./filesystem); everything in this document is written against the logical layout.
 
 **Only `AGENTS.md` is something you actually need to write** (skip it and the agent still runs — you just lose the persona injection). Everything else appears as you turn on the matching capability:
 
@@ -93,9 +137,11 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 | `disableSubagents()` | the entire subagent subsystem |
 | `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
 | `disableToolsConfig()` | reading `tools.json` |
-| `disableSessionPersistence()` | session auto-persistence |
+| `disableSessionPersistence()` | AgentState auto-persistence |
 
 ## How workspace content gets loaded
+
+Because the workspace is a logical layout (see the callout above), "loading" never assumes a plain local directory — every read goes through the configured `AbstractFilesystem`, so the same logic works whether files sit on local disk, in a remote store, or inside a sandbox. The [two-layer read](#two-layer-reads-filesystem-first--local-fallback) below is what makes that backing-store independence concrete; [Filesystem](./filesystem) covers how each mode resolves paths physically.
 
 ### System-prompt assembly per turn
 
@@ -129,7 +175,7 @@ For every "file injected into the prompt" (`AGENTS.md` / `MEMORY.md` / `knowledg
 2. Read local disk at workspace.resolve(relativePath)
 ```
 
-Writes always go through layer 1 (the filesystem backend), never directly to local disk.
+Writes always go through layer 1 (the filesystem store), never directly to local disk.
 
 This pattern earns its keep in **shared-store mode**: the first replica starts with the team-git-synced `AGENTS.md` template available on local disk, so it works immediately; later any override (e.g. from an admin console editor) lands in the shared KV, and every replica's next `call()` reads the latest version. Template is fallback, remote override is truth.
 
@@ -137,7 +183,7 @@ This pattern earns its keep in **shared-store mode**: the first replica starts w
 
 `RuntimeContext.userId` is the multi-user key — it lets one agent instance serve many users without crosstalk.
 
-For **runtime data** (sessions / tasks / memory), the framework prefixes paths via the configured `NamespaceFactory` (local-mode → path prefix, remote-mode → KV namespace, sandbox-mode → state slot). Details in the next section, "How session and memory are stored".
+For **runtime data** (sessions / tasks / memory), the framework prefixes paths via the configured `NamespaceFactory` (local-mode → path prefix, remote-mode → KV namespace, sandbox-mode → state slot). Details in the next section, "How runtime data and memory are stored".
 
 For **static assets** (notably `skills/` and `subagents/`), a per-user directory **overrides** the workspace-shared version:
 
@@ -153,7 +199,21 @@ workspace/
         └── researcher.md             ← only visible to alice
 ```
 
-When called with `RuntimeContext.userId="alice"`, the framework looks in `alice/skills/code-reviewer/` first and falls back to `skills/code-reviewer/`. Skills unique to a lower layer remain visible; only same-name conflicts are shadowed by the higher layer. Full precedence table in [Skills — Same-name conflicts](./skill#same-name-conflicts).
+When called with `RuntimeContext.userId="alice"`, the framework looks in `alice/skills/code-reviewer/` first and falls back to `skills/code-reviewer/`. Skills unique to a lower layer remain visible; only same-name conflicts are shadowed by the higher layer. Full precedence table in [Skills — Conflict resolution](./skill#conflict-resolution).
+
+#### One agent logic, customized per user
+
+This override mechanism is what lets a **single `HarnessAgent` instance behave like a different agent for every tenant** — without forking code or spinning up separate deployments. You ship one binary, one agent definition; each user gets their own slice on top:
+
+| Per-user layer | What it customizes | Resolution |
+|----------------|--------------------|------------|
+| `<userId>/AGENTS.md` *(via override)* | persona / behavior for that user | upper layer of the two-layer read (shared `AGENTS.md` is the fallback) |
+| `<userId>/knowledge/` | domain knowledge that user is allowed to see | per-user directory, shared `knowledge/` as the base |
+| `<userId>/skills/` | capabilities only that user unlocks | overrides same-name shared skills; unique ones stack |
+| `<userId>/subagents/` | sub-agents only that user can spawn | overrides same-name shared specs |
+| runtime data (memory / sessions / tasks) | that user's accumulated evolution | namespaced per `userId` (path prefix / KV namespace / sandbox slot) |
+
+The result is **two layers of multi-tenancy at once**: the *definition* differs per user (via override directories), and the *evolution* is isolated per user (via namespacing). A shared base stays common to everyone, and each user's customizations and learned state never leak across tenants — all from the same agent process. This is the file-based payoff the [optional-config callout](#design-philosophy) refers to: because definition is data, per-user customization is just another file, not another code path.
 
 ### Loading behavior under each filesystem mode
 
@@ -166,7 +226,8 @@ HarnessAgent agent = HarnessAgent.builder()
     .name("store")
     .model(model)
     .workspace(workspace)
-    .filesystem(new RemoteFilesystemSpec(redisStore)
+    .distributedStore(store)
+    .filesystem(new RemoteFilesystemSpec()
         .isolationScope(IsolationScope.USER))      // namespace per userId
     .build();
 ```
@@ -208,28 +269,33 @@ HarnessAgent agent = HarnessAgent.builder()
 - **Path safety**: default `ROOTED` mode — absolute paths are only allowed under the `workspace` and `project` (shell `cwd`) roots; `..` traversal is rejected by the path policy.
 - **Best practice**: single process / local dev / unit tests / trusted env. Do **not** run untrusted code here in production — `execute` is host `sh -c`.
 
-## How session and memory are stored
+## How runtime data and memory are stored
 
-Both of these are "runtime / long-term" content — you don't hand-edit them. Their physical location is tied to the filesystem mode.
+The framework writes two data planes automatically — and they live in **two different places**. Keep them distinct:
 
-### Session (runtime snapshot)
+| Data plane | What it is | Where it lives |
+|------------|-----------|----------------|
+| **`AgentState`** | volatile runtime context: chat buffer, compaction summary, permission / tool / task / Plan-Mode contexts, plus metadata pointing at workspace artifacts | the **`AgentStateStore`** — a separate subsystem, **not** the workspace (default `~/.agentscope/state/<agentId>/`) |
+| **Workspace runtime/long-term files** | durable artifacts: session logs, task records, `MEMORY.md` + `memory/` | inside the workspace tree, physical location follows the filesystem mode |
 
-When a `call()` completes, `AgentState` (chat history, compaction summary, permission rules, Plan Mode state, tool state) is serialized to JSON and written to:
+You don't hand-edit either. The rest of this section walks the two planes in turn.
 
-```
-<workspace>/[<namespace>/]agents/<agentId>/context/<sessionId>/agent_state.json
-```
+### Agent state — a separate store, not in the workspace
 
-The next `call()` with the same `sessionId` loads it back. This is `WorkspaceSession` (`io.agentscope.harness.agent.session.WorkspaceSession`) — the default `Session` implementation when `HarnessAgent` is built without `.session(...)`, backed by `JsonSession`.
+`AgentState` is the per-`(userId, sessionId)` runtime context, and it is deliberately kept **out of the workspace tree**. When a `call()` completes, it is serialized to JSON and persisted via the configured [`AgentStateStore`](../../integration/session/index.md), addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back.
 
-`agents/<agentId>/sessions/` also holds:
+By default `HarnessAgent` uses a `JsonFileAgentStateStore` rooted **outside** the workspace at `~/.agentscope/state/<agentId>/` (override the base via the `agentscope.state.home` system property), so runtime state stays decoupled from workspace data. Configure another store via `.stateStore(...)`.
+
+### Session logs (these *are* workspace files)
+
+Distinct from `AgentState`, the workspace holds the **conversation logs** under `agents/<agentId>/sessions/`:
 
 - **`sessions.json`** — the agent's session index (key = sessionId, value = summary + updatedAt).
 - **`<sessionId>.log.jsonl`** — the **never-compacted** raw conversation log, append-only. `session_search` / `session_history` query it.
 
-> `WorkspaceSession` is single-machine only. Multi-replica production must switch to a distributed backend (`RedisSession` / `MysqlSession` / …). If you have configured `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` without swapping the Session, `build()` raises `IllegalStateException` — a forced reminder not to make runtime state a single point of failure.
+> The default `JsonFileAgentStateStore` is single-machine only. Multi-replica production must switch to a distributed store (`RedisAgentStateStore` / `MysqlAgentStateStore` / …). If you have configured `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` without swapping in a distributed state store, `build()` raises `IllegalStateException` — a forced reminder not to make runtime state a single point of failure.
 
-Full details (recovery flow, cross-node continuation, `SessionKey`) live in [Context](./context).
+Full details (recovery flow, cross-node continuation, `(userId, sessionId)` addressing) live in [Context](./context).
 
 ### Memory (long-term)
 
@@ -267,6 +333,20 @@ Without `userId`, single-tenant default applies and everyone shares one root.
 
 > **Static assets** vs **runtime data**: `AGENTS.md`, `tools.json`, `knowledge/` and friends are **not** auto-partitioned per userId — they are shared across users, and the only way to differentiate is to add per-user override directories (`<userId>/skills/...`, `<userId>/subagents/...`). What follows `userId` is runtime data (sessions, tasks, memory).
 
+## How the agent evolves
+
+Beyond its static definition, the workspace is where the agent's *accumulated experience* lands. Five channels accrue automatically — turn on the matching capability and the data starts piling up in the workspace, isolated per tenant exactly like everything else. Each has its own deep-dive page; this table is the index:
+
+| Channel | Where it lives | Turn it on | How it accrues | Deep dive |
+|---------|----------------|------------|----------------|-----------|
+| **Long-term memory** | `MEMORY.md` + `memory/YYYY-MM-DD.md` | `.compaction(...)` | `MemoryFlushMiddleware` extracts facts from the conversation prefix before compaction; a throttled background task merges + dedups them into `MEMORY.md`, re-injected every turn | [Memory](./memory) |
+| **Self-learning skills** | `skills/`, `skills/_drafts/`, `skills/.archive/` | `.enableSkillManageTool(...)` | the agent calls `propose_skill` to draft a skill from a working pattern → an optional promotion gate approves it → a background curator marks unused skills stale (30d) and archives them (90d) | [Skills — Self-learning loop](./skill#self-learning-loop-optional) |
+| **Plans** | `plans/PLAN.md` | `.enablePlanMode()` | a read-only planning phase writes the plan via `plan_write`; it persists across calls and drives the execution phase, decoupling intent from action | [Plan Mode](./plan-mode) |
+| **Offloaded tool results** | the eviction directory under the workspace | `.toolResultEviction(...)` | when a single tool result exceeds the threshold (default 80K chars), the full output is written to disk and the in-context message is replaced with a head/tail preview + a `read_file` pointer | [Compaction](./compaction) |
+| **Session logs** | `agents/<agentId>/sessions/` (workspace) | on by default | every `call()` appends to the never-compacted JSONL log; `session_search` / `session_history` query it | [Context](./context) |
+
+The unifying idea: **the agent improves between runs without you wiring up any storage.** Memory, skills, plans, session logs, and offloaded results are all just files in the workspace — they get the same per-tenant isolation, the same two-layer reads, and the same filesystem-mode portability as everything else on this page. (The volatile `AgentState` runtime context is the one exception — it lives in the separate `AgentStateStore`, not the workspace; see [How runtime data and memory are stored](#how-runtime-data-and-memory-are-stored).)
+
 ## Deep dive on key directories
 
 ### `skills/`
@@ -283,7 +363,7 @@ skills/code-reviewer/
 There are four registration layers (low → high priority):
 
 1. `projectGlobalSkillsDir(Path)` — project global, e.g. `~/.agentscope/skills/`
-2. `skillRepository(...)` — marketplace backends (Git / Nacos / MySQL / classpath)
+2. `skillRepository(...)` — marketplace stores (Git / Nacos / MySQL / classpath)
 3. `workspace/skills/` — workspace shared
 4. `<userId>/skills/` — per-user (overrides all above)
 
@@ -351,7 +431,7 @@ plans/
 └── PLAN.md           ← current plan written by plan_write
 ```
 
-Note: `PlanModeContext` (whether the plan phase is active, current plan file path) lives in `AgentState` — it is **runtime state**, persisted under `agents/<agentId>/context/<sessionId>/`. The files under `plans/` are only the markdown content itself. See [Plan Mode](./plan-mode).
+Note: `PlanModeContext` (whether the plan phase is active, current plan file path) lives in `AgentState` — it is **runtime state**, persisted via the `AgentStateStore` (by default `~/.agentscope/state/<agentId>/`, outside the workspace). The files under `plans/` are only the markdown content itself. See [Plan Mode](./plan-mode).
 
 ### `agents/<agentId>/`
 
@@ -359,8 +439,6 @@ This is the **runtime root**, framework-written and rarely hand-edited:
 
 ```
 agents/<agentId>/
-├── context/<sessionId>/
-│   └── agent_state.json      ← serialized AgentState snapshot (written at the end of each call)
 ├── sessions/
 │   ├── sessions.json          ← session index for this agent
 │   └── <sessionId>.log.jsonl  ← never-compacted raw conversation log (append-only)
@@ -368,7 +446,9 @@ agents/<agentId>/
     └── <sessionId>.json       ← subagent background task records (taskId → TaskRecord)
 ```
 
-For cross-node recovery / multi-replica deployments this data must be shared (either `RedisSession` + `RemoteFilesystemSpec`, or sandbox with distributed state). See [Context](./context) and [Filesystem](./filesystem).
+> The serialized `AgentState` (`agent_state`) is **not** in the workspace by default — it lives in the configured `AgentStateStore` (default `~/.agentscope/state/<agentId>/`). Only the conversation logs and task records above stay in the workspace.
+
+For cross-node recovery / multi-replica deployments this data must be shared (either `RedisAgentStateStore` + `RemoteFilesystemSpec`, or sandbox with distributed state). See [Context](./context) and [Filesystem](./filesystem).
 
 ### `knowledge/`
 
@@ -397,7 +477,7 @@ When you need to write files, **go through `HarnessAgent#getWorkspaceManager()`,
 
 - [Architecture](./architecture) — how the system prompt is assembled and how capabilities cooperate
 - [Filesystem](./filesystem) — where the workspace physically lives (local / sandbox / shared store), `IsolationScope`, multi-user isolation
-- [Context](./context) — `AgentState` and `Session` persistence, cross-node recovery
+- [Context](./context) — `AgentState` and `AgentStateStore` persistence, cross-node recovery
 - [Memory](./memory) — how `MEMORY.md` / `memory/` are produced and maintained, compaction, eviction
 - [Skills](./skill) — four-layer composition, self-learning loop, the `<available_skills>` block
 - [Subagent](./subagent) — `subagents/` declarations, sync vs background, stream forwarding

@@ -15,14 +15,12 @@
  */
 package io.agentscope.dataagent.web.toolbus;
 
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
-import io.agentscope.harness.agent.HarnessAgent;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
@@ -35,8 +33,9 @@ import reactor.core.publisher.Flux;
  * before each tool-call execution, enabling real-time SSE streaming of tool calls in
  * {@link io.agentscope.dataagent.web.api.ChatController}.
  *
- * <p>The session key is derived from {@link RuntimeContext#getSessionKey()} on the in-flight
- * call, accessed via the agent's {@code getRuntimeContext()}.
+ * <p>The session key is derived from {@link RuntimeContext#getSessionId()} (falling back to
+ * {@link RuntimeContext#getUserId()}) on the in-flight call, accessed via the agent's
+ * {@code getRuntimeContext()}.
  */
 public class ToolNotificationMiddleware implements MiddlewareBase {
 
@@ -50,8 +49,11 @@ public class ToolNotificationMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onActing(
-            Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
-        String sessionKey = resolveSessionKey(agent);
+            Agent agent,
+            RuntimeContext ctx,
+            ActingInput input,
+            Function<ActingInput, Flux<AgentEvent>> next) {
+        String sessionKey = resolveSessionKey(agent, ctx);
         if (sessionKey != null && input.toolCalls() != null) {
             for (ToolUseBlock tu : input.toolCalls()) {
                 Map<String, Object> inputData = new LinkedHashMap<>();
@@ -76,16 +78,10 @@ public class ToolNotificationMiddleware implements MiddlewareBase {
         return next.apply(input);
     }
 
-    private static String resolveSessionKey(Agent agent) {
-        RuntimeContext ctx = null;
-        if (agent instanceof HarnessAgent h) {
-            ctx = h.getRuntimeContext();
-        } else if (agent instanceof ReActAgent r) {
-            ctx = r.getRuntimeContext();
-        }
+    private static String resolveSessionKey(Agent agent, RuntimeContext ctx) {
         if (ctx == null) return null;
-        if (ctx.getSessionKey() != null) {
-            return ctx.getSessionKey().toIdentifier();
+        if (ctx.getSessionId() != null) {
+            return ctx.getSessionId();
         }
         return ctx.getUserId();
     }

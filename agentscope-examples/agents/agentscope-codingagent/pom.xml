@@ -50,6 +50,34 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
+        <!-- OpenAI model implementation -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-openai</artifactId>
+        </dependency>
+
+        <!-- Anthropic model implementation -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-anthropic</artifactId>
+        </dependency>
+
+        <!-- DashScope model implementation -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-dashscope</artifactId>
+        </dependency>
+
+        <!-- IM channel implementations -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-channel-dingtalk</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-channel-feishu</artifactId>
+        </dependency>
+
         <!-- YAML parsing for subagent config -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>

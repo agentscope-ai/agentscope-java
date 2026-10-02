@@ -22,14 +22,17 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -204,6 +207,63 @@ public final class MarketplaceStager {
             }
         }
         Files.write(target, bytes);
+        // Heuristic exec-bit recovery: the ingestion path turns files into Strings and discards
+        // POSIX mode, so we re-derive +x from a shebang / known script extension. Not a true
+        // mode preservation — pure-static skill assets (.json/.md/.txt) stay 644.
+        maybeMarkExecutable(target, bytes);
+    }
+
+    /**
+     * Script-detection heuristic: shebang at byte 0/1 OR a known-script suffix. Match → add
+     * owner-exec on POSIX filesystems. Non-POSIX (Windows) silently no-op.
+     */
+    private static void maybeMarkExecutable(Path target, byte[] bytes) {
+        if (!shouldBeExecutable(target, bytes)) {
+            return;
+        }
+        try {
+            Set<PosixFilePermission> current = new HashSet<>(Files.getPosixFilePermissions(target));
+            // Only flip the exec bits the file already has *read* on, mirroring how `chmod +x`
+            // behaves: a 640 file gets 750, not 751.
+            EnumSet<PosixFilePermission> toAdd = EnumSet.noneOf(PosixFilePermission.class);
+            if (current.contains(PosixFilePermission.OWNER_READ)) {
+                toAdd.add(PosixFilePermission.OWNER_EXECUTE);
+            }
+            if (current.contains(PosixFilePermission.GROUP_READ)) {
+                toAdd.add(PosixFilePermission.GROUP_EXECUTE);
+            }
+            if (current.contains(PosixFilePermission.OTHERS_READ)) {
+                toAdd.add(PosixFilePermission.OTHERS_EXECUTE);
+            }
+            if (toAdd.isEmpty()) {
+                return;
+            }
+            current.addAll(toAdd);
+            Files.setPosixFilePermissions(target, current);
+        } catch (UnsupportedOperationException e) {
+            // POSIX permissions unavailable (Windows default FS); intentional no-op.
+        } catch (IOException e) {
+            log.debug("Failed to set exec bit on {}: {}", target, e.getMessage());
+        }
+    }
+
+    /** Known interpreter / script suffixes. Conservative — we only mark "obvious" scripts. */
+    private static final Set<String> SCRIPT_SUFFIXES =
+            Set.of(".sh", ".bash", ".zsh", ".ksh", ".py", ".rb", ".pl", ".js", ".mjs");
+
+    /** Package-private for direct heuristic testing without spinning up {@link #stage}. */
+    static boolean shouldBeExecutable(Path target, byte[] bytes) {
+        // 1. Shebang detection — strongest signal regardless of filename.
+        if (bytes != null && bytes.length >= 2 && bytes[0] == '#' && bytes[1] == '!') {
+            return true;
+        }
+        // 2. Filename suffix.
+        String fileName = target.getFileName().toString().toLowerCase(Locale.ROOT);
+        int dot = fileName.lastIndexOf('.');
+        if (dot < 0) {
+            return false;
+        }
+        return SCRIPT_SUFFIXES.contains(fileName.substring(dot));
     }
 
     private void removeUnexpected(Path stagedDir, Set<Path> expected) {

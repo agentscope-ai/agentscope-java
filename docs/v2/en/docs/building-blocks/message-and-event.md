@@ -128,7 +128,7 @@ Events are the streaming counterpart of messages. While the agent runs, it emits
 
 ### Event lifecycle
 
-Every event carries `getReplyId()`, tying it to the message being assembled. Within a reply, `getBlockId()` or `getToolCallId()` identifies the content block the event belongs to. Events follow a **start → delta → end** pattern:
+Every event carries `getReplyId()`, tying it to the message being assembled. Within a reply, `getBlockId()` or `getToolCallId()` acts as a correlation key for events that belong to the same content-block lifecycle. Events follow a **start → delta → end** pattern:
 
 ```{mermaid}
 sequenceDiagram
@@ -175,7 +175,7 @@ sequenceDiagram
     Agent->>Client: AgentEndEvent
 ```
 
-All events in one reply share the same `replyId`. Within a reply, `blockId` ties text/thinking/data block events together; `toolCallId` ties tool calls and tool results.
+All events in one reply share the same `replyId`. Within a reply, `blockId` ties text/thinking/data block events together; `toolCallId` ties tool calls and tool results. A `blockId` is scoped to its `replyId` and does not have to be a globally unique generated ID. When a block type can have at most one lifecycle within a reply, an implementation may use a stable type key, such as a fixed key for the text block.
 
 ### Event types
 
@@ -186,10 +186,11 @@ All events extend `AgentEvent` (`io.agentscope.core.event`), which exposes the c
 | `getId()` | `String` | Unique event identifier |
 | `getCreatedAt()` | `String` | ISO 8601 timestamp |
 | `getType()` | `AgentEventType` | Event type enum |
+| `getSource()` | `String` | Source path identifying the originating agent. `null` for top-level agent events; a slash-separated path (e.g. `"main/researcher"`) for events forwarded from a subagent |
 
 Events are grouped below; unless noted otherwise, every event also carries `getReplyId()` linking it to the message being assembled.
 
-:::{dropdown} Lifecycle events
+  :::{dropdown} Lifecycle events
 **AgentStartEvent** — agent begins a new reply.
 
     | Method | Type | Description |
@@ -220,14 +221,14 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | Method | Type | Description |
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
-    | `getBlockId()` | `String` | Unique text block ID |
+    | `getBlockId()` | `String` | Text-block correlation key within the current reply |
 
     **TextBlockDeltaEvent** — incremental text content arrives.
 
     | Method | Type | Description |
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
-    | `getBlockId()` | `String` | Unique text block ID |
+    | `getBlockId()` | `String` | Text-block correlation key within the current reply |
     | `getDelta()` | `String` | Incremental text content |
 
     **TextBlockEndEvent** — text block completes.
@@ -235,11 +236,11 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | Method | Type | Description |
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
-    | `getBlockId()` | `String` | Unique text block ID |
+    | `getBlockId()` | `String` | Text-block correlation key within the current reply |
 :::
 
   :::{dropdown} Thinking streaming events
-**ThinkingBlockStartEvent / ThinkingBlockDeltaEvent / ThinkingBlockEndEvent** — same shape as the text streaming events; specific to the model's chain of thought.
+**ThinkingBlockStartEvent / ThinkingBlockDeltaEvent / ThinkingBlockEndEvent** — same shape as the text streaming events; specific to the model's chain of thought. Its `blockId` has the same reply-scoped correlation-key semantics.
 :::
 
   :::{dropdown} Data streaming events
@@ -298,6 +299,17 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     **UserConfirmResultEvent** — user provides confirmation results (input event); carries `List<ConfirmResult>`.
 
     **ExternalExecutionResultEvent** — external system returns execution results (input event); carries `List<ToolResultBlock>`.
+:::
+
+  :::{dropdown} Subagent events
+**SubagentExposedEvent** — a subagent spawned via `agent_spawn(expose_to_user=true)` has been exposed as a user-addressable entry point. SSE / streaming consumers can use this to render a new conversation entry in the UI.
+
+| Method | Type | Description |
+|--------|------|-------------|
+| `getSubagentId()` | `String` | Unique identifier of the subagent |
+| `getAgentId()` | `String` | Agent type ID of the subagent |
+| `getSessionId()` | `String` | Session ID of the subagent |
+| `getLabel()` | `String` | User-visible label (optional) |
 :::
 
 ## Reconstructing messages from events
@@ -376,7 +388,7 @@ agent.streamEvents(new UserMessage("user", "Help me fix this bug"))
 How agents emit events and messages in the ReAct loop
 :::
   :::{grid-item-card} Context
-:link: ../harness/context.html
+:link: context.html
 
 How messages are stored and persisted
 :::

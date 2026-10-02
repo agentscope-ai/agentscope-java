@@ -461,35 +461,47 @@ public class SkillManageTool implements AgentTool {
                     "File not found: " + relPath + " (in skill '" + name + "')");
         }
 
-        // TODO(fuzzy-match): port hermes fuzzy_match. M1 only does exact-match + uniqueness.
-        int firstIdx = existing.indexOf(oldString);
-        if (firstIdx < 0) {
+        // Fuzzy-match ladder: EXACT → TRAILING_WS_STRIPPED → WHITESPACE_COLLAPSED. Looser
+        // levels only fire when stricter levels return zero matches; uniqueness is then
+        // checked against the chosen level's matches so non-replace_all stays safe.
+        FuzzyTextMatcher.SearchResult search = FuzzyTextMatcher.search(existing, oldString);
+        if (search.isEmpty()) {
             return ToolResultBlock.error(
                     "old_string not found in "
                             + relPath
-                            + ". "
-                            + "M1 patch requires an exact match; "
-                            + "consider using action=edit to fully rewrite SKILL.md.");
+                            + " at any fuzziness level (tried exact, trailing-whitespace, and"
+                            + " collapsed-whitespace). Re-read the file with"
+                            + " load_skill_through_path and copy the exact text, or use"
+                            + " action=edit to rewrite the file.");
         }
+        FuzzyTextMatcher.Level matchedLevel = search.level();
+        List<FuzzyTextMatcher.MatchRange> matches = search.matches();
+
         String updated;
         int replacements;
         if (replaceAll) {
-            updated = existing.replace(oldString, newString);
-            replacements = countOccurrences(existing, oldString);
+            // Apply replacements right-to-left so earlier offsets aren't invalidated.
+            StringBuilder buf = new StringBuilder(existing);
+            for (int i = matches.size() - 1; i >= 0; i--) {
+                FuzzyTextMatcher.MatchRange m = matches.get(i);
+                buf.replace(m.start(), m.end(), newString);
+            }
+            updated = buf.toString();
+            replacements = matches.size();
         } else {
-            int secondIdx = existing.indexOf(oldString, firstIdx + 1);
-            if (secondIdx >= 0) {
+            if (matches.size() > 1) {
                 return ToolResultBlock.error(
                         "old_string is not unique in "
                                 + relPath
-                                + " (found at least 2 occurrences). "
-                                + "Add more surrounding context to make it unique, or set "
-                                + "replace_all=true.");
+                                + " (found "
+                                + matches.size()
+                                + " occurrences at match level "
+                                + matchedLevel
+                                + "). Add more surrounding context to make it unique, or set"
+                                + " replace_all=true.");
             }
-            updated =
-                    existing.substring(0, firstIdx)
-                            + newString
-                            + existing.substring(firstIdx + oldString.length());
+            FuzzyTextMatcher.MatchRange m = matches.get(0);
+            updated = existing.substring(0, m.start()) + newString + existing.substring(m.end());
             replacements = 1;
         }
 
@@ -515,6 +527,12 @@ public class SkillManageTool implements AgentTool {
             }
         }
         bumpPatchSilent(name);
+        // Surface the fuzziness level so the LLM knows when whitespace was normalised — useful
+        // for the agent to decide whether to re-verify by reading the file back.
+        String levelSuffix =
+                matchedLevel == FuzzyTextMatcher.Level.EXACT
+                        ? ""
+                        : " [fuzzy: " + matchedLevel + "]";
         return ToolResultBlock.text(
                 "Patched "
                         + relPath
@@ -524,7 +542,9 @@ public class SkillManageTool implements AgentTool {
                         + replacements
                         + " replacement"
                         + (replacements == 1 ? "" : "s")
-                        + ").");
+                        + ")"
+                        + levelSuffix
+                        + ".");
     }
 
     private ToolResultBlock doWriteFile(String name, String filePath, String fileContent) {
@@ -706,19 +726,6 @@ public class SkillManageTool implements AgentTool {
             return "file_path must start with one of " + ALLOWED_SUBDIRS + " (got '" + head + "').";
         }
         return null;
-    }
-
-    private static int countOccurrences(String haystack, String needle) {
-        if (needle.isEmpty()) {
-            return 0;
-        }
-        int count = 0;
-        int idx = 0;
-        while ((idx = haystack.indexOf(needle, idx)) != -1) {
-            count++;
-            idx += needle.length();
-        }
-        return count;
     }
 
     private static String stringOf(Map<String, Object> m, String key) {

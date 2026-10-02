@@ -36,7 +36,7 @@ import io.agentscope.core.state.AgentState;
  *
  * <p>The sub-context records ({@code permissionContext}, {@code toolContext},
  * {@code tasksContext}, {@code planModeContext}) are <em>not</em> restored — they would need
- * additional core support to be swappable mid-run. For Phase 2b this matches the scope of
+ * additional core support to be swappable mid-run. Currently this matches the scope of
  * {@code session:compact} (which only mutates {@code summary} + {@code context}); broader undo
  * coverage tracks the {@code AgentState} refactor in {@code project_java-agentstate-refactor.md}.
  */

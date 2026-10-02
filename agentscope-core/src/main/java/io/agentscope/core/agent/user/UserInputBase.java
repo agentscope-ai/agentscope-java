@@ -25,6 +25,7 @@ import reactor.core.publisher.Mono;
  * sources. Implementations convert raw user input into UserInputData containing both content
  * blocks and optional structured data, maintaining consistency across different input channels.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public interface UserInputBase {
 
     /**

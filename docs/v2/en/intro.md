@@ -36,7 +36,7 @@ hide-toc: true
       </div>
       <div class="hs-code-panel" id="en-harness"><pre><span class="kw">var</span> agent = <span class="ty">HarnessAgent</span>.builder()
     .name(<span class="str">"coder"</span>)
-    .model(<span class="str">"qwen-max"</span>)                                <span class="cm">// resolved via ModelRegistry; reads DASHSCOPE_API_KEY</span>
+    .model(<span class="str">"dashscope:qwen-max"</span>)                                <span class="cm">// resolved via ModelRegistry; reads DASHSCOPE_API_KEY</span>
     .workspace(<span class="ty">Paths</span>.get(<span class="str">".agentscope/workspace"</span>))   <span class="cm">// AGENTS.md · MEMORY.md · skills · subagents</span>
     .filesystem(<span class="kw">new</span> <span class="ty">DockerFilesystemSpec</span>()           <span class="cm">// sandboxed exec: local · Docker · remote KV swap in one line</span>
         .isolationScope(<span class="ty">IsolationScope</span>.USER))           <span class="cm">// shared across sessions of the same user</span>
@@ -207,7 +207,7 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
   </details>
   <details class="hs-faq-item">
     <summary>Is 2.0 backward-compatible with 1.0?</summary>
-    <p>AgentScope Java 2.0 aims to preserve compatibility with 1.x where possible so that most users can upgrade smoothly. That said, 2.0 does introduce API-level breaking changes (typed events, the permission system, the Middleware stack, the Workspace abstraction, and more). See the <a href="docs/change-log.html">Changelog</a> for details.</p>
+    <p>AgentScope Java 2.0 aims to preserve compatibility with 1.x where possible so that most users can upgrade smoothly. That said, 2.0 does introduce API-level breaking changes (typed events, the permission system, the Middleware stack, the Workspace abstraction, and more). See the <a href="docs/change-log.html">V1 Migration Guide</a> for details.</p>
   </details>
   <details class="hs-faq-item">
     <summary>Does it work with Spring Boot or Quarkus?</summary>
@@ -215,7 +215,7 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
   </details>
   <details class="hs-faq-item">
     <summary>How does it scale horizontally in production?</summary>
-    <p>AgentScope Java is built for stateless horizontal scaling. Session state is persisted by <code>Session</code> (defaulting to <code>WorkspaceSession</code>); workspaces can be mounted on a remote KV / object store; in sandbox mode even the execution environment itself resumes across calls. Combined with Kubernetes + HPA, any replica can pick up the full context of any user.</p>
+    <p>AgentScope Java is built for stateless horizontal scaling. Agent state is persisted by an <code>AgentStateStore</code> (defaulting to a local <code>JsonFileAgentStateStore</code>; swap in <code>RedisAgentStateStore</code> for multi-replica), addressed by <code>(userId, sessionId)</code>; workspaces can be mounted on a remote KV / object store; in sandbox mode even the execution environment itself resumes across calls. Combined with Kubernetes + HPA, any replica can pick up the full context of any user.</p>
   </details>
 </div>
 

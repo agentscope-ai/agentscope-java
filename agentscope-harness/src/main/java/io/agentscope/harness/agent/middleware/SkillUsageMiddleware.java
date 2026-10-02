@@ -16,10 +16,10 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.skill.curator.SkillUsageStore;
 import java.util.Map;
 import java.util.Set;
@@ -39,7 +39,7 @@ import reactor.core.publisher.Mono;
  * this turn" — not "the call succeeded". This matches hermes-agent's telemetry shape and is
  * cheap to compute.
  */
-public class SkillUsageMiddleware implements MiddlewareBase {
+public class SkillUsageMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(SkillUsageMiddleware.class);
 
@@ -61,7 +61,10 @@ public class SkillUsageMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onActing(
-            Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ActingInput input,
+            Function<ActingInput, Flux<AgentEvent>> next) {
         if (input != null && input.toolCalls() != null) {
             for (ToolUseBlock call : input.toolCalls()) {
                 trackInvocation(call);

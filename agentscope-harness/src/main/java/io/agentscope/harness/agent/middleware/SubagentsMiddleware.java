@@ -17,14 +17,12 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
@@ -33,10 +31,10 @@ import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.SubagentSpecGenerator;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskDelivery;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.tool.AgentGenerateTool;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
@@ -59,8 +57,8 @@ import reactor.core.publisher.Flux;
  *
  * <p>In <strong>default mode</strong> (standalone harness setup), this middleware creates an
  * {@link AgentSpawnTool} backed by a {@link DefaultAgentManager}. In <strong>session mode</strong>
- * (orchestrated via {@code AgentBootstrap}), an external tool (typically {@code SessionsTool}) is
- * injected, replacing the default {@link AgentSpawnTool}.
+ * (orchestrated via {@code AgentBootstrap}), an external tool (typically {@code SessionsTool})
+ * is injected, replacing the default {@link AgentSpawnTool}.
  *
  * <p>Responsibilities:
  *
@@ -75,7 +73,7 @@ import reactor.core.publisher.Flux;
  *       accumulates across iterations.
  * </ol>
  */
-public class SubagentsMiddleware implements MiddlewareBase {
+public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(SubagentsMiddleware.class);
 
@@ -133,6 +131,9 @@ public class SubagentsMiddleware implements MiddlewareBase {
             2. **Do not poll.** Continue with other work; when the task finishes you'll see a `<system-reminder>` containing its result.
             3. If the agent has nothing useful to do, hand control back to the user — they'll prompt again when ready and the next reasoning round will surface any completions.
 
+            ### Timeout promotion
+            When a sync spawn/send exceeds its timeout, the task is **not lost** — it is automatically promoted to a background task. You receive `status: timeout_promoted` with a `task_id`. Treat it like any async task: the result will be pushed back to you automatically as a `<system-reminder>`. Do NOT retry the same task — it is already running in the background.
+
             ### Available agent ids
             %s
 
@@ -166,7 +167,7 @@ public class SubagentsMiddleware implements MiddlewareBase {
 
     private final List<SubagentEntry> baseEntries;
     private volatile List<SubagentEntry> entries;
-    private final Object subagentTool;
+    private volatile Object subagentTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
     private final boolean isSessionMode;
@@ -198,10 +199,10 @@ public class SubagentsMiddleware implements MiddlewareBase {
         this.isSessionMode = false;
         DefaultAgentManager dam = new DefaultAgentManager(entries, workspaceManager);
         this.agentManager = dam;
-        TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
-        this.taskRepository = repo;
-        this.subagentTool = new AgentSpawnTool(dam, repo, 0);
-        this.taskTool = new TaskTool(repo);
+        java.util.Objects.requireNonNull(taskRepository, "taskRepository");
+        this.taskRepository = taskRepository;
+        this.subagentTool = new AgentSpawnTool(dam, taskRepository, 0);
+        this.taskTool = new TaskTool(taskRepository);
         this.filesystem = filesystem;
         this.mainWorkspace = mainWorkspace;
         this.factoryBuilder = factoryBuilder;
@@ -218,7 +219,7 @@ public class SubagentsMiddleware implements MiddlewareBase {
     }
 
     /**
-     * Session mode: uses the externally provided tool (typically {@code SessionsTool}).
+     * AgentStateStore mode: uses the externally provided tool (typically {@code SessionsTool}).
      */
     public SubagentsMiddleware(
             List<SubagentEntry> entries,
@@ -229,16 +230,12 @@ public class SubagentsMiddleware implements MiddlewareBase {
         this.isSessionMode = true;
         this.agentManager = null;
         this.subagentTool = externalSubagentTool;
-        TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
-        this.taskRepository = repo;
-        this.taskTool = new TaskTool(repo);
+        java.util.Objects.requireNonNull(taskRepository, "taskRepository");
+        this.taskRepository = taskRepository;
+        this.taskTool = new TaskTool(taskRepository);
         this.filesystem = null;
         this.mainWorkspace = null;
         this.factoryBuilder = null;
-    }
-
-    public SubagentsMiddleware(List<SubagentEntry> entries) {
-        this(entries, (TaskRepository) null, (WorkspaceManager) null);
     }
 
     /**
@@ -262,6 +259,112 @@ public class SubagentsMiddleware implements MiddlewareBase {
         return this;
     }
 
+    /** Returns the {@link TaskRepository} used by this middleware. */
+    public TaskRepository getTaskRepository() {
+        return taskRepository;
+    }
+
+    /**
+     * Wires a {@link io.agentscope.harness.agent.bus.MessageBus} so that background task completions are
+     * pushed to the session inbox and a wakeup signal is enqueued. This enables the
+     * {@link io.agentscope.harness.agent.gateway.WakeupDispatcher} to re-trigger idle sessions
+     * when subagent work finishes.
+     *
+     * <p>Registers a {@link WorkspaceTaskRepository.TaskCompletionCallback} on the underlying
+     * repository (if it is a {@link WorkspaceTaskRepository}). Safe to call multiple times — each
+     * call replaces the previous callback.
+     *
+     * @param messageBus the application message bus
+     * @param agentId the parent agent id (for wakeup routing)
+     * @return this middleware for chaining
+     */
+    public SubagentsMiddleware wireMessageBus(
+            io.agentscope.harness.agent.bus.MessageBus messageBus, String agentId) {
+        if (messageBus == null) {
+            return this;
+        }
+        if (taskRepository instanceof WorkspaceTaskRepository wtr) {
+            wtr.setCompletionCallback(
+                    (rc, taskId, subAgentId, sessionId, result) -> {
+                        String userId = rc != null ? rc.getUserId() : null;
+                        String hintContent =
+                                String.format(
+                                        "<system-notification>Background subagent task '%s'"
+                                                + " (agent=%s) has completed.\n\nResult:\n\n%s"
+                                                + "</system-notification>",
+                                        taskId,
+                                        subAgentId,
+                                        result != null ? result : "(no output)");
+                        String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
+                        java.util.Map<String, Object> hintPayload =
+                                java.util.Map.of(
+                                        "type",
+                                        "hint",
+                                        "id",
+                                        hintId,
+                                        "hint",
+                                        hintContent,
+                                        "source",
+                                        "subagent_task");
+                        messageBus.inboxPush(sessionId, hintPayload).subscribe();
+                        messageBus
+                                .enqueueWakeup(
+                                        userId != null ? userId : "",
+                                        sessionId,
+                                        agentId != null ? agentId : "")
+                                .subscribe(
+                                        unused -> {},
+                                        err ->
+                                                log.warn(
+                                                        "Failed to enqueue wakeup after task {}"
+                                                                + " completion: {}",
+                                                        taskId,
+                                                        err.getMessage()));
+                        log.info(
+                                "Subagent task {} completed, pushed to inbox and enqueued wakeup:"
+                                        + " session={}",
+                                taskId,
+                                sessionId);
+                    });
+        }
+        return this;
+    }
+
+    /**
+     * Wires a gateway bridge into the internal {@link AgentSpawnTool}, enabling spawned subagents
+     * to be exposed as user-addressable threads. Only effective in default (non-session) mode.
+     *
+     * @param bridge the bridge implementation (typically obtained from
+     *     {@link io.agentscope.harness.agent.gateway.GatewayBootstrap#gatewayBridge()})
+     * @return this middleware for chaining
+     */
+    public SubagentsMiddleware setGatewayBridge(
+            io.agentscope.harness.agent.gateway.SubagentGatewayBridge bridge) {
+        if (isSessionMode || agentManager == null) {
+            log.debug("setGatewayBridge ignored in session mode (no internal manager)");
+            return this;
+        }
+        // Mutate the bridge on the live tool instead of replacing it: the toolkit binds
+        // agent_spawn to the AgentSpawnTool instance returned by getTools() at orchestration
+        // time, so a fresh instance here would never be invoked and exposure would silently
+        // never fire.
+        if (this.subagentTool instanceof AgentSpawnTool ast) {
+            ast.setGatewayBridge(bridge);
+        } else {
+            this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+        }
+        return this;
+    }
+
+    /**
+     * Returns the internal {@link DefaultAgentManager} that can re-materialize subagents, or
+     * {@code null} in session mode (external tool). Used to wire a gateway materializer for
+     * cross-node exposed-subagent recovery.
+     */
+    public DefaultAgentManager getAgentManager() {
+        return agentManager;
+    }
+
     /**
      * Returns the tool instances this middleware contributes to the agent toolkit. The caller
      * is responsible for registering them on the toolkit at orchestration time.
@@ -282,22 +385,25 @@ public class SubagentsMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onAgent(
-            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            AgentInput input,
+            Function<AgentInput, Flux<AgentEvent>> next) {
         reloadSubagentEntries();
         return next.apply(input);
     }
 
     @Override
     public Flux<AgentEvent> onReasoning(
-            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next) {
         List<SubagentEntry> currentEntries = this.entries;
         if (currentEntries.isEmpty()) {
             return next.apply(input);
         }
-        RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
+        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         String sessionId = rc != null ? rc.getSessionId() : null;
 
         // ---- Phase B-3 push delivery -------------------------------------------------------
@@ -309,7 +415,7 @@ public class SubagentsMiddleware implements MiddlewareBase {
         if (!pending.isEmpty() && agent instanceof ReActAgent reAct) {
             deliveryMsg = buildDeliveryReminder(pending);
             try {
-                reAct.getAgentState().contextMutable().add(deliveryMsg);
+                RuntimeContext.resolveAgentState(rc, reAct).contextMutable().add(deliveryMsg);
             } catch (RuntimeException e) {
                 log.warn(
                         "Failed to append task delivery reminder to AgentState; "

@@ -32,7 +32,9 @@ import java.util.Objects;
  *
  * <p>The plan markdown file is written exclusively through {@link WorkspaceManager}, never via
  * {@code java.nio.file.Files}, so it lands on whatever backend (local, sandbox, remote) the agent's
- * filesystem is configured with.
+ * filesystem is configured with. The logical path stays {@code <planDir>/PLAN.md} for every
+ * isolation scope; per-scope isolation is applied transparently by the filesystem (store namespace
+ * for remote, snapshot key for sandbox) rather than by encoding it into the path.
  */
 public final class PlanModeManager {
 

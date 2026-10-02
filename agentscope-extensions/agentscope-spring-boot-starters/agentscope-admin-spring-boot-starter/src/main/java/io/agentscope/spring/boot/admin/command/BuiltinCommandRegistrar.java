@@ -46,19 +46,19 @@ public final class BuiltinCommandRegistrar {
                 new AdminCommand(
                         "session.list",
                         "List sessions",
-                        "Session",
+                        "AgentStateStore",
                         CommandPlane.DATA,
                         "GET",
                         base + "/sessions",
                         List.of(),
                         false,
                         true,
-                        "List known session keys from the configured Session store"));
+                        "List known session keys from the configured AgentStateStore store"));
         registry.register(
                 new AdminCommand(
                         "session.messages",
                         "List session messages",
-                        "Session",
+                        "AgentStateStore",
                         CommandPlane.DATA,
                         "GET",
                         base + "/sessions/{sessionId}/messages",
@@ -70,7 +70,7 @@ public final class BuiltinCommandRegistrar {
                 new AdminCommand(
                         "session.state",
                         "Dump session state",
-                        "Session",
+                        "AgentStateStore",
                         CommandPlane.DATA,
                         "GET",
                         base + "/sessions/{sessionId}/state",
@@ -82,7 +82,7 @@ public final class BuiltinCommandRegistrar {
                 new AdminCommand(
                         "session.export",
                         "Export session transcript",
-                        "Session",
+                        "AgentStateStore",
                         CommandPlane.DATA,
                         "GET",
                         base + "/sessions/{sessionId}:export",
@@ -94,7 +94,7 @@ public final class BuiltinCommandRegistrar {
                 new AdminCommand(
                         "session.compact",
                         "Compact session",
-                        "Session",
+                        "AgentStateStore",
                         CommandPlane.DATA,
                         "POST",
                         base + "/sessions/{sessionId}:compact",
@@ -106,7 +106,7 @@ public final class BuiltinCommandRegistrar {
                 new AdminCommand(
                         "session.abort",
                         "Abort session",
-                        "Session",
+                        "AgentStateStore",
                         CommandPlane.DATA,
                         "POST",
                         base + "/sessions/{sessionId}:abort",
@@ -118,7 +118,7 @@ public final class BuiltinCommandRegistrar {
                 new AdminCommand(
                         "session.undo",
                         "Undo last mutation",
-                        "Session",
+                        "AgentStateStore",
                         CommandPlane.DATA,
                         "POST",
                         base + "/sessions/{sessionId}:undo",
@@ -131,7 +131,7 @@ public final class BuiltinCommandRegistrar {
                 new AdminCommand(
                         "session.redo",
                         "Redo a previously undone mutation",
-                        "Session",
+                        "AgentStateStore",
                         CommandPlane.DATA,
                         "POST",
                         base + "/sessions/{sessionId}:redo",

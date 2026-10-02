@@ -32,7 +32,7 @@ package io.agentscope.core.tool;
  * <p>Implementations can be:
  * <ul>
  *   <li>Simple in-memory Map storage ({@link DefaultContextStore})</li>
- *   <li>Custom storage backends (Redis, database, etc.)</li>
+ *   <li>Custom storage stores (Redis, database, etc.)</li>
  * </ul>
  *
  * <p>Example usage:

@@ -45,7 +45,6 @@ import org.slf4j.LoggerFactory;
  *   <li>Converts result to lowercase for consistent matching</li>
  * </ul>
  */
-@Deprecated(forRemoval = true, since = "2.0.0")
 public class WindowsCommandValidator implements CommandValidator {
 
     private static final Logger logger = LoggerFactory.getLogger(WindowsCommandValidator.class);

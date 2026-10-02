@@ -34,7 +34,7 @@ import org.springframework.boot.actuate.endpoint.annotation.Selector;
  * registered {@link ReActAgent}.
  *
  * <p>Read-only — mutating rules requires changes in agentscope-core to support live rule edits,
- * which is tracked in {@code ADMIN_OPS_API_PLAN.md} for Phase 3.
+ * which is tracked in {@code ADMIN_OPS_API_PLAN.md}.
  */
 @Endpoint(id = "agentscope-permissions")
 public class AgentscopePermissionsEndpoint {

@@ -113,7 +113,7 @@ mvn -pl agentscope-examples/agents/harness-examples/harness-quickstart exec:java
 
 **About `RuntimeContext`**: it is the identity carrier for the current `call()`. `sessionId` determines the storage path and log archive location; `userId` determines the default filesystem namespace (natural multi-tenant isolation). It is **not persisted** — it is only shared between hooks and tools within the current call.
 
-**Extension directions**: place `KNOWLEDGE.md`, `skills/*/SKILL.md`, or `subagents/*.md` in the workspace to enable domain knowledge injection, skill loading, and subagent orchestration respectively. Add `.toolResultEviction(ToolResultEvictionConfig.defaults())` to enable large-result offloading. Use [Filesystem — Three Declarative Modes](./filesystem.md) to choose between **shared storage, sandbox, or local+shell** for where files and commands land. For isolated execution prefer `filesystem(SandboxFilesystemSpec)` (see [Sandbox](./sandbox/index.md)); `abstractFilesystem` is only an escape hatch for self-managed backends.
+**Extension directions**: place `KNOWLEDGE.md`, `skills/*/SKILL.md`, or `subagents/*.md` in the workspace to enable domain knowledge injection, skill loading, and subagent orchestration respectively. Add `.toolResultEviction(ToolResultEvictionConfig.defaults())` to enable large-result offloading. Use [Filesystem — Three Declarative Modes](./filesystem.md) to choose between **shared storage, sandbox, or local+shell** for where files and commands land. For isolated execution prefer `filesystem(SandboxFilesystemSpec)` (see [Sandbox](./sandbox/index.md)); `abstractFilesystem` is only an escape hatch for self-managed stores.
 
 ## Core Capabilities
 
@@ -125,7 +125,7 @@ Each capability answers **one problem → one component**:
 - **Large tool result offloading** — answers *what to do when a single tool call returns too much*. `ToolResultEvictionHook` writes oversized results to the filesystem and keeps only a head+tail preview with a placeholder in context; the agent can re-read on demand.
 - **Session persistence** — answers *how to preserve state across processes*. `SessionPersistenceHook` writes agent state to the workspace by `sessionId`; the next call automatically resumes from where it left off.
 - **Subagent orchestration** — answers *how to decompose complex tasks*. `SubagentsHook` injects `task` / `task_output` tools; the parent agent can delegate synchronously or in the background. Subagents can be declared via workspace spec files, programmatic specs, or custom factories.
-- **Pluggable filesystem** — answers *how to isolate and control the agent's environment*. All file tools go through `AbstractFilesystem`. Choose from [three declarative modes](./filesystem.md) (local+shell, composite+store, sandbox) or `abstractFilesystem` for self-managed backends. Multi-tenant / session-level isolation is handled via `RuntimeContext.userId` and `IsolationScope`.
+- **Pluggable filesystem** — answers *how to isolate and control the agent's environment*. All file tools go through `AbstractFilesystem`. Choose from [three declarative modes](./filesystem.md) (local+shell, composite+store, sandbox) or `abstractFilesystem` for self-managed stores. Multi-tenant / session-level isolation is handled via `RuntimeContext.userId` and `IsolationScope`.
 
 Additionally, several infrastructure components support the above: `RuntimeContext` threads through the entire call, `MemoryMaintenanceScheduler` runs background merges and index maintenance, `AgentTraceHook` provides unified trace logging, and `AgentSkillRepository` auto-wires `SkillBox`.
 
@@ -144,7 +144,7 @@ The three pillars are connected by three shared objects: `WorkspaceManager` (who
 `HarnessAgent` is a thin wrapper around `Agent` + `StateModule`, internally holding a `ReActAgent delegate`. All capability injection happens in `HarnessAgent.Builder.build()`:
 
 - **Hook channel**: hooks are assembled in `priority` order and passed to `ReActAgent` (including `SandboxLifecycleHook` in sandbox mode, see [Architecture](./architecture.md))
-- **Toolkit channel**: `filesystem`, `memory_search`, `memory_get`, `session_search` are appended to the user's `Toolkit`; sandbox backends additionally add `shell_execute`; `SubagentsHook` itself registers `task` / `task_output`
+- **Toolkit channel**: `filesystem`, `memory_search`, `memory_get`, `session_search` are appended to the user's `Toolkit`; sandbox stores additionally add `shell_execute`; `SubagentsHook` itself registers `task` / `task_output`
 - **SkillBox channel**: `SkillBox` is auto-constructed from `workspace/skills/` or a custom `AgentSkillRepository`
 
 At the start of each `call()`, `bindRuntimeContext` distributes the current `RuntimeContext` to all hooks implementing `RuntimeContextAwareHook`, and restores state from `Session` as needed.

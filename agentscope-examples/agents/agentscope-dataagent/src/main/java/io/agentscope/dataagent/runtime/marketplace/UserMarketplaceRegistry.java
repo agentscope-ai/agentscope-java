@@ -160,9 +160,9 @@ public class UserMarketplaceRegistry {
     }
 
     /**
-     * SPI for plugging in marketplace backends. v1 ships
+     * SPI for plugging in marketplace stores. v1 ships
      * {@link io.agentscope.dataagent.runtime.marketplace.LocalApprovalMarketplace} under the
-     * {@code "local"} type; git and nacos backends are intentionally not bundled (lift the
+     * {@code "local"} type; git and nacos stores are intentionally not bundled (lift the
      * {@code GitDataAgentMarketplace} / {@code NacosDataAgentMarketplace} classes from
      * agentscope-builder if you need them).
      */

@@ -262,7 +262,7 @@ class ReActAgentSystemMsgTest {
 
             // Seed state with one prior message (after build so it lands in agent's own state)
             Msg priorMsg = userMsg("prior turn");
-            agent.getState().contextMutable().add(priorMsg);
+            agent.getAgentState().contextMutable().add(priorMsg);
 
             Msg callArg = userMsg("new message");
             agent.call(List.of(callArg)).block(TIMEOUT);

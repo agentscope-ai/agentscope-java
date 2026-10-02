@@ -27,7 +27,6 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.rag.Knowledge;
 import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.model.Document;
@@ -91,26 +90,6 @@ class ReActAgentBuilderLegacyShimTest {
                 return Mono.just(List.of());
             }
         };
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    void planNotebookRegistersPlanTools() {
-        PlanNotebook nb = PlanNotebook.builder().build();
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("plan-compat")
-                        .model(stubModel())
-                        .planNotebook(nb)
-                        .build();
-        // PlanNotebook self-registers a handful of plan-related tools (create_plan, finish_plan,
-        // view_subtasks, ...) when registered as a tool object.
-        boolean hasPlanTool =
-                agent.getToolkit().getToolNames().stream().anyMatch(n -> n.contains("plan"));
-        assertTrue(
-                hasPlanTool,
-                "PlanNotebook tools should be registered, got: "
-                        + agent.getToolkit().getToolNames());
     }
 
     @Test

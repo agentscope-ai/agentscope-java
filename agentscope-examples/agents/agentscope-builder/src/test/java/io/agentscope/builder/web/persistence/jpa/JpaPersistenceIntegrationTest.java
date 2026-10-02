@@ -26,8 +26,10 @@ import io.agentscope.builder.web.share.AgentShareGrant;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.harness.agent.store.BaseStore;
-import io.agentscope.harness.agent.store.InMemoryStore;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -191,6 +193,14 @@ class JpaPersistenceIntegrationTest {
         @Bean
         BaseStore inMemoryStore() {
             return new InMemoryStore();
+        }
+
+        @Bean
+        @Primary
+        AgentStateStore testStateStore() {
+            return Mockito.mock(
+                    AgentStateStore.class,
+                    org.mockito.AdditionalAnswers.delegatesTo(new InMemoryAgentStateStore()));
         }
     }
 }

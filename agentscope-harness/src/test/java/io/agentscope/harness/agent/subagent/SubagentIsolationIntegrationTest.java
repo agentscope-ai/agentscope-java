@@ -33,9 +33,9 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * End-to-end Phase B-0 isolation: spawn the same {@code SubagentDeclaration} under different
  * parent {@link RuntimeContext}s and verify each child {@link ReActAgent} ends up with a
- * distinct {@link io.agentscope.core.state.SessionKey}. Because {@code Session.save}/{@code get}
- * already partition by SessionKey, distinct keys are sufficient to guarantee state isolation
- * across all configured Session backends.
+ * distinct session ID. Because {@code AgentStateStore.save}/{@code get} already partition by
+ * (userId, sessionId), distinct IDs are sufficient to guarantee state isolation across all
+ * configured AgentStateStore stores.
  */
 class SubagentIsolationIntegrationTest {
 
@@ -61,7 +61,7 @@ class SubagentIsolationIntegrationTest {
     }
 
     @Test
-    void differentParentSessions_yieldDistinctSessionKeys() throws Exception {
+    void differentParentSessions_yieldDistinctSessionIds() throws Exception {
         SubagentEntry entry = workerEntry(buildEntries());
 
         HarnessAgent child1 =
@@ -72,15 +72,15 @@ class SubagentIsolationIntegrationTest {
                         entry.factory().create(RuntimeContext.builder().sessionId("s2").build());
 
         assertNotEquals(
-                child1.getSessionKey().toIdentifier(),
-                child2.getSessionKey().toIdentifier(),
-                "different parent sessions must produce different child SessionKeys");
-        assertEquals("worker@s1", child1.getSessionKey().toIdentifier());
-        assertEquals("worker@s2", child2.getSessionKey().toIdentifier());
+                child1.getDefaultSessionId(),
+                child2.getDefaultSessionId(),
+                "different parent sessions must produce different child session IDs");
+        assertEquals("worker@s1", child1.getDefaultSessionId());
+        assertEquals("worker@s2", child2.getDefaultSessionId());
     }
 
     @Test
-    void differentParentUsers_yieldDistinctSessionKeys() throws Exception {
+    void differentParentUsers_yieldDistinctSessionIds() throws Exception {
         SubagentEntry entry = workerEntry(buildEntries());
 
         HarnessAgent alice =
@@ -100,21 +100,20 @@ class SubagentIsolationIntegrationTest {
                                                 .userId("bob")
                                                 .build());
 
-        assertEquals("worker@s1#alice", alice.getSessionKey().toIdentifier());
-        assertEquals("worker@s1#bob", bob.getSessionKey().toIdentifier());
-        assertNotEquals(alice.getSessionKey(), bob.getSessionKey());
+        assertEquals("worker@s1#alice", alice.getDefaultSessionId());
+        assertEquals("worker@s1#bob", bob.getDefaultSessionId());
+        assertNotEquals(alice.getDefaultSessionId(), bob.getDefaultSessionId());
     }
 
     @Test
-    void sameParent_yieldsIdenticalSessionKey() throws Exception {
+    void sameParent_yieldsIdenticalSessionId() throws Exception {
         SubagentEntry entry = workerEntry(buildEntries());
         RuntimeContext rc = RuntimeContext.builder().sessionId("s1").userId("alice").build();
 
         HarnessAgent first = (HarnessAgent) entry.factory().create(rc);
         HarnessAgent second = (HarnessAgent) entry.factory().create(rc);
 
-        // Same (sid, uid) → same SessionKey → both children load/save the same persisted state.
-        assertEquals(first.getSessionKey().toIdentifier(), second.getSessionKey().toIdentifier());
+        assertEquals(first.getDefaultSessionId(), second.getDefaultSessionId());
     }
 
     @Test
@@ -123,17 +122,11 @@ class SubagentIsolationIntegrationTest {
 
         HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty());
 
-        // Single-tenant demo: rc empty → falls back to "worker" only, matching pre-B-0 behaviour.
-        assertEquals("worker", child.getSessionKey().toIdentifier());
+        assertEquals("worker", child.getDefaultSessionId());
     }
 
     @Test
     void sameSessionIdDifferentUsers_isolated_endToEnd() throws Exception {
-        // Sanity: two children with different uids do not collide on the persisted Session.
-        // We don't need to exercise the full Session.save round-trip — distinct SessionKeys are
-        // sufficient: every Session implementation already partitions by key. We just verify
-        // the two keys differ AND aren't accidentally equal as strings (defence vs sanitiser
-        // quirks like uid containing the literal "@").
         SubagentEntry entry = workerEntry(buildEntries());
 
         HarnessAgent a =
@@ -153,10 +146,8 @@ class SubagentIsolationIntegrationTest {
                                                 .userId("user")
                                                 .build());
 
-        // sanitiser only strips slashes/spaces/controls; '@' is allowed but lives only in the
-        // user segment so the prefix `worker@s1#` already disambiguates these.
-        assertNotEquals(a.getSessionKey().toIdentifier(), b.getSessionKey().toIdentifier());
-        assertTrue(a.getSessionKey().toIdentifier().endsWith("#user@evil"));
-        assertTrue(b.getSessionKey().toIdentifier().endsWith("#user"));
+        assertNotEquals(a.getDefaultSessionId(), b.getDefaultSessionId());
+        assertTrue(a.getDefaultSessionId().endsWith("#user@evil"));
+        assertTrue(b.getDefaultSessionId().endsWith("#user"));
     }
 }

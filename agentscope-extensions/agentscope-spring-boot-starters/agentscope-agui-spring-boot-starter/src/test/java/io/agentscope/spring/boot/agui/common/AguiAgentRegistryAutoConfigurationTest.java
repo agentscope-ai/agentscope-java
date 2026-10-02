@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

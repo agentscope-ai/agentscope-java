@@ -37,14 +37,14 @@ import org.slf4j.LoggerFactory;
  * Background skill maintenance orchestrator. Mirrors hermes-agent's {@code agent/curator.py}
  * lifecycle:
  * <ul>
- *   <li>Phase 1 — pure-function {@code applyAutomaticTransitions}: walk every agent-tracked
+ *   <li>Pure-function {@code applyAutomaticTransitions}: walk every agent-tracked
  *       skill, transition {@code ACTIVE → STALE → ARCHIVED} based on the latest activity
  *       timestamp from the sidecar. Pinned + DRAFT skills are skipped.</li>
- *   <li>Phase 2 — LLM umbrella pass: produces a markdown report of consolidation candidates;
+ *   <li>LLM umbrella pass: produces a markdown report of consolidation candidates;
  *       in {@code DRY_RUN_ONLY} mode (default) it does not call {@code skill_manage}, just
- *       writes the report. {@code LIVE} mode is reserved for a future milestone (it requires
- *       an auxiliary {@code Model} + a forked {@code ReActAgent}; the M5 implementation only
- *       exposes the dry-run report-generation path).</li>
+ *       writes the report. {@code LIVE} mode is reserved for a future version (it requires
+ *       an auxiliary {@code Model} + a forked {@code ReActAgent}; the current implementation
+ *       only exposes the dry-run report-generation path).</li>
  * </ul>
  *
  * <p>Strict invariants:
@@ -165,7 +165,7 @@ public class SkillCurator {
     }
 
     // ---------------------------------------------------------------------
-    //  Phase 1 — pure-function transitions
+    //  Automatic transitions
     // ---------------------------------------------------------------------
 
     public record TransitionCounts(int checked, int markedStale, int archived, int reactivated) {}
@@ -222,13 +222,13 @@ public class SkillCurator {
     }
 
     // ---------------------------------------------------------------------
-    //  Phase 2 — umbrella pass (M5: dry-run report only)
+    //  Umbrella pass (dry-run report only)
     // ---------------------------------------------------------------------
 
     /**
      * Generate a human-readable markdown report listing every agent-created skill grouped by
-     * common name prefix. This is the M5 stub for the LLM-powered umbrella consolidation pass:
-     * the prompt + LLM call require an auxiliary model and are deferred to a future milestone.
+     * common name prefix. This is a stub for the LLM-powered umbrella consolidation pass:
+     * the prompt + LLM call require an auxiliary model and are deferred to a future version.
      * In {@code DRY_RUN_ONLY} or {@code LIVE} mode this method writes a report to
      * {@code skills/.curator_reports/&lt;ts&gt;/REPORT.md}; in {@code DISABLED} mode it returns
      * {@code null} without writing.

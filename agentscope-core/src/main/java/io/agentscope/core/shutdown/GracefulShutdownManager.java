@@ -46,8 +46,17 @@ public final class GracefulShutdownManager {
             new AtomicReference<>(ShutdownState.RUNNING);
     private final AtomicReference<GracefulShutdownConfig> config =
             new AtomicReference<>(GracefulShutdownConfig.DEFAULT);
-    private final ConcurrentHashMap<String, ActiveRequestContext> activeRequestsByAgentId =
+
+    /**
+     * Active requests keyed by their unique per-call {@code requestId}, not by agent id: a single
+     * agent instance may serve many concurrent calls (distinct {@code (userId, sessionId)}
+     * sessions), each of which must be tracked, interrupted, and saved independently. Keying by
+     * agent id would collapse concurrent calls to one entry (last-writer-wins) and let one call's
+     * completion unregister another in-flight call.
+     */
+    private final ConcurrentHashMap<String, ActiveRequestContext> activeRequestsById =
             new ConcurrentHashMap<>();
+
     private final ConcurrentHashMap<String, ShutdownStateSaver> stateSavers =
             new ConcurrentHashMap<>();
     private final AtomicReference<Instant> shutdownStartedAt = new AtomicReference<>(null);
@@ -132,7 +141,7 @@ public final class GracefulShutdownManager {
     }
 
     public int getActiveRequestCount() {
-        return activeRequestsByAgentId.size();
+        return activeRequestsById.size();
     }
 
     public void ensureAcceptingRequests() {
@@ -148,28 +157,41 @@ public final class GracefulShutdownManager {
         ShutdownStateSaver saver = stateSavers.get(agent.getAgentId());
         String requestId = UUID.randomUUID().toString();
         ActiveRequestContext ctx = new ActiveRequestContext(requestId, agentBase, saver);
-        activeRequestsByAgentId.put(agent.getAgentId(), ctx);
+        activeRequestsById.put(requestId, ctx);
         return requestId;
     }
 
-    public void unregisterRequest(Agent agent) {
-        if (agent == null) {
+    /**
+     * Bind the per-call {@link AgentState} resolved for the in-flight request identified by
+     * {@code requestId}, so shutdown interruption and state-saving target that exact
+     * {@code (userId, sessionId)} session rather than the agent's no-arg "most-recently-active"
+     * accessors. Invoked by {@code AgentBase} once a call has activated its session slot. No-op when
+     * no request is tracked for the id or the state is {@code null}.
+     */
+    public void bindRequestState(String requestId, AgentState state) {
+        if (state == null) {
             return;
         }
-        activeRequestsByAgentId.remove(agent.getAgentId());
-        stateSavers.remove(agent.getAgentId());
+        getActiveRequest(requestId).ifPresent(ctx -> ctx.bindState(state));
+    }
+
+    public void unregisterRequest(String requestId) {
+        if (requestId == null || requestId.isEmpty()) {
+            return;
+        }
+        activeRequestsById.remove(requestId);
         updateTerminatedIfNoRequests();
     }
 
-    private Optional<ActiveRequestContext> getActiveRequestByAgent(Agent agent) {
-        if (agent == null) {
+    private Optional<ActiveRequestContext> getActiveRequest(String requestId) {
+        if (requestId == null || requestId.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.ofNullable(activeRequestsByAgentId.get(agent.getAgentId()));
+        return Optional.ofNullable(activeRequestsById.get(requestId));
     }
 
-    public void interruptIfShuttingDown(Agent agent) {
-        Optional<ActiveRequestContext> contextOpt = getActiveRequestByAgent(agent);
+    public void interruptIfShuttingDown(String requestId) {
+        Optional<ActiveRequestContext> contextOpt = getActiveRequest(requestId);
         if (contextOpt.isEmpty()) {
             return;
         }
@@ -182,8 +204,8 @@ public final class GracefulShutdownManager {
      * Called from agent's handleInterrupt when a SYSTEM interrupt is observed.
      * Always saves because memory may have been updated after the previous safe-point/timeout save.
      */
-    public void saveOnInterruptObserved(Agent agent) {
-        getActiveRequestByAgent(agent).ifPresent(ActiveRequestContext::saveState);
+    public void saveOnInterruptObserved(String requestId) {
+        getActiveRequest(requestId).ifPresent(ActiveRequestContext::saveState);
     }
 
     public boolean performGracefulShutdown() {
@@ -240,10 +262,10 @@ public final class GracefulShutdownManager {
                                 + " active request(s)",
                         elapsed.getSeconds(),
                         timeout.getSeconds(),
-                        activeRequestsByAgentId.size());
+                        activeRequestsById.size());
                 shutdownTimeoutSignal.get().tryEmitEmpty();
 
-                for (ActiveRequestContext ctx : activeRequestsByAgentId.values()) {
+                for (ActiveRequestContext ctx : activeRequestsById.values()) {
                     ctx.saveState();
                     if (ctx.interruptForShutdown()) {
                         log.info(
@@ -256,7 +278,7 @@ public final class GracefulShutdownManager {
     }
 
     private void updateTerminatedIfNoRequests() {
-        if (getState() == ShutdownState.SHUTTING_DOWN && activeRequestsByAgentId.isEmpty()) {
+        if (getState() == ShutdownState.SHUTTING_DOWN && activeRequestsById.isEmpty()) {
             if (state.compareAndSet(ShutdownState.SHUTTING_DOWN, ShutdownState.TERMINATED)) {
                 synchronized (terminationLock) {
                     terminationLock.notifyAll();
@@ -301,7 +323,7 @@ public final class GracefulShutdownManager {
             future.cancel(false);
         }
         state.set(ShutdownState.RUNNING);
-        activeRequestsByAgentId.clear();
+        activeRequestsById.clear();
         stateSavers.clear();
         shutdownStartedAt.set(null);
         monitorStarted.set(false);

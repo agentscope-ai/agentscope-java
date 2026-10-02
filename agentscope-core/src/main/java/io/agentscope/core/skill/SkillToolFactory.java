@@ -19,9 +19,18 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.io.IOException;
+import java.nio.charset.MalformedInputException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -172,17 +181,74 @@ class SkillToolFactory {
             return buildSkillMarkdownResponse(skillId, skill);
         }
 
-        // Get resource
+        // 1. In-memory map (eager FS repos, classpath repos, marketplace prefetch).
         Map<String, String> resources = skill.getResources();
-        if (resources == null || !resources.containsKey(path)) {
-            // Resource not found, return available resource paths
-            throw new IllegalArgumentException(
-                    buildResourceNotFoundMessage(skillId, path, resources));
+        if (resources != null && resources.containsKey(path)) {
+            activateSkill(skillId);
+            return buildResourceResponse(skillId, path, resources.get(path));
         }
 
-        String resourceContent = resources.get(path);
-        activateSkill(skillId);
-        return buildResourceResponse(skillId, path, resourceContent);
+        // 2. Disk fallback via skill.originDir (lazy FS repos, or any FS-backed skill whose
+        //    in-memory map didn't preload the requested path). Same sanitisation rules as the
+        //    advertised path schema: no '..', no absolute path, no directories.
+        Optional<String> sanitized = sanitizeRelativePath(path);
+        if (sanitized.isPresent() && skill.getOriginDir().isPresent()) {
+            Optional<String> diskContent =
+                    readFromOriginDir(skill.getOriginDir().get(), sanitized.get());
+            if (diskContent.isPresent()) {
+                activateSkill(skillId);
+                return buildResourceResponse(skillId, path, diskContent.get());
+            }
+        }
+
+        // 3. Not found — enumerate from both sources so the model gets real options.
+        throw new IllegalArgumentException(
+                buildResourceNotFoundMessage(
+                        skillId, path, resources, skill.getOriginDir().orElse(null)));
+    }
+
+    private static Optional<String> sanitizeRelativePath(String path) {
+        if (path == null || path.isBlank()) {
+            return Optional.empty();
+        }
+        String normalized = path.replace('\\', '/');
+        if (normalized.startsWith("/") || normalized.contains("..")) {
+            return Optional.empty();
+        }
+        if (".".equals(normalized) || "./".equals(normalized)) {
+            return Optional.empty();
+        }
+        return Optional.of(normalized);
+    }
+
+    /**
+     * Reads a single file under {@code originDir} for the disk-fallback path. Text content is
+     * returned as-is; binary content uses the {@code base64:} prefix convention that matches
+     * {@code SkillFileSystemHelper.readAndPutResource}, so the load tool's contract is identical
+     * whether the resource came from memory or disk.
+     */
+    private static Optional<String> readFromOriginDir(Path originDir, String relPath) {
+        Path target = originDir.resolve(relPath).normalize();
+        if (!target.startsWith(originDir)) {
+            return Optional.empty();
+        }
+        if (!Files.isRegularFile(target) || !Files.isReadable(target)) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Files.readString(target, StandardCharsets.UTF_8));
+        } catch (MalformedInputException e) {
+            try {
+                byte[] bytes = Files.readAllBytes(target);
+                return Optional.of("base64:" + Base64.getEncoder().encodeToString(bytes));
+            } catch (IOException ex) {
+                logger.warn("Failed to read binary resource {}: {}", target, ex.getMessage());
+                return Optional.empty();
+            }
+        } catch (IOException e) {
+            logger.warn("Failed to read resource {}: {}", target, e.getMessage());
+            return Optional.empty();
+        }
     }
 
     /**
@@ -233,7 +299,7 @@ class SkillToolFactory {
      * @return Formatted error message with available resources
      */
     private String buildResourceNotFoundMessage(
-            String skillId, String path, Map<String, String> resources) {
+            String skillId, String path, Map<String, String> resources, Path originDir) {
         StringBuilder message = new StringBuilder();
         message.append("Resource not found: '")
                 .append(path)
@@ -241,20 +307,42 @@ class SkillToolFactory {
                 .append(skillId)
                 .append("'.\n\n");
 
-        // Build available resources list with SKILL.md as the first item
-        List<String> resourcePaths = new ArrayList<>();
-        resourcePaths.add("SKILL.md"); // Always add SKILL.md as the first resource
-
-        if (resources != null && !resources.isEmpty()) {
+        // Build a deduped list spanning in-memory keys and on-disk entries so the model can
+        // see both classes of resources in one place.
+        Set<String> resourcePaths = new LinkedHashSet<>();
+        resourcePaths.add("SKILL.md");
+        if (resources != null) {
             resourcePaths.addAll(resources.keySet());
+        }
+        if (originDir != null) {
+            resourcePaths.addAll(listOriginDirEntries(originDir));
         }
 
         message.append("Available resources:\n");
-        for (int i = 0; i < resourcePaths.size(); i++) {
-            message.append(i + 1).append(". ").append(resourcePaths.get(i)).append("\n");
+        int i = 1;
+        for (String entry : resourcePaths) {
+            message.append(i++).append(". ").append(entry).append("\n");
         }
 
         return message.toString();
+    }
+
+    private static List<String> listOriginDirEntries(Path originDir) {
+        List<String> entries = new ArrayList<>();
+        try (var stream = Files.walk(originDir)) {
+            stream.filter(Files::isRegularFile)
+                    .forEach(
+                            p -> {
+                                String rel = originDir.relativize(p).toString().replace('\\', '/');
+                                if (!rel.isBlank() && !"SKILL.md".equals(rel)) {
+                                    entries.add(rel);
+                                }
+                            });
+        } catch (IOException e) {
+            logger.debug(
+                    "Failed to enumerate {} for not-found listing: {}", originDir, e.getMessage());
+        }
+        return entries;
     }
 
     /**

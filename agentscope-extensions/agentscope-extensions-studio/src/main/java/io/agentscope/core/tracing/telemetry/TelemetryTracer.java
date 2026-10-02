@@ -97,7 +97,7 @@ public class TelemetryTracer implements Tracer {
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callAgent"));
 
                     Span span = spanBuilder.startSpan();
-                    Context otelContext = span.storeInContext(Context.current());
+                    Context otelContext = span.storeInContext(parentContext);
 
                     return otelContext
                             .wrapSupplier(agentCall)
@@ -135,7 +135,7 @@ public class TelemetryTracer implements Tracer {
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callModel"));
 
                     Span span = spanBuilder.startSpan();
-                    Context otelContext = span.storeInContext(Context.current());
+                    Context otelContext = span.storeInContext(parentContext);
 
                     StreamChatResponseAggregator aggregator = StreamChatResponseAggregator.create();
 
@@ -179,7 +179,7 @@ public class TelemetryTracer implements Tracer {
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callTool"));
 
                     Span span = spanBuilder.startSpan();
-                    Context otelContext = span.storeInContext(Context.current());
+                    Context otelContext = span.storeInContext(parentContext);
 
                     return otelContext
                             .wrapSupplier(toolKitCall)

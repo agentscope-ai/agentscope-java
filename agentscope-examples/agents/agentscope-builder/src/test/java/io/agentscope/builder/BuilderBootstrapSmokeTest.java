@@ -22,13 +22,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.builder.runtime.BuilderBootstrap;
-import io.agentscope.builder.runtime.channel.ChannelConfig;
-import io.agentscope.builder.runtime.channel.DmScope;
-import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.DmScope;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;

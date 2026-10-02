@@ -16,26 +16,19 @@
 package io.agentscope.core.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.agent.StructuredOutputHook;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
-import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.StructuredOutputReminder;
-import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
@@ -186,53 +179,6 @@ class SkillHookTest {
                 SkillHook.SKILL_HOOK_PRIORITY,
                 skillHook.priority(),
                 "Skill hook should use SKILL_HOOK_PRIORITY");
-    }
-
-    @Test
-    @DisplayName("[ISSUE#719]: Should append skill prompt after structured output reminder")
-    void testSkillPromptAppendedAfterStructuredOutputReminder() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Test Content", null);
-        skillBox.registerSkill(skill);
-
-        Msg userMsg =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("User query").build())
-                        .build();
-
-        Msg reminderMsg =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Reminder").build())
-                        .metadata(
-                                Map.of(
-                                        MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER,
-                                        true,
-                                        MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE,
-                                        StructuredOutputReminder.TOOL_CHOICE.toString()))
-                        .build();
-
-        List<Msg> messages = new ArrayList<>();
-        messages.add(userMsg);
-        messages.add(reminderMsg);
-
-        PreReasoningEvent event =
-                new PreReasoningEvent(
-                        testAgent, "test-model", GenerateOptions.builder().build(), messages);
-
-        // SkillHook only handles PreCall; structured output is applied on PreReasoning here.
-        List<Hook> hooks = new ArrayList<>();
-        hooks.add(new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, null));
-
-        PreReasoningEvent result = notifyHooks(event, hooks).block();
-
-        assertNotNull(result);
-        assertInstanceOf(
-                ToolChoice.Specific.class, result.getEffectiveGenerateOptions().getToolChoice());
-        assertEquals(
-                "generate_response",
-                ((ToolChoice.Specific) result.getEffectiveGenerateOptions().getToolChoice())
-                        .toolName());
     }
 
     @Test

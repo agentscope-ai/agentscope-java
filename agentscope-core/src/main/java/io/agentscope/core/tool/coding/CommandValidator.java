@@ -39,7 +39,6 @@ import java.util.Set;
  * @see WindowsCommandValidator
  * @see ShellCommandTool
  */
-@Deprecated(forRemoval = true, since = "2.0.0")
 public interface CommandValidator {
 
     /**
