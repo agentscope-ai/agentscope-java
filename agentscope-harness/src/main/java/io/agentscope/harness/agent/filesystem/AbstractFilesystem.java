@@ -94,6 +94,18 @@ public interface AbstractFilesystem {
         if (path == null) {
             return null;
         }
+        // Byte-for-byte passthrough when there is nothing to resolve: POSIX file names may
+        // legally contain a backslash, and RemoteFilesystem treats the path as a literal
+        // store key — rewriting an already-clean string would change which key is read
+        // (#3378 review).
+        if (!path.contains("\\")
+                && !path.contains("./")
+                && !path.contains("../")
+                && !path.contains("//")
+                && !path.endsWith("/")
+                && !path.endsWith("..")) {
+            return path;
+        }
         String p = path.replace('\\', '/');
         boolean absolute = p.startsWith("/");
         List<String> parts = new ArrayList<>();

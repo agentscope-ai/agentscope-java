@@ -198,12 +198,15 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
+        // Normalize once at the top: routing decisions and every delegation see the canonical
+        // string, so a crafted ".." cannot pop the namespace anchor on any branch (#3378).
+        String canonical = AbstractFilesystem.normalizeEnumerationSegments(path);
         // All root spellings are equivalent and take the aggregated root — checked BEFORE
         // route resolution so a configured "/" route cannot capture ls("/") and make the
         // spellings diverge (review follow-up, #3253). Non-root paths route as usual; null
         // matches no route and falls through to the aggregate below.
-        if (!isRootSpelling(path)) {
-            RouteResult route = routeForPath(path);
+        if (!isRootSpelling(canonical)) {
+            RouteResult route = routeForPath(canonical);
 
             if (route.routePrefix() != null) {
                 LsResult result = route.backend().ls(runtimeContext, route.backendPath());
@@ -289,10 +292,12 @@ public class CompositeFilesystem implements AbstractFilesystem {
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
+        // Normalize once at the top, same as ls (review follow-up, #3253/#3378).
+        String canonical = AbstractFilesystem.normalizeEnumerationSegments(path);
         // Same ordering as ls: root spellings are checked before routing so a configured
         // "/" route cannot capture them (review follow-up, #3253).
-        if (!isRootSpelling(path)) {
-            RouteResult route = routeForPath(path);
+        if (!isRootSpelling(canonical)) {
+            RouteResult route = routeForPath(canonical);
             if (route.routePrefix() != null) {
                 GrepResult result =
                         route.backend().grep(runtimeContext, pattern, route.backendPath(), glob);
@@ -314,7 +319,8 @@ public class CompositeFilesystem implements AbstractFilesystem {
         if (isRootSpelling(path)) {
             List<GrepMatch> allMatches = new ArrayList<>();
             GrepResult defaultResult =
-                    defaultBackend.grep(runtimeContext, pattern, path == null ? null : "/", glob);
+                    defaultBackend.grep(
+                            runtimeContext, pattern, canonical == null ? null : "/", glob);
             if (!defaultResult.isSuccess()) {
                 return defaultResult;
             }
@@ -356,19 +362,17 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
         // Normalize .. segments before delegation so a crafted ".." cannot pop the
         // namespace anchor off an absolute path (#3378).
-        return defaultBackend.grep(
-                runtimeContext,
-                pattern,
-                AbstractFilesystem.normalizeEnumerationSegments(path),
-                glob);
+        return defaultBackend.grep(runtimeContext, pattern, canonical, glob);
     }
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
+        // Normalize once at the top, same as ls/grep (review follow-up, #3253/#3378).
+        String canonical = AbstractFilesystem.normalizeEnumerationSegments(path);
         // Same ordering as ls/grep: root spellings are checked before routing (review
         // follow-up, #3253).
-        if (!isRootSpelling(path)) {
-            RouteResult route = routeForPath(path);
+        if (!isRootSpelling(canonical)) {
+            RouteResult route = routeForPath(canonical);
 
             if (route.routePrefix() != null) {
                 GlobResult result =
@@ -386,8 +390,8 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
         // Non-root path that didn't match any route: delegate to default backend only.
         // Route scanning only makes sense for root-level recursive globs.
-        if (!isRootSpelling(path)) {
-            return defaultBackend.glob(runtimeContext, pattern, path);
+        if (!isRootSpelling(canonical)) {
+            return defaultBackend.glob(runtimeContext, pattern, canonical);
         }
 
         List<FileInfo> results = new ArrayList<>();
