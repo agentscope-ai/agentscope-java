@@ -179,8 +179,11 @@ public interface AbstractFilesystem {
         if (path == null || path.isBlank()) {
             throw new IllegalArgumentException("Path must not be null or blank");
         }
-        if (path.contains("..")) {
-            throw new IllegalArgumentException("Path traversal ('..') not allowed: " + path);
+        String portable = path.replace('\\', '/');
+        for (String segment : portable.split("/")) {
+            if ("..".equals(segment)) {
+                throw new IllegalArgumentException("Path traversal ('..') not allowed: " + path);
+            }
         }
     }
 }

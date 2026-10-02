@@ -1,13 +1,14 @@
 ---
-title: "计划模式（Plan Mode）"
-description: "动手前先想清楚：只读阶段写计划文件，HITL 后再进入执行阶段"
+title: 计划模式（Plan Mode）
+description: 动手前先想清楚：只读阶段写计划文件，HITL 后再进入执行阶段
+en_link: /v2/en/docs/harness/plan-mode
 ---
 
 ## 作用
 
 Plan Mode 让 agent 在动手前先"把意图想清楚 + 写下来"再执行。开启后 agent 进入一个**只读阶段**：
 
-- 只能调用**只读工具**和 4 个白名单工具：`plan_enter` / `plan_write` / `plan_exit` / `todo_write`（shell 可按需放开，见[下文](#在-plan-阶段放开-shell可选)）；
+- 只能调用**只读工具**和 9 个白名单工具：`plan_enter` / `plan_write` / `plan_exit` / `todo_write` / `agent_spawn` / `agent_send` / `agent_list` / `task_output` / `task_list`（shell 可按需放开，见[下文](#在-plan-阶段放开-shell可选)）；
 - 其它工具调用一律被拒绝（agent 看到一条"plan 阶段拒绝"提示）；
 - 退出 Plan Mode 走 HITL 确认（复用权限系统的 ASK），避免模型一意孤行直接进入执行。
 
@@ -47,7 +48,7 @@ Builder 选项：
 
 ## 工作流
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     autonumber
     participant U as User
@@ -64,11 +65,10 @@ sequenceDiagram
     A->>A: 进入执行阶段，所有工具解禁
 ```
 
-中间任意时刻调用非白名单工具（比如 `write_file`；`execute` 默认也被拒，除非你[按需放开](#在-plan-阶段放开-shell可选)）都会被即时拒绝并返回类似这样的结果给模型：
+中间任意时刻调用非白名单工具（比如 `write_file`；`execute` 默认也被拒，除非你[按需放开](#在-plan-阶段放开-shell可选)）都会被即时拒绝。模型看到的工具结果就是 `PlanModeMiddleware.DENY_MESSAGE` 常量的原文：
 
 ```text
-[Tool denied — plan mode is active]
-Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are allowed.
+Blocked: you are in PLAN mode (read-only). You may investigate and run read-only tools, record your plan with plan_write, and call plan_exit when ready to execute. Do not modify files or run mutating commands until the plan is approved.
 ```
 
 模型看到拒绝信息会自然地切回"先写计划"。
@@ -112,7 +112,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 运行期切换权限模式（"危险开关"逃生口）
 
-Plan Mode 只是一个具体的阶段开关。在它之下，每个 session 都带着一个 [`PermissionMode`](../building-blocks/context.md)，由权限引擎在评估时使用。你可以在运行期翻转这个 mode——比如提供一个由用户显式触发的"跳过所有权限确认"开关（类似其它编码工具里的 YOLO / dangerous-skip 开关）：
+Plan Mode 只是一个具体的阶段开关。在它之下，每个 session 都带着一个 [`PermissionMode`](/v2/zh/docs/building-blocks/context)，由权限引擎在评估时使用。你可以在运行期翻转这个 mode——比如提供一个由用户显式触发的"跳过所有权限确认"开关（类似其它编码工具里的 YOLO / dangerous-skip 开关）：
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder().sessionId("my-session").build();
@@ -147,12 +147,9 @@ agent.isPlanModeActive(ctx);
 
 ## 与子 agent 的关系
 
-⚠ 当前**已知缺口**：Plan Mode 期间通过 `agent_spawn` 启动的子 agent **不会自动继承只读限制**。如果希望子 agent 也只读：
+Plan Mode 期间通过 `agent_spawn` 启动的子 agent **会自动继承只读限制**：父 agent 的 plan-mode 上下文会在 spawn 时传播给子 agent，子 agent 同样处于只读阶段，直到计划被批准。
 
-- 在子 agent 的声明里把 `tools` 过滤到只读集合；或
-- 在子 agent 的 builder 里也开 `enablePlanMode()` 并自行进入
-
-未来版本会让 plan 阶段的限制按父→子自动传播。
+如需进一步收紧，仍可在子 agent 的声明里把 `tools` 过滤到只读集合。
 
 ## 与 `todo_write` 的协作
 
@@ -163,7 +160,7 @@ Plan Mode 与 `todo_write`（core 提供）是两个**独立但常常一起用**
 
 典型工作流：plan 阶段写完 `PLAN.md` → `plan_exit` → 执行阶段用 `todo_write` 把 PLAN 拆成 5–8 条 todo → 逐条推进。Agent 每轮推理前能看到 todos 的小提示，帮助保持聚焦。
 
-⚠ 不要和子 agent 的**后台任务**（`task_output` / `task_cancel` / `task_list`）混淆——那是另一回事，详见 [子 Agent](./subagent.md)。
+⚠ 不要和子 agent 的**后台任务**（`task_output` / `task_cancel` / `task_list`）混淆——那是另一回事，详见 [子 Agent](/v2/zh/docs/harness/subagent)。
 
 ## 查看任务列表
 
@@ -205,6 +202,6 @@ agent.streamEvents(message)
 
 ## 相关文档
 
-- [工作区](./workspace.md) — `plans/` 目录的位置
-- [子 Agent](./subagent.md) — `todo_write` ≠ subagent task，不要混淆
-- [架构](./architecture.md) — Plan Mode 在 call() 时序中的位置
+- [工作区](/v2/zh/docs/harness/workspace) — `plans/` 目录的位置
+- [子 Agent](/v2/zh/docs/harness/subagent) — `todo_write` ≠ subagent task，不要混淆
+- [架构](/v2/zh/docs/harness/architecture) — Plan Mode 在 call() 时序中的位置

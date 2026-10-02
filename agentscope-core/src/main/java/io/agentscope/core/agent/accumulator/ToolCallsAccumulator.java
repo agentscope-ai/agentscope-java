@@ -16,6 +16,7 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
@@ -55,6 +56,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         Map<String, Object> args = new HashMap<>();
         StringBuilder rawContent = new StringBuilder();
         Map<String, Object> metadata = new HashMap<>();
+        ToolCallState state;
 
         void merge(ToolUseBlock block) {
             // Update ID if present
@@ -67,9 +69,16 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                 this.name = block.getName();
             }
 
-            // Merge parameters
+            // Merge parameters. Skip null values so a partial/null map from an early
+            // stream chunk cannot wipe previously accumulated non-null arguments.
             if (block.getInput() != null) {
-                this.args.putAll(block.getInput());
+                for (Map.Entry<String, Object> entry : block.getInput().entrySet()) {
+                    if (entry.getValue() != null) {
+                        this.args.put(entry.getKey(), entry.getValue());
+                    } else if (!this.args.containsKey(entry.getKey())) {
+                        this.args.put(entry.getKey(), null);
+                    }
+                }
             }
 
             // Accumulate raw content (for parsing complete JSON)
@@ -81,23 +90,35 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             if (block.getMetadata() != null && !block.getMetadata().isEmpty()) {
                 this.metadata.putAll(block.getMetadata());
             }
+
+            this.state = block.getState();
         }
 
         ToolUseBlock build() {
             Map<String, Object> finalArgs = new HashMap<>(args);
             String rawContentStr = this.rawContent.toString();
 
-            // If no parsed arguments but has raw JSON content, try to parse
-            if (finalArgs.isEmpty() && rawContentStr.length() > 0) {
+            // Always attempt to parse the fully accumulated raw JSON. Early stream chunks may
+            // look like complete objects ({...}) but still contain null/incomplete values;
+            // the final raw content is the source of truth for missing or null keys.
+            if (!rawContentStr.isEmpty()) {
                 try {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> parsed =
                             JsonUtils.getJsonCodec().fromJson(rawContentStr, Map.class);
                     if (parsed != null) {
-                        finalArgs.putAll(parsed);
+                        for (Map.Entry<String, Object> entry : parsed.entrySet()) {
+                            if (entry.getValue() == null) {
+                                continue;
+                            }
+                            Object existing = finalArgs.get(entry.getKey());
+                            if (existing == null || !finalArgs.containsKey(entry.getKey())) {
+                                finalArgs.put(entry.getKey(), entry.getValue());
+                            }
+                        }
                     }
                 } catch (Exception ignored) {
-                    // Parsing failed, keep empty args
+                    // Parsing failed, keep previously merged args
                 }
             }
 
@@ -119,6 +140,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .input(finalArgs)
                     .content(contentStr)
                     .metadata(metadata.isEmpty() ? null : metadata)
+                    .state(state)
                     .build();
         }
 

@@ -1,0 +1,70 @@
+server:
+  port: ${BUILDER_SCHEDULER_PORT:8083}
+
+spring:
+  application:
+    name: builder-scheduler
+
+  # --------------------------------------------------------------------------
+  # Scheduler JDBC — prefers Postgres. Coordination / ACL reads stay in the
+  # shared builder database; session lifecycle stays on the control plane.
+  # --------------------------------------------------------------------------
+  datasource:
+    url: ${BUILDER_DB_URL:jdbc:postgresql://localhost:5432/builder?currentSchema=dp}
+    driver-class-name: ${BUILDER_DB_DRIVER:org.postgresql.Driver}
+    username: ${BUILDER_DB_USER:builder}
+    password: ${BUILDER_DB_PASSWORD:builder}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: ${BUILDER_JPA_DDL_AUTO:update}
+    properties:
+      hibernate:
+        default_schema: dp
+        jdbc:
+          time_zone: UTC
+
+  sql:
+    init:
+      # Schema seeding is the control plane's job.
+      mode: never
+
+# --------------------------------------------------------------------------
+# agentscope-builder scheduler-plane configuration
+# --------------------------------------------------------------------------
+builder:
+  # JWT signing secret — MUST match the control plane so user tokens validate.
+  jwt:
+    secret: ${BUILDER_JWT_SECRET:${CLAW_JWT_SECRET:builder-default-dev-secret-change-in-production-32chars}}
+
+  # Shared secret authenticating plane-to-plane calls (X-Builder-Internal-Token).
+  # MUST be set identically on control, data and scheduler in production.
+  internal-token: ${BUILDER_INTERNAL_TOKEN:}
+
+  # ---- Cross-plane wiring ----
+  control-plane-url: ${BUILDER_CONTROL_URL:http://localhost:8081}
+  data-plane-url: ${BUILDER_DATA_URL:http://localhost:8082}
+
+  scheduler:
+    # Channel config fetch from the control plane at startup.
+    channel-config-retries: ${BUILDER_CHANNEL_CONFIG_RETRIES:12}
+    channel-config-backoff-ms: ${BUILDER_CHANNEL_CONFIG_BACKOFF_MS:5000}
+    # Inbound turn bridging: how long to wait for the data-plane turn to finish
+    # before returning a "still processing" notice to the channel.
+    reply-timeout-ms: ${BUILDER_CHANNEL_REPLY_TIMEOUT_MS:120000}
+    poll-interval-ms: ${BUILDER_CHANNEL_POLL_INTERVAL_MS:1000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    io.agentscope: INFO
+    org.springframework.security: WARN

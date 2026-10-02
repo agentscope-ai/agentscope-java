@@ -33,6 +33,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -66,6 +67,7 @@ import reactor.core.publisher.Flux;
  * them in the IDE or via JUnit Platform if you add {@code groups} later.
  */
 @Tag("integration")
+@HarnessQuiescence
 class HarnessAgentIntegrationExampleTest {
 
     @TempDir Path workspace;
@@ -117,56 +119,61 @@ class HarnessAgentIntegrationExampleTest {
                 """);
 
         Model model = stubModel("integration-main-reply");
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("integration-main")
                         .description("integration example main agent")
                         .sysPrompt("You are the main agent in an integration test.")
                         .model(model)
                         .workspace(workspace)
-                        .build();
+                        .build()) {
+            Msg reply =
+                    agent.call(
+                                    userText("Run the integration scenario."),
+                                    RuntimeContext.builder()
+                                            .sessionId("integration-session-1")
+                                            .build())
+                            .block();
 
-        Msg reply =
-                agent.call(
-                                userText("Run the integration scenario."),
-                                RuntimeContext.builder().sessionId("integration-session-1").build())
-                        .block();
+            assertTrue(reply.getTextContent().contains("integration-main-reply"));
 
-        assertTrue(reply.getTextContent().contains("integration-main-reply"));
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+            verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+            String combined =
+                    captor.getAllValues().stream()
+                            .map(HarnessAgentIntegrationExampleTest::joinAllText)
+                            .filter(s -> s.contains("## AgentStateStore Context"))
+                            .findFirst()
+                            .orElse("");
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
-        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
-        String combined =
-                captor.getAllValues().stream()
-                        .map(HarnessAgentIntegrationExampleTest::joinAllText)
-                        .filter(s -> s.contains("## AgentStateStore Context"))
-                        .findFirst()
-                        .orElse("");
-
-        assertTrue(
-                combined.contains("## AgentStateStore Context"),
-                "AgentStateStore context should be injected; model saw: "
-                        + captor.getAllValues().stream()
-                                .map(HarnessAgentIntegrationExampleTest::joinAllText)
-                                .toList());
-        // Current WorkspaceContextHook uses markdown (##) guidance + XML <loaded_context> blocks
-        assertTrue(
-                combined.contains("## Domain Knowledge") || combined.contains("## Workspace"),
-                "expected workspace guidance sections");
-        assertTrue(combined.contains("`AGENTS.md`") || combined.contains("agents_context"));
-        assertTrue(
-                combined.contains(agentsPersona), "AGENTS.md should appear under workspace hook");
-        assertTrue(combined.contains("memory_context") || combined.contains("MEMORY.md"));
-        assertTrue(combined.contains(memoryNote));
-        assertTrue(
-                combined.contains("domain_knowledge_context") || combined.contains("KNOWLEDGE.md"));
-        assertTrue(combined.contains(knowledgeLine));
-        assertTrue(
-                combined.contains("## Subagents") || combined.contains("Subagents:"),
-                "subagent list should be injected into the system prompt");
-        assertTrue(combined.contains("`" + helperSubId + "`"));
-        assertTrue(combined.contains("`" + reviewerSubId + "`"));
+            assertTrue(
+                    combined.contains("## AgentStateStore Context"),
+                    "AgentStateStore context should be injected; model saw: "
+                            + captor.getAllValues().stream()
+                                    .map(HarnessAgentIntegrationExampleTest::joinAllText)
+                                    .toList());
+            // Current WorkspaceContextHook uses markdown (##) guidance + XML <loaded_context>
+            // blocks
+            assertTrue(
+                    combined.contains("## Domain Knowledge") || combined.contains("## Workspace"),
+                    "expected workspace guidance sections");
+            assertTrue(combined.contains("`AGENTS.md`") || combined.contains("agents_context"));
+            assertTrue(
+                    combined.contains(agentsPersona),
+                    "AGENTS.md should appear under workspace hook");
+            assertTrue(combined.contains("memory_context") || combined.contains("MEMORY.md"));
+            assertTrue(combined.contains(memoryNote));
+            assertTrue(
+                    combined.contains("domain_knowledge_context")
+                            || combined.contains("KNOWLEDGE.md"));
+            assertTrue(combined.contains(knowledgeLine));
+            assertTrue(
+                    combined.contains("## Subagents") || combined.contains("Subagents:"),
+                    "subagent list should be injected into the system prompt");
+            assertTrue(combined.contains("`" + helperSubId + "`"));
+            assertTrue(combined.contains("`" + reviewerSubId + "`"));
+        }
     }
 
     /**
@@ -217,23 +224,24 @@ class HarnessAgentIntegrationExampleTest {
                         .orElseThrow(
                                 () -> new AssertionError("missing subagent entry: " + childId));
 
-        Agent sub = child.factory().create(RuntimeContext.empty());
-        assertInstanceOf(HarnessAgent.class, sub);
-        assertEquals(childId, sub.getName());
+        Agent createdSubagent = child.factory().create(RuntimeContext.empty());
+        try (HarnessAgent sub = assertInstanceOf(HarnessAgent.class, createdSubagent)) {
+            assertEquals(childId, sub.getName());
 
-        Msg subReply = sub.call(List.of(userText("task for child"))).block();
-        assertTrue(subReply.getTextContent().contains("integration-child-reply"));
+            Msg subReply = sub.call(List.of(userText("task for child"))).block();
+            assertTrue(subReply.getTextContent().contains("integration-child-reply"));
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
-        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
-        boolean childSysSeen =
-                captor.getAllValues().stream()
-                        .map(HarnessAgentIntegrationExampleTest::joinAllText)
-                        .anyMatch(s -> s.contains("INTEGRATION_CHILD_SYS"));
-        assertTrue(
-                childSysSeen,
-                "child HarnessAgent should use spec sysPrompt in its system prompt bundle");
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+            verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+            boolean childSysSeen =
+                    captor.getAllValues().stream()
+                            .map(HarnessAgentIntegrationExampleTest::joinAllText)
+                            .anyMatch(s -> s.contains("INTEGRATION_CHILD_SYS"));
+            assertTrue(
+                    childSysSeen,
+                    "child HarnessAgent should use spec sysPrompt in its system prompt bundle");
+        }
     }
 
     private static Msg userText(String text) {

@@ -31,8 +31,11 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.StringJoiner;
 import javax.crypto.SecretKey;
 import org.slf4j.Logger;
@@ -82,6 +85,7 @@ public class DashScopeHttpClient {
     private final String baseUrl;
     private final String publicKeyId;
     private final String publicKey;
+    private final Set<String> userMultimodalPatterns;
 
     /**
      * Create a new DashScopeHttpClient.
@@ -98,11 +102,46 @@ public class DashScopeHttpClient {
             String baseUrl,
             String publicKeyId,
             String publicKey) {
+        this(transport, apiKey, baseUrl, publicKeyId, publicKey, null);
+    }
+
+    /**
+     * Create a new DashScopeHttpClient with user-supplied multimodal model patterns.
+     *
+     * @param transport the HTTP transport to use
+     * @param apiKey the DashScope API key
+     * @param baseUrl the base URL (null for default)
+     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     * @param userMultimodalPatterns case-insensitive substring patterns that extend the
+     *     built-in multimodal model detection (null or empty to disable)
+     */
+    public DashScopeHttpClient(
+            HttpTransport transport,
+            String apiKey,
+            String baseUrl,
+            String publicKeyId,
+            String publicKey,
+            Collection<String> userMultimodalPatterns) {
         this.transport = transport;
         this.apiKey = apiKey;
         this.baseUrl = baseUrl != null ? baseUrl : DEFAULT_BASE_URL;
         this.publicKeyId = publicKeyId;
         this.publicKey = publicKey;
+        this.userMultimodalPatterns =
+                userMultimodalPatterns == null || userMultimodalPatterns.isEmpty()
+                        ? Set.of()
+                        : normalizePatterns(userMultimodalPatterns);
+    }
+
+    private static Set<String> normalizePatterns(Collection<String> patterns) {
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String pattern : patterns) {
+            if (pattern != null && !pattern.isBlank()) {
+                normalized.add(pattern.trim().toLowerCase());
+            }
+        }
+        return normalized;
     }
 
     /**
@@ -270,33 +309,36 @@ public class DashScopeHttpClient {
                             .build();
 
             return transport.stream(httpRequest)
-                    .map(
-                            data -> {
+                    .<ParsedStreamResponse>handle(
+                            (data, sink) -> {
                                 try {
                                     // Decrypt response if encryption is enabled
                                     if (finalEncryptionContext != null) {
                                         data = decryptResponse(data, finalEncryptionContext);
                                     }
-                                    return JsonUtils.getJsonCodec()
-                                            .fromJson(data, DashScopeResponse.class);
+                                    sink.next(
+                                            new ParsedStreamResponse(
+                                                    data,
+                                                    JsonUtils.getJsonCodec()
+                                                            .fromJson(
+                                                                    data,
+                                                                    DashScopeResponse.class)));
                                 } catch (JsonException e) {
                                     log.warn(
                                             "Failed to parse SSE data: {}. Error: {}",
                                             data,
                                             e.getMessage());
-                                    // Return null and filter out later
-                                    return null;
                                 }
                             })
-                    .filter(response -> response != null)
                     .handle(
-                            (response, sink) -> {
+                            (streamResponse, sink) -> {
+                                DashScopeResponse response = streamResponse.response();
                                 if (response.isError()) {
                                     sink.error(
                                             new DashScopeHttpException(
                                                     "DashScope API error: " + response.getMessage(),
                                                     response.getCode(),
-                                                    null));
+                                                    streamResponse.responseBody()));
                                 } else {
                                     sink.next(response);
                                 }
@@ -327,11 +369,8 @@ public class DashScopeHttpClient {
      *   <li>If endpointType is {@link EndpointType#MULTIMODAL} → multimodal API</li>
      *   <li>If endpointType is {@link EndpointType#AUTO}:
      *     <ul>
-     *       <li>Models starting with "qvq" → multimodal API</li>
-     *       <li>Models containing "-vl" → multimodal API</li>
-     *       <li>Models containing "-asr" → multimodal API</li>
-     *       <li>Models starting with "qwen3.5" → multimodal API</li>
-     *       <li>Models starting with "qwen3.6" → multimodal API</li>
+     *       <li>Models recognized by {@link #isMultimodalModel(String)} or matching
+     *           user-supplied multimodal model patterns → multimodal API</li>
      *       <li>All other models → text generation API</li>
      *     </ul>
      *   </li>
@@ -354,7 +393,7 @@ public class DashScopeHttpClient {
         if (modelName == null) {
             return TEXT_GENERATION_ENDPOINT;
         }
-        if (isMultimodalModel(modelName)) {
+        if (isMultimodalModel(modelName) || matchesUserPattern(modelName)) {
             log.debug("Using multimodal API (auto-detected) for model: {}", modelName);
             return MULTIMODAL_GENERATION_ENDPOINT;
         }
@@ -373,6 +412,8 @@ public class DashScopeHttpClient {
      *   <li>Models starting with "qwen3.5" (e.g., qwen3.5-plus, qwen3.5-flash)</li>
      *   <li>Models starting with "qwen3.6" (e.g., qwen3.6-plus, qwen3.6-flash)</li>
      *   <li>Models starting with "qwen3.7" where not "qwen3.7-max" (e.g., qwen3.7-plus)</li>
+     *   <li>Models starting with "qwen3.8" where not "qwen3.8-2.4t-a95b"
+     *       (e.g., qwen3.8-max, qwen3.8-flash, qwen3.8-27b)</li>
      *   <li>Models containing "kimi-k2.5"/"kimi-k2.6" (e.g., kimi-k2.6, kimi/kimi-k2.5)</li>
      * </ul>
      *
@@ -381,6 +422,8 @@ public class DashScopeHttpClient {
      *   <li>"qwen3.6-max-preview" — text-only preview model.</li>
      *   <li>Models starting with "qwen3.7-max" (e.g., qwen3.7-max, qwen3.7-max-2026-05-20)
      *       — text-only models that use the text-generation endpoint.</li>
+     *   <li>Models starting with "qwen3.8-2.4t-a95b" — text-only models that use the
+     *       text-generation endpoint.</li>
      * </ul>
      *
      * @param modelName the model name
@@ -393,7 +436,10 @@ public class DashScopeHttpClient {
         String lowerModelName = modelName.toLowerCase();
         // Reverse exclusions: text-only models whose prefix would otherwise match.
         if (lowerModelName.equals("qwen3.6-max-preview")
-                || lowerModelName.startsWith("qwen3.7-max")) {
+                || lowerModelName.startsWith("qwen3.7-max")
+                || lowerModelName.contains("kimi-k2-thinking")
+                || lowerModelName.contains("moonshot-kimi-k2-instruct")
+                || lowerModelName.startsWith("qwen3.8-2.4t-a95b")) {
             return false;
         }
         return lowerModelName.startsWith("qvq")
@@ -402,8 +448,8 @@ public class DashScopeHttpClient {
                 || lowerModelName.startsWith("qwen3.5")
                 || lowerModelName.startsWith("qwen3.6")
                 || lowerModelName.startsWith("qwen3.7")
-                || lowerModelName.contains("kimi-k2.5")
-                || lowerModelName.contains("kimi-k2.6");
+                || lowerModelName.startsWith("qwen3.8")
+                || lowerModelName.contains("kimi-k");
     }
 
     /**
@@ -432,8 +478,32 @@ public class DashScopeHttpClient {
         if (endpointType == EndpointType.TEXT) {
             return false;
         }
-        // AUTO: use model name detection
-        return isMultimodalModel(modelName);
+        // AUTO: use model name detection, extended by user-supplied patterns
+        return isMultimodalModel(modelName) || matchesUserPattern(modelName);
+    }
+
+    /**
+     * Check whether a model name matches one of the user-supplied multimodal patterns.
+     *
+     * <p>Patterns are compared as case-insensitive substrings against the (trimmed) model
+     * name, mirroring the {@code contains}-style rules used by
+     * {@link #isMultimodalModel(String)}. Returns {@code false} when no patterns are
+     * configured or the model name is {@code null}.
+     *
+     * @param modelName the model name
+     * @return true if the model name matches a user-supplied multimodal pattern
+     */
+    private boolean matchesUserPattern(String modelName) {
+        if (modelName == null || userMultimodalPatterns.isEmpty()) {
+            return false;
+        }
+        String lowerModelName = modelName.trim().toLowerCase();
+        for (String pattern : userMultimodalPatterns) {
+            if (lowerModelName.contains(pattern)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -752,6 +822,7 @@ public class DashScopeHttpClient {
         private String baseUrl;
         private String publicKeyId;
         private String publicKey;
+        private Collection<String> userMultimodalPatterns;
 
         /**
          * Set the HTTP transport.
@@ -815,6 +886,32 @@ public class DashScopeHttpClient {
         }
 
         /**
+         * Set additional case-insensitive substring patterns for multimodal model detection.
+         *
+         * <p>When {@link EndpointType#AUTO} routing is used, a model name matching any of
+         * these patterns (as a substring, case-insensitively) is routed to the multimodal
+         * generation API, in addition to the built-in model-name rules of
+         * {@link DashScopeHttpClient#isMultimodalModel(String)}. This allows users to extend
+         * detection for models not yet covered by the built-in whitelist (e.g.
+         * {@code "deepseek-v4.1"} without waiting for a framework update).
+         *
+         * <p>Example:
+         * <pre>{@code
+         * DashScopeHttpClient client = DashScopeHttpClient.builder()
+         *     .apiKey("sk-xxx")
+         *     .multimodalModelPatterns(List.of("deepseek-v4"))
+         *     .build();
+         * }</pre>
+         *
+         * @param userMultimodalPatterns case-insensitive substring patterns (may be null)
+         * @return this builder
+         */
+        public Builder multimodalModelPatterns(Collection<String> userMultimodalPatterns) {
+            this.userMultimodalPatterns = userMultimodalPatterns;
+            return this;
+        }
+
+        /**
          * Build the DashScopeHttpClient.
          *
          * <p>If no transport is specified, the default transport from
@@ -830,9 +927,12 @@ public class DashScopeHttpClient {
             if (transport == null) {
                 transport = HttpTransportFactory.getDefault();
             }
-            return new DashScopeHttpClient(transport, apiKey, baseUrl, publicKeyId, publicKey);
+            return new DashScopeHttpClient(
+                    transport, apiKey, baseUrl, publicKeyId, publicKey, userMultimodalPatterns);
         }
     }
+
+    private record ParsedStreamResponse(String responseBody, DashScopeResponse response) {}
 
     /**
      * Exception thrown when DashScope HTTP operations fail.

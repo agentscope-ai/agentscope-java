@@ -17,6 +17,7 @@ package io.agentscope.core.event;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Map;
 
 public class ToolResultStartEvent extends AgentEvent {
 
@@ -30,11 +31,21 @@ public class ToolResultStartEvent extends AgentEvent {
             @JsonProperty("createdAt") String createdAt,
             @JsonProperty("replyId") String replyId,
             @JsonProperty("toolCallId") String toolCallId,
-            @JsonProperty("toolCallName") String toolCallName) {
+            @JsonProperty("toolCallName") String toolCallName,
+            @JsonProperty("metadata") Map<String, Object> metadata) {
         super(id, createdAt);
         this.replyId = replyId;
         this.toolCallId = toolCallId;
         this.toolCallName = toolCallName;
+        this.withMetadata(metadata);
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not provide metadata.
+     */
+    public ToolResultStartEvent(
+            String id, String createdAt, String replyId, String toolCallId, String toolCallName) {
+        this(id, createdAt, replyId, toolCallId, toolCallName, null);
     }
 
     public ToolResultStartEvent(String replyId, String toolCallId, String toolCallName) {

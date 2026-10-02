@@ -33,7 +33,6 @@ import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.dto.OpenAIStreamOptions;
-import io.agentscope.extensions.model.openai.formatter.OpenAIBaseFormatter;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 import java.time.Instant;
 import java.util.List;
@@ -61,8 +60,10 @@ import reactor.core.scheduler.Schedulers;
  * for your provider:
  * <ul>
  *   <li>{@link OpenAIChatFormatter} - Standard OpenAI GPT models</li>
- *   <li>{@link io.agentscope.extensions.model.openai.formatter.DeepSeekFormatter} - DeepSeek Chat models</li>
- *   <li>{@link io.agentscope.extensions.model.openai.formatter.GLMFormatter} - Zhipu GLM models</li>
+ *   <li>{@link io.agentscope.extensions.model.openai.compat.deepseek.DeepSeekFormatter} - DeepSeek Chat models</li>
+ *   <li>{@link io.agentscope.extensions.model.openai.compat.minimax.MiniMaxFormatter} - MiniMax models</li>
+ *   <li>{@link io.agentscope.extensions.model.openai.compat.kimi.KimiFormatter} - Kimi (Moonshot AI) models</li>
+ *   <li>{@link io.agentscope.extensions.model.openai.compat.glm.GLMFormatter} - Zhipu GLM models</li>
  * </ul>
  */
 public class OpenAIChatModel extends ChatModelBase {
@@ -125,7 +126,7 @@ public class OpenAIChatModel extends ChatModelBase {
         Instant start = Instant.now();
 
         // Format messages using formatter (handles provider-specific transformations)
-        List<OpenAIMessage> openaiMessages = formatter.format(messages);
+        List<OpenAIMessage> openaiMessages = formatter.format(messages, effectiveOptions);
 
         // Build request
         OpenAIRequest.Builder requestBuilder =
@@ -153,18 +154,20 @@ public class OpenAIChatModel extends ChatModelBase {
             formatter.applyToolChoice(request, effectiveOptions.getToolChoice());
         }
 
-        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
-        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())
-                && formatter instanceof OpenAIBaseFormatter openAIFormatter) {
-            openAIFormatter.applyCacheControl(request.getMessages());
-        }
-
         // Make the API call
         if (stream) {
-            // Streaming mode
-            return client.stream(apiKey, baseUrl, request, effectiveOptions)
-                    .map(response -> formatter.parseResponse(response, start))
-                    .filter(Objects::nonNull);
+            // Streaming mode: defer creation so that retryWhen re-subscriptions re-issue
+            // the HTTP request. Without defer, transports whose stream() is tied to a
+            // single future (e.g. JdkHttpTransport) would replay the same failed stream.
+            return Flux.defer(
+                            () ->
+                                    client.stream(apiKey, baseUrl, request, effectiveOptions)
+                                            .map(
+                                                    response ->
+                                                            formatter.parseResponse(
+                                                                    response, start))
+                                            .filter(Objects::nonNull))
+                    .subscribeOn(Schedulers.boundedElastic());
         } else {
             // Non-streaming mode: make a single call and return as Flux
             return Flux.defer(
@@ -303,8 +306,10 @@ public class OpenAIChatModel extends ChatModelBase {
          * <p>Use provider-specific formatters for different providers:
          * <ul>
          *   <li>{@link OpenAIChatFormatter} - Standard OpenAI GPT models</li>
-         *   <li>{@link io.agentscope.extensions.model.openai.formatter.DeepSeekFormatter} - DeepSeek Chat models</li>
-         *   <li>{@link io.agentscope.extensions.model.openai.formatter.GLMFormatter} - Zhipu GLM models</li>
+         *   <li>{@link io.agentscope.extensions.model.openai.compat.deepseek.DeepSeekFormatter} - DeepSeek Chat models</li>
+         *   <li>{@link io.agentscope.extensions.model.openai.compat.glm.GLMFormatter} - Zhipu GLM models</li>
+         *   <li>{@link io.agentscope.extensions.model.openai.compat.minimax.MiniMaxFormatter} - MiniMax models</li>
+         *   <li>{@link io.agentscope.extensions.model.openai.compat.kimi.KimiFormatter} - Kimi (Moonshot AI) models</li>
          * </ul>
          *
          * @param formatter the formatter (null for default OpenAI formatter)

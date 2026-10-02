@@ -1,0 +1,128 @@
+# Copyright 2024-2026 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: agentscope-service
+
+x-runtime-env: &runtime-env
+  SPRING_PROFILES_ACTIVE: jdbc
+  BUILDER_SEED_USERS: "false"
+  BUILDER_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=dp
+  BUILDER_DB_USER: agentscope
+  BUILDER_DB_PASSWORD: ${POSTGRES_PASSWORD:?Run init-env.sh first}
+  BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET:?Required}
+  BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:?Required}
+  BUILDER_VAULT_MASTER_KEY: ${BUILDER_VAULT_MASTER_KEY:?Required}
+  BUILDER_CONTROL_URL: http://control:8081
+  BUILDER_DATA_URL: http://data:8082
+  BUILDER_SCHEDULER_URL: http://scheduler:8083
+  BUILDER_WORKSPACE_ROOT: /data/workspaces
+  BUILDER_E2B_API_KEY: ${BUILDER_E2B_API_KEY:-}
+  DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: never
+
+x-java-health: &java-health
+  test: [CMD-SHELL, 'curl -fsS http://localhost:$${SERVER_PORT}/actuator/health >/dev/null']
+  interval: 10s
+  timeout: 5s
+  retries: 30
+  start_period: 60s
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agentscope}
+      POSTGRES_USER: agentscope
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Required}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/01-schemas.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U agentscope -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  control:
+    image: ${IMAGE_REPOSITORY:?Set image repository}/agentscope-service-control:${SERVICE_VERSION:?Set release version}
+    restart: unless-stopped
+    command: [--storage-driver=postgres]
+    environment:
+      AISTIO_ENABLE_KUBERNETES: 'false'
+      AISTIO_HTTP_BIND: ':8081'
+      AISTIO_PRODUCT_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable
+      AISTIO_STORAGE_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable&search_path=rt
+      AISTIO_SEED_USERS: 'false'
+      AISTIO_BOOTSTRAP_ADMIN: ${AISTIO_BOOTSTRAP_ADMIN:-admin}
+      AISTIO_BOOTSTRAP_PASSWORD: ${AISTIO_BOOTSTRAP_PASSWORD:?Required}
+      AISTIO_WORKSPACE_ROOT: /data/workspaces
+      AISTIO_ARTIFACT_ROOT: /data/artifacts
+      BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET}
+      BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN}
+      BUILDER_VAULT_MASTER_KEY: ${BUILDER_VAULT_MASTER_KEY}
+      BUILDER_DATA_URL: http://data:8082
+      BUILDER_OAUTH_PUBLIC_URL: ${BUILDER_OAUTH_PUBLIC_URL:-http://localhost:18080}
+      BUILDER_ALLOW_LOCAL_ENVIRONMENT: ${BUILDER_ALLOW_LOCAL_ENVIRONMENT:-false}
+    volumes:
+      - workspaces:/data/workspaces
+      - artifacts:/data/artifacts
+    healthcheck:
+      test: [CMD, /aistiod, --healthcheck]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      db: {condition: service_healthy}
+  data:
+    image: ${IMAGE_REPOSITORY}/agentscope-service-dataplane:${SERVICE_VERSION}
+    restart: unless-stopped
+    environment:
+      <<: *runtime-env
+      SERVER_PORT: 8082
+      BUILDER_DATAPLANE_PUBLIC_URL: http://data:8082
+    volumes:
+      - workspaces:/data/workspaces
+    healthcheck: *java-health
+    depends_on:
+      control: {condition: service_healthy}
+  scheduler:
+    image: ${IMAGE_REPOSITORY}/agentscope-service-scheduler:${SERVICE_VERSION}
+    restart: unless-stopped
+    environment:
+      <<: *runtime-env
+      SERVER_PORT: 8083
+    volumes:
+      - workspaces:/data/workspaces
+    healthcheck: *java-health
+    depends_on:
+      data: {condition: service_healthy}
+  gateway:
+    image: ${IMAGE_REPOSITORY}/agentscope-service-gateway:${SERVICE_VERSION}
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8080
+      BUILDER_CONTROL_URL: http://control:8081
+      BUILDER_DATA_URL: http://data:8082
+      BUILDER_SCHEDULER_URL: http://scheduler:8083
+      MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: never
+    ports:
+      - '${BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-18080}:8080'
+    healthcheck: *java-health
+    depends_on:
+      scheduler: {condition: service_healthy}
+
+volumes:
+  postgres:
+  workspaces:
+  artifacts:

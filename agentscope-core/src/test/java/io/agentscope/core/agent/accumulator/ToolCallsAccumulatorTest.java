@@ -412,4 +412,65 @@ class ToolCallsAccumulatorTest {
         assertEquals("{\"city\": \"Tokyo\"}", toolCall.getContent());
         assertEquals("Tokyo", toolCall.getInput().get("city"));
     }
+
+    @Test
+    @DisplayName(
+            "Should repair null input values from complete raw JSON (#768 HTML streaming case)")
+    void testRepairNullInputValuesFromCompleteRawContent() {
+        // Early chunk: keys present but values null (partial/early parse of incomplete JSON)
+        Map<String, Object> partialArgs = new HashMap<>();
+        partialArgs.put("file_path", null);
+        partialArgs.put("content", null);
+
+        String html =
+                "<html>\n  <body class=\"main\">\n    <p>Hello \"world\"</p>\n  </body>\n</html>";
+        String completeJson =
+                "{\"file_path\":\"index.html\",\"content\":"
+                        + io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(html)
+                        + "}";
+
+        ToolUseBlock chunk1 =
+                ToolUseBlock.builder()
+                        .id("call_html")
+                        .name("write_text_file")
+                        .input(partialArgs)
+                        .content(completeJson)
+                        .build();
+
+        accumulator.add(chunk1);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        ToolUseBlock toolCall = result.get(0);
+
+        assertEquals("index.html", toolCall.getInput().get("file_path"));
+        assertEquals(html, toolCall.getInput().get("content"));
+    }
+
+    @Test
+    @DisplayName("Should not let null input from later chunks overwrite earlier non-null values")
+    void testNullInputDoesNotOverwriteNonNullArgs() {
+        Map<String, Object> goodArgs = new HashMap<>();
+        goodArgs.put("file_path", "a.md");
+        goodArgs.put("content", "hello");
+
+        Map<String, Object> nullArgs = new HashMap<>();
+        nullArgs.put("file_path", null);
+        nullArgs.put("content", null);
+
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("write_text_file")
+                        .input(goodArgs)
+                        .content("{\"file_path\":\"a.md\",\"content\":\"hello\"}")
+                        .build());
+        accumulator.add(
+                ToolUseBlock.builder().id("call_1").name("__fragment__").input(nullArgs).build());
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        assertEquals("a.md", result.get(0).getInput().get("file_path"));
+        assertEquals("hello", result.get(0).getInput().get("content"));
+    }
 }

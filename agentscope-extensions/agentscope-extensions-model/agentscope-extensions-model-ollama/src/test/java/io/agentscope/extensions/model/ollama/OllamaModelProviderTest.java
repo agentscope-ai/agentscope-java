@@ -72,6 +72,39 @@ class OllamaModelProviderTest {
         assertEquals(128000, model.getContextWindowSize());
     }
 
+    /**
+     * Verifies the provider honors {@link ModelCreationContext#getStream()}: when set to {@code
+     * false}, the created model must be in non-streaming mode (so {@code
+     * model.stream(...).blockLast()} returns the full reply). When unset, the default remains
+     * streaming.
+     */
+    @Test
+    void createHonorsStreamFlagFromContext() {
+        OllamaModelProvider provider = new OllamaModelProvider();
+
+        // stream=false → non-streaming model
+        ModelCreationContext nonStreamingCtx =
+                ModelCreationContext.builder().baseUrl("http://ollama.example.com").stream(false)
+                        .build();
+        Model nonStreaming = provider.create("ollama:llama3", nonStreamingCtx);
+        assertTrue(nonStreaming instanceof OllamaChatModel);
+        assertFalse(((OllamaChatModel) nonStreaming).isStreaming());
+
+        // stream=true → streaming model
+        ModelCreationContext streamingCtx =
+                ModelCreationContext.builder().baseUrl("http://ollama.example.com").stream(true)
+                        .build();
+        Model streaming = provider.create("ollama:llama3", streamingCtx);
+        assertTrue(streaming instanceof OllamaChatModel);
+        assertTrue(((OllamaChatModel) streaming).isStreaming());
+
+        // unset → default streaming (backward compatible)
+        ModelCreationContext defaultCtx =
+                ModelCreationContext.builder().baseUrl("http://ollama.example.com").build();
+        Model defaultModel = provider.create("ollama:llama3", defaultCtx);
+        assertTrue(((OllamaChatModel) defaultModel).isStreaming());
+    }
+
     @Test
     void modelRegistryFindsOllamaProviderFromServiceLoader() {
         assertTrue(ModelRegistry.canResolve("ollama:llama3"));

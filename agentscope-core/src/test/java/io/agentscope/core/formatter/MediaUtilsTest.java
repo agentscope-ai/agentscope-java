@@ -358,6 +358,20 @@ class MediaUtilsTest {
     }
 
     @Test
+    @DisplayName("Should get file URI extensions independently of the host filesystem")
+    void testGetExtensionWithFileUris() {
+        assertEquals(
+                "png", MediaUtils.getExtension("file:///C:/Users/test/image%20with%20spaces.png"));
+        assertEquals("png", MediaUtils.getExtension("file:///tmp/image%20with%20spaces.png"));
+        assertEquals(
+                "png",
+                MediaUtils.getExtension(
+                        tempDir.resolve("image with spaces.png").toUri().toString()));
+        assertEquals("", MediaUtils.getExtension("file:///C:/directory.png/image"));
+        assertEquals("", MediaUtils.getExtension("file:///C:/directory.png/"));
+    }
+
+    @Test
     @DisplayName("Should get last extension when have nested types")
     void testGetExtensionWithNestedTypes() {
         assertEquals("gz", MediaUtils.getExtension("https://example.com/img.png.tar.gz"));

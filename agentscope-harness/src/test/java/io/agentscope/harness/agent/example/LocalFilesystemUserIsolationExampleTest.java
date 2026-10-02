@@ -36,6 +36,7 @@ import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,6 +63,7 @@ import reactor.core.publisher.Flux;
  *   <li>Glob/ls/grep return round-trippable paths (no double namespace on read).</li>
  * </ul>
  */
+@HarnessQuiescence
 class LocalFilesystemUserIsolationExampleTest {
 
     @TempDir Path workspace;
@@ -355,15 +357,8 @@ class LocalFilesystemUserIsolationExampleTest {
      *
      * <p>The default {@code AgentStateStore} is now {@code JsonFileAgentStateStore} rooted at
      * {@code ~/.agentscope/state/<agentId>/}, so {@code agent_state.json} no longer lives inside
-     * the workspace. The only legitimate file under {@code workspace/agents/} is:
-     *
-     * <ul>
-     *   <li>{@code workspace/agents/<agentId>/tasks/_sweep.marker} —
-     *       {@code WorkspaceTaskRepository} writes this orphan-sweep coordination marker using
-     *       {@code RuntimeContext.empty()}. Shared across all users of the agent by design;
-     *       sweep fires at a random offset within a 5-minute window, so on any given test run
-     *       the file may or may not be present.
-     * </ul>
+     * the workspace. Orphan-sweep coordination uses an in-process {@code PeriodicGate}, so
+     * {@code workspace/agents/} should contain no regular files after a single-user call.
      */
     @Test
     void noDuplicateDataAtWorkspaceRoot() throws Exception {
@@ -393,27 +388,20 @@ class LocalFilesystemUserIsolationExampleTest {
 
             // Only AGENTS.md should exist at workspace root (it's a shared config file,
             // pre-existing). Namespace-isolated runtime data should be under alice/.
-            // agents/ is permitted only for the agent-scoped orphan-sweep marker; verified below.
             try (Stream<Path> rootEntries = Files.list(workspace)) {
                 List<String> rootNames =
                         rootEntries
                                 .map(p -> p.getFileName().toString())
-                                .filter(
-                                        n ->
-                                                !n.equals("AGENTS.md")
-                                                        && !n.equals("alice")
-                                                        && !n.equals("agents"))
+                                .filter(n -> !n.equals("AGENTS.md") && !n.equals("alice"))
                                 .toList();
                 assertTrue(
                         rootNames.isEmpty(),
-                        "Only AGENTS.md, alice/, and (optionally) agents/ should exist at workspace"
-                                + " root, but found: "
+                        "Only AGENTS.md and alice/ should exist at workspace root, but found: "
                                 + rootNames);
             }
 
-            // If agents/ exists at the root, it must only contain the orphan-sweep marker.
             // agent_state.json no longer lives inside the workspace (moved to
-            // ~/.agentscope/state/<agentId>/), so any other file under agents/ is a regression.
+            // ~/.agentscope/state/<agentId>/), so any regular file under agents/ is a regression.
             Path rootAgents = workspace.resolve("agents");
             if (Files.isDirectory(rootAgents)) {
                 try (Stream<Path> walk = Files.walk(rootAgents)) {
@@ -425,11 +413,10 @@ class LocalFilesystemUserIsolationExampleTest {
                                                             .relativize(p)
                                                             .toString()
                                                             .replace('\\', '/'))
-                                    .filter(rel -> !rel.endsWith("/tasks/_sweep.marker"))
                                     .toList();
                     assertTrue(
                             unexpected.isEmpty(),
-                            "workspace/agents/ should contain only tasks/_sweep.marker but found: "
+                            "workspace/agents/ should contain no regular files but found: "
                                     + unexpected);
                 }
             }

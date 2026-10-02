@@ -31,6 +31,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
+@HarnessQuiescence
 class HarnessAgentDistributedSandboxTest {
 
     @TempDir Path workspace;

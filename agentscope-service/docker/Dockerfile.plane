@@ -1,0 +1,15 @@
+# Fast packaging path after a verified Maven reactor build.
+# Build context is agentscope-service; JAR_FILE is relative to that directory.
+FROM eclipse-temurin:21-jre
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 65532 agentscope \
+    && useradd --uid 65532 --gid 65532 --home-dir /data --no-create-home agentscope \
+    && mkdir -p /data/workspaces /data/artifacts \
+    && chown -R 65532:65532 /data
+ARG JAR_FILE
+COPY ${JAR_FILE} /app.jar
+ENV BUILDER_WORKSPACE_ROOT=/data/workspaces
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app.jar"]

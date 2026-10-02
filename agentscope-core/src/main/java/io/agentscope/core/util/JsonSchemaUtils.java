@@ -53,6 +53,10 @@ import java.util.Map;
  *   <li>{@code @JsonClassDescription(...)} - add class description</li>
  * </ul>
  *
+ * <p>All public methods are thread-safe. Schema generation through the shared victools
+ * {@code SchemaGenerator} is serialized by an internal lock, because the generator itself
+ * is not designed for concurrent use.</p>
+ *
  * @hidden
  */
 public class JsonSchemaUtils {
@@ -60,6 +64,13 @@ public class JsonSchemaUtils {
     private static final boolean PROPERTY_REQUIRED_BY_DEFAULT = false;
 
     private static final SchemaGenerator schemaGenerator;
+
+    /**
+     * Guards the shared victools {@link SchemaGenerator}, which is not thread-safe: its
+     * JacksonModule keeps an unsynchronized introspection cache, so concurrent schema
+     * generation must be serialized.
+     */
+    private static final Object SCHEMA_LOCK = new Object();
 
     static {
         // JacksonModule to support @JsonProperty, @JsonPropertyDescription annotations
@@ -95,13 +106,17 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromClass(Class<?> clazz) {
         try {
-            String schemaJson = schemaGenerator.generateSchema(clazz).toString();
+            String schemaJson;
+            synchronized (SCHEMA_LOCK) {
+                schemaJson = schemaGenerator.generateSchema(clazz).toString();
+            }
             return JsonUtils.getJsonCodec()
                     .fromJson(schemaJson, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for " + clazz.getName(), e);
         }
     }
+
 
     /**
      * Generate JSON Schema from a com.fasterxml.jackson.databind.JsonNode instance.
@@ -130,7 +145,10 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromType(Type type) {
         try {
-            String schemaJson = schemaGenerator.generateSchema(type).toString();
+            String schemaJson;
+            synchronized (SCHEMA_LOCK) {
+                schemaJson = schemaGenerator.generateSchema(type).toString();
+            }
             return JsonUtils.getJsonCodec()
                     .fromJson(schemaJson, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
@@ -138,6 +156,7 @@ public class JsonSchemaUtils {
                     "Failed to generate JSON schema for " + type.getTypeName(), e);
         }
     }
+
 
     /**
      * Convert Map to typed object.

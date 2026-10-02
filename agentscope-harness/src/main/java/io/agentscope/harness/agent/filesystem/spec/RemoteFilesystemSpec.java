@@ -79,6 +79,7 @@ public class RemoteFilesystemSpec {
     private String anonymousUserId = "_default";
     private IsolationScope isolationScope = IsolationScope.USER;
     private WorkspaceIndex workspaceIndex = null;
+    private boolean sharedLocalWorkspace = false;
 
     /**
      * Creates a remote filesystem spec that defers store resolution to
@@ -104,6 +105,16 @@ public class RemoteFilesystemSpec {
      */
     public boolean hasStore() {
         return store != null;
+    }
+
+    /**
+     * Returns the configured {@link BaseStore}, or {@code null} if not yet set.
+     *
+     * <p>Used by coordination wiring (e.g. {@code PeriodicGate}) when a remote filesystem is
+     * present without a full {@code DistributedStore}.
+     */
+    public BaseStore store() {
+        return store;
     }
 
     /**
@@ -169,6 +180,35 @@ public class RemoteFilesystemSpec {
     }
 
     /**
+     * When {@code true}, the default backend (everything not routed to a shared prefix) serves
+     * the workspace root directly: no per-user namespace prefix and sandboxed path resolution.
+     * Files the host application writes to the workspace root with plain {@code java.nio}
+     * (e.g. {@code uploads/<sessionId>/result.md}) become visible to {@code read_file} /
+     * {@code list_files} / {@code grep_files}, and absolute paths outside the workspace are
+     * rejected instead of traversing up to the filesystem root — with the default namespaced
+     * backend such reads resolve to {@code {workspace}/{userId}/...}, which the host never
+     * writes, and UNRESTRICTED resolution lets {@code list_files} walk up to the drive root.
+     *
+     * <p>Shared prefix routes ({@code memory/}, {@code skills/}, ...) keep their per-user store
+     * namespaces; only the default backend changes.
+     *
+     * <p><b>Not safe for multi-tenant workspaces:</b> shared mode disables per-user namespace
+     * isolation at the workspace root — users/sessions configured on the same workspace
+     * directory will read and overwrite each other's files there. Intended for single-tenant
+     * host-app integrations where the host writes uploads directly to the workspace.
+     *
+     * <p>Defaults to {@code false}, preserving the namespaced default backend (#3245).
+     *
+     * @param shared whether the default backend serves the shared workspace root
+     * @return this spec
+     */
+    public RemoteFilesystemSpec sharedLocalWorkspace(boolean shared) {
+        this.sharedLocalWorkspace = shared;
+        return this;
+    }
+
+    /**
+     * Builds the composite filesystem described by this spec.
      *
      * <ul>
      *   <li>default backend: {@link LocalFilesystem} (no shell), per-user namespaced
@@ -199,7 +239,12 @@ public class RemoteFilesystemSpec {
                             + " or configure a DistributedStore on the HarnessAgent builder.");
         }
         String effectiveAgentId = agentId == null || agentId.isBlank() ? "HarnessAgent" : agentId;
-        AbstractFilesystem local = new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
+        // sharedLocalWorkspace: same construction as the workspace-template layer below — shared
+        // root, no namespace prefix, traversal blocked (#3245).
+        AbstractFilesystem local =
+                sharedLocalWorkspace
+                        ? new LocalFilesystem(workspace, true, 10, null)
+                        : new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
 
         // Read-only workspace-root template view for the exact-file overlays below. The lower
         // technically exposes the entire workspace, but CompositeFilesystem does not recurse into

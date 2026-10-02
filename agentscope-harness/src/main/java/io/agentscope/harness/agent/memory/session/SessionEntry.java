@@ -21,6 +21,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -31,7 +33,9 @@ import java.util.UUID;
  *
  * <p>Entry types:
  * <ul>
- *   <li>{@link MessageEntry} — wraps a single LLM message (user/assistant/tool/system)</li>
+ *   <li>{@link MessageEntry} — conversation message (user/assistant/system) or placeholder</li>
+ *   <li>{@link ToolUseEntry} — structured tool call (machine-readable process record)</li>
+ *   <li>{@link ToolResultEntry} — structured tool result, paired via {@code toolCallId}</li>
  *   <li>{@link CompactionEntry} — marks a compaction event (non-destructive)</li>
  *   <li>{@link SummaryEntry} — holds a compaction summary</li>
  * </ul>
@@ -39,12 +43,18 @@ import java.util.UUID;
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = SessionEntry.MessageEntry.class, name = "message"),
+    @JsonSubTypes.Type(value = SessionEntry.ToolUseEntry.class, name = "tool_use"),
+    @JsonSubTypes.Type(value = SessionEntry.ToolResultEntry.class, name = "tool_result"),
     @JsonSubTypes.Type(value = SessionEntry.CompactionEntry.class, name = "compaction"),
     @JsonSubTypes.Type(value = SessionEntry.SummaryEntry.class, name = "summary")
 })
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public abstract sealed class SessionEntry
-        permits SessionEntry.MessageEntry, SessionEntry.CompactionEntry, SessionEntry.SummaryEntry {
+        permits SessionEntry.MessageEntry,
+                SessionEntry.ToolUseEntry,
+                SessionEntry.ToolResultEntry,
+                SessionEntry.CompactionEntry,
+                SessionEntry.SummaryEntry {
 
     private final String id;
     private final String parentId;
@@ -69,13 +79,17 @@ public abstract sealed class SessionEntry
     }
 
     /**
-     * A message entry wrapping a single message in the conversation.
+     * A message entry wrapping a conversation turn (user/assistant/system), or a placeholder
+     * when the message had no renderable text/tool blocks (e.g. image-only).
      */
     public static final class MessageEntry extends SessionEntry {
 
         private final String role;
         private final String content;
         private final String toolCallId;
+
+        /** Present for placeholder / non-text messages so "happened" is still recorded. */
+        private final List<String> blockTypes;
 
         @JsonCreator
         public MessageEntry(
@@ -84,15 +98,27 @@ public abstract sealed class SessionEntry
                 @JsonProperty("timestamp") Instant timestamp,
                 @JsonProperty("role") String role,
                 @JsonProperty("content") String content,
-                @JsonProperty("toolCallId") String toolCallId) {
+                @JsonProperty("toolCallId") String toolCallId,
+                @JsonProperty("blockTypes") List<String> blockTypes) {
             super(id, parentId, timestamp);
             this.role = role;
             this.content = content;
             this.toolCallId = toolCallId;
+            this.blockTypes = blockTypes;
+        }
+
+        public MessageEntry(
+                String id,
+                String parentId,
+                Instant timestamp,
+                String role,
+                String content,
+                String toolCallId) {
+            this(id, parentId, timestamp, role, content, toolCallId, null);
         }
 
         public MessageEntry(String parentId, String role, String content) {
-            this(null, parentId, null, role, content, null);
+            this(null, parentId, null, role, content, null, null);
         }
 
         public String getRole() {
@@ -105,6 +131,119 @@ public abstract sealed class SessionEntry
 
         public String getToolCallId() {
             return toolCallId;
+        }
+
+        public List<String> getBlockTypes() {
+            return blockTypes;
+        }
+    }
+
+    /**
+     * Structured tool-call record. Process-complete and machine-readable; {@code input} may be
+     * truncated with {@link #truncated}/{@link #originalSize} set.
+     */
+    public static final class ToolUseEntry extends SessionEntry {
+
+        private final String toolCallId;
+        private final String name;
+        private final Map<String, Object> input;
+        private final boolean truncated;
+        private final Integer originalSize;
+
+        @JsonCreator
+        public ToolUseEntry(
+                @JsonProperty("id") String id,
+                @JsonProperty("parentId") String parentId,
+                @JsonProperty("timestamp") Instant timestamp,
+                @JsonProperty("toolCallId") String toolCallId,
+                @JsonProperty("name") String name,
+                @JsonProperty("input") Map<String, Object> input,
+                @JsonProperty("truncated") Boolean truncated,
+                @JsonProperty("originalSize") Integer originalSize) {
+            super(id, parentId, timestamp);
+            this.toolCallId = toolCallId;
+            this.name = name;
+            this.input = input;
+            this.truncated = truncated != null && truncated;
+            this.originalSize = originalSize;
+        }
+
+        public String getToolCallId() {
+            return toolCallId;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public Map<String, Object> getInput() {
+            return input;
+        }
+
+        public boolean isTruncated() {
+            return truncated;
+        }
+
+        public Integer getOriginalSize() {
+            return originalSize;
+        }
+    }
+
+    /**
+     * Structured tool-result record, paired with {@link ToolUseEntry} via {@code toolCallId}.
+     * {@code output} may be truncated with {@link #truncated}/{@link #originalSize} set.
+     */
+    public static final class ToolResultEntry extends SessionEntry {
+
+        private final String toolCallId;
+        private final String name;
+        private final String output;
+        private final List<String> outputBlockTypes;
+        private final boolean truncated;
+        private final Integer originalSize;
+
+        @JsonCreator
+        public ToolResultEntry(
+                @JsonProperty("id") String id,
+                @JsonProperty("parentId") String parentId,
+                @JsonProperty("timestamp") Instant timestamp,
+                @JsonProperty("toolCallId") String toolCallId,
+                @JsonProperty("name") String name,
+                @JsonProperty("output") String output,
+                @JsonProperty("outputBlockTypes") List<String> outputBlockTypes,
+                @JsonProperty("truncated") Boolean truncated,
+                @JsonProperty("originalSize") Integer originalSize) {
+            super(id, parentId, timestamp);
+            this.toolCallId = toolCallId;
+            this.name = name;
+            this.output = output;
+            this.outputBlockTypes = outputBlockTypes;
+            this.truncated = truncated != null && truncated;
+            this.originalSize = originalSize;
+        }
+
+        public String getToolCallId() {
+            return toolCallId;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getOutput() {
+            return output;
+        }
+
+        public List<String> getOutputBlockTypes() {
+            return outputBlockTypes;
+        }
+
+        public boolean isTruncated() {
+            return truncated;
+        }
+
+        public Integer getOriginalSize() {
+            return originalSize;
         }
     }
 

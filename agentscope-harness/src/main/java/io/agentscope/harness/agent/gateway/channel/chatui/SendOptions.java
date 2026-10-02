@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.gateway.channel.chatui;
 
+import io.agentscope.core.agent.RuntimeContext;
 import java.util.Objects;
 
 /**
@@ -31,6 +32,9 @@ import java.util.Objects;
  *       default.
  *   <li>{@code agentId} — optional target agent override for multi-agent setups. When null, the
  *       channel's default agent is used.
+ *   <li>{@code runtimeContext} — optional per-call {@link RuntimeContext} merged into the agent
+ *       turn (attributes, typed values, force-sync flags, …). Gateway-owned identity fields still
+ *       win on conflict.
  * </ul>
  *
  * <h2>Usage</h2>
@@ -45,13 +49,25 @@ import java.util.Objects;
  *
  * // Target a specific agent in multi-agent setups
  * chat.send(SendOptions.userId("user-1").withAgentId("support"), "help me");
+ *
+ * // Pass application context into the agent turn
+ * chat.send(
+ *     SendOptions.userId("user-1")
+ *         .withAttribute("tenant", "acme")
+ *         .withRuntimeContext(
+ *             RuntimeContext.builder()
+ *                 .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+ *                 .build()),
+ *     "hello");
  * }</pre>
  *
  * @param userId the user identity (required)
  * @param sessionId optional conversation identifier; null means one session per user
  * @param agentId optional target agent override; null for default routing
+ * @param runtimeContext optional caller-supplied runtime context; null when none
  */
-public record SendOptions(String userId, String sessionId, String agentId) {
+public record SendOptions(
+        String userId, String sessionId, String agentId, RuntimeContext runtimeContext) {
 
     public SendOptions {
         Objects.requireNonNull(userId, "userId");
@@ -59,18 +75,44 @@ public record SendOptions(String userId, String sessionId, String agentId) {
 
     /** One session per user — the most common case. */
     public static SendOptions userId(String userId) {
-        return new SendOptions(userId, null, null);
+        return new SendOptions(userId, null, null, null);
     }
 
     /** Explicit user + session — multiple conversations for the same user. */
     public static SendOptions of(String userId, String sessionId) {
         Objects.requireNonNull(sessionId, "sessionId");
-        return new SendOptions(userId, sessionId, null);
+        return new SendOptions(userId, sessionId, null, null);
     }
 
     /** Returns a copy with the given agent id override. */
     public SendOptions withAgentId(String agentId) {
-        return new SendOptions(userId, sessionId, agentId);
+        return new SendOptions(userId, sessionId, agentId, runtimeContext);
+    }
+
+    /**
+     * Returns a copy that carries the given {@link RuntimeContext} into the agent turn. Replaces
+     * any previously attached context.
+     */
+    public SendOptions withRuntimeContext(RuntimeContext runtimeContext) {
+        return new SendOptions(userId, sessionId, agentId, runtimeContext);
+    }
+
+    /**
+     * Returns a copy with a string attribute merged into the carried {@link RuntimeContext}.
+     * Creates a new context from empty when none is present yet.
+     */
+    public SendOptions withAttribute(String key, Object value) {
+        RuntimeContext next = RuntimeContext.builder(runtimeContext).put(key, value).build();
+        return new SendOptions(userId, sessionId, agentId, next);
+    }
+
+    /**
+     * Returns a copy with a typed attribute merged into the carried {@link RuntimeContext}.
+     * Creates a new context from empty when none is present yet.
+     */
+    public <T> SendOptions withAttribute(Class<T> type, T value) {
+        RuntimeContext next = RuntimeContext.builder(runtimeContext).put(type, value).build();
+        return new SendOptions(userId, sessionId, agentId, next);
     }
 
     /** The effective session key: sessionId if provided, otherwise userId. */

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: aistio
+description: Aistio - Kubernetes-native AI Agent Management
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+keywords:
+  - agent
+  - ai
+  - kubernetes
+  - aistio
+maintainers:
+  - name: Aistio Team

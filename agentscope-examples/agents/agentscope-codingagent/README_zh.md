@@ -74,8 +74,8 @@ codingagent 跑在 **HarnessAgent + `SandboxFilesystem`** 之上，sandbox 生�
             GitHub API · 目标仓库
 ```
 
-[claw]: ../agentscope-claw/
-[builder]: ../agentscope-builder/
+[claw]: ../agentscope-paw/
+[builder]: ../../../agentscope-service/
 
 ---
 

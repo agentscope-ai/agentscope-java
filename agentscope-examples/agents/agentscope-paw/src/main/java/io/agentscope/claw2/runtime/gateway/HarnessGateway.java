@@ -31,13 +31,15 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.ChannelManager;
 import io.agentscope.harness.agent.gateway.Gateway;
+import io.agentscope.harness.agent.gateway.LocalSessionTurnGate;
 import io.agentscope.harness.agent.gateway.MsgContext;
 import io.agentscope.harness.agent.gateway.SessionTurnGate;
+import io.agentscope.harness.agent.gateway.TurnBusyException;
+import io.agentscope.harness.agent.gateway.TurnLease;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -108,7 +110,11 @@ public final class HarnessGateway implements Gateway {
     private final ConcurrentHashMap<String, OutboundAddress> lastRouteBySessionKey =
             new ConcurrentHashMap<>();
 
-    private final SessionTurnGate sessionTurnGate = new SessionTurnGate();
+    /** Control-plane session ids adopted for externally dispatched AgentTasks. */
+    private final ConcurrentHashMap<String, String> externalSessionToGateKey =
+            new ConcurrentHashMap<>();
+
+    private final SessionTurnGate sessionTurnGate = new LocalSessionTurnGate();
 
     private HarnessGateway(SessionAgentManager sessionAgentManager, ChannelManager channelManager) {
         this.sessionAgentManager = Objects.requireNonNull(sessionAgentManager);
@@ -198,6 +204,20 @@ public final class HarnessGateway implements Gateway {
         String id = resolveAgentId(agent);
         agentRegistry.put(id, agent);
         defaultAgentId = id;
+    }
+
+    /**
+     * Adopts a control-plane-allocated session id so later injects and wakeups can resolve it.
+     * Used by external AgentTask dispatch.
+     */
+    public void registerExternalSession(String sessionId, String gateKey) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId required");
+        }
+        if (gateKey == null || gateKey.isBlank()) {
+            throw new IllegalArgumentException("gateKey required");
+        }
+        externalSessionToGateKey.put(sessionId, gateKey);
     }
 
     @Override
@@ -441,22 +461,24 @@ public final class HarnessGateway implements Gateway {
     }
 
     private Mono<Msg> withGatedTurn(String gateKey, Supplier<Mono<Msg>> turn) {
-        AtomicBoolean acquired = new AtomicBoolean(false);
-        return Mono.defer(turn::get)
-                .doOnSubscribe(
-                        s -> {
+        AtomicReference<TurnLease> leaseRef = new AtomicReference<>();
+        return Mono.defer(
+                        () -> {
                             try {
-                                sessionTurnGate.acquire(gateKey);
-                                acquired.set(true);
+                                leaseRef.set(sessionTurnGate.acquire(gateKey));
+                            } catch (TurnBusyException e) {
+                                return Mono.empty();
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
-                                throw new IllegalStateException(e);
+                                return Mono.error(new IllegalStateException(e));
                             }
+                            return turn.get();
                         })
                 .doFinally(
                         sig -> {
-                            if (acquired.get()) {
-                                sessionTurnGate.release(gateKey);
+                            TurnLease lease = leaseRef.get();
+                            if (lease != null) {
+                                lease.close();
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());

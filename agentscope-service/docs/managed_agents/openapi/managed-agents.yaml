@@ -1,0 +1,963 @@
+openapi: 3.1.0
+info:
+  title: AgentScope Managed Agents API
+  version: 0.1.0
+  description: |
+    Public control-plane surface for Managed Agents (M0–M5 commitment).
+    Internal (`/api/internal/*`) and Operate (`/api/v1/*`) routes are intentionally excluded.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+tags:
+  - name: Agents
+  - name: Environments
+  - name: Sessions
+  - name: Memory
+  - name: Vaults
+  - name: Deployments
+  - name: Files
+  - name: Channels
+paths:
+  /api/agents:
+    get:
+      tags: [Agents]
+      summary: List agents
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Agent list (array body; X-Total-Count header)
+          headers:
+            X-Total-Count:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Agent' }
+        '400': { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Agents]
+      summary: Create agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentCreate' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Agent' }
+          description: Created
+  /api/agents/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Agents]
+      summary: Get agent
+      responses:
+        '200':
+          description: Agent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Agent' }
+        '404': { $ref: '#/components/responses/Error' }
+    put:
+      tags: [Agents]
+      summary: Update agent (optimistic lock via version)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentUpdate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Agent' }
+    delete:
+      tags: [Agents]
+      summary: Delete agent
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/agents/{id}/archive:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Agents]
+      summary: Archive agent
+      responses:
+        '200':
+          description: Archived
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Agent' }
+  /api/agents/{id}/versions:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Agents]
+      summary: List agent versions
+      responses:
+        '200':
+          description: Versions
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+  /api/agents/{id}/versions/{v}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - name: v
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      tags: [Agents]
+      summary: Get agent version snapshot
+      responses:
+        '200':
+          description: Version
+          content:
+            application/json:
+              schema: { type: object }
+  /api/environments:
+    get:
+      tags: [Environments]
+      summary: List environments
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Environments
+          headers:
+            X-Total-Count:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Environment' }
+    post:
+      tags: [Environments]
+      summary: Create environment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnvironmentCreate' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Environment' }
+  /api/environments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Environments]
+      summary: Get environment
+      responses:
+        '200':
+          description: Environment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Environment' }
+        '404': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Environments]
+      summary: Update environment name/config (type immutable)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnvironmentUpdate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Environment' }
+    delete:
+      tags: [Environments]
+      summary: Delete environment
+      responses:
+        '204': { description: Deleted }
+  /api/environments/{id}/archive:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Environments]
+      summary: Archive environment
+      responses:
+        '200':
+          description: Archived
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Environment' }
+  /api/environments/{id}/rotate-key:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Environments]
+      summary: Rotate environment worker key
+      responses:
+        '200':
+          description: New key material
+          content:
+            application/json:
+              schema: { type: object }
+  /api/sessions:
+    get:
+      tags: [Sessions]
+      summary: List sessions
+      parameters:
+        - name: agentId
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Sessions
+          headers:
+            X-Total-Count:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Session' }
+    post:
+      tags: [Sessions]
+      summary: Create session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SessionCreate' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+  /api/sessions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Sessions]
+      summary: Get session
+      responses:
+        '200':
+          description: Session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '404': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Sessions]
+      summary: Update session overrides (whitelist)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SessionUpdate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Sessions]
+      summary: Delete session
+      responses:
+        '204': { description: Deleted }
+  /api/sessions/{id}/archive:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Sessions]
+      summary: Archive session
+      responses:
+        '200':
+          description: Archived
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+  /api/sessions/{id}/events:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Sessions]
+      summary: List session events (data plane)
+      responses:
+        '200':
+          description: Events
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+    post:
+      tags: [Sessions]
+      summary: Append inbound events (data plane)
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: Accepted
+          content:
+            application/json:
+              schema: { type: object }
+  /api/sessions/{id}/events/stream:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Sessions]
+      summary: SSE event stream (data plane)
+      responses:
+        '200':
+          description: text/event-stream
+  /api/memory-stores:
+    get:
+      tags: [Memory]
+      summary: List memory stores
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Stores
+          headers:
+            X-Total-Count:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/MemoryStore' } }
+    post:
+      tags: [Memory]
+      summary: Create memory store
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemoryStoreCreate' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemoryStore' }
+  /api/memory-stores/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Memory]
+      summary: Get memory store
+      responses:
+        '200':
+          description: Store
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemoryStore' }
+    delete:
+      tags: [Memory]
+      summary: Delete memory store
+      responses:
+        '204': { description: Deleted }
+  /api/memory-stores/{id}/archive:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Memory]
+      summary: Archive memory store
+      responses:
+        '200':
+          description: Archived
+          content:
+            application/json:
+              schema: { type: object }
+  /api/memory-stores/{id}/redact:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Memory]
+      summary: Redact a memory path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string }
+                replacement: { type: string }
+      responses:
+        '200':
+          description: Redacted memory
+          content:
+            application/json:
+              schema: { type: object }
+  /api/memory-stores/{id}/memories:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Memory]
+      summary: List memories
+      responses:
+        '200':
+          description: Memories
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+  /api/memory-stores/{id}/memories/{path}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - name: path
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Memory]
+      summary: Read memory
+      responses:
+        '200':
+          description: Memory
+          content:
+            application/json:
+              schema: { type: object }
+    put:
+      tags: [Memory]
+      summary: Put memory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content: { type: string }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { type: object }
+    delete:
+      tags: [Memory]
+      summary: Delete memory
+      responses:
+        '204': { description: Deleted }
+  /api/vaults:
+    get:
+      tags: [Vaults]
+      summary: List vaults
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Vaults
+          headers:
+            X-Total-Count:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Vault' } }
+    post:
+      tags: [Vaults]
+      summary: Create vault
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VaultCreate' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Vault' }
+  /api/vaults/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Vaults]
+      summary: Get vault
+      responses:
+        '200':
+          description: Vault
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Vault' }
+    patch:
+      tags: [Vaults]
+      summary: Update vault
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VaultUpdate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Vault' }
+    delete:
+      tags: [Vaults]
+      summary: Delete vault
+      responses:
+        '204': { description: Deleted }
+  /api/vaults/{id}/archive:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Vaults]
+      summary: Archive vault
+      responses:
+        '200':
+          description: Archived
+          content:
+            application/json:
+              schema: { type: object }
+  /api/vaults/{id}/credentials:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Vaults]
+      summary: List credentials (no secrets)
+      responses:
+        '200':
+          description: Credentials
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Credential' } }
+    post:
+      tags: [Vaults]
+      summary: Add credential
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CredentialCreate' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Credential' }
+  /api/vaults/{id}/credentials/{cid}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - name: cid
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Vaults]
+      summary: Update credential metadata / rotate secret
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CredentialUpdate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Credential' }
+    delete:
+      tags: [Vaults]
+      summary: Delete credential
+      responses:
+        '204': { description: Deleted }
+  /api/vaults/{id}/credentials/{cid}/validate:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - name: cid
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Vaults]
+      summary: Validate credential (decrypt + optional reachability)
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema: { type: object }
+  /api/deployments:
+    get:
+      tags: [Deployments]
+      summary: List deployments
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Deployments
+          headers:
+            X-Total-Count:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Deployment' } }
+    post:
+      tags: [Deployments]
+      summary: Create deployment
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeploymentCreate' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deployment' }
+  /api/deployments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Deployments]
+      summary: Get deployment
+      responses:
+        '200':
+          description: Deployment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deployment' }
+    patch:
+      tags: [Deployments]
+      summary: Update deployment
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deployment' }
+    delete:
+      tags: [Deployments]
+      summary: Delete deployment
+      responses:
+        '204': { description: Deleted }
+  /api/deployments/{id}/archive:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Deployments]
+      summary: Archive deployment
+      responses:
+        '200':
+          description: Archived
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deployment' }
+  /api/deployments/{id}/run:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Deployments]
+      summary: Run deployment now
+      responses:
+        '200':
+          description: Fired
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deployment' }
+  /api/deployments/{id}/pause:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Deployments]
+      summary: Pause deployment
+      responses:
+        '200':
+          description: Paused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deployment' }
+  /api/deployments/{id}/unpause:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Deployments]
+      summary: Unpause deployment
+      responses:
+        '200':
+          description: Unpaused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deployment' }
+  /api/deployments/webhook/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Deployments]
+      summary: Fire webhook deployment (no JWT)
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string }
+      responses:
+        '200':
+          description: Fired (narrow body; no webhookToken)
+          content:
+            application/json:
+              schema: { type: object }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/files:
+    get:
+      tags: [Files]
+      summary: List files
+      responses:
+        '200':
+          description: Files metadata
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/FileMeta' } }
+    post:
+      tags: [Files]
+      summary: Upload text file (max 1 MiB)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FileCreate' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FileMeta' }
+        '400': { $ref: '#/components/responses/Error' }
+  /api/files/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Files]
+      summary: Get file metadata
+      responses:
+        '200':
+          description: Metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FileMeta' }
+    delete:
+      tags: [Files]
+      summary: Delete file
+      responses:
+        '204': { description: Deleted }
+  /api/files/{id}/content:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Files]
+      summary: Get file content
+      responses:
+        '200':
+          description: Content
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  filename: { type: string }
+                  content: { type: string }
+  /api/channels:
+    get:
+      tags: [Channels]
+      summary: List channels
+      responses:
+        '200':
+          description: Channels
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+    post:
+      tags: [Channels]
+      summary: Create channel
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { type: object }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      description: Optional page size 1..500; omit for full list
+      schema: { type: integer, minimum: 1, maximum: 500 }
+    Offset:
+      name: offset
+      in: query
+      description: Requires limit when set
+      schema: { type: integer, minimum: 0 }
+  responses:
+    Error:
+      description: Control-plane error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Agent:
+      type: object
+      additionalProperties: true
+    AgentCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        system: { type: string }
+        model: { type: string }
+        maxIters: { type: integer }
+        tools: { type: array, items: { type: object } }
+        mcpServers: { type: array, items: { type: object } }
+    AgentUpdate:
+      type: object
+      additionalProperties: true
+    Environment:
+      type: object
+      additionalProperties: true
+    EnvironmentCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        config: { type: object }
+    EnvironmentUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        config: { type: object }
+    Session:
+      type: object
+      additionalProperties: true
+    SessionCreate:
+      type: object
+      required: [agent, environmentId]
+      properties:
+        agent: {}
+        environmentId: { type: string }
+        memoryStoreIds: { type: array, items: { type: string } }
+        vaultIds: { type: array, items: { type: string } }
+        resources: { type: array, items: { type: object } }
+        agentOverrides: { type: object }
+    SessionUpdate:
+      type: object
+      required: [agentOverrides]
+      properties:
+        agentOverrides:
+          type: object
+          description: Whitelist keys system/model/maxIters/name/description
+          additionalProperties: true
+    MemoryStore:
+      type: object
+      additionalProperties: true
+    MemoryStoreCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+    Vault:
+      type: object
+      additionalProperties: true
+    VaultCreate:
+      type: object
+      required: [displayName]
+      properties:
+        displayName: { type: string }
+        metadata: { type: object }
+    VaultUpdate:
+      type: object
+      properties:
+        displayName: { type: string }
+        metadata: { type: object }
+    Credential:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string }
+        label: { type: string }
+        target: { type: string }
+        createdAt: { type: integer }
+    CredentialCreate:
+      type: object
+      required: [type, label, secret]
+      properties:
+        type: { type: string }
+        label: { type: string }
+        target: { type: string }
+        secret: { type: string }
+    CredentialUpdate:
+      type: object
+      properties:
+        label: { type: string }
+        target: { type: string }
+        secret: { type: string }
+    Deployment:
+      type: object
+      additionalProperties: true
+    DeploymentCreate:
+      type: object
+      required: [name, agentId, triggerType]
+      properties:
+        name: { type: string }
+        agentId: { type: string }
+        environmentId: { type: string }
+        triggerType: { type: string, enum: [manual, cron, webhook] }
+        cronExpression: { type: string }
+    FileMeta:
+      type: object
+      properties:
+        id: { type: string }
+        filename: { type: string }
+        contentType: { type: string }
+        sizeBytes: { type: integer }
+        createdAt: { type: integer }
+    FileCreate:
+      type: object
+      required: [filename, content]
+      properties:
+        filename: { type: string }
+        content: { type: string }
+        contentType: { type: string }

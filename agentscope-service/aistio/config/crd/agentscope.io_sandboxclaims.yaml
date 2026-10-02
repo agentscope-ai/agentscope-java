@@ -1,0 +1,205 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: sandboxclaims.agentscope.io
+spec:
+  group: agentscope.io
+  names:
+    kind: SandboxClaim
+    listKind: SandboxClaimList
+    plural: sandboxclaims
+    shortNames:
+    - sbc
+    singular: sandboxclaim
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.agentRef.name
+      name: Agent
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.serviceFQDN
+      name: FQDN
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          SandboxClaim represents a request for a sandboxed execution environment.
+
+          EXPERIMENTAL: Sandbox provisioning is not yet implemented. Creating a
+          SandboxClaim will be accepted and set to Pending phase, but will not
+          provision an actual sandbox. This feature requires the agent-sandbox
+          project (agent-sandbox.sigs.k8s.io) which is under active development.
+          See the project roadmap for planned integration timeline.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: SandboxClaimSpec defines the desired state of SandboxClaim.
+            properties:
+              agentRef:
+                description: ObjectReference refers to a Kubernetes object.
+                properties:
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                type: object
+              sandboxTemplate:
+                description: SandboxTemplateSpec defines the sandbox template.
+                properties:
+                  lifecycle:
+                    description: SandboxLifecycle defines sandbox lifecycle behavior.
+                    properties:
+                      idleTimeout:
+                        type: string
+                      shutdownPolicy:
+                        enum:
+                        - Delete
+                        - Retain
+                        type: string
+                    type: object
+                  network:
+                    description: NetworkPolicy defines network access rules.
+                    properties:
+                      allowedDomains:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  podTemplate:
+                    description: PodTemplateSpec holds a simplified pod template.
+                    properties:
+                      containers:
+                        items:
+                          description: ContainerSpec defines a container in the sandbox.
+                          properties:
+                            image:
+                              type: string
+                            name:
+                              type: string
+                            resources:
+                              description: ResourceRequirements defines resource requests
+                                and limits.
+                              properties:
+                                limits:
+                                  description: ResourceList is a set of resource quantities.
+                                  properties:
+                                    cpu:
+                                      type: string
+                                    memory:
+                                      type: string
+                                  type: object
+                                requests:
+                                  description: ResourceList is a set of resource quantities.
+                                  properties:
+                                    cpu:
+                                      type: string
+                                    memory:
+                                      type: string
+                                  type: object
+                              type: object
+                          required:
+                          - image
+                          - name
+                          type: object
+                        type: array
+                    type: object
+                type: object
+              sessionRef:
+                description: ObjectReference refers to a Kubernetes object.
+                properties:
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - agentRef
+            - sandboxTemplate
+            type: object
+          status:
+            description: SandboxClaimStatus defines the observed state of SandboxClaim.
+            properties:
+              conditions:
+                items:
+                  description: Condition represents a status condition.
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      description: ConditionType defines the type of condition.
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              phase:
+                description: SandboxPhase represents the lifecycle phase of a sandbox
+                  claim.
+                enum:
+                - Pending
+                - Bound
+                - Released
+                type: string
+              sandboxRef:
+                description: ObjectReference refers to a Kubernetes object.
+                properties:
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                type: object
+              serviceFQDN:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,59 @@
+apiVersion: agentscope.io/v1alpha1
+kind: Agent
+metadata:
+  name: customer-support-agent
+  namespace: production
+spec:
+  type: Declarative
+  runtime: agentscope-java
+  displayName: "客服助手"
+  description: "处理客户咨询的智能体"
+  declarative:
+    agentConfig:
+      systemMessage: "你是一个专业的客服助手，负责处理客户的咨询和投诉。"
+      modelConfigRef: "qwen-max-config"
+      stream: true
+      maxTurns: 50
+      sessionAffinity: none
+    tools:
+      - type: McpServer
+        mcpServer:
+          name: "knowledge-base"
+          toolNames: ["search_docs", "get_faq"]
+          requireApproval: ["delete_doc"]
+      - type: McpServer
+        mcpServer:
+          name: "crm"
+          toolNames: ["lookup_customer", "create_ticket"]
+    subagents:
+      - name: security-scanner
+        description: "Scan code for security vulnerabilities"
+        model: "qwen-turbo"
+        instructions: "You are a security scanner focused on auth vulnerabilities."
+        tools: ["read_file", "grep_files"]
+        steps: 15
+        workspaceMode: isolated
+    replicas: 3
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+    env:
+      - name: LOG_LEVEL
+        value: "info"
+    advanced:
+      contextStrategy:
+        triggerRatio: "0.8"
+        reserveRatio: "0.1"
+        compressionModel: "qwen-turbo-config"
+      reactConfig:
+        maxIters: 20
+        stopOnReject: false
+  sandbox:
+    enabled: false
+    templateRef: "python-sandbox-template"
+  allowedNamespaces:
+    from: Same

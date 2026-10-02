@@ -230,7 +230,7 @@ class PlanModeMiddlewareTest {
     void skillLoadToolIsReadOnlyAndPermittedInPlanMode(
             @TempDir Path project, @TempDir Path workspace) {
         // SkillLoadTool implements AgentTool (not ToolBase) — verify isReadOnly() is true.
-        SkillLoadTool loadTool = new SkillLoadTool(new AtomicReference<>(null));
+        SkillLoadTool loadTool = new SkillLoadTool();
         assertTrue(loadTool.isReadOnly(), "SkillLoadTool must be read-only");
 
         // Build a toolkit containing the SkillLoadTool and wire a resolver matching

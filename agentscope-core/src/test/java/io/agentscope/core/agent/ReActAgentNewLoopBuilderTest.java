@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.config.FailoverListener;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -111,9 +112,38 @@ class ReActAgentNewLoopBuilderTest {
     }
 
     @Test
+    void builderMiddlewaresAreSortedDescendingAndStableForTies() {
+        MiddlewareBase firstDefault = new OrderedMiddleware(1);
+        MiddlewareBase lowerPriority = new OrderedMiddleware(-1);
+        MiddlewareBase higherPriority = new OrderedMiddleware(2);
+        MiddlewareBase secondDefault = new OrderedMiddleware(1);
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("ordered")
+                        .model(newFakeModel())
+                        .toolkit(new Toolkit())
+                        .middleware(firstDefault)
+                        .middleware(lowerPriority)
+                        .middleware(higherPriority)
+                        .middleware(secondDefault)
+                        .build();
+
+        List<MiddlewareBase> middlewares = agent.getMiddlewares();
+        assertTrue(middlewares.get(0) instanceof GracefulShutdownMiddleware);
+        assertSame(higherPriority, middlewares.get(1));
+        assertSame(firstDefault, middlewares.get(2));
+        assertSame(secondDefault, middlewares.get(3));
+        assertSame(lowerPriority, middlewares.get(4));
+    }
+
+    private record OrderedMiddleware(int order) implements MiddlewareBase {}
+
+    @Test
     void fromAgentCopiesModelResilienceConfig() {
         ChatModelBase model = newFakeModel();
         ChatModelBase fallback = newFakeModel();
+        FailoverListener listener = (primary, error) -> {};
 
         ReActAgent source =
                 ReActAgent.builder()
@@ -122,6 +152,7 @@ class ReActAgentNewLoopBuilderTest {
                         .model(model)
                         .fallbackModel(fallback)
                         .maxRetries(7)
+                        .failoverListener(listener)
                         .toolkit(new Toolkit())
                         .build();
 
@@ -130,6 +161,7 @@ class ReActAgentNewLoopBuilderTest {
         assertNotNull(copy.getModelConfig());
         assertEquals(7, copy.getModelConfig().maxRetries());
         assertSame(fallback, copy.getModelConfig().fallbackModel());
+        assertSame(listener, copy.getModelConfig().failoverListener());
         assertSame(model, copy.getModel());
     }
 

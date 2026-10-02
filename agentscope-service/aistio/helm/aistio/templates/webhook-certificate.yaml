@@ -1,0 +1,18 @@
+{{- if and .Values.webhook.enabled .Values.webhook.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Release.Name }}-webhook-cert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: aistio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  secretName: {{ .Values.webhook.certSecret }}
+  dnsNames:
+    - {{ .Release.Name }}.{{ .Release.Namespace }}.svc
+    - {{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    name: {{ .Values.webhook.certManager.issuerRef }}
+    kind: Issuer
+{{- end }}

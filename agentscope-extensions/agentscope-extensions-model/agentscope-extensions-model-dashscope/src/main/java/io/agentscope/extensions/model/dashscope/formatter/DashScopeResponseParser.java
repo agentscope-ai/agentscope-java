@@ -22,6 +22,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeChoice;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeFunction;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
@@ -97,10 +98,31 @@ public class DashScopeResponseParser {
             ChatUsage usage = null;
             DashScopeUsage u = response.getUsage();
             if (u != null) {
+                DashScopeUsage.OutputTokensDetails outputTokensDetails = u.getOutputTokensDetails();
+                DashScopeUsage.PromptTokensDetails promptTokensDetails = u.getPromptTokensDetails();
                 usage =
                         ChatUsage.builder()
                                 .inputTokens(u.getInputTokens() != null ? u.getInputTokens() : 0)
                                 .outputTokens(u.getOutputTokens() != null ? u.getOutputTokens() : 0)
+                                .cachedTokens(
+                                        promptTokensDetails != null
+                                                        && promptTokensDetails.getCachedTokens()
+                                                                != null
+                                                ? promptTokensDetails.getCachedTokens()
+                                                : 0)
+                                .cacheCreationTokens(
+                                        promptTokensDetails != null
+                                                        && promptTokensDetails
+                                                                        .getCacheCreationInputTokens()
+                                                                != null
+                                                ? promptTokensDetails.getCacheCreationInputTokens()
+                                                : 0)
+                                .reasoningTokens(
+                                        outputTokensDetails != null
+                                                        && outputTokensDetails.getReasoningTokens()
+                                                                != null
+                                                ? outputTokensDetails.getReasoningTokens()
+                                                : 0)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
@@ -146,7 +168,7 @@ public class DashScopeResponseParser {
             // For DashScope streaming tool calls:
             // - First chunk: has name, id, and partial arguments
             // - Subsequent chunks: only have argument fragments, no name/id
-            if (name != null && !name.trim().isEmpty()) {
+            if (name != null && ToolValidator.requireNonBlank("DashScope", name, id)) {
                 // First chunk with complete metadata
                 String callId =
                         id != null ? id : ("tool_call_" + System.currentTimeMillis() + "_" + idx);
