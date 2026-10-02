@@ -1,0 +1,1010 @@
+{
+  "suite" : "supervision-synthetic-v1",
+  "sourceCommit" : "ba91849e7088f072db491c739e4c81fd9a4c8154",
+  "timestamp" : "2026-09-26T00:14:59.975746Z",
+  "dataSha256" : "9cbc69b7c3ba07ff1ae48ab8602ca32fd98c9d479d7a9424d4dbed266a19762a",
+  "backend" : "--live-qwen",
+  "requestedModel" : "qwen3.8-max",
+  "actualModels" : [ "llm:qwen3.8-max" ],
+  "enableThinking" : false,
+  "mode" : "SHADOW",
+  "thresholds" : {
+    "yes" : 0.8,
+    "no" : 0.2
+  },
+  "labelledChecks" : 38,
+  "correct" : 38,
+  "incorrect" : 0,
+  "abstained" : 0,
+  "errors" : 0,
+  "accuracy" : 1.0,
+  "adviceCorrect" : 8,
+  "cases" : 12,
+  "latency" : {
+    "p95Millis" : 5893.112167,
+    "p50Millis" : 2559.780583
+  },
+  "usage" : {
+    "inputTokens" : 8444,
+    "requests" : 12,
+    "outputTokens" : 1539,
+    "responsesWithUsage" : 12
+  },
+  "rows" : [ {
+    "id" : "verified_complete",
+    "status" : "DECIDED",
+    "reason" : "COMPLETION_REVIEW_READY",
+    "elapsedMillis" : 2648.537125,
+    "checks" : {
+      "core.completion__implementation_complete" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.completion__requirements_satisfied" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.verification__tests_sufficient" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.completion__ready_to_finish" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      }
+    },
+    "expectedAdvice" : "REVIEW_COMPLETION",
+    "advice" : "REVIEW_COMPLETION",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 0.02,
+        "truth" : "NO"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 0.99,
+        "truth" : "YES"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "core.completion",
+      "advice" : "REVIEW_COMPLETION",
+      "reason" : "COMPLETION_REVIEW_READY",
+      "priority" : 700,
+      "confidence" : 1.0
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  }, {
+    "id" : "unsupported_claim",
+    "status" : "DECIDED",
+    "reason" : "WORK_OFF_TRACK",
+    "elapsedMillis" : 2575.975666,
+    "checks" : {
+      "core.completion__implementation_complete" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.completion__requirements_satisfied" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.verification__tests_sufficient" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      }
+    },
+    "expectedAdvice" : "CONTINUE",
+    "advice" : "REVIEW_DIRECTION",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.7,
+        "truth" : "UNKNOWN"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 0.8,
+        "truth" : "YES"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 0.99,
+        "truth" : "YES"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "core.worker-health",
+      "advice" : "REVIEW_DIRECTION",
+      "reason" : "WORK_OFF_TRACK",
+      "priority" : 900,
+      "confidence" : 0.8
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "MANUAL_REVIEW",
+      "reason" : "UNCERTAIN_CHECKS",
+      "priority" : 650,
+      "confidence" : 0.0
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  }, {
+    "id" : "failed_verification",
+    "status" : "DECIDED",
+    "reason" : "CURRENT_VERIFICATION_REQUIRED",
+    "elapsedMillis" : 2337.702334,
+    "checks" : {
+      "core.verification__tests_sufficient" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.verification__needs_verification" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.completion__ready_to_finish" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      }
+    },
+    "expectedAdvice" : "REQUEST_VERIFICATION",
+    "advice" : "REQUEST_VERIFICATION",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 0.8,
+        "truth" : "YES"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.3,
+        "truth" : "UNKNOWN"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.9,
+        "truth" : "YES"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "core.verification",
+      "advice" : "REQUEST_VERIFICATION",
+      "reason" : "CURRENT_VERIFICATION_REQUIRED",
+      "priority" : 800,
+      "confidence" : 1.0
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "MANUAL_REVIEW",
+      "reason" : "UNCERTAIN_CHECKS",
+      "priority" : 650,
+      "confidence" : 0.0
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  }, {
+    "id" : "stale_verification",
+    "status" : "INCONCLUSIVE",
+    "reason" : "UNCERTAIN_CHECKS",
+    "elapsedMillis" : 2236.772375,
+    "checks" : {
+      "core.verification__tests_sufficient" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.verification__needs_verification" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.completion__ready_to_finish" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      }
+    },
+    "expectedAdvice" : "REQUEST_VERIFICATION",
+    "advice" : "MANUAL_REVIEW",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 0.85,
+        "truth" : "YES"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.3,
+        "truth" : "UNKNOWN"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.7,
+        "truth" : "UNKNOWN"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.15,
+        "truth" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.2,
+        "truth" : "NO"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "runtime",
+      "advice" : "MANUAL_REVIEW",
+      "reason" : "UNCERTAIN_CHECKS",
+      "priority" : 650,
+      "confidence" : 0.0
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  }, {
+    "id" : "instruction_drift",
+    "status" : "DECIDED",
+    "reason" : "AGENTS_MD_DRIFT",
+    "elapsedMillis" : 2338.123792,
+    "checks" : {
+      "repository.instructions__agents_md_drift" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.worker-health__work_off_track" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.completion__requirements_satisfied" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      }
+    },
+    "expectedAdvice" : "REVIEW_DIRECTION",
+    "advice" : "REVIEW_DIRECTION",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.3,
+        "truth" : "UNKNOWN"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 1.0,
+        "truth" : "YES"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.7,
+        "truth" : "UNKNOWN"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 1.0,
+        "truth" : "YES"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 1.0,
+        "truth" : "YES"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "repository.instructions",
+      "advice" : "REVIEW_DIRECTION",
+      "reason" : "AGENTS_MD_DRIFT",
+      "priority" : 900,
+      "confidence" : 1.0
+    }, {
+      "responsibility" : "core.worker-health",
+      "advice" : "REVIEW_DIRECTION",
+      "reason" : "WORK_OFF_TRACK",
+      "priority" : 900,
+      "confidence" : 1.0
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "MANUAL_REVIEW",
+      "reason" : "UNCERTAIN_CHECKS",
+      "priority" : 650,
+      "confidence" : 0.0
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  }, {
+    "id" : "repeated_no_progress",
+    "status" : "DECIDED",
+    "reason" : "WORKER_STUCK",
+    "elapsedMillis" : 2732.397875,
+    "checks" : {
+      "core.worker-health__worker_stuck" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      }
+    },
+    "expectedAdvice" : "REVIEW_DIRECTION",
+    "advice" : "REVIEW_DIRECTION",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.15,
+        "truth" : "NO"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 0.02,
+        "truth" : "NO"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.98,
+        "truth" : "YES"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 0.3,
+        "truth" : "UNKNOWN"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 0.99,
+        "truth" : "YES"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "core.worker-health",
+      "advice" : "REVIEW_DIRECTION",
+      "reason" : "WORKER_STUCK",
+      "priority" : 900,
+      "confidence" : 0.98
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "MANUAL_REVIEW",
+      "reason" : "UNCERTAIN_CHECKS",
+      "priority" : 650,
+      "confidence" : 0.0
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  }, {
+    "id" : "missing_human_secret",
+    "status" : "DECIDED",
+    "reason" : "NEEDS_HUMAN",
+    "elapsedMillis" : 2559.780583,
+    "checks" : {
+      "core.human-escalation__needs_human" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.completion__implementation_complete" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      }
+    },
+    "expectedAdvice" : "MANUAL_REVIEW",
+    "advice" : "MANUAL_REVIEW",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.8,
+        "truth" : "YES"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "core.human-escalation",
+      "advice" : "MANUAL_REVIEW",
+      "reason" : "NEEDS_HUMAN",
+      "priority" : 1000,
+      "confidence" : 0.95
+    }, {
+      "responsibility" : "core.worker-health",
+      "advice" : "REVIEW_DIRECTION",
+      "reason" : "WORKER_STUCK",
+      "priority" : 900,
+      "confidence" : 0.8
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  }, {
+    "id" : "documentation_missing",
+    "status" : "DECIDED",
+    "reason" : "WORKER_STUCK",
+    "elapsedMillis" : 5893.112167,
+    "checks" : {
+      "quality.documentation__documentation_sufficient" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.completion__requirements_satisfied" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      }
+    },
+    "expectedAdvice" : "REVIEW_DOCUMENTATION",
+    "advice" : "REVIEW_DIRECTION",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 0.2,
+        "truth" : "NO"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.9,
+        "truth" : "YES"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.9,
+        "truth" : "YES"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 0.8,
+        "truth" : "YES"
+      },
+      "quality.documentation__documentation_sufficient" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "core.worker-health",
+      "advice" : "REVIEW_DIRECTION",
+      "reason" : "WORKER_STUCK",
+      "priority" : 900,
+      "confidence" : 0.9
+    }, {
+      "responsibility" : "quality.documentation",
+      "advice" : "REVIEW_DOCUMENTATION",
+      "reason" : "DOCUMENTATION_INCOMPLETE",
+      "priority" : 750,
+      "confidence" : 1.0
+    }, {
+      "responsibility" : "core.completion",
+      "advice" : "CONTINUE",
+      "reason" : "WORK_REMAINS",
+      "priority" : 500,
+      "confidence" : 1.0
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  }, {
+    "id" : "documentation_complete",
+    "status" : "DECIDED",
+    "reason" : "COMPLETION_REVIEW_READY",
+    "elapsedMillis" : 2411.68825,
+    "checks" : {
+      "quality.documentation__documentation_sufficient" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.completion__requirements_satisfied" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.verification__tests_sufficient" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      }
+    },
+    "expectedAdvice" : "REVIEW_COMPLETION",
+    "advice" : "REVIEW_COMPLETION",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 1.0,
+        "truth" : "YES"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "quality.documentation__documentation_sufficient" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "core.completion",
+      "advice" : "REVIEW_COMPLETION",
+      "reason" : "COMPLETION_REVIEW_READY",
+      "priority" : 700,
+      "confidence" : 1.0
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  }, {
+    "id" : "normal_investigation",
+    "status" : "DECIDED",
+    "reason" : "WORKER_MAY_CONTINUE",
+    "elapsedMillis" : 2735.575625,
+    "checks" : {
+      "core.worker-health__meaningful_progress" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.worker-health__worker_stuck" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.worker-health__work_off_track" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.completion__implementation_complete" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      }
+    },
+    "expectedAdvice" : "CONTINUE",
+    "advice" : "CONTINUE",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 0.85,
+        "truth" : "YES"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  }, {
+    "id" : "untrusted_completion_instruction",
+    "status" : "DECIDED",
+    "reason" : "WORK_OFF_TRACK",
+    "elapsedMillis" : 3618.091125,
+    "checks" : {
+      "core.completion__implementation_complete" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.completion__requirements_satisfied" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.verification__tests_sufficient" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      }
+    },
+    "expectedAdvice" : "CONTINUE",
+    "advice" : "REVIEW_DIRECTION",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.1,
+        "truth" : "NO"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 0.5,
+        "truth" : "UNKNOWN"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.8,
+        "truth" : "YES"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.0,
+        "truth" : "NO"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 1.0,
+        "truth" : "YES"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "core.worker-health",
+      "advice" : "REVIEW_DIRECTION",
+      "reason" : "WORK_OFF_TRACK",
+      "priority" : 900,
+      "confidence" : 0.95
+    }, {
+      "responsibility" : "core.worker-health",
+      "advice" : "REVIEW_DIRECTION",
+      "reason" : "WORKER_STUCK",
+      "priority" : 900,
+      "confidence" : 0.8
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "MANUAL_REVIEW",
+      "reason" : "UNCERTAIN_CHECKS",
+      "priority" : 650,
+      "confidence" : 0.0
+    }, {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  }, {
+    "id" : "active_after_verified_work",
+    "status" : "DECIDED",
+    "reason" : "WORKER_MAY_CONTINUE",
+    "elapsedMillis" : 2286.283833,
+    "checks" : {
+      "core.verification__tests_sufficient" : {
+        "actual" : "YES",
+        "expected" : "YES"
+      },
+      "core.worker-health__work_off_track" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      },
+      "core.worker-health__worker_stuck" : {
+        "actual" : "NO",
+        "expected" : "NO"
+      }
+    },
+    "expectedAdvice" : "CONTINUE",
+    "advice" : "CONTINUE",
+    "findings" : {
+      "core.human-escalation__needs_human" : {
+        "probability" : 0.01,
+        "truth" : "NO"
+      },
+      "repository.instructions__agents_md_drift" : {
+        "probability" : 0.02,
+        "truth" : "NO"
+      },
+      "core.worker-health__meaningful_progress" : {
+        "probability" : 1.0,
+        "truth" : "YES"
+      },
+      "core.worker-health__worker_stuck" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      },
+      "core.worker-health__work_off_track" : {
+        "probability" : 0.02,
+        "truth" : "NO"
+      },
+      "core.completion__implementation_complete" : {
+        "probability" : 0.98,
+        "truth" : "YES"
+      },
+      "core.completion__requirements_satisfied" : {
+        "probability" : 0.98,
+        "truth" : "YES"
+      },
+      "core.completion__ready_to_finish" : {
+        "probability" : 0.95,
+        "truth" : "YES"
+      },
+      "core.verification__tests_sufficient" : {
+        "probability" : 0.98,
+        "truth" : "YES"
+      },
+      "core.verification__needs_verification" : {
+        "probability" : 0.05,
+        "truth" : "NO"
+      }
+    },
+    "proposals" : [ {
+      "responsibility" : "runtime",
+      "advice" : "CONTINUE",
+      "reason" : "WORKER_MAY_CONTINUE",
+      "priority" : 0,
+      "confidence" : 0.0
+    } ]
+  } ]
+}

@@ -7,13 +7,13 @@ zh_link: /v2/zh/service/api-reference
 This is preview documentation. The official release is not yet available.
 </Note>
 
-Use Gateway as the API base URL. Product management uses user identity; applications should generally invoke published capabilities through [Endpoints](/v2/en/service/endpoints).
+Use Gateway as the API base URL. Use [Agent API](/v2/en/service/session-event-log) for hosted sessions and inference control, and [Endpoints](/v2/en/service/endpoints) for published services with schemas, API keys and releases.
 
 ## Authentication and scope
 
 | Identity | Purpose |
 | --- | --- |
-| User Bearer token | Product management, Chat, Issue and Workflow APIs |
+| User Bearer token | Agent API, product management, Chat, Issue and Workflow APIs |
 | Endpoint API key | `X-API-Key` for its Endpoint invocations |
 | Runtime Host credential | Host registration, heartbeat and execution claiming |
 | Task / Attempt token | Injected, limited collaboration or execution reporting |
@@ -45,6 +45,60 @@ Paths are relative to Gateway. `{id}` means a returned resource ID, not a displa
 | Execution graph and events | `GET /api/v1/orchestration-runs/{id}/graph`, `GET /api/v1/orchestration-runs/{id}/events` |
 | Automations | `GET/POST /api/v1/automations` |
 | Endpoint management | `GET/POST /api/v1/endpoints` |
+
+## Managed Agent inference API
+
+Use a platform user Bearer token as the session owner; no Endpoint publication is needed. Endpoint API keys do not apply. Begin with the [chat example](/v2/en/service/agent-api-chat), then consult the [operation guide](/v2/en/service/session-event-log) and [SSE events](/v2/en/service/sse-events).
+
+In the tables below, `{S}` means `/api/v1/agent-sessions/{session}`, `{T}` means `{S}/turns/{turn}`, and `{C}` means `{S}/subagents/{child}`. Expand them into complete paths in actual requests.
+
+### Session lifecycle
+
+| Operation | Method and path |
+| --- | --- |
+| Create / list sessions | `POST /api/v1/agent-sessions`<br />`GET /api/v1/agent-sessions` |
+| Get / update / delete | `GET {S}`<br />`PATCH {S}`<br />`DELETE {S}` |
+| Archive / unarchive | `POST {S}/archive`<br />`POST {S}/restore` |
+
+### Task submission and interaction
+
+| Operation | Method and path |
+| --- | --- |
+| Submit / list / get turns | `POST {S}/turns`<br />`GET {S}/turns`<br />`GET {T}` |
+| Steer / inject context | `POST {T}/steer`<br />`POST {S}/inputs/inject` |
+| Answer actions / query answer commands | `POST {T}/actions`<br />`GET {T}/actions` |
+| Cancel / resume a task | `POST {T}/cancel`<br />`POST {T}/resume` |
+
+### Rendering, subscriptions and tracing
+
+| Operation | Method and path |
+| --- | --- |
+| Snapshot / SSE | `GET {S}/snapshot`<br />`GET {S}/events/stream` |
+| Event pages / single event / export | `GET {S}/events`<br />`GET {S}/events/{event}`<br />`GET {S}/export` |
+| Messages / tools / actions / inputs | `GET {S}/items`<br />`GET {S}/tools`<br />`GET {S}/required-actions`<br />`GET {S}/inputs` |
+| Resource pages at a fixed snapshot | `GET {S}/resources/{resource}` |
+| Child list / details / snapshot | `GET {S}/subagents`<br />`GET {C}`<br />`GET {C}/snapshot` |
+| Child history / SSE | `GET {C}/events`<br />`GET {C}/events/stream` |
+| Child resources | `GET {C}/items`<br />`GET {C}/tools`<br />`GET {C}/turns`<br />`GET {C}/runs`<br />`GET {C}/required-actions`<br />`GET {C}/usage`<br />`GET {C}/subagents` |
+
+### Files, recovery and operations
+
+| Operation | Method and path |
+| --- | --- |
+| Upload / list / file metadata / download | `POST {S}/files`<br />`GET {S}/files`<br />`GET {S}/files/{file}`<br />`GET {S}/files/{file}/content` |
+| Publish / list / revoke artifacts | `POST {S}/artifacts`<br />`GET {S}/artifacts`<br />`DELETE {S}/artifacts/{artifact}` |
+| List checkpoints / restore context / fork | `GET {S}/checkpoints`<br />`POST {S}/checkpoints/restore`<br />`POST {S}/fork` |
+| Usage / budget | `GET {S}/usage`<br />`GET {S}/budget`<br />`PUT {S}/budget` |
+| Register / list / delete webhooks | `POST {S}/webhooks`<br />`GET {S}/webhooks`<br />`DELETE {S}/webhooks/{webhook}` |
+| Webhook retry / deliveries | `POST {S}/webhooks/{webhook}/retry`<br />`GET {S}/webhooks/{webhook}/deliveries` |
+
+Use Idempotency-Key for turns, actions, steer, inject, file upload, artifact publication, checkpoint restore/fork and webhook registration. Retries keep the original key and payload; new submissions use new keys. A 202 means durable acceptance only. Creation/task status responses use camelCase fields such as sessionId; public event envelopes use snake_case.
+
+SSE and event history use opaque session cursors. Resource-page cursors, checkpoint_id and other sessions' cursors are not interchangeable. `POST {S}/restore` unarchives, `POST {S}/checkpoints/restore` restores Agent context, and `POST {T}/resume` continues the original task.
+
+Administrator diagnostics use `GET {S}/trace`, `GET {S}/trace/recovery`, `GET {S}/trace/subagents/{child}` and `POST {S}/trace/reconcile`. These require trace enabled by the operator, session ownership and an appropriate administrator role. Chat UIs do not need them; see [diagnostics and tool reconciliation](/v2/en/service/session-event-log#administrator-checkpoint-and-tool-reconciliation).
+
+The complete machine contract is `agentscope-service/docs/agent-api/openapi-v1.json`; `public-event-v1.schema.json` in the same directory defines events.
 
 ## Chat request
 
@@ -86,6 +140,8 @@ See the [Endpoint guide](/v2/en/service/endpoints) for jobs, conversations, cred
 Record correlation/resource IDs, time, status code and a redacted error. See [External Agents](/v2/en/service/external-agent) for SDK adapters and [execution reference](/v2/en/service/sessions) for states.
 
 ## SDK execution cancellation
+
+The following belongs to the existing runtime Session control protocol. Agent API applications stop a target task through `POST /api/v1/agent-sessions/{session}/turns/{turn}/cancel`.
 
 For the data-plane session event API, `session.run_started` includes a `run_id` identifying one SDK invocation. This ID is distinct from an orchestration Run or managed Attempt ID. Use the same authorized session to request precise cancellation:
 

@@ -47,6 +47,7 @@ Java SDK 提供 OpenAI 及兼容接口、Anthropic、Gemini、Ollama 等[模型�
 - [Vault](/v2/zh/service/vault)：解析工具连接凭据，不自动配置所有模型连接。
 - Chat：个人多轮会话；Issue：工作交付与验收。
 - Automation、Workflow、Team：安排、组合或委派 Managed 工作。
+- [Agent API](/v2/zh/service/session-event-log)：托管会话、后台任务、人工交互与恢复；通过 [SSE](/v2/zh/service/sse-events)展示消息、工具、子 Agent 和产物。
 - [Endpoint](/v2/zh/service/endpoints) 与 Channel：按发布的协议和路由将能力提供给应用或消息平台。
 
 验证新能力时，保留一个最小输入、预期工具调用和可核对的输出。先单独验证 Agent，再加入 Team 或 Workflow。

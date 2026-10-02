@@ -54,6 +54,12 @@ Agent 定义总体围绕 AgentScope Harness 的核心设计理念设计，首先
 
 在运行架构上，设计与 Claude Managed Agents 非常类似，Harness 基础设施与运行时全托管（底层依赖AgentScope Harness Runtime），基于 Brain/Hands 分离的架构让用户对工具执行环境有更多控制权。部署架构上，分为控制面、托管数据面两大组件，具体可参考后面的部署架构章节。
 
+### Agent API：把 Agent 作为托管推理服务
+
+业务应用可通过 Agent API 创建持久会话、提交后台任务，以 snapshot + SSE 展示消息、工具调用和待办。刷新页面恢复已有内容；人工确认、steer、取消和 resume 都围绕原 session/turn 操作。还可接入文件与产物、子 Agent、checkpoint 分支、用量预算和 Webhook 通知。
+
+从[可恢复聊天示例](../docs/v2/zh/service/agent-api-chat.md)开始，按[操作指南](../docs/v2/zh/service/session-event-log.md)选择 API，并对照 [SSE 事件目录](../docs/v2/zh/service/sse-events.md)实现前端。需要 API key、schema、发布版本或 Team/Workflow 服务时使用 [Endpoint](../docs/v2/zh/service/endpoints.md)，其认证与事件协议独立。
+
 ### Agent Teams
 注册在 AgentScope Service 控制面的所有智能体，不论是使用框架开发部署、自行注册到控制面的（Langchain、AgentScope、ADK、Claude SDK等）智能体，或者是使用 Managed Agents 低代码方式直接创建的托管 Agent，都可以把它们按照你想要的方式编排在一起，形成一个可以互相协作的 Agent Teams 来协作处理复杂。
 
@@ -270,5 +276,10 @@ AgentScope Service 把不同模式构建的 Agent（Framework、Coding Agent、M
 企业级云产品亦可关注阿里云 [Agent Teams](https://help.aliyun.com/zh/agentteams/magic-console-product-overview)、[Agent Loop](https://help.aliyun.com/zh/document_detail/3033860.html)。
 
 ## 文档
+
+- [Agent API：托管会话与任务](../docs/v2/zh/service/session-event-log.md)
+- [可恢复聊天接入示例](../docs/v2/zh/service/agent-api-chat.md)
+- [SSE 事件与前端接入](../docs/v2/zh/service/sse-events.md)
+- [API 参考](../docs/v2/zh/service/api-reference.md)
 
 关于 AgentScope Service 更多详细讲解，请参考博客文章[《AgentScope Service -企业级智能体管控与治理中心》](https://java.agentscope.io/v2/zh/blogs/agentscope-v2-release.html)

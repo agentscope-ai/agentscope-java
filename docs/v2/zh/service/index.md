@@ -14,12 +14,13 @@ en_link: /v2/en/service/index
 ```mermaid
 flowchart TB
   U["控制台：Chat / Issue"] --> G["Gateway：统一入口与认证"]
-  A["业务应用：Endpoint API / SSE"] --> G
+  A["业务应用：Agent API / Endpoint / SSE"] --> G
   G --> C["Control：Agent 目录、Team、Workflow 与工作记录"]
   C --> S["Scheduler：调度与执行协调"]
   S --> M["Managed：Dataplane 托管 Agent"]
   S --> E["External：SDK 接入独立应用"]
   S --> H["Hosted：Runtime Host 运行 Coding Agent"]
+  G -->|会话执行 API 与 SSE| M
   M --> R["Environment / Memory / Vault"]
   C --- P["持久存储：PostgreSQL、Workspace、Artifact"]
   M --- P
@@ -48,6 +49,18 @@ flowchart TB
 Service 管理任务与交付，Runtime Host 管理 provider 进程和工作目录。各 provider 对工具、子 Agent、审批和恢复的支持不同，详见 [Hosted Agent](/v2/zh/service/hosted-agent)及其[能力对照](/v2/zh/service/hosted-agent-providers)。
 
 三种方式的 Agent 都可以按已具备的任务能力参与编排。使用 **Team** 让 Leader 动态委派、汇总成员结果，或使用 **Workflow** 固定步骤、条件和人工关口。
+
+## 把 Managed Agent 接入业务应用
+
+需要自建聊天界面、工具进度和人工确认时，使用 **Agent API**：创建持久 session、提交后台 turn，以 snapshot + SSE 展示完整过程。服务保存消息、工具调用和执行状态，用户离开页面后任务继续运行，返回时可恢复已生成内容。
+
+| 你要做什么 | 选择入口 | 从哪里开始 |
+| --- | --- | --- |
+| 托管多轮对话，展示消息与工具，处理确认、取消和恢复 | Agent API，用户 Bearer token | [可恢复聊天示例](/v2/zh/service/agent-api-chat) → [API 使用指南](/v2/zh/service/session-event-log) → [SSE 事件](/v2/zh/service/sse-events) |
+| 对外发布带 schema、API key 和版本的 Agent、Team 或 Workflow 服务 | Endpoint Conversation / Job | [发布与调用](/v2/zh/service/endpoints) |
+| 在自己的 Java 应用进程中运行 Agent | SDK 的 call / streamEvents；持久会话使用 AgentSession | [SDK 使用指南](/v2/zh/docs/harness/session-log) |
+
+Agent API 还支持结构化和文件输入、执行中引导、子 Agent 追踪、checkpoint 恢复与分支、用量预算和 Webhook 通知。Endpoint 有独立的事件与调用协议；根据业务需要选择入口，不互换两者的 token、ID 或 cursor。
 
 ## 核心概念
 

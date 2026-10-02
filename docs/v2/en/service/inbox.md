@@ -9,7 +9,7 @@ This is preview documentation. The official release is not yet available.
 
 Inbox brings together work updates, approvals and result reviews that concern you. Start with items that need a decision, then read informational updates.
 
-Handle feedback related to your [console Issues](/v2/en/service/issues) here. Applications receive execution feedback through [SSE and status APIs](/v2/en/service/sse-events); work that requires human review still follows its acceptance policy.
+Handle feedback related to your [console Issues](/v2/en/service/issues) here. Applications receive execution feedback through [SSE and status APIs](/v2/en/service/sse-events#endpoint-protocol-scope); work that requires human review still follows its acceptance policy.
 
 ## Interface tour
 

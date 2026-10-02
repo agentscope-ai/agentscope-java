@@ -24,6 +24,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
@@ -32,6 +33,7 @@ import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -45,7 +47,7 @@ import reactor.core.publisher.Mono;
  * <p>Fires on {@link #onReasoning}. When the compaction threshold is exceeded:
  * <ol>
  *   <li>Long-term memories are flushed from the prefix via {@link MemoryFlushManager}.</li>
- *   <li>The full conversation is offloaded to the session JSONL.</li>
+ *   <li>The native session log retains the complete conversation before compaction.</li>
  *   <li>The prefix is distilled into a structured summary via one LLM call.</li>
  *   <li>The agent's working {@link AgentState#contextMutable() context} is replaced with
  *       {@code [summaryMsg] + preservedTail}.</li>
@@ -99,6 +101,90 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                 prepared.messages(),
                                                 prepared.tools(),
                                                 prepared.options())));
+    }
+
+    /** Retry provider context overflow inside the same execution, before its recorder is closed. */
+    public HarnessRuntimeMiddleware overflowRecovery() {
+        return new HarnessRuntimeMiddleware() {
+            @Override
+            public Flux<AgentEvent> onReasoning(
+                    Agent agent,
+                    RuntimeContext ctx,
+                    ReasoningInput input,
+                    Function<ReasoningInput, Flux<AgentEvent>> next) {
+                Flux<AgentEvent> execution = next.apply(input);
+                if (!(agent instanceof ReActAgent react) || !react.sessionLogEnabled())
+                    return execution;
+                return execution.onErrorResume(
+                        error -> {
+                            if (ExceptionUtils.containsInterruptedException(error)
+                                    || SessionLogException.causedBy(error)
+                                    || !isContextOverflowError(error)) return Flux.error(error);
+                            AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
+                            if (state == null || state.getContext().isEmpty())
+                                return Flux.error(error);
+                            List<Msg> before = List.copyOf(state.getContext());
+                            // The final request preparer may already have compacted state before
+                            // the provider rejected the request. Retry from that latest history.
+                            var retryMessages = new ArrayList<Msg>();
+                            input.messages().stream()
+                                    .filter(
+                                            message ->
+                                                    message.getRole() == MsgRole.SYSTEM
+                                                            || isSynthetic(message))
+                                    .forEach(retryMessages::add);
+                            retryMessages.addAll(before);
+                            var forced =
+                                    new CompactionMiddleware(
+                                            workspaceManager,
+                                            model,
+                                            CompactionConfig.builder()
+                                                    .triggerMessages(1)
+                                                    .keepMessages(1)
+                                                    .keepTokens(0)
+                                                    .flushBeforeCompact(
+                                                            config.isFlushBeforeCompact())
+                                                    .build());
+                            return forced.prepareCandidate(
+                                            agent,
+                                            ctx,
+                                            new ModelCallInput(
+                                                    retryMessages,
+                                                    input.tools(),
+                                                    input.options(),
+                                                    react.getModel()),
+                                            CompactionConfig.FALLBACK_TRIGGER_TOKENS,
+                                            before)
+                                    .flatMapMany(
+                                            candidate -> {
+                                                if (candidate.history().equals(before)
+                                                        || !state.getContext().equals(before))
+                                                    return Flux.error(error);
+                                                applyToContext(state, candidate.history());
+                                                // next creates a new model call; the turn,
+                                                // execution and writer stay unchanged.
+                                                return next.apply(
+                                                        new ReasoningInput(
+                                                                candidate.input().messages(),
+                                                                candidate.input().tools(),
+                                                                candidate.input().options()));
+                                            });
+                        });
+            }
+        };
+    }
+
+    public static boolean isContextOverflowError(Throwable error) {
+        String message = error.getMessage();
+        if (message == null) return false;
+        String lower = message.toLowerCase(Locale.ROOT);
+        return lower.contains("context_length_exceeded")
+                || lower.contains("context length")
+                || lower.contains("maximum context")
+                || lower.contains("token limit")
+                || lower.contains("too many tokens")
+                || lower.contains("exceeds the model's maximum")
+                || lower.contains("reduce the length");
     }
 
     /** Compact at the final model boundary, using the actual request's conversation allowance. */
@@ -181,7 +267,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                     rc.getSessionId() == null ? "default" : rc.getSessionId())
                             .onErrorResume(
                                     error -> {
-                                        if (ExceptionUtils.containsInterruptedException(error))
+                                        if (ExceptionUtils.containsInterruptedException(error)
+                                                || SessionLogException.causedBy(error))
                                             return Mono.error(error);
                                         log.warn(
                                                 "Compaction failed; final request budget validation"

@@ -27,6 +27,18 @@ en_link: /v2/en/docs/building-blocks/agent
 
 `ReActAgent` 在此之上还提供 `call(msgs, structuredOutputClass, runtimeContext)` 等结构化输出重载，以及通过 `RuntimeContext` 传递 per-call 元数据的便捷入口。
 
+### 按业务场景选择调用方式
+
+| 你要实现什么 | 使用方式 |
+| --- | --- |
+| 获取回复、提取结构化数据、执行工作流中的一个步骤 | `agent.call(input, ctx)` |
+| 在当前请求中逐步展示文本和工具进度 | `agent.streamEvents(input, ctx)` |
+| 后台持续执行、忙时排队、运行中补充要求、中断后继续原任务 | `agent.session(ctx)` 的会话操作，仅 HarnessAgent 提供 |
+
+`call` 和 `streamEvents` 都可以用于多轮对话；每次调用可包含多次推理和工具执行。使用默认配置的 HarnessAgent 时，两者也会保存 Session Log 和 checkpoint。仅需要记住上一轮或查询历史时，可以继续直接调用。
+
+先按下文完成直接调用。有后台任务管理需求时，再阅读[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)。通过 HTTP 使用托管 Agent 时，阅读 [Service Agent API](/v2/zh/service/session-event-log)。
+
 ### 主循环
 
 智能体在每次 `call` 调用时运行推理-行动循环，下图展示了主要控制流程：
@@ -170,6 +182,63 @@ ReActAgent agent =
 | `reactConfig` | `ReactConfig` | 默认值 | 最大迭代次数和拒绝处理方式 |
 | `maxIters` | `int` | `10` | ReAct 主循环最大迭代次数（也可放在 `reactConfig` 中） |
 
+## 运行智能体
+
+`call` 和 `streamEvents` 都接受相同的输入消息列表，驱动相同的推理-行动循环，区别在于结果的交付方式。
+
+`call` 返回 `Mono<Msg>`，`streamEvents` 返回 `Flux<AgentEvent>`，都在订阅后开始执行。命令行可用 `block()` / `blockLast()` 等待；WebFlux handler 可以返回这个响应式结果，由框架订阅。调用方控制这次执行的订阅，取消它会取消该次执行。
+
+同一请求选一个入口、订阅一次。`streamEvents` 用于发起一次带实时事件的执行；查询已提交历史使用日志读取 API。
+
+### call
+
+`call` 在内部消费所有事件，当智能体完成或因外部交互暂停时返回最终 `Msg`。
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
+import java.util.List;
+
+UserMessage msg = new UserMessage("当前目录有哪些文件？");
+RuntimeContext ctx = RuntimeContext.builder().userId("alice").sessionId("session-001").build();
+Msg result = agent.call(List.of(msg), ctx).block();
+System.out.println(result.getTextContent());
+```
+
+### streamEvents
+
+`streamEvents` 逐一产出 `AgentEvent` 对象，让你实时将文本输出、工具调用进度和生命周期事件流式传输给用户。按 `event.getType()` 分发即可针对每类事件做不同处理：
+
+```java
+import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+
+agent.streamEvents(new UserMessage("总结一下 README 的内容。"), ctx)
+        .doOnNext(event -> {
+            if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
+                // 模型返回的流式文本片段 —— 追加到界面或标准输出
+                System.out.print(((TextBlockDeltaEvent) event).getDelta());
+            } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
+                // 智能体即将调用工具 —— 展示调用信息
+                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
+            }
+            // 其他事件：思考块、工具结果、回复结束等
+        })
+        .blockLast();
+```
+
+完整事件类型与字段参考 [消息与事件](/v2/zh/docs/building-blocks/message-and-event)。
+
+### observe
+
+使用 `observe` 将消息注入智能体上下文而不触发 reply——适用于多智能体场景中，一个智能体需要观察另一个智能体输出的情况。
+
+```java
+agent.observe(otherAgentMsg).block();
+```
+
 ## 多用户 / 多会话并发
 
 `ReActAgent` 在调用之间**是无状态的**——同一个 agent 实例可以同时服务多个用户和会话。每次 `call()` 通过 `RuntimeContext` 携带的 `(userId, sessionId)` 来定位该次调用应该使用哪份对话状态，互不干扰。
@@ -210,7 +279,15 @@ agent.call(List.of(new UserMessage("Hi there")),
 
 Spring Boot 完整示例见 `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`。
 
-## 控制单次执行
+## 会话应用的执行控制
+
+当聊天产品需要关闭页面后继续执行、保存排队任务或统一处理恢复和待办时，使用 `AgentSession` 管理这些操作。普通问答、流式展示或自行处理 HITL 的应用可以继续使用直接调用。
+
+会话方式通过 `submit` 接收新任务，以 `steer` / `inject` 补充信息，以 `respond` / `resume` 继续原任务；框架持有后台执行。前端从快照与持久事件读取进度。完整流程见[会话使用指南](/v2/zh/docs/harness/session-log)。
+
+同一个会话选择直接调用或会话操作来驱动任务；只读历史查询可以共用。已经 `submit` 的任务应通过读取事件观察，不能再调用 `streamEvents` 来订阅它，否则会发起另一次执行。
+
+<Accordion title="高级：自行管理单次执行">
 
 `ReActAgent` 和 `HarnessAgent` 提供 `prepareRun(messages, context)`（事件流）与 `prepareCall(messages, context)`（最终回复），返回带有唯一 `runId()` 的 `AgentRun<T>`。创建句柄不会执行 Agent；订阅一次 `stream()` 才开始执行。
 
@@ -230,9 +307,11 @@ run.cancel();
 
 运行管理器负责查找、鉴权及终态清理，Agent 不登记 RuntimeContext 对象。取消不会回滚外部副作用，也不能强行终止不响应取消的阻塞工具；立即取消不保证走协作中断的恢复回复和状态保存路径。
 
+</Accordion>
+
 ## 中断执行（Interrupt）
 
-当需要从外部中断一个正在运行的 agent call 时（用户取消、超时、优雅停机），使用 `interrupt`：
+下面针对通过 `call` / `streamEvents` 启动的执行。需要从外部协作中断时，使用 `agent.interrupt`；通过 AgentSession 提交的任务使用 `session.interrupt()`，再按[会话指南](/v2/zh/docs/harness/session-log#场景四中断后继续原任务)继续：
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -255,65 +334,13 @@ agent.interrupt(target, new UserMessage("用户已取消操作"));
 **中断后的行为：**
 - 当前推理/工具执行在下一个检查点（reasoning 开始、acting 开始、streaming 每个 chunk）被拦截
 - agent 返回一个带 `GenerateReason.INTERRUPTED` 标记的 Msg
-- 对话上下文（AgentState）自动保存——下次对同一 session 发起 `call()` 时从中断点恢复
+- 按已配置的后端保存状态；下次调用读取已保存的上下文。继续挂起的工具请求仍需提供相应答案，不会恢复工具内部的执行进度
 
 也可以直接用 `(userId, sessionId)` 字符串：
 
 ```java
 agent.interrupt("alice", "session-001");
 agent.interrupt("alice", "session-001", interruptMsg);
-```
-
-## 运行智能体
-
-`call` 和 `streamEvents` 都接受相同的输入消息列表，驱动相同的推理-行动循环，区别在于结果的交付方式。
-
-### call
-
-`call` 在内部消费所有事件，当智能体完成或因外部交互暂停时返回最终 `Msg`。
-
-```java
-import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.UserMessage;
-import java.util.List;
-
-UserMessage msg = new UserMessage("当前目录有哪些文件？");
-Msg result = agent.call(List.of(msg), RuntimeContext.empty()).block();
-System.out.println(result.getTextContent());
-```
-
-### streamEvents
-
-`streamEvents` 逐一产出 `AgentEvent` 对象，让你实时将文本输出、工具调用进度和生命周期事件流式传输给用户。按 `event.getType()` 分发即可针对每类事件做不同处理：
-
-```java
-import io.agentscope.core.event.AgentEventType;
-import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ToolCallStartEvent;
-
-agent.streamEvents(new UserMessage("总结一下 README 的内容。"))
-        .doOnNext(event -> {
-            if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
-                // 模型返回的流式文本片段 —— 追加到界面或标准输出
-                System.out.print(((TextBlockDeltaEvent) event).getDelta());
-            } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
-                // 智能体即将调用工具 —— 展示调用信息
-                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
-            }
-            // 其他事件：思考块、工具结果、回复结束等
-        })
-        .blockLast();
-```
-
-完整事件类型与字段参考 [消息与事件](/v2/zh/docs/building-blocks/message-and-event)。
-
-### observe
-
-使用 `observe` 将消息注入智能体上下文而不触发 reply——适用于多智能体场景中，一个智能体需要观察另一个智能体输出的情况。
-
-```java
-agent.observe(otherAgentMsg).block();
 ```
 
 ## RuntimeContext (per-call 上下文)
@@ -378,6 +405,8 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 ## 人机交互
 
+下文展示直接调用时如何处理工具确认与外部结果；发起请求与交回答案时沿用同一个 `ctx`。业务自己管理交互界面和后续调用；需要持久待办和自动关联原任务时，可使用 [AgentSession.respond](/v2/zh/docs/harness/session-log#场景三回复-hitl-待办)。
+
 当智能体遇到以下两种情况时，会暂停执行并发出特殊事件：需要**用户确认**的工具调用（权限系统返回 ASK），或标记为**外部执行**的工具（结果必须来自智能体外部）。两种情况下，都可以通过把结果事件再次喂给 agent 的下一次 `call` 来恢复执行。
 
 ### 用户确认
@@ -389,7 +418,7 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ```java
 import io.agentscope.core.event.RequireUserConfirmEvent;
 
-agent.streamEvents(msg)
+agent.streamEvents(msg, ctx)
         .doOnNext(event -> {
             if (event instanceof RequireUserConfirmEvent confirm) {
                 confirm.getToolCalls().forEach(tc -> {
@@ -424,14 +453,15 @@ for (var tc : confirmEvent.getToolCalls()) {
 ```java
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
+import java.util.Map;
 
 UserMessage resumeMsg =
         UserMessage.builder()
-                .metadata(java.util.Map.of(
+                .metadata(Map.of(
                         Msg.METADATA_CONFIRM_RESULTS, confirmResults))
                 .build();
 
-Msg result = agent.call(List.of(resumeMsg), RuntimeContext.empty()).block();
+Msg result = agent.call(List.of(resumeMsg), ctx).block();
 ```
 
 - **已确认**的工具调用立即执行，智能体继续推理。
@@ -447,7 +477,7 @@ Msg result = agent.call(List.of(resumeMsg), RuntimeContext.empty()).block();
 ```java
 import io.agentscope.core.event.RequireExternalExecutionEvent;
 
-agent.streamEvents(msg)
+agent.streamEvents(msg, ctx)
         .doOnNext(event -> {
             if (event instanceof RequireExternalExecutionEvent ext) {
                 ext.getToolCalls().forEach(tc ->
@@ -490,6 +520,8 @@ for (var tc : externalEvent.getToolCalls()) {
 
 
 ## 配置状态持久化（AgentStateStore）
+
+下面是直接构建 `ReActAgent` 时配置状态存储的方式。`HarnessAgent` 默认使用 Session Log 保存历史和 checkpoint，无需额外设置 `stateStore`；其日志后端配置见[存储参考](/v2/zh/docs/harness/session-log-reference#存储位置与后端配置)。两者的关系见[上下文文档](/v2/zh/docs/building-blocks/context#session-log-与-agentstatestore-的关系)。
 
 `AgentState` 是 agent 的全部可恢复状态——对话上下文、压缩摘要、权限规则、工具状态和当前 reply 位置。[`AgentStateStore`](/v2/zh/integration/session/index) 是它的存储抽象。
 

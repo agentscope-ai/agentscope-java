@@ -49,6 +49,8 @@ Inspect status, waitReason, input, output, errors and linked Issues in Runs. Dis
 
 ## Receive a Webhook
 
+These webhooks receive external requests that trigger work in Service. To have **Service notify your backend when a session task completes or needs input**, use [Agent API session webhooks](/v2/en/service/session-event-log#receive-notifications-without-an-open-page). Their URLs, authentication and signature contracts differ.
+
 Add a Webhook trigger and copy its URL from the detail view. Store the secret shown on creation or rotation. Send a JSON object or array with `X-Automation-Secret` and a stable `Idempotency-Key`:
 
 ```bash

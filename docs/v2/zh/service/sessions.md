@@ -42,6 +42,12 @@ Pause 不冻结已经开始的外部进程。Cancel 也不自动回滚已经产�
 
 刷新页面后重新打开原工作，查询当前状态和已保存事件。SSE 长连接结束不代表任务失败。代理应及时转发事件；不要因为前端连接断开就用新的幂等键重复提交。
 
+## Managed Session 的日志与恢复入口
+
+Agent API 使用 session_id → turn_id → run_id 关联推理工作；run_id 不是编排 Run ID。GET snapshot 返回已保存的 items/tools/turns/required_actions 与公共 as_of cursor，再从 events/stream 续传。GET turns 按提交返回的 turn ID 查询队列和结果。
+
+完整执行历史与 checkpoint 在原生 Session Log；普通客户端读公共投影，授权管理员才能读取 trace/recovery。断线只重连，不再 POST 输入；中断的执行先检查未知工具结果，再按 actions/resume 流程继续。具体位置、HTTP 示例和边界见 [Agent API、会话日志与持久 SSE](/v2/zh/service/session-event-log)。
+
 ## 一次排障应记录什么
 
 用[研发闭环案例](/v2/zh/service/cases/sdlc-team)练习：从主 Issue 打开 Run，在 Task map 中找到 Hosted 成员，定位最新 Attempt，再核对其 Session、日志与文件。

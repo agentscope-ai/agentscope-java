@@ -9,7 +9,7 @@ en_link: /v2/en/service/inbox
 
 Inbox 汇集与你相关的工作更新、审批和结果验收。每天先处理需要你作出决定的事项，再阅读普通通知。
 
-从[控制台 Issue](/v2/zh/service/issues)发起工作后，在这里处理与你相关的反馈。应用侧通过[SSE 与状态接口](/v2/zh/service/sse-events)接收执行反馈；需要人工验收的工作仍要按其完成策略处理。
+从[控制台 Issue](/v2/zh/service/issues)发起工作后，在这里处理与你相关的反馈。应用侧通过[SSE 与状态接口](/v2/zh/service/sse-events#endpoint-协议范围)接收执行反馈；需要人工验收的工作仍要按其完成策略处理。
 
 ## 界面导览
 

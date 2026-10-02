@@ -22,6 +22,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.GenerateReason;
@@ -33,6 +34,7 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.time.Duration;
 import java.util.List;
@@ -48,6 +50,47 @@ import reactor.test.StepVerifier;
 
 /** Verifies that compaction fallback does not swallow interrupts or rerun downstream reasoning. */
 class CompactionMiddlewareTest {
+    @Test
+    void nativeOverflowRecoveryKeepsOneExecutionAndRecordsBothModelCalls() {
+        AtomicInteger calls = new AtomicInteger();
+        ChatModelBase model =
+                new ChatModelBase() {
+                    public String getModelName() {
+                        return "overflow-once";
+                    }
+
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        if (calls.getAndIncrement() == 0)
+                            return Flux.error(new IllegalStateException("context_length_exceeded"));
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(TextBlock.builder().text("answer").build()))
+                                        .build());
+                    }
+                };
+        var recovery = new CompactionMiddleware(null, new SuccessfulSummaryModel(), fixedConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("overflow-test")
+                        .model(model)
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        var ctx = context("user", "overflow-session");
+        var run =
+                agent.prepareCall(
+                        List.of(userMessage("old context"), userMessage("latest request")), ctx);
+        assertEquals("answer", run.stream().blockLast(Duration.ofSeconds(10)).getTextContent());
+        assertEquals(AgentRun.Status.COMPLETED, run.status());
+        assertEquals(2, calls.get());
+        var facts = agent.sessionLog(ctx).readAfter(0, 1000);
+        assertEquals(1, facts.stream().filter(e -> e.type().equals("run/start")).count());
+        assertEquals(1, facts.stream().filter(e -> e.type().equals("run/end")).count());
+        assertTrue(facts.stream().allMatch(e -> run.runId().equals(e.executionRunId())));
+        assertTrue(facts.stream().filter(e -> e.type().equals("model/end")).count() >= 2);
+    }
 
     /** An ordinary compaction failure skips compaction and invokes original reasoning once. */
     @Test
@@ -351,7 +394,6 @@ class CompactionMiddlewareTest {
                 .triggerTokens(1)
                 .keepTokens(1)
                 .flushBeforeCompact(false)
-                .offloadBeforeCompact(false)
                 .prune(null)
                 .build();
     }

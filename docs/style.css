@@ -905,3 +905,22 @@
 
 .agentscope-landing { padding: 0 clamp(16px, 3vw, 40px); }
 .agentscope-landing .hs-window { margin-inline: auto; }
+
+/* Keep the JEV page catalog visible in compact desktop preview panes.
+   Smaller screens retain Mintlify's navigation drawer. */
+@media (min-width: 900px) and (max-width: 1023px) {
+  div:has(> #sidebar a[href^="/v2/zh/jev/"]) {
+    display: flex;
+    gap: 24px;
+  }
+
+  #sidebar:has(a[href^="/v2/zh/jev/"]) {
+    display: block;
+    width: 240px;
+  }
+
+  #sidebar:has(a[href^="/v2/zh/jev/"]) ~ #content-container {
+    flex: 1;
+    min-width: 0;
+  }
+}

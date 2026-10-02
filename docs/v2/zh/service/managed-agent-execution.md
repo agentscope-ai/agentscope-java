@@ -11,13 +11,13 @@ Managed 模式由 Service 持有 Agent 的运行生命周期。浏览器只提�
 
 ```mermaid
 flowchart TD
-  A[Chat 或 Issue 工作] --> B[控制面解析身份、定义版本和资源绑定]
+  A[Chat、Issue 或 Agent API 工作] --> B[控制面解析身份、定义版本和资源绑定]
   B --> C[Dataplane 构建 Harness 与 Session]
   C --> D[模型推理与工具调用]
   D --> E[Local / E2B / Remote / Worker]
   E --> D
   D --> F[事件、状态与交付结果]
-  F --> G[Chat 回复或 Issue 验收]
+  F --> G[Chat / Agent API 回复或 Issue 验收]
 ```
 
 ## 创建运行上下文
@@ -37,6 +37,16 @@ Local 工具在 Dataplane 环境执行，sandbox 使用 E2B，remote 使用共�
 会话状态、事件和协调记录存储在部署配置的持久存储中。多副本使用协调租约约束执行；恢复仍依赖数据库、工作文件、所选环境和外部工具可用。一次工具成功后的外部副作用不会因服务重启自动撤销。
 
 共享 Memory 是按需访问的实时平台知识，不应理解为每次调用都完整复制进模型提示。修改它需要按共享知识维护流程处理，不能假设 Agent 定义版本同时固定所有外部知识。
+
+## 通过 Agent API 接入 Managed Agent
+
+自建前端或业务系统可在 Gateway 使用 `/api/v1/agent-sessions`：创建 session，携幂等键 POST turns，GET snapshot 后从 as_of 订阅 events/stream。运行与观察连接分离，浏览器断线不取消任务。Console 的 Execution 页签提供这一流程。
+
+Service 保存执行历史和 checkpoint。应用通过公共快照与事件恢复消息、工具卡和待办，包括进行中内容的已提交部分；不需要读取底层日志或连接到原来的运行副本。完整接入过程见[可恢复聊天示例](/v2/zh/service/agent-api-chat)。
+
+浏览器刷新只恢复观察；工具确认通过 actions 回传；执行中断后检查结果并显式 resume。工具已分派但结果未知时必须先核对，不能靠重试规避。会话与任务操作见 [Agent API 指南](/v2/zh/service/session-event-log)，事件目录、工具展示和续传代码见 [SSE 接入](/v2/zh/service/sse-events)。
+
+Agent API 还提供运行中 steer/inject、结构化及文件输入、进行中消息与工具快照、子会话读取、checkpoint 恢复/fork、Webhook 和用量预算。按业务场景选择操作见 [Agent API 使用指南](/v2/zh/service/session-event-log)；前端恢复和事件字段见 [SSE 文档](/v2/zh/service/sse-events)。
 
 ## 完成不等于验收
 

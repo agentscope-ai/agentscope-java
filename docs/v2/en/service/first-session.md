@@ -40,7 +40,15 @@ Check the owner, deadline and unconfirmed review time. Ask “What information i
   <img src="/imgs/service/chat.png" alt="Select an Agent and start a multi-turn console conversation" />
 </Frame>
 
-## 2. Publish the Agent as an API service
+## 2. Call the Agent from your application
+
+| Scenario | Integration |
+| --- | --- |
+| Build chat UI, tool cards, human confirmation and refresh recovery | [Agent API chat example](/v2/en/service/agent-api-chat): user Bearer token, create session → submit turn → snapshot + SSE; no Endpoint publication required |
+| Publish a reusable API with API keys, schemas, or Team/Workflow targets | Create an Endpoint below and follow its statusUrl/eventsUrl |
+
+### Publish an Endpoint
+
 
 Return to the Agent's detail page and open **Connections → Published APIs**. Select **New Endpoint** under **Publish as API**:
 
@@ -169,7 +177,7 @@ curl --fail-with-body "$BASE_URL/invoke/v1/endpoints/meeting-team/jobs" \
   --data '{"title":"Organize meeting actions","description":"Alex finishes the installation guide by Friday. Review is Monday; its time is unconfirmed. Draft and review one consolidated action list.","input":{}}'
 ```
 
-As with the individual Agent, submit a request, subscribe to the returned `eventsUrl` using `text/event-stream`, and query `statusUrl`. Reuse the SSE commands from step 2 with the current URLs and Team API key.
+As with the earlier Endpoint Conversation, submit a request, subscribe to the returned `eventsUrl` using `text/event-stream`, and query `statusUrl`. Reuse the SSE commands from step 2 with the current URLs and Team API key.
 
 **The shared integration pattern is Endpoint authentication, request submission and SSE subscription.** Conversations stream turn events; Jobs stream orchestration events. Their request bodies, event contents and result semantics differ. To use the same Job contract for an individual Agent and a Team/Workflow, publish the individual Agent in Job mode too.
 

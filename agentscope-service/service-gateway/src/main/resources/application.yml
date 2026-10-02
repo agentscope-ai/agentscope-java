@@ -34,12 +34,22 @@ spring:
             # Evaluated first (order 0): these overlap the control plane's
             # /api/sessions/** and /api/environments/** namespaces.
             # ------------------------------------------------------------------
+            - id: agent-session-lifecycle
+              uri: ${builder.control-plane-url}
+              order: -1
+              predicates:
+                - Path=/api/v1/agent-sessions,/api/v1/agent-sessions/*,/api/v1/agent-sessions/*/archive,/api/v1/agent-sessions/*/restore
+              filters:
+                - RewritePath=/api/v1/agent-sessions(?<remaining>.*), /api/sessions$\{remaining}
+                - RemoveRequestHeader=X-Builder-Environment-Key
+                - RemoveRequestHeader=X-Builder-Internal-Token
+                - RemoveRequestHeader=X-Builder-Internal-User
             - id: data-session-turn
               uri: ${builder.data-plane-url}
               order: 0
               predicates:
                 # user.message + event log + SSE stream + hands-stats
-                - Path=/api/sessions/*/events/**,/api/sessions/*/hands-stats
+                - Path=/api/sessions/*/events/**,/api/sessions/*/hands-stats,/api/v1/agent-sessions/**
             - id: data-environment-work
               uri: ${builder.data-plane-url}
               order: 0

@@ -65,7 +65,7 @@ An [`AgentStateStore`](/v2/en/integration/session/index) persists an **`AgentSta
 
 Execution controls are separate from `AgentState`: each invocation owns an independent interrupt signal. See [Per-session interrupt](#per-session-interrupt) below.
 
-At the end of each `call()`, the framework writes the entire `AgentState` to the state store under the key `agent_state`, addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back automatically. A shared store lets other instances load successfully persisted state. It does not guarantee real-time consistency between concurrent calls or recover unsaved progress and external side effects.
+In LEGACY or Core agents without native logging, the end of each call writes the entire `AgentState` to the state store under the key `agent_state`, addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back automatically. A shared store lets other instances load successfully persisted state. It does not guarantee real-time consistency between concurrent calls or recover unsaved progress and external side effects.
 
 ### Task state is not automatic business acceptance
 
@@ -79,6 +79,14 @@ Progress completion, confirmed requirements and passed checks have different mea
 automatically establishes overall completion. Harness taskContext options control projection.
 See [Optional task information](/v2/en/docs/harness/context#optional-task-information)
 for the field/writer mapping and display configuration.
+
+### Session Log and AgentStateStore
+
+`call` / `streamEvents` and `AgentSession` use the same conversation storage configuration. Multi-turn context, history queries and persistence do not require session scheduling. Introduce [AgentSession](/v2/en/docs/harness/session-log) for background tasks, durable queues or coordinated interruption and continuation. For direct calls, start with the [Quick Start](/v2/en/docs/quickstart).
+
+HarnessAgent defaults to EVENT_LOG: existing native checkpoints plus applicable facts restore AgentState, and saves commit checkpoints to the log. AgentStateStore is no longer that session's recovery authority. LEGACY and Core agents without native logging use the state-store flow below.
+
+Native history follows Workspace Filesystem, including distributed backends, or an explicit sessionLogStore. Keep stable agentId, userId, sessionId, namespace and storage consistent. See [Session logs](/v2/en/docs/harness/session-log) for inspection, reconciliation and continuation. StateStore-only examples below explicitly select LEGACY; default EVENT_LOG also needs shared native history.
 
 ### The auto-persistence and recovery flow
 
@@ -115,7 +123,7 @@ Anything implementing `io.agentscope.core.state.AgentStateStore` works. Pick by 
 | Implementation | Module | Use case |
 |---|---|---|
 | `InMemoryAgentStateStore` | `agentscope-core` | Unit tests / single-process demos; lost on exit |
-| `JsonFileAgentStateStore` | `agentscope-core` | Local dev with file persistence; not cross-node. **`HarnessAgent` default**, rooted at `~/.agentscope/state/<agentId>/` (override the base via the `agentscope.state.home` system property); **single-host** |
+| `JsonFileAgentStateStore` | `agentscope-core` | Local dev with file persistence; not cross-node. **`HarnessAgent` LEGACY default**, rooted at `~/.agentscope/state/<agentId>/` (override the base via the `agentscope.state.home` system property); **single-host** |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | **Production default** for multi-replica deployments; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
 | `MysqlAgentStateStore` | `agentscope-extensions-mysql` | When state needs to flow into a relational store (audit, reporting) |
 
@@ -124,6 +132,7 @@ Switching is one call at builder time:
 ```java
 // Default (single host) — omit .stateStore(...); a local JsonFileAgentStateStore is used automatically
 HarnessAgent agent = HarnessAgent.builder()
+    .legacySessionHistory(true)
     .name("MyAgent")
     .model(model)
     .workspace(workspace)
@@ -132,6 +141,7 @@ HarnessAgent agent = HarnessAgent.builder()
 // Production multi-replica — use DistributedStore
 JedisPooled jedis = new JedisPooled("redis://redis.prod:6379");
 HarnessAgent agent = HarnessAgent.builder()
+    .legacySessionHistory(true)
         .name("MyAgent")
         .model(model)
         .workspace(workspace)
@@ -143,7 +153,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 <Warning>
 
-The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-host only. If you've already chosen `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` (distributed workspace), HarnessAgent **rejects** a local state store at build time with `IllegalStateException` — sandbox state must be shared across replicas. Configure a distributed store via `.distributedStore(...)` (e.g. `RedisDistributedStore`) or `.stateStore(...)`.
+The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-host only. If you've already chosen `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` (distributed workspace), HarnessAgent in LEGACY mode **rejects** a local state store at build time with `IllegalStateException` — sandbox state must be shared across replicas. Configure a distributed store via `.distributedStore(...)` (e.g. `RedisDistributedStore`) or `.stateStore(...)`.
 
 </Warning>
 
@@ -155,6 +165,7 @@ With a shared store, each call reloads the slot's persisted state. This example 
 ```java
 // Node A — start a conversation
 HarnessAgent agentA = HarnessAgent.builder()
+    .legacySessionHistory(true)
     .stateStore(redisStore)
     /* ... */ .build();
 agentA.call(msg, RuntimeContext.builder()
@@ -164,6 +175,7 @@ agentA.call(msg, RuntimeContext.builder()
 
 // Node B — different physical machine, separate JVM
 HarnessAgent agentB = HarnessAgent.builder()
+    .legacySessionHistory(true)
     .stateStore(redisStore)
     /* same state store */ .build();
 
@@ -224,10 +236,12 @@ AgentState restored = AgentState.fromJsonString(json);
 
 ### Clearing a session's conversation context
 
+In EVENT_LOG mode, `getAgentState()` returns a detached native projection. `clearContext()`, permission changes and `saveAgentState()` commit a native checkpoint with writer leases and version checks. Existing get→mutate→save calls remain supported, but stale snapshots are rejected; prefer `updateAgentState(rc, reason, mutation)` for atomic administration. Clearing working context retains full history. Direct AgentStateStore edits do not affect native sessions.
+
 To let a user start a fresh topic without creating a new session, call `clearContext`. It keeps the
 same `(userId, sessionId)` and preserves non-conversation state such as permissions, tools, tasks,
 and Plan Mode. It clears the historical message buffer and compaction summary, then immediately
-persists the result when the agent has an `AgentStateStore`.
+persists a native checkpoint in EVENT_LOG mode, or saves the configured AgentStateStore in LEGACY mode.
 
 ```java
 agent.clearContext("alice", "session-001");
@@ -260,7 +274,7 @@ agent.interrupt("alice", "session-001");
 agent.interrupt("alice", "session-001", new UserMessage("Please stop."));
 ```
 
-An idle session is unaffected. To select a particular queued or running invocation, use the `AgentRun` returned by `prepareRun` or `prepareCall`; see [execution control](/v2/en/docs/building-blocks/agent#control-one-execution). Queued B and running A have independent controls even when they share a session.
+An idle session is unaffected. Tasks submitted through AgentSession use `session.interrupt()`, or `session.interrupt(runId)` to reject a stale request targeting a newer execution. Continue the original task with `session.resume(turnId)`; see the [session guide](/v2/en/docs/harness/session-log).
 
 The reasoning loop checks its execution's signal at cooperative checkpoints. A user interrupt produces an interrupted recovery reply and saves conversation state. The deprecated no-argument `interrupt()` targets the default session's current execution, never the most recently used context.
 

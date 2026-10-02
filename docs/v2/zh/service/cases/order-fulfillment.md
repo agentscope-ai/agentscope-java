@@ -119,7 +119,7 @@ execute 阶段仅执行已批准的确切方案，并重新检查版本、库存
 curl --fail-with-body "$BASE_URL/invoke/v1/endpoints/order-triage/jobs"   -H "X-API-Key: $ENDPOINT_TOKEN"   -H 'Content-Type: application/json'   -H 'Idempotency-Key: order-O-1001-triage-001'   --data '{"title":"Investigate O-1001","description":"Investigate the delay using the fixture. Propose a resolution without executing changes.","input":{"orderId":"O-1001","requestedArrival":"2026-09-15","phase":"diagnose"}}'
 ```
 
-保存 `invocationId`、`eventsUrl` 和 `statusUrl`，按[SSE 指南](/v2/zh/service/sse-events)展示调查进度，结束后读取 `invocation.result`。该字段中的业务结构由输出契约约定；不要把每一条模型回复直接当作最终客户答复。Endpoint key 放在业务后端，由业务系统补充并校验客户授权上下文。
+保存 `invocationId`、`eventsUrl` 和 `statusUrl`，按[SSE 指南](/v2/zh/service/sse-events#endpoint-协议范围)展示调查进度，结束后读取 `invocation.result`。该字段中的业务结构由输出契约约定；不要把每一条模型回复直接当作最终客户答复。Endpoint key 放在业务后端，由业务系统补充并校验客户授权上下文。
 
 ## 6. 审批后执行并核对结果
 

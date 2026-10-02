@@ -377,6 +377,27 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     // ─── event ingest ───
 
     /** Adapter callback. Assigns a sequence number, updates the view, and triggers reports. */
+    /** Acknowledges durable native export only after the local journal has forced the record. */
+    public void onCommittedEvent(String source, long nativeSeq, SessionEvent event) {
+        synchronized (lock) {
+            if (eventJournal == null)
+                throw new IllegalStateException("Aistio durable journal unavailable");
+            if (eventJournal.sourceWatermark(source) >= nativeSeq) return;
+            int seq = sequences.getOrDefault(event.getSessionId(), 0) + 1;
+            event.setSeq(seq);
+            try {
+                eventJournal.append(event.toProto());
+            } catch (IOException error) {
+                throw new IllegalStateException("Aistio journal commit failed", error);
+            }
+            sequences.put(event.getSessionId(), seq);
+            trackers.computeIfAbsent(
+                            event.getSessionId(), id -> new ContextTracker(id, frameworkName()))
+                    .onEvent(event);
+            touch(event.getSessionId());
+        }
+    }
+
     public void onEvent(SessionEvent event) {
         String sessionId = event.getSessionId();
         if (sessionId == null || sessionId.isEmpty()) {

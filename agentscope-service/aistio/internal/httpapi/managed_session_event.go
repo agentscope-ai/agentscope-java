@@ -184,7 +184,7 @@ func managedReportToSessionEvent(report *managedSessionEventReport) *store.Sessi
 			metadata[key] = value
 		}
 	}
-	for _, key := range []string{"approvalId", "decisionVersion", "source", "status", "state", "endpointInvocationId", "endpointTurnId", "truncated", "originalSize", "usage", "error"} {
+	for _, key := range []string{"message_id", "final_output", "tool_results", "approvalId", "decisionVersion", "source", "status", "state", "endpointInvocationId", "endpointTurnId", "truncated", "originalSize", "usage", "error"} {
 		if value, ok := payload[key]; ok && value != nil {
 			metadata[key] = value
 		}
@@ -193,7 +193,7 @@ func managedReportToSessionEvent(report *managedSessionEventReport) *store.Sessi
 	return event
 }
 
-// Endpoint identity travels with the durable user message. Resolve it by source
+// Endpoint identity travels with the command-admission marker (or an older user message). Resolve it by source
 // sequence, never by the most recently active invocation or wall-clock time:
 // delayed completion from turn A must not complete turn B.
 func (s *Server) projectManagedEndpointTurn(ctx context.Context, session *store.Session, report *managedSessionEventReport, at time.Time) error {
@@ -213,11 +213,11 @@ func (s *Server) projectManagedEndpointTurn(ctx context.Context, session *store.
 	var sourceSeq int64
 	for _, event := range events {
 		var meta map[string]any
-		if event.EventType != "user.message" || json.Unmarshal(event.FrameworkMeta, &meta) != nil {
+		if (event.EventType != "user.message" && event.EventType != "session.input_accepted") || json.Unmarshal(event.FrameworkMeta, &meta) != nil {
 			continue
 		}
 		seq, _ := meta["managedSeq"].(float64)
-		if int64(seq) > sourceSeq && int64(seq) < report.Seq {
+		if firstPayloadString(meta, "endpointInvocationId") != "" && int64(seq) > sourceSeq && int64(seq) < report.Seq {
 			source, sourceSeq = meta, int64(seq)
 		}
 	}
@@ -257,15 +257,35 @@ func (s *Server) projectManagedEndpointTurn(ctx context.Context, session *store.
 		invocation.Status = controlmodel.EndpointInvocationCancelled
 	default:
 		var answer []string
+		var finalAnswer string
+		hasFinalAnswer := false
+		messagePositions := make(map[string]int)
 		for _, event := range events {
 			var meta map[string]any
 			if event.EventType != "agent.message" || json.Unmarshal(event.FrameworkMeta, &meta) != nil {
 				continue
 			}
 			seq, _ := meta["managedSeq"].(float64)
-			if int64(seq) > sourceSeq && int64(seq) < report.Seq && event.Content != "" {
-				answer = append(answer, event.Content)
+			if int64(seq) > sourceSeq && int64(seq) < report.Seq {
+				if final, _ := meta["final_output"].(bool); final {
+					finalAnswer, hasFinalAnswer = event.Content, true
+				}
+				if event.Content == "" {
+					continue
+				}
+				identity := firstPayloadString(meta, "message_id")
+				if position, exists := messagePositions[identity]; identity != "" && exists {
+					answer[position] = event.Content
+				} else {
+					if identity != "" {
+						messagePositions[identity] = len(answer)
+					}
+					answer = append(answer, event.Content)
+				}
 			}
+		}
+		if hasFinalAnswer {
+			answer = []string{finalAnswer}
 		}
 		invocation.Status = controlmodel.EndpointInvocationCompleted
 		invocation.Result, _ = json.Marshal(strings.Join(answer, "\n\n"))
@@ -283,6 +303,23 @@ func (s *Server) projectManagedEndpointTurn(ctx context.Context, session *store.
 // function, and the shared call ID deduplicates the remote and session paths.
 func (s *Server) projectManagedToolFailure(ctx context.Context, session *store.Session,
 	report *managedSessionEventReport, event *store.SessionEvent) error {
+	if results, ok := report.Payload["tool_results"].([]any); ok && report.Type == "agent.tool_result" {
+		for _, value := range results {
+			result, ok := value.(map[string]any)
+			if !ok {
+				continue
+			}
+			part := *report
+			part.Payload = result
+			partEvent := *event
+			partEvent.ToolName = firstPayloadString(result, "name", "toolName")
+			partEvent.ToolOutput = firstPayloadString(result, "output")
+			if err := s.projectManagedToolFailure(ctx, session, &part, &partEvent); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	state := strings.ToLower(firstPayloadString(report.Payload, "state"))
 	if report.Type != "agent.tool_result" || session.AgentTaskID == nil ||
 		(state != "error" && state != "denied" && state != "interrupted") {

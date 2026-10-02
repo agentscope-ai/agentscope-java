@@ -56,6 +56,26 @@ final class EventJournal {
     private final Path sequencePath;
     private final List<SessionEventMsg> pending = new ArrayList<>();
     private final Map<String, Integer> latestSequences = new LinkedHashMap<>();
+    private final Map<String, Long> sourceWatermarks = new LinkedHashMap<>();
+
+    long sourceWatermark(String source) {
+        return sourceWatermarks.getOrDefault(source, 0L);
+    }
+
+    private void trackSource(SessionEventMsg event) {
+        if (event.getFrameworkMeta().isEmpty()) return;
+        try {
+            var metadata =
+                    io.agentscope.core.util.JsonUtils.getJsonCodec()
+                            .fromJson(event.getFrameworkMeta().toStringUtf8(), Map.class);
+            Object source = metadata.get("native_source");
+            Object seq = metadata.get("native_seq");
+            if (source instanceof String key && seq instanceof Number number)
+                sourceWatermarks.merge(key, number.longValue(), Math::max);
+        } catch (RuntimeException ignored) {
+            /* Legacy framework metadata is not a native envelope. */
+        }
+    }
 
     EventJournal(AistioConfig config) throws IOException {
         Path root =
@@ -99,6 +119,7 @@ final class EventJournal {
             channel.force(true);
         }
         pending.add(event);
+        trackSource(event);
         latestSequences.merge(event.getSessionId(), event.getSeq(), Math::max);
     }
 
@@ -133,6 +154,12 @@ final class EventJournal {
                 properties.load(input);
             }
             for (String sessionId : properties.stringPropertyNames()) {
+                if (sessionId.startsWith("__native__")) {
+                    sourceWatermarks.put(
+                            sessionId.substring(10),
+                            Long.parseLong(properties.getProperty(sessionId)));
+                    continue;
+                }
                 try {
                     latestSequences.put(
                             sessionId, Integer.parseInt(properties.getProperty(sessionId)));
@@ -162,6 +189,7 @@ final class EventJournal {
                 }
                 SessionEventMsg event = SessionEventMsg.parseFrom(payload);
                 pending.add(event);
+                trackSource(event);
                 latestSequences.merge(event.getSessionId(), event.getSeq(), Math::max);
             }
         }
@@ -173,6 +201,8 @@ final class EventJournal {
         Properties properties = new Properties();
         latestSequences.forEach(
                 (sessionId, seq) -> properties.setProperty(sessionId, String.valueOf(seq)));
+        sourceWatermarks.forEach(
+                (source, seq) -> properties.setProperty("__native__" + source, Long.toString(seq)));
         Path temp = sequencePath.resolveSibling(sequencePath.getFileName() + ".tmp");
         try (var output =
                 Files.newOutputStream(

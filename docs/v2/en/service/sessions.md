@@ -42,6 +42,12 @@ Tool events, final replies, Attempt success and Issue acceptance are separate ev
 
 Reopen the original work and query saved events and current state. SSE ending is not proof of failure. Proxies should forward events promptly. Do not submit duplicate work with a new idempotency key merely because the frontend disconnected.
 
+## Managed Session log and recovery entry points
+
+Agent API correlates session_id → turn_id → run_id; run_id is not an orchestration Run ID. Snapshot supplies items/tools/turns/required_actions and an as_of cursor for stream resumption. GET turns returns command states keyed by the submitted turn ID.
+
+Native history holds checkpoints and execution facts; ordinary clients read public projections, while authorized administrators inspect trace/recovery. Reconnect after transport loss without posting another input. Inspect uncertain effects before actions/resume after execution interruption. See [Agent API and session logs](/v2/en/service/session-event-log).
+
 ## What to record during diagnosis
 
 Practice with the [engineering case](/v2/en/service/cases/sdlc-team): open the Run from the parent Issue, locate the Hosted member in Task map, inspect its latest Attempt, and correlate its Session, logs, and files.

@@ -11,6 +11,10 @@ Service manages a Managed Agent's Harness, Sessions and model execution. Configu
 
 Start with the [practical guide](/v2/en/service/create-managed-agent) for creation or connection. This reference section collects detailed configuration, supported capabilities and execution principles.
 
+To integrate an Agent into your application, start with [Agent API: hosted sessions and tasks](/v2/en/service/session-event-log), then use [SSE events and frontend integration](/v2/en/service/sse-events) for messages, tools and reconnection. The service owns background execution; clients submit, display and interact.
+
+The [resumable chat example](/v2/en/service/agent-api-chat) connects creation, submission, refresh recovery, tool confirmation and cancellation in one integration flow.
+
 ## In this chapter
 
 - [Configuration and models](/v2/en/service/managed-agent-configuration)

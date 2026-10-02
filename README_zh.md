@@ -113,7 +113,7 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 
 其他可选：`agentscope-extensions-model-openai`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-ollama`。详见[模型文档](https://java.agentscope.io/v2/zh/docs/building-blocks/model.html)。
 
-只想跑裸 `ReActAgent`（不需要工作区 / 持久化 / 沙箱），单独依赖 `agentscope-core` 即可。
+如果希望直接使用 `ReActAgent` 的推理和工具 API、自行组合工程能力，可依赖 `agentscope-core` 和所需模型扩展。
 
 ## Hello AgentScope!
 
@@ -121,6 +121,8 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.nio.file.Paths;
@@ -147,14 +149,14 @@ public class FirstAgent {
         // 阻塞式调用
         agent.call(new UserMessage("你好！"), ctx).block();
 
-        // 或者流式获取事件，用于实时 UI 渲染
+        // 下一次请求可使用事件流，实时更新界面
         agent.streamEvents(new UserMessage("帮我把今天的关键点列三条。"), ctx)
                 .doOnNext(event -> {
                     switch (event.getType()) {
                         case TEXT_BLOCK_DELTA -> System.out.print(
-                                ((io.agentscope.core.event.TextBlockDeltaEvent) event).getDelta());
+                                ((TextBlockDeltaEvent) event).getDelta());
                         case TOOL_CALL_START -> System.out.println(
-                                "\n[tool] " + ((io.agentscope.core.event.ToolCallStartEvent) event).getToolCallName());
+                                "\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
                         default -> { }
                     }
                 })
@@ -162,6 +164,8 @@ public class FirstAgent {
     }
 }
 ```
+
+普通问答、多轮对话和工作流节点从 `call` / `streamEvents` 开始，详见[快速开始](https://java.agentscope.io/v2/zh/docs/quickstart)。两者默认也会记录 Harness 会话历史。需要关闭页面后继续执行、任务排队或中断后续做时，再引入 [AgentSession](https://java.agentscope.io/v2/zh/docs/harness/session-log)；[可恢复聊天示例](./agentscope-examples/agents/agentscope-chat/README_zh.md)提供完整接入流程。
 
 ## AgentScope Service
 

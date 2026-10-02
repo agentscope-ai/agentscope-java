@@ -40,7 +40,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-The default summary prompt organizes content into `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` — works well for engineering/orchestration agents. `CompactionConfig` also supports `.model(...)` to specify a dedicated model for the summarization LLM call (falls back to the agent's primary model when not set). The full configuration surface (`triggerTokens`, `keepTokens`, `flushBeforeCompact`, `offloadBeforeCompact`, `model`, `TruncateArgsConfig`) and the summary prompt template are in [Memory — Enable compaction](/v2/en/docs/harness/memory#enable-compaction); not duplicated here.
+The default summary prompt organizes content into `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` — works well for engineering/orchestration agents. `CompactionConfig` also supports `.model(...)` to specify a dedicated model for the summarization LLM call (falls back to the agent's primary model when not set). The full configuration surface (`triggerTokens`, `keepTokens`, `flushBeforeCompact`, `model`, `TruncateArgsConfig`) and the summary prompt template are in [Memory — Enable compaction](/v2/en/docs/harness/memory#enable-compaction); not duplicated here.
 
 ### 2. Large tool-result eviction (`ToolResultEvictionMiddleware`)
 
@@ -82,7 +82,7 @@ In many workloads this single step delays the summarization trigger considerably
 
 `CompactionConfig.flushBeforeCompact` (default `true`) decides **whether to extract facts from the conversation prefix into long-term memory before summarizing** — handled by `MemoryFlushMiddleware` + `MemoryFlushManager`, which read `<workspace>/MEMORY.md` and `memory/*.md` and incrementally append new facts. Once summarization drops the prefix messages, the information persists: the agent can pull it back via `memory_search` / `memory_get`.
 
-Similarly, `offloadBeforeCompact` (default `true`) writes the **raw messages** to the uncompressed `*.log.jsonl` before summarization, so `session_search` can still reach them.
+These tools read full message projections from native Session Log, so earlier committed messages remain available after working context is summarized.
 
 > The full Memory subsystem — two-tier structure, background maintenance (archive, merge), memory tools — is in [Memory](/v2/en/docs/harness/memory). Compaction and memory are commonly used together but have independent switches.
 
@@ -105,7 +105,7 @@ When session capability is on (the default), three query tools are registered au
 - `session_history agentId="..." sessionId="..." lastN=20` — recent N messages of a session.
 - `session_search query="..." agentId="..."` — keyword search across history.
 
-These tools read the **uncompressed conversation log** (`<workspace>/agents/<agentId>/sessions/<sessionId>.log.jsonl`), so even when the in-context conversation has been summarized, the agent can still pull up the original messages.
+These tools read full message projections from native Session Log, so earlier committed messages remain available after working context is summarized.
 
 ---
 

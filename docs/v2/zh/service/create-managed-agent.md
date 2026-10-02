@@ -33,6 +33,8 @@ en_link: /v2/en/service/create-managed-agent
 
 ## 分派实际工作
 
+自建聊天或任务页面时，直接按 [Agent API 聊天示例](/v2/zh/service/agent-api-chat)创建会话、提交任务并订阅 SSE。工具卡、人工确认、取消和断线续传使用同一 session。
+
 通过[控制台 Issue](/v2/zh/service/issues)安排带验收标准的任务，或[发布 Endpoint](/v2/zh/service/endpoints)供应用调用。模型、工具或资源调整后，用新 Chat 或新任务验证。
 
 详细参数、能力和运行原理见参考手册中的[Managed Agent](/v2/zh/service/managed-agent)。[Workspace](/v2/zh/service/workspaces)、[Environment](/v2/zh/service/environments)、[Memory](/v2/zh/service/memory) 和 [Vault](/v2/zh/service/vault) 的绑定方法也在该参考分类中。

@@ -1,0 +1,3 @@
+Real isolated browser and Agent; local read-only pages, scripted generation, judgment=--live-qwen
+Run[answer=The standard warranty lasts two years., judgments=2, modelCalls=2, browserActions=1, closedSessions=1]
+elapsedMillis=5387.994833, actualModels=[llm:qwen3.8-max], responsesWithUsage=2, inputTokens=858, outputTokens=72

@@ -1,0 +1,3 @@
+Real isolated browser and Agent; local read-only pages, scripted generation, judgment=--live-jev
+Run[answer=The standard warranty lasts two years., judgments=2, modelCalls=2, browserActions=1, closedSessions=1]
+elapsedMillis=5195.252333, actualModels=[jev-1.13.0], responsesWithUsage=2, inputTokens=1220, outputTokens=118

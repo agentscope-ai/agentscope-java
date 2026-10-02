@@ -119,7 +119,7 @@ public class AistioRegistrationConfig {
                         new CollaborationClient(new ControlPlaneHttpClient(controlHttp, token))));
 
         SessionBridge bridge = Aistio.instrument(main, cfg.build(), adapter);
-        adapter.setHistorySource(new HarnessSessionHistorySource(main));
+        adapter.setHistorySource(new AgentSessionHistorySource(main));
         adapter.setRuntimeSource(new HarnessAgentRuntimeSource(main));
         bridges.add(bridge);
         log.info(

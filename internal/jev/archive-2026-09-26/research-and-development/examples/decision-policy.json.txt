@@ -1,0 +1,28 @@
+{
+  "schemaStatus": "PROPOSED_NOT_LOADED_BY_CURRENT_SDK",
+  "purpose": "support.refund_precheck",
+  "definitionVersion": "v1",
+  "policyVersion": "shadow-v1",
+  "mode": "SHADOW",
+  "backend": {
+    "model": "jev-1.13.0",
+    "credentialRef": "TYPESAFE_API_KEY"
+  },
+  "budget": {
+    "totalMillis": "TBD_AFTER_MEASUREMENT",
+    "maxAttempts": 1
+  },
+  "thresholds": {
+    "evidenceSupport": "TBD_CALIBRATED",
+    "intentMatch": "TBD_CALIBRATED"
+  },
+  "onError": "REVIEW_WITHOUT_EXECUTION",
+  "onAbstain": "ASK_FOR_EVIDENCE",
+  "requiredGuards": [
+    "identity",
+    "order_ownership",
+    "refund_eligibility",
+    "state_version",
+    "idempotency"
+  ]
+}

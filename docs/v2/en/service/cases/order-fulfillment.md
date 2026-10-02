@@ -117,7 +117,7 @@ Set `BASE_URL` to the Gateway origin and `ENDPOINT_TOKEN` to this Endpoint's key
 curl --fail-with-body "$BASE_URL/invoke/v1/endpoints/order-triage/jobs"   -H "X-API-Key: $ENDPOINT_TOKEN"   -H 'Content-Type: application/json'   -H 'Idempotency-Key: order-O-1001-triage-001'   --data '{"title":"Investigate O-1001","description":"Investigate the delay using the fixture. Propose a resolution without executing changes.","input":{"orderId":"O-1001","requestedArrival":"2026-09-15","phase":"diagnose"}}'
 ```
 
-Retain `invocationId`, `eventsUrl`, and `statusUrl`. Display progress using the [SSE guide](/v2/en/service/sse-events) and read `invocation.result` after completion. Its business structure follows your output contract; intermediate model messages are not final customer responses. Keep the Endpoint key in the business backend, which supplies and verifies customer authorization context.
+Retain `invocationId`, `eventsUrl`, and `statusUrl`. Display progress using the [SSE guide](/v2/en/service/sse-events#endpoint-protocol-scope) and read `invocation.result` after completion. Its business structure follows your output contract; intermediate model messages are not final customer responses. Keep the Endpoint key in the business backend, which supplies and verifies customer authorization context.
 
 ## 6. Approve, execute, and verify
 

@@ -30,8 +30,8 @@ public final class ContextModelCalls {
     private ContextModelCalls() {}
 
     public static Flux<ChatResponse> auxiliary(Model model, List<Msg> messages) {
-        return Flux.defer(
-                () ->
+        return Flux.deferContextual(
+                subscriber ->
                         new HarnessContextBuilder(ContextPolicy.defaults(), null, null)
                                 .prepare(
                                         null,
@@ -41,9 +41,16 @@ public final class ContextModelCalls {
                                         ModelRequestPreparer.Purpose.SUMMARY)
                                 .flatMapMany(
                                         input ->
-                                                input.model().stream(
-                                                        input.messages(),
-                                                        input.tools(),
-                                                        input.options())));
+                                                io.agentscope.core.session.SessionModels.wrap(
+                                                        input.model(),
+                                                        subscriber.getOrDefault(
+                                                                io.agentscope.core.agent.AgentBase
+                                                                        .RUNTIME_CONTEXT_KEY,
+                                                                RuntimeContext.empty()),
+                                                        "SUMMARY")
+                                                        .stream(
+                                                                input.messages(),
+                                                                input.tools(),
+                                                                input.options())));
     }
 }

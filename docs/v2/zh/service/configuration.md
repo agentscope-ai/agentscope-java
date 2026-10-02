@@ -29,6 +29,39 @@ Docker 在 `.env` 中配置；Kubernetes 将敏感项放入已有 Secret，通�
 | `DASHSCOPE_API_KEY` | 默认 DashScope 模型凭据 | 只在使用该模型路径时需要 |
 | `BUILDER_E2B_API_KEY` | E2B 环境凭据 | 仅对应 Sandbox 路径需要 |
 
+## Agent API 配置
+
+这些是 **Dataplane 的 Spring 配置项**。通过实际加载的 application.yml、启动参数或传入进程的环境配置设置；仅往 Compose 的 `.env` 加一行不会自动传给容器，需要在服务定义中映射并重建 data 容器。
+
+| 配置项 | 默认值 | 用途 |
+| --- | --- | --- |
+| `builder.agent-api.files.max-bytes` | `16777216` | 单文件上传上限（16 MiB），不改变模型或上下文限制 |
+| `builder.agent-api.webhooks.allowed-hosts` | 空 | 允许投递的精确主机名，多个以逗号分隔；仅 HTTPS 443，默认不允许注册目的地址 |
+| `builder.agent-api.webhooks.poll-ms` | `2000` | Webhook 投递轮询间隔（毫秒） |
+| `builder.agent-api.pricing.models` | `{}` | JSON 字符串：模型名到每百万输入/输出 token 单价的映射 |
+| `builder.agent-api.pricing.currency` | `USD` | 估算费用币种；应与 max_cost 预算一致 |
+| `builder.agent-api.trace-enabled` | `false` | 管理员诊断；启用后仍检查 session 所有者及 ROLE_ADMIN / ROLE_SESSION_TRACE |
+| `builder.agent-api.inbox-poll-ms` | `1000` | 持久任务队列的派发轮询间隔（毫秒） |
+| `builder.agent-api.export-poll-ms` | `5000` | 原生日志公共事件补导出轮询间隔（毫秒），不是 SSE token 刷新周期 |
+
+在 Dataplane 实际加载的 YAML 中，例如：
+
+```yaml
+builder:
+  agent-api:
+    files:
+      max-bytes: 16777216
+    webhooks:
+      allowed-hosts: notify.example.com
+    pricing:
+      currency: USD
+      models: '{"your-model":{"input_per_million":1,"output_per_million":2}}'
+```
+
+替换为你的通知主机和模型标识。示例价格只用于展示格式，实际价格由部署方维护。未配置价格时费用显示不完整，不能按零费用处理。SSE 消息与工具增量默认持久保存，无需开启 preview。
+
+多副本共享 Data Plane 数据库及支持条件写入的 BaseStore；工作文件的 Filesystem 也可使用分布式后端。日志位置见[存储说明](/v2/zh/service/session-event-log#存储分层与记录位置)。代理应关闭 SSE 缓冲、及时转发并配置足够的读取超时；15 秒心跳只保持连接，不表示模型有输出。
+
 ## 文件与组件地址
 
 发布配置统一挂载 `/data/workspaces`。控制面使用 `AISTIO_WORKSPACE_ROOT`，Java 使用 `BUILDER_WORKSPACE_ROOT`。产物目录由 `AISTIO_ARTIFACT_ROOT` 指定。

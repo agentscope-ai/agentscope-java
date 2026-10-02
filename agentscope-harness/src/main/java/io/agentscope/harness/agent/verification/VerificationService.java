@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.verification;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.CustomEvent;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.TaskRequirement;
 import io.agentscope.core.state.TaskVerification;
@@ -107,19 +108,89 @@ public final class VerificationService {
                                             throw new IllegalStateException(
                                                     "Pin the task subject version before"
                                                             + " execution");
+                                        var recorder = SessionRecorder.from(context);
                                         var evidence =
-                                                observations
-                                                        .load(
-                                                                context.getUserId(),
-                                                                context.getSessionId(),
-                                                                actionId,
-                                                                false)
-                                                        .orElseThrow(
-                                                                () ->
-                                                                        new IllegalArgumentException(
-                                                                                "Settled action"
-                                                                                    + " evidence"
-                                                                                    + " unavailable"));
+                                                recorder == null
+                                                        ? observations
+                                                                .load(
+                                                                        context.getUserId(),
+                                                                        context.getSessionId(),
+                                                                        actionId,
+                                                                        false)
+                                                                .orElseThrow(
+                                                                        () ->
+                                                                                new IllegalArgumentException(
+                                                                                        "Settled"
+                                                                                            + " action"
+                                                                                            + " evidence"
+                                                                                            + " unavailable"))
+                                                        : recorder.findLast(
+                                                                        "action/end",
+                                                                        event -> {
+                                                                            Object value =
+                                                                                    event.data()
+                                                                                            .get(
+                                                                                                    "observation");
+                                                                            return value
+                                                                                            instanceof
+                                                                                            Map<
+                                                                                                            ?,
+                                                                                                            ?>
+                                                                                                    observation
+                                                                                    && actionId
+                                                                                            .equals(
+                                                                                                    observation
+                                                                                                            .get(
+                                                                                                                    "actionId"));
+                                                                        })
+                                                                .map(
+                                                                        event -> {
+                                                                            var payload =
+                                                                                    event.data();
+                                                                            var codec =
+                                                                                    io.agentscope
+                                                                                            .core
+                                                                                            .util
+                                                                                            .JsonUtils
+                                                                                            .getJsonCodec();
+                                                                            return new io.agentscope
+                                                                                    .harness.agent
+                                                                                    .observation
+                                                                                    .StoredActionObservation(
+                                                                                    codec
+                                                                                            .convertValue(
+                                                                                                    payload
+                                                                                                            .get(
+                                                                                                                    "observation"),
+                                                                                                    io
+                                                                                                            .agentscope
+                                                                                                            .core
+                                                                                                            .observation
+                                                                                                            .ActionObservation
+                                                                                                            .class),
+                                                                                    payload.get(
+                                                                                                            "result")
+                                                                                                    == null
+                                                                                            ? null
+                                                                                            : codec
+                                                                                                    .convertValue(
+                                                                                                            payload
+                                                                                                                    .get(
+                                                                                                                            "result"),
+                                                                                                            io
+                                                                                                                    .agentscope
+                                                                                                                    .core
+                                                                                                                    .message
+                                                                                                                    .ToolResultBlock
+                                                                                                                    .class));
+                                                                        })
+                                                                .orElseThrow(
+                                                                        () ->
+                                                                                new IllegalArgumentException(
+                                                                                        "Settled"
+                                                                                            + " action"
+                                                                                            + " evidence"
+                                                                                            + " unavailable"));
                                         var action = evidence.observation();
                                         if (!actionId.equals(action.actionId())
                                                 || !Objects.equals(
@@ -167,7 +238,16 @@ public final class VerificationService {
                                                         requirement,
                                                         StateStoreActionObserver.key(
                                                                 actionId, false));
-                                        if (store.supportsVersioning()) {
+                                        if (recorder != null) {
+                                            recorder.recordNow(
+                                                    "verification/result",
+                                                    Map.of(
+                                                            "verification",
+                                                            report,
+                                                            "criterion",
+                                                            requirement));
+                                        }
+                                        if ((recorder == null) && store.supportsVersioning()) {
                                             if (store.saveIfVersion(
                                                             context.getUserId(),
                                                             context.getSessionId(),
@@ -178,7 +258,7 @@ public final class VerificationService {
                                                 throw new IllegalStateException(
                                                         "Verification commit was not acknowledged");
                                             }
-                                        } else {
+                                        } else if (recorder == null) {
                                             store.save(
                                                     context.getUserId(),
                                                     context.getSessionId(),
@@ -189,6 +269,11 @@ public final class VerificationService {
                                             throw new CancellationException(
                                                     "Verification cancelled after commit");
                                         task.recordVerification(report, snapshot.getRevision());
+                                        if (recorder != null) {
+                                            recorder.captureState(
+                                                    context.getAgentState(), "verification");
+                                            recorder.flushNow();
+                                        }
                                         emitter.ifPresent(
                                                 value -> {
                                                     try {

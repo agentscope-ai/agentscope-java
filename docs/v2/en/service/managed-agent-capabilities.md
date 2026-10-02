@@ -47,6 +47,7 @@ Use a [Team](/v2/en/service/teams) for independent ownership, persistent discuss
 - [Vault](/v2/en/service/vault): tool connection credentials; it does not configure every model connection.
 - Chat: personal conversations. Issue: delivery and acceptance.
 - Automation, Workflow and Team: schedule, compose or delegate Managed work.
+- [Agent API](/v2/en/service/session-event-log): hosted sessions, background tasks, interactions and recovery; [SSE](/v2/en/service/sse-events) exposes messages, tools, children and artifacts.
 - [Endpoint](/v2/en/service/endpoints) and Channel: expose capabilities through published protocols and message routing.
 
 Keep a minimal input, expected tool call and checkable output for each added capability. Verify the Agent alone before adding it to a Team or Workflow.

@@ -1,0 +1,195 @@
+{
+  "suite" : "context-synthetic-v1",
+  "sourceCommit" : "e3f262a7f4d42bd8dd32ced30d26176f7cb545b0",
+  "timestamp" : "2026-09-25T23:48:13.713873Z",
+  "dataSha256" : "7bdda75c6d77c10b2805fd62cc2b04b8552226209c8c75d8ae2903a1f30f6af1",
+  "backend" : "--live-jev",
+  "requestedModel" : "jev-latest",
+  "actualModels" : [ "jev-1.13.0" ],
+  "enableThinking" : false,
+  "mode" : "SHADOW",
+  "config" : {
+    "discardThreshold" : 0.2,
+    "keepThreshold" : 0.8,
+    "preserveRecentMessages" : 1,
+    "maxStateTokens" : 25000,
+    "maxRequestTokens" : 30000,
+    "maxQuestions" : 128,
+    "truncateHeadChars" : 100,
+    "minimumReduction" : 0.01,
+    "maxTranscriptChars" : 1000000,
+    "eligibleTools" : [ "read" ],
+    "pinnedMessageIds" : [ ]
+  },
+  "labelledSemanticPairs" : 9,
+  "correct" : 1,
+  "incorrect" : 0,
+  "abstained" : 8,
+  "errors" : 0,
+  "accuracy" : 0.1111111111111111,
+  "pinned" : 2,
+  "pinnedCorrect" : 2,
+  "latency" : {
+    "p50Millis" : 256.618625,
+    "p95Millis" : 1341.45875
+  },
+  "usage" : {
+    "inputTokens" : 4006,
+    "responsesWithUsage" : 6,
+    "outputTokens" : 348,
+    "requests" : 6
+  },
+  "rows" : [ {
+    "id" : "stale_file",
+    "status" : "INCONCLUSIVE",
+    "reason" : "INSUFFICIENT_REDUCTION",
+    "elapsedMillis" : 1341.45875,
+    "pairs" : {
+      "t1" : {
+        "expected" : "DROP_PAIR",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : {
+          "keepCall" : 0.23,
+          "keepResult" : 0.23,
+          "reason" : "UNCERTAIN"
+        }
+      },
+      "t2" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : {
+          "keepCall" : 0.74,
+          "keepResult" : 0.76,
+          "reason" : "UNCERTAIN"
+        }
+      }
+    }
+  }, {
+    "id" : "superseded_read",
+    "status" : "INCONCLUSIVE",
+    "reason" : "INSUFFICIENT_REDUCTION",
+    "elapsedMillis" : 256.618625,
+    "pairs" : {
+      "t1" : {
+        "expected" : "DROP_PAIR",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : {
+          "keepCall" : 0.24,
+          "keepResult" : 0.33,
+          "reason" : "UNCERTAIN"
+        }
+      },
+      "t2" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : {
+          "keepCall" : 0.72,
+          "keepResult" : 0.73,
+          "reason" : "UNCERTAIN"
+        }
+      }
+    }
+  }, {
+    "id" : "call_history_only",
+    "status" : "INCONCLUSIVE",
+    "reason" : "INSUFFICIENT_REDUCTION",
+    "elapsedMillis" : 260.708208,
+    "pairs" : {
+      "t1" : {
+        "expected" : "TRUNCATE_RESULT",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : {
+          "keepCall" : 0.63,
+          "keepResult" : 0.15,
+          "reason" : "UNCERTAIN"
+        }
+      },
+      "t2" : {
+        "expected" : "TRUNCATE_RESULT",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : {
+          "keepCall" : 0.67,
+          "keepResult" : 0.12,
+          "reason" : "UNCERTAIN"
+        }
+      }
+    }
+  }, {
+    "id" : "keep_exact_evidence",
+    "status" : "INCONCLUSIVE",
+    "reason" : "INSUFFICIENT_REDUCTION",
+    "elapsedMillis" : 252.724125,
+    "pairs" : {
+      "t1" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : {
+          "keepCall" : 0.74,
+          "keepResult" : 0.8,
+          "reason" : "NEEDED_RESULT"
+        }
+      },
+      "t2" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : true,
+        "scores" : {
+          "keepCall" : 1.0,
+          "keepResult" : 1.0,
+          "reason" : "PINNED"
+        }
+      }
+    }
+  }, {
+    "id" : "protect_write_receipt",
+    "status" : "INCONCLUSIVE",
+    "reason" : "INSUFFICIENT_REDUCTION",
+    "elapsedMillis" : 330.111209,
+    "pairs" : {
+      "t1" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : true,
+        "scores" : {
+          "keepCall" : 1.0,
+          "keepResult" : 1.0,
+          "reason" : "PINNED"
+        }
+      },
+      "t2" : {
+        "expected" : "DROP_PAIR",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : {
+          "keepCall" : 0.26,
+          "keepResult" : 0.23,
+          "reason" : "UNCERTAIN"
+        }
+      }
+    }
+  }, {
+    "id" : "unresolved_task",
+    "status" : "INCONCLUSIVE",
+    "reason" : "INSUFFICIENT_REDUCTION",
+    "elapsedMillis" : 238.722208,
+    "pairs" : {
+      "t1" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : {
+          "keepCall" : 0.62,
+          "keepResult" : 0.72,
+          "reason" : "UNCERTAIN"
+        }
+      }
+    }
+  } ]
+}

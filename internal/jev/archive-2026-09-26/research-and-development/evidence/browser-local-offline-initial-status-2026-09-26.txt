@@ -1,0 +1,3 @@
+Real isolated browser and Agent; local read-only pages, scripted generation, judgment=offline
+Run[answer=The standard warranty lasts two years., judgments=2, modelCalls=2, browserActions=1, closedSessions=1]
+elapsedMillis=2660.929334, actualModels=[offline-synthetic], responsesWithUsage=2, inputTokens=0, outputTokens=0

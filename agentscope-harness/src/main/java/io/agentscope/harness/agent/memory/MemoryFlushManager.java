@@ -26,7 +26,6 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.context.ContextModelCalls;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
-import io.agentscope.harness.agent.memory.session.SessionTranscriptWriter;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.LocalDate;
@@ -182,38 +181,6 @@ public class MemoryFlushManager {
                             writeMemoryFiles(rc, extracted);
                             return Mono.empty();
                         });
-    }
-
-    /**
-     * Returns the string path of the session JSONL file where messages for the given agent and
-     * session are offloaded. Used by the compaction layer to embed the archive location in the
-     * summary message so the agent can retrieve full history if needed.
-     *
-     * @deprecated Prefer {@link SessionTranscriptWriter#resolveContextPath}.
-     */
-    @Deprecated
-    public String resolveOffloadPath(RuntimeContext rc, String agentId, String sessionId) {
-        return new SessionTranscriptWriter(workspaceManager)
-                .resolveContextPath(rc, agentId, sessionId);
-    }
-
-    /**
-     * Offloads raw messages to the JSONL session tree.
-     *
-     * @deprecated Prefer {@link SessionTranscriptWriter#appendMessages}. Kept as a thin
-     *     delegate so compaction / overflow-recovery call sites keep compiling during the
-     *     migration; new code should use {@link SessionTranscriptWriter} directly.
-     */
-    @Deprecated
-    public void offloadMessages(
-            RuntimeContext rc, List<Msg> messages, String agentId, String sessionId) {
-        new SessionTranscriptWriter(workspaceManager)
-                .appendMessages(rc, messages, agentId, sessionId);
-        log.debug(
-                "Offloaded {} messages for agent={}, session={}",
-                messages.size(),
-                agentId,
-                sessionId);
     }
 
     /**

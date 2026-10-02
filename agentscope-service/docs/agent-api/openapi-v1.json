@@ -1,0 +1,5247 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AgentScope Agent Session API",
+    "version": "1.0.0",
+    "description": "Hosted sessions, durable turn and input commands, recoverable message/tool events, files, checkpoints, children, signed webhooks and usage budgets. Lifecycle and Turn resources retain camelCase; event envelopes and new resources use snake_case."
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/agent-sessions/{session}/turns": {
+      "post": {
+        "summary": "Durably queue a new logical turn",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Turn"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentInput"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Read command states",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Turn"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/turns/{turn}/cancel": {
+      "post": {
+        "summary": "Cancel a turn",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "turn",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Turn"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/turns/{turn}/resume": {
+      "post": {
+        "summary": "Resume a turn",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "turn",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Turn"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/turns/{turn}/actions": {
+      "post": {
+        "summary": "Answer pending confirmation or external execution",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "turn",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Turn"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "answers": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "request_id": {
+                          "type": "string"
+                        },
+                        "allow": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "output": {
+                          "type": "string"
+                        },
+                        "is_error": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "request_id"
+                      ],
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "required": [
+                  "answers"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Read action command delivery state",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "turn",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActionCommand"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/snapshot": {
+      "get": {
+        "summary": "Read resources at one committed watermark",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/items": {
+      "get": {
+        "summary": "Read items",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/required-actions": {
+      "get": {
+        "summary": "Read required-actions",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/artifacts": {
+      "get": {
+        "summary": "Read artifacts",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      },
+      "post": {
+        "summary": "Publish a hosted file or HTTPS artifact reference",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "file_id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "file_id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "uri": {
+                        "type": "string",
+                        "format": "uri",
+                        "pattern": "^https://"
+                      },
+                      "media_type": {
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "uri"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/usage": {
+      "get": {
+        "summary": "Read reported model usage and configured cost estimates",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "include_children",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Usage"
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "description": "Tree usage has separate session_watermarks; it is not one atomic tree-wide snapshot or a provider invoice."
+      }
+    },
+    "/agent-sessions/{session}/events": {
+      "get": {
+        "summary": "Page committed public events",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PublicEvent"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "next_offset": {
+                      "type": "integer"
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "has_more"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/events/stream": {
+      "get": {
+        "summary": "Replay committed events and follow new events",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Deprecated no-op. All public deltas are durable and replayable by default."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "description": "SSE id is the opaque cursor, event is the public type, data is a PublicEvent JSON envelope. Comments are heartbeats. Advance cursor only after applying the event."
+      }
+    },
+    "/agent-sessions/{session}/artifacts/{artifact}": {
+      "delete": {
+        "summary": "Revoke publication without deleting history or file content",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "artifact",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/trace": {
+      "get": {
+        "summary": "Read separately authorized native facts",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          }
+        },
+        "description": "Disabled by default. Requires session owner plus ROLE_ADMIN or ROLE_SESSION_TRACE and builder.agent-api.trace-enabled=true. Native trace may contain sensitive model inputs."
+      }
+    },
+    "/agent-sessions/{session}/trace/recovery": {
+      "get": {
+        "summary": "Inspect recovery state with trace permission",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          }
+        },
+        "description": "Disabled by default. Requires session owner plus ROLE_ADMIN or ROLE_SESSION_TRACE and builder.agent-api.trace-enabled=true. Native trace may contain sensitive model inputs."
+      }
+    },
+    "/agent-sessions/{session}/trace/reconcile": {
+      "post": {
+        "summary": "Record verified external outcomes; never re-execute tools",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason",
+                  "outcomes"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  },
+                  "outcomes": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "description": "Core ToolResultBlock keyed by exact pending toolCallId"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Disabled by default. Requires session owner plus ROLE_ADMIN or ROLE_SESSION_TRACE and builder.agent-api.trace-enabled=true. Native trace may contain sensitive model inputs."
+      }
+    },
+    "/agent-sessions/{session}/trace/subagents/{child}": {
+      "get": {
+        "summary": "Read a directly linked child native journal with parent trace authorization",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          }
+        },
+        "description": "Disabled by default. Requires session owner plus ROLE_ADMIN or ROLE_SESSION_TRACE and builder.agent-api.trace-enabled=true. Native trace may contain sensitive model inputs."
+      }
+    },
+    "/agent-sessions": {
+      "post": {
+        "summary": "Create a hosted session",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ],
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "environmentId": {
+                    "type": "string"
+                  },
+                  "memoryStoreIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "vaultIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "externalKey": {
+                    "type": "string"
+                  },
+                  "agentOverrides": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "resources": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "required": [
+                  "agent"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List owned sessions",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "active",
+                "archived",
+                "all"
+              ]
+            }
+          },
+          {
+            "name": "agentId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}": {
+      "get": {
+        "summary": "Read session metadata",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update session configuration",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "environmentId": {
+                    "type": "string"
+                  },
+                  "memoryStoreIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "vaultIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "agentOverrides": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a session",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/archive": {
+      "post": {
+        "summary": "Archive session archive status",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "description": "Archive restore is distinct from checkpoint state restore."
+      }
+    },
+    "/agent-sessions/{session}/restore": {
+      "post": {
+        "summary": "Restore session archive status",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "description": "Archive restore is distinct from checkpoint state restore."
+      }
+    },
+    "/agent-sessions/{session}/turns/{turn}": {
+      "get": {
+        "summary": "Read one turn",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "turn",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Turn"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/turns/{turn}/steer": {
+      "post": {
+        "summary": "Steer the currently executing turn at the next step",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "turn",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/inputs/inject": {
+      "post": {
+        "summary": "Persist context for the next execution step without starting work",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/tools": {
+      "get": {
+        "summary": "Read tools",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/inputs": {
+      "get": {
+        "summary": "Read inputs",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/subagents": {
+      "get": {
+        "summary": "Read subagents",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/resources/{resource}": {
+      "get": {
+        "summary": "Page an immutable resource snapshot",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "resource",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "next_offset": {
+                      "type": "integer"
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "has_more"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "description": "Resource: items, tools, turns, runs, required-actions, action-commands, inputs, artifacts or subagents. Cursor expires after 15 minutes; response also includes expires_at. Never use a resource cursor as an SSE cursor."
+      }
+    },
+    "/agent-sessions/{session}/events/{event}": {
+      "get": {
+        "summary": "Read one immutable public event",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "event",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicEvent"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/export": {
+      "get": {
+        "summary": "Export the current public event prefix as JSONL",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "description": "Authenticated public events only. Private prompts, checkpoints, credentials and provider reasoning are excluded."
+      }
+    },
+    "/agent-sessions/{session}/files": {
+      "post": {
+        "summary": "Upload an immutable session file",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "X-File-Name",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Percent-encoded UTF-8 filename"
+          },
+          {
+            "name": "Content-Type",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/File"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "application/pdf": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List session files",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/File"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "next_cursor": {
+                      "type": "string"
+                    },
+                    "next_offset": {
+                      "type": "integer"
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "has_more"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/files/{file}": {
+      "get": {
+        "summary": "Read file metadata",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "file",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/File"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/files/{file}/content": {
+      "get": {
+        "summary": "Download a session file with owner authorization",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "file",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/checkpoints": {
+      "get": {
+        "summary": "List opaque committed checkpoint handles",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Checkpoint"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "next_offset": {
+                      "type": "integer"
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "has_more"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/checkpoints/restore": {
+      "post": {
+        "summary": "Restore model context and state from a checkpoint",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "checkpoint_id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "checkpoint_id",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "description": "All turns must be settled or cancelled; resolve unknown tools and pending inputs first. Does not undo external effects or truncate history."
+      }
+    },
+    "/agent-sessions/{session}/fork": {
+      "post": {
+        "summary": "Copy checkpoint state into an empty owned session",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "checkpoint_id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "target_session_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "checkpoint_id",
+                  "reason",
+                  "target_session_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "description": "Create target first with the same Agent and required environment, credentials and resources. Copies state; does not clone files or environments."
+      }
+    },
+    "/agent-sessions/{session}/subagents/{child}": {
+      "get": {
+        "summary": "Read a linked descendant through parent authorization",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/subagents/{child}/snapshot": {
+      "get": {
+        "summary": "Read a linked descendant through parent authorization",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/subagents/{child}/items": {
+      "get": {
+        "summary": "Read child items",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/subagents/{child}/tools": {
+      "get": {
+        "summary": "Read child tools",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/subagents/{child}/turns": {
+      "get": {
+        "summary": "Read child turns",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/subagents/{child}/runs": {
+      "get": {
+        "summary": "Read child runs",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/subagents/{child}/required-actions": {
+      "get": {
+        "summary": "Read child required-actions",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/subagents/{child}/usage": {
+      "get": {
+        "summary": "Read child usage",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Usage"
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/subagents/{child}/subagents": {
+      "get": {
+        "summary": "Read child subagents",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceEnvelope"
+                      }
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "as_of"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/subagents/{child}/events": {
+      "get": {
+        "summary": "Page linked child public history",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PublicEvent"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "next_offset": {
+                      "type": "integer"
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "has_more"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/subagents/{child}/events/stream": {
+      "get": {
+        "summary": "Replay and follow linked child events",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "description": "Use child-scoped cursors; parent cursors are rejected."
+      }
+    },
+    "/agent-sessions/{session}/budget": {
+      "get": {
+        "summary": "Read session-tree limits and accounting",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "limits": {
+                      "$ref": "#/components/schemas/BudgetLimits"
+                    },
+                    "usage": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "scope": {
+                      "const": "session_tree"
+                    },
+                    "enforcement": {
+                      "const": "before_model_call"
+                    }
+                  },
+                  "required": [
+                    "limits",
+                    "usage",
+                    "revision",
+                    "scope",
+                    "enforcement"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      },
+      "put": {
+        "summary": "Replace session-tree limits",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetLimits"
+              }
+            }
+          }
+        },
+        "description": "Empty object clears limits. Model-call admissions use atomic reservations. Reported token/cost limits stop the next call; they cannot hard-cap concurrent in-flight usage. Unknown usage/prices fail closed for the corresponding limit."
+      }
+    },
+    "/agent-sessions/{session}/webhooks": {
+      "post": {
+        "summary": "Register a signed session notification webhook",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "event_types": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "url"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "description": "HTTPS operator-allowlisted destinations only. Starts at current event head. Signing secret returned here, including same-key retry; keep it server-side."
+      },
+      "get": {
+        "summary": "List webhook registrations without signing secrets",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Webhook"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "next_cursor": {
+                      "type": "string"
+                    },
+                    "next_offset": {
+                      "type": "integer"
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "has_more"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/webhooks/{webhook}": {
+      "delete": {
+        "summary": "Disable a webhook",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "webhook",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/webhooks/{webhook}/retry": {
+      "post": {
+        "summary": "Resume failed notification delivery",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "webhook",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session}/webhooks/{webhook}/deliveries": {
+      "get": {
+        "summary": "Read durable delivery attempts",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "webhook",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "delivery_id": {
+                            "type": "string"
+                          },
+                          "event_id": {
+                            "type": "string"
+                          },
+                          "attempt": {
+                            "type": "integer"
+                          },
+                          "status_code": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": true
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "next_offset": {
+                      "type": "integer"
+                    },
+                    "as_of": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "has_more"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Http400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Http401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Http403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Http404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Http409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Http410"
+          },
+          "413": {
+            "$ref": "#/components/responses/Http413"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "PublicEvent": {
+        "$ref": "./public-event-v1.schema.json"
+      },
+      "PublicContentBlock": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "text"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ],
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": [
+                  "image",
+                  "audio",
+                  "video",
+                  "data"
+                ]
+              },
+              "source": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "type",
+              "source"
+            ],
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "file"
+              },
+              "file_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "file_id"
+            ],
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "tool_use"
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "content": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "tool_result"
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "output": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "state": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "additionalProperties": true
+          }
+        ]
+      },
+      "Item": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "text"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "text"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "image",
+                        "audio",
+                        "video",
+                        "data"
+                      ]
+                    },
+                    "source": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "source"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "file"
+                    },
+                    "file_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "file_id"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "tool_use"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "input": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "tool_result"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "output": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "additionalProperties": true
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "role",
+          "content",
+          "status"
+        ],
+        "additionalProperties": true
+      },
+      "AgentInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "message"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "input": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "const": "user"
+                    },
+                    "content": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "text"
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "text"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "data"
+                                ]
+                              },
+                              "source": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "source"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "file"
+                              },
+                              "file_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "file_id"
+                            ],
+                            "additionalProperties": true
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "content"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "input"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Turn": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "requires_action",
+              "completed",
+              "failed",
+              "cancelled",
+              "interrupted",
+              "cancel_requested"
+            ]
+          },
+          "createdAt": {
+            "type": "integer"
+          },
+          "errorCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "sessionId",
+          "status",
+          "createdAt"
+        ],
+        "additionalProperties": true
+      },
+      "InputReceipt": {
+        "type": "object",
+        "properties": {
+          "input_id": {
+            "type": "string"
+          },
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "steer",
+              "inject"
+            ]
+          },
+          "status": {
+            "enum": [
+              "accepted",
+              "applied",
+              "rejected"
+            ]
+          }
+        },
+        "required": [
+          "input_id",
+          "kind",
+          "status"
+        ],
+        "additionalProperties": true
+      },
+      "ResourceEnvelope": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "type",
+          "data"
+        ],
+        "additionalProperties": true
+      },
+      "Usage": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "enum": [
+              "session_only",
+              "session_tree"
+            ]
+          },
+          "model_calls": {
+            "type": "integer"
+          },
+          "totals": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "session_watermarks": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "estimated_cost": {
+            "type": "number"
+          },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cost_complete": {
+            "type": "boolean"
+          },
+          "unpriced_calls": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scope",
+          "model_calls",
+          "totals"
+        ],
+        "additionalProperties": true
+      },
+      "BudgetLimits": {
+        "type": "object",
+        "properties": {
+          "max_model_calls": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "max_total_tokens": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "max_cost": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "File": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "download_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id",
+          "name",
+          "media_type",
+          "sha256",
+          "size",
+          "download_url"
+        ],
+        "additionalProperties": true
+      },
+      "Checkpoint": {
+        "type": "object",
+        "properties": {
+          "checkpoint_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "checkpoint_id",
+          "created_at"
+        ],
+        "additionalProperties": true
+      },
+      "CheckpointReceipt": {
+        "type": "object",
+        "properties": {
+          "source_session_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "checkpoint_id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "status": {
+            "const": "completed"
+          }
+        },
+        "required": [
+          "source_session_id",
+          "session_id",
+          "checkpoint_id",
+          "operation_id",
+          "status"
+        ],
+        "additionalProperties": true
+      },
+      "Webhook": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "event_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "failed",
+              "disabled"
+            ]
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "next_attempt_at": {
+            "type": "integer"
+          },
+          "signing_secret": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "url",
+          "event_types",
+          "status"
+        ],
+        "additionalProperties": true
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentOwnerId": {
+            "type": "string"
+          },
+          "agentVersion": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "agentRefType": {
+            "type": "string"
+          },
+          "agentOverridesJson": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "externalKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "memoryStoreIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "vaultIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "stopReason": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "integer"
+          },
+          "archivedAt": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": true
+      },
+      "ActionCommand": {
+        "type": "object",
+        "properties": {
+          "command_id": {
+            "type": "string"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "request_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "enum": [
+              "accepted",
+              "resolved",
+              "rejected"
+            ]
+          },
+          "created_at": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "command_id",
+          "turn_id",
+          "request_ids",
+          "status"
+        ],
+        "additionalProperties": true
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": true
+      },
+      "Snapshot": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Session"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "parent_session_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "parent_session_id"
+                ]
+              }
+            ]
+          },
+          "as_of": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceEnvelope"
+            }
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceEnvelope"
+            }
+          },
+          "turns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceEnvelope"
+            }
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceEnvelope"
+            }
+          },
+          "required_actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceEnvelope"
+            }
+          },
+          "action_commands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceEnvelope"
+            }
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceEnvelope"
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceEnvelope"
+            }
+          },
+          "subagents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceEnvelope"
+            }
+          }
+        },
+        "required": [
+          "as_of",
+          "items",
+          "tools",
+          "turns",
+          "runs",
+          "required_actions",
+          "action_commands",
+          "inputs",
+          "artifacts",
+          "subagents",
+          "usage"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "responses": {
+      "Http400": {
+        "description": "Invalid request or cursor",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Http401": {
+        "description": "Authentication required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Http403": {
+        "description": "Access denied",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Http404": {
+        "description": "Not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Http409": {
+        "description": "State, writer or idempotency conflict",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Http410": {
+        "description": "Resource page expired; restart pagination",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Http413": {
+        "description": "Input exceeds configured size",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

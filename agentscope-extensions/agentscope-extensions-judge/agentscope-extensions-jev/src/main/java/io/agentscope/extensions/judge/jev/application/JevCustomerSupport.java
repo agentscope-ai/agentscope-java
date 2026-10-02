@@ -19,7 +19,8 @@ package io.agentscope.extensions.judge.jev.application;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.extensions.judge.jev.JevExecution;
 import io.agentscope.extensions.judge.jev.JevJudge;
-import io.agentscope.extensions.judge.jev.example.JevCustomerSupportExample;
+import io.agentscope.extensions.judge.jev.NoulQuestion;
+import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
 
@@ -34,6 +35,30 @@ public final class JevCustomerSupport {
     public JevCustomerSupport(JevCandidateSelector selector, JevJudge judge) {
         this.selector = java.util.Objects.requireNonNull(selector);
         this.judge = java.util.Objects.requireNonNull(judge);
+    }
+
+    public static JevJudge.Definition definition() {
+        return new JevJudge.Definition(
+                "support-draft-v1",
+                List.of(
+                        new JevJudge.Criterion(
+                                "covers_request",
+                                new NoulQuestion(
+                                        "Does the draft address the customer's request and its"
+                                                + " conditions?",
+                                        null),
+                                true,
+                                0.2,
+                                0.8),
+                        new JevJudge.Criterion(
+                                "unsupported_commitment",
+                                new NoulQuestion(
+                                        "Does the draft claim an action has completed without a"
+                                                + " successful business record?",
+                                        null),
+                                false,
+                                0.2,
+                                0.8)));
     }
 
     public Mono<Report> review(
@@ -51,6 +76,6 @@ public final class JevCustomerSupport {
                                 "Payments and conditional refund requests",
                                 "technical",
                                 "Technical failures"))
-                .zipWith(judge.judge(state, JevCustomerSupportExample.definition()), Report::new);
+                .zipWith(judge.judge(state, definition()), Report::new);
     }
 }

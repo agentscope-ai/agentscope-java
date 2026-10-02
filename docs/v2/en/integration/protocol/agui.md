@@ -344,12 +344,12 @@ The front end does not need to echo `metadata` in `resume[]`; it only sends `int
 
 ## Example Project
 
-See the complete example at [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui):
+See the complete example at [agentscope-examples/documentation](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/documentation):
 
 ```bash
 export DASHSCOPE_API_KEY=your-key
-cd agentscope-examples/agui
-mvn spring-boot:run
+cd agentscope-examples/documentation
+mvn spring-boot:run -Dspring-boot.run.mainClass=io.agentscope.examples.documentation2.agui.AguiExampleApplication
 ```
 
 Visit http://localhost:8080 after startup. The example demonstrates multi-agent routing, custom converters, custom enrichers, token usage, and HITL interrupts.

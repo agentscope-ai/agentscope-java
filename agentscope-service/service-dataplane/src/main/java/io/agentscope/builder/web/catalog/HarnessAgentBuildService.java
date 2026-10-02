@@ -91,7 +91,18 @@ public class HarnessAgentBuildService {
     /** Prefix for locally-built data-plane agent instance ids. */
     private static final String DP_AGENT_PREFIX = "dpa-";
 
+    public static String sessionLogAgentId(ManagedSessionDto session) {
+        return DP_AGENT_PREFIX + session.ownerId() + "-" + session.agentId() + "-" + session.id();
+    }
+
     private static final String COLLABORATION_MCP_NAME = "aistio-collaboration";
+
+    private io.agentscope.core.session.SessionLogStore sessionLogStore;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setSessionLogStore(io.agentscope.core.session.SessionLogStore store) {
+        this.sessionLogStore = store;
+    }
 
     private final Model model;
     private final ToolEventBus toolEventBus;
@@ -362,8 +373,7 @@ public class HarnessAgentBuildService {
         }
         sysPrompt = appendManagedExecutionPrompt(sysPrompt, resolved.executionContext());
 
-        String instanceId =
-                DP_AGENT_PREFIX + session.ownerId() + "-" + agentId + "-" + session.id();
+        String instanceId = sessionLogAgentId(session);
 
         HarnessAgent.Builder b = HarnessAgent.builder();
         b.contextPolicy(contextPolicy);
@@ -389,6 +399,7 @@ public class HarnessAgentBuildService {
         }
         b.workspace(workspace);
         b.stateStore(agentStateStore);
+        if (sessionLogStore != null) b.sessionLogStore(sessionLogStore);
 
         List<AgentToolset> tools = snapshot.tools();
         List<McpServerSpec> mcpServers = snapshot.mcpServers();
@@ -476,8 +487,18 @@ public class HarnessAgentBuildService {
 
         b.middleware(new ToolNotificationMiddleware(toolEventBus));
         b.middleware(toolConfirmationMiddleware);
-        if (jevServiceSupport != null)
+        if (jevServiceSupport != null) {
             jevServiceSupport.middlewares(spec.overridesJson()).forEach(b::middleware);
+            jevServiceSupport
+                    .compaction(
+                            spec.overridesJson(),
+                            new io.agentscope.extensions.judge.jev.context.FileJevContextArchive(
+                                    sharedWorkspacePaths
+                                            .resolveSessionDataPath(session.ownerId(), session.id())
+                                            .resolve("jev-context"),
+                                    20_000_000))
+                    .ifPresent(b::compaction);
+        }
 
         applyManagedSessionBuildOptions(
                 b,
@@ -669,11 +690,36 @@ public class HarnessAgentBuildService {
                                                 .map(mount -> (String) mount.get("storeId"))
                                                 .toList()));
         environmentSpecFactory.applyMemoryStoreRoutes(b, buildOwnerId, filesystems);
-        if (!filesystems.isEmpty()) {
-            var memoryToolkit = new io.agentscope.core.tool.Toolkit();
-            memoryToolkit.registerTool(
-                    new io.agentscope.builder.web.managed.ManagedMemoryTools(filesystems));
-            b.toolkit(memoryToolkit);
+        var reviewTool =
+                jevServiceSupport == null
+                        ? java.util.Optional
+                                .<io.agentscope.extensions.judge.jev.review.JevCodeReviewTool>
+                                        empty()
+                        : jevServiceSupport.reviewTool(spec.overridesJson());
+        var evidenceTool =
+                jevServiceSupport == null
+                        ? java.util.Optional
+                                .<io.agentscope.extensions.judge.jev.evidence.JevEvidenceTool>
+                                        empty()
+                        : jevServiceSupport.evidenceTool(spec.overridesJson());
+        var browserTool =
+                jevServiceSupport == null
+                        ? java.util.Optional
+                                .<io.agentscope.extensions.judge.jev.browser.JevBrowserReadTool>
+                                        empty()
+                        : jevServiceSupport.browserTool(spec.overridesJson());
+        if (!filesystems.isEmpty()
+                || reviewTool.isPresent()
+                || evidenceTool.isPresent()
+                || browserTool.isPresent()) {
+            var applicationToolkit = new io.agentscope.core.tool.Toolkit();
+            if (!filesystems.isEmpty())
+                applicationToolkit.registerTool(
+                        new io.agentscope.builder.web.managed.ManagedMemoryTools(filesystems));
+            reviewTool.ifPresent(applicationToolkit::registerTool);
+            evidenceTool.ifPresent(applicationToolkit::registerTool);
+            browserTool.ifPresent(applicationToolkit::registerTool);
+            b.toolkit(applicationToolkit);
         }
         var mounts =
                 filesystems.stream()

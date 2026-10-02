@@ -29,6 +29,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -188,18 +189,47 @@ public class SessionEventLog {
         }
         var existing = repository.findByEventId(eventId);
         if (existing.isEmpty()) {
-            return appendInternal(sessionId, type, payload, eventId, mirror);
+            try {
+                return appendInternal(sessionId, type, payload, eventId, mirror);
+            } catch (RuntimeException error) {
+                if (repository.findByEventId(eventId).isPresent())
+                    return appendIdempotent(sessionId, type, payload, eventId, mirror);
+                throw error;
+            }
         }
         if (!sessionId.equals(existing.get().getSessionId())
                 || !type.equals(existing.get().getEventType())) {
             throw new IllegalStateException(
                     "eventId already belongs to another session/event type: " + eventId);
         }
+        if (!java.util.Objects.equals(
+                jsonHelper.readMap(existing.get().getPayloadJson()),
+                jsonHelper.readMap(jsonHelper.writeJson(payload)))) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "eventId reused with different payload");
+        }
         SessionEventDto replay = toDto(existing.get());
         if (mirror) {
             mirrorBestEffort(replay);
         }
         return replay;
+    }
+
+    /** Command admission and its public fact commit together. Publish only after commit. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public SessionEventDto appendCommand(
+            String sessionId, String type, Map<String, Object> payload, String eventId) {
+        var event = appendOnce(sessionId, type, payload, eventId);
+        org.springframework.transaction.support.TransactionSynchronizationManager
+                .registerSynchronization(
+                        new org.springframework.transaction.support.TransactionSynchronization() {
+                            @Override
+                            public void afterCommit() {
+                                notifier.publish(sessionId);
+                                mirrorBestEffort(event);
+                            }
+                        });
+        return event;
     }
 
     private void mirrorBestEffort(SessionEventDto event) {
@@ -304,6 +334,18 @@ public class SessionEventLog {
                 .toList();
     }
 
+    /** Bounded database read over a fixed committed prefix. */
+    @Transactional(readOnly = true)
+    public List<SessionEventDto> page(String sessionId, long after, long through, int limit) {
+        if (limit < 1 || limit > 1000) throw new IllegalArgumentException("limit must be 1..1000");
+        return repository
+                .findBySessionIdAndSeqGreaterThanAndSeqLessThanEqualOrderBySeqAsc(
+                        sessionId, after, through, PageRequest.of(0, limit))
+                .stream()
+                .map(this::toDto)
+                .toList();
+    }
+
     /** Looks up a single event by its public identifier. */
     @Transactional(readOnly = true)
     public SessionEventDto getByEventId(String eventId) {
@@ -314,6 +356,11 @@ public class SessionEventLog {
                         () ->
                                 new ResponseStatusException(
                                         HttpStatus.NOT_FOUND, "Event not found: " + eventId));
+    }
+
+    @Transactional(readOnly = true)
+    public long highWatermark(String sessionId) {
+        return repository.maxSeq(sessionId);
     }
 
     /** Returns a live flux of events for SSE streaming, starting after sequence 0. */
@@ -337,22 +384,41 @@ public class SessionEventLog {
                 Flux.merge(Flux.just(0L), recovery, notifier.wakeups(sessionId).map(ignored -> 0L))
                         .onBackpressureLatest();
         return wakeups.concatMap(
-                        ignored ->
+                ignored ->
+                        Mono.fromCallable(
+                                        () ->
+                                                transactionTemplate.execute(
+                                                        status -> repository.maxSeq(sessionId)))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .flatMapMany(
+                                        through ->
+                                                readCommittedPrefix(sessionId, cursor, through)));
+    }
+
+    private Flux<SessionEventDto> readCommittedPrefix(
+            String sessionId, AtomicLong cursor, long through) {
+        return Flux.defer(
+                        () ->
                                 Mono.fromCallable(
                                                 () ->
                                                         transactionTemplate.execute(
                                                                 status ->
-                                                                        listAfterUnchecked(
+                                                                        page(
                                                                                 sessionId,
-                                                                                cursor.get())))
-                                        .subscribeOn(Schedulers.boundedElastic()))
-                .concatMapIterable(
-                        list -> {
-                            if (list != null && !list.isEmpty()) {
-                                cursor.set(list.get(list.size() - 1).seq());
-                            }
-                            return list != null ? list : List.of();
-                        });
+                                                                                cursor.get(),
+                                                                                through,
+                                                                                256)))
+                                        .subscribeOn(Schedulers.boundedElastic())
+                                        .flatMapMany(
+                                                batch -> {
+                                                    if (batch == null || batch.isEmpty()) {
+                                                        cursor.set(through);
+                                                        return Flux.empty();
+                                                    }
+                                                    cursor.set(batch.get(batch.size() - 1).seq());
+                                                    return Flux.fromIterable(batch);
+                                                }))
+                .repeat(() -> cursor.get() < through);
     }
 
     /** Repository read used by transactional entry points and resumable subscriptions. */

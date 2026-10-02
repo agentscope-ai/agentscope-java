@@ -43,6 +43,12 @@ The recommended path is: create Agent → create Environment → create Session 
 
 Runtime design is closely aligned with Claude Managed Agents. Harness infrastructure and runtime are fully hosted (backed by AgentScope Harness Runtime). The Brain/Hands split gives users more control over where tools actually run. Deployment separates into a Control Plane and a managed Dataplane — see the production deployment section below.
 
+### Agent API: hosted inference for applications
+
+Create persistent sessions, submit background tasks and render messages, tools and pending actions through snapshot + SSE. Refresh restores existing content. Confirmation, steering, cancellation and resume act on the same session/turn. Files, artifacts, child Agents, checkpoint forks, usage budgets and webhook notifications are also available.
+
+Start with the [resumable chat example](../docs/v2/en/service/agent-api-chat.md), choose operations in the [API guide](../docs/v2/en/service/session-event-log.md), and implement rendering with the [SSE event catalog](../docs/v2/en/service/sse-events.md). Use [Endpoints](../docs/v2/en/service/endpoints.md) for API keys, schemas, releases or Team/Workflow services; their authentication and event contracts are separate.
+
 ### Agent Teams
 
 Every agent registered with the AgentScope Service Control Plane — whether self-deployed and registered through a framework (LangChain, AgentScope, ADK, Claude SDK, and so on), or created as a Managed Agent through the low-code path — can be orchestrated into Agent Teams to collaborate on complex work.
@@ -226,5 +232,12 @@ Near-term focus includes:
 For enterprise cloud offerings, also see Alibaba Cloud [Agent Teams](https://help.aliyun.com/zh/agentteams/magic-console-product-overview) and [Agent Loop](https://help.aliyun.com/zh/document_detail/3033860.html).
 
 ## Documentation
+
+- [Resumable chat integration example](../docs/v2/en/service/agent-api-chat.md) · [中文](../docs/v2/zh/service/agent-api-chat.md)
+- [API reference](../docs/v2/en/service/api-reference.md)
+
+- [Managed Agent API: durable turns, session logs and SSE](../docs/v2/en/service/session-event-log.md) · [中文](../docs/v2/zh/service/session-event-log.md)
+- [HarnessAgent session logs, storage and recovery](../docs/v2/en/docs/harness/session-log.md) · [中文](../docs/v2/zh/docs/harness/session-log.md)
+- [SSE contracts for Agent API and existing Endpoints](../docs/v2/en/service/sse-events.md)
 
 For a deeper walkthrough of AgentScope Service, see the blog post [AgentScope Service — Enterprise Agent Control and Governance Center](https://java.agentscope.io/v2/en/blogs/agentscope-service-release.html).

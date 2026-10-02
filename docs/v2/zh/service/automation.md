@@ -49,6 +49,8 @@ Automation 把“何时触发”和“执行什么工作”保存为一条可复
 
 ## 使用 Webhook
 
+这里的 Webhook 是**外部系统调用 Service 来触发工作**。如果需要 **Service 在会话完成或等待确认时通知业务后端**，使用 [Agent API 的 session Webhook](/v2/zh/service/session-event-log#页面离线时通过-webhook-获取通知)；两者的 URL、认证和签名协议不同。
+
 添加 Webhook trigger，从详情复制对应 URL，保存创建或轮换时显示的 secret。发送 JSON 对象或数组，同时携带 `X-Automation-Secret` 和稳定的 `Idempotency-Key`：
 
 ```bash

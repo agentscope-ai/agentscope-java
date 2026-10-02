@@ -104,7 +104,6 @@ class HarnessContextBuilderTest {
                         .keepMessages(1)
                         .keepTokens(0)
                         .flushBeforeCompact(false)
-                        .offloadBeforeCompact(false)
                         .build();
         var compaction = new CompactionMiddleware(null, summary, config);
         var request = new ModelCallInput(history, List.of(), null, model(100));

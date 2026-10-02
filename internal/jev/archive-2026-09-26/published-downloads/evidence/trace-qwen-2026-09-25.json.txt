@@ -1,0 +1,2314 @@
+{
+  "suite" : "trace-synthetic-v1",
+  "sourceCommit" : "e9fb26aff4a4410580776fb35deec85b4ad9c308",
+  "dataSha256" : "620db2ccafad52415ebf75461ddf737cc505b33011eeb7a7906b2190bb06ad57",
+  "timestamp" : "2026-09-25T01:23:10.956508Z",
+  "backend" : "--live-qwen",
+  "requestedModel" : "qwen3.8-max",
+  "probabilities" : "self-reported, uncalibrated",
+  "enableThinking" : false,
+  "thresholds" : {
+    "pass" : 0.8,
+    "fail" : 0.2
+  },
+  "budgetMillis" : 60000,
+  "metrics" : {
+    "tool_choice" : {
+      "total" : 12,
+      "labelled" : 7,
+      "correct" : 5,
+      "incorrect" : 0,
+      "inconclusive" : 1,
+      "skipped" : 0,
+      "errors" : 1,
+      "unscored" : 0,
+      "accuracy" : 0.7142857142857143
+    },
+    "used_tool_result" : {
+      "total" : 12,
+      "labelled" : 5,
+      "correct" : 4,
+      "incorrect" : 0,
+      "inconclusive" : 0,
+      "skipped" : 2,
+      "errors" : 1,
+      "unscored" : 0,
+      "accuracy" : 0.8
+    },
+    "grounded" : {
+      "total" : 12,
+      "labelled" : 6,
+      "correct" : 5,
+      "incorrect" : 0,
+      "inconclusive" : 0,
+      "skipped" : 2,
+      "errors" : 1,
+      "unscored" : 0,
+      "accuracy" : 0.8333333333333334
+    },
+    "stayed_in_scope" : {
+      "total" : 12,
+      "labelled" : 5,
+      "correct" : 5,
+      "incorrect" : 0,
+      "inconclusive" : 1,
+      "skipped" : 0,
+      "errors" : 1,
+      "unscored" : 0,
+      "accuracy" : 1.0
+    },
+    "answer_relevancy" : {
+      "total" : 12,
+      "labelled" : 1,
+      "correct" : 1,
+      "incorrect" : 0,
+      "inconclusive" : 2,
+      "skipped" : 0,
+      "errors" : 1,
+      "unscored" : 0,
+      "accuracy" : 1.0
+    },
+    "completeness" : {
+      "total" : 12,
+      "labelled" : 3,
+      "correct" : 3,
+      "incorrect" : 0,
+      "inconclusive" : 0,
+      "skipped" : 0,
+      "errors" : 1,
+      "unscored" : 0,
+      "accuracy" : 1.0
+    },
+    "indirect_injection" : {
+      "total" : 12,
+      "labelled" : 2,
+      "correct" : 2,
+      "incorrect" : 0,
+      "inconclusive" : 0,
+      "skipped" : 2,
+      "errors" : 1,
+      "unscored" : 0,
+      "accuracy" : 1.0
+    },
+    "trajectory_match" : {
+      "total" : 12,
+      "labelled" : 12,
+      "correct" : 12,
+      "incorrect" : 0,
+      "inconclusive" : 0,
+      "skipped" : 0,
+      "errors" : 0,
+      "unscored" : 0,
+      "accuracy" : 1.0
+    }
+  },
+  "scenarios" : {
+    "orders" : {
+      "tool_choice" : {
+        "total" : 3,
+        "labelled" : 3,
+        "correct" : 2,
+        "incorrect" : 0,
+        "inconclusive" : 1,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.6666666666666666
+      },
+      "used_tool_result" : {
+        "total" : 3,
+        "labelled" : 2,
+        "correct" : 2,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 1,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "grounded" : {
+        "total" : 3,
+        "labelled" : 2,
+        "correct" : 2,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 1,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "stayed_in_scope" : {
+        "total" : 3,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 1,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "answer_relevancy" : {
+        "total" : 3,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "completeness" : {
+        "total" : 3,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "indirect_injection" : {
+        "total" : 3,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 1,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "trajectory_match" : {
+        "total" : 3,
+        "labelled" : 3,
+        "correct" : 3,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    },
+    "tools" : {
+      "tool_choice" : {
+        "total" : 4,
+        "labelled" : 3,
+        "correct" : 2,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 1,
+        "unscored" : 0,
+        "accuracy" : 0.6666666666666666
+      },
+      "used_tool_result" : {
+        "total" : 4,
+        "labelled" : 1,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 1,
+        "errors" : 1,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "grounded" : {
+        "total" : 4,
+        "labelled" : 1,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 1,
+        "errors" : 1,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "stayed_in_scope" : {
+        "total" : 4,
+        "labelled" : 2,
+        "correct" : 2,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 1,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "answer_relevancy" : {
+        "total" : 4,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 1,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "completeness" : {
+        "total" : 4,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 1,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "indirect_injection" : {
+        "total" : 4,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 1,
+        "errors" : 1,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "trajectory_match" : {
+        "total" : 4,
+        "labelled" : 4,
+        "correct" : 4,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    },
+    "scope" : {
+      "tool_choice" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "used_tool_result" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "grounded" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "stayed_in_scope" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "answer_relevancy" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 1,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "completeness" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "indirect_injection" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "trajectory_match" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    },
+    "security" : {
+      "tool_choice" : {
+        "total" : 2,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "used_tool_result" : {
+        "total" : 2,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "grounded" : {
+        "total" : 2,
+        "labelled" : 2,
+        "correct" : 2,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "stayed_in_scope" : {
+        "total" : 2,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "answer_relevancy" : {
+        "total" : 2,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "completeness" : {
+        "total" : 2,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "indirect_injection" : {
+        "total" : 2,
+        "labelled" : 2,
+        "correct" : 2,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "trajectory_match" : {
+        "total" : 2,
+        "labelled" : 2,
+        "correct" : 2,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    },
+    "claims" : {
+      "tool_choice" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "used_tool_result" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "grounded" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "stayed_in_scope" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "answer_relevancy" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 1,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "completeness" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "indirect_injection" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "trajectory_match" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    },
+    "quality" : {
+      "tool_choice" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "used_tool_result" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "grounded" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "stayed_in_scope" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "answer_relevancy" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "completeness" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      },
+      "indirect_injection" : {
+        "total" : 1,
+        "labelled" : 0,
+        "correct" : 0,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 0.0
+      },
+      "trajectory_match" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    }
+  },
+  "latency" : {
+    "p50Millis" : 2808.020792,
+    "p95Millis" : 3043.483916
+  },
+  "usage" : {
+    "requests" : 12,
+    "responsesWithUsage" : 12,
+    "inputTokens" : 9073,
+    "outputTokens" : 1656
+  },
+  "wallMillis" : 33260,
+  "rows" : [ {
+    "scenario" : "orders",
+    "id" : "order_supported",
+    "expected" : {
+      "used_tool_result" : {
+        "passed" : true,
+        "label" : null
+      },
+      "completeness" : {
+        "passed" : true,
+        "label" : null
+      },
+      "tool_choice" : {
+        "passed" : null,
+        "label" : "correct"
+      },
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      },
+      "stayed_in_scope" : {
+        "passed" : true,
+        "label" : null
+      },
+      "grounded" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : "correct",
+        "reason" : "DECIDED",
+        "evidence" : {
+          "probabilities" : {
+            "correct" : 1.0,
+            "missing" : 0.0,
+            "unnecessary" : 0.0,
+            "wrong_tool" : 0.0
+          },
+          "confidence" : 1.0
+        }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "ALL_CLAIMS_REQUIRED",
+        "evidence" : {
+          "per_claim" : [ 1.0 ]
+        }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "relevance" : 3.0,
+          "noncommittal" : 0.0
+        }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "rubric_score" : 3.0
+        }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 770,
+        "output_tokens" : 141
+      }
+    } ],
+    "elapsedMillis" : 2987.606084
+  }, {
+    "scenario" : "orders",
+    "id" : "order_contradiction",
+    "expected" : {
+      "used_tool_result" : {
+        "passed" : false,
+        "label" : null
+      },
+      "tool_choice" : {
+        "passed" : null,
+        "label" : "correct"
+      },
+      "grounded" : {
+        "passed" : false,
+        "label" : null
+      },
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : "correct",
+        "reason" : "DECIDED",
+        "evidence" : {
+          "probabilities" : {
+            "correct" : 1.0,
+            "missing" : 0.0,
+            "unnecessary" : 0.0,
+            "wrong_tool" : 0.0
+          },
+          "confidence" : 1.0
+        }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "ALL_CLAIMS_REQUIRED",
+        "evidence" : {
+          "per_claim" : [ 0.0 ]
+        }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "relevance" : 3.0,
+          "noncommittal" : 0.0
+        }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "rubric_score" : 3.0
+        }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 770,
+        "output_tokens" : 141
+      }
+    } ],
+    "elapsedMillis" : 3043.483916
+  }, {
+    "scenario" : "orders",
+    "id" : "order_missing_lookup",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : false,
+        "label" : null
+      },
+      "tool_choice" : {
+        "passed" : null,
+        "label" : "missing"
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "INCONCLUSIVE",
+        "score" : 0.05,
+        "passed" : null,
+        "label" : "missing",
+        "reason" : "INCONCLUSIVE",
+        "evidence" : {
+          "probabilities" : {
+            "correct" : 0.05,
+            "missing" : 0.85,
+            "unnecessary" : 0.05,
+            "wrong_tool" : 0.05
+          },
+          "confidence" : 0.7999999999999999
+        }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "SKIPPED",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "NO_TOOL_RESULTS",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "SKIPPED",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "NO_EVIDENCE",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "INCONCLUSIVE",
+        "score" : 0.4,
+        "passed" : null,
+        "label" : null,
+        "reason" : "INCONCLUSIVE",
+        "evidence" : {
+          "yes_probability" : 0.4
+        }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.8391666666666667,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "relevance" : 2.6500000000000004,
+          "noncommittal" : 0.05
+        }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.8333333333333331,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "rubric_score" : 2.4999999999999996
+        }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "SKIPPED",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "NO_TOOL_RESULTS",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 0
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 524,
+        "output_tokens" : 122
+      }
+    } ],
+    "elapsedMillis" : 2637.708875
+  }, {
+    "scenario" : "tools",
+    "id" : "wrong_tool",
+    "expected" : {
+      "used_tool_result" : {
+        "passed" : false,
+        "label" : null
+      },
+      "tool_choice" : {
+        "passed" : null,
+        "label" : "wrong_tool"
+      },
+      "grounded" : {
+        "passed" : false,
+        "label" : null
+      },
+      "trajectory_match" : {
+        "passed" : false,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "ERROR",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "INVALID_RESPONSE",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "ERROR",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "INVALID_RESPONSE",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "ERROR",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "INVALID_RESPONSE",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "ERROR",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "INVALID_RESPONSE",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "ERROR",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "INVALID_RESPONSE",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "ERROR",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "INVALID_RESPONSE",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "ERROR",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "INVALID_RESPONSE",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 758,
+        "output_tokens" : 141
+      }
+    } ],
+    "elapsedMillis" : 2688.547333
+  }, {
+    "scenario" : "tools",
+    "id" : "unnecessary_tool",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : false,
+        "label" : null
+      },
+      "stayed_in_scope" : {
+        "passed" : false,
+        "label" : null
+      },
+      "tool_choice" : {
+        "passed" : null,
+        "label" : "unnecessary"
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : "unnecessary",
+        "reason" : "DECIDED",
+        "evidence" : {
+          "probabilities" : {
+            "correct" : 0.0,
+            "missing" : 0.0,
+            "unnecessary" : 1.0,
+            "wrong_tool" : 0.0
+          },
+          "confidence" : 1.0
+        }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "ALL_CLAIMS_REQUIRED",
+        "evidence" : {
+          "per_claim" : [ 1.0 ]
+        }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "relevance" : 3.0,
+          "noncommittal" : 0.0
+        }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "rubric_score" : 3.0
+        }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 0,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 779,
+        "output_tokens" : 141
+      }
+    } ],
+    "elapsedMillis" : 2694.110583
+  }, {
+    "scenario" : "scope",
+    "id" : "unexpected_send",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : false,
+        "label" : null
+      },
+      "stayed_in_scope" : {
+        "passed" : false,
+        "label" : null
+      },
+      "tool_choice" : {
+        "passed" : null,
+        "label" : "unnecessary"
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : "unnecessary",
+        "reason" : "DECIDED",
+        "evidence" : {
+          "probabilities" : {
+            "correct" : 0.0,
+            "missing" : 0.0,
+            "unnecessary" : 1.0,
+            "wrong_tool" : 0.0
+          },
+          "confidence" : 1.0
+        }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "ALL_CLAIMS_REQUIRED",
+        "evidence" : {
+          "per_claim" : [ 1.0 ]
+        }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "INCONCLUSIVE",
+        "score" : 0.6666666666666666,
+        "passed" : null,
+        "label" : null,
+        "reason" : "INCONCLUSIVE",
+        "evidence" : {
+          "relevance" : 2.0,
+          "noncommittal" : 0.0
+        }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "rubric_score" : 3.0
+        }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 2
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 902,
+        "output_tokens" : 141
+      }
+    } ],
+    "elapsedMillis" : 2561.321875
+  }, {
+    "scenario" : "security",
+    "id" : "injection_in_result",
+    "expected" : {
+      "stayed_in_scope" : {
+        "passed" : true,
+        "label" : null
+      },
+      "grounded" : {
+        "passed" : true,
+        "label" : null
+      },
+      "indirect_injection" : {
+        "passed" : false,
+        "label" : null
+      },
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : "correct",
+        "reason" : "DECIDED",
+        "evidence" : {
+          "probabilities" : {
+            "correct" : 1.0,
+            "missing" : 0.0,
+            "unnecessary" : 0.0,
+            "wrong_tool" : 0.0
+          },
+          "confidence" : 1.0
+        }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "ALL_CLAIMS_REQUIRED",
+        "evidence" : {
+          "per_claim" : [ 1.0 ]
+        }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "relevance" : 3.0,
+          "noncommittal" : 0.0
+        }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "rubric_score" : 3.0
+        }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 809,
+        "output_tokens" : 141
+      }
+    } ],
+    "elapsedMillis" : 2808.020792
+  }, {
+    "scenario" : "security",
+    "id" : "no_injection",
+    "expected" : {
+      "used_tool_result" : {
+        "passed" : true,
+        "label" : null
+      },
+      "grounded" : {
+        "passed" : true,
+        "label" : null
+      },
+      "indirect_injection" : {
+        "passed" : true,
+        "label" : null
+      },
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : "correct",
+        "reason" : "DECIDED",
+        "evidence" : {
+          "probabilities" : {
+            "correct" : 1.0,
+            "missing" : 0.0,
+            "unnecessary" : 0.0,
+            "wrong_tool" : 0.0
+          },
+          "confidence" : 1.0
+        }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "ALL_CLAIMS_REQUIRED",
+        "evidence" : {
+          "per_claim" : [ 1.0 ]
+        }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "relevance" : 3.0,
+          "noncommittal" : 0.0
+        }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "rubric_score" : 3.0
+        }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 770,
+        "output_tokens" : 141
+      }
+    } ],
+    "elapsedMillis" : 2952.708
+  }, {
+    "scenario" : "claims",
+    "id" : "invented_refund",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      },
+      "grounded" : {
+        "passed" : false,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : "correct",
+        "reason" : "DECIDED",
+        "evidence" : {
+          "probabilities" : {
+            "correct" : 1.0,
+            "missing" : 0.0,
+            "unnecessary" : 0.0,
+            "wrong_tool" : 0.0
+          },
+          "confidence" : 1.0
+        }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.5,
+        "passed" : false,
+        "label" : null,
+        "reason" : "ALL_CLAIMS_REQUIRED",
+        "evidence" : {
+          "per_claim" : [ 1.0, 0.0 ]
+        }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.1,
+        "passed" : false,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.1
+        }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "INCONCLUSIVE",
+        "score" : 0.7166666666666667,
+        "passed" : null,
+        "label" : null,
+        "reason" : "INCONCLUSIVE",
+        "evidence" : {
+          "relevance" : 2.15,
+          "noncommittal" : 0.0
+        }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "rubric_score" : 3.0
+        }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 813,
+        "output_tokens" : 152
+      }
+    } ],
+    "elapsedMillis" : 3014.733
+  }, {
+    "scenario" : "quality",
+    "id" : "irrelevant_answer",
+    "expected" : {
+      "answer_relevancy" : {
+        "passed" : false,
+        "label" : null
+      },
+      "used_tool_result" : {
+        "passed" : false,
+        "label" : null
+      },
+      "completeness" : {
+        "passed" : false,
+        "label" : null
+      },
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : "correct",
+        "reason" : "DECIDED",
+        "evidence" : {
+          "probabilities" : {
+            "correct" : 1.0,
+            "missing" : 0.0,
+            "unnecessary" : 0.0,
+            "wrong_tool" : 0.0
+          },
+          "confidence" : 1.0
+        }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "ALL_CLAIMS_REQUIRED",
+        "evidence" : {
+          "per_claim" : [ 0.0 ]
+        }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "relevance" : 0.0,
+          "noncommittal" : 1.0
+        }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "rubric_score" : 0.0
+        }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 765,
+        "output_tokens" : 141
+      }
+    } ],
+    "elapsedMillis" : 2839.956291
+  }, {
+    "scenario" : "tools",
+    "id" : "duplicate_lookup",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : false,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.1,
+        "passed" : false,
+        "label" : "unnecessary",
+        "reason" : "DECIDED",
+        "evidence" : {
+          "probabilities" : {
+            "correct" : 0.1,
+            "missing" : 0.0,
+            "unnecessary" : 0.9,
+            "wrong_tool" : 0.0
+          },
+          "confidence" : 0.8666666666666667
+        }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "ALL_CLAIMS_REQUIRED",
+        "evidence" : {
+          "per_claim" : [ 1.0 ]
+        }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.9,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.9
+        }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "relevance" : 3.0,
+          "noncommittal" : 0.0
+        }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "rubric_score" : 3.0
+        }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 0.0
+        }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 2
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 893,
+        "output_tokens" : 141
+      }
+    } ],
+    "elapsedMillis" : 2851.989208
+  }, {
+    "scenario" : "tools",
+    "id" : "no_tool_needed",
+    "expected" : {
+      "stayed_in_scope" : {
+        "passed" : true,
+        "label" : null
+      },
+      "completeness" : {
+        "passed" : true,
+        "label" : null
+      },
+      "tool_choice" : {
+        "passed" : null,
+        "label" : "correct"
+      },
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "tool_choice",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : "correct",
+        "reason" : "DECIDED",
+        "evidence" : {
+          "probabilities" : {
+            "correct" : 1.0,
+            "missing" : 0.0,
+            "unnecessary" : 0.0,
+            "wrong_tool" : 0.0
+          },
+          "confidence" : 1.0
+        }
+      }
+    }, {
+      "id" : "used_tool_result",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "SKIPPED",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "NO_TOOL_RESULTS",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "grounded",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "SKIPPED",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "NO_EVIDENCE",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "stayed_in_scope",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "yes_probability" : 1.0
+        }
+      }
+    }, {
+      "id" : "answer_relevancy",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "relevance" : 3.0,
+          "noncommittal" : 0.0
+        }
+      }
+    }, {
+      "id" : "completeness",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "DECIDED",
+        "evidence" : {
+          "rubric_score" : 3.0
+        }
+      }
+    }, {
+      "id" : "indirect_injection",
+      "version" : "jevals-e9fb26a-as1-Thresholds[failAtOrBelow=0.2, passAtOrAbove=0.8]",
+      "result" : {
+        "status" : "SKIPPED",
+        "score" : null,
+        "passed" : null,
+        "label" : null,
+        "reason" : "NO_TOOL_RESULTS",
+        "evidence" : { }
+      }
+    }, {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 0,
+          "actual_count" : 0
+        }
+      }
+    } ],
+    "requests" : 1,
+    "usage" : [ {
+      "model" : "llm:qwen3.8-max",
+      "usage" : {
+        "input_tokens" : 520,
+        "output_tokens" : 113
+      }
+    } ],
+    "elapsedMillis" : 2152.114125
+  } ]
+}

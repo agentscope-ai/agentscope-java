@@ -41,7 +41,7 @@
                 ]
               },
               {
-                "tab": "SDK",
+                "tab": "Harness",
                 "groups": [
                   {
                     "group": "Quick Start",
@@ -69,6 +69,9 @@
                       "v2/en/docs/harness/context",
                       "v2/en/docs/harness/compaction",
                       "v2/en/docs/harness/workspace",
+                      "v2/en/docs/harness/session-log",
+                      "v2/en/docs/harness/session-log-reference",
+                      "v2/en/docs/harness/session-chat",
                       "v2/en/docs/harness/memory",
                       "v2/en/docs/harness/filesystem",
                       "v2/en/docs/harness/sandbox",
@@ -121,6 +124,8 @@
                       {
                         "group": "Assign tasks to Agents",
                         "pages": [
+                          "v2/en/service/session-event-log",
+                          "v2/en/service/agent-api-chat",
                           "v2/en/service/endpoints",
                           "v2/en/service/issues"
                         ]
@@ -240,6 +245,17 @@
                 ]
               },
               {
+                "tab": "JEV",
+                "groups": [
+                  {
+                    "group": "JEV",
+                    "pages": [
+                      "v2/en/jev/index"
+                    ]
+                  }
+                ]
+              },
+              {
                 "tab": "Integration",
                 "groups": [
                   {
@@ -249,17 +265,17 @@
                       {
                         "group": "Model Providers",
                         "pages": [
-                         "v2/en/integration/model/index",
-                         "v2/en/integration/model/openai",
-                         "v2/en/integration/model/openai-official",
-                         "v2/en/integration/model/deepseek",
-                         "v2/en/integration/model/glm",
-                         "v2/en/integration/model/kimi",
-                         "v2/en/integration/model/minimax",
-                         "v2/en/integration/model/dashscope",
-                         "v2/en/integration/model/gemini",
-                         "v2/en/integration/model/anthropic",
-                         "v2/en/integration/model/ollama"
+                          "v2/en/integration/model/index",
+                          "v2/en/integration/model/openai",
+                          "v2/en/integration/model/openai-official",
+                          "v2/en/integration/model/deepseek",
+                          "v2/en/integration/model/glm",
+                          "v2/en/integration/model/kimi",
+                          "v2/en/integration/model/minimax",
+                          "v2/en/integration/model/dashscope",
+                          "v2/en/integration/model/gemini",
+                          "v2/en/integration/model/anthropic",
+                          "v2/en/integration/model/ollama"
                         ]
                       },
                       {
@@ -329,8 +345,8 @@
                         "pages": [
                           "v2/en/integration/ecosystem/index",
                           "v2/en/integration/ecosystem/overview",
-                         "v2/en/integration/ecosystem/chat-completions-web",
-                         "v2/en/integration/ecosystem/studio",
+                          "v2/en/integration/ecosystem/chat-completions-web",
+                          "v2/en/integration/ecosystem/studio",
                           "v2/en/integration/ecosystem/training"
                         ]
                       }
@@ -392,32 +408,21 @@
                   }
                 ]
               },
-             {
-               "tab": "Community",
-               "groups": [
-                 {
-                   "group": "Community",
-                   "pages": [
-                     "v2/en/community/contributors"
-                   ]
-                 }
-               ]
-             },
-             {
-               "tab": "JEV",
-               "groups": [
-                 {
-                   "group": "JEV",
-                   "pages": [
-                     "v2/en/jev/index"
-                   ]
-                 }
-               ]
-             }
-           ]
-         },
-         {
-           "version": "v1",
+              {
+                "tab": "Community",
+                "groups": [
+                  {
+                    "group": "Community",
+                    "pages": [
+                      "v2/en/community/contributors"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "version": "v1",
             "tabs": [
               {
                 "tab": "Home",
@@ -426,7 +431,7 @@
                 ]
               },
               {
-                "tab": "SDK",
+                "tab": "Harness",
                 "groups": [
                   {
                     "group": "Quick Start",
@@ -549,7 +554,7 @@
                 ]
               },
               {
-                "tab": "SDK",
+                "tab": "Harness",
                 "groups": [
                   {
                     "group": "快速开始",
@@ -577,6 +582,9 @@
                       "v2/zh/docs/harness/context",
                       "v2/zh/docs/harness/compaction",
                       "v2/zh/docs/harness/workspace",
+                      "v2/zh/docs/harness/session-log",
+                      "v2/zh/docs/harness/session-log-reference",
+                      "v2/zh/docs/harness/session-chat",
                       "v2/zh/docs/harness/memory",
                       "v2/zh/docs/harness/filesystem",
                       "v2/zh/docs/harness/sandbox",
@@ -629,6 +637,8 @@
                       {
                         "group": "给 Agent 分派任务",
                         "pages": [
+                          "v2/zh/service/session-event-log",
+                          "v2/zh/service/agent-api-chat",
                           "v2/zh/service/endpoints",
                           "v2/zh/service/issues"
                         ]
@@ -748,6 +758,107 @@
                 ]
               },
               {
+                "tab": "JEV",
+                "groups": [
+                  {
+                    "group": "入门与能力概览",
+                    "pages": [
+                      "v2/zh/jev/index",
+                      "v2/zh/jev/concepts",
+                      "v2/zh/jev/guides/client",
+                      "v2/zh/jev/guides/agent-integration-example",
+                      "v2/zh/jev/sdk-reference"
+                    ]
+                  },
+                  {
+                    "group": "Agent 轨迹评估与定义复用",
+                    "pages": [
+                      "v2/zh/jev/guides/judge-api",
+                      "v2/zh/jev/guides/metric-definitions",
+                      "v2/zh/jev/guides/trace-evaluation-api",
+                      "v2/zh/jev/guides/evaluator-api",
+                      "v2/zh/jev/evaluation"
+                    ]
+                  },
+                  {
+                    "group": "上下文治理与恢复",
+                    "pages": [
+                      "v2/zh/jev/guides/context-compaction-api",
+                      "v2/zh/jev/guides/context-archive",
+                      "v2/zh/jev/guides/context-planner-api",
+                      "v2/zh/jev/guides/memory-api"
+                    ]
+                  },
+                  {
+                    "group": "长任务进展与交付监督",
+                    "pages": [
+                      "v2/zh/jev/guides/supervision-api",
+                      "v2/zh/jev/guides/supervision-evidence",
+                      "v2/zh/jev/guides/task-review"
+                    ]
+                  },
+                  {
+                    "group": "工具选择与执行防护",
+                    "pages": [
+                      "v2/zh/jev/guides/tool-selection-api",
+                      "v2/zh/jev/guides/tool-guard-api"
+                    ]
+                  },
+                  {
+                    "group": "模型、阶段与团队路由",
+                    "pages": [
+                      "v2/zh/jev/guides/model-routing-api",
+                      "v2/zh/jev/guides/phase-routing-api",
+                      "v2/zh/jev/guides/team-routing"
+                    ]
+                  },
+                  {
+                    "group": "检索证据与知识问答",
+                    "pages": [
+                      "v2/zh/jev/guides/evidence-pipeline-api",
+                      "v2/zh/jev/guides/rag-api",
+                      "v2/zh/jev/guides/knowledge-adapter-api"
+                    ]
+                  },
+                  {
+                    "group": "内容审核与回答修订",
+                    "pages": [
+                      "v2/zh/jev/guides/content-guardrail-api",
+                      "v2/zh/jev/guides/answer-refinement-api",
+                      "v2/zh/jev/guides/draft-pipeline-api"
+                    ]
+                  },
+                  {
+                    "group": "代码评审与证据定位",
+                    "pages": [
+                      "v2/zh/jev/guides/code-review-api"
+                    ]
+                  },
+                  {
+                    "group": "浏览器只读导航与验证",
+                    "pages": [
+                      "v2/zh/jev/guides/browser-execution-api",
+                      "v2/zh/jev/guides/browser-proposals"
+                    ]
+                  },
+                  {
+                    "group": "业务分类与客服评审",
+                    "pages": [
+                      "v2/zh/jev/guides/application-api",
+                      "v2/zh/jev/guides/support-api"
+                    ]
+                  },
+                  {
+                    "group": "Service 接入与运行观测",
+                    "pages": [
+                      "v2/zh/jev/guides/service-api",
+                      "v2/zh/jev/guides/harness-runtime",
+                      "v2/zh/jev/operations"
+                    ]
+                  }
+                ]
+              },
+              {
                 "tab": "集成",
                 "groups": [
                   {
@@ -757,17 +868,17 @@
                       {
                         "group": "模型提供商",
                         "pages": [
-                         "v2/zh/integration/model/index",
-                         "v2/zh/integration/model/openai",
-                         "v2/zh/integration/model/openai-official",
-                         "v2/zh/integration/model/deepseek",
-                         "v2/zh/integration/model/glm",
-                         "v2/zh/integration/model/kimi",
-                         "v2/zh/integration/model/minimax",
-                         "v2/zh/integration/model/dashscope",
-                         "v2/zh/integration/model/gemini",
-                         "v2/zh/integration/model/anthropic",
-                         "v2/zh/integration/model/ollama"
+                          "v2/zh/integration/model/index",
+                          "v2/zh/integration/model/openai",
+                          "v2/zh/integration/model/openai-official",
+                          "v2/zh/integration/model/deepseek",
+                          "v2/zh/integration/model/glm",
+                          "v2/zh/integration/model/kimi",
+                          "v2/zh/integration/model/minimax",
+                          "v2/zh/integration/model/dashscope",
+                          "v2/zh/integration/model/gemini",
+                          "v2/zh/integration/model/anthropic",
+                          "v2/zh/integration/model/ollama"
                         ]
                       },
                       {
@@ -835,12 +946,12 @@
                       {
                         "group": "生态扩展",
                         "pages": [
-                         "v2/zh/integration/ecosystem/index",
-                         "v2/zh/integration/ecosystem/overview",
-                         "v2/zh/integration/ecosystem/chat-completions-web",
-                         "v2/zh/integration/ecosystem/studio",
-                         "v2/zh/integration/ecosystem/training"
-                       ]
+                          "v2/zh/integration/ecosystem/index",
+                          "v2/zh/integration/ecosystem/overview",
+                          "v2/zh/integration/ecosystem/chat-completions-web",
+                          "v2/zh/integration/ecosystem/studio",
+                          "v2/zh/integration/ecosystem/training"
+                        ]
                       }
                     ]
                   },
@@ -899,32 +1010,21 @@
                   }
                 ]
               },
-             {
-               "tab": "社区",
-               "groups": [
-                 {
-                   "group": "社区",
-                   "pages": [
-                     "v2/zh/community/contributors"
-                   ]
-                 }
-               ]
-             },
-             {
-               "tab": "JEV",
-               "groups": [
-                 {
-                   "group": "JEV",
-                   "pages": [
-                     "v2/zh/jev/index"
-                   ]
-                 }
-               ]
-             }
-           ]
-         },
-         {
-           "version": "v1",
+              {
+                "tab": "社区",
+                "groups": [
+                  {
+                    "group": "社区",
+                    "pages": [
+                      "v2/zh/community/contributors"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "version": "v1",
             "tabs": [
               {
                 "tab": "首页",
@@ -933,7 +1033,7 @@
                 ]
               },
               {
-                "tab": "SDK",
+                "tab": "Harness",
                 "groups": [
                   {
                     "group": "快速开始",
@@ -2422,13 +2522,13 @@
       "destination": "/v2/en/integration/ecosystem/index",
       "permanent": true
     },
-   {
-     "source": "/v2/en/jev/index.html",
-     "destination": "/v2/en/jev/index",
-     "permanent": true
-   },
-   {
-     "source": "/v2/en/integration/ecosystem/overview.html",
+    {
+      "source": "/v2/en/jev/index.html",
+      "destination": "/v2/en/jev/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/ecosystem/overview.html",
       "destination": "/v2/en/integration/ecosystem/overview",
       "permanent": true
     },
@@ -2537,20 +2637,20 @@
       "destination": "/v2/en/integration/model/ollama",
       "permanent": true
     },
-   {
-     "source": "/v2/en/integration/model/openai.html",
-     "destination": "/v2/en/integration/model/openai",
-     "permanent": true
-   },
-   {
-     "source": "/v2/en/integration/model/openai-official.html",
-     "destination": "/v2/en/integration/model/openai-official",
-     "permanent": true
-   },
-   {
-     "source": "/v2/en/integration/overview.html",
-     "destination": "/v2/en/integration/overview",
-     "permanent": true
+    {
+      "source": "/v2/en/integration/model/openai.html",
+      "destination": "/v2/en/integration/model/openai",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/model/openai-official.html",
+      "destination": "/v2/en/integration/model/openai-official",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/overview.html",
+      "destination": "/v2/en/integration/overview",
+      "permanent": true
     },
     {
       "source": "/v2/en/integration/protocol/a2a.html",
@@ -2997,13 +3097,13 @@
       "destination": "/v2/zh/integration/ecosystem/index",
       "permanent": true
     },
-   {
-     "source": "/v2/zh/jev/index.html",
-     "destination": "/v2/zh/jev/index",
-     "permanent": true
-   },
-   {
-     "source": "/v2/zh/integration/ecosystem/overview.html",
+    {
+      "source": "/v2/zh/jev/index.html",
+      "destination": "/v2/zh/jev/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/ecosystem/overview.html",
       "destination": "/v2/zh/integration/ecosystem/overview",
       "permanent": true
     },
@@ -3112,20 +3212,20 @@
       "destination": "/v2/zh/integration/model/ollama",
       "permanent": true
     },
-   {
-     "source": "/v2/zh/integration/model/openai.html",
-     "destination": "/v2/zh/integration/model/openai",
-     "permanent": true
-   },
-   {
-     "source": "/v2/zh/integration/model/openai-official.html",
-     "destination": "/v2/zh/integration/model/openai-official",
-     "permanent": true
-   },
-   {
-     "source": "/v2/zh/integration/overview.html",
-     "destination": "/v2/zh/integration/overview",
-     "permanent": true
+    {
+      "source": "/v2/zh/integration/model/openai.html",
+      "destination": "/v2/zh/integration/model/openai",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/model/openai-official.html",
+      "destination": "/v2/zh/integration/model/openai-official",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/overview.html",
+      "destination": "/v2/zh/integration/overview",
+      "permanent": true
     },
     {
       "source": "/v2/zh/integration/protocol/a2a.html",
@@ -3454,6 +3554,106 @@
       "source": "/v2/en/service/chat",
       "destination": "/v2/en/service/issues",
       "permanent": true
+    },
+    {
+      "source": "/v2/zh/jev/guides/judge",
+      "destination": "/v2/zh/jev/guides/judge-api"
+    },
+    {
+      "source": "/v2/zh/jev/guides/supervision-benchmark",
+      "destination": "/v2/zh/jev/evaluation"
+    },
+    {
+      "source": "/v2/zh/jev/applications/index",
+      "destination": "/v2/zh/jev/index"
+    },
+    {
+      "source": "/v2/zh/jev/guides/trace-benchmark",
+      "destination": "/v2/zh/jev/evaluation"
+    },
+    {
+      "source": "/v2/zh/jev/applications/engineering-data",
+      "destination": "/v2/zh/jev/guides/supervision-api"
+    },
+    {
+      "source": "/v2/zh/jev/guides/rag",
+      "destination": "/v2/zh/jev/guides/evidence-pipeline-api"
+    },
+    {
+      "source": "/v2/zh/jev/guides/code-review-benchmark",
+      "destination": "/v2/zh/jev/evaluation"
+    },
+    {
+      "source": "/v2/zh/jev/guides/browser-benchmark",
+      "destination": "/v2/zh/jev/evaluation"
+    },
+    {
+      "source": "/v2/zh/jev/guides/context-benchmark",
+      "destination": "/v2/zh/jev/evaluation"
+    },
+    {
+      "source": "/v2/zh/jev/guides/context-memory",
+      "destination": "/v2/zh/jev/guides/context-compaction-api"
+    },
+    {
+      "source": "/v2/zh/jev/applications/knowledge-assistant",
+      "destination": "/v2/zh/jev/guides/evidence-pipeline-api"
+    },
+    {
+      "source": "/v2/zh/jev/guides/phase-routing-benchmark",
+      "destination": "/v2/zh/jev/evaluation"
+    },
+    {
+      "source": "/v2/zh/jev/applications/customer-support",
+      "destination": "/v2/zh/jev/guides/support-api"
+    },
+    {
+      "source": "/v2/zh/jev/guides/guardrails",
+      "destination": "/v2/zh/jev/guides/content-guardrail-api"
+    },
+    {
+      "source": "/v2/zh/jev/guides/supervision-teams",
+      "destination": "/v2/zh/jev/guides/supervision-api"
+    },
+    {
+      "source": "/v2/zh/jev/reference-roadmap",
+      "destination": "/v2/zh/jev/index"
+    },
+    {
+      "source": "/v2/zh/jev/guides/evidence-benchmark",
+      "destination": "/v2/zh/jev/evaluation"
+    },
+    {
+      "source": "/v2/zh/jev/applications/github-cases",
+      "destination": "/v2/zh/jev/index"
+    },
+    {
+      "source": "/v2/zh/jev/guides/routing",
+      "destination": "/v2/zh/jev/guides/phase-routing-api"
+    },
+    {
+      "source": "/v2/zh/jev/overview",
+      "destination": "/v2/zh/jev/index"
+    },
+    {
+      "source": "/v2/zh/jev/guides/team-browser-api",
+      "destination": "/v2/zh/jev/guides/team-routing"
+    },
+    {
+      "source": "/v2/zh/jev/implementation-plan",
+      "destination": "/v2/zh/jev/index"
+    },
+    {
+      "source": "/v2/zh/jev/implementation-validation",
+      "destination": "/v2/zh/jev/index"
+    },
+    {
+      "source": "/v2/zh/jev/architecture",
+      "destination": "/v2/zh/jev/index"
+    },
+    {
+      "source": "/v2/zh/jev/references",
+      "destination": "/v2/zh/jev/sdk-reference"
     }
   ]
 }

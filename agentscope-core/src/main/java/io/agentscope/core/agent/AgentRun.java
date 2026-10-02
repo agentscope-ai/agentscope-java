@@ -18,7 +18,6 @@ package io.agentscope.core.agent;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -36,7 +35,11 @@ import reactor.core.publisher.Mono;
  * @param <T> the execution's output type (typically Msg or AgentEvent)
  */
 public final class AgentRun<T> {
-    /** Execution state. QUEUED includes setup before admission to the core lifecycle. */
+    /**
+     * Execution-handle state. COMPLETED means the publisher returned normally, including a
+     * suspended or unsuccessful semantic result. Inspect AgentResult / durable turn status for
+     * the logical outcome. QUEUED includes setup before admission to the core lifecycle.
+     */
     public enum Status {
         CREATED,
         QUEUED,
@@ -51,7 +54,6 @@ public final class AgentRun<T> {
         }
     }
 
-    private final String runId = UUID.randomUUID().toString();
     private final RunControl control;
     private final AtomicBoolean subscribed = new AtomicBoolean();
     private final AtomicReference<Supplier<? extends Publisher<T>>> pendingSource;
@@ -106,7 +108,7 @@ public final class AgentRun<T> {
 
     /** Stable opaque identifier for this single execution. */
     public String runId() {
-        return runId;
+        return control.runId();
     }
 
     /** Current execution state; a cooperative interrupt may still be RUNNING until observed. */

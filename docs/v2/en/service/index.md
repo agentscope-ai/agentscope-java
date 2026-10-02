@@ -14,12 +14,13 @@ Create cloud Agents in the console without writing code, connect applications bu
 ```mermaid
 flowchart TB
   U["Console: Chat / Issue"] --> G["Gateway: unified entry and authentication"]
-  A["Business applications: Endpoint API / SSE"] --> G
+  A["Business applications: Agent API / Endpoint / SSE"] --> G
   G --> C["Control: Agent catalog, Teams, Workflows and work records"]
   C --> S["Scheduler: scheduling and execution coordination"]
   S --> M["Managed: Agents hosted by Dataplane"]
   S --> E["External: independent applications with SDK integration"]
   S --> H["Hosted: Coding Agents on Runtime Host"]
+  G -->|Session execution API and SSE| M
   M --> R["Environment / Memory / Vault"]
   C --- P["Persistent storage: PostgreSQL, Workspace, Artifact"]
   M --- P
@@ -48,6 +49,18 @@ You still manage the application's models, dependencies and process. With task e
 Service manages tasks and deliverables; Runtime Host manages provider processes and working directories. Tool, Subagent, approval and recovery support varies by provider. See [Hosted Agent](/v2/en/service/hosted-agent) and the [capability comparison](/v2/en/service/hosted-agent-providers).
 
 Agents from all three modes can participate in orchestration according to their implemented task capabilities. A **Team** lets a Leader delegate and combine member results dynamically. A **Workflow** defines fixed steps, conditions and human gates.
+
+## Integrate a Managed Agent into your application
+
+Use **Agent API** for a custom chat interface with tool progress and human confirmation: create a persistent session, submit background turns, and render snapshot + SSE. The service saves messages, tool calls and execution state. Work continues while the user is away, and returning restores committed content.
+
+| What you need | Entry point | Start here |
+| --- | --- | --- |
+| Hosted conversations with messages, tools, confirmation, cancellation and recovery | Agent API with a user Bearer token | [Resumable chat example](/v2/en/service/agent-api-chat) → [API guide](/v2/en/service/session-event-log) → [SSE events](/v2/en/service/sse-events) |
+| Published Agent, Team or Workflow services with schemas, API keys and releases | Endpoint Conversation / Job | [Publish and invoke](/v2/en/service/endpoints) |
+| An Agent running in your own Java application | SDK call / streamEvents; AgentSession for persistent conversations | [SDK guide](/v2/en/docs/harness/session-log) |
+
+Agent API also supports structured/file input, steering, child Agent tracing, checkpoint restore and forks, usage budgets and webhooks. Endpoints have their own invocation and event contracts; choose the appropriate entry point without interchanging tokens, IDs or cursors.
 
 ## Core concepts
 

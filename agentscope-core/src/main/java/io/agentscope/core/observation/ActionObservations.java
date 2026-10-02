@@ -20,7 +20,10 @@ import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.tool.ToolCallParam;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -40,8 +43,42 @@ public final class ActionObservations {
                     RuntimeContext context = param.getRuntimeContext();
                     Object configured =
                             context == null ? null : context.get(ActionObserver.CONTEXT_KEY);
-                    if (!(configured instanceof ActionObserver observer))
-                        return Mono.defer(execution);
+                    SessionRecorder recorder = SessionRecorder.from(context);
+                    ActionObserver observer;
+                    if (recorder != null) {
+                        observer =
+                                (observation, result) -> {
+                                    var payload = new LinkedHashMap<String, Object>();
+                                    if (observation.status() == ActionObservation.Status.STARTED)
+                                        recorder.actionStarted(
+                                                observation.toolCallId(), observation.actionId());
+                                    if (result != null
+                                            && (result.isSuspended()
+                                                    || result.getState() == ToolResultState.DENIED))
+                                        recorder.append(
+                                                "tool/decision",
+                                                Map.of(
+                                                        "toolCallId",
+                                                        observation.toolCallId(),
+                                                        "decision",
+                                                        result.isSuspended()
+                                                                ? "suspended"
+                                                                : "denied"));
+                                    payload.put("observation", observation);
+                                    payload.put("toolCallId", observation.toolCallId());
+                                    payload.put("result", result);
+                                    Mono<Void> recorded =
+                                            recorder.record(
+                                                    observation.status()
+                                                                    == ActionObservation.Status
+                                                                            .STARTED
+                                                            ? "action/start"
+                                                            : "action/end",
+                                                    payload);
+                                    return recorded;
+                                };
+                    } else if (configured instanceof ActionObserver value) observer = value;
+                    else return Mono.defer(execution);
                     var use = param.getToolUseBlock();
                     var state = RuntimeContext.resolveAgentState(context, param.getAgent());
                     var started =

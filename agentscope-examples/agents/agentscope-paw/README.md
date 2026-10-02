@@ -577,58 +577,30 @@ Recognised properties (all under `paw.*`, with matching `PAW_*` env vars):
 If you provide your own `Model` Spring bean (for example by importing another
 `@Configuration`), the auto-wired DashScope model is skipped.
 
-## Operate / aistio BYO + transcript testing
+## Operate / aistio BYO and native history
 
-paw is the reference BYO data plane for verifying session history with
-[aistio](../../../agentscope-service/aistio/). After each turn,
-`TranscriptMiddleware` writes structured JSONL segments (independent of memory
-flush). aistiod can read the same directory via `AISTIO_TRANSCRIPT_FS_ROOT`, so
-Operate message history survives DP shutdown.
-
-Layout:
-
-```
-${claw.home}/transcripts/{tenant}/{agentId}/{sessionId}/events/{seqStart}-{seqEnd}-{writerId}.jsonl
-```
-
-`tenant` defaults to `claw.aistio.namespace` (`default`). `agentId` is the
-catalog id (auto-generated config uses `default`). **Set
-`CLAW_AISTIO_AGENT_NAME` to that same id** so Operate FS reads hit the path paw
-writes.
+Harness records native Session Log in the Workspace Filesystem's private partition. `AgentSessionHistorySource` serves messages through `sessionTranscript()`, and Paw history pages read the same facts. TranscriptMiddleware, segmented transcripts and duplicate `.log.jsonl` writes have been removed; existing archives are not deleted.
 
 ```bash
-# Terminal 1 — control plane
-export AISTIO_TRANSCRIPT_FS_ROOT="$HOME/.agentscope/claw/transcripts"
-# start aistiod (:8081)
-
-# Terminal 2 — paw
-export DASHSCOPE_API_KEY=sk-...
 export CLAW_AISTIO_ENABLED=true
 export AISTIO_CONTROL_HTTP=http://localhost:8081
-export BUILDER_INTERNAL_TOKEN=local-dev-internal-token-at-least-32chars
 export CLAW_AISTIO_AGENT_NAME=default
-export CLAW_AISTIO_NAMESPACE=default
-export CLAW_PORT=8090
-java -jar agentscope-examples/agents/agentscope-paw/target/agentscope-paw-*.jar
+# Optional shared native-log root; unset uses each agent's Workspace backend.
+export CLAW_SESSION_LOG_ROOT=/data/paw-session-history
 ```
 
-Checklist:
+Operate history requires a reachable agent message contract; it no longer relies on aistiod reading a shared transcript tree. Keep the registered agent name aligned with the published agent. Native files have a version prefix: read them through the SessionLog API, not a JSONL parser.
 
-1. Chat in the paw UI (include a tool call if possible).
-2. `ls $HOME/.agentscope/claw/transcripts/default/default/*/events/`
-3. Open the session in Operate → Messages (tool_use / tool_result should be structured).
-4. Stop paw and refresh Messages — history should still load from the FS root.
-5. Optional: `GET /api/v1/sessions/{id}/events?before=…&limit=50`
-
-Contract: [wrapper-transcript-contract.md](../../../agentscope-service/aistio/docs/zh/controlplane/wrapper-transcript-contract.md).
-
-| Property | Env | Default |
+| Property | Environment | Default |
 | --- | --- | --- |
 | `claw.aistio.enabled` | `CLAW_AISTIO_ENABLED` | `false` |
-| `claw.aistio.agent-name` | `CLAW_AISTIO_AGENT_NAME` | `default` (must match catalog id) |
-| `claw.transcript.enabled` | `CLAW_TRANSCRIPT_ENABLED` | `true` |
-| `claw.transcript.root` | `CLAW_TRANSCRIPT_ROOT` | `${claw.home}/transcripts` |
-| `claw.transcript.tenant` | `CLAW_TRANSCRIPT_TENANT` | = aistio namespace |
+| `claw.aistio.control-http` | `AISTIO_CONTROL_HTTP` | `http://localhost:8081` |
+| `claw.aistio.agent-name` | `CLAW_AISTIO_AGENT_NAME` | `default` |
+| `claw.aistio.namespace` | `CLAW_AISTIO_NAMESPACE` | `default` |
+| `claw.aistio.contract-port` | `CLAW_AISTIO_CONTRACT_PORT` | `18090` |
+| `claw.session-log.root` | `CLAW_SESSION_LOG_ROOT` | Empty: Workspace backend |
+
+Remove old `claw.transcript.*` / `CLAW_TRANSCRIPT_*` settings. A custom `SessionLogStore` Spring Bean applies to built-in and dynamic agents. See [session logs and recovery](../../../../docs/v2/en/docs/harness/session-log.md) for storage, restoration and SSE integration.
 
 ## What this fork is _not_
 

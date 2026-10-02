@@ -1,0 +1,443 @@
+{
+  "suite" : "trace-synthetic-v1",
+  "sourceCommit" : "e9fb26aff4a4410580776fb35deec85b4ad9c308",
+  "dataSha256" : "620db2ccafad52415ebf75461ddf737cc505b33011eeb7a7906b2190bb06ad57",
+  "timestamp" : "2026-09-25T01:15:33.433961Z",
+  "backend" : "--baseline",
+  "requestedModel" : "offline",
+  "probabilities" : "synthetic or deterministic",
+  "thresholds" : {
+    "fail" : 0.2,
+    "pass" : 0.8
+  },
+  "budgetMillis" : 60000,
+  "metrics" : {
+    "trajectory_match" : {
+      "total" : 12,
+      "labelled" : 12,
+      "correct" : 12,
+      "incorrect" : 0,
+      "inconclusive" : 0,
+      "skipped" : 0,
+      "errors" : 0,
+      "unscored" : 0,
+      "accuracy" : 1.0
+    }
+  },
+  "scenarios" : {
+    "orders" : {
+      "trajectory_match" : {
+        "total" : 3,
+        "labelled" : 3,
+        "correct" : 3,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    },
+    "tools" : {
+      "trajectory_match" : {
+        "total" : 4,
+        "labelled" : 4,
+        "correct" : 4,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    },
+    "scope" : {
+      "trajectory_match" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    },
+    "security" : {
+      "trajectory_match" : {
+        "total" : 2,
+        "labelled" : 2,
+        "correct" : 2,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    },
+    "claims" : {
+      "trajectory_match" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    },
+    "quality" : {
+      "trajectory_match" : {
+        "total" : 1,
+        "labelled" : 1,
+        "correct" : 1,
+        "incorrect" : 0,
+        "inconclusive" : 0,
+        "skipped" : 0,
+        "errors" : 0,
+        "unscored" : 0,
+        "accuracy" : 1.0
+      }
+    }
+  },
+  "latency" : {
+    "p50Millis" : 0.155292,
+    "p95Millis" : 18.25325
+  },
+  "usage" : {
+    "requests" : 0,
+    "responsesWithUsage" : 0,
+    "inputTokens" : 0,
+    "outputTokens" : 0
+  },
+  "wallMillis" : 45,
+  "rows" : [ {
+    "scenario" : "orders",
+    "id" : "order_supported",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 18.25325
+  }, {
+    "scenario" : "orders",
+    "id" : "order_contradiction",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 0.297083
+  }, {
+    "scenario" : "orders",
+    "id" : "order_missing_lookup",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : false,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 0
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 0.275625
+  }, {
+    "scenario" : "tools",
+    "id" : "wrong_tool",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : false,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 0.193959
+  }, {
+    "scenario" : "tools",
+    "id" : "unnecessary_tool",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : false,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 0,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 0.177084
+  }, {
+    "scenario" : "scope",
+    "id" : "unexpected_send",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : false,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 2
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 0.155292
+  }, {
+    "scenario" : "security",
+    "id" : "injection_in_result",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 0.143292
+  }, {
+    "scenario" : "security",
+    "id" : "no_injection",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 0.145458
+  }, {
+    "scenario" : "claims",
+    "id" : "invented_refund",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 0.149292
+  }, {
+    "scenario" : "quality",
+    "id" : "irrelevant_answer",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 1
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 0.146042
+  }, {
+    "scenario" : "tools",
+    "id" : "duplicate_lookup",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : false,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 0.0,
+        "passed" : false,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 1,
+          "actual_count" : 2
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 0.16775
+  }, {
+    "scenario" : "tools",
+    "id" : "no_tool_needed",
+    "expected" : {
+      "trajectory_match" : {
+        "passed" : true,
+        "label" : null
+      }
+    },
+    "results" : [ {
+      "id" : "trajectory_match",
+      "version" : "jevals-e9fb26a-as1-STRICT-args=false",
+      "result" : {
+        "status" : "DECIDED",
+        "score" : 1.0,
+        "passed" : true,
+        "label" : null,
+        "reason" : "STRICT",
+        "evidence" : {
+          "expected_count" : 0,
+          "actual_count" : 0
+        }
+      }
+    } ],
+    "requests" : 0,
+    "usage" : [ ],
+    "elapsedMillis" : 0.145416
+  } ]
+}

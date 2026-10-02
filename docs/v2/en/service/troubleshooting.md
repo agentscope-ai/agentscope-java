@@ -48,3 +48,23 @@ Inspect the Run, Node and latest Attempt from Issue Executions, not just the las
 ## Repeated Webhook or Endpoint requests
 
 Query the existing Delivery/Invocation first. Reuse the same key and content for the same logical request; assign a new key only to new work. Check trigger event filters, authentication and schemas. After SSE disconnects, query the returned statusUrl before resubmitting.
+
+## Agent API and SSE
+
+Keep the session ID, turn ID, latest event ID, HTTP status and sanitized error. Distinguish the page connection, task execution and context recovery:
+
+| Symptom | Action |
+| --- | --- |
+| Refresh shows only a suffix or loses tools produced while away | Render snapshot.items/tools first, then stream after as_of; a cursor alone cannot rebuild UI state |
+| Stream closes and task status is unclear | Read turns/{turn} or snapshot; disconnect neither cancels nor calls for a new turn |
+| Task stays running after run.ended / item.completed | Wait for the target turn outcome; an attempt, message or tool is not the whole task |
+| 400 / 409 cursor error | Verify session scope and reload snapshot; never parse or increment cursors yourself |
+| Resource pagination returns 410 | Restart from its first page; resource-page cursors are not SSE cursors |
+| Answer submitted but the tool does not continue | Read required_actions and GET turns/{turn}/actions; accepted is receipt, rejected requires checking reason and pending |
+| Steer returns 409 | The task may have ended or closed input; reread status, and use a new turn for a separate question |
+| Checkpoint restore returns 409 | Resolve open tasks, actions, pending inputs and unknown tool outcomes; restoring does not undo external operations |
+| Cost is incomplete or budget blocks execution | Inspect unpriced calls, usage and pricing in usage/budget; adjust limits and explicitly resume as task state permits |
+| No webhook received | Check allowed hosts, registration time, event filters and deliveries; fix the receiver before retrying a paused webhook |
+| Heartbeats but no text | Check task, tool and model state; deltas may be unavailable. If content arrives in bursts, inspect proxy buffering |
+
+See [Agent API operations](/v2/en/service/session-event-log) and [SSE handling](/v2/en/service/sse-events). Published Endpoints retain their statusUrl/eventsUrl and [separate event contract](/v2/en/service/sse-events#endpoint-protocol-scope).

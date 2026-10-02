@@ -64,7 +64,7 @@ Harness 的材料组织与预算策略。
 
 执行控制与 `AgentState` 分离，每次调用拥有独立中断信号，详见下方[Per-session 中断](#per-session-中断)。
 
-一次 `call()` 结束,框架自动把整份 `AgentState` 以 `agent_state` 这个键写进状态存储,按该次调用的 `(userId, sessionId)` 寻址。下次同 `(userId, sessionId)` 的 `call()` 会自动从存储读回——配置共享状态存储后，其他实例可以加载已成功保存的状态；这不保证并发调用间实时一致，也不恢复尚未保存的进度或外部副作用。
+在 LEGACY 或未启用原生日志的 Core Agent 中，一次 `call()` 结束,框架把整份 `AgentState` 以 `agent_state` 这个键写进状态存储,按该次调用的 `(userId, sessionId)` 寻址。下次同 `(userId, sessionId)` 的 `call()` 会自动从存储读回——配置共享状态存储后，其他实例可以加载已成功保存的状态；这不保证并发调用间实时一致，也不恢复尚未保存的进度或外部副作用。
 
 ### 任务状态不是自动业务判定
 
@@ -76,6 +76,14 @@ TaskContextState 的 Todo 由 todo_write 或应用更新；任务目标由应用
 Todo 完成、要求已确认、限定检查通过是不同含义，都不自动代表整体完成。
 Harness 是否展示这些信息由 taskContext 配置控制；字段与更新入口的完整对照见
 [可选任务信息](/v2/zh/docs/harness/context#可选任务信息)。
+
+### Session Log 与 AgentStateStore 的关系
+
+`call` / `streamEvents` 与 `AgentSession` 使用相同的会话存储配置。多轮对话、历史查询和状态持久化不要求启用会话调度；需要后台任务、持久排队或会话级中断续做时，再使用 [AgentSession](/v2/zh/docs/harness/session-log)。直接调用的入门用法见[快速开始](/v2/zh/docs/quickstart)。
+
+HarnessAgent 默认 EVENT_LOG：已有原生日志时，AgentState 从日志 checkpoint 及后续可应用事实重建，保存时向日志提交 checkpoint；AgentStateStore 不再是该会话的恢复权威。LEGACY 和未启用日志的 Core Agent 使用下文的状态存储链路。
+
+原生日志默认复用 Workspace Filesystem（也支持分布式），或用 sessionLogStore 指定。稳定 agentId、userId、sessionId、namespace 与存储都要保持一致。SDK 历史查询、未知工具核对和 checkpoint 接续见 [会话日志与恢复](/v2/zh/docs/harness/session-log)。下面仅配置 stateStore 的跨节点示例显式选择 LEGACY；默认 EVENT_LOG 还须共享原生日志。
 
 ### 自动持久化与恢复链路
 
@@ -112,7 +120,7 @@ call(msgs, RuntimeContext(userId, sessionId))
 | 实现 | 模块 | 适用场景 |
 |---|---|---|
 | `InMemoryAgentStateStore` | `agentscope-core` | 单元测试 / 单进程演示;进程退出全部丢失 |
-| `JsonFileAgentStateStore` | `agentscope-core` | 单机开发、文件落盘即可恢复;不能跨节点共享。**`HarnessAgent` 默认值**,落在 `~/.agentscope/state/<agentId>/`(可通过 `agentscope.state.home` 系统属性改根目录);**单机** |
+| `JsonFileAgentStateStore` | `agentscope-core` | 单机开发、文件落盘即可恢复;不能跨节点共享。**`HarnessAgent` LEGACY 模式默认值**,落在 `~/.agentscope/state/<agentId>/`(可通过 `agentscope.state.home` 系统属性改根目录);**单机** |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | **生产首选**,多副本共享;支持 Jedis / Lettuce / Redisson(Standalone / Cluster / Sentinel) |
 | `MysqlAgentStateStore` | `agentscope-extensions-mysql` | 需要把状态沉淀进关系型库(审计、报表)时使用 |
 
@@ -121,6 +129,7 @@ call(msgs, RuntimeContext(userId, sessionId))
 ```java
 // 默认(单机):省略 .stateStore(...) 即可,自动用本地 JsonFileAgentStateStore
 HarnessAgent agent = HarnessAgent.builder()
+    .legacySessionHistory(true)
     .name("MyAgent")
     .model(model)
     .workspace(workspace)
@@ -129,6 +138,7 @@ HarnessAgent agent = HarnessAgent.builder()
 // 多副本生产:使用 DistributedStore
 JedisPooled jedis = new JedisPooled("redis://redis.prod:6379");
 HarnessAgent agent = HarnessAgent.builder()
+    .legacySessionHistory(true)
         .name("MyAgent")
         .model(model)
         .workspace(workspace)
@@ -140,7 +150,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 <Warning>
 
-内置的 `JsonFileAgentStateStore` / `InMemoryAgentStateStore` 仅适合单机。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)`(分布式工作区),HarnessAgent 会**强制要求**状态存储也换成分布式后端,否则 `build()` 直接抛 `IllegalStateException`——因为 sandbox 状态必须跨副本共享。请通过 `.distributedStore(...)` 或 `.stateStore(...)` 配置分布式后端(例如 `RedisDistributedStore`)。
+内置的 `JsonFileAgentStateStore` / `InMemoryAgentStateStore` 仅适合单机。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)`(分布式工作区),LEGACY 模式的 HarnessAgent 会**强制要求**状态存储也换成分布式后端,否则 `build()` 直接抛 `IllegalStateException`——因为 sandbox 状态必须跨副本共享。请通过 `.distributedStore(...)` 或 `.stateStore(...)` 配置分布式后端(例如 `RedisDistributedStore`)。
 
 </Warning>
 
@@ -152,6 +162,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ```java
 // 节点 A:开了一段对话
 HarnessAgent agentA = HarnessAgent.builder()
+    .legacySessionHistory(true)
     .stateStore(redisStore)
     /* ... */ .build();
 agentA.call(msg, RuntimeContext.builder()
@@ -161,6 +172,7 @@ agentA.call(msg, RuntimeContext.builder()
 
 // 节点 B:不同物理机,完全独立的 JVM
 HarnessAgent agentB = HarnessAgent.builder()
+    .legacySessionHistory(true)
     .stateStore(redisStore)
     /* 同一份存储后端 */ .build();
 
@@ -221,9 +233,11 @@ AgentState restored = AgentState.fromJsonString(json);
 
 ### 清空会话对话上下文
 
+EVENT_LOG 模式下，`getAgentState()` 返回原生日志投影的独立快照；`clearContext()`、权限修改和 `saveAgentState()` 均以 writer 租约和版本检查提交原生 checkpoint。旧的 get→修改→save 调用可继续使用，但过期快照会被拒绝；并发管理操作推荐 `updateAgentState(rc, reason, mutation)`。清空的是工作上下文，完整 Session Log 历史仍然保留；直接改 AgentStateStore 不影响原生会话。
+
 若要让用户在不创建新会话的情况下开始新话题，可调用 `clearContext`。该方法保留相同的
 `(userId, sessionId)`，也保留权限、工具、任务和 Plan Mode 等非对话状态；它会清空模型可见的
-历史消息缓冲和压缩摘要，并在 agent 配置了 `AgentStateStore` 时立即持久化结果。
+历史消息缓冲和压缩摘要，并立即持久化结果：原生模式提交 checkpoint，LEGACY 使用配置的 AgentStateStore。
 
 ```java
 agent.clearContext("alice", "session-001");
@@ -256,7 +270,7 @@ agent.interrupt("alice", "session-001");
 agent.interrupt("alice", "session-001", new UserMessage("请停止。"));
 ```
 
-空闲 session 不受影响。需要选择某次排队中或运行中的调用时，使用 `prepareRun` / `prepareCall` 返回的 `AgentRun`，见[单次执行控制](/v2/zh/docs/building-blocks/agent#控制单次执行)。即使属于同一 session，排队中的 B 与运行中的 A 也拥有独立控制信号。
+空闲 session 不受影响。通过 AgentSession 提交的任务使用 `session.interrupt()`；界面已绑定某次执行时可传入 `session.interrupt(runId)`，拒绝误中断后续执行。中断后用 `session.resume(turnId)` 继续原任务，见[会话使用指南](/v2/zh/docs/harness/session-log)。
 
 推理循环在协作检查点读取本次执行的信号。用户中断会生成带中断标记的恢复回复并保存会话状态。已废弃的无参 `interrupt()` 定位默认 session 的当前执行，不读取最近一次调用的上下文。
 

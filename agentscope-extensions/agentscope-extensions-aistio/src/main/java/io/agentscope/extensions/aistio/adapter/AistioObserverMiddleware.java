@@ -70,6 +70,32 @@ public final class AistioObserverMiddleware implements MiddlewareBase {
         String sessionId = sessionIdOf(ctx, agent);
         adapter.rememberSession(sessionId, ctx == null ? null : ctx.getUserId(), agent);
 
+        if (agent instanceof io.agentscope.core.ReActAgent react
+                && react.sessionLogEnabled()
+                && ctx != null) {
+            var prior =
+                    (io.agentscope.core.session.SessionExportSink)
+                            ctx.get(io.agentscope.core.session.SessionExportSink.CONTEXT_KEY);
+            if (prior == null || !prior.name().contains("aistio-native-v1")) {
+                ctx.put(
+                        io.agentscope.core.session.SessionExportSink.CONTEXT_KEY,
+                        new io.agentscope.core.session.SessionExportSink() {
+                            public String name() {
+                                return prior == null
+                                        ? "aistio-native-v1"
+                                        : prior.name() + "+aistio-native-v1";
+                            }
+
+                            public void accept(io.agentscope.core.session.SessionEvent fact) {
+                                if (prior != null) prior.accept(fact);
+                                publishNative(sessionId, fact);
+                            }
+                        });
+            }
+            adapter.markBusy(sessionId, true);
+            return next.apply(input).doFinally(signal -> adapter.markBusy(sessionId, false));
+        }
+
         // One call() is a turn, not a session; the session opens on the first turn and closes
         // only on an explicit terminate, so no session_end is emitted here.
         if (startedSessions.add(sessionId)) {
@@ -96,6 +122,51 @@ public final class AistioObserverMiddleware implements MiddlewareBase {
                 .doFinally(signal -> adapter.markBusy(sessionId, false));
     }
 
+    private void publishNative(String sessionId, io.agentscope.core.session.SessionEvent fact) {
+        String type =
+                switch (fact.type()) {
+                    case "message/user", "message/assistant" -> SessionEvent.MESSAGE;
+                    case "tool/requested" -> SessionEvent.TOOL_CALL;
+                    case "tool/result" -> SessionEvent.TOOL_RESULT;
+                    case "context/replaced" -> SessionEvent.COMPACTION;
+                    default -> null;
+                };
+        if (type == null) return;
+        String source = sessionId;
+        var metadata = new java.util.LinkedHashMap<String, Object>();
+        metadata.put("native_source", source);
+        metadata.put("native_seq", fact.seq());
+        metadata.put("native_event_id", fact.eventId());
+        metadata.put("execution_run_id", fact.executionRunId());
+        var builder =
+                SessionEvent.builder(sessionId, type)
+                        .occurredAt(fact.occurredAt())
+                        .frameworkMeta(
+                                io.agentscope.core.util.JsonUtils.getJsonCodec()
+                                        .toJson(metadata)
+                                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Object message = fact.data().get("message");
+        if (message != null) {
+            var msg =
+                    io.agentscope.core.util.JsonUtils.getJsonCodec()
+                            .convertValue(message, Msg.class);
+            builder.role(AgentScopeAdapter.roleOf(msg)).content(AgentScopeAdapter.textOf(msg));
+            metadata.put("message", fact.data().get("message"));
+            builder.frameworkMeta(
+                    io.agentscope.core.util.JsonUtils.getJsonCodec()
+                            .toJson(metadata)
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        if (type.equals(SessionEvent.TOOL_CALL)) {
+            var call =
+                    io.agentscope.core.util.JsonUtils.getJsonCodec()
+                            .convertValue(fact.data().get("call"), ToolUseBlock.class);
+            builder.toolName(call.getName())
+                    .toolInput(call.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        adapter.publishCommitted(source, fact.seq(), builder.build());
+    }
+
     @Override
     public Flux<AgentEvent> onActing(
             Agent agent,
@@ -103,6 +174,7 @@ public final class AistioObserverMiddleware implements MiddlewareBase {
             ActingInput input,
             Function<ActingInput, Flux<AgentEvent>> next) {
         String sessionId = sessionIdOf(ctx, agent);
+        if (io.agentscope.core.session.SessionRecorder.from(ctx) != null) return next.apply(input);
         if (input != null && input.toolCalls() != null) {
             for (ToolUseBlock call : input.toolCalls()) {
                 adapter.publish(

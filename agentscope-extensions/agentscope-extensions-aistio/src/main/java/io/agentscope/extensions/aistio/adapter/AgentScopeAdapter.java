@@ -211,6 +211,12 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         return agent;
     }
 
+    void publishCommitted(String source, long seq, SessionEvent event) {
+        SessionBridge attached = bridge;
+        if (attached == null) throw new IllegalStateException("Aistio bridge not attached");
+        attached.onCommittedEvent(source, seq, event);
+    }
+
     void publish(SessionEvent event) {
         Consumer<SessionEvent> sink = emit;
         if (sink == null) {

@@ -9,7 +9,9 @@ This is preview documentation. The official release is not yet available.
 
 An Endpoint exposes an Agent, Team or published Workflow revision through a stable interface with authentication, schemas and invocation records. Callers do not need internal runtime or scheduler addresses.
 
-Publish an entry point and submit work here, then use [SSE format and task feedback](/v2/en/service/sse-events) to consume events, reconnect and retrieve the final result.
+Publish an entry point and submit work here, then use [SSE format and task feedback](/v2/en/service/sse-events#endpoint-protocol-scope) to consume events, reconnect and retrieve the final result.
+
+Use [Agent API](/v2/en/service/session-event-log) when you need direct control of Managed sessions, steering, interactions or checkpoints. Endpoints publish stable invocation contracts; their Conversation/Job SSE does not directly expose Agent API snapshots, public event envelopes or recovery operations.
 
 ## Choose a mode
 

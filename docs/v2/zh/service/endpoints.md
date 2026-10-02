@@ -9,7 +9,9 @@ en_link: /v2/en/service/endpoints
 
 Endpoint 是提供给应用调用的稳定入口，将 Agent、Team 或已发布 Workflow revision 包装为具有认证、输入输出 schema 和调用记录的服务。调用方无需了解内部调度和运行时地址。
 
-本页介绍如何从应用发布入口并提交工作；收到调用标识后，按[SSE 格式与任务反馈](/v2/zh/service/sse-events)消费事件、恢复连接并读取最终结果。
+本页介绍如何从应用发布入口并提交工作；收到调用标识后，按[SSE 格式与任务反馈](/v2/zh/service/sse-events#endpoint-协议范围)消费事件、恢复连接并读取最终结果。
+
+需要直接控制 Managed Agent 的 session、steer、人工交互或 checkpoint 时，使用 [Agent API](/v2/zh/service/session-event-log)。本页的 Endpoint 适合发布稳定调用契约；其 Conversation/Job SSE 不直接提供 Agent API 的 snapshot、公共事件 envelope 和恢复接口。
 
 ## 选择调用形式
 

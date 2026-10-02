@@ -1,0 +1,151 @@
+{
+  "suite" : "context-synthetic-v1",
+  "sourceCommit" : "e3f262a7f4d42bd8dd32ced30d26176f7cb545b0",
+  "timestamp" : "2026-09-25T23:48:14.710218Z",
+  "dataSha256" : "7bdda75c6d77c10b2805fd62cc2b04b8552226209c8c75d8ae2903a1f30f6af1",
+  "backend" : "--baseline",
+  "requestedModel" : "none",
+  "actualModels" : [ ],
+  "enableThinking" : false,
+  "mode" : "SHADOW",
+  "config" : {
+    "discardThreshold" : 0.2,
+    "keepThreshold" : 0.8,
+    "preserveRecentMessages" : 1,
+    "maxStateTokens" : 25000,
+    "maxRequestTokens" : 30000,
+    "maxQuestions" : 128,
+    "truncateHeadChars" : 100,
+    "minimumReduction" : 0.01,
+    "maxTranscriptChars" : 1000000,
+    "eligibleTools" : [ "read" ],
+    "pinnedMessageIds" : [ ]
+  },
+  "labelledSemanticPairs" : 9,
+  "correct" : 4,
+  "incorrect" : 5,
+  "abstained" : 0,
+  "errors" : 0,
+  "accuracy" : 0.4444444444444444,
+  "pinned" : 2,
+  "pinnedCorrect" : 2,
+  "latency" : {
+    "p50Millis" : 1.25E-4,
+    "p95Millis" : 4.17E-4
+  },
+  "usage" : {
+    "responsesWithUsage" : 0,
+    "outputTokens" : 0,
+    "requests" : 0,
+    "inputTokens" : 0
+  },
+  "rows" : [ {
+    "id" : "stale_file",
+    "status" : "BASELINE",
+    "reason" : "KEEP_ORIGINAL",
+    "elapsedMillis" : 4.17E-4,
+    "pairs" : {
+      "t1" : {
+        "expected" : "DROP_PAIR",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : null
+      },
+      "t2" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : null
+      }
+    }
+  }, {
+    "id" : "superseded_read",
+    "status" : "BASELINE",
+    "reason" : "KEEP_ORIGINAL",
+    "elapsedMillis" : 2.08E-4,
+    "pairs" : {
+      "t1" : {
+        "expected" : "DROP_PAIR",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : null
+      },
+      "t2" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : null
+      }
+    }
+  }, {
+    "id" : "call_history_only",
+    "status" : "BASELINE",
+    "reason" : "KEEP_ORIGINAL",
+    "elapsedMillis" : 8.4E-5,
+    "pairs" : {
+      "t1" : {
+        "expected" : "TRUNCATE_RESULT",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : null
+      },
+      "t2" : {
+        "expected" : "TRUNCATE_RESULT",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : null
+      }
+    }
+  }, {
+    "id" : "keep_exact_evidence",
+    "status" : "BASELINE",
+    "reason" : "KEEP_ORIGINAL",
+    "elapsedMillis" : 1.25E-4,
+    "pairs" : {
+      "t1" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : null
+      },
+      "t2" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : true,
+        "scores" : null
+      }
+    }
+  }, {
+    "id" : "protect_write_receipt",
+    "status" : "BASELINE",
+    "reason" : "KEEP_ORIGINAL",
+    "elapsedMillis" : 8.3E-5,
+    "pairs" : {
+      "t1" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : true,
+        "scores" : null
+      },
+      "t2" : {
+        "expected" : "DROP_PAIR",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : null
+      }
+    }
+  }, {
+    "id" : "unresolved_task",
+    "status" : "BASELINE",
+    "reason" : "KEEP_ORIGINAL",
+    "elapsedMillis" : 1.25E-4,
+    "pairs" : {
+      "t1" : {
+        "expected" : "KEEP",
+        "actual" : "KEEP",
+        "pinned" : false,
+        "scores" : null
+      }
+    }
+  } ]
+}

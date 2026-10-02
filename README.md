@@ -113,7 +113,7 @@ Model providers are shipped as separate extension modules in 2.0. Add the one yo
 
 Other options: `agentscope-extensions-model-openai`, `agentscope-extensions-model-anthropic`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-ollama`. See the [Model docs](https://java.agentscope.io/v2/en/docs/building-blocks/model.html) for details.
 
-If you only need a bare `ReActAgent` without workspace / persistence / sandbox, depend on `agentscope-core` alone.
+To use the reasoning and tool APIs of `ReActAgent` and compose application capabilities yourself, depend on `agentscope-core` and your model extension.
 
 ## Hello AgentScope!
 
@@ -121,6 +121,8 @@ Start your first agent with AgentScope Java 2.0:
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.nio.file.Paths;
@@ -148,14 +150,14 @@ public class FirstAgent {
         // Blocking call
         agent.call(new UserMessage("Hello!"), ctx).block();
 
-        // Or stream events for real-time UI rendering
+        // For another request, stream events for real-time UI rendering
         agent.streamEvents(new UserMessage("Summarize today in three bullets."), ctx)
                 .doOnNext(event -> {
                     switch (event.getType()) {
                         case TEXT_BLOCK_DELTA -> System.out.print(
-                                ((io.agentscope.core.event.TextBlockDeltaEvent) event).getDelta());
+                                ((TextBlockDeltaEvent) event).getDelta());
                         case TOOL_CALL_START -> System.out.println(
-                                "\n[tool] " + ((io.agentscope.core.event.ToolCallStartEvent) event).getToolCallName());
+                                "\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
                         default -> { }
                     }
                 })
@@ -163,6 +165,8 @@ public class FirstAgent {
     }
 }
 ```
+
+Start with `call` / `streamEvents` for ordinary replies, multi-turn chat and workflow steps; follow the [Quick Start](https://java.agentscope.io/v2/en/docs/quickstart). Both also record Harness conversation history by default. Introduce [AgentSession](https://java.agentscope.io/v2/en/docs/harness/session-log) when work must continue after a page closes, queue while busy or resume after interruption. The [recoverable chat example](./agentscope-examples/agents/agentscope-chat/README.md) shows the full integration.
 
 ## AgentScope Service
 **[AgentScope Service](./agentscope-service)** — an Agent Control Plane built on AgentScope Harness that provides:

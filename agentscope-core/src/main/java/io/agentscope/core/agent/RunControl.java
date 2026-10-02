@@ -18,16 +18,20 @@ package io.agentscope.core.agent;
 import io.agentscope.core.interruption.InterruptControl;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
+import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.util.context.Context;
+import reactor.util.context.ContextView;
 
 /** Runtime-only control for one execution; never stored in conversation state. */
 public final class RunControl {
     static final Object CONTEXT_KEY = new Object();
     private final String agentId;
+    private final String runId = UUID.randomUUID().toString();
     private final InterruptControl interruption = new InterruptControl();
     private final Sinks.Empty<Void> cancellation = Sinks.empty();
     private final Sinks.One<AgentRun.Status> termination = Sinks.one();
@@ -35,6 +39,21 @@ public final class RunControl {
 
     public RunControl(String agentId) {
         this.agentId = agentId;
+    }
+
+    /** Same identifier used by AgentRun and the native SessionEvent executionRunId. */
+    public String runId() {
+        return runId;
+    }
+
+    /** Runtime propagation; nested calls without this control allocate their own run. */
+    public static RunControl current(ContextView context, String agentId) {
+        RunControl control = context.getOrDefault(CONTEXT_KEY, null);
+        return control != null && control.belongsTo(agentId) ? control : null;
+    }
+
+    public Context attach(Context context) {
+        return context.put(CONTEXT_KEY, this);
     }
 
     boolean belongsTo(String id) {
@@ -92,7 +111,7 @@ public final class RunControl {
         return cancel();
     }
 
-    void finish(AgentRun.Status outcome) {
+    public void finish(AgentRun.Status outcome) {
         synchronized (this) {
             if (status.isTerminal()) {
                 return;

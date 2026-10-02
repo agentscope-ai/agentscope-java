@@ -34,11 +34,11 @@ Agent *evolution* — everything the agent learns or accumulates across sessions
 - **Self-learning skills** (`skills/`) — the agent drafts new skills from successful patterns; after an optional review gate they become reusable capabilities, then a background curator ages out / archives the unused ones.
 - **Plans** (`plans/`) — plans written during Plan Mode persist and survive across calls, keeping "figure it out" decoupled from "do it".
 - **Offloaded tool results** (compaction) — oversized tool outputs are written to disk and replaced in-context with a head/tail preview + a `read_file` pointer, so the agent can re-read them later without bloating the prompt.
-- **Session logs** (`agents/<agentId>/sessions/`) — the full never-compacted conversation log, queryable at any time.
+- **Session history** — Native Session Log holds execution facts/checkpoints; `agents/<agentId>/sessions/` JSONL remains a compatibility message view.
 
 Evolution data is long-lived by default: memory accumulates indefinitely, session logs are append-only and never purged automatically. How each channel is produced and maintained is detailed in [How the agent evolves](#how-the-agent-evolves) below.
 
-(The volatile per-call *runtime context* — `AgentState` — is **not** part of this list: it is the resume snapshot for an in-flight conversation, persisted separately in the `AgentStateStore`, never in the workspace. See the callout under idea 2 below.)
+AgentState describes working state. Default EVENT_LOG saves it in native checkpoints; AgentStateStore remains the legacy authority and explicit migration source. See [Session logs](/v2/en/docs/harness/session-log).
 
 **2. Content splits into three lifecycles, kept distinct.**
 
@@ -50,7 +50,7 @@ Evolution data is long-lived by default: memory accumulates indefinitely, sessio
 
 They live in one tree purely for deployment convenience (copy a directory, get a complete agent). Inside the framework they travel different read/write paths.
 
-> **`AgentState` is not workspace content — don't conflate the two.** The in-flight context an agent needs to resume mid-conversation (conversation buffer, rolling summary, permission / tool / task / Plan-Mode sub-contexts, plus the *metadata* pointing at workspace artifacts such as the active plan file) is serialized as a single `AgentState` document into the **`AgentStateStore`**, a separate subsystem (default `~/.agentscope/state/<agentId>/`, fully outside the workspace tree). The split is deliberate: the workspace holds the durable *file artifacts* (the never-compacted session log, plan markdown, task records, memory), while `AgentState` holds the volatile *runtime context + workspace metadata*. Two stores, two lifecycles — see [Context](/v2/en/docs/building-blocks/context).
+> **Separate file artifacts from recovery state.** Plans, skills and memory are Workspace files. AgentState is structured runtime state: default EVENT_LOG checkpoints it in the native Session Log, using a reserved Filesystem partition or custom backend. LEGACY use the separate AgentStateStore for recovery.
 
 **3. Natively multi-tenant.** Workspace data (memory, sessions, tasks, skills, sandbox state) is bucketed by a single `IsolationScope` — no application-level partitioning code. The scope decides who shares one bucket:
 
@@ -63,7 +63,7 @@ They live in one tree purely for deployment convenience (copy a directory, get a
 
 The chosen scope materializes differently per filesystem mode (path prefix on local disk, KV namespace in a shared store, sandbox state slot in a sandbox). Full semantics, fallback rules, and concurrency notes in [Filesystem — IsolationScope](/v2/en/docs/harness/filesystem#isolationscope--bucketing-across-users-and-replicas).
 
-> `IsolationScope` governs the **workspace/filesystem** buckets above. `AgentState` has its own, orthogonal addressing: it is always keyed by `(userId, sessionId)` in the `AgentStateStore`, regardless of scope.
+> IsolationScope selects the Filesystem bucket. Native history additionally uses `(userId, stableAgentId, sessionId)`; legacy AgentStateStore uses `(userId, sessionId)`. Migrate data when changing routing or backends.
 
 A single `HarnessAgent` instance can serve thousands of concurrent users with zero cross-user data leakage.
 
@@ -88,9 +88,6 @@ A single `HarnessAgent` instance can serve thousands of concurrent users with ze
 ├── plans/                       ← runtime: plan files written in Plan Mode
 │   └── PLAN.md
 └── agents/<agentId>/            ← runtime: each agent's runtime root
-    ├── sessions/                ← runtime: session index + never-compacted log
-    │   ├── sessions.json
-    │   └── <sessionId>.log.jsonl
     └── tasks/                   ← runtime: subagent background task records
         └── <sessionId>.json
 ```
@@ -169,7 +166,7 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 | `disableSubagents()` | the entire subagent subsystem |
 | `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
 | `disableToolsConfig()` | reading `tools.json` |
-| `disableSessionPersistence()` | AgentState auto-persistence |
+| `disableSessionPersistence()` | Compatibility no-op; does not disable native history. See session history modes |
 
 ## How workspace content gets loaded
 
@@ -304,31 +301,20 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## How runtime data and memory are stored
 
-The framework writes two data planes automatically — and they live in **two different places**. Keep them distinct:
+In default EVENT_LOG mode, AgentState checkpoints and execution facts live in native history; file artifacts and long-term memory keep their own lifecycles.
 
-| Data plane | What it is | Where it lives |
-|------------|-----------|----------------|
-| **`AgentState`** | volatile runtime context: chat buffer, compaction summary, permission / tool / task / Plan-Mode contexts, plus metadata pointing at workspace artifacts | the **`AgentStateStore`** — a separate subsystem, **not** the workspace (default `~/.agentscope/state/<agentId>/`) |
-| **Workspace runtime/long-term files** | durable artifacts: session logs, task records, `MEMORY.md` + `memory/` | inside the workspace tree, physical location follows the filesystem mode |
+| Data | Storage and recovery |
+| --- | --- |
+| Native history and checkpoints | Reserved local `.agentscope-runtime/` or remote partition, or explicit SessionLogStore; read through APIs |
+| AgentStateStore | LEGACY recovery and explicit migration source; default local root `~/.agentscope/state/<agentId>/` |
+| Tasks/plans/memory/files | Their Workspace, TaskRepository or sandbox backends; checkpoints do not copy all external content |
 
-You don't hand-edit either. The rest of this section walks the two planes in turn.
+### Agent state and native history
 
-### Agent state — a separate store, not in the workspace
+Calls with the same identity/backend restore committed checkpoints and applicable facts. Shared Workspace Filesystems can also provide distributed native logs if they offer genuine atomic CAS. Sandboxes and unsupported backends need an explicit log store. See [Session logs and recovery](/v2/en/docs/harness/session-log).
 
-`AgentState` is the per-`(userId, sessionId)` runtime context, and it is deliberately kept **out of the workspace tree**. When a `call()` completes, it is serialized to JSON and persisted via the configured [`AgentStateStore`](/v2/en/integration/session/index), addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back.
+### Compatibility session files
 
-By default `HarnessAgent` uses a `JsonFileAgentStateStore` rooted **outside** the workspace at `~/.agentscope/state/<agentId>/` (override the base via the `agentscope.state.home` system property), so runtime state stays decoupled from workspace data. Configure another store via `.stateStore(...)`.
-
-### Session logs (these *are* workspace files)
-
-Distinct from `AgentState`, the workspace holds the **conversation logs** under `agents/<agentId>/sessions/`:
-
-- **`sessions.json`** — the agent's session index (key = sessionId, value = summary + updatedAt).
-- **`<sessionId>.log.jsonl`** — the **never-compacted** raw conversation log, append-only. `session_search` / `session_history` query it.
-
-> The default `JsonFileAgentStateStore` is single-machine only. Multi-replica production must switch to a distributed store (`RedisAgentStateStore` / `MysqlAgentStateStore` / …). If you have configured `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` without swapping in a distributed state store, `build()` raises `IllegalStateException` — a forced reminder not to make runtime state a single point of failure.
-
-Full details (recovery flow, cross-node continuation, `(userId, sessionId)` addressing) live in [Context](/v2/en/docs/building-blocks/context).
 
 ### Memory (long-term)
 
@@ -376,9 +362,9 @@ Beyond its static definition, the workspace is where the agent's *accumulated ex
 | **Self-learning skills** | `skills/`, `skills/_drafts/`, `skills/.archive/` | `.enableSkillManageTool(...)` | the agent calls `propose_skill` to draft a skill from a working pattern → an optional promotion gate approves it → a background curator marks unused skills stale (30d) and archives them (90d) | [Skills — Self-learning loop](/v2/en/docs/harness/skill#self-learning-loop-optional) |
 | **Plans** | `plans/PLAN.md` | `.enablePlanMode()` | a read-only planning phase writes the plan via `plan_write`; it persists across calls and drives the execution phase, decoupling intent from action | [Plan Mode](/v2/en/docs/harness/plan-mode) |
 | **Offloaded tool results** | the eviction directory under the workspace | `.toolResultEviction(...)` | when a single tool result exceeds the threshold (default 80K chars), the full output is written to disk and the in-context message is replaced with a head/tail preview + a `read_file` pointer | [Compaction](/v2/en/docs/harness/compaction) |
-| **Session logs** | `agents/<agentId>/sessions/` (workspace) | on by default | every `call()` appends to the never-compacted JSONL log; `session_search` / `session_history` query it | [Context](/v2/en/docs/building-blocks/context) |
+| **Session logs** | Reserved Filesystem partition / custom SessionLogStore; compatibility JSONL also retained | EVENT_LOG by default | Execution facts and native message history; existing index supports discovery | [Session logs](/v2/en/docs/harness/session-log) |
 
-The unifying idea: **the agent improves between runs without you wiring up any storage.** Memory, skills, plans, session logs, and offloaded results are all just files in the workspace — they get the same per-tenant isolation, the same two-layer reads, and the same filesystem-mode portability as everything else on this page. (The volatile `AgentState` runtime context is the one exception — it lives in the separate `AgentStateStore`, not the workspace; see [How runtime data and memory are stored](#how-runtime-data-and-memory-are-stored).)
+Memory, skills, plans and offloaded results follow Workspace isolation/routing. Native history additionally requires atomic storage and reserves its commit structure; compatibility JSONL cannot replace full execution records.
 
 ## Deep dive on key directories
 
@@ -464,7 +450,7 @@ plans/
 └── PLAN.md           ← current plan written by plan_write
 ```
 
-Note: `PlanModeContext` (whether the plan phase is active, current plan file path) lives in `AgentState` — it is **runtime state**, persisted via the `AgentStateStore` (by default `~/.agentscope/state/<agentId>/`, outside the workspace). The files under `plans/` are only the markdown content itself. See [Plan Mode](/v2/en/docs/harness/plan-mode).
+PlanModeContext belongs to AgentState and restores from native checkpoints by default, or AgentStateStore in legacy mode. The plans directory holds the actual Markdown files and needs its own persistence. See [Plan Mode](/v2/en/docs/harness/plan-mode).
 
 ### `agents/<agentId>/`
 
@@ -472,16 +458,13 @@ This is the **runtime root**, framework-written and rarely hand-edited:
 
 ```
 agents/<agentId>/
-├── sessions/
-│   ├── sessions.json          ← session index for this agent
-│   └── <sessionId>.log.jsonl  ← never-compacted raw conversation log (append-only)
 └── tasks/
     └── <sessionId>.json       ← subagent background task records (taskId → TaskRecord)
 ```
 
-> The serialized `AgentState` (`agent_state`) is **not** in the workspace by default — it lives in the configured `AgentStateStore` (default `~/.agentscope/state/<agentId>/`). Only the conversation logs and task records above stay in the workspace.
+> This tree shows task records. Native Session Log lives in the reserved Filesystem partition: local `.agentscope-runtime/` or remote `__agentscope_session_log_v1__`. Read history with `sessionTranscript()`, `session_history` and `session_list`; legacy JSONL, sessions.json and segmented transcripts are no longer written.
 
-For cross-node recovery / multi-replica deployments this data must be shared (either `RedisAgentStateStore` + `RemoteFilesystemSpec`, or sandbox with distributed state). See [Context](/v2/en/docs/building-blocks/context) and [Filesystem](/v2/en/docs/harness/filesystem).
+Share native history, task/file artifacts and sandbox metadata as appropriate across replicas. Configuring shared AgentStateStore alone does not share a local native log. See [Session logs](/v2/en/docs/harness/session-log) and [Filesystem](/v2/en/docs/harness/filesystem).
 
 ### `knowledge/`
 

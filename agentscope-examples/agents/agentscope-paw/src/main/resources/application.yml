@@ -32,10 +32,7 @@ claw:
   # so Operate can discover this agent. Defaults match local-dev stack:
   #   control :8081, shared internal token, contract HTTP :18090.
   #
-  # IMPORTANT for transcript testing: set agent-name to your catalog main agent id
-  # (usually "main" or "default" in agentscope.json). Segment keys are
-  #   {tenant}/{agentId}/{sessionId}/events/...
-  # and aistiod looks up the same path using the registered agent name.
+  # agent-name must match the registered agent used by Operate.
   aistio:
     enabled: ${CLAW_AISTIO_ENABLED:false}
     control-http: ${AISTIO_CONTROL_HTTP:http://localhost:8081}
@@ -46,16 +43,11 @@ claw:
     contract-port: ${CLAW_AISTIO_CONTRACT_PORT:18090}
     enable-events: true
 
-  # ---- Session transcript (BYO Operate history) ----
-  # Harness writes immutable JSONL segments here. Point aistiod at the same directory:
-  #   AISTIO_TRANSCRIPT_FS_ROOT=$CLAW_HOME/transcripts
-  # so Operate can read messages after the DP process exits.
-  transcript:
-    enabled: ${CLAW_TRANSCRIPT_ENABLED:true}
-    # Empty → ${claw.home}/transcripts
-    root: ${CLAW_TRANSCRIPT_ROOT:}
-    # Must match claw.aistio.tenant (tenant segment in object keys).
-    tenant: ${CLAW_TRANSCRIPT_TENANT:${claw.aistio.tenant:default}}
+  # ---- Native session log ----
+  # Empty uses the workspace backend. A shared root can serve multiple agent instances.
+  # Operate reads history through the agent contract; no separate transcript tree is written.
+  session-log:
+    root: ${CLAW_SESSION_LOG_ROOT:}
 
   # ---- DashScope model (used when no Model Spring bean is present) ----
   # Set DASHSCOPE_API_KEY env var or override api-key below.

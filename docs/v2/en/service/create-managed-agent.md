@@ -33,6 +33,8 @@ For a missing model response, inspect deployment credentials. For file or Shell 
 
 ## Assign real work
 
+For your own chat or task page, follow the [Agent API chat example](/v2/en/service/agent-api-chat) to create a session, submit work and subscribe to SSE. Tool cards, human confirmation, cancellation and reconnection share that session.
+
 Use a [console Issue](/v2/en/service/issues) for work with acceptance criteria or [publish an Endpoint](/v2/en/service/endpoints) for applications. Verify model, tool or resource changes with a new Chat or task.
 
 See the [Managed Agent reference](/v2/en/service/managed-agent) for parameters, capabilities and execution. Its resource guides cover [Workspace](/v2/en/service/workspaces), [Environment](/v2/en/service/environments), [Memory](/v2/en/service/memory) and [Vault](/v2/en/service/vault) bindings.

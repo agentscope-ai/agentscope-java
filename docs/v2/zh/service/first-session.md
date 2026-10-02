@@ -39,7 +39,15 @@ en_link: /v2/en/service/first-session
   <img src="/imgs/service/chat.png" alt="在控制台选择 Agent 并进行多轮对话" />
 </Frame>
 
-## 2. 将 Agent 作为 API 服务发布
+## 2. 从业务应用调用 Agent
+
+| 场景 | 接入方式 |
+| --- | --- |
+| 自己实现聊天 UI、工具卡、人工确认与刷新恢复 | [Agent API 聊天示例](/v2/zh/service/agent-api-chat)：用户 Bearer token，创建 session → 提交 turn → 快照 + SSE；无需发布 Endpoint |
+| 发布可复用 API，配置 API key、输入输出 schema 或面向 Team/Workflow | 按下面步骤创建 Endpoint，使用返回的 statusUrl/eventsUrl |
+
+### 发布 Endpoint
+
 
 回到“资料助手”详情，打开 **Connections → Published APIs**，在 **Publish as API** 中点击 **New Endpoint**：
 
@@ -168,7 +176,7 @@ curl --fail-with-body "$BASE_URL/invoke/v1/endpoints/meeting-team/jobs" \
   --data '{"title":"整理会议待办","description":"小李周五完成安装说明，下周一评审，时间待确认。请整理并复核待办，交付统一清单。","input":{}}'
 ```
 
-与单 Agent 一样，调用方先提交请求，再使用响应中的 `eventsUrl` 订阅 `text/event-stream`，使用 `statusUrl` 查询状态。复用第 2 步的 SSE 命令，替换本次 URL 和 Team API key 即可。
+与前面的 Endpoint Conversation 一样，调用方先提交请求，再使用响应中的 `eventsUrl` 订阅 `text/event-stream`，使用 `statusUrl` 查询状态。复用第 2 步的 SSE 命令，替换本次 URL 和 Team API key 即可。
 
 **相同的是 Endpoint 的认证、提交后订阅 SSE 的接入方式。** Conversation 提供一轮会话的事件，Job 提供编排运行事件；二者的请求体、事件内容和结果语义不同。若希望单 Agent 与 Team/Workflow 都采用相同的 Job 契约，也可以将单 Agent 发布为 Job Endpoint。
 

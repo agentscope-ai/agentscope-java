@@ -11,6 +11,10 @@ Managed Agent 由 Service 管理 Harness、会话和模型执行。你配置职�
 
 首次使用请先按[操作指南](/v2/zh/service/create-managed-agent)完成创建或接入。本分类集中提供详细配置、支持能力和工作原理。
 
+如果要把 Agent 接入自己的业务系统，从 [Agent API：托管会话与任务](/v2/zh/service/session-event-log) 开始，再按 [SSE 事件与前端接入](/v2/zh/service/sse-events)实现聊天界面、工具进度与重连。服务负责后台执行，客户端负责提交、展示和交互。
+
+[可恢复聊天示例](/v2/zh/service/agent-api-chat)把创建、发送、刷新恢复、工具确认和取消串成一条完整接入流程。
+
 ## 本章节
 
 - [参数与模型配置](/v2/zh/service/managed-agent-configuration)

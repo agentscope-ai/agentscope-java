@@ -212,7 +212,6 @@ class ContextPipelineV2Test {
                         .keepMessages(1)
                         .keepTokens(0)
                         .flushBeforeCompact(false)
-                        .offloadBeforeCompact(false)
                         .build());
     }
 

@@ -22,6 +22,8 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.observation.ActionObservationException;
 import io.agentscope.core.observation.ActionObservations;
+import io.agentscope.core.session.SessionLogException;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
@@ -274,7 +276,24 @@ class ToolExecutor {
 
         // Create emitter for streaming
         ToolEmitter toolEmitter =
-                new DefaultToolEmitter(toolCall, getEffectiveChunkCallback(internalChunkCallback));
+                new DefaultToolEmitter(
+                        toolCall,
+                        (use, chunk) -> {
+                            SessionRecorder recorder =
+                                    SessionRecorder.from(param.getRuntimeContext());
+                            if (recorder != null)
+                                recorder.append(
+                                        "tool/chunk",
+                                        Map.of(
+                                                "toolCallId",
+                                                use.getId(),
+                                                "actionId",
+                                                recorder.actionId(use.getId()),
+                                                "chunk",
+                                                chunk));
+                            var callback = getEffectiveChunkCallback(internalChunkCallback);
+                            if (callback != null) callback.accept(use, chunk);
+                        });
 
         // Merge input with preset parameters. Preset values win so framework-controlled
         // parameters remain immutable from the caller/LLM perspective.
@@ -298,7 +317,37 @@ class ToolExecutor {
                         .emitter(toolEmitter)
                         .build();
 
-        return tool.callAsync(executionParam)
+        SessionRecorder recorder = SessionRecorder.from(runtimeContext);
+        Mono<Void> dispatch =
+                recorder == null
+                        ? Mono.empty()
+                        : Mono.defer(
+                                () -> {
+                                    recorder.captureState(
+                                            RuntimeContext.resolveAgentState(
+                                                    executionParam.getRuntimeContext(),
+                                                    executionParam.getAgent()),
+                                            "before_tool");
+                                    recorder.append(
+                                            "tool/decision",
+                                            Map.of(
+                                                    "toolCallId",
+                                                    toolCall.getId(),
+                                                    "decision",
+                                                    "allowed"));
+                                    return recorder.record(
+                                            "tool/dispatch",
+                                            Map.of(
+                                                    "toolCallId",
+                                                    toolCall.getId(),
+                                                    "actionId",
+                                                    recorder.actionId(toolCall.getId()),
+                                                    "name",
+                                                    toolCall.getName(),
+                                                    "arguments",
+                                                    mergedInput));
+                                });
+        return dispatch.then(Mono.defer(() -> tool.callAsync(executionParam)))
                 .onErrorResume(
                         ToolSuspendException.class,
                         e -> {
@@ -311,7 +360,8 @@ class ToolExecutor {
                         })
                 .onErrorResume(
                         e -> {
-                            if (ActionObservationException.causedBy(e)) return Mono.error(e);
+                            if (ActionObservationException.causedBy(e)
+                                    || SessionLogException.causedBy(e)) return Mono.error(e);
                             String errorMsg =
                                     e.getMessage() != null
                                             ? e.getMessage()
@@ -501,7 +551,8 @@ class ToolExecutor {
                 .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()))
                 .onErrorResume(
                         e -> {
-                            if (ActionObservationException.causedBy(e)) return Mono.error(e);
+                            if (ActionObservationException.causedBy(e)
+                                    || SessionLogException.causedBy(e)) return Mono.error(e);
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
                             String errorMsg = ExceptionUtils.getErrorMessage(e);
                             return Mono.just(
@@ -556,6 +607,7 @@ class ToolExecutor {
                         .filter(
                                 error ->
                                         !ActionObservationException.causedBy(error)
+                                                && !SessionLogException.causedBy(error)
                                                 && retryOn.test(error))
                         .doBeforeRetry(
                                 signal ->

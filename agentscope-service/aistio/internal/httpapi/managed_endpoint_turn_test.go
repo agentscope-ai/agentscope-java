@@ -68,8 +68,12 @@ func TestManagedEndpointTurnsProjectResultAndFailureToTheirInvocation(t *testing
 		if err != nil {
 			t.Fatal(err)
 		}
-		base := i * 4
-		report(base+1, "user.message", map[string]any{"text": "question", "endpointInvocationId": inv.ID.String(), "endpointTurnId": turnID.String()})
+		base := i * 10
+		inputType := "user.message"
+		if i == 1 {
+			inputType = "session.input_accepted"
+		}
+		report(base+1, inputType, map[string]any{"endpointInvocationId": inv.ID.String(), "endpointTurnId": turnID.String()})
 		report(base+2, "session.status_running", nil)
 		if i > 0 {
 			report(4, "session.status_idle", nil) // replay of the first turn must not close this turn
@@ -80,6 +84,13 @@ func TestManagedEndpointTurnsProjectResultAndFailureToTheirInvocation(t *testing
 		}
 		if i == 2 {
 			report(base+3, "session.error", map[string]any{"code": "provider_unavailable", "message": "provider failed"})
+		} else if i == 1 {
+			// A native user fact does not overwrite the earlier command's invocation fence.
+			report(base+3, "user.message", map[string]any{"text": "question", "message_id": "user"})
+			report(base+4, "agent.message", map[string]any{"text": "I will inspect the files", "message_id": "preamble"})
+			report(base+5, "agent.message", map[string]any{"text": "draft", "message_id": "output"})
+			report(base+6, "agent.message", map[string]any{"text": fmt.Sprintf("answer %d", i), "message_id": "output", "final_output": true})
+			report(base+7, "session.status_idle", nil)
 		} else {
 			report(base+3, "agent.message", map[string]any{"text": fmt.Sprintf("answer %d", i)})
 			report(base+4, "session.status_idle", nil)

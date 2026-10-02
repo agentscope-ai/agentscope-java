@@ -39,7 +39,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-默认摘要 prompt 会把内容组织成 `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` 四个小节,适合工程/编排类 agent。`CompactionConfig` 还支持 `.model(...)` 为压缩摘要指定独立模型（不设则用 agent 主模型）。完整字段表(`triggerTokens`、`keepTokens`、`flushBeforeCompact`、`offloadBeforeCompact`、`model`、`TruncateArgsConfig`)与摘要 prompt 模板在[记忆](/v2/zh/docs/harness/memory#开启压缩)文档里有详细列表,这里不重复。
+默认摘要 prompt 会把内容组织成 `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` 四个小节,适合工程/编排类 agent。`CompactionConfig` 还支持 `.model(...)` 为压缩摘要指定独立模型（不设则用 agent 主模型）。完整字段表(`triggerTokens`、`keepTokens`、`flushBeforeCompact`、`model`、`TruncateArgsConfig`)与摘要 prompt 模板在[记忆](/v2/zh/docs/harness/memory#开启压缩)文档里有详细列表,这里不重复。
 
 ### 2. 大工具结果卸载 (`ToolResultEvictionMiddleware`)
 
@@ -81,7 +81,7 @@ CompactionConfig.builder()
 
 `CompactionConfig.flushBeforeCompact`(默认 `true`)决定**摘要发生前是否先把对话前缀里的事实抽取到长期记忆(Memory)中**——这一步由 `MemoryFlushMiddleware` + `MemoryFlushManager` 完成,会读 `<workspace>/MEMORY.md` 与 `memory/*.md`,把新事实增量写进去。等会儿摘要丢掉前缀消息时,信息不会随之消失——agent 仍可以通过 `memory_search` / `memory_get` 工具回头查。
 
-类似地,`offloadBeforeCompact`(默认 `true`)在摘要前把**原始消息**整段写到永不压缩的 `*.log.jsonl`,供 `session_search` 检索。
+原生 Session Log 已保存完整消息；压缩不再执行额外原文 offload。摘要中可通过 `session_history(agentId=..., sessionId=...)` 找回压缩前历史。
 
 > Memory 子系统的完整工作机制——双层结构、后台维护任务(归档、合并)、记忆工具——见 [记忆](/v2/zh/docs/harness/memory) 文档。压缩与 memory 是一对常常一起用的组件,但有各自独立的开关。
 
@@ -104,7 +104,7 @@ CompactionConfig.builder()
 - `session_history agentId="..." sessionId="..." lastN=20` —— 看某次会话最近 N 条消息。
 - `session_search query="..." agentId="..."` —— 在历史会话里关键词搜索。
 
-这些工具读的是**永不压缩的对话日志**(`<workspace>/agents/<agentId>/sessions/<sessionId>.log.jsonl`),所以即使上下文已经被压缩成摘要,agent 也能查到原始消息。
+这些工具读取原生 Session Log 的完整消息投影，所以即使工作上下文已压缩成摘要，仍可查询此前已提交的消息。
 
 ---
 

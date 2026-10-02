@@ -29,6 +29,39 @@ Use `.env` for Docker. On Kubernetes, keep sensitive settings in an existing Sec
 | `DASHSCOPE_API_KEY` | Default DashScope model credentials | Required only for that model path |
 | `BUILDER_E2B_API_KEY` | E2B environment credentials | Required only for the corresponding Sandbox path |
 
+## Agent API settings
+
+These are **Dataplane Spring properties**. Supply them through a loaded application.yml, startup arguments or process environment configuration. Adding a line only to Compose `.env` does not pass it to a container; map it in the service definition and recreate the data container.
+
+| Property | Default | Purpose |
+| --- | --- | --- |
+| `builder.agent-api.files.max-bytes` | `16777216` | Upload limit per file (16 MiB); independent of model/context limits |
+| `builder.agent-api.webhooks.allowed-hosts` | Empty | Comma-separated exact destination hosts; HTTPS port 443 only; no destinations allowed by default |
+| `builder.agent-api.webhooks.poll-ms` | `2000` | Webhook delivery poll interval in milliseconds |
+| `builder.agent-api.pricing.models` | `{}` | JSON string mapping model IDs to per-million input/output token prices |
+| `builder.agent-api.pricing.currency` | `USD` | Estimated cost currency; must match max_cost budgets |
+| `builder.agent-api.trace-enabled` | `false` | Administrator diagnostics; ownership and ROLE_ADMIN / ROLE_SESSION_TRACE are still required |
+| `builder.agent-api.inbox-poll-ms` | `1000` | Durable task dispatch polling interval in milliseconds |
+| `builder.agent-api.export-poll-ms` | `5000` | Native-to-public event catch-up interval in milliseconds, not a token refresh interval |
+
+For example, in YAML actually loaded by Dataplane:
+
+```yaml
+builder:
+  agent-api:
+    files:
+      max-bytes: 16777216
+    webhooks:
+      allowed-hosts: notify.example.com
+    pricing:
+      currency: USD
+      models: '{"your-model":{"input_per_million":1,"output_per_million":2}}'
+```
+
+Use your own notification host and model ID. Example prices illustrate format only; operators maintain actual prices. Missing prices mean incomplete cost data, not zero cost. Message/tool deltas are durable by default; preview is not required.
+
+Replicas share the Data Plane database and a BaseStore supporting conditional writes. Filesystem storage can also be distributed. See [record locations](/v2/en/service/session-event-log#where-records-live). Disable proxy buffering for SSE, flush promptly and allow a sufficient read timeout. The 15-second heartbeat keeps the connection alive without promising model output.
+
 ## Paths and internal addresses
 
 Release deployments share `/data/workspaces`. The control plane uses `AISTIO_WORKSPACE_ROOT`; Java uses `BUILDER_WORKSPACE_ROOT`. `AISTIO_ARTIFACT_ROOT` selects the artifact directory.

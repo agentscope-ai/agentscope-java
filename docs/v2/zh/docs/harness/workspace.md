@@ -32,11 +32,11 @@ en_link: /v2/en/docs/harness/workspace
 - **自学习技能**（`skills/`）—— agent 从成功模式中起草新技能；经过可选的审批闸门后成为可复用能力，再由后台 curator 把长期未用的老化、归档。
 - **计划文件**（`plans/`）—— Plan Mode 中写下的计划会持久化、跨调用保留，让"想清楚"与"做出来"解耦。
 - **工具结果落盘**（compaction）—— 超大工具输出写到磁盘，上下文里只留 head/tail 预览 + `read_file` 指针，agent 之后可按需重读而不撑爆 prompt。
-- **会话日志**（`agents/<agentId>/sessions/`）—— 永不压缩的完整对话日志，随时可查。
+- **会话日志** —— 原生 Session Log 保存完整执行事实和 checkpoint；`agents/<agentId>/sessions/` 的 JSONL 保留为兼容消息视图。
 
 这些进化数据默认长期有效：记忆无限累积，会话日志只追加不自动清除。每条通道如何产生与维护，详见下文 [智能体如何进化](#智能体如何进化)。
 
-（每次调用的易失*运行期上下文* —— `AgentState` —— 不在这张清单里：它是在途对话的恢复快照，单独存放在 `AgentStateStore`，从不进工作区。详见下方第 2 条下的提示框。）
+`AgentState` 描述当前工作状态；默认 EVENT_LOG 模式将它保存为原生日志中的 checkpoint。旧 AgentStateStore 仍用于 legacy 和显式迁移，详见 [会话日志与恢复](/v2/zh/docs/harness/session-log)。
 
 **2. 内容按生命周期分三类，互不混淆。**
 
@@ -48,7 +48,7 @@ en_link: /v2/en/docs/harness/workspace
 
 混在一棵树里只是为了部署方便（一个目录拷贝走就是完整 agent），框架内部走不同的读写路径。
 
-> **`AgentState` 不是工作区内容——别把两者混为一谈。** agent 中途恢复对话所需的在途上下文（对话缓冲、滚动摘要、权限 / 工具 / 任务 / Plan-Mode 子上下文，以及指向工作区产物的*元数据*，例如当前激活的计划文件）会被序列化成一份 `AgentState` 文档，存进**独立子系统 `AgentStateStore`**（默认 `~/.agentscope/state/<agentId>/`，完全在工作区树之外）。这是刻意的拆分：工作区保存持久的*文件产物*（永不压缩的会话日志、计划 markdown、任务记录、记忆），而 `AgentState` 保存易失的*运行期上下文 + 工作区元数据*。两个存储、两套生命周期——详见 [Context](/v2/zh/docs/building-blocks/context)。
+> **区分文件产物和恢复状态。** 计划、技能和记忆是 Workspace 文件；AgentState 是结构化运行状态。默认 EVENT_LOG 模式将状态 checkpoint 放进原生 Session Log，日志复用 Filesystem 的保留分区或自定义后端。LEGACY 才以独立 AgentStateStore 为恢复来源。
 
 **3. 原生多租户隔离。** 工作区数据（记忆、会话、任务、技能、沙箱状态）由单一的 `IsolationScope` 分桶——无需应用层手写任何分区逻辑。Scope 决定谁和谁共享一个桶：
 
@@ -61,7 +61,7 @@ en_link: /v2/en/docs/harness/workspace
 
 选定的 scope 在不同 filesystem 模式下落地方式不同（本机为路径前缀、共享存储为 KV 命名空间、沙箱为状态 slot）。完整语义、降级规则、并发说明见 [filesystem — IsolationScope](/v2/zh/docs/harness/filesystem#isolationscope--多用户与多副本怎么分桶)。
 
-> `IsolationScope` 管的是上面**工作区 / filesystem** 的分桶。`AgentState` 有自己正交的寻址方式：无论哪种 scope，它始终按 `(userId, sessionId)` 存进 `AgentStateStore`。
+> `IsolationScope` 决定 Filesystem 分桶。原生日志在桶内继续以 `(userId, stableAgentId, sessionId)` 隔离；旧 AgentStateStore 以 `(userId, sessionId)` 寻址。改变 scope 或日志后端前应迁移数据。
 
 单个 `HarnessAgent` 实例可服务数千并发用户，用户间数据零泄漏。
 
@@ -86,9 +86,6 @@ en_link: /v2/en/docs/harness/workspace
 ├── plans/                       ← 运行时：Plan Mode 写下的计划文件
 │   └── PLAN.md
 └── agents/<agentId>/            ← 运行时：每个 agent 自己的运行时根
-    ├── sessions/                ← 运行时：会话索引 + 永不压缩对话日志
-    │   ├── sessions.json
-    │   └── <sessionId>.log.jsonl
     └── tasks/                   ← 运行时：子 agent 后台任务记录
         └── <sessionId>.json
 ```
@@ -164,7 +161,7 @@ env:
 | `disableSubagents()` | 整个子 agent 子系统 |
 | `disableDynamicSkills()` | 每轮重新合并技能；改成 build 时一次 |
 | `disableToolsConfig()` | 不读 `tools.json` |
-| `disableSessionPersistence()` | AgentState 自动持久化 |
+| `disableSessionPersistence()` | 兼容 no-op；不能用它关闭原生 Session Log，模式选择见会话日志指南 |
 
 ## 工作区内容如何被加载
 
@@ -298,31 +295,20 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 运行时数据与 Memory 怎么存
 
-框架会自动写两个数据面，而它们落在**两个不同的地方**。务必分清：
+默认 EVENT_LOG 下，AgentState 的 checkpoint 与完整执行事实保存在原生 Session Log 中；文件产物和长期记忆仍各有生命周期。
 
-| 数据面 | 是什么 | 落在哪 |
-|--------|--------|--------|
-| **`AgentState`** | 易失的运行期上下文：对话缓冲、压缩摘要、权限 / 工具 / 任务 / Plan-Mode 上下文，以及指向工作区产物的元数据 | **`AgentStateStore`** —— 独立子系统，**不在**工作区（默认 `~/.agentscope/state/<agentId>/`） |
-| **工作区运行时 / 长期文件** | 持久产物：会话日志、任务记录、`MEMORY.md` + `memory/` | 在工作区树内，物理位置随 filesystem 模式而定 |
+| 数据 | 存储与恢复 |
+| --- | --- |
+| 原生执行历史、AgentState checkpoint | Filesystem 的 `.agentscope-runtime/` / 远端保留分区，或显式 SessionLogStore；通过 API 读取 |
+| AgentStateStore | LEGACY 恢复来源和显式迁移来源；默认本地根 `~/.agentscope/state/<agentId>/`，可用 stateStore 替换 |
+| 任务、计划、记忆和工作文件 | Workspace / TaskRepository / sandbox 等对应后端；日志 checkpoint 不复制它们的全部内容 |
 
-两者都不需要你手写编辑。本节依次走一遍这两个数据面。
+### Agent 状态与原生日志
 
-### Agent 状态 —— 独立存储，不在工作区
+每次调用沿用相同身份和后端即可自动恢复已提交 checkpoint 及后续可应用事实。共享 Workspace Filesystem 可以同时提供分布式日志存储；它需要真实原子 CAS 能力。Sandbox 或不具备该能力的后端应显式提供日志 store。完整配置和恢复检查见 [会话日志与恢复](/v2/zh/docs/harness/session-log)。
 
-`AgentState` 是按 `(userId, sessionId)` 维度的运行期上下文，被刻意放在**工作区树之外**。每次 `call()` 结束，它会被序列化成 JSON，按该次调用的 `(userId, sessionId)` 通过 [`AgentStateStore`](/v2/zh/integration/session/index) 持久化；下次同 `(userId, sessionId)` 的 `call()` 自动加载回来。
+### 兼容会话文件
 
-默认情况下 `HarnessAgent` 使用 `JsonFileAgentStateStore`，根目录在工作区**之外**的 `~/.agentscope/state/<agentId>/`（可通过 `agentscope.state.home` 系统属性改根目录），让运行时状态与工作区数据解耦。可通过 `.stateStore(...)` 换成别的后端。
-
-### 会话日志（这些*才是*工作区文件）
-
-与 `AgentState` 不同，工作区里保留 `agents/<agentId>/sessions/` 下的**对话日志**：
-
-- **`sessions.json`** —— 该 agent 的会话索引（key 是 sessionId，value 是 summary + updatedAt）。
-- **`<sessionId>.log.jsonl`** —— **永不压缩**的原始对话日志，append-only。`session_search` / `session_history` 工具就是查它。
-
-> 默认的 `JsonFileAgentStateStore` 仅适合单机。生产多副本必须换成分布式后端（`RedisAgentStateStore` / `MysqlAgentStateStore` ……）。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)` 但没换成分布式状态存储，`build()` 会直接抛 `IllegalStateException`—— 强制提醒你别让运行时状态成为单点。
-
-完整细节（恢复链路、跨节点接续、`(userId, sessionId)` 寻址）见 [Context](/v2/zh/docs/building-blocks/context)。
 
 ### Memory（长期记忆）
 
@@ -370,9 +356,9 @@ workspace/
 | **自学习技能** | `skills/`、`skills/_drafts/`、`skills/.archive/` | `.enableSkillManageTool(...)` | agent 调 `propose_skill` 从有效模式起草技能 → 可选审批闸门放行 → 后台 curator 把长期未用的标记为 stale（30 天）并归档（90 天） | [技能 — 自学习闭环](/v2/zh/docs/harness/skill#自学习闭环可选) |
 | **计划文件** | `plans/PLAN.md` | `.enablePlanMode()` | 只读规划阶段用 `plan_write` 写计划；跨调用保留并驱动执行阶段，让意图与动作解耦 | [Plan Mode](/v2/zh/docs/harness/plan-mode) |
 | **工具结果落盘** | 工作区下的 eviction 目录 | `.toolResultEviction(...)` | 单个工具结果超阈值（默认 80K 字符）时，完整输出写盘，上下文消息替换为 head/tail 预览 + `read_file` 指针 | [上下文压缩](/v2/zh/docs/harness/compaction) |
-| **会话日志** | `agents/<agentId>/sessions/`（工作区） | 默认开启 | 每次 `call()` 追加到永不压缩的 JSONL 日志；`session_search` / `session_history` 查它 | [Context](/v2/zh/docs/building-blocks/context) |
+| **会话日志** | Filesystem 保留分区 / 自定义 SessionLogStore，另有兼容 JSONL | 默认 EVENT_LOG | 保存执行事实；工具可读原生消息历史，旧索引用于发现 | [会话日志](/v2/zh/docs/harness/session-log) |
 
-贯穿其中的理念：**智能体在每次运行之间变强，而你不用搭任何存储。** 记忆、技能、计划、会话日志、落盘结果都只是工作区里的文件——它们享受和本页其它内容一样的按租户隔离、两层读、以及跨 filesystem 模式的可移植性。（唯一的例外是易失的 `AgentState` 运行期上下文——它存在独立的 `AgentStateStore`，不在工作区；见 [运行时数据与 Memory 怎么存](#运行时数据与-memory-怎么存)。）
+记忆、技能、计划和卸载结果沿用 Workspace 的租户隔离与 Filesystem 路由。原生日志另需原子存储能力，并通过保留分区保护提交结构；兼容 JSONL 不能替代完整执行记录。
 
 ## 重点目录深入
 
@@ -458,7 +444,7 @@ plans/
 └── PLAN.md           ← plan_write 写入的当前计划
 ```
 
-注意：`PlanModeContext`（是否处于 plan 阶段、当前计划文件路径）跟着 `AgentState` 走，是**运行时状态**，通过 `AgentStateStore` 持久化（默认 `~/.agentscope/state/<agentId>/`，在工作区之外）。`plans/` 下只是 markdown 内容本身。详见 [Plan Mode](/v2/zh/docs/harness/plan-mode)。
+`PlanModeContext`（阶段和计划路径）属于 AgentState，默认随原生日志 checkpoint 恢复；legacy 使用 AgentStateStore。`plans/` 保存 Markdown 文件本身，文件内容仍需独立持久保存。详见 [Plan Mode](/v2/zh/docs/harness/plan-mode)。
 
 ### `agents/<agentId>/`
 
@@ -466,16 +452,13 @@ plans/
 
 ```
 agents/<agentId>/
-├── sessions/
-│   ├── sessions.json          ← 该 agent 的会话索引
-│   └── <sessionId>.log.jsonl  ← 永不压缩的原始对话日志（append-only）
 └── tasks/
     └── <sessionId>.json       ← 子 agent 后台任务记录（taskId → TaskRecord）
 ```
 
-> 序列化的 `AgentState`（`agent_state`）默认**不**在工作区里——它存在配置的 `AgentStateStore`（默认 `~/.agentscope/state/<agentId>/`）。工作区里只保留上面的对话日志与任务记录。
+> 上图仅展示任务记录。原生 Session Log 位于 Filesystem 保留分区：本地为 `.agentscope-runtime/`，远端为 `__agentscope_session_log_v1__`。通过 `sessionTranscript()`、`session_history` 和 `session_list` 读取历史；不再写旧 JSONL、sessions.json 或分段 transcript。
 
-跨节点恢复 / 多副本部署时这些数据必须共享（要么走 `RedisAgentStateStore` + `RemoteFilesystemSpec`，要么走沙箱+分布式状态）。详见 [Context](/v2/zh/docs/building-blocks/context) 与 [filesystem](/v2/zh/docs/harness/filesystem)。
+跨节点恢复时，原生日志、任务/文件产物、sandbox 元数据等都应使用适合的共享后端；仅配置共享 AgentStateStore 不会自动共享本地 Session Log。见 [会话日志](/v2/zh/docs/harness/session-log) 与 [Filesystem](/v2/zh/docs/harness/filesystem)。
 
 ### `knowledge/`
 

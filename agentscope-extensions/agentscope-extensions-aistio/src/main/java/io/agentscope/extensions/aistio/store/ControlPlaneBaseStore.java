@@ -73,6 +73,11 @@ public final class ControlPlaneBaseStore implements BaseStore {
     }
 
     @Override
+    public boolean supportsAtomicSessionStorage() {
+        return true;
+    }
+
+    @Override
     public boolean putIfVersion(
             List<String> ns, String key, Map<String, Object> value, long expectedVersion) {
         try {

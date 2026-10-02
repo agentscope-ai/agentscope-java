@@ -1,0 +1,389 @@
+{
+  "suite" : "phase-routing-synthetic-v1",
+  "timestamp" : "2026-09-26T01:48:55.139536Z",
+  "sourceCommit" : "75e980a8b05cf931b3f7f0de364fea905ab4ca01",
+  "dataSha256" : "f1fd2a6f042663ff34c8f515c2588f0cbfa57a351878590589c583f567dc39cf",
+  "backend" : "--live-qwen",
+  "requestedModel" : "qwen3.8-max",
+  "actualModels" : [ "llm:qwen3.8-max" ],
+  "mode" : "SHADOW",
+  "confidenceThreshold" : 0.8,
+  "enableThinking" : false,
+  "cases" : 12,
+  "route" : {
+    "incorrect" : 0,
+    "correct" : 8,
+    "abstained" : 4,
+    "labels" : 12,
+    "errors" : 0
+  },
+  "effort" : {
+    "incorrect" : 0,
+    "correct" : 7,
+    "abstained" : 4,
+    "labels" : 11,
+    "errors" : 0
+  },
+  "latency" : {
+    "p50Millis" : 1515.031709,
+    "p95Millis" : 1843.683375
+  },
+  "usage" : {
+    "inputTokens" : 7859,
+    "responsesWithUsage" : 12,
+    "outputTokens" : 493,
+    "requests" : 12
+  },
+  "requestFailureKinds" : { },
+  "limitations" : "Authored route/effort labels and synthetic candidate capabilities/prices. Generation models are not called; task quality, actual generation cost and provider wire effort are unmeasured.",
+  "rows" : [ {
+    "id" : "greeting",
+    "elapsedMillis" : 1843.683375,
+    "expectedRoute" : "utility",
+    "actualRoute" : null,
+    "routeOutcome" : "ABSTAINED",
+    "expectedEffort" : "low",
+    "actualEffort" : null,
+    "effortOutcome" : "ABSTAINED",
+    "status" : "INCONCLUSIVE",
+    "reason" : "LOW_ROUTE_CONFIDENCE",
+    "report" : {
+      "route" : null,
+      "model" : null,
+      "effort" : null,
+      "suggestedEffort" : null,
+      "confidence" : null,
+      "probabilities" : { },
+      "skipped" : [ ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 686,
+        "output_tokens" : 48
+      }
+    },
+    "applied" : false
+  }, {
+    "id" : "short-summary",
+    "elapsedMillis" : 1515.031709,
+    "expectedRoute" : "utility",
+    "actualRoute" : "utility",
+    "routeOutcome" : "CORRECT",
+    "expectedEffort" : "low",
+    "actualEffort" : "low",
+    "effortOutcome" : "CORRECT",
+    "status" : "DECIDED",
+    "reason" : "ROUTED",
+    "report" : {
+      "route" : "utility",
+      "model" : "fast",
+      "effort" : "low",
+      "suggestedEffort" : "low",
+      "confidence" : 1.0,
+      "probabilities" : {
+        "execute" : 0.0,
+        "none" : 0.0,
+        "plan" : 0.0,
+        "utility" : 1.0
+      },
+      "skipped" : [ ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 699,
+        "output_tokens" : 42
+      }
+    },
+    "applied" : false
+  }, {
+    "id" : "simple-arithmetic",
+    "elapsedMillis" : 1787.336334,
+    "expectedRoute" : "utility",
+    "actualRoute" : null,
+    "routeOutcome" : "ABSTAINED",
+    "expectedEffort" : "low",
+    "actualEffort" : null,
+    "effortOutcome" : "ABSTAINED",
+    "status" : "INCONCLUSIVE",
+    "reason" : "LOW_ROUTE_CONFIDENCE",
+    "report" : {
+      "route" : null,
+      "model" : null,
+      "effort" : null,
+      "suggestedEffort" : null,
+      "confidence" : null,
+      "probabilities" : { },
+      "skipped" : [ ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 689,
+        "output_tokens" : 48
+      }
+    },
+    "applied" : false
+  }, {
+    "id" : "architecture",
+    "elapsedMillis" : 1653.695708,
+    "expectedRoute" : "plan",
+    "actualRoute" : "plan",
+    "routeOutcome" : "CORRECT",
+    "expectedEffort" : "high",
+    "actualEffort" : "high",
+    "effortOutcome" : "CORRECT",
+    "status" : "DECIDED",
+    "reason" : "ROUTED",
+    "report" : {
+      "route" : "plan",
+      "model" : "strong",
+      "effort" : "high",
+      "suggestedEffort" : "high",
+      "confidence" : 0.9333333333333332,
+      "probabilities" : {
+        "execute" : 0.02,
+        "none" : 0.02,
+        "plan" : 0.95,
+        "utility" : 0.01
+      },
+      "skipped" : [ ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 706,
+        "output_tokens" : 46
+      }
+    },
+    "applied" : false
+  }, {
+    "id" : "security-design",
+    "elapsedMillis" : 1552.961916,
+    "expectedRoute" : "plan",
+    "actualRoute" : "plan",
+    "routeOutcome" : "CORRECT",
+    "expectedEffort" : "high",
+    "actualEffort" : "high",
+    "effortOutcome" : "CORRECT",
+    "status" : "DECIDED",
+    "reason" : "ROUTED",
+    "report" : {
+      "route" : "plan",
+      "model" : "strong",
+      "effort" : "high",
+      "suggestedEffort" : "high",
+      "confidence" : 0.8666666666666667,
+      "probabilities" : {
+        "execute" : 0.03,
+        "none" : 0.05,
+        "plan" : 0.9,
+        "utility" : 0.02
+      },
+      "skipped" : [ ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 708,
+        "output_tokens" : 45
+      }
+    },
+    "applied" : false
+  }, {
+    "id" : "specified-code",
+    "elapsedMillis" : 1464.605625,
+    "expectedRoute" : "execute",
+    "actualRoute" : null,
+    "routeOutcome" : "ABSTAINED",
+    "expectedEffort" : "low",
+    "actualEffort" : null,
+    "effortOutcome" : "ABSTAINED",
+    "status" : "INCONCLUSIVE",
+    "reason" : "LOW_ROUTE_CONFIDENCE",
+    "report" : {
+      "route" : null,
+      "model" : null,
+      "effort" : null,
+      "suggestedEffort" : null,
+      "confidence" : null,
+      "probabilities" : { },
+      "skipped" : [ ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 710,
+        "output_tokens" : 46
+      }
+    },
+    "applied" : false
+  }, {
+    "id" : "specified-json",
+    "elapsedMillis" : 1556.039667,
+    "expectedRoute" : "execute",
+    "actualRoute" : null,
+    "routeOutcome" : "ABSTAINED",
+    "expectedEffort" : "low",
+    "actualEffort" : null,
+    "effortOutcome" : "ABSTAINED",
+    "status" : "INCONCLUSIVE",
+    "reason" : "LOW_ROUTE_CONFIDENCE",
+    "report" : {
+      "route" : null,
+      "model" : null,
+      "effort" : null,
+      "suggestedEffort" : null,
+      "confidence" : null,
+      "probabilities" : { },
+      "skipped" : [ ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 708,
+        "output_tokens" : 48
+      }
+    },
+    "applied" : false
+  }, {
+    "id" : "failure-diagnosis",
+    "elapsedMillis" : 1336.298459,
+    "expectedRoute" : "plan",
+    "actualRoute" : "plan",
+    "routeOutcome" : "CORRECT",
+    "expectedEffort" : "high",
+    "actualEffort" : "high",
+    "effortOutcome" : "CORRECT",
+    "status" : "DECIDED",
+    "reason" : "ROUTED",
+    "report" : {
+      "route" : "plan",
+      "model" : "strong",
+      "effort" : "high",
+      "suggestedEffort" : "high",
+      "confidence" : 0.9333333333333332,
+      "probabilities" : {
+        "execute" : 0.02,
+        "none" : 0.02,
+        "plan" : 0.95,
+        "utility" : 0.01
+      },
+      "skipped" : [ ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 707,
+        "output_tokens" : 48
+      }
+    },
+    "applied" : false
+  }, {
+    "id" : "chinese-design",
+    "elapsedMillis" : 1452.686959,
+    "expectedRoute" : "plan",
+    "actualRoute" : "plan",
+    "routeOutcome" : "CORRECT",
+    "expectedEffort" : "high",
+    "actualEffort" : "high",
+    "effortOutcome" : "CORRECT",
+    "status" : "DECIDED",
+    "reason" : "ROUTED",
+    "report" : {
+      "route" : "plan",
+      "model" : "strong",
+      "effort" : "high",
+      "suggestedEffort" : "high",
+      "confidence" : 0.9333333333333332,
+      "probabilities" : {
+        "execute" : 0.02,
+        "none" : 0.02,
+        "plan" : 0.95,
+        "utility" : 0.01
+      },
+      "skipped" : [ ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 705,
+        "output_tokens" : 46
+      }
+    },
+    "applied" : false
+  }, {
+    "id" : "context-constrained",
+    "elapsedMillis" : 1119.18225,
+    "expectedRoute" : "plan",
+    "actualRoute" : "plan",
+    "routeOutcome" : "CORRECT",
+    "expectedEffort" : "high",
+    "actualEffort" : "high",
+    "effortOutcome" : "CORRECT",
+    "status" : "DECIDED",
+    "reason" : "ROUTED",
+    "report" : {
+      "route" : "plan",
+      "model" : "strong",
+      "effort" : "high",
+      "suggestedEffort" : "high",
+      "confidence" : 0.8999999999999999,
+      "probabilities" : {
+        "none" : 0.05,
+        "plan" : 0.95
+      },
+      "skipped" : [ {
+        "model" : "fast",
+        "reason" : "CONTEXT_LIMIT"
+      } ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 419,
+        "output_tokens" : 17
+      }
+    },
+    "applied" : false
+  }, {
+    "id" : "explicit-effort-floor",
+    "elapsedMillis" : 945.441083,
+    "expectedRoute" : "plan",
+    "actualRoute" : "plan",
+    "routeOutcome" : "CORRECT",
+    "expectedEffort" : "high",
+    "actualEffort" : "high",
+    "effortOutcome" : "CORRECT",
+    "status" : "DECIDED",
+    "reason" : "ROUTED",
+    "report" : {
+      "route" : "plan",
+      "model" : "strong",
+      "effort" : "high",
+      "suggestedEffort" : "high",
+      "confidence" : 0.8999999999999999,
+      "probabilities" : {
+        "none" : 0.05,
+        "plan" : 0.95
+      },
+      "skipped" : [ {
+        "model" : "fast",
+        "reason" : "EFFORT_FLOOR"
+      } ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 415,
+        "output_tokens" : 17
+      }
+    },
+    "applied" : false
+  }, {
+    "id" : "unsupported-image",
+    "elapsedMillis" : 1716.442334,
+    "expectedRoute" : "none",
+    "actualRoute" : "none",
+    "routeOutcome" : "CORRECT",
+    "expectedEffort" : null,
+    "actualEffort" : null,
+    "effortOutcome" : "UNLABELLED",
+    "status" : "INCONCLUSIVE",
+    "reason" : "NO_APPLICABLE_ROUTE",
+    "report" : {
+      "route" : null,
+      "model" : null,
+      "effort" : null,
+      "suggestedEffort" : null,
+      "confidence" : null,
+      "probabilities" : { },
+      "skipped" : [ ],
+      "judgeModel" : "llm:qwen3.8-max",
+      "judgeUsage" : {
+        "input_tokens" : 707,
+        "output_tokens" : 42
+      }
+    },
+    "applied" : false
+  } ]
+}

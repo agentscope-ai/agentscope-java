@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.web.auth.InternalTokenAuthFilter;
 import io.agentscope.builder.web.managed.EnvironmentDto;
+import io.agentscope.builder.web.managed.LegacySessionEventAdapter;
 import io.agentscope.builder.web.managed.SessionEventDto;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -83,7 +84,9 @@ public class ControlPlaneClient {
     /** Mirrors one event with an explicit immutable fence, including from a different replica. */
     @SuppressWarnings("unchecked")
     public void appendSessionEvent(SessionEventDto event, ManagedExecutionScope scope) {
-        Map<String, Object> body = objectMapper.convertValue(event, LinkedHashMap.class);
+        Map<String, Object> body =
+                objectMapper.convertValue(
+                        LegacySessionEventAdapter.adapt(event), LinkedHashMap.class);
         if (scope != null) {
             if (scope.agentTaskId() != null && !scope.agentTaskId().isBlank()) {
                 body.put("agentTaskId", scope.agentTaskId());
@@ -244,13 +247,26 @@ public class ControlPlaneClient {
         return value != null && !String.valueOf(value).isBlank() ? String.valueOf(value) : null;
     }
 
-    /** Immutable fence attached to all events emitted by one admitted Managed AgentTask turn. */
+    /**
+     * Immutable orchestration fence. {@code turnId} is the control-plane admission ID, not the
+     * logical Agent API turn ID; {@code attemptId} is a scheduler attempt, not a model call/run.
+     */
     public record ManagedExecutionScope(
             String tenant,
             String agentTaskId,
             String attemptId,
             long dispatchGeneration,
-            String turnId) {}
+            String turnId) {
+        /** Explicitly named correlation metadata; the control-plane wire fence remains unchanged. */
+        public Map<String, Object> correlation() {
+            var result = new LinkedHashMap<String, Object>();
+            if (turnId != null) result.put("control_plane_turn_id", turnId);
+            if (attemptId != null) result.put("orchestration_attempt_id", attemptId);
+            if (agentTaskId != null) result.put("agent_task_id", agentTaskId);
+            result.put("dispatch_generation", dispatchGeneration);
+            return result;
+        }
+    }
 
     /**
      * Lists recent product sessions for data-plane contract probing ({@code GET

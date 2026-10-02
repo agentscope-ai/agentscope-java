@@ -324,7 +324,36 @@ public abstract class AgentBase implements Agent {
             return Mono.error(
                     new java.util.concurrent.CancellationException("Agent run cancelled"));
         }
-        Object scope = beforeAgentExecution(msgs, rc, control);
+        return Mono.usingWhen(
+                acquireCallExecution(msgs, rc, control),
+                scope -> executeCallBody(msgs, doCallFn, requestId, control, gateKey, scope),
+                scope -> releaseCallExecution(scope, "completed"),
+                (scope, error) -> releaseCallExecution(scope, "failed"),
+                scope -> releaseCallExecution(scope, "cancelled"));
+    }
+
+    /** Asynchronous resource boundary for durable execution ownership. */
+    protected Mono<Object> acquireCallExecution(
+            List<Msg> msgs, RuntimeContext rc, RunControl control) {
+        return Mono.fromSupplier(
+                () -> {
+                    Object scope = beforeAgentExecution(msgs, rc, control);
+                    return scope == null ? this : scope;
+                });
+    }
+
+    /** Runs before completion/error is delivered, including subscriber cancellation. */
+    protected Mono<Void> releaseCallExecution(Object scope, String status) {
+        return Mono.empty();
+    }
+
+    private Mono<Msg> executeCallBody(
+            List<Msg> msgs,
+            Function<List<Msg>, Mono<Msg>> doCallFn,
+            String requestId,
+            RunControl control,
+            Object gateKey,
+            Object scope) {
         if (gateKey != null) {
             runningCalls.put(gateKey, control);
         }
@@ -332,23 +361,41 @@ public abstract class AgentBase implements Agent {
         // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
         // no-arg "most-recently-active" accessors.
         GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
+        List<Msg> acceptedInputs = inputsForCall(scope, msgs);
         Mono<Msg> body =
                 TracerRegistry.get()
                         .callAgent(
                                 this,
                                 msgs,
                                 () ->
-                                        notifyPreCall(msgs, scope)
+                                        notifyPreCall(acceptedInputs, scope)
                                                 .flatMap(doCallFn)
                                                 .flatMap(this::notifyPostCall)
                                                 .onErrorResume(
                                                         createErrorHandler(
                                                                 control,
                                                                 msgs.toArray(new Msg[0]))));
+        body = body.doOnNext(result -> onCallResult(scope, result));
         Mono<Msg> scoped =
                 scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
         // Nested calls own their own control; only the outer execution receives this handle.
-        return scoped.contextWrite(c -> c.delete(RunControl.CONTEXT_KEY));
+        RuntimeContext runtime = runtimeForCall(scope);
+        return scoped.contextWrite(
+                c ->
+                        runtime == null
+                                ? c.delete(RunControl.CONTEXT_KEY)
+                                : c.delete(RunControl.CONTEXT_KEY)
+                                        .put(RUNTIME_CONTEXT_KEY, runtime));
+    }
+
+    protected List<Msg> inputsForCall(Object scope, List<Msg> inputs) {
+        return inputs;
+    }
+
+    protected void onCallResult(Object scope, Msg result) {}
+
+    protected RuntimeContext runtimeForCall(Object scope) {
+        return null;
     }
 
     /**

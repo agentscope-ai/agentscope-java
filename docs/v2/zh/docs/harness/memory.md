@@ -37,7 +37,7 @@ graph LR
     Conv -->|每次调用结束 / 可节流| Flush["Flush LLM 调用"]
     Flush -->|提炼新事实| Daily["memory/YYYY-MM-DD.md"]
     Conv -->|超阈值| Compactor["对话压缩"]
-    Compactor -->|offload 原文| Sess["sessions/&lt;id&gt;.log.jsonl"]
+    Conv -->|执行事实提交| Sess["原生 Session Log"]
     Compactor -->|压缩前再 flush 一次| Flush
     Daily -. 节流后台 Consolidation .-> MEM["MEMORY.md"]
     MEM -->|每次 call 加载| SYS["HARNESS_CONTEXT 参考消息"]
@@ -47,7 +47,7 @@ graph LR
 
 - 第一层只追加，不去重；第二层周期性整体重写；**两层互不覆盖**。
 - 第二层永远是 LLM 注入提示的来源；第一层等待被合并。
-- 对话被压缩前的原始消息会另存一份永不压缩的日志（`*.log.jsonl`），供事后审计或 `session_search`。
+- 原生 Session Log 已记录完整消息与执行事实；压缩只改变模型工作上下文，历史由 `session_history` / `session_search` 读取，不再重复落盘。
 
 ## Flush 的三个触发点
 
@@ -59,7 +59,7 @@ Flush（路径 1）会在以下三个时机被触发：
 
 这三处用的是 **同一份** `flushPrompt`，定制后三处行为一致。
 
-Flush 和 offload 都是**异步执行**的：它们在响应流结束后通过 `doOnComplete` 以 fire-and-forget 方式启动，不会阻塞当前 `call()` 的返回。换句话说，调用方拿到完整响应之后，flush LLM 调用和 JSONL offload 才在后台开始。
+每轮结束后的长期记忆 Flush 在后台执行；压缩前 Flush 属于压缩步骤。原生 Session Log 在执行边界提交，不能把它当作异步日志副本：关键事实提交失败会阻止继续执行。
 
 ## 开启压缩
 
@@ -84,7 +84,6 @@ HarnessAgent agent = HarnessAgent.builder()
 | `keepMessages` | `20` | 保留尾部条数 |
 | `keepTokens` | `-1` | `-1` 表示动态计算（基于模型上下文窗口自动计算）；`0` 表示使用 `keepMessages`；`>0` 表示固定 token 预算并覆盖 `keepMessages` |
 | `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账（路径 2） |
-| `offloadBeforeCompact` | `true` | 压缩前先把原始消息存一份永不压缩的日志 |
 | `summaryPrompt` | 见 `DEFAULT_SUMMARY_PROMPT` | 路径 3 的摘要 prompt（必须含 `{messages}` 占位符） |
 | `model` | `null`（使用 agent 主模型） | 压缩摘要使用的独立模型 |
 
@@ -127,7 +126,7 @@ HarnessAgent.builder()
 
 - `THROTTLED` 只影响**路径 1**（per-call flush）。压缩内嵌的 flush（路径 2）和兜底 flush（路径 3）按各自的触发条件照常跑——压缩很少发生，那两条本来就不频繁。
 - 第一次符合条件的 call 会立即 flush；`Duration.ofMinutes(10)` 只限制后续的 per-call flush。
-- **Offload 不受影响**，session JSONL 仍然每次写完整。`session_search` 和会话恢复正常工作。
+- **原生日志不受影响**：Flush 节流不会停用 Session Log、历史检索或 checkpoint 恢复。
 
 ### 例 2：完全关掉 per-call flush
 
@@ -174,7 +173,6 @@ HarnessAgent.builder()
 .memory(MemoryConfig.builder()
     .consolidationMinGap(Duration.ofHours(2))   // 首次可立即运行，之后至少间隔 2 小时
     .dailyFileRetentionDays(30)                 // 30 天就归档
-    .sessionRetentionDays(60)                   // 60 天后删 session JSONL
     .consolidationMaxTokens(8_000)              // MEMORY.md 上限放宽到 8K tokens
     .build())
 ```
@@ -207,7 +205,6 @@ HarnessAgent.builder()
 | `consolidationMaxTokens` | `4_000` | `MEMORY.md` token 上限 |
 | `consolidationMinGap` | `30 min` | 后台维护运行间隔；第一次符合条件的 call 立即放行 |
 | `dailyFileRetentionDays` | `90` | 多少天后把日流水账归档到 `memory/archive/` |
-| `sessionRetentionDays` | `180` | 多少天后清掉 `*.log.jsonl` |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
 
 ## 大工具结果卸载
@@ -244,7 +241,6 @@ HarnessAgent.builder()
 
 - 把超过 `dailyFileRetentionDays`（默认 90 天）的日流水账归档到 `memory/archive/`
 - 跑一次 `MEMORY.md` 合并（consolidation）
-- 清理超过 `sessionRetentionDays`（默认 180 天）的会话日志
 
 进入维护流程不一定会调用模型：如果自上次成功合并以来没有新增日流水账内容，consolidation 会跳过 LLM 请求。`FlushTrigger.never()` 不会关闭这条维护路径。
 
@@ -270,7 +266,9 @@ HarnessAgent.builder()
 ## 相关文档
 
 - [工作区](/v2/zh/docs/harness/workspace) — `MEMORY.md` / `memory/` 在工作区的位置
-- [Context](/v2/zh/docs/building-blocks/context) — 永不压缩的对话日志 `*.log.jsonl`
+- [会话日志与恢复](/v2/zh/docs/harness/session-log) — 完整历史、checkpoint 与历史检索
 - [架构](/v2/zh/docs/harness/architecture) — 长会话事实如何沉淀进 `MEMORY.md`
 
 消息位置、刷新时机和最终预算见 [上下文构建](/v2/zh/docs/harness/context)。
+
+旧 JSONL 清理任务及 `sessionRetentionDays` 已移除；原生日志目前没有自动清理策略，已有旧档案也不会由记忆维护任务删除。
