@@ -315,7 +315,7 @@ Middleware
 </h3>
 
 <p>
-<code>onAgent / onReasoning / onActing / onModelCall</code> 四个洋葱钩子 + <code>onSystemPrompt</code> 变换钩子。日志、追踪、权限、上下文注入、业务策略都能挂上去，框架核心保持稳定。
+<code>onAgent / onReasoning / onActing / onModelCall</code> 四个洋葱钩子、<code>onSystemPrompt</code> 变换钩子，以及 <code>onAgentStateReady</code> 通知钩子。日志、追踪、权限、上下文注入、业务策略都能挂上去，框架核心保持稳定。
 </p>
  <span className="hs-card__link">了解 Middleware →</span>
 </a>

@@ -31,9 +31,11 @@ import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -166,6 +168,12 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     /** Test hook to shrink the flush timeout; keeps timeout behaviour unit-testable. */
     void setFlushTimeoutForTests(Duration timeout) {
         this.flushTimeout = timeout != null ? timeout : FLUSH_TIMEOUT;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
     }
 
     @Override

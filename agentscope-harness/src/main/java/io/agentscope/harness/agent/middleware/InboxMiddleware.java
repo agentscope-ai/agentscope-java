@@ -32,8 +32,10 @@ import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -77,6 +79,12 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
         this.maxDrainCount = maxDrainCount;
         this.asyncToolRegistry = asyncToolRegistry;
         this.staleTtl = staleTtl != null ? staleTtl : DEFAULT_STALE_TTL;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_REASONING);
     }
 
     @Override

@@ -262,7 +262,7 @@ public abstract class AgentBase implements Agent {
     }
 
     private Mono<Msg> runInContext(
-            List<Msg> msgs,
+            List<Msg> inputMsgs,
             Function<List<Msg>, Mono<Msg>> doCallFn,
             reactor.util.context.ContextView cv) {
         RuntimeContext rc = cv.getOrDefault(RUNTIME_CONTEXT_KEY, null);
@@ -282,6 +282,9 @@ public abstract class AgentBase implements Agent {
                     }
                     shutdown.unregisterRequest(requestId);
                 };
+        // Per-subscription private mutable copy: input adjustments from per-call extension
+        // points (e.g. onAgentStateReady middlewares) never touch the caller's list.
+        List<Msg> msgs = new ArrayList<>(inputMsgs != null ? inputMsgs : List.of());
         // Resolve session state only after admission. Retire before releasing the queue gate so a
         // retry cannot have its new registration removed by the preceding attempt's cleanup.
         Mono<Msg> lifecycle =
@@ -324,10 +327,14 @@ public abstract class AgentBase implements Agent {
             return Mono.error(
                     new java.util.concurrent.CancellationException("Agent run cancelled"));
         }
-        Object scope = beforeAgentExecution(msgs, rc, control);
+        // Register for interruption before beforeAgentExecution: it fires user middleware
+        // (onAgentStateReady), and an interrupt arriving in that window must find this control
+        // instead of being dropped. Failure cleanup is unchanged — retire removes the entry on
+        // any terminal signal, including a synchronous throw from the scope setup.
         if (gateKey != null) {
             runningCalls.put(gateKey, control);
         }
+        Object scope = beforeAgentExecution(msgs, rc, control);
         // Bind this call's resolved per-session state to the tracked shutdown request so graceful
         // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
         // no-arg "most-recently-active" accessors.
