@@ -11,7 +11,7 @@ zh_link: /v2/zh/integration/protocol/agui
 
 `AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
 
-Multimodal input is supported, but document types are not supported yet.
+Multimodal input supports text, image, audio, and video. Document input is not supported yet: the adapter rejects it with `RUN_ERROR` and code `INVALID_INPUT_ERROR`, without including the document source or metadata in the error message.
 
 `AguiMessageConverter.toAguiMessage()` currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.
 

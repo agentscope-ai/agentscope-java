@@ -607,11 +607,14 @@ class AguiMessageConverterTest {
                         List.of(
                                 new DocumentInputContent(
                                         new InputContentUrlSource("https://example.com/doc.pdf"),
-                                        null)));
+                                        Map.of("private", "private-metadata"))));
 
         IllegalStateException exception =
                 assertThrows(IllegalStateException.class, () -> converter.toMsg(aguiMsg));
-        assertTrue(exception.getMessage().startsWith("Unhandled InputContent type:"));
+        assertEquals(
+                "Unsupported AG-UI input content type 'document': document input is not supported"
+                        + " yet",
+                exception.getMessage());
     }
 
     @Test
@@ -622,11 +625,14 @@ class AguiMessageConverterTest {
                         List.of(
                                 new DocumentInputContent(
                                         new InputContentDataSource("dGVzdA==", "application/pdf"),
-                                        null)));
+                                        Map.of("private", "private-metadata"))));
 
         IllegalStateException exception =
                 assertThrows(IllegalStateException.class, () -> converter.toMsg(aguiMsg));
-        assertTrue(exception.getMessage().startsWith("Unhandled InputContent type:"));
+        assertEquals(
+                "Unsupported AG-UI input content type 'document': document input is not supported"
+                        + " yet",
+                exception.getMessage());
     }
 
     @Test
