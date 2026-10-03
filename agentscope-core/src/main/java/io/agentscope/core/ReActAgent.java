@@ -95,6 +95,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
@@ -329,6 +330,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             "<system-reminder>Your previous reply had empty content - the full answer was written"
                     + " to the reasoning channel only. Reply again and write the final answer into"
                     + " the content channel.</system-reminder>";
+
+    /**
+     * Synthetic reminder injected when a structured-output fallback round ends with prose
+     * instead of the {@code generate_response} call the schema requires.
+     */
+    private static final String STRUCTURED_OUTPUT_REMINDER_TEXT =
+            "<system-reminder>Your previous reply did not call the generate_response"
+                    + " function. Call it with the structured answer instead of writing the"
+                    + " answer as text.</system-reminder>";
 
     @SuppressWarnings("deprecation")
     private final LegacyHookDispatcher hookDispatcher;
@@ -1840,6 +1850,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /** The tool result message from the successful {@code generate_response} call. */
         Msg soResultMsg;
 
+        /**
+         * Set to {@code true} once a structured-output fallback round has been retried with
+         * the {@code generate_response} call forced. Bounds the retry to a single round.
+         */
+        boolean soRetryForced;
+
         /** Placeholder sentence written to the tool_result of a returnDirect tool. */
         private static final String RETURN_DIRECT_PLACEHOLDER =
                 "Tool call completed. The result has been presented to the user as the final output"
@@ -2501,7 +2517,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // Per-call structured-output tool: expose generate_response to the
                                 // model for this call only (not registered on the shared toolkit).
                                 if (soTool != null) {
-                                    tools = new ArrayList<>(tools);
+                                    // A retry round withholds the business tools and pins
+                                    // tool_choice to generate_response, so a model that answered in
+                                    // prose cannot answer in prose again (#3393).
+                                    tools =
+                                            soRetryForced
+                                                    ? new ArrayList<>()
+                                                    : new ArrayList<>(tools);
                                     tools.add(
                                             ToolSchema.builder()
                                                     .name(soTool.getName())
@@ -2510,6 +2532,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     .strict(soTool.getStrict())
                                                     .outputSchema(soTool.getOutputSchema())
                                                     .build());
+                                    if (soRetryForced) {
+                                        GenerateOptions forced =
+                                                GenerateOptions.builder()
+                                                        .toolChoice(
+                                                                new ToolChoice.Specific(
+                                                                        STRUCTURED_OUTPUT_TOOL_NAME))
+                                                        .build();
+                                        options = GenerateOptions.mergeOptions(forced, options);
+                                    }
                                 }
                                 Function<ReasoningInput, Flux<AgentEvent>> reasoningCore =
                                         ri ->
@@ -2630,6 +2661,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 // Check finish conditions
                                 if (isFinished(eventMsg)) {
+                                    // A structured-output fallback call is only finished once
+                                    // generate_response ran. A model that answered in prose would
+                                    // otherwise be returned verbatim and silently break the
+                                    // schema contract, so retry once with the tool pinned (#3393).
+                                    if (soTool != null && !soCompleted && !soRetryForced) {
+                                        log.warn(
+                                                "Structured output fallback ended without calling"
+                                                        + " {}, retrying with the tool forced,"
+                                                        + " model: {}, iter: {}",
+                                                STRUCTURED_OUTPUT_TOOL_NAME,
+                                                model.getModelName(),
+                                                iter);
+                                        soRetryForced = true;
+                                        state.contextMutable().add(buildStructuredOutputReminder());
+                                        return reasoning(iter + 1, true);
+                                    }
                                     return Mono.justOrEmpty(eventMsg);
                                 }
 
@@ -4263,6 +4310,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     true,
                                     Msg.METADATA_REMINDER_KIND,
                                     "empty_response"))
+                    .build();
+        }
+
+        /**
+         * Build the synthetic {@code system} reminder injected before retrying a structured-output
+         * fallback round that ended without the {@code generate_response} call.
+         *
+         * @return the reminder message
+         */
+        private static Msg buildStructuredOutputReminder() {
+            return Msg.builder()
+                    .role(MsgRole.USER)
+                    .name("system")
+                    .content(TextBlock.builder().text(STRUCTURED_OUTPUT_REMINDER_TEXT).build())
+                    .metadata(
+                            Map.of(
+                                    Msg.METADATA_SYNTHETIC,
+                                    true,
+                                    Msg.METADATA_REMINDER_KIND,
+                                    "structured_output"))
                     .build();
         }
 

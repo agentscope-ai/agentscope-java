@@ -35,12 +35,14 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -455,5 +457,142 @@ class ReActAgentStructuredOutputWithToolsTest {
                     }
                 };
         assertTrue(modelOn.supportsNativeStructuredOutputWithTools());
+    }
+
+    // ------------------------------------------------------------------
+    // Regression for #3393: a fallback model that answers in prose instead
+    // of calling generate_response must not be returned verbatim.
+    // ------------------------------------------------------------------
+
+    /** Records every model call so a test can inspect the retry round. */
+    static class RecordingMockModel implements Model {
+
+        private final Function<Integer, List<ChatResponse>> responder;
+        private final List<List<ToolSchema>> toolsByCall = new ArrayList<>();
+        private final List<GenerateOptions> optionsByCall = new ArrayList<>();
+
+        RecordingMockModel(Function<Integer, List<ChatResponse>> responder) {
+            this.responder = responder;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            toolsByCall.add(tools == null ? List.of() : List.copyOf(tools));
+            optionsByCall.add(options);
+            return Flux.fromIterable(responder.apply(toolsByCall.size() - 1));
+        }
+
+        @Override
+        public String getModelName() {
+            return "recording-mock";
+        }
+
+        @Override
+        public boolean supportsNativeStructuredOutput() {
+            return false;
+        }
+
+        @Override
+        public boolean supportsNativeStructuredOutputWithTools() {
+            return false;
+        }
+
+        int callCount() {
+            return toolsByCall.size();
+        }
+
+        List<ToolSchema> toolsAt(int index) {
+            return toolsByCall.get(index);
+        }
+
+        GenerateOptions optionsAt(int index) {
+            return optionsByCall.get(index);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "Fallback path retries with generate_response forced when the model answers in prose")
+    void fallbackPath_modelAnswersInProse_retriesWithForcedToolCall() {
+        Map<String, Object> toolInput =
+                Map.of("response", Map.of("city", "Shanghai", "temperature", "32°C"));
+
+        RecordingMockModel model =
+                new RecordingMockModel(
+                        call -> {
+                            if (call == 0) {
+                                // The reported symptom: the model renders the call as text
+                                // instead of emitting a tool call.
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_1")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "generate_response({\"response\":"
+                                                                                    + " {\"city\":"
+                                                                                    + " \"Shanghai\","
+                                                                                    + " \"temperature\":"
+                                                                                    + " \"32°C\"}})")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 0.5))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_2")
+                                            .content(
+                                                    List.of(
+                                                            ToolUseBlock.builder()
+                                                                    .id("call_1")
+                                                                    .name("generate_response")
+                                                                    .input(toolInput)
+                                                                    .content(
+                                                                            JsonUtils.getJsonCodec()
+                                                                                    .toJson(
+                                                                                            toolInput))
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 0.5))
+                                            .build());
+                        });
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new DummyTools());
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("test-agent")
+                        .sysPrompt("test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg result =
+                agent.call(userMsg(), WeatherInfo.class)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(result);
+        assertEquals(
+                2, model.callCount(), "The prose answer should be followed by exactly one retry");
+
+        // The retry round pins the tool call and withholds the business tools, so the model
+        // cannot answer in prose a second time.
+        GenerateOptions retryOptions = model.optionsAt(1);
+        assertNotNull(retryOptions);
+        assertEquals(
+                new ToolChoice.Specific("generate_response"),
+                retryOptions.getToolChoice(),
+                "The retry round should force generate_response");
+        assertEquals(
+                List.of("generate_response"),
+                model.toolsAt(1).stream().map(ToolSchema::getName).toList(),
+                "The retry round should expose generate_response only");
+
+        // The prose answer is not returned; the structured result is extracted instead.
+        WeatherInfo info = result.getStructuredData(WeatherInfo.class);
+        assertNotNull(info, "Structured data should be extracted after the forced retry");
+        assertEquals("Shanghai", info.city);
     }
 }
