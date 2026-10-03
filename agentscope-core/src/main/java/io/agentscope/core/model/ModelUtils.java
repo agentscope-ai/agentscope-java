@@ -58,6 +58,8 @@ public final class ModelUtils {
      * <p><b>Retry Behavior:</b>
      * <ul>
      *   <li>If RetryConfig is provided, failed requests will be retried with exponential backoff
+     *       only while the current subscription has not emitted a response with visible content
+     *       blocks
      *   <li>Retries respect the maxAttempts, initialBackoff, and maxBackoff settings
      *   <li>Only errors matching the retryOn predicate will be retried
      *   <li>Each retry is logged with attempt number and failure reason
@@ -127,8 +129,7 @@ public final class ModelUtils {
                 // the first partial response followed by the retried one, duplicating content.
                 // The visibility flag is created inside defer so every subscription (model
                 // call) gets a fresh flag, while it persists across retry attempts of the same
-                // call. Role-only or usage-only chunks carry no content blocks and do not
-                // disable retries — nothing user-visible has been delivered yet.
+                // call.
                 final Flux<ChatResponse> source = responseFlux;
                 responseFlux =
                         Flux.defer(
@@ -209,12 +210,6 @@ public final class ModelUtils {
 
     /**
      * Whether the response carries user-visible content (text, thinking or tool-call deltas).
-     *
-     * <p>Role-only or usage-only chunks carry no content blocks — nothing user-visible has
-     * been delivered, so retrying past them cannot duplicate content.</p>
-     *
-     * @param response the response chunk to inspect
-     * @return true if the chunk contains at least one content block
      */
     private static boolean hasVisibleContent(ChatResponse response) {
         List<ContentBlock> content = response.getContent();

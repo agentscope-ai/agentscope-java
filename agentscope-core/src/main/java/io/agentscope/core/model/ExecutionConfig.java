@@ -103,8 +103,7 @@ public class ExecutionConfig {
             return hte.isRetryable();
         }
 
-        // Only treat a ModelHttpException as an HTTP response error when a status code is
-        // present. Implementations without a status code (e.g. OpenAIException wrapping a
+        // Implementations without a status code (e.g. OpenAIException wrapping a
         // streaming transport failure) must fall through to the transport/IO and cause-chain
         // checks below instead of being classified as a permanent client error (issue #3057).
         if (error instanceof ModelHttpException mhe && mhe.getStatusCode() != null) {
