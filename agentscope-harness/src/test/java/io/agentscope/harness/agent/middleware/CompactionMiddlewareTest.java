@@ -17,8 +17,11 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
@@ -28,26 +31,192 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
 /** Verifies that compaction fallback does not swallow interrupts or rerun downstream reasoning. */
 class CompactionMiddlewareTest {
+
+    /** Lightweight reductions must reach both reasoning and state even without a summary. */
+    @ParameterizedTest
+    @CsvSource({"false, 0", "false, 3", "true, 0", "true, 3"})
+    void lightweightCompactionReachesReasoningAndState(boolean truncateArgs, int triggerMessages) {
+        Model model = mock(Model.class);
+        String largeText = "x".repeat(10_000);
+        Msg system = Msg.builder().role(MsgRole.SYSTEM).textContent("system").build();
+        Msg user = userMessage("write a file");
+        Msg call =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("call-1")
+                                        .name("write_file")
+                                        .input(
+                                                Map.of(
+                                                        "content",
+                                                        truncateArgs ? largeText : "small"))
+                                        .build())
+                        .build();
+        Msg result =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call-1")
+                                        .name("write_file")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text(
+                                                                        truncateArgs
+                                                                                ? "done"
+                                                                                : largeText)
+                                                                .build()))
+                                        .build())
+                        .build();
+        List<Msg> conversation = List.of(user, call, result);
+        AgentState state = AgentState.builder().context(conversation).build();
+        RuntimeContext rc = context("user", "session");
+        rc.setAgentState(state);
+        ReasoningInput original =
+                new ReasoningInput(
+                        List.of(system, user, call, result),
+                        List.of(),
+                        GenerateOptions.builder().build());
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerTokens(1_000)
+                        .triggerMessages(triggerMessages)
+                        .keepTokens(0)
+                        .keepMessages(20)
+                        .truncateArgs(
+                                truncateArgs
+                                        ? CompactionConfig.TruncateArgsConfig.builder()
+                                                .triggerTokens(1)
+                                                .keepMessages(1)
+                                                .maxArgLength(100)
+                                                .build()
+                                        : null)
+                        .prune(
+                                truncateArgs
+                                        ? null
+                                        : CompactionConfig.PruneConfig.builder()
+                                                .protectTokens(0)
+                                                .minimumTokens(1)
+                                                .maxOutputChars(100)
+                                                .build())
+                        .build();
+        CompactionMiddleware middleware = new CompactionMiddleware(null, model, config);
+        AtomicInteger nextCalls = new AtomicInteger();
+        assertTrue(TokenCounterUtil.calculateToken(conversation) > config.getTriggerTokens());
+
+        StepVerifier.create(
+                        middleware.onReasoning(
+                                agent(),
+                                rc,
+                                original,
+                                next -> {
+                                    nextCalls.incrementAndGet();
+                                    assertNotSame(original, next);
+                                    assertSame(system, next.messages().get(0));
+                                    assertSame(user, next.messages().get(1));
+                                    assertSame(original.tools(), next.tools());
+                                    assertSame(original.options(), next.options());
+                                    assertEquals(4, next.messages().size());
+                                    assertEquals(
+                                            next.messages().subList(1, 4), state.contextMutable());
+                                    assertTrue(
+                                            TokenCounterUtil.calculateToken(state.contextMutable())
+                                                    < config.getTriggerTokens());
+                                    ToolUseBlock reducedCall =
+                                            (ToolUseBlock)
+                                                    next.messages().get(2).getContent().get(0);
+                                    ToolResultBlock reducedResult =
+                                            (ToolResultBlock)
+                                                    next.messages().get(3).getContent().get(0);
+                                    assertEquals("call-1", reducedCall.getId());
+                                    assertEquals(reducedCall.getId(), reducedResult.getId());
+                                    if (truncateArgs) {
+                                        assertTrue(
+                                                ((String) reducedCall.getInput().get("content"))
+                                                                .length()
+                                                        < 100);
+                                    } else {
+                                        assertTrue(
+                                                ((TextBlock) reducedResult.getOutput().get(0))
+                                                        .getText()
+                                                        .contains("chars pruned"));
+                                    }
+                                    return Flux.empty();
+                                }))
+                .verifyComplete();
+
+        assertEquals(1, nextCalls.get());
+        assertTrue(TokenCounterUtil.calculateToken(conversation) > config.getTriggerTokens());
+        verifyNoInteractions(model);
+    }
+
+    /** A true no-op must keep the original request and state, with or without a safe cutoff. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void unchangedConversationKeepsOriginalInput(int triggerMessages) {
+        Model model = mock(Model.class);
+        ReasoningInput original = input();
+        AgentState state = AgentState.builder().context(original.messages()).build();
+        RuntimeContext rc = context("user", "session");
+        rc.setAgentState(state);
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerTokens(1_000)
+                        .triggerMessages(triggerMessages)
+                        .keepTokens(0)
+                        .keepMessages(20)
+                        .build();
+        AtomicInteger nextCalls = new AtomicInteger();
+
+        StepVerifier.create(
+                        new CompactionMiddleware(null, model, config)
+                                .onReasoning(
+                                        agent(),
+                                        rc,
+                                        original,
+                                        next -> {
+                                            nextCalls.incrementAndGet();
+                                            assertSame(original, next);
+                                            assertEquals(
+                                                    original.messages(), state.contextMutable());
+                                            return Flux.empty();
+                                        }))
+                .verifyComplete();
+
+        assertEquals(1, nextCalls.get());
+        verifyNoInteractions(model);
+    }
 
     /** An ordinary compaction failure skips compaction and invokes original reasoning once. */
     @Test
