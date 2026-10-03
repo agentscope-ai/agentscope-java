@@ -284,7 +284,8 @@ class ToolkitTest {
         AgentTool first = namedAgentTool("remove_if_same_b");
         AgentTool second = namedAgentTool("remove_if_same_b");
         toolkit.registerAgentTool(first);
-        toolkit.registerAgentTool(second);
+        // Duplicate names fail fast since #3328; the replacement here is intentional.
+        toolkit.replaceAgentTool(second);
         assertFalse(
                 toolkit.removeToolIfSame("remove_if_same_b", first),
                 "stale instance after replace must return false");
@@ -326,6 +327,16 @@ class ToolkitTest {
                 tk.removeToolIfSame("remove_if_same_no_delete", tool),
                 "allowToolDeletion=false must return false");
         assertSame(tool, tk.getTool("remove_if_same_no_delete"));
+    }
+
+    @Test
+    @DisplayName("registerAgentTool rejects a null tool")
+    void registerAgentToolRejectsNullTool() {
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> toolkit.registerAgentTool((AgentTool) null));
+        assertEquals("AgentTool cannot be null", ex.getMessage());
     }
 
     @Test
@@ -420,12 +431,11 @@ class ToolkitTest {
         toolkit.createToolGroup("activeGroup", "Active tools", true);
         toolkit.createToolGroup("inactiveGroup", "Inactive tools", false);
 
-        // Register tools to different groups
+        // Register tools to the active group. The inactive group keeps a differently-named
+        // tool: the original test relied on a second same-named registration silently
+        // overriding the tool's group binding, which #3328 turned into a fail-fast error.
         toolkit.registration().tool(sampleTools).group("activeGroup").apply();
-
-        // Create a separate tool for inactive group
-        SampleTools inactiveTools = new SampleTools();
-        toolkit.registration().tool(inactiveTools).group("inactiveGroup").apply();
+        toolkit.registration().tool(new InactiveGroupTools()).group("inactiveGroup").apply();
 
         // Get a tool from inactive group (should exist in registry)
         AgentTool tool = toolkit.getTool("add");
@@ -1370,5 +1380,13 @@ class ToolkitTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> toolkit.registration().propagateMeta(null, false));
+    }
+
+    /** Fixture: a tool that only lives in the inactive group of the group-gating test. */
+    static class InactiveGroupTools {
+        @Tool(name = "inactive_only", description = "Bound to the inactive group")
+        public String inactiveOnly() {
+            return "inactive";
+        }
     }
 }

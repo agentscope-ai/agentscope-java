@@ -210,6 +210,20 @@ public class Toolkit {
     }
 
     /**
+     * Replace an existing registration for {@code tool.getName()} intentionally, or register it
+     * when the name is free.
+     *
+     * <p>This is the explicit counterpart to the fail-fast duplicate protection in
+     * {@link #registerAgentTool(AgentTool)}: use it when overriding a same-named tool (local or
+     * MCP) is deliberate.
+     *
+     * @param tool the AgentTool to register, replacing any existing tool with the same name
+     */
+    public void replaceAgentTool(AgentTool tool) {
+        registerAgentTool(tool, null, null, null, null, null, null, true);
+    }
+
+    /**
      * Internal method to register AgentTool with full metadata including preset parameters.
      */
     private void registerAgentTool(
@@ -218,6 +232,29 @@ public class Toolkit {
             ExtendedModel extendedModel,
             String mcpClientName,
             Map<String, Object> presetParameters) {
+        registerAgentTool(
+                tool, groupName, extendedModel, mcpClientName, presetParameters, null, null, false);
+    }
+
+    /**
+     * Full registration funnel shared by every public registration path (annotated-object
+     * scanning, direct {@link AgentTool} instances, MCP tools and sub-agent tools).
+     *
+     * <p>A name already bound to a different tool is rejected by {@link ToolRegistry} unless the
+     * caller passes {@code allowReplace}, the registration is a refresh of the exact same source
+     * method on the same tool object (idempotent re-registration), or the registry classifies it
+     * as an idempotent refresh (an MCP client re-registering its own tools, or a
+     * {@code SchemaOnlyTool} re-declared with an identical schema).
+     */
+    private void registerAgentTool(
+            AgentTool tool,
+            String groupName,
+            ExtendedModel extendedModel,
+            String mcpClientName,
+            Map<String, Object> presetParameters,
+            Object sourceObject,
+            Method sourceMethod,
+            boolean allowReplace) {
         if (tool == null) {
             throw new IllegalArgumentException("AgentTool cannot be null");
         }
@@ -233,8 +270,16 @@ public class Toolkit {
         RegisteredToolFunction registered =
                 new RegisteredToolFunction(tool, extendedModel, mcpClientName, presetParameters);
 
+        boolean refreshSameSource =
+                !allowReplace && isSameSourceRegistration(toolName, sourceObject, sourceMethod);
+
         // Register in toolRegistry
-        toolRegistry.registerTool(toolName, tool, registered);
+        toolRegistry.registerTool(toolName, tool, registered, allowReplace || refreshSameSource);
+
+        if (refreshSameSource) {
+            logger.debug(
+                    "Refreshed registration of tool '{}' from the same source method", toolName);
+        }
 
         // Add to group if specified
         if (groupName != null) {
@@ -245,6 +290,22 @@ public class Toolkit {
                 "Registered tool '{}' in group '{}'",
                 toolName,
                 groupName != null ? groupName : "ungrouped");
+    }
+
+    /**
+     * True when the name is already bound to a {@link ReflectiveFunctionTool} created from the
+     * exact same source object and method; re-registering a tool object is therefore idempotent,
+     * while a same-named tool coming from anywhere else remains a hard conflict.
+     */
+    private boolean isSameSourceRegistration(
+            String toolName, Object sourceObject, Method sourceMethod) {
+        if (sourceObject == null || sourceMethod == null) {
+            return false;
+        }
+        AgentTool existing = toolRegistry.getTool(toolName);
+        return existing instanceof ReflectiveFunctionTool reflective
+                && reflective.getToolObject() == sourceObject
+                && reflective.getMethod().equals(sourceMethod);
     }
 
     /**
@@ -475,7 +536,8 @@ public class Toolkit {
                         customConverter,
                         presetParamNames);
 
-        registerAgentTool(tool, groupName, extendedModel, null, presetParameters);
+        registerAgentTool(
+                tool, groupName, extendedModel, null, presetParameters, toolObject, method, false);
     }
 
     /**
@@ -898,8 +960,10 @@ public class Toolkit {
         AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
         registeredMetaTool = metaTool;
 
-        // Register without group (meta tool is always available)
-        registerAgentTool(metaTool, null, null, null, null);
+        // Register without group (meta tool is always available). Replacement is intentional:
+        // Toolkit.copy() shares tool instances, then rebinds a fresh meta tool (bound to the
+        // copy's group manager) under this same name.
+        replaceAgentTool(metaTool);
 
         logger.info("Registered meta tool: reset_equipped_tools");
     }
