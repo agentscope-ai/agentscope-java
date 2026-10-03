@@ -82,6 +82,21 @@ public class AguiMessageConverter {
     private static final String RESUME_PAYLOAD_REASON = "reason";
 
     /**
+     * The marker itself, matching the predicate core tests when it decides a result failed: {@code
+     * ReActAgent.determineToolResultState} looks for {@code "[ERROR]"} without a trailing space.
+     * Kept separate from the emitted form below so the two cannot drift apart.
+     */
+    private static final String ERROR_MARKER = "[ERROR]";
+
+    /**
+     * The marker as {@link ToolResultBlock#error(String, String)} emits it, marker plus separator.
+     *
+     * <p>Core exposes no constant for it, so it is repeated here for the cases where an error has
+     * to be combined with the payload the client sent alongside it, or stripped back off.
+     */
+    private static final String ERROR_TEXT_PREFIX = ERROR_MARKER + " ";
+
+    /**
      * Creates a new AguiMessageConverter
      */
     public AguiMessageConverter() {}
@@ -127,14 +142,35 @@ public class AguiMessageConverter {
     /**
      * Convert an AgentScope message to an AG-UI message.
      *
+     * <p>A tool result in {@link ToolResultState#ERROR} is mirrored into the protocol's
+     * {@code error} field instead of being left in the content, so a client can tell a failed
+     * tool call from a successful one without parsing the {@code [ERROR] } text prefix. The
+     * prefix is stripped from the mirrored value so the field carries the reason itself.
+     *
+     * <p>Only a tool message mirrors it. {@code error} is a field of the protocol's tool message,
+     * and an ERROR result also occurs inside an assistant response — provider server tools report
+     * their failures that way — where moving the text out of the content would both take it off
+     * the wire and put it under a field that role does not define.
+     *
+     * <p>Only {@code ERROR} is mirrored. {@link ToolResultState#DENIED} and {@link
+     * ToolResultState#INTERRUPTED} results keep travelling as content: the protocol carries a
+     * single {@code error} string, so the richer states core distinguishes have no faithful
+     * representation on the wire. Coming back in they read as {@code SUCCESS}, which loses the
+     * distinction rather than preserving it.
+     *
+     * <p>A tool message always carries {@code content}, empty when the result has no ordinary
+     * output, because the protocol requires the field and rejects null.
+     *
      * @param msg The AgentScope message to convert
      * @return The converted AG-UI message
      */
     public AguiMessage toAguiMessage(Msg msg) {
         String role = convertRole(msg.getRole());
+        boolean toolMessage = msg.getRole() == MsgRole.TOOL;
         StringBuilder content = new StringBuilder();
         List<AguiToolCall> toolCalls = new ArrayList<>();
         String toolCallId = null;
+        String error = null;
 
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof TextBlock tb) {
@@ -145,25 +181,93 @@ public class AguiMessageConverter {
             } else if (block instanceof ToolUseBlock tub) {
                 toolCalls.add(toAguiToolCall(tub));
             } else if (block instanceof ToolResultBlock trb) {
-                toolCallId = trb.getId();
-                // Extract text content from tool result
-                for (ContentBlock output : trb.getOutput()) {
-                    if (output instanceof TextBlock tb) {
+                // `error` is a field of the protocol's tool message, so only a tool message may
+                // carry it. An ERROR result also occurs inside an assistant response — provider
+                // server tools report their failures that way — and there the text has to stay
+                // in the content, or it would leave the wire under a field the role does not
+                // define and the failure would be unreadable.
+                if (toolMessage && trb.getState() == ToolResultState.ERROR) {
+                    // A failed result is reported through `error` rather than the content, so a
+                    // round trip does not carry it in both places. The protocol carries a single
+                    // `error`, so the last failing result takes the field and `toolCallId` with
+                    // it — the id has to stay with the error it describes. A reason it displaces
+                    // is folded into the content instead of being dropped, marker included, so
+                    // it survives the round trip rather than vanishing from the wire.
+                    if (error != null) {
                         if (content.length() > 0) {
                             content.append("\n");
                         }
-                        content.append(tb.getText());
+                        content.append(ERROR_TEXT_PREFIX).append(error);
+                    }
+                    error = stripErrorPrefix(toolResultText(trb));
+                    toolCallId = trb.getId();
+                } else {
+                    if (error == null) {
+                        toolCallId = trb.getId();
+                    }
+                    // Extract text content from tool result
+                    for (ContentBlock output : trb.getOutput()) {
+                        if (output instanceof TextBlock tb) {
+                            if (content.length() > 0) {
+                                content.append("\n");
+                            }
+                            content.append(tb.getText());
+                        }
                     }
                 }
             }
         }
 
+        // The protocol lists `content` as required on a tool message and does not accept null,
+        // so a result with no ordinary output carries an empty string rather than omitting the
+        // field. Other roles keep the previous behaviour.
+        String contentText = content.toString();
+        MessageContent wireContent =
+                contentText.isEmpty() && !toolMessage ? null : new MessageContent.Text(contentText);
+
         return new AguiMessage(
                 msg.getId(),
                 role,
-                content.length() > 0 ? new MessageContent.Text(content.toString()) : null,
+                wireContent,
                 toolCalls.isEmpty() ? null : toolCalls,
-                toolCallId);
+                toolCallId,
+                error);
+    }
+
+    /**
+     * Join the text blocks of a tool result into a single string, the same way the content of a
+     * successful result is assembled.
+     *
+     * @param trb the tool result block
+     * @return the joined text, empty if the result carries no text
+     */
+    private static String toolResultText(ToolResultBlock trb) {
+        StringBuilder text = new StringBuilder();
+        for (ContentBlock output : trb.getOutput()) {
+            if (output instanceof TextBlock tb) {
+                if (text.length() > 0) {
+                    text.append("\n");
+                }
+                text.append(tb.getText());
+            }
+        }
+        return text.toString();
+    }
+
+    /**
+     * Strip the {@code [ERROR] } marker {@link ToolResultBlock#error(String, String)} prefixes.
+     *
+     * <p>Applied in both directions: outbound so a mirrored error carries the reason itself
+     * rather than the marker that already announces it, inbound so a client that echoes a
+     * prefixed value back does not end up with the marker twice.
+     *
+     * @param text the tool result text or reported error
+     * @return the text without the marker, unchanged if it does not carry one
+     */
+    private static String stripErrorPrefix(String text) {
+        return text.startsWith(ERROR_TEXT_PREFIX)
+                ? text.substring(ERROR_TEXT_PREFIX.length())
+                : text;
     }
 
     /**
@@ -293,12 +397,34 @@ public class AguiMessageConverter {
         if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
             // Tool results must always carry a ToolResultBlock, even when the frontend
             // returned empty content.
+            String error = aguiMessage.getError();
+            if (error != null && !error.isBlank()) {
+                // A frontend tool that failed reports the reason in the AG-UI `error` field
+                // rather than in `content`. Report the failure instead of a success, so the
+                // model can retry, report it, or ask the user. A client may echo back a value
+                // this converter already prefixed, and the marker is added again below, so it
+                // is stripped here to keep both directions symmetric.
+                blocks.add(
+                        errorResultBlock(
+                                aguiMessage.getToolCallId(), stripErrorPrefix(error), text));
+                return;
+            }
             String resultText = text != null ? text : "";
+            // Core documents the `[ERROR]` marker as the way a result announces failure — see
+            // ToolResultBlock.error(String, String) — and `ReActAgent.determineToolResultState`
+            // only consults that marker for a result whose state is unasserted. A client that
+            // reports a failure purely as marker text in `content` would therefore be recorded as
+            // a success, so the marker is read here rather than left to core. The predicate is
+            // core's own, marker without a separator, so text such as `[ERROR]boom` is caught too.
+            ToolResultState state =
+                    resultText.startsWith(ERROR_MARKER)
+                            ? ToolResultState.ERROR
+                            : ToolResultState.SUCCESS;
             blocks.add(
                     ToolResultBlock.builder()
                             .id(aguiMessage.getToolCallId())
                             .output(TextBlock.builder().text(resultText).build())
-                            .state(ToolResultState.SUCCESS)
+                            .state(state)
                             .build());
             return;
         }
@@ -306,6 +432,34 @@ public class AguiMessageConverter {
             return;
         }
         blocks.add(TextBlock.builder().text(text).build());
+    }
+
+    /**
+     * Build an ERROR tool result for a frontend tool that reported a failure.
+     *
+     * <p>{@link ToolResultBlock#error(String, String)} is used when the client sent no payload,
+     * so the error text keeps the {@code [ERROR]} prefix the agent runtime recognises. A payload
+     * sent alongside the error is kept after it rather than discarded, which the AG-UI protocol
+     * allows and which would otherwise lose the only part of the tool output the client sent.
+     *
+     * @param toolCallId the tool call ID the result answers
+     * @param error the error the frontend reported
+     * @param content the payload the frontend sent alongside the error, may be null
+     * @return the ERROR-state ToolResultBlock
+     */
+    private static ToolResultBlock errorResultBlock(
+            String toolCallId, String error, String content) {
+        if (content == null || content.isEmpty()) {
+            return ToolResultBlock.error(toolCallId, error);
+        }
+        return ToolResultBlock.builder()
+                .id(toolCallId)
+                .output(
+                        TextBlock.builder()
+                                .text(ERROR_TEXT_PREFIX + error + "\n" + content)
+                                .build())
+                .state(ToolResultState.ERROR)
+                .build();
     }
 
     /**
