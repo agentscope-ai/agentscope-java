@@ -73,6 +73,11 @@ public class Msg implements State {
      * Metadata key for carrying a {@code List<ConfirmResult>} when resuming a Permission HITL
      * pause. The receiving {@code ReActAgent.call(msgs)} extracts and applies these results to
      * the ASKING tool calls in context.
+     *
+     * <p>Idempotency contract: when no tool call is currently ASKING (e.g. a transport retried
+     * an already-applied confirmation), the payload is processed as a normal turn and silently
+     * ignored — "no error" therefore does NOT mean "the confirmation took effect". A result
+     * referencing an id that is not among the ASKING calls, by contrast, is rejected outright.
      */
     public static final String METADATA_CONFIRM_RESULTS = "agentscope_confirm_results";
 
