@@ -161,6 +161,7 @@ env:
 | `disableWorkspaceContext()` | system prompt 注入（`AGENTS.md` / `MEMORY.md` / `knowledge/`） |
 | `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `<memory_context>`（`MEMORY.md`） |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导 |
+| `disableKnowledgeContext()` | `## Domain Knowledge` 引导段、`knowledge/KNOWLEDGE.md` 全文及 `Knowledge files:` 目录；同时省略空的 `<domain_knowledge_context>` 元素。与 `disableWorkspaceContext()` 不同，此开关保留 `AGENTS.md`、`MEMORY.md` 和记忆工具 |
 | `disableSubagents()` | 整个子 agent 子系统 |
 | `disableDynamicSkills()` | 每轮重新合并技能；改成 build 时一次 |
 | `disableToolsConfig()` | 不读 `tools.json` |
@@ -177,12 +178,12 @@ env:
 | 段落 | 来源 | 受预算约束 |
 |------|------|-----------|
 | `## Session Context` | 模板生成（日期、操作系统、workspace 绝对路径、临时目录、当前 `sessionId`） | 否 |
-| `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` 引导段 | 内置模板（教模型怎么用记忆 + 怎么查 knowledge）。Memory 相关段会随 `disableMemoryTools()` / `disableMemoryHooks()` 裁剪或整段省略 | 否 |
+| `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` 引导段 | 内置模板（教模型怎么用记忆 + 怎么查 knowledge）。Memory 相关段会随 `disableMemoryTools()` / `disableMemoryHooks()` 裁剪或整段省略；Domain Knowledge 段会随 `disableKnowledgeContext()` 整段省略 | 否 |
 | `## Workspace` 段 | 模板生成，**按 filesystem 模式分支**（详见下面）—— 告诉模型自己跑在本机 / 沙箱 / 远端 | 否 |
 | `## Workspace Files (Injected)` 段 | 框架自动从工作区把以下文件拉成 `<loaded_context>` XML 块注入 | 见下 |
 | `<agents_context>` | `AGENTS.md` 全文 | 无限 |
 | `<memory_context>` | `MEMORY.md`（剩余预算下，超出按字符截断 + 提示「用 memory_search 查更早」；关 tools 时只硬截断不提工具；tools + hooks 都关时整段不注入） | `maxContextTokens` 默认 8000 |
-| `<domain_knowledge_context>` | `knowledge/KNOWLEDGE.md` 全文 + `knowledge/` 下所有文件路径列表 | 无限（仅文件名做索引） |
+| `<domain_knowledge_context>` | `knowledge/KNOWLEDGE.md` 全文 + `knowledge/` 下所有文件路径列表；`disableKnowledgeContext()` 时整段不注入 | 无限（仅文件名做索引） |
 | `<x_md>` / `<y_md>` | 你 `additionalContextFile("X.md")` 添加的任意文件 | 无限 |
 
 要点：
