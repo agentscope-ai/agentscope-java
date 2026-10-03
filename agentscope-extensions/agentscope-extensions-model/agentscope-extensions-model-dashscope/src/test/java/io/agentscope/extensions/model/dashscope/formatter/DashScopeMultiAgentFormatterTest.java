@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.dashscope.formatter;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -43,10 +44,16 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeOutput;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeToolCall;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeUsage;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -168,6 +175,37 @@ class DashScopeMultiAgentFormatterTest {
         assertEquals("tool", result.get(0).getRole());
         assertEquals("call_123", result.get(0).getToolCallId());
         assertEquals("15", result.get(0).getContentAsString());
+    }
+
+    @Test
+    void testBase64ToolResultFormattingIsDeterministic() throws IOException {
+        byte[] expected =
+                ("dashscope-stable-image-" + UUID.randomUUID()).getBytes(StandardCharsets.UTF_8);
+        String data = Base64.getEncoder().encodeToString(expected);
+        ImageBlock image =
+                ImageBlock.builder()
+                        .source(Base64Source.builder().mediaType("image/png").data(data).build())
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .name("ImageTool")
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_image")
+                                                .name("read_image")
+                                                .output(image)
+                                                .build()))
+                        .build();
+
+        String first = formatter.format(List.of(msg)).get(0).getContentAsString();
+        String second = formatter.format(List.of(msg)).get(0).getContentAsString();
+        String prefix = "The returned image can be found at: ";
+        assertEquals(first, second);
+        assertTrue(first.startsWith(prefix));
+        Path path = Path.of(first.substring(prefix.length()));
+        assertArrayEquals(expected, Files.readAllBytes(path));
     }
 
     @Test
