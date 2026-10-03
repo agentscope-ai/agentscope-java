@@ -196,13 +196,32 @@ class MysqlIntegrationTest {
         assertEquals("content-a", repo.getSkill("team-a", "mysql-ns-skill").getSkillContent());
         assertEquals("content-b", repo.getSkill("team-b", "mysql-ns-skill").getSkillContent());
 
-        // Delete and clear stay inside their namespace; the unique index runs under
+        // Delete and clear stay inside their namespace; name comparisons still run under
         // MySQL's case-insensitive collation, which the local H2/SQLite tests cannot cover.
         assertTrue(repo.delete("team-b", "mysql-ns-skill"));
         assertEquals("a", repo.getSkill("team-a", "mysql-ns-skill").getResource("docs/a.md"));
         repo.clearAllSkills("team-a");
         assertTrue(repo.getAllSkillNames("team-a").isEmpty());
         assertTrue(repo.getAllSkillNames("team-b").isEmpty());
+
+        // Case-differing namespaces are distinct scopes on MySQL: the namespace columns
+        // are pinned to utf8mb4_bin (like the store/session key columns), so 'Team-a'
+        // and 'team-a' coexist instead of collapsing into one under the case-insensitive
+        // table default.
+        var caseSkill =
+                new AgentSkill(
+                        Map.of("name", "case-skill", "description", "d"),
+                        "content",
+                        Map.of(),
+                        "integration");
+        assertTrue(repo.save("Team-a", List.of(caseSkill), false));
+        assertTrue(
+                repo.save("team-a", List.of(caseSkill), false),
+                "utf8mb4_bin namespace must treat 'Team-a' and 'team-a' as distinct scopes");
+        assertEquals(1, repo.getAllSkillNames("Team-a").size());
+        assertEquals(1, repo.getAllSkillNames("team-a").size());
+        repo.clearAllSkills("Team-a");
+        repo.clearAllSkills("team-a");
     }
 
     /**

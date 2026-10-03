@@ -176,7 +176,9 @@ teamA.save("team-b", List.of(otherSkill), false);
 - The constructors without a namespace bind `"default"`.
 - A `force=true` overwrite stays inside one namespace; it never deletes across namespaces.
 - Namespaces are validated at construction and on every convenience call: 1–64 characters from `[A-Za-z0-9._-]`, anything else throws `IllegalArgumentException`.
-- On MySQL the `namespace` column keeps the table's default collation and is case-insensitive like `name`; PostgreSQL / H2 / SQLite compare case-sensitively.
+- Namespace comparison is case-sensitive on every database; on MySQL the `namespace` columns are pinned to `utf8mb4_bin`, while `name` keeps the case-insensitive default.
+- `clearAllSkills()` clears all skills of one namespace (the no-argument form: the bound one).
+- `namespace` is **write-once** — no repository statement updates it.
 
 **Upgrading an existing table** (the framework never alters existing tables — run this once by hand):
 
@@ -187,10 +189,19 @@ ALTER TABLE agentscope_skills
 ALTER TABLE agentscope_skill_resources
   ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 'default';
 
--- 2. Rebuild the unique index (prefer an off-peak window: drop the old single-column one, then add the composite)
+-- 2. MySQL only — pin the isolation boundary to case-sensitive comparison
+--    (rebuilds the table; prefer an off-peak window)
+ALTER TABLE agentscope_skills
+  MODIFY COLUMN namespace VARCHAR(64) COLLATE utf8mb4_bin NOT NULL DEFAULT 'default';
+ALTER TABLE agentscope_skill_resources
+  MODIFY COLUMN namespace VARCHAR(64) COLLATE utf8mb4_bin NOT NULL DEFAULT 'default';
+
+-- 3. Rebuild the unique index (prefer an off-peak window: drop the old single-column
+--    one, then add the composite) and index the resources' namespace
 ALTER TABLE agentscope_skills DROP INDEX name;
 ALTER TABLE agentscope_skills
   ADD UNIQUE KEY uk_namespace_name (namespace, name);
+ALTER TABLE agentscope_skill_resources ADD INDEX idx_namespace (namespace);
 ```
 
 PostgreSQL variant:
@@ -200,9 +211,11 @@ ALTER TABLE agentscope_skills ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 
 ALTER TABLE agentscope_skill_resources ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 'default';
 ALTER TABLE agentscope_skills DROP CONSTRAINT agentscope_skills_name_key;
 ALTER TABLE agentscope_skills ADD CONSTRAINT uk_namespace_name UNIQUE (namespace, name);
+CREATE INDEX IF NOT EXISTS agentscope_skill_resources_namespace_idx
+  ON agentscope_skill_resources (namespace);
 ```
 
-H2 can drop the old constraint by name (`ALTER TABLE agentscope_skills DROP CONSTRAINT <name>`) and add the new one. SQLite differs: the implicit index behind an inline `UNIQUE` cannot be dropped, so rebuild the table instead (create both new tables with the `namespace` column and the skills table with `UNIQUE(namespace, name)`, copy the rows, drop the old tables, rename). Startup validation compares columns only, never indexes, so **both steps are required**: skipping step 2 leaves the global `UNIQUE(name)` in place, and saving the same name into another namespace fails on the constraint.
+H2 can drop the old constraint by name (`ALTER TABLE agentscope_skills DROP CONSTRAINT <name>`) and add the new one. SQLite differs: the implicit index behind an inline `UNIQUE` cannot be dropped, so rebuild the table instead (create both new tables with the `namespace` column and the skills table with `UNIQUE(namespace, name)`, copy the rows, drop the old tables, rename). Startup validation compares columns only, never indexes, so **steps 2 and 3 are required** (step 3 removes the global `UNIQUE(name)`; step 2 keeps MySQL namespace comparison case-sensitive). The resources index is performance-only.
 
 ## Migrating from Legacy Modules
 
@@ -220,7 +233,7 @@ Migrating the skill repositories:
 - Tables created by the current legacy modules already include `metadata_json` and work as-is; older tables need the column added first — the startup error carries the reference DDL.
 - One caveat to "work as-is": the legacy modules never rejected absolute or `..` resource paths, and the new implementation validates rows on read — `getSkill` refuses such a row; `getAllSkills` / `getAllSkillNames` skip it with a warning. A row whose *name* fails validation cannot be deleted either — `clearAllSkills` or direct SQL is the only remedy. Audit `resource_path` and skill names before migrating; those values were never safely consumable downstream.
 - The old modules implicitly created an `agentscope` database (MySQL) or schema (PostgreSQL). The new repository puts its tables wherever the connection points — aim the `DataSource` at the existing tables.
-- `databaseName` / `schemaName` have no equivalent — the tables live in whatever database the DataSource points to, same as the base tables. Table names can be overridden via `skillTableName` / `skillResourcesTableName`. Correspondingly, `getSource()` changes from `mysql_<databaseName>_<table>` / `postgresql_<schemaName>_<table>` to `jdbc_<skillTableName>` — consumers keying on it (e.g. the skill staging cache namespace) get a fresh subtree after migration, and the old one is reclaimed by orphan GC.
+- `databaseName` / `schemaName` have no equivalent — the tables live in whatever database the DataSource points to, same as the base tables. Table names can be overridden via `skillTableName` / `skillResourcesTableName`. Correspondingly, `getSource()` changes from `mysql_<databaseName>_<table>` / `postgresql_<schemaName>_<table>` to `jdbc_<skillTableName>@<namespace>` (the namespace suffix keeps scopes of one table distinct) — consumers keying on it (e.g. the skill staging cache namespace) get a fresh subtree after migration, and the old one is reclaimed by orphan GC.
 
 ## When to Use
 

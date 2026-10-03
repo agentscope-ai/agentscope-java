@@ -195,7 +195,14 @@ public class SqliteDialect extends AbstractJdbcDialect {
                         + "  FOREIGN KEY (id) REFERENCES "
                         + skillTableName()
                         + "(id) ON DELETE CASCADE"
-                        + ")");
+                        + ")",
+                // SQLite cannot express a secondary index inside CREATE TABLE; without it,
+                // the namespace-scoped bulk resource statements full-scan the shared table.
+                "CREATE INDEX IF NOT EXISTS "
+                        + skillResourcesTableName()
+                        + "_namespace_idx ON "
+                        + skillResourcesTableName()
+                        + " (namespace)");
     }
 
     // ------------------------------------------------------------------

@@ -25,6 +25,7 @@ import io.agentscope.extensions.jdbc.dialect.vendor.MysqlDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.PostgresDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.SqliteDialect;
 import java.io.ByteArrayInputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -370,6 +371,79 @@ class DialectSqlTests {
                 d.skillResourcesInsert("team-a", 1L, "docs/a.md", "a")
                         .sql()
                         .contains("(namespace, id, resource_path, resource_content)"));
+    }
+
+    @Test
+    @DisplayName("resources DDLs index namespace; MySQL pins it to utf8mb4_bin")
+    void skillDdlsIndexAndCollateNamespace() {
+        // The resources table is shared by every namespace and its bulk statements filter
+        // by namespace, so each vendor must cover that predicate with an index.
+        for (AbstractJdbcDialect dialect :
+                List.of(new H2Dialect(), new PostgresDialect(), new SqliteDialect())) {
+            assertEquals(
+                    "CREATE INDEX IF NOT EXISTS "
+                            + dialect.skillResourcesTableName()
+                            + "_namespace_idx ON "
+                            + dialect.skillResourcesTableName()
+                            + " (namespace)",
+                    dialect.skillResourcesCreateTableDdls().get(1),
+                    dialect.getClass().getSimpleName() + " must index resources.namespace");
+        }
+        assertTrue(
+                new MysqlDialect()
+                        .skillResourcesCreateTableDdls()
+                        .get(0)
+                        .contains("INDEX idx_namespace (namespace)"),
+                "MySQL declares the resources index inline");
+
+        // The namespace is the isolation boundary: on MySQL it must not fold case under
+        // the table's case-insensitive default collation.
+        MysqlDialect mysql = new MysqlDialect();
+        assertTrue(
+                mysql.skillCreateTableDdls().get(0).contains("COLLATE utf8mb4_bin"),
+                "MySQL skill DDL must pin namespace to utf8mb4_bin");
+        assertTrue(
+                mysql.skillResourcesCreateTableDdls().get(0).contains("COLLATE utf8mb4_bin"),
+                "MySQL resources DDL must pin namespace to utf8mb4_bin");
+    }
+
+    /** An UPDATE statement assigning the namespace column — forbidden, see below. */
+    private static final Pattern NAMESPACE_ASSIGNMENT =
+            Pattern.compile("(?is).*\\bUPDATE\\b.*\\bSET\\b.*\\bnamespace\\s*=.*");
+
+    @Test
+    @DisplayName("no skill statement ever updates the namespace column (write-once contract)")
+    void skillStatementsNeverUpdateNamespace() {
+        // Namespace is bound per repository instance and write-once per row: a skill never
+        // moves namespaces through this library, so its resources can never be stranded by
+        // an in-library write. The guard keeps a future update-style statement from
+        // silently breaking that: updates may exist, but namespace must not be assigned.
+        List<BoundSql> statements = new ArrayList<>();
+        for (AbstractJdbcDialect d :
+                List.of(
+                        new H2Dialect(),
+                        new MysqlDialect(),
+                        new PostgresDialect(),
+                        new SqliteDialect())) {
+            statements.add(d.skillSelectByName("ns", "s"));
+            statements.add(d.skillSelectAll("ns"));
+            statements.add(d.skillSelectAllNames("ns"));
+            statements.add(d.skillExists("ns", "s"));
+            statements.add(d.skillSelectIdByName("ns", "s"));
+            statements.add(d.skillInsert("ns", "s", "d", "c", "src", null));
+            statements.add(d.skillDeleteByName("ns", "s"));
+            statements.add(d.skillDeleteAll("ns"));
+            statements.add(d.skillResourcesInsert("ns", 1L, "docs/a.md", "a"));
+            statements.add(d.skillResourcesSelectAll("ns"));
+            statements.add(d.skillResourcesDeleteAll("ns"));
+            statements.add(d.skillResourcesSelectBySkillId(1L));
+            statements.add(d.skillResourcesDeleteBySkillId(1L));
+        }
+        for (BoundSql statement : statements) {
+            assertFalse(
+                    NAMESPACE_ASSIGNMENT.matcher(statement.sql()).matches(),
+                    "namespace is write-once; no statement may SET it: " + statement.sql());
+        }
     }
 
     // ------------------------------------------------------------------

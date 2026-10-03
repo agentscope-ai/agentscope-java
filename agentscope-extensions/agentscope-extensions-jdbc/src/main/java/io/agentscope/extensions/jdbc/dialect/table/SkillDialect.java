@@ -29,7 +29,9 @@ import java.util.List;
  * <p>The namespace column partitions names: {@code UNIQUE(namespace, name)} allows the
  * same skill name once per namespace. Every statement addresses exactly one namespace;
  * the column is {@code NOT NULL DEFAULT 'default'}: every row carries a concrete
- * namespace and vendor-specific NULL comparison semantics never apply.
+ * namespace and vendor-specific NULL comparison semantics never apply. The column is
+ * write-once per row: no statement updates it, so a skill never moves namespaces through
+ * SQL generated here.
  *
  * <p>Method names are prefixed with {@code skill}; all business SQL is ANSI-standard, so
  * vendors override only the create-table DDL.

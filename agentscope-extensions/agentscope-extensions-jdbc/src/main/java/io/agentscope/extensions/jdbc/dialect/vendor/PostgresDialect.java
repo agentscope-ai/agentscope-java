@@ -172,11 +172,11 @@ public class PostgresDialect extends AbstractJdbcDialect {
 
     /**
      * Skill tables ported verbatim from the deprecated skill-postgresql-repository module:
-     * {@code BIGSERIAL} id, {@code TEXT} payloads, cascading FK. Only the table names are
-     * resolved through the dialect instead of a hard-coded {@code schema.table} prefix —
-     * tables now live in the connection's current schema, like the base tables.
+     * {@code BIGSERIAL} id, {@code TEXT} payloads, cascading FK. The skill table carries
+     * the {@code namespace} column with {@code UNIQUE(namespace, name)}. Only the table
+     * names are resolved through the dialect instead of a hard-coded {@code schema.table}
+     * prefix — tables now live in the connection's current schema, like the base tables.
      */
-    /** Skill table with the {@code namespace} column and {@code UNIQUE(namespace, name)}. */
     @Override
     public List<String> skillCreateTableDdls() {
         return List.of(
@@ -212,7 +212,15 @@ public class PostgresDialect extends AbstractJdbcDialect {
                         + "  FOREIGN KEY (id) REFERENCES "
                         + skillTableName()
                         + "(id) ON DELETE CASCADE"
-                        + ")");
+                        + ")",
+                // PostgreSQL cannot express a secondary index inside CREATE TABLE; without
+                // it, the namespace-scoped bulk resource statements full-scan the shared
+                // table.
+                "CREATE INDEX IF NOT EXISTS "
+                        + skillResourcesTableName()
+                        + "_namespace_idx ON "
+                        + skillResourcesTableName()
+                        + " (namespace)");
     }
 
     // ------------------------------------------------------------------

@@ -57,6 +57,15 @@ import org.slf4j.LoggerFactory;
  * that scope. The namespace-aware methods are a class-specific convenience for tooling
  * that must touch several namespaces through one instance.
  *
+ * <p>Namespace is the primary dimension of every operation in this repository: each
+ * method resolves to exactly one explicit namespace first — {@code clearAllSkills()}
+ * included, which clears all skills of its bound namespace, never another. A
+ * cross-namespace wipe is deliberately not a repository operation.
+ *
+ * <p>A skill's namespace is write-once: every write path here is an insert or a delete —
+ * no statement updates the {@code namespace} column, so a skill never moves namespaces
+ * through this class.
+ *
  * <p>Example:
  * <pre>{@code
  * AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource)
@@ -476,15 +485,26 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         }
     }
 
+    /**
+     * Reports type, location, and writability; the location carries the bound namespace
+     * ({@code <skill table>@<namespace>}) so two scopes of one table stay
+     * distinguishable.
+     */
     @Override
     public AgentSkillRepositoryInfo getRepositoryInfo() {
         return new AgentSkillRepositoryInfo(
-                REPOSITORY_TYPE, skillDialect.skillTableName(), writeable);
+                REPOSITORY_TYPE, skillDialect.skillTableName() + "@" + namespace, writeable);
     }
 
+    /**
+     * The repository's identity, {@code jdbc_<skill table>@<namespace>} — the bound
+     * namespace is part of it. Consumers key on this string (the skill staging cache
+     * namespace, prompt provenance), so two scopes of one table must not share it; the
+     * form follows the Nacos repository's {@code nacos@<namespaceId>} convention.
+     */
     @Override
     public String getSource() {
-        return REPOSITORY_TYPE + "_" + skillDialect.skillTableName();
+        return REPOSITORY_TYPE + "_" + skillDialect.skillTableName() + "@" + namespace;
     }
 
     @Override

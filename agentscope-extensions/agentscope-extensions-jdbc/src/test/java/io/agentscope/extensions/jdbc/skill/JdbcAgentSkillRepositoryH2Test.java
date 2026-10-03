@@ -544,17 +544,25 @@ class JdbcAgentSkillRepositoryH2Test {
     class InfoAndConstructionTests {
 
         @Test
-        @DisplayName(
-                "getRepositoryInfo and getSource report jdbc and the skill table; close is a no-op")
+        @DisplayName("getRepositoryInfo and getSource carry the bound namespace; close is a no-op")
         void infoAndSource() {
             JdbcAgentSkillRepository repo = newRepository("skill_repo_info");
 
             AgentSkillRepositoryInfo info = repo.getRepositoryInfo();
             assertEquals("jdbc", info.getType());
-            assertEquals("agentscope_skills", info.getLocation());
+            assertEquals("agentscope_skills@default", info.getLocation());
             assertTrue(info.isWritable());
-            assertEquals("jdbc_agentscope_skills", repo.getSource());
+            assertEquals("jdbc_agentscope_skills@default", repo.getSource());
             assertDoesNotThrow(repo::close);
+
+            // The bound namespace is part of the identity: two scopes of one table must
+            // not share a source string — the skill staging cache keys on it.
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_info_ns");
+            JdbcAgentSkillRepository teamA =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "team-a", true);
+            assertEquals("jdbc_agentscope_skills@team-a", teamA.getSource());
+            assertEquals("agentscope_skills@team-a", teamA.getRepositoryInfo().getLocation());
+            assertDoesNotThrow(teamA::close);
         }
 
         @Test

@@ -24,8 +24,10 @@ import java.util.List;
  * <p>One row per skill resource, keyed by {@code (id, resource_path)} with a foreign key to
  * the skill table and {@code ON DELETE CASCADE}. The row carries the owning skill's
  * {@code namespace}, written in the same transaction, so bulk reads and deletes scope by
- * namespace without joining the skill table. This table must be created after the skill
- * table it references.
+ * namespace without joining the skill table. Like the skill row's, that column is
+ * write-once: no statement updates it, the two rows' values are always written together,
+ * and the pair never diverges through this interface. This table must be created after
+ * the skill table it references.
  *
  * <p>Method names are prefixed with {@code skillResources}; all business SQL is
  * ANSI-standard, so vendors override only the create-table DDL.
