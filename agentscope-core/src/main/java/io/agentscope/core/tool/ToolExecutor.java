@@ -542,7 +542,7 @@ class ToolExecutor {
 
     private Mono<ToolResultBlock> applyTimeout(
             Mono<ToolResultBlock> execution, ExecutionConfig config, ToolUseBlock toolCall) {
-        if (config == null || config.getTimeout() == null || config.getTimeout().isNegative()) {
+        if (config == null || config.getTimeout() == null || config.isTimeoutDisabled()) {
             return execution;
         }
 

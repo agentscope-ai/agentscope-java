@@ -154,7 +154,8 @@ public class ExecutionConfig {
 
     /**
      * Sentinel value for {@link #timeout} meaning "no timeout". A negative duration is never
-     * produced by normal usage and is recognised by {@code applyTimeout} / {@code applyTimeout}
+     * produced by normal usage and is recognised by {@code ToolExecutor.applyTimeout} and
+     * {@link ModelUtils#applyTimeoutAndRetry ModelUtils.applyTimeoutAndRetry}
      * as "skip the timeout operator entirely".
      *
      * <p>This is the only way to opt out of the timeout that {@link #TOOL_DEFAULTS} and {@link
@@ -190,6 +191,16 @@ public class ExecutionConfig {
      */
     public Duration getTimeout() {
         return timeout;
+    }
+
+    /**
+     * Returns true when the configured timeout is the {@link #NO_TIMEOUT} sentinel,
+     * meaning consumers should skip applying any timeout operator.
+     *
+     * @return true if timeout is disabled via {@link #NO_TIMEOUT}
+     */
+    public boolean isTimeoutDisabled() {
+        return timeout != null && timeout.isNegative();
     }
 
     /**

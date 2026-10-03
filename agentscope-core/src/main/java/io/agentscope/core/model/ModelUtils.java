@@ -82,7 +82,7 @@ public final class ModelUtils {
         if (execConfig != null) {
             // Apply timeout if configured
             Duration timeout = execConfig.getTimeout();
-            if (timeout != null) {
+            if (timeout != null && !execConfig.isTimeoutDisabled()) {
                 responseFlux =
                         responseFlux.timeout(
                                 timeout,
