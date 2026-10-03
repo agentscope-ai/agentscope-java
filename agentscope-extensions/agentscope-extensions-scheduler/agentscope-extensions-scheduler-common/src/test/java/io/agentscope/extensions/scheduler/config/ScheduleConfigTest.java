@@ -19,7 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link ScheduleConfig}. */
@@ -102,6 +104,60 @@ class ScheduleConfigTest {
                 ScheduleConfig.builder().cron("0 0 8 * * ?").zoneId("Asia/Shanghai").build();
 
         assertEquals("Asia/Shanghai", config.getZoneId());
+    }
+
+    @Test
+    void testInvalidZoneId() {
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                ScheduleConfig.builder()
+                                        .cron("0 0 8 * * ?")
+                                        .zoneId("Invalid/Zone")
+                                        .build());
+
+        assertTrue(exception.getMessage().contains("Invalid/Zone"));
+    }
+
+    @Test
+    void testBlankZoneId() {
+        for (String zoneId : new String[] {"", " "}) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> ScheduleConfig.builder().cron("0 0 8 * * ?").zoneId(zoneId).build());
+        }
+    }
+
+    @Test
+    void testQuartzReloadZoneIdStringsAreAccepted() {
+        // loadTaskFromQuartz rebuilds a ScheduleConfig from TimeZone.getID(), whose output
+        // must therefore stay valid under the new build-time validation. These exact strings
+        // are what the JDK returns for offset and region zones.
+        for (String zoneId : new String[] {"GMT+01:00", "UTC", "GMT", "Asia/Shanghai"}) {
+            ScheduleConfig config =
+                    ScheduleConfig.builder().cron("0 0 8 * * ?").zoneId(zoneId).build();
+            assertEquals(zoneId, config.getZoneId());
+        }
+    }
+
+    @Test
+    void testLegacyTimeZoneIdsRemainAccepted() {
+        for (String zoneId : new String[] {"PST", "EST"}) {
+            ScheduleConfig config =
+                    ScheduleConfig.builder().cron("0 0 8 * * ?").zoneId(zoneId).build();
+            assertEquals(zoneId, config.getZoneId());
+        }
+    }
+
+    @Test
+    void testLegacyTimeZoneIdsAreCaseInsensitiveAndCanonicalized() {
+        for (Map.Entry<String, String> alias :
+                Map.of("pst", "PST", "pSt", "PST", "gmt", "GMT", "utc", "UTC").entrySet()) {
+            ScheduleConfig config =
+                    ScheduleConfig.builder().cron("0 0 8 * * ?").zoneId(alias.getKey()).build();
+            assertEquals(alias.getValue(), config.getZoneId());
+        }
     }
 
     @Test

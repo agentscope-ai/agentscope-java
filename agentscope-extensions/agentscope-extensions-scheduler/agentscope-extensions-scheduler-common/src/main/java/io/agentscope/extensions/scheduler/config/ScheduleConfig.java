@@ -16,7 +16,13 @@
 package io.agentscope.extensions.scheduler.config;
 
 import io.agentscope.extensions.scheduler.AgentScheduler;
+import java.time.DateTimeException;
+import java.time.ZoneId;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.TimeZone;
 
 /**
  * Configuration for scheduled agent tasks.
@@ -57,6 +63,28 @@ import java.util.Objects;
  */
 public class ScheduleConfig {
 
+    private static final Map<String, String> LEGACY_TIME_ZONE_IDS = createLegacyTimeZoneIds();
+
+    private static Map<String, String> createLegacyTimeZoneIds() {
+        Map<String, String> timeZoneIds = new HashMap<>();
+        for (String timeZoneId : TimeZone.getAvailableIDs()) {
+            timeZoneIds.putIfAbsent(timeZoneId.toLowerCase(Locale.ROOT), timeZoneId);
+        }
+        return Map.copyOf(timeZoneIds);
+    }
+
+    private static String canonicalizeZoneId(String zoneId) {
+        if (zoneId == null) {
+            return null;
+        }
+        try {
+            ZoneId.of(zoneId);
+            return zoneId;
+        } catch (DateTimeException e) {
+            return LEGACY_TIME_ZONE_IDS.getOrDefault(zoneId.toLowerCase(Locale.ROOT), zoneId);
+        }
+    }
+
     private final ScheduleMode scheduleMode;
     private final String cronExpression;
     private final Long fixedRate;
@@ -70,7 +98,10 @@ public class ScheduleConfig {
         this.fixedRate = builder.fixedRate;
         this.fixedDelay = builder.fixedDelay;
         this.initialDelay = builder.initialDelay;
-        this.zoneId = builder.zoneId;
+        this.zoneId =
+                builder.scheduleMode == ScheduleMode.CRON
+                        ? canonicalizeZoneId(builder.zoneId)
+                        : builder.zoneId;
         validate();
     }
 
@@ -87,6 +118,17 @@ public class ScheduleConfig {
                 if (cronExpression == null || cronExpression.trim().isEmpty()) {
                     throw new IllegalArgumentException(
                             "Cron expression must not be null or empty for CRON mode");
+                }
+                if (zoneId != null) {
+                    try {
+                        ZoneId.of(zoneId);
+                    } catch (DateTimeException e) {
+                        // Keep accepting IDs used by existing Quartz triggers (e.g. PST).
+                        if (!LEGACY_TIME_ZONE_IDS.containsKey(zoneId.toLowerCase(Locale.ROOT))) {
+                            throw new IllegalArgumentException(
+                                    "Invalid time zone ID: " + zoneId, e);
+                        }
+                    }
                 }
                 break;
             case FIXED_RATE:
@@ -271,6 +313,9 @@ public class ScheduleConfig {
          * time zone will be used.
          *
          * <p>Examples: "Asia/Shanghai", "America/New_York", "UTC", "Europe/London"
+         *
+         * <p>For CRON schedules the ID is validated eagerly when the config is built; an
+         * invalid or blank ID raises {@link IllegalArgumentException}.
          *
          * @param zoneIdStr The time zone ID string (e.g., "Asia/Shanghai")
          * @return This builder
