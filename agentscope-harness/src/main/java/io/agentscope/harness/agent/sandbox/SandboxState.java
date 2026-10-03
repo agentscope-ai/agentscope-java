@@ -82,4 +82,18 @@ public abstract class SandboxState {
     public void setWorkspaceRootReady(boolean workspaceRootReady) {
         this.workspaceRootReady = workspaceRootReady;
     }
+
+    /**
+     * Returns the absolute path of the workspace root inside the sandbox container.
+     *
+     * <p>Each backend stores this value in its concrete state subclass. This base-class accessor
+     * provides a polymorphic read path for code that only holds a {@code SandboxState} reference
+     * (e.g. middleware prompt builders). Subclasses that define a {@code workspaceRoot} field
+     * override this method with their own getter.
+     *
+     * @return the workspace root path, or {@code null} when the backend has not yet initialised it
+     */
+    public String getWorkspaceRoot() {
+        return null;
+    }
 }
