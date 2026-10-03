@@ -66,11 +66,27 @@ public final class HttpSelfRegistration implements AutoCloseable {
     private final long heartbeatIntervalMs;
 
     private final AtomicBoolean registered = new AtomicBoolean(false);
+
+    /**
+     * Set once {@link #close()} begins; the re-register path respects it so a
+     * closed instance can never resurrect a registration (which would be
+     * heartbeated by nobody and deleted by nobody).
+     */
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+
     private final AtomicReference<String> registeredInstanceId = new AtomicReference<>();
     private final AtomicLong generation = new AtomicLong();
     private final AtomicReference<RegisteredIdentity> identity = new AtomicReference<>();
     private volatile Consumer<RegisteredIdentity> identityListener = ignored -> {};
     private ScheduledExecutorService scheduler;
+
+    /**
+     * Serializes identity publication (in {@code tryRegister}) against the identity
+     * claim in {@link #close()}: whichever side runs second observes {@code closed}
+     * under the same lock and deletes the freshly created (or just claimed)
+     * instance, so a registration completing after close() is deleted exactly once.
+     */
+    private final Object lifecycleLock = new Object();
 
     public HttpSelfRegistration(
             String controlPlaneHttp,
@@ -105,7 +121,20 @@ public final class HttpSelfRegistration implements AutoCloseable {
         this.heartbeatIntervalMs = heartbeatIntervalMs > 0 ? heartbeatIntervalMs : 15_000L;
     }
 
-    public void start() {
+    /**
+     * Starts registration and heartbeat scheduling.
+     *
+     * @throws IllegalStateException if this registration has already been closed;
+     *     the lifecycle is single-valued and a closed instance cannot be revived
+     */
+    public synchronized void start() {
+        if (closed.get()) {
+            // Lifecycle is single-valued: a closed registration must not be revived,
+            // since start() after close() would replay the registration credential
+            // of an instance that has already been DELETEd on the control plane.
+            throw new IllegalStateException(
+                    "HttpSelfRegistration has been closed and cannot be restarted");
+        }
         if (scheduler != null) {
             return;
         }
@@ -135,28 +164,43 @@ public final class HttpSelfRegistration implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
+        // Claim the closed state before anything else so concurrent close() calls
+        // and in-flight re-registers observe it (see tryRegister).
+        closed.set(true);
         if (scheduler != null) {
             scheduler.shutdownNow();
             scheduler = null;
         }
-        if (!registered.get()) {
+        // Atomically claim the identity under the lifecycle lock instead of only
+        // reading `registered`: shutdownNow() interrupts the heartbeat thread but
+        // does not join it, and the publish path in tryRegister takes the same lock
+        // and re-checks `closed` inside it, so a registration completing after this
+        // claim deletes itself instead of being published — exactly one DELETE.
+        // A re-register cycle may also have cleared `registered` while the identity
+        // was still set (observed on loaded CI runners as a flaky
+        // HttpSelfRegistrationTest) — claiming the surviving identity regardless of
+        // `registered` is what closes that leak.
+        String id;
+        synchronized (lifecycleLock) {
+            id = registeredInstanceId.getAndSet(null);
+            registered.set(false);
+        }
+        if (id == null || id.isBlank()) {
             return;
         }
         try {
-            String id = registeredInstanceId.get();
-            if (id != null && !id.isBlank()) {
-                request(
-                        "DELETE",
-                        "/api/v1/dataplanes/" + id,
-                        Map.of("generation", generation.get()));
-            }
+            request("DELETE", "/api/v1/dataplanes/" + id, Map.of("generation", generation.get()));
             LOG.info(() -> "aistio: unregistered instance " + instanceKey);
         } catch (Exception e) {
-            LOG.log(Level.FINE, "aistio: unregister failed", e);
+            // A lost deregistration leaks a control-plane instance, so it must be
+            // visible at default log levels (not FINE).
+            LOG.log(Level.WARNING, "aistio: unregister failed for " + id, e);
         } finally {
-            registered.set(false);
-            registeredInstanceId.set(null);
+            // The control plane has forgotten this instance: drop the cached
+            // identity so identity() no longer reports it and no listener can be
+            // handed a stale credential.
+            identity.set(null);
         }
     }
 
@@ -193,6 +237,12 @@ public final class HttpSelfRegistration implements AutoCloseable {
     }
 
     private void tryRegister() {
+        if (closed.get()) {
+            // Never resurrect a registration on a closed instance: close() may
+            // have already claimed and DELETEd the identity, and re-publishing
+            // it here would leave it heartbeated by nobody and deleted by nobody.
+            return;
+        }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("tenant", tenant);
         body.put("agentKey", agentKey);
@@ -231,8 +281,10 @@ public final class HttpSelfRegistration implements AutoCloseable {
                     throw new IllegalStateException(
                             "registration response is missing stable identity or credential");
                 }
-                registeredInstanceId.set(durableId);
-                generation.set(currentGeneration);
+                // Publish under the lifecycle lock and re-check `closed` inside it:
+                // close() claims the identity under the same lock, so exactly one
+                // side deletes a registration that completes after close(), no
+                // matter how the two interleave.
                 RegisteredIdentity registeredIdentity =
                         new RegisteredIdentity(
                                 agentId,
@@ -242,9 +294,33 @@ public final class HttpSelfRegistration implements AutoCloseable {
                                 instanceKey,
                                 currentGeneration,
                                 issuedCredential);
-                identity.set(registeredIdentity);
-                identityListener.accept(registeredIdentity);
-                registered.set(true);
+                synchronized (lifecycleLock) {
+                    if (closed.get()) {
+                        try {
+                            request(
+                                    "DELETE",
+                                    "/api/v1/dataplanes/" + durableId,
+                                    Map.of("generation", currentGeneration));
+                            LOG.fine(() -> "aistio: discarded registration issued after close");
+                        } catch (Exception deleteFailure) {
+                            LOG.log(
+                                    Level.WARNING,
+                                    "aistio: failed to delete registration issued after close",
+                                    deleteFailure);
+                        }
+                        // The discarded registration must not linger: drop any cached
+                        // identity (it pointed at a registration that was never kept)
+                        // and make sure the instance stays unregistered.
+                        identity.set(null);
+                        registered.set(false);
+                        return;
+                    }
+                    registeredInstanceId.set(durableId);
+                    generation.set(currentGeneration);
+                    identity.set(registeredIdentity);
+                    identityListener.accept(registeredIdentity);
+                    registered.set(true);
+                }
                 LOG.info(
                         () ->
                                 "aistio: registered "
