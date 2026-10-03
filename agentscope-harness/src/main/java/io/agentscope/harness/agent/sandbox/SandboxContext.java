@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.sandbox;
 
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.Objects;
 
 /**
  * Immutable configuration for sandbox behavior.
@@ -33,6 +34,7 @@ public final class SandboxContext {
     private final Sandbox externalSandbox;
     private final SandboxState externalSandboxState;
     private final IsolationScope isolationScope;
+    private final SandboxReleasePolicy releasePolicy;
 
     private SandboxContext(Builder builder) {
         this.client = builder.client;
@@ -42,6 +44,7 @@ public final class SandboxContext {
         this.externalSandbox = builder.externalSandbox;
         this.externalSandboxState = builder.externalSandboxState;
         this.isolationScope = builder.isolationScope;
+        this.releasePolicy = builder.releasePolicy;
     }
 
     public SandboxClient<?> getClient() {
@@ -72,6 +75,11 @@ public final class SandboxContext {
         return isolationScope;
     }
 
+    /** Returns the release policy for SDK-managed sandboxes. */
+    public SandboxReleasePolicy getReleasePolicy() {
+        return releasePolicy;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -85,6 +93,7 @@ public final class SandboxContext {
         private Sandbox externalSandbox;
         private SandboxState externalSandboxState;
         private IsolationScope isolationScope;
+        private SandboxReleasePolicy releasePolicy = SandboxReleasePolicy.DELETE;
 
         private Builder() {}
 
@@ -120,6 +129,12 @@ public final class SandboxContext {
 
         public Builder isolationScope(IsolationScope isolationScope) {
             this.isolationScope = isolationScope;
+            return this;
+        }
+
+        /** Sets the release policy; defaults to DELETE and must not be null. */
+        public Builder releasePolicy(SandboxReleasePolicy policy) {
+            this.releasePolicy = Objects.requireNonNull(policy, "releasePolicy must not be null");
             return this;
         }
 

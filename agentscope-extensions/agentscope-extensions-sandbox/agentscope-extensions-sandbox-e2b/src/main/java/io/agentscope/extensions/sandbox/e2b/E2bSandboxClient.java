@@ -18,10 +18,13 @@ package io.agentscope.extensions.sandbox.e2b;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
+import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -89,8 +92,30 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         return new E2bSandbox(e2b, resumed);
     }
 
+    /**
+     * Destroys an owned E2B sandbox without creating a final snapshot. Safe to retry after expiry;
+     * failures are propagated and keep the sandbox id available for retry. Snapshot pruning obeys
+     * snapshotRetention; this does not erase retained backups or the harness state-store entry.
+     */
     @Override
-    public void delete(Sandbox sandbox) {}
+    public void delete(Sandbox sandbox) {
+        if (!(sandbox instanceof E2bSandbox)) {
+            throw new IllegalArgumentException("Expected an E2bSandbox");
+        }
+        try {
+            // Do not stop/snapshot here: explicit deletion must also work after provider expiry.
+            sandbox.shutdown();
+        } catch (Exception e) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_STOP_ERROR, "Failed to delete E2B sandbox", e);
+        }
+    }
+
+    /** E2B supports reusing live instances between SDK-managed calls. */
+    @Override
+    public boolean supportsRetention() {
+        return true;
+    }
 
     @Override
     public String serializeState(SandboxState state) {
@@ -110,6 +135,17 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             throw new SandboxException.SandboxConfigurationException(
                     "Failed to deserialize E2B sandbox state", e);
         }
+    }
+
+    /** Deserializes state and rebinds remote snapshots to the current configured storage client. */
+    @Override
+    public SandboxState deserializeState(String json, SandboxSnapshotSpec snapshotSpec) {
+        SandboxState state = deserializeState(json);
+        if (snapshotSpec instanceof RemoteSnapshotSpec remote
+                && state.getSnapshot() instanceof RemoteSandboxSnapshot snapshot) {
+            state.setSnapshot(new RemoteSandboxSnapshot(remote.getClient(), snapshot.getId()));
+        }
+        return state;
     }
 
     private E2bSandboxClientOptions merge(E2bSandboxClientOptions call) {

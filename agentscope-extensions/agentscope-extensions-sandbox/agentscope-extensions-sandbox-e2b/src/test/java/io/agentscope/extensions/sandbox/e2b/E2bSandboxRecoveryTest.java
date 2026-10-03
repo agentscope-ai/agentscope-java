@@ -47,7 +47,7 @@ class E2bSandboxRecoveryTest {
 
     @Test
     void recreateClearsStaleWorkspaceProjectionState() throws Exception {
-        server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
+        server.enqueue(new MockResponse().setResponseCode(404).setBody("sandbox expired"));
         server.enqueue(
                 new MockResponse()
                         .setResponseCode(200)

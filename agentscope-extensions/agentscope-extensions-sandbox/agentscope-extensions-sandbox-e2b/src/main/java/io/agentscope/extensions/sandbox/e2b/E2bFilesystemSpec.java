@@ -18,6 +18,7 @@ package io.agentscope.extensions.sandbox.e2b;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
+import io.agentscope.harness.agent.sandbox.SandboxReleasePolicy;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
@@ -29,6 +30,12 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
     private final E2bSandboxClientOptions options = new E2bSandboxClientOptions();
     private SandboxSnapshotSpec snapshotSpec = new NoopSnapshotSpec();
     private WorkspaceSpec defaultWorkspaceSpec = new WorkspaceSpec();
+
+    @Override
+    public E2bFilesystemSpec releasePolicy(SandboxReleasePolicy policy) {
+        super.releasePolicy(policy);
+        return this;
+    }
 
     public E2bFilesystemSpec client(SandboxClient<?> client) {
         this.client = client;
@@ -96,7 +103,7 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     /**
-     * Maximum number of snapshots created by this session that are kept on shutdown; {@code <= 0}
+     * Target number of snapshots created by this session kept after release; {@code <= 0}
      * disables pruning. Defaults to {@code 0} (disabled), matching the historical no-pruning
      * behaviour. See {@link E2bSandboxClientOptions#setSnapshotRetention(int)} for the full
      * contract.
