@@ -38,10 +38,7 @@ import reactor.core.publisher.Mono;
  *                                 .filter(m -> m.getRole() != MsgRole.SYSTEM)
  *                                 .toList(),
  *                         compactionConfig, agentId, sessionId)
- *                 .doOnNext(replacement -> replacement.ifPresent(msgs -> {
- *                     state.contextMutable().clear();
- *                     state.contextMutable().addAll(msgs);
- *                 }))
+ *                 .doOnNext(replacement -> replacement.ifPresent(state::replaceContext))
  *                 .then();
  * }</pre>
  */
@@ -52,8 +49,8 @@ public interface SessionCompactor {
      * Compacts the session's conversation in place.
      *
      * @param sessionId the session to compact
-     * @param state live agent state for that session; mutate {@code state.contextMutable()} to
-     *     apply the compacted history
+     * @param state live agent state for that session; use {@link AgentState#replaceContext(java.util.List)}
+     *     to apply the compacted history
      */
     Mono<Void> compact(String sessionId, AgentState state);
 }
