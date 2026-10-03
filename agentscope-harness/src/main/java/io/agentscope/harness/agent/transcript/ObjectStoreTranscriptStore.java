@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.transcript;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import java.io.ByteArrayInputStream;
@@ -83,7 +84,12 @@ public class ObjectStoreTranscriptStore implements TranscriptStore {
             TranscriptRef ref, long seqStart, long seqEnd, String writerId, byte[] jsonl) {
         String name = seqStart + "-" + seqEnd + "-" + sanitize(writerId) + ".jsonl";
         String key = rootPrefix + ref.prefix() + "/events/" + name;
-        filesystem.uploadFiles(rc, List.of(Map.entry(key, jsonl)));
+        List<FileUploadResponse> uploads =
+                filesystem.uploadFiles(rc, List.of(Map.entry(key, jsonl)));
+        if (uploads.size() != 1 || !uploads.get(0).isSuccess()) {
+            String error = uploads.size() == 1 ? uploads.get(0).error() : "missing upload response";
+            throw new IllegalStateException("segment upload failed for " + key + ": " + error);
+        }
         return key;
     }
 

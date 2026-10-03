@@ -44,6 +44,8 @@ public interface TranscriptStore {
      * @param jsonl     UTF-8 JSONL payload (one {@link
      *     io.agentscope.harness.agent.memory.session.SessionEntry} per line)
      * @return storage key of the written segment
+     * @throws RuntimeException when the segment cannot be written completely; callers must not
+     *     assume a returned key unless the write succeeded
      */
     String appendSegment(
             TranscriptRef ref, long seqStart, long seqEnd, String writerId, byte[] jsonl);
