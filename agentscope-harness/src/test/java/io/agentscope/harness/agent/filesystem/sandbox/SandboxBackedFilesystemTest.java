@@ -17,12 +17,16 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
@@ -32,17 +36,26 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.AbstractMap;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SandboxBackedFilesystemTest {
 
     private static final RuntimeContext RT = RuntimeContext.empty();
+
+    @TempDir Path workspace;
 
     @Test
     void downloadFiles_decodesWrappedBase64Output() {
@@ -104,6 +117,74 @@ class SandboxBackedFilesystemTest {
 
         assertTrue(!responses.get(0).isSuccess());
         assertEquals("File download output was truncated by the sandbox", responses.get(0).error());
+    }
+
+    @Test
+    void downloadFiles_rejectsTruncatedOutputAndContinuesBatch() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        TruncatingSandbox sandbox = new TruncatingSandbox();
+        byte[] largeContent = largeContent();
+        byte[] smallContent = new byte[] {1, 2, 3};
+        sandbox.files.put("/large.bin", largeContent);
+        sandbox.files.put("/small.bin", smallContent);
+        filesystem.setSandbox(sandbox);
+
+        List<FileDownloadResponse> responses =
+                filesystem.downloadFiles(RT, List.of("/large.bin", "/small.bin"));
+
+        assertEquals(2, responses.size());
+        assertEquals("/large.bin", responses.get(0).path());
+        assertFalse(responses.get(0).isSuccess());
+        assertNull(responses.get(0).content());
+        assertTrue(responses.get(0).error().contains("truncated"));
+        assertEquals("/small.bin", responses.get(1).path());
+        assertTrue(responses.get(1).isSuccess(), responses.get(1).error());
+        assertArrayEquals(smallContent, responses.get(1).content());
+        assertArrayEquals(largeContent, sandbox.files.get("/large.bin"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void crossBackendMove_rejectsTruncatedDownloadAndPreservesFiles(boolean targetExists)
+            throws Exception {
+        byte[] content = largeContent();
+        byte[] existing = new byte[] {7, 8, 9};
+        TruncatingSandbox sandbox = new TruncatingSandbox();
+        sandbox.files.put("/large.bin", content);
+        SandboxBackedFilesystem source = new SandboxBackedFilesystem();
+        source.setSandbox(sandbox);
+        Path target = workspace.resolve("large.bin");
+        if (targetExists) {
+            Files.write(target, existing);
+        }
+        CompositeFilesystem filesystem =
+                new CompositeFilesystem(
+                        source, Map.of("/target/", new LocalFilesystem(workspace, true, 10)));
+
+        WriteResult result = filesystem.move(RT, "/large.bin", "/target/large.bin");
+
+        assertFalse(
+                result.isSuccess(),
+                () ->
+                        "Truncated download must not move the file: source bytes="
+                                + content.length
+                                + ", source exists="
+                                + sandbox.files.containsKey("/large.bin")
+                                + ", downloaded bytes="
+                                + sandbox.lastDownloadedBytes);
+        assertTrue(result.error().contains("truncated"), result.error());
+        assertArrayEquals(content, sandbox.files.get("/large.bin"));
+        if (targetExists) {
+            assertArrayEquals(existing, Files.readAllBytes(target));
+        } else {
+            assertFalse(Files.exists(target));
+        }
+    }
+
+    private static byte[] largeContent() {
+        byte[] content = new byte[400_000];
+        Arrays.fill(content, (byte) 'x');
+        return content;
     }
 
     @Test
@@ -386,6 +467,40 @@ class SandboxBackedFilesystemTest {
 
         private FakeSandbox(ExecResult execResult) {
             super(execResult);
+        }
+    }
+
+    /** Models a sandbox whose exec output is capped at 512 KiB per stream. */
+    private static final class TruncatingSandbox extends BaseFakeSandbox {
+
+        private final Map<String, byte[]> files = new HashMap<>();
+        private int lastDownloadedBytes;
+
+        private TruncatingSandbox() {
+            super(new ExecResult(0, "", "", false));
+        }
+
+        @Override
+        public ExecResult exec(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            if (command.startsWith("base64 '")) {
+                String path = command.substring("base64 '".length(), command.length() - 1);
+                String output =
+                        Base64.getMimeEncoder(76, new byte[] {'\n'})
+                                .encodeToString(files.get(path));
+                boolean truncated = output.length() > 512 * 1024;
+                if (truncated) {
+                    output = output.substring(0, 512 * 1024);
+                }
+                // A truncated prefix can still be valid Base64, despite missing file bytes.
+                lastDownloadedBytes = Base64.getMimeDecoder().decode(output).length;
+                return new ExecResult(0, output, "", truncated);
+            }
+            if (command.equals("rm -rf '/large.bin'")) {
+                files.remove("/large.bin");
+                return new ExecResult(0, "", "", false);
+            }
+            throw new IllegalArgumentException("Unexpected command: " + command);
         }
     }
 
