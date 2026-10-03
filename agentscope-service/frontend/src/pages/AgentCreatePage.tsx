@@ -28,6 +28,7 @@ import {
   RuntimeCapabilityDescriptor,
   createAgent,
   listHostedRuntimeOptions,
+  slugifyAgentKey,
 } from '../api/agents';
 import { listEnvironments } from '../api/environments';
 import { getWorkspace, listWorkspaces, WorkspaceSummary } from '../api/workspaces';
@@ -79,6 +80,7 @@ const S: Record<string, React.CSSProperties> = {
   disabled: { background: '#d4d4d8', cursor: 'not-allowed' },
   secondary: { border: '1px solid #d4d4d8', borderRadius: 10, background: '#fff', color: '#3f3f46', padding: '10px 16px', fontWeight: 600, cursor: 'pointer' },
   error: { alignSelf: 'center', marginRight: 'auto', color: '#b91c1c', fontSize: 13 },
+  warn: { color: '#b45309', fontSize: 12, marginTop: 4 },
 };
 
 const managedRuntime: DiscoveredRuntimeOption = {
@@ -124,6 +126,8 @@ export default function AgentCreatePage() {
   const [name, setName] = useState('');
   const [agentKey, setAgentKey] = useState('');
   const [agentKeyCustomized, setAgentKeyCustomized] = useState(false);
+  // Used when the name cannot be turned into an ASCII slug (e.g. a fully Chinese name).
+  const [fallbackAgentKey] = useState(() => `agent-${crypto.randomUUID().slice(0, 8)}`);
   const [executionId, setExecutionId] = useState('managed');
   const [executionCustomized, setExecutionCustomized] = useState(false);
   const [runtimes, setRuntimes] = useState<DiscoveredRuntimeOption[]>([]);
@@ -208,7 +212,10 @@ export default function AgentCreatePage() {
               <label htmlFor="agent-name" style={S.label}>Name</label>
               <input id="agent-name" style={S.input} value={name} onChange={e => {
                 setName(e.target.value);
-                if (!agentKeyCustomized) setAgentKey(e.target.value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, ''));
+                if (!agentKeyCustomized) {
+                  const slug = slugifyAgentKey(e.target.value);
+                  setAgentKey(slug || (e.target.value.trim() ? fallbackAgentKey : ''));
+                }
               }} placeholder="e.g. Repository reviewer" autoFocus />
             </div>
             <div style={{ ...S.row, ...S.lastRow }}>
@@ -276,7 +283,10 @@ export default function AgentCreatePage() {
           <summary style={S.summary}>Advanced settings</summary>
           <div style={{ ...S.row, paddingLeft: 0, paddingRight: 0 }}>
             <label htmlFor="agent-key" style={S.label}>Agent key</label>
-            <div><input id="agent-key" style={S.input} value={agentKey} onChange={e => { setAgentKeyCustomized(true); setAgentKey(e.target.value.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')); }} placeholder="repository-reviewer" /><div style={S.hint}>{scope.selectorVisible ? 'Stable identity inside the current tenant and namespace.' : 'Stable identity for this agent.'}</div></div>
+            <div><input id="agent-key" style={S.input} value={agentKey} onChange={e => { setAgentKeyCustomized(true); setAgentKey(e.target.value.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')); }} placeholder="repository-reviewer" /><div style={S.hint}>{scope.selectorVisible ? 'Stable identity inside the current tenant and namespace.' : 'Stable identity for this agent.'}</div>
+                {!agentKeyCustomized && !!name.trim() && !slugifyAgentKey(name) && (
+                  <div style={S.warn}>Name contains only non-ASCII characters and cannot be used to generate an agent key. A temporary key was generated; enter a readable one (a-z, 0-9, -, _).</div>
+                )}</div>
           </div>
           {runtimeKind === 'managed' && <div style={{ ...S.row, paddingLeft: 0, paddingRight: 0 }}>
             <label htmlFor="agent-environment" style={S.label}><FolderKanban size={16} /> Environment</label>
