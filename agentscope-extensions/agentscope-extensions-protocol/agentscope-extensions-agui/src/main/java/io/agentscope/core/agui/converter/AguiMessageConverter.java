@@ -47,6 +47,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -99,7 +100,11 @@ public class AguiMessageConverter {
         // Handle content: plain text or structured blocks
         MessageContent content = aguiMessage.getContent();
         if (content instanceof MessageContent.Text text) {
-            addTextBlock(blocks, text.value(), aguiMessage);
+            if (aguiMessage.isReasoningMessage()) {
+                addThinkingBlock(blocks, text.value());
+            } else {
+                addTextBlock(blocks, text.value(), aguiMessage);
+            }
         } else if (content instanceof MessageContent.Blocks blocksContent) {
             if (!aguiMessage.isUserMessage()) {
                 throw new IllegalArgumentException(
@@ -135,13 +140,13 @@ public class AguiMessageConverter {
         StringBuilder content = new StringBuilder();
         List<AguiToolCall> toolCalls = new ArrayList<>();
         String toolCallId = null;
+        StringBuilder reasoningContent = new StringBuilder();
 
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof TextBlock tb) {
-                if (content.length() > 0) {
-                    content.append("\n");
-                }
-                content.append(tb.getText());
+                appendContent(content, tb.getText());
+            } else if (block instanceof ThinkingBlock tb) {
+                appendContent(reasoningContent, tb.getThinking());
             } else if (block instanceof ToolUseBlock tub) {
                 toolCalls.add(toAguiToolCall(tub));
             } else if (block instanceof ToolResultBlock trb) {
@@ -149,13 +154,17 @@ public class AguiMessageConverter {
                 // Extract text content from tool result
                 for (ContentBlock output : trb.getOutput()) {
                     if (output instanceof TextBlock tb) {
-                        if (content.length() > 0) {
-                            content.append("\n");
-                        }
-                        content.append(tb.getText());
+                        appendContent(content, tb.getText());
                     }
                 }
             }
+        }
+
+        if (reasoningContent.length() > 0
+                && content.length() == 0
+                && toolCalls.isEmpty()
+                && toolCallId == null) {
+            return AguiMessage.reasoningMessage(msg.getId(), reasoningContent.toString());
         }
 
         return new AguiMessage(
@@ -164,6 +173,35 @@ public class AguiMessageConverter {
                 content.length() > 0 ? new MessageContent.Text(content.toString()) : null,
                 toolCalls.isEmpty() ? null : toolCalls,
                 toolCallId);
+    }
+
+    /**
+     * Convert an AgentScope message to one or more AG-UI messages.
+     *
+     * <p>A message containing both {@link ThinkingBlock} and normal assistant content is split
+     * because AG-UI represents reasoning with its own {@code reasoning} role. The reasoning message
+     * receives a derived ID so each emitted protocol message remains independently addressable.
+     *
+     * @param msg The AgentScope message to convert
+     * @return The converted AG-UI messages
+     */
+    public List<AguiMessage> toAguiMessages(Msg msg) {
+        StringBuilder reasoningContent = new StringBuilder();
+        for (ContentBlock block : msg.getContent()) {
+            if (block instanceof ThinkingBlock tb) {
+                appendContent(reasoningContent, tb.getThinking());
+            }
+        }
+
+        AguiMessage standardMessage = toAguiMessage(msg);
+        if (reasoningContent.length() == 0 || standardMessage.isReasoningMessage()) {
+            return List.of(standardMessage);
+        }
+
+        return List.of(
+                AguiMessage.reasoningMessage(
+                        msg.getId() + "-reasoning", reasoningContent.toString()),
+                standardMessage);
     }
 
     /**
@@ -248,7 +286,9 @@ public class AguiMessageConverter {
      * @return The converted AG-UI messages
      */
     public List<AguiMessage> toAguiMessageList(List<Msg> msgs) {
-        return msgs.stream().map(this::toAguiMessage).collect(Collectors.toList());
+        return msgs.stream()
+                .flatMap(msg -> toAguiMessages(msg).stream())
+                .collect(Collectors.toList());
     }
 
     /**
@@ -263,6 +303,7 @@ public class AguiMessageConverter {
             case "assistant" -> MsgRole.ASSISTANT;
             case "system" -> MsgRole.SYSTEM;
             case "tool" -> MsgRole.TOOL;
+            case "reasoning" -> MsgRole.ASSISTANT;
             default -> MsgRole.USER;
         };
     }
@@ -306,6 +347,23 @@ public class AguiMessageConverter {
             return;
         }
         blocks.add(TextBlock.builder().text(text).build());
+    }
+
+    private void addThinkingBlock(List<ContentBlock> blocks, String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        blocks.add(ThinkingBlock.builder().thinking(text).build());
+    }
+
+    private void appendContent(StringBuilder target, String value) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        if (target.length() > 0) {
+            target.append("\n");
+        }
+        target.append(value);
     }
 
     /**
