@@ -83,9 +83,9 @@ public final class EmbeddingUtils {
             return embeddingMono;
         }
 
-        // Apply timeout if configured
+        // Apply timeout if configured (skip when NO_TIMEOUT sentinel is set)
         Duration timeout = config.getTimeout();
-        if (timeout != null) {
+        if (timeout != null && !config.isTimeoutDisabled()) {
             embeddingMono =
                     embeddingMono.timeout(
                             timeout,

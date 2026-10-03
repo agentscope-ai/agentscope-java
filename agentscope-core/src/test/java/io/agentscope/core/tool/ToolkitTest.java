@@ -1537,16 +1537,17 @@ class ToolkitTest {
 
     @Test
     @DisplayName(
-            "callTool(ToolCallParam, ExecutionConfig) with noTimeout() should execute without"
-                    + " timeout")
-    void testCallToolPerCallConfigNoTimeout() {
-        toolkit.registerTool(sampleTools);
+            "callTool(ToolCallParam, ExecutionConfig) with noTimeout() should not abort a slow"
+                    + " tool")
+    void testCallToolPerCallConfigNoTimeoutDoesNotAbortSlowTool() {
+        SlowTool slowTool = new SlowTool();
+        toolkit.registerTool(slowTool);
 
-        Map<String, Object> input = Map.of("a", 1, "b", 2);
+        Map<String, Object> input = Map.of("delayMs", 300);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
-                        .id("call-notimeout")
-                        .name("add")
+                        .id("call-notimeout-slow")
+                        .name("slow")
                         .input(input)
                         .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
@@ -1559,13 +1560,52 @@ class ToolkitTest {
         ToolResultBlock result = toolkit.callTool(param, perCallConfig).block();
 
         assertNotNull(result);
-        assertEquals("call-notimeout", result.getId());
-        assertEquals("add", result.getName());
-        assertEquals("3", ToolTestUtils.extractContent(result));
+        assertEquals("call-notimeout-slow", result.getId());
+        assertEquals("slow", result.getName());
+        assertEquals("\"done\"", ToolTestUtils.extractContent(result));
+        assertFalse(isErrorResult(result), "NO_TIMEOUT must not trigger the timeout path");
+    }
 
-        assertEquals(
-                ExecutionConfig.NO_TIMEOUT,
-                perCallConfig.getTimeout(),
-                "noTimeout() should set the sentinel value");
+    @Test
+    @DisplayName("isTimeoutDisabled() — null, positive and NO_TIMEOUT")
+    void testIsTimeoutDisabled() {
+        assertFalse(
+                ExecutionConfig.builder().build().isTimeoutDisabled(),
+                "null timeout should not be disabled");
+        assertFalse(
+                ExecutionConfig.builder()
+                        .timeout(Duration.ofMinutes(1))
+                        .build()
+                        .isTimeoutDisabled(),
+                "positive timeout should not be disabled");
+        assertTrue(
+                ExecutionConfig.builder().noTimeout().build().isTimeoutDisabled(),
+                "NO_TIMEOUT should be recognised as disabled");
+        assertTrue(
+                ExecutionConfig.builder()
+                        .timeout(ExecutionConfig.NO_TIMEOUT)
+                        .build()
+                        .isTimeoutDisabled(),
+                "explicit NO_TIMEOUT should be recognised as disabled");
+    }
+
+    @Test
+    @DisplayName("Builder.timeout() should reject non-sentinel negative durations")
+    void testBuilderRejectsStrayNegativeTimeout() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ExecutionConfig.builder().timeout(Duration.ofSeconds(-30)),
+                "stray negative timeout should be rejected");
+    }
+
+    // Slow tool: returns result after a configurable delay, used to verify
+    // NO_TIMEOUT correctly disables the timeout operator.
+    public static class SlowTool {
+        @io.agentscope.core.tool.Tool(name = "slow", description = "Delay then return 'done'")
+        public Mono<String> slow(
+                @io.agentscope.core.tool.ToolParam(name = "delayMs", description = "Delay in ms")
+                        long delayMs) {
+            return Mono.delay(Duration.ofMillis(delayMs)).thenReturn("done");
+        }
     }
 }

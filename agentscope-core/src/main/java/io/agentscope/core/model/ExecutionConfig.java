@@ -164,6 +164,14 @@ public class ExecutionConfig {
      * <p>This is the only way to opt out of the timeout that {@link #TOOL_DEFAULTS} and {@link
      * #MODEL_DEFAULTS} always carry, because {@link #mergeConfigs} treats {@code null} as
      * "inherit from fallback".
+     *
+     * <p><b>Supported paths</b>: The sentinel is honoured on the <em>tool</em> path
+     * ({@code ToolExecutor.applyTimeout}) and the <em>model-flux</em> path
+     * ({@code ModelUtils.applyTimeoutAndRetry}). Extension consumers that read
+     * {@link #getTimeout()} directly and pass the value to a framework timeout operator
+     * (e.g. {@code EmbeddingUtils.applyTimeoutAndRetry} in {@code rag-simple}, or the
+     * OpenAI SDK client timeout in {@code openai-official}) must apply the same guard
+     * via {@link #isTimeoutDisabled()}.
      */
     public static final Duration NO_TIMEOUT = Duration.ofNanos(-1);
 
@@ -200,10 +208,14 @@ public class ExecutionConfig {
      * Returns true when the configured timeout is the {@link #NO_TIMEOUT} sentinel,
      * meaning consumers should skip applying any timeout operator.
      *
+     * <p>Only the exact {@link #NO_TIMEOUT} sentinel is recognised; stray negative
+     * durations (which should be rejected by {@link Builder#timeout(Duration)}) are
+     * not treated as "no timeout".
+     *
      * @return true if timeout is disabled via {@link #NO_TIMEOUT}
      */
     public boolean isTimeoutDisabled() {
-        return timeout != null && timeout.isNegative();
+        return NO_TIMEOUT.equals(timeout);
     }
 
     /**
@@ -327,10 +339,17 @@ public class ExecutionConfig {
         /**
          * Sets the timeout duration for a single execution.
          *
-         * @param timeout the timeout duration, or null to inherit from fallback
+         * @param timeout the timeout duration (must be &gt;= 0, or {@link #NO_TIMEOUT}),
+         *        or null to inherit from fallback
          * @return this builder instance
+         * @throws IllegalArgumentException if timeout is a negative duration other than
+         *        {@link #NO_TIMEOUT}
          */
         public Builder timeout(Duration timeout) {
+            if (timeout != null && timeout.isNegative() && !NO_TIMEOUT.equals(timeout)) {
+                throw new IllegalArgumentException(
+                        "timeout must be >= 0; use NO_TIMEOUT (or noTimeout()) to disable it");
+            }
             this.timeout = timeout;
             return this;
         }
