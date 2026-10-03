@@ -30,6 +30,7 @@ import io.agentscope.core.agui.model.AguiToolCall;
 import io.agentscope.core.agui.model.AudioInputContent;
 import io.agentscope.core.agui.model.DocumentInputContent;
 import io.agentscope.core.agui.model.ImageInputContent;
+import io.agentscope.core.agui.model.InputContent;
 import io.agentscope.core.agui.model.InputContentDataSource;
 import io.agentscope.core.agui.model.InputContentUrlSource;
 import io.agentscope.core.agui.model.MessageContent;
@@ -48,6 +49,8 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -597,6 +600,22 @@ class AguiMessageConverterTest {
         assertTrue(msg.hasContentBlocks(ImageBlock.class));
         assertTrue(msg.hasContentBlocks(AudioBlock.class));
         assertTrue(msg.hasContentBlocks(VideoBlock.class));
+    }
+
+    @Test
+    void testNullInputContentIsRejectedWithoutDereferencingIt() throws Exception {
+        // Blocks rejects null elements, so exercise this defensive guard directly.
+        Method method =
+                AguiMessageConverter.class.getDeclaredMethod("toContentBlock", InputContent.class);
+        method.setAccessible(true);
+
+        InvocationTargetException exception =
+                assertThrows(
+                        InvocationTargetException.class,
+                        () -> method.invoke(converter, new Object[] {null}));
+
+        assertEquals(IllegalStateException.class, exception.getCause().getClass());
+        assertEquals("Unhandled InputContent type: null", exception.getCause().getMessage());
     }
 
     @Test
