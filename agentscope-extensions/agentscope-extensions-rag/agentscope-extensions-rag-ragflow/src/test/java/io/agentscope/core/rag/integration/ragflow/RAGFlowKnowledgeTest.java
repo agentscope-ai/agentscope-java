@@ -16,16 +16,21 @@
 package io.agentscope.core.rag.integration.ragflow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -237,6 +242,78 @@ class RAGFlowKnowledgeTest {
 
         assertNotNull(documents);
         assertTrue(documents.isEmpty());
+    }
+
+    @Test
+    void testRetrieveWithDynamicFiltersAndConfigFallback() throws Exception {
+        mockWebServer.enqueue(createSuccessResponse());
+        mockWebServer.enqueue(createSuccessResponse());
+        mockWebServer.enqueue(createSuccessResponse());
+
+        RAGFlowConfig config =
+                RAGFlowConfig.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockWebServer.url("").toString().replaceAll("/$", ""))
+                        .addDatasetId("default-dataset")
+                        .metadataCondition(Map.of("source", "default"))
+                        .maxRetries(0)
+                        .build();
+        RAGFlowKnowledge knowledge = RAGFlowKnowledge.builder().config(config).build();
+        RetrieveConfig retrieveConfig =
+                RetrieveConfig.builder().limit(10).scoreThreshold(0.5).build();
+
+        knowledge
+                .retrieve(
+                        "first query",
+                        retrieveConfig,
+                        List.of("dataset-a"),
+                        Map.of("source", "first"))
+                .block();
+        knowledge
+                .retrieve(
+                        "second query",
+                        retrieveConfig,
+                        List.of("dataset-b"),
+                        Map.of("source", "second"))
+                .block();
+        knowledge.retrieve("fallback query", retrieveConfig, List.of(), Map.of()).block();
+
+        Map<String, Object> firstBody = readRequestBody(mockWebServer.takeRequest());
+        Map<String, Object> secondBody = readRequestBody(mockWebServer.takeRequest());
+        Map<String, Object> fallbackBody = readRequestBody(mockWebServer.takeRequest());
+
+        assertEquals(List.of("dataset-a"), firstBody.get("dataset_ids"));
+        assertEquals(Map.of("source", "first"), firstBody.get("metadata_condition"));
+        assertEquals(List.of("dataset-b"), secondBody.get("dataset_ids"));
+        assertEquals(Map.of("source", "second"), secondBody.get("metadata_condition"));
+        assertEquals(List.of("default-dataset"), fallbackBody.get("dataset_ids"));
+        assertEquals(Map.of("source", "default"), fallbackBody.get("metadata_condition"));
+    }
+
+    @Test
+    void testRetrieveWithDocumentOnlyConfigOmitsDatasetIds() throws Exception {
+        mockWebServer.enqueue(createSuccessResponse());
+
+        RAGFlowConfig config =
+                RAGFlowConfig.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockWebServer.url("").toString().replaceAll("/$", ""))
+                        .addDocumentId("document-only")
+                        .maxRetries(0)
+                        .build();
+        RAGFlowKnowledge knowledge = RAGFlowKnowledge.builder().config(config).build();
+
+        knowledge.retrieve("document query", null).block();
+
+        Map<String, Object> requestBody = readRequestBody(mockWebServer.takeRequest());
+        assertFalse(requestBody.containsKey("dataset_ids"));
+        assertEquals(List.of("document-only"), requestBody.get("document_ids"));
+    }
+
+    private Map<String, Object> readRequestBody(RecordedRequest request) {
+        return JsonUtils.getJsonCodec()
+                .fromJson(
+                        request.getBody().readUtf8(), new TypeReference<Map<String, Object>>() {});
     }
 
     // === AddDocuments Tests ===
