@@ -50,6 +50,10 @@
         <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
         <central.publishing.maven.version>0.10.0</central.publishing.maven.version>
 
+        <!-- Alibaba Cloud SDK transitive version-range pins; see dependencyManagement below. -->
+        <aliyun-tea.version>1.4.1</aliyun-tea.version>
+        <aliyun-java-sdk-core.version>4.7.8</aliyun-java-sdk-core.version>
+
         <maven.deploy.skip>false</maven.deploy.skip>
         <argLine>-Xms512m -Xmx1024m</argLine>
     </properties>
@@ -146,6 +150,31 @@
                 <version>${revision}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!--
+              Alibaba Cloud SDK transitive dependencies declare version RANGES:
+                - com.aliyun:tea                  [1.1.14, 2.0.0) via alibabacloud-gateway-spi:0.0.3
+                                                  [1.2.0, 2.0.0)  via openapiutil:0.2.2 / credentials-java:1.0.x
+                - com.aliyun:aliyun-java-sdk-core [4.3.2, 5.0.0)  via aliyun-java-sdk-ram:3.1.0
+              Range resolution performs a remote metadata lookup on every build and reports a
+              misleading "No versions available ... within specified range" failure whenever
+              that lookup hiccups, which makes CI non-deterministic (observed as an
+              intermittent failure on PR #2858, cleared by a plain re-run; issue #3256).
+              Pinning the versions the tree already selects removes the lookup. Deliberately
+              kept in the root aggregator (build-local) rather than in the published
+              agentscope-dependencies-bom, so downstream consumers keep resolving the
+              versions their own Alibaba SDK needs.
+            -->
+            <dependency>
+                <groupId>com.aliyun</groupId>
+                <artifactId>tea</artifactId>
+                <version>${aliyun-tea.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.aliyun</groupId>
+                <artifactId>aliyun-java-sdk-core</artifactId>
+                <version>${aliyun-java-sdk-core.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
