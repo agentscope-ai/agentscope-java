@@ -282,21 +282,38 @@ public class AguiStreamContext {
     }
 
     public void endToolResult(String replyId, String toolCallId) {
+        endToolResult(replyId, toolCallId, null);
+    }
+
+    /**
+     * Close out a tool call and emit its {@code TOOL_CALL_RESULT}.
+     *
+     * <p>{@code finalResultText} is the tool method's return value as reported by {@link
+     * io.agentscope.core.event.ToolResultEndEvent}. It wins over the buffered deltas when present:
+     * a tool that streamed progress through {@code ToolEmitter} has progress text in the buffer, and
+     * per that emitter's contract progress is not what the model received. Persisting the buffer as
+     * the result would feed progress text back to the model on the next history replay, and would
+     * leak anything emitted only for the UI.
+     *
+     * @param replyId the enclosing reply id
+     * @param toolCallId the tool call being closed
+     * @param finalResultText the return value, or {@code null} to fall back to buffered deltas
+     */
+    public void endToolResult(String replyId, String toolCallId, String finalResultText) {
         if (!hasKnownToolCall(toolCallId, "ToolResultEndEvent")) {
             return;
         }
         if (startedToolCalls.contains(toolCallId) && endedToolCalls.add(toolCallId)) {
             emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
         }
-        StringBuilder content = toolResultContent.remove(toolCallId);
+        StringBuilder buffered = toolResultContent.remove(toolCallId);
+        String content =
+                finalResultText != null
+                        ? finalResultText
+                        : buffered != null && !buffered.isEmpty() ? buffered.toString() : null;
         emit(
                 new AguiEvent.ToolCallResult(
-                        threadId,
-                        runId,
-                        toolCallId,
-                        content != null && !content.isEmpty() ? content.toString() : null,
-                        "tool",
-                        replyId + ":" + toolCallId));
+                        threadId, runId, toolCallId, content, "tool", replyId + ":" + toolCallId));
     }
 
     public void markToolCallSuspended(String toolCallId) {

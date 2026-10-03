@@ -27,6 +27,18 @@ public class ToolResultEndEvent extends AgentEvent {
     private final String toolCallName;
     private final ToolResultState state;
 
+    /**
+     * The tool method's return value as text, or {@code null} when the producer did not report one.
+     *
+     * <p>A tool that streams progress through {@link io.agentscope.core.tool.ToolEmitter} pushes
+     * those chunks onto the event stream as deltas, but per that emitter's contract progress is not
+     * what the model receives — only the return value is. A consumer rebuilding the tool message
+     * from the delta stream alone would persist progress text as the result, so the authoritative
+     * value travels here. It deliberately does not ride on {@link AgentEvent#getMetadata()}, which
+     * carries the tool result's own metadata through unchanged.
+     */
+    private final String finalResultText;
+
     @JsonCreator
     public ToolResultEndEvent(
             @JsonProperty("id") String id,
@@ -35,12 +47,14 @@ public class ToolResultEndEvent extends AgentEvent {
             @JsonProperty("toolCallId") String toolCallId,
             @JsonProperty("toolCallName") String toolCallName,
             @JsonProperty("state") ToolResultState state,
-            @JsonProperty("metadata") Map<String, Object> metadata) {
+            @JsonProperty("metadata") Map<String, Object> metadata,
+            @JsonProperty("finalResultText") String finalResultText) {
         super(id, createdAt);
         this.replyId = replyId;
         this.toolCallId = toolCallId;
         this.toolCallName = toolCallName;
         this.state = state;
+        this.finalResultText = finalResultText;
         this.withMetadata(metadata);
     }
 
@@ -54,15 +68,29 @@ public class ToolResultEndEvent extends AgentEvent {
             String toolCallId,
             String toolCallName,
             ToolResultState state) {
-        this(id, createdAt, replyId, toolCallId, toolCallName, state, null);
+        this(id, createdAt, replyId, toolCallId, toolCallName, state, null, null);
     }
 
     public ToolResultEndEvent(
             String replyId, String toolCallId, String toolCallName, ToolResultState state) {
+        this(replyId, toolCallId, toolCallName, state, null);
+    }
+
+    /**
+     * As {@link #ToolResultEndEvent(String, String, String, ToolResultState)} additionally reporting
+     * the tool method's return value.
+     */
+    public ToolResultEndEvent(
+            String replyId,
+            String toolCallId,
+            String toolCallName,
+            ToolResultState state,
+            String finalResultText) {
         this.replyId = replyId;
         this.toolCallId = toolCallId;
         this.toolCallName = toolCallName;
         this.state = state;
+        this.finalResultText = finalResultText;
     }
 
     @Override
@@ -84,5 +112,13 @@ public class ToolResultEndEvent extends AgentEvent {
 
     public ToolResultState getState() {
         return state;
+    }
+
+    /**
+     * The tool method's return value as text, or {@code null} when the producer did not report one
+     * (for example when the result carries no text blocks).
+     */
+    public String getFinalResultText() {
+        return finalResultText;
     }
 }
