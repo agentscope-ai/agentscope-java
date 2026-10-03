@@ -236,7 +236,7 @@ public class LocalFilesystem implements AbstractFilesystem {
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        Path dirPath = resolvePath(runtimeContext, path);
+        Path dirPath = resolvePath(runtimeContext, isRootPath(path) ? "." : path);
         if (!Files.exists(dirPath)) {
             return LsResult.fail("Path does not exist: " + path);
         }
@@ -394,7 +394,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
         Path basePath;
         try {
-            basePath = resolvePath(runtimeContext, path != null ? path : ".");
+            basePath = resolvePath(runtimeContext, isRootPath(path) ? "." : path);
         } catch (SecurityException e) {
             return GrepResult.success(List.of());
         }
@@ -417,12 +417,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             effectivePattern = effectivePattern.substring(1);
         }
 
-        Path searchPath;
-        if ("/".equals(path) || path == null) {
-            searchPath = hasNamespace(runtimeContext) ? resolvePath(runtimeContext, ".") : cwd;
-        } else {
-            searchPath = resolvePath(runtimeContext, path);
-        }
+        Path searchPath = resolvePath(runtimeContext, isRootPath(path) ? "." : path);
 
         if (!Files.exists(searchPath) || !Files.isDirectory(searchPath)) {
             return GlobResult.success(List.of());
@@ -591,6 +586,20 @@ public class LocalFilesystem implements AbstractFilesystem {
 
     protected NamespaceFactory getNamespaceFactory() {
         return namespaceFactory;
+    }
+
+    /**
+     * Returns {@code true} when {@code path} spells "this filesystem's own root" — {@code null},
+     * blank, or {@code "/"} — rather than naming a specific entry. Root spellings resolve through
+     * {@code resolvePath(rc, ".")} so they anchor at the backend root with the per-user namespace
+     * applied: {@code "/"} is an absolute path that would otherwise bypass the namespace and, in
+     * {@link LocalFsMode#UNRESTRICTED}, enumerate the OS root (#3253). A blank key receives the
+     * same treatment because {@code applyNamespacePrefix} early-returns on blank keys, which
+     * would otherwise strip the namespace from the anchor. {@code "."} is not listed here but
+     * resolves to the same anchor through {@link #resolvePath} directly.
+     */
+    private static boolean isRootPath(String path) {
+        return AbstractFilesystem.denotesRootPath(path);
     }
 
     protected Path resolvePath(RuntimeContext rc, String key) {
