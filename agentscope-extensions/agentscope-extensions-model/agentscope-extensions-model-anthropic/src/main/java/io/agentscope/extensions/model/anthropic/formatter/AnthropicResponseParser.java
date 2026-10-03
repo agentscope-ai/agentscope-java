@@ -128,7 +128,11 @@ public class AnthropicResponseParser {
                         .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                         .build();
 
-        return ChatResponse.builder().id(message.id()).content(contentBlocks).usage(usage).build();
+        return ChatResponse.builder()
+                .id(resolveMessageId(message))
+                .content(contentBlocks)
+                .usage(usage)
+                .build();
     }
 
     /**
@@ -183,7 +187,7 @@ public class AnthropicResponseParser {
         // the final usage emitted on message_delta can include it
         if (event.isMessageStart()) {
             var startMessage = event.asMessageStart().message();
-            messageId = startMessage.id();
+            messageId = resolveMessageId(startMessage);
 
             var startUsage = startMessage.usage();
             long cacheReadTokens = startUsage.cacheReadInputTokens().orElse(0L);
@@ -321,6 +325,32 @@ public class AnthropicResponseParser {
         }
 
         return ChatResponse.builder().id(messageId).content(contentBlocks).usage(usage).build();
+    }
+
+    /**
+     * Resolves the Anthropic message id without failing when a proxy strips the field.
+     *
+     * <p>The SDK's typed {@code id()} accessor throws {@code AnthropicInvalidDataException} when
+     * the field is absent, so prefer the raw {@code _id()} field and fall back to the typed
+     * accessor when the raw field is unavailable. Returning {@code null} is safe: {@code
+     * ChatResponse.Builder} generates an id when none is set.
+     */
+    private static String resolveMessageId(Message message) {
+        if (message == null) {
+            return null;
+        }
+
+        var rawId = message._id();
+        if (rawId != null && !rawId.isMissing()) {
+            return rawId.asString().orElse(null);
+        }
+
+        try {
+            return message.id();
+        } catch (Exception e) {
+            log.debug("Anthropic response has no message id, using a generated one");
+            return null;
+        }
     }
 
     /**
