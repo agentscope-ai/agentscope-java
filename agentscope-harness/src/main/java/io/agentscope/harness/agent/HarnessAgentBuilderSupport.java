@@ -339,6 +339,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final var capturedWebHttpClient = b.webHttpClient;
+        final boolean capturedParallelWebSearch = b.parallelWebSearch && !b.disableWebTools;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
         final boolean capturedPlanModeEnabled = b.planModeEnabled;
@@ -395,6 +396,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
+            if (capturedParallelWebSearch) sub.parallelWebSearch();
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
             if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
             configurePlanMode(
@@ -461,6 +463,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final var capturedWebHttpClient = b.webHttpClient;
+        final boolean capturedParallelWebSearch = b.parallelWebSearch && !b.disableWebTools;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedPlanModeEnabled = b.planModeEnabled;
         final boolean capturedPlanModeAllowShell = b.planModeAllowShell;
@@ -565,6 +568,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
+            if (capturedParallelWebSearch) sub.parallelWebSearch();
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
             configurePlanMode(
                     sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);
