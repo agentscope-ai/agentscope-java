@@ -31,6 +31,12 @@ import reactor.core.publisher.Mono;
  * <p><b>Hook Priority:</b> Hooks are executed in priority order (lower value = higher priority).
  * Default priority is 100. Hooks with the same priority execute in registration order.
  *
+ * <p><b>Shared instances:</b> Harness automatically constructed subagents inherit the parent's
+ * explicitly configured Hook instances. One instance can receive concurrent events from the
+ * parent and multiple children. Implementations must be reentrant, isolate mutable state by
+ * agent/session identity and resolve the emitting agent from {@link HookEvent#getAgent()} rather
+ * than capture a single owning agent. A parent-only hook should skip events from other agent IDs.
+ *
  * <p><b>Event Modifiability:</b> Whether an event is modifiable is indicated by the presence of
  * setter methods:
  * <ul>
@@ -160,6 +166,11 @@ public interface Hook {
      *
      * <p>Return {@link AgentTool} instances and/or objects that declare {@code @Tool} methods.
      * The default implementation returns an empty list so existing hooks need no change.
+     *
+     * <p>Contributions must be plain value objects with no registration-time resource ownership
+     * or one-shot binding to a toolkit. Construction-time filtering may resolve them in a temporary
+     * toolkit and register the retained tools on the agent toolkit. Manage external resources
+     * separately from tool registration; the temporary toolkit owns no connections to close.
      *
      * <p>If this method returns {@code null}, it is treated as an empty list.
      *
