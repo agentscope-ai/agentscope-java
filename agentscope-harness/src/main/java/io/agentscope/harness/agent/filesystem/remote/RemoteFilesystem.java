@@ -286,6 +286,11 @@ public class RemoteFilesystem implements AbstractFilesystem {
             String oldString,
             String newString,
             boolean replaceAll) {
+        EditResult invalid = FilesystemUtils.validateEditArguments(filePath, oldString, newString);
+        if (invalid != null) {
+            return invalid;
+        }
+
         List<String> ns = getNamespace(runtimeContext);
         // Bounded CAS retry loop: re-read the current version on each attempt and retry on
         // version mismatch. After EDIT_MAX_RETRIES failed CAS attempts we surface a conflict
@@ -302,16 +307,15 @@ public class RemoteFilesystem implements AbstractFilesystem {
             }
 
             String content = fileData.content() != null ? fileData.content() : "";
-            Object[] result =
-                    FilesystemUtils.performStringReplacement(
-                            content, oldString, newString, replaceAll);
+            FilesystemUtils.ReplacementResult result =
+                    FilesystemUtils.stringReplacement(content, oldString, newString, replaceAll);
 
-            if (result.length == 1) {
-                return EditResult.fail((String) result[0]);
+            if (!result.isSuccess()) {
+                return EditResult.fail(result.error());
             }
 
-            String newContent = (String) result[0];
-            int occurrences = (int) result[1];
+            String newContent = result.content();
+            int occurrences = result.occurrences();
 
             FileData updated = fileData.withContent(newContent);
             boolean ok =
