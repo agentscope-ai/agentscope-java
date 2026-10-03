@@ -566,6 +566,24 @@ class JdbcAgentSkillRepositoryH2Test {
         }
 
         @Test
+        @DisplayName(
+                "path-shaped namespaces are rejected at construction — getSource() feeds a"
+                        + " path segment")
+        void pathShapedNamespacesRejectedAtConstruction() {
+            // getSource() embeds the namespace into a string MarketplaceStager resolves as
+            // a .skills-cache path segment, so the constructor's validation is what keeps
+            // the identity traversal-safe; loosening it must break this test, visibly.
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_ns_path");
+            AbstractJdbcDialect dialect = skillDialect(ds);
+            for (String bad : Arrays.asList(".", "..", "team/a", "team\\a")) {
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> new JdbcAgentSkillRepository(ds, dialect, bad, true),
+                        "path-shaped namespace must be rejected: " + bad);
+            }
+        }
+
+        @Test
         @DisplayName("the no-arg constructor binds the default namespace constant")
         void defaultNamespaceConstant() {
             JdbcAgentSkillRepository repo = newRepository("skill_repo_default_ns");

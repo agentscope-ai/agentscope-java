@@ -498,9 +498,12 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
 
     /**
      * The repository's identity, {@code jdbc_<skill table>@<namespace>} — the bound
-     * namespace is part of it. Consumers key on this string (the skill staging cache
-     * namespace, prompt provenance), so two scopes of one table must not share it; the
-     * form follows the Nacos repository's {@code nacos@<namespaceId>} convention.
+     * namespace is part of it; the form follows the Nacos repository's {@code
+     * nacos@<namespaceId>} convention. Two scopes of one table must not share it:
+     * MarketplaceStager resolves the source into a filesystem path segment (its {@code
+     * .skills-cache/<source>/} subtree), which stays traversal-safe only because the
+     * constructor's namespace validation rejects path separators and {@code .} / {@code
+     * ..}.
      */
     @Override
     public String getSource() {

@@ -407,17 +407,23 @@ class DialectSqlTests {
                 "MySQL resources DDL must pin namespace to utf8mb4_bin");
     }
 
-    /** An UPDATE statement assigning the namespace column — forbidden, see below. */
-    private static final Pattern NAMESPACE_ASSIGNMENT =
-            Pattern.compile("(?is).*\\bUPDATE\\b.*\\bSET\\b.*\\bnamespace\\s*=.*");
+    /** The assignments of a statement — the span between SET and WHERE (or the end). */
+    private static final Pattern SET_CLAUSE =
+            Pattern.compile("(?is)\\bSET\\b(.*?)(?:\\bWHERE\\b|$)");
+
+    /** Whether the statement assigns the namespace column inside its SET clause. */
+    private static boolean assignsNamespace(String sql) {
+        Matcher setClause = SET_CLAUSE.matcher(sql);
+        return setClause.find() && setClause.group(1).matches("(?is).*\\bnamespace\\s*=.*");
+    }
 
     @Test
-    @DisplayName("no skill statement ever updates the namespace column (write-once contract)")
+    @DisplayName("no skill statement assigns namespace in a SET clause (write-once contract)")
     void skillStatementsNeverUpdateNamespace() {
         // Namespace is bound per repository instance and write-once per row: a skill never
         // moves namespaces through this library, so its resources can never be stranded by
-        // an in-library write. The guard keeps a future update-style statement from
-        // silently breaking that: updates may exist, but namespace must not be assigned.
+        // an in-library write. Updates may exist, but namespace must never be assigned —
+        // only the SET clause is checked, so namespace predicates stay legal.
         List<BoundSql> statements = new ArrayList<>();
         for (AbstractJdbcDialect d :
                 List.of(
@@ -441,9 +447,18 @@ class DialectSqlTests {
         }
         for (BoundSql statement : statements) {
             assertFalse(
-                    NAMESPACE_ASSIGNMENT.matcher(statement.sql()).matches(),
-                    "namespace is write-once; no statement may SET it: " + statement.sql());
+                    assignsNamespace(statement.sql()),
+                    "namespace is write-once; no statement may assign it: " + statement.sql());
         }
+
+        // The SET-clause scope is the contract: a namespace predicate is legitimate, an
+        // assignment is not — both sides of that line are pinned here.
+        assertFalse(
+                assignsNamespace("UPDATE t SET description = ? WHERE namespace = ? AND name = ?"),
+                "a namespace predicate must not trip the guard");
+        assertTrue(
+                assignsNamespace("UPDATE t SET namespace = ? WHERE name = ?"),
+                "a namespace assignment must trip the guard");
     }
 
     // ------------------------------------------------------------------
