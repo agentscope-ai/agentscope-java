@@ -252,10 +252,12 @@ agent.streamEvents(new UserMessage("Hello"))
 - 这些工具直接在宿主机进程上执行命令和读写文件。对于不需要 workspace / 沙箱隔离的 `ReActAgent` 用户，它们是给 agent 添加 shell 和文件访问能力的推荐方式：
 
 ```java
+import java.util.Set;
+
 Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new ReadFileTool("/path/to/base/dir"));
 toolkit.registerTool(new WriteFileTool("/path/to/base/dir"));
-toolkit.registerTool(new ShellCommandTool());
+toolkit.registerTool(new ShellCommandTool(Set.of("python3")));
 
 ReActAgent agent = ReActAgent.builder()
     .toolkit(toolkit)
@@ -263,6 +265,7 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
+- **2.0.4 的不兼容行为变更：** 使用默认校验器时，空白名单或清空后的白名单现在需要审批。`new ShellCommandTool()` 不包含审批回调，因此配置白名单之前，命令会返回 `SecurityError`。请配置所需的可执行程序，或使用 `new ShellCommandTool(allowedCommands, approvalCallback)`。相对路径可执行程序必须同时满足不越出当前目录和匹配白名单两个条件。Shell 操作符或展开语法也需要审批；没有明确批准的回调时，命令将被拒绝。自定义校验器仍采用自身的策略。迁移详情及 Windows 特有限制见 [Shell 工具配置](/v2/zh/docs/building-blocks/tool#skill-执行脚本配置-shell-工具)。
 - 对于 `HarnessAgent` 用户，harness 模块自带 workspace 感知的文件和 shell 工具（`read_file`、`write_file`、`execute` 等），提供统一的本地 / Docker / 云沙箱后端、权限隔离、读写缓存、HITL 审批，推荐在需要 workspace 集成的场景下使用 harness 内置工具
 
 详见 → [Harness 文件系统](/v2/zh/docs/harness/filesystem)
