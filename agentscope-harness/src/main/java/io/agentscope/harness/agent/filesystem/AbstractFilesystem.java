@@ -170,6 +170,39 @@ public interface AbstractFilesystem {
     // ==================== Path validation utility ====================
 
     /**
+     * Returns an identity object for the storage location that workspace IO for {@code path}
+     * under {@code rc} resolves to. Two operations whose keys compare equal are guaranteed to
+     * target the same physical storage, which lets callers safely batch them into one
+     * read-modify-write.
+     *
+     * <p>The conservative default isolates per context instance: it only reports equal keys for
+     * the very same {@code RuntimeContext} and path, which is always safe for backends whose
+     * routing may depend on the context. This is identity-equal by construction — {@code
+     * RuntimeContext} overrides no {@code equals}/{@code hashCode} — and that is deliberate:
+     * a context-blind default (the bare path) would merge contexts a backend routes apart,
+     * and no proxy of context fields can stand in for the backend's own resolution (a {@code
+     * NamespaceFactory} may key on any context property). An implementation that inherits the
+     * default therefore degrades to one batch per key instance: correct, uncoalesced, exactly
+     * the pre-batching behaviour. Backends that locate content purely by path should override
+     * this to return the normalized path, and backends that derive the location from the
+     * context (e.g. a per-user namespace) must include that derived location in the key.
+     *
+     * <p><b>Contract:</b> the returned object MUST have value equality (a {@code String},
+     * {@code List}, or record composed of value-equal parts — never an identity-equality
+     * type). The compiler cannot enforce this: an implementation that returns an
+     * identity-equal key silently degrades batching to one batch per key instance — every
+     * refresh pays its own full read-modify-write, exactly the pre-batching behaviour. No
+     * correctness is lost, only write coalescing.
+     *
+     * @param runtimeContext per-call agent runtime; {@link RuntimeContext#empty()} when none
+     * @param path the workspace-relative path of the operation
+     * @return an object with value equality reflecting the storage identity
+     */
+    default Object storageKey(RuntimeContext runtimeContext, String path) {
+        return java.util.Arrays.asList(runtimeContext, path);
+    }
+
+    /**
      * Validates that {@code path} is safe (non-null, non-blank, no {@code ..} traversal).
      *
      * @param path the path to validate

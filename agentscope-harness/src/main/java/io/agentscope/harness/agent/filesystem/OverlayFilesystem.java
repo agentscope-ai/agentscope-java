@@ -299,4 +299,27 @@ public class OverlayFilesystem implements AbstractFilesystem {
     public AbstractFilesystem getLower() {
         return lower;
     }
+
+    /**
+     * The key includes BOTH layers: writes go to {@code upper}, but a batched
+     * read-modify-write snapshots through {@link #read} — which reads through to {@code
+     * lower} while {@code upper} lacks the path — so two contexts whose lower views differ
+     * must never share a batch even on a context-free upper. When both layers resolve the
+     * path identically for every context the composed key is equal and batching merges as
+     * before.
+     *
+     * <p><b>Limitation:</b> whole-file copy-up cannot merge a context-partitioned lower into
+     * one upper file — once one batch persists, {@code upper} shadows the other contexts'
+     * lower-only copies for subsequent reads. Batching therefore requires the store to
+     * resolve to one physical file per key; task stores written through this overlay always
+     * satisfy that (their registration write lands in upper, so upper holds the union from
+     * the start).
+     */
+    @Override
+    public Object storageKey(RuntimeContext runtimeContext, String path) {
+        return java.util.List.of(
+                "overlay",
+                upper.storageKey(runtimeContext, path),
+                lower.storageKey(runtimeContext, path));
+    }
 }
