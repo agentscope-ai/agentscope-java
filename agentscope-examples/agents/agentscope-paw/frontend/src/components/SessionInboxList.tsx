@@ -73,7 +73,7 @@ export default function SessionInboxList({ agentId }: { agentId: string }) {
           <div
             key={e.sessionKey}
             style={{ ...S.card, ...(e.unread ? S.cardUnread : {}) }}
-            onClick={() => navigate(`/agents/${encodeURIComponent(aid)}/chat?session=${encodeURIComponent(e.sessionKey)}`)}
+            onClick={() => navigate(`/agents/${encodeURIComponent(aid)}/chat?session=${encodeURIComponent(e.conversationId ?? e.sessionKey)}`)}
             title="Resume this conversation in Chat"
             onMouseEnter={ev => {
               ev.currentTarget.style.borderColor = '#c7d2fe';
@@ -96,7 +96,7 @@ export default function SessionInboxList({ agentId }: { agentId: string }) {
                 style={S.transcriptLink}
                 onClick={ev => {
                   ev.stopPropagation();
-                  navigate(`/agents/${encodeURIComponent(aid)}/sessions/${encodeURIComponent(e.sessionKey)}`);
+                  navigate(`/agents/${encodeURIComponent(aid)}/sessions/${encodeURIComponent(e.conversationId ?? e.sessionKey)}`);
                 }}
               >
                 View transcript →

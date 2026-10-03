@@ -26,8 +26,6 @@ import io.agentscope.claw2.web.session.SessionReadStateStore;
 import io.agentscope.claw2.web.session.SessionTurnParser;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.gateway.MsgContext;
-import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -35,8 +33,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -92,10 +88,10 @@ public class SessionController {
             @RequestParam(defaultValue = "false") boolean unreadOnly) {
         return Mono.fromCallable(
                 () -> {
-                    String expectedGateKey = expectedChatGateKey(agentId);
+                    String expectedGatewayAgentId = expectedGatewayAgentId(agentId);
                     List<SessionEntry> matched =
                             sessionAgentManager.allSessions().stream()
-                                    .filter(e -> sessionMatchesAgent(e, expectedGateKey))
+                                    .filter(e -> sessionMatchesAgent(e, expectedGatewayAgentId))
                                     .sorted(
                                             Comparator.comparingLong(SessionEntry::lastActivityMs)
                                                     .reversed())
@@ -113,6 +109,7 @@ public class SessionController {
                                         e.sessionKey(),
                                         e.sessionId(),
                                         e.agentId(),
+                                        extractConversationId(e.gateKey()),
                                         e.label(),
                                         e.lastActivityMs(),
                                         preview,
@@ -137,8 +134,8 @@ public class SessionController {
     public Mono<ResetResult> reset(@PathVariable String agentId, @PathVariable String key) {
         return Mono.fromCallable(
                 () -> {
-                    requireSession(agentId, key);
-                    boolean ok = sessionAgentManager.resetSession(key);
+                    SessionEntry entry = requireSession(agentId, key);
+                    boolean ok = sessionAgentManager.resetSession(entry.sessionKey());
                     return new ResetResult(key, ok);
                 });
     }
@@ -147,8 +144,8 @@ public class SessionController {
     public Mono<ReadStateResult> markRead(@PathVariable String agentId, @PathVariable String key) {
         return Mono.fromCallable(
                 () -> {
-                    requireSession(agentId, key);
-                    long readAtMs = readStateStore.markRead(key);
+                    SessionEntry entry = requireSession(agentId, key);
+                    long readAtMs = readStateStore.markRead(entry.sessionKey());
                     return new ReadStateResult(key, readAtMs, false);
                 });
     }
@@ -158,8 +155,8 @@ public class SessionController {
     public Mono<Void> delete(@PathVariable String agentId, @PathVariable String key) {
         return Mono.fromRunnable(
                 () -> {
-                    requireSession(agentId, key);
-                    sessionAgentManager.removeSession(key);
+                    SessionEntry entry = requireSession(agentId, key);
+                    sessionAgentManager.removeSession(entry.sessionKey());
                 });
     }
 
@@ -171,57 +168,80 @@ public class SessionController {
         SessionEntry entry =
                 sessionAgentManager
                         .getSession(key)
-                        .orElseThrow(
-                                () ->
-                                        new ResponseStatusException(
-                                                HttpStatus.NOT_FOUND,
-                                                "AgentStateStore not found: " + key));
-        String expectedGateKey = expectedChatGateKey(agentId);
-        if (!sessionMatchesAgent(entry, expectedGateKey)) {
+                        .orElseGet(() -> findSessionByConversationId(agentId, key));
+        if (entry == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "AgentStateStore not found: " + key);
+        }
+        String expectedGatewayAgentId = expectedGatewayAgentId(agentId);
+        if (!sessionMatchesAgent(entry, expectedGatewayAgentId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
         return entry;
     }
 
-    /**
-     * Computes the gateway routing key the chat-ui channel uses for {@code agentId}. Mirrors
-     * {@code ChatController#resolveGateKey} so this controller can authorize against the same
-     * key the gateway uses to register the session.
-     */
-    private String expectedChatGateKey(String agentId) {
-        if (agentId == null) return null;
-        String gatewayAgentId;
-        try {
-            gatewayAgentId = catalogService.resolveGatewayAgentId(agentId);
-        } catch (ResponseStatusException ex) {
-            return null;
+    private SessionEntry findSessionByConversationId(String agentId, String key) {
+        if (key == null || key.isBlank()) return null;
+        String expectedGatewayAgentId = expectedGatewayAgentId(agentId);
+        for (SessionEntry e : sessionAgentManager.allSessions()) {
+            if (e.kind() != SessionKind.MAIN) continue;
+            if (!sessionMatchesAgent(e, expectedGatewayAgentId)) continue;
+            if (key.equals(extractConversationId(e.gateKey()))) {
+                return e;
+            }
         }
-        if (gatewayAgentId == null) return null;
-        MsgContext ctx =
-                new MsgContext(
-                        ChatUiChannel.CHANNEL_ID,
-                        null,
-                        null,
-                        null,
-                        null,
-                        Map.of("agentId", gatewayAgentId));
-        return ctx.canonicalKey();
+        return null;
     }
 
     /**
-     * Authorizes a session against the URL agent. {@link SessionEntry#agentId()} holds the
-     * HarnessAgent's internal UUID (not the gateway/catalog id), so we cannot match by agent id
-     * directly. Instead we compare the session's {@code gateKey} (which is deterministically
-     * derived from {@code gatewayAgentId}) against the expected one for the URL agent.
-     * Sub/group sessions that lack a {@code gateKey} are passed through (they have no inbox
-     * visibility regardless).
+     * Gateway catalog id for {@code agentId}. Used to authorize sessions via the {@code
+     * |x:agentId=} segment of their routing key.
      */
-    private static boolean sessionMatchesAgent(SessionEntry e, String expectedGateKey) {
-        if (expectedGateKey == null) return false;
-        if (e.kind() == SessionKind.MAIN) {
-            return Objects.equals(e.gateKey(), expectedGateKey);
+    private String expectedGatewayAgentId(String agentId) {
+        if (agentId == null) return null;
+        try {
+            return catalogService.resolveGatewayAgentId(agentId);
+        } catch (ResponseStatusException ex) {
+            return null;
         }
-        return e.gateKey() == null || Objects.equals(e.gateKey(), expectedGateKey);
+    }
+
+    /**
+     * Authorizes a session against the URL agent by the {@code |x:agentId=} segment, independent
+     * of the {@code |t:<conversationId>} thread that distinguishes Chat conversations.
+     */
+    static boolean sessionMatchesAgent(SessionEntry e, String gatewayAgentId) {
+        if (gatewayAgentId == null) return false;
+        String gateKey = e.gateKey();
+        if (e.kind() == SessionKind.MAIN) {
+            return gateKey != null && gatewayAgentId.equals(extractGatewayAgentId(gateKey));
+        }
+        return gateKey == null || gatewayAgentId.equals(extractGatewayAgentId(gateKey));
+    }
+
+    static String extractGatewayAgentId(String gateKey) {
+        if (gateKey == null) return "";
+        String needle = "|x:agentId=";
+        int i = gateKey.indexOf(needle);
+        if (i < 0) return "";
+        int start = i + needle.length();
+        int end = gateKey.indexOf('|', start);
+        return end < 0 ? gateKey.substring(start) : gateKey.substring(start, end);
+    }
+
+    static String extractConversationId(String gateKey) {
+        if (gateKey == null) return null;
+        String needle = "|t:";
+        int i = gateKey.indexOf(needle);
+        if (i < 0) return null;
+        int start = i + needle.length();
+        int end = gateKey.indexOf('|', start);
+        String val = end < 0 ? gateKey.substring(start) : gateKey.substring(start, end);
+        return val.isEmpty() ? null : val;
+    }
+
+    static RuntimeContext transcriptReadContext(SessionEntry entry) {
+        return RuntimeContext.builder().sessionId(entry.sessionId()).build();
     }
 
     private String lastMessagePreview(String agentId, SessionEntry entry) {
@@ -266,20 +286,40 @@ public class SessionController {
             if (wm != null && innerAgentId != null && !innerAgentId.isBlank()) {
                 Path logFile =
                         wm.resolveSessionLogFile(
-                                RuntimeContext.empty(), innerAgentId, entry.sessionId());
+                                transcriptReadContext(entry), innerAgentId, entry.sessionId());
                 if (Files.isRegularFile(logFile)) {
                     try {
                         return Files.readString(logFile, StandardCharsets.UTF_8);
                     } catch (Exception ignored) {
-                        // fall through to history()
+                        // fall through
                     }
                 }
                 Path contextFile =
                         wm.resolveSessionContextFile(
-                                RuntimeContext.empty(), innerAgentId, entry.sessionId());
+                                transcriptReadContext(entry), innerAgentId, entry.sessionId());
                 if (Files.isRegularFile(contextFile)) {
                     try {
                         return Files.readString(contextFile, StandardCharsets.UTF_8);
+                    } catch (Exception ignored) {
+                        // fall through
+                    }
+                }
+                Path legacyLog =
+                        wm.resolveSessionLogFile(
+                                RuntimeContext.empty(), innerAgentId, entry.sessionId());
+                if (Files.isRegularFile(legacyLog)) {
+                    try {
+                        return Files.readString(legacyLog, StandardCharsets.UTF_8);
+                    } catch (Exception ignored) {
+                        // fall through to history()
+                    }
+                }
+                Path legacyContext =
+                        wm.resolveSessionContextFile(
+                                RuntimeContext.empty(), innerAgentId, entry.sessionId());
+                if (Files.isRegularFile(legacyContext)) {
+                    try {
+                        return Files.readString(legacyContext, StandardCharsets.UTF_8);
                     } catch (Exception ignored) {
                         // fall through to history()
                     }
@@ -302,6 +342,7 @@ public class SessionController {
             String sessionKey,
             String sessionId,
             String agentId,
+            String conversationId,
             String label,
             long lastActivityMs,
             String lastMessage,

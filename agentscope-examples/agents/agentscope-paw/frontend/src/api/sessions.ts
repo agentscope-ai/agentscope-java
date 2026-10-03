@@ -2,6 +2,7 @@ export interface InboxEntry {
   sessionKey: string;
   sessionId: string;
   agentId: string;
+  conversationId: string | null;
   label: string | null;
   lastActivityMs: number;
   lastMessage: string | null;
