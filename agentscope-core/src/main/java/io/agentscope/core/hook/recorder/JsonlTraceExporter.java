@@ -252,8 +252,8 @@ public final class JsonlTraceExporter implements Hook, AutoCloseable {
     }
 
     private RunState getOrUpdateRunState(HookEvent event) {
-        String agentId = event.getAgent().getAgentId();
-        RunState state = runStates.computeIfAbsent(agentId, unused -> new RunState());
+        String id = event.getAgent().getId();
+        RunState state = runStates.computeIfAbsent(id, unused -> new RunState());
         if (event.getType() == HookEventType.PRE_CALL) {
             state.currentRunId = UUID.randomUUID().toString();
             state.turnId++;

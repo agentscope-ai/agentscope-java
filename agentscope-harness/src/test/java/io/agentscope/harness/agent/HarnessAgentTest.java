@@ -117,6 +117,47 @@ class HarnessAgentTest {
     }
 
     @Test
+    void resolvesAgentIdAndIdIndependently() {
+        Model model = stubModel("ok");
+        HarnessAgent explicit =
+                HarnessAgent.builder()
+                        .agentId("support-agent-001")
+                        .name("Support")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+        HarnessAgent nameFallback =
+                HarnessAgent.builder()
+                        .name("name-agent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+        HarnessAgent fixedFallback =
+                HarnessAgent.builder()
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        assertEquals("support-agent-001", explicit.getAgentId());
+        assertEquals(explicit.getAgentId(), explicit.getDelegate().getAgentId());
+        assertEquals("name-agent", nameFallback.getAgentId());
+        assertEquals("ReActAgent", fixedFallback.getAgentId());
+        UUID.fromString(explicit.getId());
+        UUID.fromString(nameFallback.getId());
+        UUID.fromString(fixedFallback.getId());
+        assertNotEquals(explicit.getAgentId(), explicit.getId());
+        assertEquals(
+                HarnessAgent.defaultStateDir("support-agent-001"),
+                HarnessAgent.defaultStateDir(explicit.getAgentId()));
+        assertNotEquals(
+                HarnessAgent.defaultStateDir(explicit.getAgentId()),
+                HarnessAgent.defaultStateDir(nameFallback.getAgentId()));
+    }
+
+    @Test
     void workspaceAgentsMd_readableViaWorkspaceManager() throws Exception {
         Files.createDirectories(workspace);
         String marker = "persona-marker-unique-agents-md-42";

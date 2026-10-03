@@ -53,6 +53,7 @@ docs/_build
 
 # vibe coding
 .claude
+.codex
 openspec
 .omc/
 .qoder/

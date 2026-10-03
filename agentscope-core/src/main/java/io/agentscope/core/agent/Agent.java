@@ -47,9 +47,21 @@ import io.agentscope.core.tool.Toolkit;
 public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
 
     /**
-     * Get the unique identifier for this agent.
+     * Get the unique identifier for this running agent instance.
      *
-     * @return Agent ID
+     * <p>The default implementation preserves compatibility for custom {@code Agent}
+     * implementations created before instance and logical identities were separated.
+     *
+     * @return Runtime instance ID
+     */
+    default String getId() {
+        return getAgentId();
+    }
+
+    /**
+     * Get the logical identifier for this agent.
+     *
+     * @return Logical agent ID
      */
     String getAgentId();
 

@@ -49,24 +49,26 @@ public class GatewayMultiAgentExample {
 
         HarnessAgent salesAgent =
                 HarnessAgent.builder()
-                        .name("sales")
+                        .agentId("sales-agent-001")
+                        .name("Sales")
                         .sysPrompt("You are a sales assistant.")
                         .model("dashscope:qwen-plus")
                         .build();
 
         HarnessAgent supportAgent =
                 HarnessAgent.builder()
-                        .name("support")
+                        .agentId("support-agent-001")
+                        .name("Support")
                         .sysPrompt("You are a support agent.")
                         .model("dashscope:qwen-plus")
                         .build();
 
-        // Register both agents. mainAgent("sales") makes it the default.
+        // Register both agents and make the sales agent the default.
         GatewayBootstrap gw =
                 GatewayBootstrap.builder()
-                        .agent("sales", salesAgent)
-                        .agent("support", supportAgent)
-                        .mainAgent("sales")
+                        .agent(salesAgent.getAgentId(), salesAgent)
+                        .agent(supportAgent.getAgentId(), supportAgent)
+                        .mainAgent(salesAgent.getAgentId())
                         .build();
 
         ChatUiChannel chat = gw.chatUiChannel();
@@ -80,7 +82,7 @@ public class GatewayMultiAgentExample {
         // Route to the support agent explicitly via withAgentId().
         Msg supportReply =
                 chat.send(
-                                SendOptions.userId("user-1").withAgentId("support"),
+                                SendOptions.userId("user-1").withAgentId(supportAgent.getAgentId()),
                                 "I have a billing issue")
                         .block();
         System.out.println(
