@@ -72,6 +72,10 @@ import org.slf4j.LoggerFactory;
  *   <li>{@link LocalFsMode#UNRESTRICTED} — absolute paths pass through; relative paths anchor
  *       to {@code rootDir}. Equivalent to legacy {@code virtualMode=false}.
  * </ul>
+ *
+ * <p>In {@link LocalFsMode#ROOTED} mode an optional namespace boundary
+ * ({@link #namespaceBoundary(boolean)}) further confines every key resolving under the root to
+ * the caller's own namespace, compared on the physical (symlink-resolved) location.
  */
 public class LocalFilesystem implements AbstractFilesystem {
 
@@ -84,6 +88,29 @@ public class LocalFilesystem implements AbstractFilesystem {
     private final PathPolicy pathPolicy;
     private final long maxFileSizeBytes;
     private final NamespaceFactory namespaceFactory;
+
+    /**
+     * When {@code true}, paths that resolve under {@link #cwd} but outside the caller's own
+     * namespace directory are rejected with a {@link SecurityException} in
+     * {@link LocalFsMode#ROOTED} mode. Off by default; see {@link #namespaceBoundary(boolean)}.
+     * Volatile so a configuration change on a shared instance is safely published to concurrent
+     * readers — the contract remains to configure before exposing the filesystem.
+     */
+    private volatile boolean namespaceBoundary = false;
+
+    /**
+     * Physical form of {@link #cwd}, filled once and reused for the instance's lifetime. Only
+     * an <em>existing</em> workspace root is cached: a cold anchor would sit above {@code cwd}
+     * and keep a stale lexical form, so if the root later materialised as a symbolic link the
+     * namespace resolution would follow it from that stale form and silently re-anchor the
+     * boundary onto the link's target. A cache that goes stale after the fact (workspace root
+     * swapped or removed) can only make the candidate and the namespace root disagree, which
+     * fails closed. When {@code cwd} does not exist, every guarded call resolves from scratch
+     * until it does; a root that materialises as a link is then followed the same way as a
+     * pre-existing path alias (Windows 8.3 short names, macOS {@code /var} vs
+     * {@code /private/var}), which is operator-level, outside tenant reach.
+     */
+    private volatile Path physicalCwdCache;
 
     /**
      * Per-path locks for the read-modify-write cycle inside {@link #edit}.
@@ -232,6 +259,48 @@ public class LocalFilesystem implements AbstractFilesystem {
      */
     public PathPolicy getPathPolicy() {
         return pathPolicy;
+    }
+
+    /**
+     * Restricts paths to the caller's own namespace directory in
+     * {@link LocalFsMode#ROOTED} mode.
+     *
+     * <p>The namespace factory scopes <em>relative</em> keys by prepending the namespace prefix
+     * (e.g. {@code sessionId}), but other key forms bypass that prefix: absolute keys pass
+     * through untouched, and the leading-slash virtual form ({@code /foo}) resolves against the
+     * workspace root — so with a per-session namespace any session could address another
+     * session's directory under the shared workspace root. When the boundary is enabled, every
+     * key that resolves under {@link #getCwd() cwd} must resolve under {@code cwd/<namespace>}
+     * to be accepted; anything else is rejected with a {@link SecurityException}. Paths under
+     * the {@link PathPolicy} roots that lie outside {@link #getCwd() cwd} (e.g. the read-only
+     * project layer) are unaffected, and with no namespace active (AGENT/GLOBAL scope, or
+     * missing user/session identifiers) the check is a no-op.
+     *
+     * <p>The check runs on the physical location of the path, with symbolic links resolved: a
+     * link planted inside the own namespace that leads to a sibling namespace or a shared
+     * directory is rejected like a direct path, and casing is normalized on case-insensitive
+     * hosts. The namespace root is resolved the same way, so the comparison stays consistent
+     * when the workspace root does not exist yet or is reached through a path alias (Windows
+     * 8.3 short names, macOS {@code /var} vs {@code /private/var}). Namespace directories
+     * themselves are framework-managed and never links, so a link swapped in for one of them is
+     * rejected outright rather than re-anchoring the boundary to its target. This adds a small
+     * amount of filesystem I/O per resolved path while the boundary is active. Two limitations
+     * remain: the check runs before the file operation, so a component swapped in between
+     * (TOCTOU) is not covered; and the boundary is a filesystem-API control only — the
+     * shell-bearing variant runs {@code execute()} commands without filtering, so
+     * configurations that expose the shell rely on the sandbox layer, not on this check.
+     * Likewise, a workspace root that materialises as a symbolic link after deployment anchors
+     * the boundary at its target, the same way as a pre-existing path alias — an operator-level
+     * concern outside tenant reach.
+     *
+     * <p>Must be configured before the filesystem is exposed to agent calls.
+     *
+     * @param enabled whether the namespace boundary is enforced
+     * @return this filesystem
+     */
+    public LocalFilesystem namespaceBoundary(boolean enabled) {
+        this.namespaceBoundary = enabled;
+        return this;
     }
 
     @Override
@@ -601,7 +670,7 @@ public class LocalFilesystem implements AbstractFilesystem {
 
         return switch (mode) {
             case SANDBOXED -> resolveSandboxed(effectiveKey);
-            case ROOTED -> resolveRooted(effectiveKey);
+            case ROOTED -> resolveRooted(rc, effectiveKey);
             case UNRESTRICTED -> resolveUnrestricted(effectiveKey);
         };
     }
@@ -630,12 +699,16 @@ public class LocalFilesystem implements AbstractFilesystem {
         return key;
     }
 
-    private Path resolveRooted(String effectiveKey) {
+    private Path resolveRooted(RuntimeContext rc, String effectiveKey) {
         AbstractFilesystem.validatePath(effectiveKey);
         Path target = Path.of(effectiveKey);
         if (target.isAbsolute()) {
             Path normalized = target.normalize();
-            if (normalized.startsWith(cwd) || pathPolicy.isAllowed(normalized)) {
+            if (normalized.startsWith(cwd)) {
+                requireOwnNamespace(rc, normalized);
+                return normalized;
+            }
+            if (pathPolicy.isAllowed(normalized)) {
                 return normalized;
             }
             if (Files.exists(normalized)) {
@@ -647,10 +720,9 @@ public class LocalFilesystem implements AbstractFilesystem {
         }
 
         if (effectiveKey.startsWith("/")) {
+            // "/" resolves to the workspace root itself via Path.resolve(""), so the boundary
+            // check below applies to it like any other virtual path.
             String stripped = effectiveKey.substring(1);
-            if (stripped.isEmpty()) {
-                return cwd;
-            }
             if (stripped.startsWith("~")) {
                 throw new SecurityException("Path traversal not allowed: " + effectiveKey);
             }
@@ -658,6 +730,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             if (!full.startsWith(cwd)) {
                 throw new SecurityException("Path " + full + " outside root directory: " + cwd);
             }
+            requireOwnNamespace(rc, full);
             return full;
         }
 
@@ -665,6 +738,9 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (!full.startsWith(cwd)) {
             throw new SecurityException("Path " + full + " outside root directory: " + cwd);
         }
+        // Relative keys are namespace-prefixed into the own namespace, but a link inside it
+        // could still lead out; the physical check applies to them like any other key form.
+        requireOwnNamespace(rc, full);
         return full;
     }
 
@@ -676,6 +752,142 @@ public class LocalFilesystem implements AbstractFilesystem {
                         + cwd
                         + "; additional roots: "
                         + pathPolicy.roots());
+    }
+
+    /**
+     * Rejects paths that resolve under {@link #cwd} but outside the caller's own namespace
+     * directory when {@link #namespaceBoundary} is enabled and a namespace is active.
+     *
+     * <p>Both sides of the comparison are resolved through {@link #physicalPath}: the candidate
+     * to its on-disk location, and the namespace root to the on-disk location of
+     * {@code cwd/<namespace>}. Sharing one resolution path keeps the two sides comparable even
+     * when {@link #cwd} itself does not exist yet or is reached through an alias — Windows 8.3
+     * short names ({@code RUNNER~1}), macOS {@code /var} vs {@code /private/var} — because both
+     * then walk up to the same nearest existing ancestor and real-path it. Symbolic links are
+     * followed (broken ones included, via their link target) and casing is normalized to the
+     * on-disk form, so a link planted inside the own namespace cannot lead the check past the
+     * boundary and case-insensitive hosts compare consistently. Namespace directories
+     * themselves are framework-managed and never links, so a link swapped in for one of them is
+     * rejected outright (fail closed) instead of re-anchoring the boundary to its target.
+     * Relative keys do reach this check — they arrive namespace-prefixed from
+     * {@link #applyNamespacePrefix}, but a link inside the own namespace could still lead out
+     * of it, which the physical resolution catches. The check runs before the actual file
+     * operation, so a component swapped in between (TOCTOU) is out of scope.
+     */
+    private void requireOwnNamespace(RuntimeContext rc, Path resolved) {
+        if (!namespaceBoundary || namespaceFactory == null) {
+            return;
+        }
+        List<String> ns = namespaceFactory.getNamespace(rc);
+        if (ns == null || ns.isEmpty()) {
+            return;
+        }
+        Path nsDir = physicalCwd();
+        for (String segment : ns) {
+            nsDir = nsDir.resolve(segment);
+            if (Files.isSymbolicLink(nsDir)) {
+                throw new SecurityException(
+                        "Namespace directory "
+                                + nsDir
+                                + " has been replaced by a symbolic link; refusing access to "
+                                + resolved);
+            }
+        }
+        Path nsRoot = physicalPath(nsDir);
+        Path physical = physicalPath(resolved);
+        if (!physical.isAbsolute()) {
+            // physicalPath only floors to a relative lexical path when the resolution failed
+            // outright (e.g. an unresolvable link chain); say so instead of a confusing
+            // namespace error.
+            throw new SecurityException(
+                    "Path "
+                            + resolved
+                            + " could not be resolved to a physical location on disk"
+                            + " (unresolvable symbolic-link chain); refusing access.");
+        }
+        if (physical.startsWith(nsRoot)) {
+            return;
+        }
+        throw new SecurityException(
+                "Path "
+                        + resolved
+                        + " is outside the isolated namespace '"
+                        + String.join("/", ns)
+                        + "' of the workspace root "
+                        + cwd
+                        + ". Paths under the workspace root may only address paths inside "
+                        + nsRoot
+                        + "; use workspace-relative paths for shared content.");
+    }
+
+    /**
+     * Returns the cached physical form of {@link #cwd}, filling the cache only once
+     * {@code cwd} exists; see {@link #physicalCwdCache} for why a cold anchor is never cached.
+     */
+    private Path physicalCwd() {
+        Path cached = physicalCwdCache;
+        if (cached != null) {
+            return cached;
+        }
+        Path resolved = physicalPath(cwd);
+        if (Files.exists(cwd)) {
+            physicalCwdCache = resolved;
+        }
+        return resolved;
+    }
+
+    /**
+     * Returns the physical location of {@code path} on disk: symbolic links are followed and
+     * casing matches the on-disk form, so comparisons against the result cannot be bypassed by
+     * a link planted along the path and stay consistent on case-insensitive filesystems.
+     *
+     * <p>Components that do not exist yet cannot hide a link, so the nearest existing ancestor
+     * is resolved and the remaining components are appended lexically. Broken links are
+     * followed lexically through their target ({@link Files#readSymbolicLink}), so the
+     * eventual location of an operation through such a link is what gets compared. When the
+     * path cannot be fully resolved (a link chain longer than the iteration guard), the
+     * lexical form is returned as a floor: no resolvable outside location can slip through,
+     * and the subsequent file operation fails on its own for the unresolvable remainder.
+     */
+    private static Path physicalPath(Path path) {
+        Path p = path.normalize();
+        Path tail = null;
+        for (int hops = 0; hops < 64; hops++) {
+            try {
+                Path real = p.toRealPath();
+                return tail == null ? real : real.resolve(tail);
+            } catch (IOException e) {
+                Path link = linkTarget(p);
+                if (link != null) {
+                    p = link;
+                    continue;
+                }
+                Path name = p.getFileName();
+                if (name == null || p.getParent() == null) {
+                    break;
+                }
+                tail = tail == null ? name : name.resolve(tail);
+                p = p.getParent();
+            }
+        }
+        return tail == null ? p : p.resolve(tail);
+    }
+
+    /**
+     * Returns the absolute, normalized target of the symbolic link {@code p}, or {@code null}
+     * when {@code p} is not a link or its target cannot be read.
+     */
+    private static Path linkTarget(Path p) {
+        if (!Files.isSymbolicLink(p)) {
+            return null;
+        }
+        try {
+            Path target = Files.readSymbolicLink(p);
+            Path parent = p.getParent();
+            return (parent == null ? target : parent.resolve(target)).normalize();
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     private Path resolveUnrestricted(String effectiveKey) {
