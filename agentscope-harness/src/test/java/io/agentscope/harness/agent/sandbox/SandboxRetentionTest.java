@@ -17,10 +17,13 @@ package io.agentscope.harness.agent.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -32,10 +35,14 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
+import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.io.IOException;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InOrder;
 
 class SandboxRetentionTest {
@@ -112,6 +119,8 @@ class SandboxRetentionTest {
 
     @Test
     void unsupportedBackendRejectedBeforeAcquire() throws Exception {
+        when(client.supportsRetention()).thenCallRealMethod();
+        assertFalse(client.supportsRetention());
         assertThrows(
                 SandboxException.SandboxConfigurationException.class,
                 () -> manager.acquire(context(SandboxReleasePolicy.RETAIN), runtime()));
@@ -184,8 +193,13 @@ class SandboxRetentionTest {
         verify(sandbox, never()).shutdown();
     }
 
-    @Test
-    void failedStartDelegatesCleanupWithoutOverwritingSnapshotAndReleasesLease() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void failedStartDelegatesCleanupWithoutOverwritingSnapshotAndReleasesLease(boolean cleanupFails)
+            throws Exception {
+        if (cleanupFails) {
+            doThrow(new IOException("cleanup failed")).when(sandbox).cleanupAfterStartFailure();
+        }
         when(client.supportsRetention()).thenReturn(true);
         when(store.load(any())).thenReturn(Optional.empty());
         when(client.create(any(), any(), any())).thenReturn(sandbox);
@@ -217,6 +231,106 @@ class SandboxRetentionTest {
                 () -> guarded.acquire(context(SandboxReleasePolicy.RETAIN), runtime()));
         verify(client, never()).create(any(), any(), any());
         verify(lease).close();
+    }
+
+    @Test
+    void defaultPolicyStillCreatesSandboxWhenStateStoreIsUnavailable() throws Exception {
+        when(store.load(any())).thenThrow(new IOException("store unavailable"));
+        when(client.create(any(), any(), any())).thenReturn(sandbox);
+        SandboxLease lease = mock(SandboxLease.class);
+        SandboxManager guarded = new SandboxManager(client, store, "agent", key -> lease);
+        SandboxAcquireResult result =
+                guarded.acquire(context(SandboxReleasePolicy.DELETE), runtime());
+        assertSame(sandbox, result.getSandbox());
+        assertSame(lease, result.getLease());
+        assertEquals(SandboxReleasePolicy.DELETE, result.getReleasePolicy());
+        verify(lease, never()).close();
+        guarded.release(result);
+        result.getLease().close();
+        InOrder order = inOrder(sandbox, lease);
+        order.verify(sandbox).stop();
+        order.verify(sandbox).shutdown();
+        order.verify(lease).close();
+    }
+
+    @Test
+    void filesystemPolicyIsValidatedAndCapturedByEachContext() {
+        SandboxFilesystemSpec spec =
+                new SandboxFilesystemSpec() {
+                    @Override
+                    protected SandboxClient<?> createClient() {
+                        return client;
+                    }
+
+                    @Override
+                    protected SandboxClientOptions clientOptions() {
+                        return null;
+                    }
+
+                    @Override
+                    protected SandboxSnapshotSpec snapshotSpec() {
+                        return null;
+                    }
+
+                    @Override
+                    protected WorkspaceSpec workspaceSpec() {
+                        return new WorkspaceSpec();
+                    }
+                };
+        assertEquals(SandboxReleasePolicy.DELETE, spec.getReleasePolicy());
+        SandboxContext defaultContext = spec.toSandboxContext();
+        assertSame(spec, spec.releasePolicy(SandboxReleasePolicy.RETAIN));
+        assertEquals(SandboxReleasePolicy.RETAIN, spec.getReleasePolicy());
+        assertEquals(SandboxReleasePolicy.RETAIN, spec.toSandboxContext().getReleasePolicy());
+        assertEquals(SandboxReleasePolicy.DELETE, defaultContext.getReleasePolicy());
+        assertThrows(NullPointerException.class, () -> spec.releasePolicy(null));
+        assertEquals(SandboxReleasePolicy.RETAIN, spec.toSandboxContext().getReleasePolicy());
+    }
+
+    @Test
+    void defaultMaintenancePreservesResourcesAndDefaultFailedStartCleanupDestroysThem()
+            throws Exception {
+        doCallRealMethod().when(sandbox).onRetained();
+        doCallRealMethod().when(sandbox).cleanupAfterStartFailure();
+        manager.release(
+                SandboxAcquireResult.selfManaged(sandbox, null, SandboxReleasePolicy.RETAIN));
+        verify(sandbox).stop();
+        verify(sandbox, never()).shutdown();
+        manager.discard(SandboxAcquireResult.selfManaged(sandbox));
+        verify(sandbox).shutdown();
+        // Failed-start cleanup must not persist the partially initialized workspace again.
+        verify(sandbox).stop();
+    }
+
+    @Test
+    void discardWithoutAnAcquiredSandboxIsSafe() {
+        assertDoesNotThrow(() -> manager.discard(null));
+        assertDoesNotThrow(() -> manager.discard(SandboxAcquireResult.selfManaged(null)));
+        verifyNoInteractions(sandbox, client, store);
+    }
+
+    @Test
+    void defaultPolicyStillReleasesFailedStartAndClosesLease() throws Exception {
+        when(store.load(any())).thenReturn(Optional.empty());
+        when(client.create(any(), any(), any())).thenReturn(sandbox);
+        IOException failure = new IOException("start failed");
+        doThrow(failure).when(sandbox).start();
+        SandboxLease lease = mock(SandboxLease.class);
+        SandboxManager guarded = new SandboxManager(client, store, "agent", key -> lease);
+        RuntimeContext ctx = runtime();
+        ctx.put(SandboxContext.class, context(SandboxReleasePolicy.DELETE));
+        SandboxLifecycleMiddleware middleware =
+                new SandboxLifecycleMiddleware(guarded, new SandboxBackedFilesystem());
+        RuntimeException thrown =
+                assertThrows(RuntimeException.class, () -> middleware.acquireForCall(ctx));
+        assertSame(failure, thrown.getCause());
+        InOrder order = inOrder(sandbox, lease);
+        order.verify(sandbox).stop();
+        order.verify(sandbox).shutdown();
+        order.verify(lease).close();
+        verify(sandbox, never()).cleanupAfterStartFailure();
+        verify(store, never()).save(any(), any());
+        assertNull(ctx.get(SandboxAcquireResult.class));
     }
 
     @Test

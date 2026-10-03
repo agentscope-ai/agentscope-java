@@ -118,6 +118,26 @@ class E2bSandboxRetentionTest {
     }
 
     @Test
+    void remoteConfigurationDoesNotReplacePersistedLocalSnapshot() throws Exception {
+        E2bSandboxState state = state();
+        state.setSnapshot(new LocalSnapshotSpec(temp).build("local-archive"));
+        byte[] archive = "retained local workspace".getBytes(StandardCharsets.UTF_8);
+        state.getSnapshot().persist(new ByteArrayInputStream(archive));
+        SandboxState restored =
+                client.deserializeState(
+                        client.serializeState(state),
+                        new RemoteSnapshotSpec(mock(RemoteSnapshotClient.class)));
+        assertEquals(state.getSnapshot().getClass(), restored.getSnapshot().getClass());
+        try (InputStream content = restored.getSnapshot().restore()) {
+            assertEquals(
+                    "retained local workspace",
+                    new String(content.readAllBytes(), StandardCharsets.UTF_8));
+        }
+        assertEquals("live", ((E2bSandboxState) restored).getSandboxId());
+        assertEquals(0, server.getRequestCount());
+    }
+
+    @Test
     void specDefaultsToDeleteAndPassesRetainThroughToContext() {
         E2bFilesystemSpec spec = new E2bFilesystemSpec();
         assertEquals(SandboxReleasePolicy.DELETE, spec.toSandboxContext().getReleasePolicy());

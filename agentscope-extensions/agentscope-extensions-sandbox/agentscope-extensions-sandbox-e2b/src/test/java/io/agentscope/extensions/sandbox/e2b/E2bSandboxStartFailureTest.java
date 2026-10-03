@@ -16,6 +16,7 @@
 package io.agentscope.extensions.sandbox.e2b;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -65,6 +66,8 @@ class E2bSandboxStartFailureTest {
     private E2bSandboxState state;
     private boolean failProbe;
     private boolean missingWorkspace;
+    private int probeExitCode;
+    private boolean nativeRestore;
     private boolean failSetup;
     private boolean failRestore;
     private int restores;
@@ -123,7 +126,7 @@ class E2bSandboxStartFailureTest {
                 if (failProbe) {
                     throw new IOException("temporary guest connection failure");
                 }
-                return new ExecResult(missingWorkspace ? 1 : 0, "", "", false);
+                return new ExecResult(missingWorkspace ? 1 : probeExitCode, "", "", false);
             }
 
             @Override
@@ -136,6 +139,9 @@ class E2bSandboxStartFailureTest {
             @Override
             protected void doHydrateWorkspace(InputStream archive) throws Exception {
                 restores++;
+                if (nativeRestore) {
+                    super.doHydrateWorkspace(archive);
+                }
                 if (failRestore) {
                     throw new IOException("temporary restore failure");
                 }
@@ -163,6 +169,86 @@ class E2bSandboxStartFailureTest {
         verify(lease).close();
         verify(store, never()).save(any(), any());
         assertNull(context.get(SandboxAcquireResult.class));
+    }
+
+    @Test
+    void abnormalProbeExitPreservesWorkspaceAndCanRetry() throws Exception {
+        saved();
+        probeExitCode = 127;
+        connected("retained-live");
+        failedCallPreservesStoredState();
+        assertEquals("retained-live", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals(0, restores);
+        assertEquals(1, server.getRequestCount());
+        probeExitCode = 0;
+        connected("retained-live");
+        middleware.acquireForCall(context);
+        assertTrue(context.get(SandboxAcquireResult.class).getSandbox().isRunning());
+        assertEquals(0, restores);
+        assertEquals(2, server.getRequestCount());
+    }
+
+    @Test
+    void failedNativeRestoreDeletesReplacementWithoutPruningSnapshots() throws Exception {
+        state.setWorkspaceRootReady(false);
+        state.setSnapshot(new LocalSnapshotSpec(temp).build("archive"));
+        state.getSnapshot()
+                .persist(new ByteArrayInputStream(E2bSnapshotRefs.encodeSnapshotId("latest")));
+        nativeRestore = true;
+        failRestore = true;
+        saved();
+        connected("retained-live");
+        connected("native-replacement");
+        server.enqueue(new MockResponse().setResponseCode(200));
+        server.enqueue(new MockResponse().setResponseCode(200));
+        failedCallPreservesStoredState();
+        request("POST", "/sandboxes/retained-live/connect");
+        request("POST", "/sandboxes");
+        request("DELETE", "/sandboxes/retained-live");
+        request("DELETE", "/sandboxes/native-replacement");
+        assertEquals(4, server.getRequestCount());
+        assertNull(state.getSandboxId());
+        assertFalse(state.isWorkspaceRootReady());
+        assertEquals(List.of("old", "latest"), state.getSnapshotIds());
+        assertEquals(1, restores);
+    }
+
+    @Test
+    void failedStartNeverDeletesCallerOwnedSandbox() throws Exception {
+        state.setSandboxOwned(false);
+        failProbe = true;
+        connected("retained-live");
+        Sandbox sandbox = sandbox();
+        assertThrows(Exception.class, sandbox::start);
+        sandbox.cleanupAfterStartFailure();
+        assertEquals("retained-live", state.getSandboxId());
+        assertEquals(List.of("old", "latest"), state.getSnapshotIds());
+        assertEquals(1, server.getRequestCount());
+    }
+
+    @Test
+    void cleanupTargetsItsOwnAllocationWithoutClearingReplacementState() throws Exception {
+        state.setSandboxId(null);
+        state.setWorkspaceRootReady(false);
+        failSetup = true;
+        connected("failed-allocation");
+        Sandbox sandbox = sandbox();
+        assertThrows(Exception.class, sandbox::start);
+        // The state is public and mutable; cleanup must target the allocation it recorded.
+        state.setSandboxId("another-allocation");
+        state.setWorkspaceRootReady(true);
+        state.setWorkspaceProjectionHash("another-projection");
+        server.enqueue(new MockResponse().setResponseCode(200));
+        sandbox.cleanupAfterStartFailure();
+        sandbox.cleanupAfterStartFailure();
+        request("POST", "/sandboxes");
+        request("DELETE", "/sandboxes/failed-allocation");
+        assertEquals(2, server.getRequestCount());
+        assertEquals("another-allocation", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("another-projection", state.getWorkspaceProjectionHash());
+        assertEquals(List.of("old", "latest"), state.getSnapshotIds());
     }
 
     @ParameterizedTest
