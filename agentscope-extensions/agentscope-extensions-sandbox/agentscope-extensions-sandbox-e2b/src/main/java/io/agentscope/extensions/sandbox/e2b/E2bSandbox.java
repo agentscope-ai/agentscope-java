@@ -77,8 +77,21 @@ public class E2bSandbox extends AbstractBaseSandbox {
                     "[sandbox-e2b] WorkspaceSpec contains bind_mount entries; "
                             + "E2B does not apply host bind mounts — paths are not mounted.");
         }
-        ensureSandbox();
-        super.start();
+        boolean workspaceReadyBeforeStart = e2bState.isWorkspaceRootReady();
+        String projectionBeforeStart = e2bState.getWorkspaceProjectionHash();
+        try {
+            ensureSandbox();
+            super.start();
+        } catch (Exception e) {
+            if (sandboxCreatedDuringStart == null) {
+                // AbstractBaseSandbox marks failed starts unready. Preserve the previous metadata
+                // when retrying the same state object, so a transient error does not force a stale
+                // snapshot restore over an existing workspace.
+                e2bState.setWorkspaceRootReady(workspaceReadyBeforeStart);
+                e2bState.setWorkspaceProjectionHash(projectionBeforeStart);
+            }
+            throw e;
+        }
     }
 
     /**

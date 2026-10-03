@@ -219,6 +219,32 @@ class E2bSandboxStartFailureTest {
         assertEquals(2, server.getRequestCount());
     }
 
+    @Test
+    void explicitStateRetryPreservesWorkspaceInsteadOfRestoringOldSnapshot() throws Exception {
+        state.setSnapshot(new LocalSnapshotSpec(temp).build("old-archive"));
+        state.getSnapshot().persist(new ByteArrayInputStream(new byte[] {1}));
+        state.setWorkspaceProjectionHash("previous-projection");
+        context.put(
+                SandboxContext.class,
+                SandboxContext.builder()
+                        .externalSandboxState(state)
+                        .releasePolicy(SandboxReleasePolicy.RETAIN)
+                        .build());
+        failProbe = true;
+        connected("retained-live");
+        assertThrows(RuntimeException.class, () -> middleware.acquireForCall(context));
+        assertTrue(state.isWorkspaceRootReady(), "retry must probe the preserved workspace again");
+        assertEquals("previous-projection", state.getWorkspaceProjectionHash());
+        assertEquals(1, server.getRequestCount());
+        failProbe = false;
+        connected("retained-live");
+        middleware.acquireForCall(context);
+        assertEquals(0, restores, "a transient failure must not cause stale snapshot restoration");
+        assertEquals(2, server.getRequestCount());
+        assertTrue(context.get(SandboxAcquireResult.class).getSandbox().isRunning());
+        verify(store, never()).save(any(), any());
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void failedNewAllocationIsDeletedWithoutSnapshotGc(boolean expired) throws Exception {
