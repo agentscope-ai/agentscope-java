@@ -64,7 +64,9 @@ public interface AbstractFilesystem {
     ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit);
 
     /**
-     * Write content to a new file, error if file already exists.
+     * Write content to a new file, failing if the path already exists. Atomicity across concurrent
+     * calls depends on the backend; callers that require exactly one concurrent create to succeed
+     * must use a backend that provides atomic create-if-absent behavior.
      *
      * @param runtimeContext per-call agent runtime; {@link RuntimeContext#empty()} when none
      * @param filePath absolute path where the file should be created

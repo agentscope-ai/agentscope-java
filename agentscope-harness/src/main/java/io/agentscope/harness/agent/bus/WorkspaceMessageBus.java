@@ -21,12 +21,14 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -36,9 +38,10 @@ import reactor.core.scheduler.Schedulers;
 /**
  * {@link MessageBus} implementation backed by {@link AbstractFilesystem}.
  *
- * <p>Works with any filesystem backend (local, remote, sandbox). Cross-process delivery only
- * works when the filesystem backend is actually shared (for example a remote/KV-backed store);
- * a pure local disk backend remains single-process.
+ * <p>Queue claims rely on the filesystem backend's {@link AbstractFilesystem#write} operation
+ * providing atomic create-if-absent behavior. Cross-process delivery also requires the backend to
+ * be shared (for example a remote/KV-backed store); a pure local disk backend remains
+ * single-process.
  *
  * <p>Mode D (pub/sub) is degraded to polling: {@link #subscribe} returns a {@code Flux} that emits
  * an empty signal every 3 seconds; {@link #publish} is a no-op.
@@ -47,10 +50,26 @@ import reactor.core.scheduler.Schedulers;
  * <pre>
  * {busRoot}/
  *   queues/{key-hash}/
- *     {entryId}.json       — Mode A entries (drain = ls + read + delete)
+ *     {entryId}.payload    — Mode A payload, written before publication
+ *     {entryId}.ready      — Mode A ready marker; legacy entries use {entryId}.json
+ *     {entryId}.ready.claim — exclusive drain claim marker
  *   logs/{key-hash}/
  *     {entryId}.json       — Mode C entries (append-only)
  * </pre>
+ *
+ * <p>Claims are not leased. A crash after claiming an entry can leave it unavailable until
+ * operator-led recovery; automatically reclaiming it could deliver the same entry twice. Entry
+ * ids use a per-instance {@link System#nanoTime()} seed, so sorted order does not guarantee FIFO
+ * across processes.
+ *
+ * <p>A failed ready-marker write may still leave the marker visible. A {@link #queuePush} error
+ * therefore does not prove that the entry is absent. The failed publisher preserves the payload
+ * and any marker, which may belong to another writer, for a possible drain or operator-led
+ * recovery. {@link #queueDelete} removes the entire queue for a key, not just an orphaned entry.
+ *
+ * <p>New queue entries use {@code .payload} and {@code .ready} files. Older consumers that only
+ * scan {@code .json} entries will not see entries created by this version during a mixed-version
+ * rollout.
  */
 public class WorkspaceMessageBus implements MessageBus {
 
@@ -63,7 +82,8 @@ public class WorkspaceMessageBus implements MessageBus {
     private final AtomicLong seq = new AtomicLong(System.nanoTime());
 
     /**
-     * @param filesystem any {@link AbstractFilesystem} implementation
+     * @param filesystem an {@link AbstractFilesystem} whose {@code write} operation atomically
+     *     creates a path only when absent
      * @param busRoot    absolute path within the filesystem for bus data (e.g. {@code "/bus"})
      */
     public WorkspaceMessageBus(AbstractFilesystem filesystem, String busRoot) {
@@ -80,9 +100,36 @@ public class WorkspaceMessageBus implements MessageBus {
                     String entryId = nextEntryId();
                     String dir = queueDir(key);
                     ensureDir(dir);
-                    String path = dir + "/" + entryId + ".json";
+                    String payloadPath = dir + "/" + entryId + ".payload";
+                    String readyPath = dir + "/" + entryId + ".ready";
                     String json = JsonUtils.getJsonCodec().toJson(payload);
-                    fs.write(RC, path, json);
+                    WriteResult payloadWrite = fs.write(RC, payloadPath, json);
+                    if (!payloadWrite.isSuccess()) {
+                        throw new IllegalStateException(
+                                "queuePush: failed to write payload "
+                                        + payloadPath
+                                        + " ("
+                                        + payloadWrite.error()
+                                        + ")");
+                    }
+
+                    WriteResult publish = fs.write(RC, readyPath, "");
+                    if (!publish.isSuccess()) {
+                        // A failed write does not establish ownership of the marker. Removing
+                        // either file here could discard an entry another writer published.
+                        log.warn(
+                                "queuePush: publication of {} failed ({}); retaining payload {}"
+                                        + " for possible drain or operator recovery",
+                                readyPath,
+                                publish.error(),
+                                payloadPath);
+                        throw new IllegalStateException(
+                                "queuePush: failed to publish entry "
+                                        + readyPath
+                                        + " ("
+                                        + publish.error()
+                                        + ")");
+                    }
                     return entryId;
                 });
     }
@@ -92,20 +139,44 @@ public class WorkspaceMessageBus implements MessageBus {
         return Mono.fromCallable(
                 () -> {
                     String dir = queueDir(key);
-                    List<FileInfo> files = listSorted(dir);
+                    List<FileInfo> files = listQueueEntries(dir);
                     List<BusEntry> result = new ArrayList<>();
-                    int count = Math.min(maxCount, files.size());
-                    for (int i = 0; i < count; i++) {
-                        FileInfo fi = files.get(i);
-                        String content = readFileContent(fi.path());
+                    for (FileInfo fi : files) {
+                        if (result.size() >= maxCount) {
+                            break;
+                        }
+                        String claimPath = fi.path() + ".claim";
+                        WriteResult claim = fs.write(RC, claimPath, "");
+                        if (!claim.isSuccess()) {
+                            if (!claim.isAlreadyExists()) {
+                                if (!result.isEmpty()) {
+                                    log.warn(
+                                            "queueDrain: failed to claim entry {} ({}); returning"
+                                                    + " {} already-drained entries",
+                                            fi.path(),
+                                            claim.error(),
+                                            result.size());
+                                    break;
+                                }
+                                throw new IllegalStateException(
+                                        "queueDrain: failed to claim entry "
+                                                + fi.path()
+                                                + " ("
+                                                + claim.error()
+                                                + ")");
+                            }
+                            continue;
+                        }
+                        String content = readQueueEntryContent(fi.path());
                         if (content == null) {
-                            // Transient read failure (race with concurrent drain, I/O error).
-                            // Do NOT delete — preserve the entry so the next drain can retry it.
+                            // A transient read failure is retryable because no entry was returned.
                             log.warn(
                                     "queueDrain: failed to read entry {}, skipping without delete",
                                     fi.path());
+                            releaseClaim(claimPath);
                             continue;
                         }
+
                         String entryId = extractEntryId(fi.path());
                         try {
                             @SuppressWarnings("unchecked")
@@ -120,10 +191,25 @@ public class WorkspaceMessageBus implements MessageBus {
                                             + " unblock queue",
                                     fi.path(),
                                     e.getMessage());
-                            fs.delete(RC, fi.path());
-                            continue;
                         }
-                        fs.delete(RC, fi.path());
+
+                        WriteResult deletion = deleteQueueEntry(fi.path());
+                        if (deletion.isSuccess()) {
+                            WriteResult claimDeletion = fs.delete(RC, claimPath);
+                            if (!claimDeletion.isSuccess()) {
+                                log.warn(
+                                        "queueDrain: failed to delete claim {} ({}) after deleting"
+                                                + " its entry",
+                                        claimPath,
+                                        claimDeletion.error());
+                            }
+                        } else {
+                            log.warn(
+                                    "queueDrain: failed to delete claimed entry {} ({});"
+                                            + " retaining claim to prevent duplicate delivery",
+                                    fi.path(),
+                                    deletion.error());
+                        }
                     }
                     return result;
                 });
@@ -136,7 +222,7 @@ public class WorkspaceMessageBus implements MessageBus {
 
     @Override
     public Mono<Boolean> queuePeek(String key) {
-        return Mono.fromCallable(() -> !listSorted(queueDir(key)).isEmpty());
+        return Mono.fromCallable(() -> !listQueueEntries(queueDir(key)).isEmpty());
     }
 
     // ---- Mode C: replay log ----
@@ -241,13 +327,23 @@ public class WorkspaceMessageBus implements MessageBus {
 
     private String extractEntryId(String path) {
         String name = path.substring(path.lastIndexOf('/') + 1);
-        if (name.endsWith(".json")) {
-            return name.substring(0, name.length() - 5);
+        for (String suffix : List.of(".json", ".ready")) {
+            if (name.endsWith(suffix)) {
+                return name.substring(0, name.length() - suffix.length());
+            }
         }
         return name;
     }
 
     private List<FileInfo> listSorted(String dir) {
+        return listSorted(dir, f -> f.path().endsWith(".json"));
+    }
+
+    private List<FileInfo> listQueueEntries(String dir) {
+        return listSorted(dir, f -> f.path().endsWith(".json") || f.path().endsWith(".ready"));
+    }
+
+    private List<FileInfo> listSorted(String dir, Predicate<FileInfo> include) {
         if (!fs.exists(RC, dir)) {
             return List.of();
         }
@@ -256,9 +352,39 @@ public class WorkspaceMessageBus implements MessageBus {
             return List.of();
         }
         return ls.entries().stream()
-                .filter(f -> !f.isDirectory() && f.path().endsWith(".json"))
+                .filter(f -> !f.isDirectory() && include.test(f))
                 .sorted(Comparator.comparing(FileInfo::path))
                 .toList();
+    }
+
+    private String readQueueEntryContent(String path) {
+        if (!path.endsWith(".ready")) {
+            return readFileContent(path);
+        }
+        String payloadPath = path.substring(0, path.length() - ".ready".length()) + ".payload";
+        return readFileContent(payloadPath);
+    }
+
+    private WriteResult deleteQueueEntry(String path) {
+        if (path.endsWith(".ready")) {
+            WriteResult markerDeletion = fs.delete(RC, path);
+            if (!markerDeletion.isSuccess()) {
+                return markerDeletion;
+            }
+            String payloadPath = path.substring(0, path.length() - ".ready".length()) + ".payload";
+            return fs.delete(RC, payloadPath);
+        }
+        return fs.delete(RC, path);
+    }
+
+    private void releaseClaim(String claimPath) {
+        WriteResult release = fs.delete(RC, claimPath);
+        if (!release.isSuccess()) {
+            log.warn(
+                    "queueDrain: failed to release claim {} ({}); entry will remain unavailable",
+                    claimPath,
+                    release.error());
+        }
     }
 
     private String readFileContent(String path) {
