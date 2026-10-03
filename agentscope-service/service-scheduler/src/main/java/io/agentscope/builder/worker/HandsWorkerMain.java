@@ -49,7 +49,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   java -cp service-scheduler.jar io.agentscope.builder.worker.HandsWorkerMain \
  *     --base-url http://builder:8080 \
  *     --environment-id env_xxx \
- *     --environment-key ebk_... \
+ *     --environment-key ek_... \
  *     --hands-root /var/lib/agentscope/hands
  * </pre>
  *
