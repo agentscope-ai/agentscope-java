@@ -119,7 +119,9 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                         definition.path("definitionDigest").asText());
             } else runtimeAgent = agent.get();
             executionAgent = runtimeAgent;
-            registerCollaborationTools(runtimeAgent, assignment, availableActions(envelope));
+            List<String> droppedCollaborationTools =
+                    registerCollaborationTools(
+                            runtimeAgent, assignment, availableActions(envelope));
 
             String payload = new String(assignment.payload(), StandardCharsets.UTF_8);
             String prompt =
@@ -129,13 +131,14 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                             + " Issue, discussion inputs, Team role, and artifacts. Complete the"
                             + " requested work and return a concise result; use CollaborationClient"
                             + " for fresh reads, progress comments, artifacts, or child Issues. The"
-                            + " available CollaborationClient actions are registered as tools with"
-                            + " the exact names shown in availableActions. The adapter owns"
-                            + " task.complete and task.fail; do not call them. Before returning,"
-                            + " call task.submit_result with an explicit business outcome and the"
-                            + " actual deliverable. A promise to do work later is not completion."
-                            + " Check the tool capabilities before delegating: spawning a subagent"
-                            + " does not add missing web access."
+                            + " available CollaborationClient actions are registered as tools under"
+                            + " OpenAI-safe names (see toModelName: dots and other illegal"
+                            + " characters become underscores). The adapter"
+                            + " owns task_complete and task_fail; do not call them. Before"
+                            + " returning, call task_submit_result with an explicit business"
+                            + " outcome and the actual deliverable. A promise to do work later is"
+                            + " not completion. Check the tool capabilities before delegating:"
+                            + " spawning a subagent does not add missing web access."
                             + roleInstructions(envelope, inputIds)
                             + "\ncontextUrl="
                             + nullToEmpty(assignment.contextUrl())
@@ -143,6 +146,11 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                             + modelContext(envelope)
                             + "\nActual tool names available to this agent: "
                             + runtimeAgent.getToolkit().getToolNames()
+                            + (droppedCollaborationTools.isEmpty()
+                                    ? ""
+                                    : "\nDropped collaboration tools due to model-name collision"
+                                            + " (not callable): "
+                                            + droppedCollaborationTools)
                             + (payload.isBlank() ? "" : "\neventPayload=" + safePayload(payload));
             Msg kickoff = Msg.builder().role(MsgRole.USER).textContent(prompt).build();
             String sessionId =
@@ -259,7 +267,7 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                 next =
                         message(
                                 "The turn ended without a business outcome. Do the remaining work,"
-                                    + " or call task.submit_result with blocked and the concrete"
+                                    + " or call task_submit_result with blocked and the concrete"
                                     + " missing capability. Do not submit a plan or waiting promise"
                                     + " as successful research.");
                 continue;
@@ -428,63 +436,132 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
         if (node.isContainerNode()) node.forEach(HarnessAgentTaskStarter::stripCredentials);
     }
 
-    private void registerCollaborationTools(
+    /**
+     * Registers the outcome tool and collaboration proxies. Returns human-readable descriptions of
+     * collaboration tools skipped due to model-name collisions (for the kickoff prompt).
+     */
+    private List<String> registerCollaborationTools(
             HarnessAgent runtimeAgent,
             AgentTaskAssignment assignment,
             Set<String> availableActions) {
         Object toolkit = runtimeAgent.getToolkit();
+        List<String> dropped = new ArrayList<>();
         synchronized (toolkit) {
-            if (!runtimeAgent.getToolkit().getToolNames().contains("task.submit_result")) {
-                runtimeAgent.getToolkit().registerTool(new AgentTaskOutcomeTool());
-            }
+            ensureOutcomeToolRegistered(runtimeAgent);
             for (JsonNode definition :
                     collaboration.tools(assignment.agentTaskId(), assignment.taskToken())) {
-                String name = definition.path("name").asText();
+                String wireName = definition.path("name").asText();
                 // The starter owns the physical task lifecycle. Exposing these two actions would
-                // race the adapter's fenced completion/failure reporting.
-                if ("task.complete".equals(name) || "task.fail".equals(name)) {
+                // race the adapter's fenced completion/failure reporting. Compare wire names via
+                // shared constants so underscore republishing cannot silently re-enable them.
+                if (AgentTaskCollaborationTool.WIRE_TASK_COMPLETE.equals(wireName)
+                        || AgentTaskCollaborationTool.WIRE_TASK_FAIL.equals(wireName)) {
                     continue;
                 }
-                if (!availableActions.contains(name)) {
+                if (!availableActions.contains(wireName)) {
                     continue;
                 }
-                if (!runtimeAgent.getToolkit().getToolNames().contains(name)) {
+                String modelName = AgentTaskCollaborationTool.toModelName(wireName);
+                if (!runtimeAgent.getToolkit().getToolNames().contains(modelName)) {
                     runtimeAgent
                             .getToolkit()
                             .registerAgentTool(
                                     new AgentTaskCollaborationTool(collaboration, definition));
+                } else {
+                    String drop =
+                            wireName
+                                    + " -> "
+                                    + modelName
+                                    + " (keeping the already-registered tool)";
+                    dropped.add(drop);
+                    LOG.warning(
+                            "Skipping collaboration tool registration due to model-name collision:"
+                                    + " wireName="
+                                    + wireName
+                                    + ", modelName="
+                                    + modelName
+                                    + " (keeping the already-registered tool)");
+                    if (AgentTaskCollaborationTool.isTerminalWireName(wireName)) {
+                        throw new IllegalStateException(
+                                "Terminal collaboration action '"
+                                        + wireName
+                                        + "' (model name '"
+                                        + modelName
+                                        + "') cannot be exposed because another tool already"
+                                        + " occupies that model name");
+                    }
                 }
             }
         }
+        return dropped;
+    }
+
+    /**
+     * Ensures {@link AgentTaskOutcomeTool} is registered under its model name. Identity-checked
+     * (not merely by name): a foreign tool occupying {@code task_submit_result} is replaced so a
+     * business outcome can still be submitted.
+     */
+    private static void ensureOutcomeToolRegistered(HarnessAgent runtimeAgent) {
+        String submitResultModelName = AgentTaskOutcomeTool.MODEL_NAME;
+        var existing = runtimeAgent.getToolkit().getTool(submitResultModelName);
+        if (existing instanceof AgentTaskOutcomeTool) {
+            return;
+        }
+        if (existing != null) {
+            LOG.warning(
+                    "Replacing foreign tool occupying outcome model name "
+                            + submitResultModelName
+                            + " (was "
+                            + existing.getClass().getName()
+                            + ") with AgentTaskOutcomeTool");
+            runtimeAgent.getToolkit().removeTool(submitResultModelName);
+        }
+        runtimeAgent.getToolkit().registerAgentTool(new AgentTaskOutcomeTool());
     }
 
     static String roleInstructions(JsonNode envelope, List<String> inputIds) {
         JsonNode task = envelope.path("task");
+        // Model-facing names must use the same toModelName() mapping as registered tools.
+        String runNodeComplete = AgentTaskCollaborationTool.toModelName("run.node.complete");
+        String runNodeFail = AgentTaskCollaborationTool.toModelName("run.node.fail");
+        String runReplan = AgentTaskCollaborationTool.toModelName("run.replan");
+        String issueChildCreate = AgentTaskCollaborationTool.toModelName("issue.child.create");
+        String issueAccept = AgentTaskCollaborationTool.toModelName("issue.accept");
+        String taskSubmitResult =
+                AgentTaskCollaborationTool.toModelName(
+                        AgentTaskCollaborationTool.WIRE_TASK_SUBMIT_RESULT);
+        String taskComplete =
+                AgentTaskCollaborationTool.toModelName(
+                        AgentTaskCollaborationTool.WIRE_TASK_COMPLETE);
         if (task.path("teamId").asText().isBlank()) {
             return " Complete the requested work and return the result.";
         }
         if (!task.path("leaderTask").asBoolean(false)) {
-            return " You are a Team worker, not its coordinator. Do not create or accept child"
-                    + " Issues and do not call run.node.complete, run.node.fail, or run.replan."
-                    + " Complete only the assigned work and submit its result using"
-                    + " task.submit_result; the adapter will complete this AgentTask.";
+            return (" You are a Team worker, not its coordinator. "
+                            + "Do not create or accept child Issues and do not call %s, %s, or %s. "
+                            + "Complete only the assigned work and submit its result using %s; "
+                            + "the adapter will complete this AgentTask.")
+                    .formatted(runNodeComplete, runNodeFail, runReplan, taskSubmitResult);
         }
         if (inputIds.isEmpty()) {
-            return " You are the Team leader's initial task. If you delegate child work, return"
-                    + " immediately after issue.child.create succeeds by calling"
-                    + " task.submit_result with waiting, a reason and the returned AgentTask"
-                    + " IDs; do not wait through local session/task tools and do not call"
-                    + " run.node.complete yet. The control plane will deliver a fresh leader"
-                    + " follow-up when a worker result arrives. If no work is delegated, call"
-                    + " run.node.complete after your own work converges. Returning text alone"
-                    + " never completes a Team coordinator.";
+            return (" You are the Team leader's initial task. "
+                            + "If you delegate child work, return immediately after %s succeeds "
+                            + "by calling %s with waiting, a reason and the returned AgentTask "
+                            + "IDs; do not wait through local session/task tools and do not call "
+                            + "%s yet. The control plane will deliver a fresh leader follow-up "
+                            + "when a worker result arrives. If no work is delegated, call %s "
+                            + "after your own work converges. Returning text alone never "
+                            + "completes a Team coordinator.")
+                    .formatted(
+                            issueChildCreate, taskSubmitResult, runNodeComplete, runNodeComplete);
         }
-        return " You are a Team leader follow-up with new worker inputs. Validate the supplied"
-                + " result, call issue.accept and wait for its result, then make a separate"
-                + " run.node.complete call only when every child Issue and worker node has"
-                + " converged. Never send those mutations in parallel. run.node.complete also"
-                + " completes this leader AgentTask; do not call task.complete afterwards."
-                + " Returning text alone never completes a Team coordinator.";
+        return (" You are a Team leader follow-up with new worker inputs. "
+                        + "Validate the supplied result, call %s and wait for its result, then "
+                        + "make a separate %s call only when every child Issue and worker node "
+                        + "has converged. Never send those mutations in parallel. "
+                        + "%s also completes this leader AgentTask; do not call %s afterwards. "
+                        + "Returning text alone never completes a Team coordinator.")
+                .formatted(issueAccept, runNodeComplete, runNodeComplete, taskComplete);
     }
 
     private static Set<String> availableActions(JsonNode envelope) {
