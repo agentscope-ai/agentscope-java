@@ -162,6 +162,14 @@ final class HarnessAgentBuilderSupport {
         if (b.localFilesystemSpec != null) {
             return b.localFilesystemSpec.toFilesystem(workspace, nsFactory);
         }
+        if (b.disableLocalWorkspace) {
+            // No default local filesystem: nothing to materialise under the working directory.
+            // Workspace-backed components (WorkspaceMessageBus, WorkspaceAsyncToolRegistry,
+            // workspace task repository, transcript-on-disk, skills staging…) are consequently
+            // skipped or require an explicit custom implementation — exactly the intent for
+            // SaaS/sandboxed builds that never want a .agentscope directory locally.
+            return null;
+        }
         // Default: route through LocalFilesystemSpec so the default project (= ${user.dir})
         // is overlaid below the agent workspace, matching the Claude-Code-style two-layer model.
         return new LocalFilesystemSpec().toFilesystem(workspace, nsFactory);
@@ -338,6 +346,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
+        final boolean capturedDisableLocalWorkspace = b.disableLocalWorkspace;
         final var capturedWebHttpClient = b.webHttpClient;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
@@ -394,6 +403,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableShellTool) sub.disableShellTool();
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+            if (capturedDisableLocalWorkspace) sub.disableLocalWorkspace();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
             if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
@@ -460,6 +470,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
+        final boolean capturedDisableLocalWorkspace = b.disableLocalWorkspace;
         final var capturedWebHttpClient = b.webHttpClient;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedPlanModeEnabled = b.planModeEnabled;
@@ -564,6 +575,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableShellTool) sub.disableShellTool();
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+            if (capturedDisableLocalWorkspace) sub.disableLocalWorkspace();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
             configurePlanMode(
@@ -833,6 +845,13 @@ final class HarnessAgentBuilderSupport {
             if (distributed != null) {
                 return distributed;
             }
+        }
+        if (b.disableLocalWorkspace) {
+            throw new IllegalStateException(
+                    "disableLocalWorkspace() prevents the workspace-backed default TaskRepository"
+                            + " (which would materialise agents/<agentId>/tasks under the working"
+                            + " directory). Pass an explicit .taskRepository(...), or configure a"
+                            + " DistributedStore that supplies one.");
         }
         Objects.requireNonNull(
                 wsManager,
