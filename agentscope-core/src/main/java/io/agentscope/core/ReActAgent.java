@@ -293,14 +293,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     // ==================== 2.0 Core Fields ====================
 
     /** Cache of state per {@code (userId, sessionId)} slot key. */
-    private final ConcurrentHashMap<String, AgentState> stateCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<SlotId, AgentState> stateCache = new ConcurrentHashMap<>();
 
     /**
      * Optimistic-concurrency version observed for each slot (parallel to {@link #stateCache}).
      * Updated on load and on successful CAS save. Absent entries mean {@link
      * AgentStateStore#UNVERSIONED}.
      */
-    private final ConcurrentHashMap<String, Long> slotVersions = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<SlotId, Long> slotVersions = new ConcurrentHashMap<>();
 
     /** Count of CAS conflicts observed during agent_state saves (metric / diagnostics). */
     private final AtomicLong stateConflictCount = new AtomicLong();
@@ -309,7 +309,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * Per-slot permission engine cache: runtime-added ASK rules accumulate within the owning
      * slot rather than leaking across users / sessions.
      */
-    private final ConcurrentHashMap<String, PermissionEngine> permissionEngineCache =
+    private final ConcurrentHashMap<SlotId, PermissionEngine> permissionEngineCache =
             new ConcurrentHashMap<>();
 
     private final ModelConfig modelConfig;
@@ -376,9 +376,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     // On CAS conflict the session was taken over elsewhere — log and skip
                     // overwrite.
                     agentState -> {
-                        String uid = agentState.getUserId();
+                        String uid = storeUserId(agentState.getUserId());
                         String sid = agentState.getSessionId();
-                        String slot = slotKey(uid, sid);
+                        SlotId slot = SlotId.of(uid, sid);
                         long expected =
                                 slotVersions.getOrDefault(slot, AgentStateStore.UNVERSIONED);
                         long newVersion =
@@ -402,22 +402,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Internal slot identifier — {@code (userId or "__anon__") + "/" + sessionId}.
-     * Not part of the public API.
+     * Identity of a per-session slot: {@code (userId or "__anon__", sessionId)}. Record equality
+     * is per-field, so two distinct {@code (userId, sessionId)} pairs can never collide on the
+     * same slot — the cached state, CAS versions and interrupt routing stay isolated (#3337,
+     * #2475), with no string encoding/decoding pair to keep in sync. Not part of the public API.
      */
-    private static String slotKey(String userId, String sessionId) {
-        Objects.requireNonNull(sessionId, "sessionId must not be null");
-        return (userId == null || userId.isBlank() ? "__anon__" : userId) + "/" + sessionId;
+    private record SlotId(String userId, String sessionId) {
+        static SlotId of(String userId, String sessionId) {
+            Objects.requireNonNull(sessionId, "sessionId must not be null");
+            String u = userId == null || userId.isBlank() ? "__anon__" : userId;
+            return new SlotId(u, sessionId);
+        }
     }
 
-    /** Reverse of {@link #slotKey}: the parsed {@code (userId, sessionId)} pair. */
-    private record SlotRef(String userId, String sessionId) {
-        static SlotRef parse(String slotKey) {
-            int slash = slotKey.lastIndexOf('/');
-            String u = slotKey.substring(0, slash);
-            String s = slotKey.substring(slash + 1);
-            return new SlotRef("__anon__".equals(u) ? null : u, s);
-        }
+    /**
+     * Collapses a blank caller userId to {@code null} at the store boundary. The store
+     * documents {@code null} as the anonymous namespace and {@link SlotId#of} already treats
+     * blank as anonymous in memory; persisting blank verbatim would split null- and
+     * blank-anonymous calls into two identities on a store that does not normalize itself.
+     */
+    private static String storeUserId(String userId) {
+        return (userId == null || userId.isBlank()) ? null : userId;
     }
 
     /**
@@ -436,6 +441,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             PermissionContextState permCtx,
             String agentId,
             List<String> initialActiveToolGroups) {
+        userId = storeUserId(userId);
         AgentState fresh = freshState(permCtx, agentId, userId, sessionId, initialActiveToolGroups);
         if (stateStore == null) {
             return new VersionedState<>(fresh, AgentStateStore.UNVERSIONED);
@@ -487,15 +493,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (stateStore == null) {
             return Mono.empty();
         }
-        SlotRef ref = SlotRef.parse(scope.slotKey);
         AgentState toSave = scope.state;
         return Mono.<Void>fromRunnable(
                         () -> {
+                            // The caller's original ids own the store key: userId == null is
+                            // the documented anonymous namespace (never the "__anon__" in-memory
+                            // sentinel), and a legacy-loaded state's embedded sessionId is a
+                            // generated value that must not orphan the persisted row.
                             long newVersion =
                                     persistAgentStateCas(
-                                            ref.userId,
-                                            ref.sessionId,
-                                            scope.slotKey,
+                                            scope.userId,
+                                            scope.sessionId,
+                                            scope.slotId,
                                             toSave,
                                             scope.loadedVersion,
                                             scope.loadedContextSize);
@@ -546,10 +555,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private long persistAgentStateCas(
             String userId,
             String sessionId,
-            String slot,
+            SlotId slot,
             AgentState toSave,
             long expectedVersion,
             int loadedContextSize) {
+        userId = storeUserId(userId);
         if (!stateStore.supportsVersioning() || expectedVersion == AgentStateStore.UNVERSIONED) {
             if (stateStore.supportsVersioning()) {
                 // Unconditional write through the versioning API: the store returns the
@@ -673,7 +683,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             sid = defaultSessionId;
         }
         String uid = ctx != null ? ctx.getUserId() : null;
-        String slot = slotKey(uid, sid);
+        SlotId slot = SlotId.of(uid, sid);
         final String finalUid = uid;
         final String finalSid = sid;
         AgentState loaded;
@@ -714,7 +724,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     permissionEngineCache.computeIfAbsent(
                             slot, k -> new PermissionEngine(loaded.getPermissionContext()));
         }
-        return new CallExecution(loaded, loadedEngine, slot, loadedVersion);
+        return new CallExecution(loaded, loadedEngine, finalUid, finalSid, slot, loadedVersion);
     }
 
     // ==================== Config assembly helpers ====================
@@ -744,7 +754,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             sid = defaultSessionId;
         }
         String uid = rc != null ? rc.getUserId() : null;
-        return slotKey(uid, sid);
+        return SlotId.of(uid, sid);
     }
 
     @Override
@@ -957,7 +967,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Deprecated
     @Override
     public void interrupt(InterruptSource source) {
-        interruptRunning(slotKey(null, defaultSessionId), source, null);
+        interruptRunning(SlotId.of(null, defaultSessionId), source, null);
     }
 
     /**
@@ -983,7 +993,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (sid == null || sid.isBlank()) {
             sid = defaultSessionId;
         }
-        interruptRunning(slotKey(uid, sid), InterruptSource.USER, msg);
+        interruptRunning(SlotId.of(uid, sid), InterruptSource.USER, msg);
     }
 
     /**
@@ -1001,7 +1011,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * associated user message.
      */
     public void interrupt(String userId, String sessionId, Msg msg) {
-        interruptRunning(slotKey(userId, sessionId), InterruptSource.USER, msg);
+        interruptRunning(SlotId.of(userId, sessionId), InterruptSource.USER, msg);
     }
 
     /**
@@ -1768,7 +1778,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         InterruptControl interruption = new InterruptControl();
         AgentState state;
         PermissionEngine permissionEngine;
-        String slotKey;
+        SlotId slotId;
+
+        /**
+         * The caller's original ids for store persistence (userId may be null). They, not the
+         * ids embedded in {@link #state}, own the store key: a state loaded from v1 legacy keys
+         * carries a generated sessionId, and persisting under it would orphan the row.
+         */
+        final String userId;
+
+        final String sessionId;
 
         /**
          * Store version observed when this call loaded {@link #state}. Used for CAS on save.
@@ -1848,18 +1867,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /** Native structured-output format set on the per-call scope for native-path calls. */
         ResponseFormat nativeResponseFormat;
 
-        CallExecution(AgentState state, PermissionEngine permissionEngine, String slotKey) {
-            this(state, permissionEngine, slotKey, AgentStateStore.UNVERSIONED);
-        }
-
         CallExecution(
                 AgentState state,
                 PermissionEngine permissionEngine,
-                String slotKey,
+                String userId,
+                String sessionId,
+                SlotId slotId,
                 long loadedVersion) {
             this.state = state;
             this.permissionEngine = permissionEngine;
-            this.slotKey = slotKey;
+            this.userId = userId;
+            this.sessionId = sessionId;
+            this.slotId = slotId;
             this.loadedVersion = loadedVersion;
             this.loadedContextSize = state != null ? state.getContext().size() : 0;
         }
@@ -4569,7 +4588,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * for the "get → mutate → save" pattern used by admin APIs and tests).
      */
     public AgentState getAgentState(String userId, String sessionId) {
-        String slot = slotKey(userId, sessionId);
+        SlotId slot = SlotId.of(userId, sessionId);
         return stateCache.computeIfAbsent(
                 slot,
                 k -> {
@@ -4628,7 +4647,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     public void clearStateCache(String userId, String sessionId) {
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
-        String slot = slotKey(userId, sid);
+        SlotId slot = SlotId.of(userId, sid);
         stateCache.remove(slot);
         permissionEngineCache.remove(slot);
         slotVersions.remove(slot);
@@ -4678,7 +4697,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     public void clearContext(String userId, String sessionId) {
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
-        String slot = slotKey(userId, sid);
+        // Normalize once so the exists probe and the eventual save cannot drift apart on a
+        // store that does not normalize blank itself.
+        userId = storeUserId(userId);
+        SlotId slot = SlotId.of(userId, sid);
         AgentState state;
         if (stateStore != null) {
             if (stateStore.exists(userId, sid)) {
@@ -4762,7 +4784,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             PermissionContextState permissionContext) {
         state.setPermissionContext(permissionContext);
         permissionEngineCache.put(
-                slotKey(userId, sessionId), new PermissionEngine(permissionContext));
+                SlotId.of(userId, sessionId), new PermissionEngine(permissionContext));
         saveAgentState(userId, sessionId);
     }
 
@@ -4816,7 +4838,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (stateStore == null) {
             return;
         }
-        String slot = slotKey(userId, sessionId);
+        SlotId slot = SlotId.of(userId, sessionId);
         AgentState s = stateCache.get(slot);
         if (s != null) {
             long expected = slotVersions.getOrDefault(slot, AgentStateStore.UNVERSIONED);
@@ -4860,7 +4882,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /** @deprecated Use {@code getAgentState(userId, sessionId).getPermissionContext()} instead. */
     @Deprecated
     public PermissionEngine getPermissionEngine() {
-        String slot = slotKey(null, defaultSessionId);
+        SlotId slot = SlotId.of(null, defaultSessionId);
         AgentState s = getAgentState(null, defaultSessionId);
         return permissionEngineCache.computeIfAbsent(
                 slot, k -> new PermissionEngine(s.getPermissionContext()));
