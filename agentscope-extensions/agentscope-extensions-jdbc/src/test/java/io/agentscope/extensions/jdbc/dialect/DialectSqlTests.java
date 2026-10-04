@@ -372,7 +372,7 @@ class DialectSqlTests {
     }
 
     @Test
-    @DisplayName("builder rejects invalid store table name")
+    @DisplayName("builder rejects invalid table names, skill overrides included")
     void builderRejectsInvalidTableName() {
         var ds = new org.h2.jdbcx.JdbcDataSource();
         ds.setUrl("jdbc:h2:mem:validation_test2;DB_CLOSE_DELAY=-1");
@@ -380,6 +380,12 @@ class DialectSqlTests {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> AbstractJdbcDialect.from(ds).storeTableName("t; DROP TABLE users"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AbstractJdbcDialect.from(ds).skillTableName("t; DROP TABLE users"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AbstractJdbcDialect.from(ds).skillResourcesTableName("bad name"));
     }
 
     @Test

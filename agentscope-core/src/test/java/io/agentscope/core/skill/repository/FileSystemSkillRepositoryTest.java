@@ -231,6 +231,24 @@ class FileSystemSkillRepositoryTest {
         assertFalse(repository.delete("test-skill"));
     }
 
+    @Test
+    @DisplayName("Should discover and load a UTF-8 SKILL.md with a BOM")
+    void testLoadSkillWithUtf8Bom() throws IOException {
+        Path skillDir = Files.createDirectories(skillsBaseDir.resolve("bom-directory"));
+        String content = "# Instructions\r\nPreserve this \uFEFF character.";
+        String markdown =
+                "\uFEFF---\r\nname: bom-skill\r\ndescription: A BOM skill\r\n---\r\n" + content;
+        Files.writeString(skillDir.resolve("SKILL.md"), markdown, StandardCharsets.UTF_8);
+
+        assertEquals(3, repository.getAllSkills().size());
+        assertTrue(repository.getAllSkillNames().contains("bom-skill"));
+        AgentSkill skill = repository.getSkill("bom-skill");
+        assertNotNull(skill);
+        assertEquals("bom-skill", skill.getName());
+        assertEquals("A BOM skill", skill.getDescription());
+        assertEquals(content, skill.getSkillContent());
+    }
+
     // ==================== Save Tests ====================
 
     @Test
