@@ -54,8 +54,6 @@ Spring Boot applications can use the OpenAI Official starter:
 </dependency>
 ```
 
-Activate it with:
-
 ```yaml
 agentscope:
   model:
@@ -64,10 +62,6 @@ agentscope:
     api-key: ${OPENAI_API_KEY}
     model-name: gpt-4o
 ```
-
-`agentscope.openai-official.model-name` defaults to `gpt-4.1-mini`.
-
-Full builder options and registry context details are covered in [Model](/v2/en/docs/building-blocks/model).
 
 ## Reasoning
 
