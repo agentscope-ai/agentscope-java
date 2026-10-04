@@ -731,4 +731,65 @@ class OpenAIResponsesChatModelTest {
             verify(svc, times(1)).create(any(ResponseCreateParams.class));
         }
     }
+
+    // ── No-timeout sentinel ─────────────────────────────────────────
+
+    @Nested
+    class NoTimeoutSentinel {
+
+        @Test
+        void noTimeoutDoesNotCrashBuilderAndPreservesNoTimeoutInConfig() {
+            ExecutionConfig noTimeoutExec = ExecutionConfig.builder().noTimeout().build();
+            GenerateOptions options =
+                    GenerateOptions.builder()
+                            .apiKey("test-key")
+                            .modelName(MODEL_NAME)
+                            .executionConfig(noTimeoutExec)
+                            .build();
+
+            OpenAIResponsesChatModel model =
+                    OpenAIResponsesChatModel.builder()
+                            .apiKey("test-key")
+                            .modelName(MODEL_NAME)
+                            .generateOptions(options)
+                            .build();
+
+            assertNotNull(model, "Model must build successfully with noTimeout()");
+            GenerateOptions configured = model.getConfiguredOptions();
+            assertNotNull(configured);
+            ExecutionConfig execConfig = configured.getExecutionConfig();
+            assertNotNull(execConfig);
+            assertTrue(
+                    execConfig.isTimeoutDisabled(),
+                    "NO_TIMEOUT sentinel must survive the Builder and not crash client"
+                            + " construction");
+        }
+
+        @Test
+        void noTimeoutViaBuilderTimeoutNoTimeoutPassesNullToSdkFactory() {
+            ExecutionConfig noTimeoutExec =
+                    ExecutionConfig.builder().timeout(ExecutionConfig.NO_TIMEOUT).build();
+            GenerateOptions options =
+                    GenerateOptions.builder()
+                            .apiKey("test-key")
+                            .modelName(MODEL_NAME)
+                            .executionConfig(noTimeoutExec)
+                            .build();
+
+            OpenAIResponsesChatModel model =
+                    OpenAIResponsesChatModel.builder()
+                            .apiKey("test-key")
+                            .modelName(MODEL_NAME)
+                            .generateOptions(options)
+                            .build();
+
+            assertNotNull(
+                    model,
+                    "Model must build when NO_TIMEOUT is set via timeout(NO_TIMEOUT) — the guard"
+                            + " must prevent the sentinel from reaching the SDK factory");
+            assertTrue(
+                    model.getConfiguredOptions().getExecutionConfig().isTimeoutDisabled(),
+                    "isTimeoutDisabled() must return true after building with NO_TIMEOUT");
+        }
+    }
 }

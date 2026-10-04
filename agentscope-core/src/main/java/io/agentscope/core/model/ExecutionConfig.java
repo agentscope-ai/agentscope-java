@@ -351,7 +351,7 @@ public class ExecutionConfig {
                     && (timeout.isNegative() || timeout.isZero())
                     && !NO_TIMEOUT.equals(timeout)) {
                 throw new IllegalArgumentException(
-                        "timeout must be > 0; use NO_TIMEOUT (or noTimeout()) to disable it");
+                        "timeout must be positive; use NO_TIMEOUT or noTimeout() to disable it");
             }
             this.timeout = timeout;
             return this;
