@@ -171,4 +171,75 @@ class FuzzyTextMatcherTest {
         assertTrue(patched.endsWith("SUFFIX_KEEP"), "suffix bytes must survive verbatim");
         assertTrue(patched.contains("REPLACED"));
     }
+
+    // ---------------------------------------------------------------------
+    //  CRLF coverage. A skill file authored on Windows ends every line with CRLF, while the
+    //  LLM almost always hands back LF. Before the fix, '\r' was carried through both
+    //  normalisers as ordinary content, so a CRLF 'existing' matched an LF needle at NO rung
+    //  of the ladder — including the most lenient one, whose whole purpose is to absorb
+    //  exactly this kind of whitespace difference.
+    // ---------------------------------------------------------------------
+
+    @Test
+    @DisplayName("CRLF file matches an LF needle at the trailing-whitespace level")
+    void crlfExistingMatchesLfNeedle() {
+        String existing = "alpha   \r\nbeta\r\ngamma\r\n";
+        String needle = "alpha\nbeta\ngamma";
+        SearchResult r = FuzzyTextMatcher.search(existing, needle);
+        assertEquals(Level.TRAILING_WS_STRIPPED, r.level());
+        assertEquals(1, r.matches().size());
+    }
+
+    @Test
+    @DisplayName("CRLF match range maps back without eating the line terminator")
+    void crlfMatchRangePreservesTerminators() {
+        String existing = "PREFIX_KEEP\r\nalpha   \r\nbeta\r\nSUFFIX_KEEP\r\n";
+        String needle = "alpha\nbeta";
+        SearchResult r = FuzzyTextMatcher.search(existing, needle);
+        assertEquals(Level.TRAILING_WS_STRIPPED, r.level());
+        assertEquals(1, r.matches().size());
+        MatchRange m = r.matches().get(0);
+        // The range covers exactly the needle's bytes in the original — CRLF included — and
+        // stops before the '\r' that terminates the last matched line. Mapping the emitted
+        // newline back to the '\n' instead would swallow that '\r' and silently rewrite the
+        // file's line ending at the patch boundary.
+        assertEquals("alpha   \r\nbeta", existing.substring(m.start(), m.end()));
+        String patched = existing.substring(0, m.start()) + "ALPHA" + existing.substring(m.end());
+        assertEquals("PREFIX_KEEP\r\nALPHA\r\nSUFFIX_KEEP\r\n", patched);
+    }
+
+    @Test
+    @DisplayName("CRLF file still reaches the collapsed level when indentation drifts")
+    void crlfCollapseLevelHandlesIndentDrift() {
+        String existing = "if cond:\r\n    return 1\r\n    return 2\r\n";
+        String needle = "if cond:\n\treturn 1\n\treturn 2";
+        SearchResult r = FuzzyTextMatcher.search(existing, needle);
+        assertEquals(Level.WHITESPACE_COLLAPSED, r.level());
+        assertEquals(1, r.matches().size());
+    }
+
+    @Test
+    @DisplayName("A CRLF document behaves exactly like its LF twin")
+    void crlfBehavesLikeLfTwin() {
+        String lf = "header\n\nalpha   \n   beta\nfooter\n";
+        String crlf = lf.replace("\n", "\r\n");
+        for (String needle : new String[] {"alpha\nbeta", "header\nalpha\nbeta\nfooter"}) {
+            SearchResult onLf = FuzzyTextMatcher.search(lf, needle);
+            SearchResult onCrlf = FuzzyTextMatcher.search(crlf, needle);
+            assertEquals(onLf.isEmpty(), onCrlf.isEmpty(), "emptiness differs for: " + needle);
+            assertEquals(onLf.level(), onCrlf.level(), "level differs for: " + needle);
+            assertEquals(
+                    onLf.matches().size(),
+                    onCrlf.matches().size(),
+                    "match count differs for: " + needle);
+            for (int i = 0; i < onLf.matches().size(); i++) {
+                MatchRange lfRange = onLf.matches().get(i);
+                MatchRange crlfRange = onCrlf.matches().get(i);
+                assertEquals(
+                        lf.substring(lfRange.start(), lfRange.end()),
+                        crlf.substring(crlfRange.start(), crlfRange.end()).replace("\r", ""),
+                        "mapped range differs for: " + needle);
+            }
+        }
+    }
 }
