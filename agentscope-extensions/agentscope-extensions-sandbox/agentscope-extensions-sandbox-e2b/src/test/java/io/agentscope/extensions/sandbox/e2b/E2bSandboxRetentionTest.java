@@ -27,11 +27,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
+import io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
@@ -50,6 +53,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -115,6 +119,65 @@ class E2bSandboxRetentionTest {
         assertNotNull(request);
         assertEquals(method, request.getMethod());
         assertEquals(path, request.getPath());
+    }
+
+    @Test
+    void callerCanPersistExplicitStateResumeAndDeleteWithoutIsolationKey() throws Exception {
+        WorkspaceClient localClient = new WorkspaceClient();
+        SandboxSnapshotSpec snapshots = new LocalSnapshotSpec(temp);
+        SandboxState initial = localClient.create(new WorkspaceSpec(), snapshots, null).getState();
+        SessionSandboxStateStore store = mock(SessionSandboxStateStore.class);
+        SandboxLifecycleMiddleware lifecycle =
+                new SandboxLifecycleMiddleware(
+                        new SandboxManager(localClient, store, "agent"),
+                        new SandboxBackedFilesystem());
+        RuntimeContext firstCall = RuntimeContext.empty();
+        firstCall.put(
+                SandboxContext.class,
+                SandboxContext.builder()
+                        .externalSandboxState(initial)
+                        .releasePolicy(SandboxReleasePolicy.RETAIN)
+                        .build());
+        sandboxResponse("caller-owned-record");
+        lifecycle.acquireForCall(firstCall);
+        Sandbox first = firstCall.get(SandboxAcquireResult.class).getSandbox();
+        localClient.workspace = "retained files";
+        lifecycle.releaseForCall(firstCall);
+        assertFalse(
+                first.isRunning(), "the local call ended even though the remote instance remains");
+        Path record = temp.resolve("sandbox-state.json");
+        Files.writeString(record, localClient.serializeState(first.getState()));
+
+        SandboxState saved = localClient.deserializeState(Files.readString(record), snapshots);
+        assertNotSame(initial, saved);
+        RuntimeContext secondCall = RuntimeContext.empty();
+        secondCall.put(
+                SandboxContext.class,
+                SandboxContext.builder()
+                        .externalSandboxState(saved)
+                        .releasePolicy(SandboxReleasePolicy.RETAIN)
+                        .build());
+        sandboxResponse("caller-owned-record");
+        lifecycle.acquireForCall(secondCall);
+        assertEquals("retained files", localClient.workspace);
+        assertEquals(0, localClient.restores);
+        lifecycle.releaseForCall(secondCall);
+        Files.writeString(record, localClient.serializeState(saved));
+
+        // Cleanup can reconstruct a handle from durable state without starting a new call.
+        Sandbox cleanup =
+                localClient.resume(
+                        localClient.deserializeState(Files.readString(record), snapshots));
+        respond(200);
+        localClient.delete(cleanup);
+        Files.delete(record);
+        assertNull(((E2bSandboxState) cleanup.getState()).getSandboxId());
+        assertFalse(Files.exists(record));
+        request("POST", "/sandboxes");
+        request("POST", "/sandboxes/caller-owned-record/connect");
+        request("DELETE", "/sandboxes/caller-owned-record");
+        assertEquals(3, server.getRequestCount());
+        verifyNoInteractions(store);
     }
 
     @Test

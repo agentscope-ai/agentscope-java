@@ -96,6 +96,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
      * Destroys an owned E2B sandbox without creating a final snapshot. Safe to retry after expiry;
      * failures are propagated and keep the sandbox id available for retry. Snapshot pruning obeys
      * snapshotRetention; this does not erase retained backups or the harness state-store entry.
+     * Non-owned instances are left unchanged.
      */
     @Override
     public void delete(Sandbox sandbox) {

@@ -41,11 +41,16 @@ import io.agentscope.harness.agent.sandbox.SandboxReleasePolicy;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import io.agentscope.harness.agent.sandbox.layout.FileEntry;
+import io.agentscope.harness.agent.sandbox.layout.LocalFileEntry;
+import io.agentscope.harness.agent.sandbox.layout.WorkspaceProjectionEntry;
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -169,6 +174,83 @@ class E2bSandboxStartFailureTest {
         verify(lease).close();
         verify(store, never()).save(any(), any());
         assertNull(context.get(SandboxAcquireResult.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"restore", "entries", "projection"})
+    void retryAfterWorkspaceMutationFailureRestoresInsteadOfTrustingPartialTree(String stage)
+            throws Exception {
+        state.getWorkspaceSpec().setRoot(temp.resolve("workspace").toString());
+        state.setWorkspaceProjectionHash("previous-projection");
+        state.setSnapshot(new LocalSnapshotSpec(temp).build("saved-archive"));
+        state.getSnapshot().persist(new ByteArrayInputStream(new byte[] {1}));
+        if (stage.equals("entries")) {
+            FileEntry first = new FileEntry("partially initialized");
+            first.setEphemeral(true);
+            LocalFileEntry second = new LocalFileEntry();
+            second.setSourcePath(temp.resolve("missing-source").toString());
+            second.setEphemeral(true);
+            state.getWorkspaceSpec().setEntries(new LinkedHashMap<>());
+            state.getWorkspaceSpec().getEntries().put("first.txt", first);
+            state.getWorkspaceSpec().getEntries().put("second.txt", second);
+        } else {
+            failRestore = true;
+            if (stage.equals("restore")) {
+                missingWorkspace = true;
+            } else {
+                Path source = Files.createDirectory(temp.resolve("projection"));
+                Files.writeString(source.resolve("AGENTS.md"), "project instructions");
+                WorkspaceProjectionEntry projection = new WorkspaceProjectionEntry();
+                projection.setSourceRoot(source.toString());
+                projection.setIncludeRoots(List.of("AGENTS.md"));
+                state.getWorkspaceSpec().getEntries().put("projection", projection);
+            }
+        }
+        context.put(
+                SandboxContext.class,
+                SandboxContext.builder()
+                        .externalSandboxState(state)
+                        .releasePolicy(SandboxReleasePolicy.RETAIN)
+                        .build());
+        connected("retained-live");
+        assertThrows(RuntimeException.class, () -> middleware.acquireForCall(context));
+        if (stage.equals("entries")) {
+            assertEquals(
+                    "partially initialized", Files.readString(temp.resolve("workspace/first.txt")));
+        }
+        assertFalse(state.isWorkspaceRootReady(), "a partially initialized tree must be restored");
+        assertNull(state.getWorkspaceProjectionHash(), "retry must reapply the projection");
+        assertEquals("retained-live", state.getSandboxId());
+        assertEquals(1, server.getRequestCount(), "do not destroy the pre-existing instance");
+        verify(store, never()).save(any(), any());
+        int restoresBeforeRetry = restores;
+        failRestore = false;
+        missingWorkspace = false;
+        Files.writeString(temp.resolve("missing-source"), "complete");
+        connected("retained-live");
+        middleware.acquireForCall(context);
+        assertEquals(restoresBeforeRetry + (stage.equals("projection") ? 2 : 1), restores);
+        assertTrue(state.isWorkspaceRootReady());
+        assertTrue(context.get(SandboxAcquireResult.class).getSandbox().isRunning());
+        assertEquals(2, server.getRequestCount());
+    }
+
+    @Test
+    void failedProbeOfNewAllocationDoesNotRestoreStaleReadyMetadata() throws Exception {
+        state.setSandboxId(null);
+        state.setWorkspaceProjectionHash("old-instance-projection");
+        failProbe = true;
+        connected("new-allocation");
+        Sandbox sandbox = sandbox();
+        assertThrows(Exception.class, sandbox::start);
+        assertFalse(state.isWorkspaceRootReady());
+        assertNull(state.getWorkspaceProjectionHash());
+        server.enqueue(new MockResponse().setResponseCode(200));
+        sandbox.cleanupAfterStartFailure();
+        assertNull(state.getSandboxId());
+        request("POST", "/sandboxes");
+        request("DELETE", "/sandboxes/new-allocation");
+        assertEquals(2, server.getRequestCount());
     }
 
     @Test

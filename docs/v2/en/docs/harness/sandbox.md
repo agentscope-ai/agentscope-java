@@ -59,6 +59,13 @@ Distinct `SESSION` keys use separate slots, but concurrent calls with the same k
 
 E2B supports an opt-in `releasePolicy(SandboxReleasePolicy.RETAIN)` to keep the live sandbox between calls. The default remains `DELETE`. See [E2B retention and cleanup](/v2/en/docs/harness/filesystem#retaining-an-e2b-sandbox-between-calls) for configuration, concurrency, expiry, and explicit deletion.
 
+Retained E2B instances need durable state records and a finite provider timeout. If a worker dies
+before saving an instance ID, the state record is evicted, or the isolation key changes, the SDK
+cannot discover that instance automatically; it can remain running and billed until provider
+expiry. Delete abandoned instances before removing their state records. With explicit state and
+no isolation key, the caller must persist the updated state and coordinate access itself.
+
+
 ## Cross-call recovery = snapshots
 
 The sandbox snapshots its workspace at each `call()` end and restores at the next start:

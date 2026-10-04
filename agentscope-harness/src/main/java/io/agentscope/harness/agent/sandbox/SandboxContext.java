@@ -122,6 +122,13 @@ public final class SandboxContext {
             return this;
         }
 
+        /**
+         * Supplies state to resume directly, bypassing the harness execution guard. The caller
+         * must serialize access. With RETAIN and no resolvable isolation key, the harness does not
+         * save state: the caller must durably persist the updated sandbox state after each call,
+         * including its current instance id, and retain it for later resume or explicit deletion.
+         * Losing that record can leave a billed instance running until provider expiry.
+         */
         public Builder externalSandboxState(SandboxState externalSandboxState) {
             this.externalSandboxState = externalSandboxState;
             return this;

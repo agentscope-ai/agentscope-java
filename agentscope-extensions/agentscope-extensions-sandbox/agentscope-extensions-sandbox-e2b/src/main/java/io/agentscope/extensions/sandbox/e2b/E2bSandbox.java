@@ -61,6 +61,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
 
     // Only this start's allocation may be destroyed if initialization fails.
     private String sandboxCreatedDuringStart;
+    private boolean workspaceProbeFailed;
 
     public E2bSandbox(E2bSandboxState state, E2bSandboxClientOptions opt) {
         super(state);
@@ -72,6 +73,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
     @Override
     public void start() throws Exception {
         sandboxCreatedDuringStart = null;
+        workspaceProbeFailed = false;
         if (WorkspaceMountSupport.hasBindMounts(e2bState.getWorkspaceSpec())) {
             log.warn(
                     "[sandbox-e2b] WorkspaceSpec contains bind_mount entries; "
@@ -79,16 +81,21 @@ public class E2bSandbox extends AbstractBaseSandbox {
         }
         boolean workspaceReadyBeforeStart = e2bState.isWorkspaceRootReady();
         String projectionBeforeStart = e2bState.getWorkspaceProjectionHash();
+        // Connection failures have not touched workspace metadata. Keep them outside the
+        // workspace-start recovery path; a confirmed expiry may already have invalidated it.
+        ensureSandbox();
         try {
-            ensureSandbox();
             super.start();
         } catch (Exception e) {
-            if (sandboxCreatedDuringStart == null) {
-                // AbstractBaseSandbox marks failed starts unready. Preserve the previous metadata
-                // when retrying the same state object, so a transient error does not force a stale
-                // snapshot restore over an existing workspace.
+            if (workspaceProbeFailed && sandboxCreatedDuringStart == null) {
+                // Only a failed read-only probe proves initialization never began. Once the probe
+                // succeeds, setup, restore, entries or projection may have partially changed files.
                 e2bState.setWorkspaceRootReady(workspaceReadyBeforeStart);
                 e2bState.setWorkspaceProjectionHash(projectionBeforeStart);
+            } else {
+                // AbstractBaseSandbox has already marked the workspace unready. Also invalidate
+                // its projection so retry cannot skip reapplying it over a restored snapshot.
+                e2bState.setWorkspaceProjectionHash(null);
             }
             throw e;
         }
@@ -125,7 +132,11 @@ public class E2bSandbox extends AbstractBaseSandbox {
         }
     }
 
-    /** Returns whether this handle has started and its remote instance has not been deleted. */
+    /**
+     * Returns whether this local handle is between successful start and stop, and has not been
+     * explicitly deleted. This is not a remote liveness probe: a retained instance can still exist
+     * after stop has made this method return false.
+     */
     @Override
     public boolean isRunning() {
         // Explicit deletion bypasses stop() so it never uploads a final workspace snapshot.
@@ -268,7 +279,11 @@ public class E2bSandbox extends AbstractBaseSandbox {
     @Override
     protected boolean probeWorkspaceRootForPreservedResume() {
         try {
-            ExecResult result = doExec(null, "test -d " + shellSingleQuote(getWorkspaceRoot()), 10);
+            ExecResult result =
+                    doExec(
+                            null,
+                            "test -d " + shellSingleQuote(getWorkspaceRoot()),
+                            PROBE_TIMEOUT_SECONDS);
             if (result.exitCode() == 0) {
                 return true;
             }
@@ -278,6 +293,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
             throw new SandboxException.ExecException(
                     result.exitCode(), result.stdout(), result.stderr());
         } catch (Exception e) {
+            workspaceProbeFailed = true;
             // A failed probe does not prove files are missing. Restoring here could overwrite them.
             throw new SandboxException.SandboxRuntimeException(
                     SandboxErrorCode.WORKSPACE_START_ERROR,

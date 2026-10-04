@@ -23,6 +23,11 @@ public enum SandboxReleasePolicy {
      * Persist the workspace and retain the sandbox for reuse until provider expiry or explicit
      * deletion. Requires backend support and a single writer per isolation key. Retaining a live
      * sandbox does not replace configuring a snapshot store for recovery after expiry.
+     *
+     * <p>Retain durable state records and configure a finite provider timeout. A crash before state
+     * is saved, state eviction or an isolation-key change can orphan a running, billed instance
+     * until provider expiry. There is no automatic instance discovery or reconciliation. Explicit
+     * state without a resolvable isolation key must be persisted and cleaned up by its caller.
      */
     RETAIN
 }
