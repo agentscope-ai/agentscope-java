@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -941,5 +942,60 @@ class ToolValidatorTest {
                             ToolValidator.validateToolResultMatch(
                                     assistantMsg, List.of(userMsg1, userMsg2)));
         }
+    }
+
+    @Test
+    @DisplayName("resolveArgsForValidation uses the input map when content is absent")
+    void resolveArgsUsesInputMapWhenContentAbsent() {
+        ToolUseBlock inputOnly =
+                ToolUseBlock.builder()
+                        .id("t")
+                        .name("ask_scope")
+                        .input(Map.of("scope", "prod"))
+                        .build();
+        String resolved = ToolValidator.resolveArgsForValidation(inputOnly);
+        assertNotNull(resolved);
+        assertTrue(resolved.contains("prod"), resolved);
+
+        ToolUseBlock withContent =
+                ToolUseBlock.builder()
+                        .id("t")
+                        .name("ask_scope")
+                        .input(Map.of("scope", "prod"))
+                        .content("{\"scope\":\"raw\"}")
+                        .build();
+        String raw = ToolValidator.resolveArgsForValidation(withContent);
+        assertNotNull(raw);
+        assertTrue(raw.contains("raw"), raw);
+        assertTrue(!raw.contains("prod"), raw);
+
+        ToolUseBlock placeholder =
+                ToolUseBlock.builder()
+                        .id("t")
+                        .name("ask_scope")
+                        .input(Map.of("scope", "prod"))
+                        .content("{}")
+                        .build();
+        String fromInput = ToolValidator.resolveArgsForValidation(placeholder);
+        assertNotNull(fromInput);
+        assertTrue(fromInput.contains("prod"), fromInput);
+    }
+
+    @Test
+    @DisplayName("resolveArgsForValidation normalises missing arguments to an empty object")
+    void resolveArgsNormalizesMissingArgumentsToEmptyObject() {
+        assertNull(ToolValidator.resolveArgsForValidation(null));
+
+        ToolUseBlock none = ToolUseBlock.builder().id("t").name("ask_scope").build();
+        assertEquals("{}", ToolValidator.resolveArgsForValidation(none));
+
+        ToolUseBlock blank =
+                ToolUseBlock.builder()
+                        .id("t")
+                        .name("ask_scope")
+                        .content("  ")
+                        .input(Map.of())
+                        .build();
+        assertEquals("{}", ToolValidator.resolveArgsForValidation(blank));
     }
 }

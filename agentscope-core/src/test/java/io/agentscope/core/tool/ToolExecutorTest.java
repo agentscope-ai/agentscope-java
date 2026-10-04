@@ -302,6 +302,106 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should execute input-map arguments when content is blank")
+    void shouldExecuteInputMapWhenContentIsBlank() {
+        AtomicInteger calls = new AtomicInteger();
+        toolkit.registerTool(requiredScopeTool(calls));
+
+        ToolUseBlock inputOnly =
+                ToolUseBlock.builder()
+                        .id("call-input")
+                        .name("scope_tool")
+                        .input(Map.of("scope", "prod"))
+                        .content("")
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(inputOnly), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get(), "input-map arguments must reach the tool");
+        assertEquals("ran:prod", extractFirstText(responses.get(0)));
+    }
+
+    @Test
+    @DisplayName("Should reject malformed content even when the input map is populated")
+    void shouldRejectMalformedContentEvenWhenInputMapIsPopulated() {
+        AtomicInteger calls = new AtomicInteger();
+        toolkit.registerTool(requiredScopeTool(calls));
+
+        ToolUseBlock malformed =
+                ToolUseBlock.builder()
+                        .id("call-bad")
+                        .name("scope_tool")
+                        .input(Map.of("scope", "prod"))
+                        .content("{bad")
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(malformed), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        assertEquals(1, responses.size());
+        assertEquals(0, calls.get(), "malformed content must not invoke the tool");
+        String errorText = extractFirstText(responses.get(0));
+        assertTrue(
+                errorText.startsWith("Error: Parameter validation failed for tool 'scope_tool'"),
+                errorText);
+    }
+
+    @Test
+    @DisplayName("Should schema-check a call with no arguments as an empty object")
+    void shouldValidateMissingArgumentsAsEmptyObject() {
+        AtomicInteger calls = new AtomicInteger();
+        toolkit.registerTool(requiredScopeTool(calls));
+
+        ToolUseBlock none = ToolUseBlock.builder().id("call-none").name("scope_tool").build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(none), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        assertEquals(1, responses.size());
+        assertEquals(0, calls.get());
+        String errorText = extractFirstText(responses.get(0));
+        assertTrue(errorText.startsWith("Error: Parameter validation failed"), errorText);
+        assertTrue(!errorText.contains("Schema validation error"), errorText);
+    }
+
+    private static AgentTool requiredScopeTool(AtomicInteger calls) {
+        return new AgentTool() {
+            @Override
+            public String getName() {
+                return "scope_tool";
+            }
+
+            @Override
+            public String getDescription() {
+                return "requires scope";
+            }
+
+            @Override
+            public Map<String, Object> getParameters() {
+                return Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of("scope", Map.of("type", "string")),
+                        "required",
+                        List.of("scope"));
+            }
+
+            @Override
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                calls.incrementAndGet();
+                Object scope = param.getInput() == null ? "" : param.getInput().get("scope");
+                return Mono.just(ToolResultBlock.text("ran:" + scope));
+            }
+        };
+    }
+
+    @Test
     @DisplayName("Should NOT specially handle InterruptedException in error path")
     void testToolErrorWithoutInterruptSpecialCase() {
         // Create a tool that throws RuntimeException with InterruptedException cause
