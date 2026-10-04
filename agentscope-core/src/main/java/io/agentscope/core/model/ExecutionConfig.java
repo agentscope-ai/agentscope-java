@@ -339,16 +339,19 @@ public class ExecutionConfig {
         /**
          * Sets the timeout duration for a single execution.
          *
-         * @param timeout the timeout duration (must be &gt;= 0, or {@link #NO_TIMEOUT}),
-         *        or null to inherit from fallback
+         * @param timeout the timeout duration (must be &gt; 0, or {@link #NO_TIMEOUT}),
+         *        or null to inherit from fallback; {@code Duration.ZERO} is not a synonym
+         *        for {@link #noTimeout()} and will cause immediate expiration
          * @return this builder instance
          * @throws IllegalArgumentException if timeout is a negative duration other than
-         *        {@link #NO_TIMEOUT}
+         *        {@link #NO_TIMEOUT}, or if timeout is {@code Duration.ZERO}
          */
         public Builder timeout(Duration timeout) {
-            if (timeout != null && timeout.isNegative() && !NO_TIMEOUT.equals(timeout)) {
+            if (timeout != null
+                    && (timeout.isNegative() || timeout.isZero())
+                    && !NO_TIMEOUT.equals(timeout)) {
                 throw new IllegalArgumentException(
-                        "timeout must be >= 0; use NO_TIMEOUT (or noTimeout()) to disable it");
+                        "timeout must be > 0; use NO_TIMEOUT (or noTimeout()) to disable it");
             }
             this.timeout = timeout;
             return this;

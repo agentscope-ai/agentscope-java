@@ -542,7 +542,7 @@ class ToolExecutor {
 
     private Mono<ToolResultBlock> applyTimeout(
             Mono<ToolResultBlock> execution, ExecutionConfig config, ToolUseBlock toolCall) {
-        // null = inherit from fallback, negative = explicitly disabled via NO_TIMEOUT
+        // null = inherit from fallback, NO_TIMEOUT sentinel = explicitly disabled
         if (config == null || config.getTimeout() == null || config.isTimeoutDisabled()) {
             return execution;
         }

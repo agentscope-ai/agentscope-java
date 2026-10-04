@@ -356,6 +356,8 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
             String resolvedBaseUrl =
                     ModelProviderSupport.firstNonBlank(
                             effectiveOptions.getBaseUrl(), System.getenv("OPENAI_BASE_URL"));
+            // When timeout is disabled, pass null so the SDK uses its own default
+            // (not truly unbounded, but avoids the NO_TIMEOUT sentinel reaching the SDK)
             Duration clientTimeout = null;
             if (effectiveOptions.getExecutionConfig() != null
                     && !effectiveOptions.getExecutionConfig().isTimeoutDisabled()) {

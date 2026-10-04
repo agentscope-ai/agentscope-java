@@ -225,4 +225,21 @@ class EmbeddingUtilsTest {
         // Must complete successfully despite the delay — NO_TIMEOUT sentinel skips the guard
         StepVerifier.create(result).expectNext(testEmbedding).verifyComplete();
     }
+
+    @Test
+    @DisplayName(
+            "Should fail with timeout when 300ms delay exceeds 100ms limit (without NO_TIMEOUT)")
+    void testShortTimeoutExpiresSlowMono() {
+        ExecutionConfig shortTimeout =
+                ExecutionConfig.builder().timeout(Duration.ofMillis(100)).maxAttempts(1).build();
+
+        double[] testEmbedding = new double[] {0.1, 0.2, 0.3};
+        Mono<double[]> slowMono = Mono.just(testEmbedding).delayElement(Duration.ofMillis(300));
+
+        Mono<double[]> result =
+                EmbeddingUtils.applyTimeoutAndRetry(
+                        slowMono, shortTimeout, "test-model", "test-provider", log);
+
+        StepVerifier.create(result).expectError(EmbeddingException.class).verify();
+    }
 }
