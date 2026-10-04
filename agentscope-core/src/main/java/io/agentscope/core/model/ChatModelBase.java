@@ -34,6 +34,8 @@ public abstract class ChatModelBase implements Model {
 
     private Boolean nativeStructuredOutputWithTools;
 
+    private Boolean supportsToolChoiceSpecific;
+
     @Override
     public int getContextWindowSize() {
         return contextWindowSize;
@@ -61,6 +63,15 @@ public abstract class ChatModelBase implements Model {
 
     protected void setNativeStructuredOutputWithTools(boolean nativeStructuredOutputWithTools) {
         this.nativeStructuredOutputWithTools = nativeStructuredOutputWithTools;
+    }
+
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return supportsToolChoiceSpecific == null || supportsToolChoiceSpecific;
+    }
+
+    protected void setSupportsToolChoiceSpecific(boolean supportsToolChoiceSpecific) {
+        this.supportsToolChoiceSpecific = supportsToolChoiceSpecific;
     }
 
     /**

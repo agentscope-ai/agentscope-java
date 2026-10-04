@@ -35,6 +35,7 @@ public final class OpenAIModelProviderSupport {
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT = "nativeStructuredOutput";
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS =
             "nativeStructuredOutputWithTools";
+    private static final String OPTION_SUPPORTS_TOOL_CHOICE_SPECIFIC = "supportsToolChoiceSpecific";
 
     private OpenAIModelProviderSupport() {}
 
@@ -76,6 +77,11 @@ public final class OpenAIModelProviderSupport {
                 booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS);
         if (nativeStructuredOutputWithTools != null) {
             builder.nativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
+        }
+        Boolean supportsToolChoiceSpecific =
+                booleanOption(context, OPTION_SUPPORTS_TOOL_CHOICE_SPECIFIC);
+        if (supportsToolChoiceSpecific != null) {
+            builder.supportsToolChoiceSpecific(supportsToolChoiceSpecific);
         }
     }
 }
