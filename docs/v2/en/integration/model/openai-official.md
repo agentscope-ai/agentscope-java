@@ -44,7 +44,7 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
 
 ## Spring Boot
 
-Spring Boot applications can use the OpenAI starter:
+Spring Boot applications can use the OpenAI Official starter:
 
 ```xml
 <dependency>
@@ -53,6 +53,21 @@ Spring Boot applications can use the OpenAI starter:
     <version>${agentscope.version}</version>
 </dependency>
 ```
+
+Activate it with:
+
+```yaml
+agentscope:
+  model:
+    provider: openai-official
+  openai-official:
+    api-key: ${OPENAI_API_KEY}
+    model-name: gpt-4o
+```
+
+`agentscope.openai-official.model-name` defaults to `gpt-4.1-mini`.
+
+Full builder options and registry context details are covered in [Model](/v2/en/docs/building-blocks/model).
 
 ## Reasoning
 

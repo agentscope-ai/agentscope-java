@@ -44,7 +44,7 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
 
 ## Spring Boot
 
-Spring Boot 应用可以使用 OpenAI starter：
+Spring Boot 应用可以使用 OpenAI Official starter：
 
 ```xml
 <dependency>
@@ -52,6 +52,15 @@ Spring Boot 应用可以使用 OpenAI starter：
     <artifactId>agentscope-openai-official-spring-boot-starter</artifactId>
     <version>${agentscope.version}</version>
 </dependency>
+```
+
+```yaml
+agentscope:
+  model:
+    provider: openai-official
+  openai-official:
+    api-key: ${OPENAI_API_KEY}
+    model-name: gpt-4o
 ```
 
 ## 推理

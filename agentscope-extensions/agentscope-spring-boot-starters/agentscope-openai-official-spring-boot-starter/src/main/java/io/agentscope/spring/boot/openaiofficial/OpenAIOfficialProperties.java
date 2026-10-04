@@ -51,7 +51,7 @@ public class OpenAIOfficialProperties {
     /**
      * OpenAI model name, for example {@code gpt-4o}.
      */
-    private String modelName;
+    private String modelName = "gpt-4o";
 
     /**
      * Optional OpenAI API base URL. When unset, the model extension falls back to the

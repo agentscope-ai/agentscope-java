@@ -57,11 +57,12 @@ class OpenAIOfficialAutoConfigurationTest {
     }
 
     @Test
-    void shouldRequireModelNameWhenProviderIsOpenAIOfficial() {
+    void shouldRequireModelNameWhenBlankPropertyIsSet() {
         contextRunner
                 .withPropertyValues(
                         "agentscope.model.provider=openai-official",
-                        "agentscope.openai-official.api-key=test-openai-key")
+                        "agentscope.openai-official.api-key= ",
+                        "agentscope.openai-official.model-name= ")
                 .run(
                         context ->
                                 assertThat(context.getStartupFailure())
