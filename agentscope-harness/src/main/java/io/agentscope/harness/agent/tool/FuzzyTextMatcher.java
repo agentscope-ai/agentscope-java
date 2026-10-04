@@ -42,6 +42,12 @@ import java.util.List;
  *       line and collapsing every internal whitespace run to a single {@code ' '}. Catches
  *       indentation drift (tabs ↔ spaces, 2-space ↔ 4-space) and re-wrapped lines.
  * </ul>
+ *
+ * <p>CRLF terminators are folded to {@code '\n'} so a Windows-authored file matches an LF-only
+ * needle, and a span never begins or ends inside a terminator. A lone {@code '\r'} — classic Mac
+ * line endings, or a file where only some lines end that way — is still treated as ordinary
+ * content and matches nothing; that is out of scope here, but stated because the rest of this
+ * class advertises newline tolerance.
  */
 final class FuzzyTextMatcher {
 
@@ -139,13 +145,13 @@ final class FuzzyTextMatcher {
         }
         int idx = 0;
         while ((idx = haystack.text.indexOf(needle.text, idx)) >= 0) {
-            int origStart = haystack.originalIndex[idx];
+            int origStart = startOffset(haystack, idx);
             int needleEndExcl = idx + needle.text.length();
             int origEnd;
             if (needleEndExcl < haystack.originalIndex.length) {
                 origEnd = haystack.originalIndex[needleEndExcl];
             } else {
-                origEnd = haystack.originalLength;
+                origEnd = haystack.originalLength();
             }
             out.add(new MatchRange(origStart, origEnd, level));
             idx = needleEndExcl;
@@ -154,11 +160,35 @@ final class FuzzyTextMatcher {
     }
 
     /**
+     * Original-string offset at which a match beginning at normalised index {@code idx} starts.
+     * A span must never begin inside a CRLF terminator: when the needle's first character is a
+     * newline the normalised view points it at the terminator's {@code '\r'}, so start at the
+     * {@code '\n'} instead. The {@code '\r'} then stays outside the span and the caller's
+     * replacement text supplies the line break, which leaves the document's terminator style
+     * intact — the mirror image of the trailing boundary, where the terminator is likewise
+     * excluded from the span.
+     */
+    private static int startOffset(Normalized haystack, int idx) {
+        int orig = haystack.originalIndex[idx];
+        if (haystack.text.charAt(idx) == '\n'
+                && haystack.source.charAt(orig) == '\r'
+                && orig + 1 < haystack.originalLength()
+                && haystack.source.charAt(orig + 1) == '\n') {
+            return orig + 1;
+        }
+        return orig;
+    }
+
+    /**
      * A normalised view of a string plus a per-character map back to the original string. For
      * every {@code i} in {@code [0, text.length())}, {@code originalIndex[i]} is the offset in
      * the original string of the source character that emitted {@code text.charAt(i)}.
      */
-    private record Normalized(String text, int[] originalIndex, int originalLength) {}
+    private record Normalized(String source, String text, int[] originalIndex) {
+        int originalLength() {
+            return source.length();
+        }
+    }
 
     /**
      * End (exclusive) of the line body within {@code [lineStart, lineEnd)}. A {@code '\r'} that
@@ -209,7 +239,7 @@ final class FuzzyTextMatcher {
             }
             i = lineEnd + 1;
         }
-        return new Normalized(out.toString(), Arrays.copyOf(map, mapLen), len);
+        return new Normalized(s, out.toString(), Arrays.copyOf(map, mapLen));
     }
 
     /**
@@ -267,6 +297,6 @@ final class FuzzyTextMatcher {
             }
             i = lineEnd + 1;
         }
-        return new Normalized(out.toString(), Arrays.copyOf(map, mapLen), len);
+        return new Normalized(s, out.toString(), Arrays.copyOf(map, mapLen));
     }
 }

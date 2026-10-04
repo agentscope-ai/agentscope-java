@@ -242,4 +242,23 @@ class FuzzyTextMatcherTest {
             }
         }
     }
+
+    @Test
+    @DisplayName("A newline-leading needle does not begin inside a CRLF terminator")
+    void crlfLeadingNewlineKeepsTerminatorOutsideSpan() {
+        String existing = "alpha\r\nbeta   \r\ngamma\r\n";
+        String needle = "\nbeta\ngamma";
+        SearchResult r = FuzzyTextMatcher.search(existing, needle);
+        assertEquals(Level.TRAILING_WS_STRIPPED, r.level());
+        assertEquals(1, r.matches().size());
+        MatchRange m = r.matches().get(0);
+        // The span starts on the '\n' of the first terminator, so the '\r' in front of it stays
+        // outside. Resolving the start to the '\r' instead would let the replacement's LF stand
+        // in for a CRLF, silently downgrading that line's terminator.
+        assertEquals("\nbeta   \r\ngamma", existing.substring(m.start(), m.end()));
+        assertEquals('\r', existing.charAt(m.start() - 1));
+        // Patching therefore leaves the document fully CRLF rather than mixing styles.
+        String patched = existing.substring(0, m.start()) + "\nBETA" + existing.substring(m.end());
+        assertEquals("alpha\r\nBETA\r\n", patched);
+    }
 }
