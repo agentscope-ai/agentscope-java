@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.state;
 
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 
 /**
@@ -23,12 +24,9 @@ import java.util.List;
  * <p>This class provides hash computation for change detection in AgentStateStore implementations. The hash
  * is used to detect if a list has been modified (not just appended) since the last save operation.
  *
- * <p>The hash computation uses a sampling strategy to avoid iterating over large lists:
- *
- * <ul>
- *   <li>For small lists (≤5 elements): all elements are included
- *   <li>For large lists: samples at positions 0, 1/4, 1/2, 3/4, and last
- * </ul>
+ * <p>The hash is a full content hash computed over every element (serialized to JSON), so any
+ * modification to any element is detected. It must NOT use sampling: a sampled hash can silently
+ * miss edits to non-sampled positions and cause stale data to be kept on save.
  *
  * <p>Usage in AgentStateStore implementations:
  *
@@ -50,9 +48,6 @@ public final class ListHashUtil {
     /** Empty list hash constant. */
     private static final String EMPTY_HASH = "empty:0";
 
-    /** Threshold for using sampling strategy. */
-    private static final int SAMPLING_THRESHOLD = 5;
-
     private ListHashUtil() {
         // Utility class, prevent instantiation
     }
@@ -64,11 +59,12 @@ public final class ListHashUtil {
      *
      * <ul>
      *   <li>List size
-     *   <li>Hash codes of sampled elements
+     *   <li>The serialized (JSON) form of every element, at every position
      * </ul>
      *
-     * <p>This method is designed to be lightweight and fast, using sampling for large lists to
-     * avoid O(n) iteration.
+     * <p>Every element is included so that a modification at any position is detected. Detection
+     * is based on the serialized form rather than {@link Object#hashCode()}, so it does not depend
+     * on whether {@code State} implementations override {@code hashCode()} content-wise.
      *
      * @param values the list of state objects to hash
      * @return a hex string hash representing the list content
@@ -78,47 +74,16 @@ public final class ListHashUtil {
             return EMPTY_HASH;
         }
 
-        int size = values.size();
         StringBuilder sb = new StringBuilder();
-        sb.append("size:").append(size).append(";");
+        sb.append("size:").append(values.size()).append(";");
 
-        // Get sample indices based on list size
-        int[] sampleIndices = getSampleIndices(size);
-
-        for (int idx : sampleIndices) {
+        for (int idx = 0; idx < values.size(); idx++) {
             State item = values.get(idx);
-            int itemHash = item != null ? item.hashCode() : 0;
-            sb.append(idx).append(":").append(itemHash).append(",");
+            String json = item != null ? JsonUtils.getJsonCodec().toJson(item) : "null";
+            sb.append(idx).append(":").append(json.hashCode()).append(",");
         }
 
         return Integer.toHexString(sb.toString().hashCode());
-    }
-
-    /**
-     * Get the indices to sample from a list of given size.
-     *
-     * <p>Sampling strategy:
-     *
-     * <ul>
-     *   <li>For size ≤ 5: returns all indices [0, 1, 2, ..., size-1]
-     *   <li>For size > 5: returns [0, size/4, size/2, size*3/4, size-1]
-     * </ul>
-     *
-     * @param size the size of the list
-     * @return array of indices to sample
-     */
-    private static int[] getSampleIndices(int size) {
-        if (size <= SAMPLING_THRESHOLD) {
-            // Small list: sample all elements
-            int[] indices = new int[size];
-            for (int i = 0; i < size; i++) {
-                indices[i] = i;
-            }
-            return indices;
-        }
-
-        // Large list: sample at key positions
-        return new int[] {0, size / 4, size / 2, size * 3 / 4, size - 1};
     }
 
     /**

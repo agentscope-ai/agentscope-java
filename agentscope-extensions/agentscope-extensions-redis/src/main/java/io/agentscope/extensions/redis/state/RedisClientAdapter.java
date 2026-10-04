@@ -52,6 +52,31 @@ public interface RedisClientAdapter {
     String get(String key);
 
     /**
+     * Get multiple string values atomically (single MGET), preserving order and nulls.
+     *
+     * <p>Used by {@code getVersioned} to read a payload and its version counter in one command so
+     * a concurrent writer cannot produce a torn read (payload from one version, version counter
+     * from another). All keys must map to the same slot in cluster mode (guaranteed for keys
+     * sharing the session hash tag).
+     *
+     * <p>The default implementation falls back to sequential {@link #get(String)} calls for
+     * backward compatibility with custom adapters that predate this method. Implementations
+     * should override this with a native atomic MGET for correctness under concurrency.
+     *
+     * @param keys the Redis keys
+     * @return list of values in the same order as {@code keys}; each entry is null when the key
+     *     does not exist
+     * @since 2.0.4
+     */
+    default List<String> mget(String... keys) {
+        List<String> result = new java.util.ArrayList<>(keys.length);
+        for (String key : keys) {
+            result.add(get(key));
+        }
+        return result;
+    }
+
+    /**
      * Append a value to the right end of a list.
      *
      * @param key the Redis list key
