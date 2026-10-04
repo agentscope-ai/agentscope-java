@@ -141,6 +141,19 @@ class ExecutionConfigTest {
                 "Positive timeout in primary position must override fallback NO_TIMEOUT");
     }
 
+    @Test
+    @DisplayName("mergeConfigs(null timeout primary, noTimeout fallback) should inherit NO_TIMEOUT")
+    void mergeConfigsNullTimeoutInheritsNoTimeoutFromFallback() {
+        ExecutionConfig primary = ExecutionConfig.builder().build(); // timeout = null
+        ExecutionConfig fallback = ExecutionConfig.builder().noTimeout().build();
+
+        ExecutionConfig merged = ExecutionConfig.mergeConfigs(primary, fallback);
+
+        assertTrue(
+                merged.isTimeoutDisabled(),
+                "Null (unset) primary should inherit NO_TIMEOUT from fallback");
+    }
+
     private static final class TestModelHttpException extends RuntimeException
             implements ModelHttpException {
 
