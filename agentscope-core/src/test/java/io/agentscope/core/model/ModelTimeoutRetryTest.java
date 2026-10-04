@@ -462,7 +462,7 @@ class ModelTimeoutRetryTest {
 
         // Apply timeout if configured
         Duration timeout = executionConfig.getTimeout();
-        if (timeout != null) {
+        if (timeout != null && !executionConfig.isTimeoutDisabled()) {
             responseFlux =
                     responseFlux.timeout(
                             timeout,

@@ -156,6 +156,26 @@ public class ExecutionConfig {
                     .build();
 
     /**
+     * Sentinel value for {@link #timeout} meaning "no timeout". A negative duration is never
+     * produced by normal usage and is recognised by {@code ToolExecutor.applyTimeout} and
+     * {@link ModelUtils#applyTimeoutAndRetry ModelUtils.applyTimeoutAndRetry}
+     * as "skip the timeout operator entirely".
+     *
+     * <p>This is the only way to opt out of the timeout that {@link #TOOL_DEFAULTS} and {@link
+     * #MODEL_DEFAULTS} always carry, because {@link #mergeConfigs} treats {@code null} as
+     * "inherit from fallback".
+     *
+     * <p><b>Supported paths</b>: The sentinel is honoured on the <em>tool</em> path
+     * ({@code ToolExecutor.applyTimeout}) and the <em>model-flux</em> path
+     * ({@code ModelUtils.applyTimeoutAndRetry}). Extension consumers that read
+     * {@link #getTimeout()} directly and pass the value to a framework timeout operator
+     * (e.g. {@code EmbeddingUtils.applyTimeoutAndRetry} in {@code rag-simple}, or the
+     * OpenAI SDK client timeout in {@code openai-official}) must apply the same guard
+     * via {@link #isTimeoutDisabled()}.
+     */
+    public static final Duration NO_TIMEOUT = Duration.ofNanos(-1);
+
+    /**
      * Standard defaults for tool executions.
      *
      * <ul>
@@ -182,6 +202,20 @@ public class ExecutionConfig {
      */
     public Duration getTimeout() {
         return timeout;
+    }
+
+    /**
+     * Returns true when the configured timeout is the {@link #NO_TIMEOUT} sentinel,
+     * meaning consumers should skip applying any timeout operator.
+     *
+     * <p>Only the exact {@link #NO_TIMEOUT} sentinel is recognised; stray negative
+     * durations (which should be rejected by {@link Builder#timeout(Duration)}) are
+     * not treated as "no timeout".
+     *
+     * @return true if timeout is disabled via {@link #NO_TIMEOUT}
+     */
+    public boolean isTimeoutDisabled() {
+        return NO_TIMEOUT.equals(timeout);
     }
 
     /**
@@ -305,11 +339,28 @@ public class ExecutionConfig {
         /**
          * Sets the timeout duration for a single execution.
          *
-         * @param timeout the timeout duration, or null for no timeout
+         * @param timeout the timeout duration (must be &gt;= 0, or {@link #NO_TIMEOUT}),
+         *        or null to inherit from fallback
          * @return this builder instance
+         * @throws IllegalArgumentException if timeout is a negative duration other than
+         *        {@link #NO_TIMEOUT}
          */
         public Builder timeout(Duration timeout) {
+            if (timeout != null && timeout.isNegative() && !NO_TIMEOUT.equals(timeout)) {
+                throw new IllegalArgumentException(
+                        "timeout must be >= 0; use NO_TIMEOUT (or noTimeout()) to disable it");
+            }
             this.timeout = timeout;
+            return this;
+        }
+
+        /**
+         * Opt out of timeout entirely for this call. Equivalent to {@code timeout(NO_TIMEOUT)}.
+         * This is the only way to prevent the timeout inherited from {@link #TOOL_DEFAULTS} /
+         * {@link #MODEL_DEFAULTS}, because {@link #mergeConfigs} treats {@code null} as inherit.
+         */
+        public Builder noTimeout() {
+            this.timeout = NO_TIMEOUT;
             return this;
         }
 
