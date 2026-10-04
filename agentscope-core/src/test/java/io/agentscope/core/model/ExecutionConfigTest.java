@@ -99,6 +99,18 @@ class ExecutionConfigTest {
     }
 
     @Test
+    @DisplayName("Should reject Duration.ZERO in Builder.timeout()")
+    void shouldRejectZeroDuration() {
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> ExecutionConfig.builder().timeout(Duration.ZERO));
+        assertTrue(
+                ex.getMessage().contains("positive"),
+                "Message must indicate the value must be positive");
+    }
+
+    @Test
     @DisplayName(
             "mergeConfigs(noTimeout, withTimeout) must keep the NO_TIMEOUT sentinel in primary"
                     + " position")
