@@ -2608,7 +2608,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * decides whether to continue to acting or return early (HITL stop, gotoReasoning, or finished).
          *
          * @param iter Current iteration number
-         * @param ignoreMaxIters If true, skip maxIters check (for gotoReasoning)
+         * @param ignoreMaxIters If true, skip maxIters check (for gotoReasoning and the
+         *     structured-output forced retries, which are bounded by their own ceilings)
          * @return Mono containing the final result message
          */
         private Mono<Msg> reasoning(int iter, boolean ignoreMaxIters) {
@@ -2829,6 +2830,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     soForceToolChoiceCount,
                                                     getAgentId(),
                                                     getName());
+                                            // ignoreMaxIters is deliberate: a forced retry
+                                            // must not be cut short by maxIters (e.g. a
+                                            // maxIters=1 caller still gets the pending
+                                            // generate_response), and the total extra model
+                                            // calls stay bounded by the 3-retry ceiling above.
                                             return reasoning(iter + 1, true);
                                         }
                                         log.warn(

@@ -249,6 +249,10 @@ public class KimiFormatter extends OpenAIChatFormatter {
      *       via the {@code thinking} body parameter</li>
      * </ul>
      *
+     * <p>{@link KimiModelProvider} mirrors the {@code Specific} degradation above in the
+     * {@code supportsToolChoiceSpecific} flag it sets on the built model; update both
+     * together when the thinking model lists change.
+     *
      * <p>This method is static to allow sharing with {@link KimiMultiAgentFormatter}.
      *
      * @param request the request to apply tool choice to
