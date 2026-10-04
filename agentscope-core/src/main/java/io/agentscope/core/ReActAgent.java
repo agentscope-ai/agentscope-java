@@ -290,6 +290,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private final PermissionContextState initialPermissionContext;
 
+    /**
+     * Whether {@link #initialPermissionContext} is authoritative for every call rather than only
+     * for slots created after it was declared. See {@link
+     * Builder#permissionRulesAuthoritative(boolean)}.
+     */
+    private final boolean permissionRulesAuthoritative;
+
     // ==================== 2.0 Core Fields ====================
 
     /** Cache of state per {@code (userId, sessionId)} slot key. */
@@ -362,6 +369,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         ? builder.defaultSessionId
                         : (builder.name != null ? builder.name : "ReActAgent");
         this.initialPermissionContext = builder.permissionContext;
+        this.permissionRulesAuthoritative = builder.permissionRulesAuthoritative;
 
         this.modelConfig = assembleModelConfig(builder);
         this.reactConfig = assembleReactConfig(builder);
@@ -707,14 +715,70 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
         PermissionEngine loadedEngine;
         if (stateStore != null) {
-            loadedEngine = new PermissionEngine(loaded.getPermissionContext());
+            loadedEngine =
+                    new PermissionEngine(enginePermissionContext(loaded.getPermissionContext()));
             permissionEngineCache.put(slot, loadedEngine);
         } else {
+            // Without a store the session's context is the declared one on every call, so there is
+            // nothing to compose and the cached engine stays correct.
             loadedEngine =
                     permissionEngineCache.computeIfAbsent(
                             slot, k -> new PermissionEngine(loaded.getPermissionContext()));
         }
         return new CallExecution(loaded, loadedEngine, slot, loadedVersion);
+    }
+
+    /**
+     * The permission context a call's engine is built from.
+     *
+     * <p>By default this is the session's persisted context, which is what makes a rule change in
+     * code miss every slot that already exists. With {@link
+     * Builder#permissionRulesAuthoritative(boolean)} set, the builder's rules take its place for
+     * every tool the builder declares, and the session keeps its own rules only for the tools the
+     * builder says nothing about. The session's mode and working directories are kept either way,
+     * so a runtime {@code setPermissionMode} still applies.
+     */
+    private PermissionContextState enginePermissionContext(PermissionContextState persisted) {
+        PermissionContextState declared = initialPermissionContext;
+        if (!permissionRulesAuthoritative || declared == null) {
+            return persisted;
+        }
+        PermissionContextState.Builder composed =
+                PermissionContextState.builder().mode(persisted.getMode());
+        persisted.getWorkingDirectories().forEach(composed::addWorkingDirectory);
+        copyRulesForUndeclaredTools(persisted.getAllowRules(), declared, composed::addAllowRule);
+        copyRulesForUndeclaredTools(persisted.getDenyRules(), declared, composed::addDenyRule);
+        copyRulesForUndeclaredTools(persisted.getAskRules(), declared, composed::addAskRule);
+        copyRules(declared.getAllowRules(), composed::addAllowRule);
+        copyRules(declared.getDenyRules(), composed::addDenyRule);
+        copyRules(declared.getAskRules(), composed::addAskRule);
+        return composed.build();
+    }
+
+    /**
+     * Copies the rules of one session table for the tools {@code declared} says nothing about.
+     * Those are the only session rules that survive when the builder's rules are authoritative: a
+     * rule the builder now declares replaces the session's, which is what stops a stale persisted
+     * ALLOW from relaxing a newer ASK or DENY.
+     */
+    private static void copyRulesForUndeclaredTools(
+            Map<String, List<PermissionRule>> sessionRules,
+            PermissionContextState declared,
+            BiConsumer<String, PermissionRule> adder) {
+        sessionRules.forEach(
+                (tool, rules) -> {
+                    if (declared.getAllowRules().containsKey(tool)
+                            || declared.getDenyRules().containsKey(tool)
+                            || declared.getAskRules().containsKey(tool)) {
+                        return;
+                    }
+                    rules.forEach(rule -> adder.accept(tool, rule));
+                });
+    }
+
+    private static void copyRules(
+            Map<String, List<PermissionRule>> rules, BiConsumer<String, PermissionRule> adder) {
+        rules.forEach((tool, forTool) -> forTool.forEach(rule -> adder.accept(tool, rule)));
     }
 
     // ==================== Config assembly helpers ====================
@@ -3445,7 +3509,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (toolCalls == null || toolCalls.isEmpty()) {
                 return Mono.just(new PermissionGate(List.of(), Set.of()));
             }
-            boolean useEngine = !state.getPermissionContext().isTrivial();
+            // Ask the engine whenever the context it was actually built from is non-trivial, not
+            // the persisted one: with the builder's rules authoritative the engine may carry rules
+            // for a session whose persisted context is empty, and reading the session's context
+            // here would leave that session on the lightweight path where no rule is consulted.
+            boolean useEngine = !permissionEngine.getContext().isTrivial();
             return Flux.fromIterable(toolCalls)
                     .concatMap(use -> evaluateOne(use, useEngine))
                     .collectList()
@@ -4941,6 +5009,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // 2.0 core fields
         private PermissionContextState permissionContext;
 
+        private boolean permissionRulesAuthoritative = false;
+
         // Flat setters backing ModelConfig / ReactConfig values
         private Integer flatMaxRetries;
         private Model flatFallbackModel;
@@ -5373,6 +5443,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder permissionContext(PermissionContextState permissionContext) {
             this.permissionContext = permissionContext;
+            return this;
+        }
+
+        /**
+         * Makes the rules declared through {@link #permissionContext(PermissionContextState)}
+         * authoritative on every call, instead of only for slots created after they are declared.
+         *
+         * <p>By default the builder's context is copied into a session when its slot is first
+         * created, and later calls rebuild the engine from that persisted copy. A rule tightened in
+         * code therefore never reaches a session that already exists, and the tool keeps running
+         * without the confirmation the new rule asks for.
+         *
+         * <p>When enabled, each call composes the engine from the builder's rules for every tool the
+         * builder declares, keeping the session's own rules only for the tools it says nothing
+         * about. The session's mode and working directories are still the session's, so a runtime
+         * {@code setPermissionMode} continues to apply. Nothing about what is persisted changes:
+         * existing stores keep working and stay readable by agents that do not set this.
+         *
+         * <p>This only changes behaviour when a state store is configured. Without one the session's
+         * context is the declared one on every call already, so there is nothing for the option to
+         * override.
+         *
+         * @param authoritative true to make the builder's rules authoritative on every call
+         * @return This builder instance for method chaining
+         */
+        public Builder permissionRulesAuthoritative(boolean authoritative) {
+            this.permissionRulesAuthoritative = authoritative;
             return this;
         }
 
