@@ -8,6 +8,14 @@ en_link: /v2/en/docs/others/release-notes
 
 ---
 
+## 尚未发布
+
+### 变更
+
+- **同 slot 沙箱调用默认串行化** —— 未显式配置 execution guard 时，Harness 现在会安装同一 JVM 内共享的 guard，获取繁忙 slot 的最长等待时间为 30 分钟。不同 `HarnessAgent` 实例只要使用相同 `SandboxIsolationKey`，也会串行执行，防止从同一持久化状态恢复并互相覆盖。许可覆盖整个 agent 调用；在默认 `USER` scope 下，同一用户的不同会话也会串行，可能降低吞吐量、增加延迟。每个 key 最多允许八个等待者，超出时立即抛出 `SandboxExecutionQueueFullException`；不同 key 仍可并行。多副本部署必须提供分布式 guard。若应用有意依赖旧的并行、最后写入覆盖行为，可通过 `.executionGuard(SandboxExecutionGuard.noop())` 显式关闭串行化 ([#2846](https://github.com/agentscope-ai/agentscope-java/pull/2846))
+
+---
+
 ## 2.0.1
 
 > 发布日期：2026-08-05
