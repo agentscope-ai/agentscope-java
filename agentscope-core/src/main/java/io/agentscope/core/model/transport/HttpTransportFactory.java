@@ -16,6 +16,7 @@
 package io.agentscope.core.model.transport;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,9 +72,14 @@ public final class HttpTransportFactory {
     /**
      * Get the default HttpTransport instance.
      *
-     * <p>If no default has been set, a new JdkHttpTransport with default configuration
-     * will be created lazily. The default transport is automatically registered for
-     * cleanup on JVM shutdown.
+     * <p>If no default has been set, a new {@link LoggingHttpTransport} wrapping a
+     * {@code JdkHttpTransport} is created lazily. The logging decorator provides uniform, sanitized
+     * DEBUG request/response logging and dispatches {@link HttpTransportListener} events. The
+     * built-in default cannot be reconfigured in place: to silence its DEBUG logs, either raise
+     * the log level of {@code LoggingHttpTransport} above DEBUG, or call {@link
+     * #setDefault(HttpTransport)} with a custom transport built with {@code
+     * HttpTransportConfig.Builder#logRequests(false)}. The default transport is automatically
+     * registered for cleanup on JVM shutdown.
      *
      * @return the default HttpTransport instance
      */
@@ -81,13 +87,47 @@ public final class HttpTransportFactory {
         if (defaultTransport == null) {
             synchronized (lock) {
                 if (defaultTransport == null) {
-                    defaultTransport = new JdkHttpTransport();
+                    defaultTransport =
+                            new LoggingHttpTransport(
+                                    new JdkHttpTransport(), HttpTransportConfig.defaults());
                     managedTransports.add(defaultTransport);
                     log.debug("Created default HttpTransport: {}", defaultTransport);
                 }
             }
         }
         return defaultTransport;
+    }
+
+    /**
+     * Create a logging transport from an {@link HttpTransportConfig}.
+     *
+     * <p>Returns a {@link LoggingHttpTransport} wrapping a fresh {@code JdkHttpTransport}
+     * configured with the given config's timeouts, proxy, HTTP version and listeners, so a
+     * config's {@code logRequests} / {@code logBodies} options and {@link
+     * HttpTransportListener}s actually take effect (a config passed directly to a plain {@link
+     * JdkHttpTransport} or {@link OkHttpTransport} would ignore them). The created transport is
+     * automatically registered for cleanup on JVM shutdown.
+     *
+     * <p>Usage:
+     * <pre>{@code
+     * HttpTransport transport = HttpTransportFactory.createLogging(
+     *     HttpTransportConfig.builder()
+     *         .logBodies(true) // opt in to body contents in DEBUG logs
+     *         .listeners(myListener)
+     *         .build());
+     * }</pre>
+     *
+     * @param config the transport configuration (must not be null)
+     * @return a registered logging transport wrapping a JDK transport built from {@code config}
+     */
+    public static HttpTransport createLogging(HttpTransportConfig config) {
+        Objects.requireNonNull(config, "config must not be null");
+        // The delegate must be built FROM the config, not with defaults: proxy, timeouts, HTTP
+        // version and ignoreSsl only take effect on the client that opens the socket. Passing the
+        // config to the wrapper alone would honour only the logging half of it.
+        HttpTransport transport = new LoggingHttpTransport(new JdkHttpTransport(config), config);
+        register(transport);
+        return transport;
     }
 
     /**

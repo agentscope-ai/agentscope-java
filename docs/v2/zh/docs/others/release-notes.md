@@ -8,6 +8,27 @@ en_link: /v2/en/docs/others/release-notes
 
 ---
 
+## 2.0.4 (Unreleased)
+
+> 尚未发布——以下变更将随 2.0.4 发布。
+
+### 新增
+
+**核心 / Transport**
+
+- 传输层统一的 HTTP 请求/响应可观测能力：新增 `HttpTransportListener` SPI（`onRequest` / `onResponse` / `onFailure` / `onStreamComplete` / `onStreamCancel`）、`LoggingHttpTransport` 装饰器与 `HttpLogSanitizer`（敏感 header、URL 查询参数、URL userinfo 及 body 中的凭据字段始终脱敏）。`HttpTransportFactory.createLogging(config)` 基于配置构建带日志的 transport，使配置中的开关与 listener 真正生效 ([#3364](https://github.com/agentscope-ai/agentscope-java/pull/3364), [#3363](https://github.com/agentscope-ai/agentscope-java/issues/3363))
+- `HttpTransportConfig` 新增 `logRequests`（默认 `true`）、`logFailures`（默认 `true`，与 `logRequests` 相互独立）、`logBodies`（默认 `false`——body 内容为显式 opt-in）与 `logBodyMaxLength`（默认 2048）([#3364](https://github.com/agentscope-ai/agentscope-java/pull/3364))
+
+### 变更
+
+**核心 / Transport**
+
+- **行为变化：** `HttpTransportFactory.getDefault()` 现在返回包装了 `JdkHttpTransport` 的 `LoggingHttpTransport`（声明的返回类型不变）。对 factory 默认实例做 `instanceof JdkHttpTransport` / `instanceof OkHttpTransport` 判断的代码将不再匹配 ([#3364](https://github.com/agentscope-ai/agentscope-java/pull/3364))
+- **行为变化：** transport 失败默认以 WARN 级别记录，不再受 logger 级别限制，因此在默认日志配置下连接问题也可见。可用 `logFailures(false)` 关闭失败日志；DEBUG 流量日志由 `logRequests(false)` 独立控制 ([#3364](https://github.com/agentscope-ai/agentscope-java/pull/3364))
+- 移除了 `OpenAIClient`（6 处）、`DashScopeHttpClient`（3 处）与 `OllamaHttpClient`（3 处）中共 12 条未脱敏的 ad-hoc DEBUG 日志。等价的脱敏输出现在来自 logger `io.agentscope.core.model.transport.LoggingHttpTransport`。注意：只有当 transport 被装饰时（`getDefault()` / `createLogging(...)` 路径），ad-hoc 日志才会被传输层日志替代；自行构建的普通 transport 没有内置请求日志 ([#3364](https://github.com/agentscope-ai/agentscope-java/pull/3364))
+
+---
+
 ## 2.0.1
 
 > 发布日期：2026-08-05
