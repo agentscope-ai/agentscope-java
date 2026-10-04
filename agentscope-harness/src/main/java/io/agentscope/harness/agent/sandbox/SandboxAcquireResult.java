@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import java.util.Objects;
+
 /**
  * Result of acquiring a {@link Sandbox} from {@link SandboxManager}.
  *
@@ -22,10 +24,9 @@ package io.agentscope.harness.agent.sandbox;
  *
  * <ul>
  *   <li><b>self-managed</b> ({@code selfManaged=true}): the SDK created the sandbox and is
- *       responsible for its full lifecycle — {@code stop()} + {@code shutdown()} are both called
- *       after each agent call.
+ *       responsible for its lifecycle according to {@link SandboxReleasePolicy}.
  *   <li><b>user-managed</b> ({@code selfManaged=false}): the caller injected a pre-existing
- *       sandbox; the SDK only calls {@code stop()} and never calls {@code shutdown()}.
+ *       sandbox; the caller owns both snapshot persistence and resource destruction.
  * </ul>
  *
  * <p>When a {@link SandboxExecutionGuard} is configured, the result also carries the
@@ -37,10 +38,17 @@ public final class SandboxAcquireResult {
     private final Sandbox sandbox;
     private final boolean selfManaged;
     private final SandboxLease lease;
+    private final SandboxReleasePolicy releasePolicy;
 
     private SandboxAcquireResult(Sandbox sandbox, boolean selfManaged, SandboxLease lease) {
+        this(sandbox, selfManaged, lease, SandboxReleasePolicy.DELETE);
+    }
+
+    private SandboxAcquireResult(
+            Sandbox sandbox, boolean selfManaged, SandboxLease lease, SandboxReleasePolicy policy) {
         this.sandbox = sandbox;
         this.selfManaged = selfManaged;
+        this.releasePolicy = Objects.requireNonNull(policy, "releasePolicy must not be null");
         this.lease = lease != null ? lease : SandboxLease.noop();
     }
 
@@ -49,12 +57,23 @@ public final class SandboxAcquireResult {
         return new SandboxAcquireResult(sandbox, true, lease);
     }
 
+    /** Creates a self-managed result with the release policy captured for this call. */
+    public static SandboxAcquireResult selfManaged(
+            Sandbox sandbox, SandboxLease lease, SandboxReleasePolicy policy) {
+        return new SandboxAcquireResult(sandbox, true, lease, policy);
+    }
+
+    /** Returns the release policy for SDK-managed sandboxes. */
+    public SandboxReleasePolicy getReleasePolicy() {
+        return releasePolicy;
+    }
+
     /** Creates a self-managed result with no guard (SDK owns the full lifecycle). */
     public static SandboxAcquireResult selfManaged(Sandbox sandbox) {
         return new SandboxAcquireResult(sandbox, true, SandboxLease.noop());
     }
 
-    /** Creates a user-managed result (caller owns the lifecycle; SDK only calls stop). */
+    /** Creates a user-managed result (caller owns the entire lifecycle). */
     public static SandboxAcquireResult userManaged(Sandbox sandbox) {
         return new SandboxAcquireResult(sandbox, false, SandboxLease.noop());
     }

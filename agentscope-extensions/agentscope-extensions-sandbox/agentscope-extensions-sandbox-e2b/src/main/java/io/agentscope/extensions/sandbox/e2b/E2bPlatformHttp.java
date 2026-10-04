@@ -193,14 +193,26 @@ final class E2bPlatformHttp {
         try (Response res = http.newCall(rb.build()).execute()) {
             String text = res.body() != null ? res.body().string() : "";
             if (!res.isSuccessful()) {
-                throw new SandboxException.SandboxRuntimeException(
-                        SandboxErrorCode.WORKSPACE_START_ERROR,
-                        "E2B HTTP " + res.code() + ": " + text);
+                throw new HttpException(res.code(), text);
             }
             if (text.isBlank()) {
                 return json.createObjectNode();
             }
             return json.readTree(text);
+        }
+    }
+
+    /** Carries the status separately so recovery never infers expiry from an error message. */
+    static final class HttpException extends SandboxException.SandboxRuntimeException {
+        private final int statusCode;
+
+        HttpException(int statusCode, String body) {
+            super(SandboxErrorCode.WORKSPACE_START_ERROR, "E2B HTTP " + statusCode + ": " + body);
+            this.statusCode = statusCode;
+        }
+
+        int statusCode() {
+            return statusCode;
         }
     }
 

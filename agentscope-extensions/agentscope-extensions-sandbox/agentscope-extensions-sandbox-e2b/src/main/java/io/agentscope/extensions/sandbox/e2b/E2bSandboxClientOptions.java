@@ -42,20 +42,24 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
     private int maxRetries = 3;
 
     /**
-     * Maximum number of snapshots created by this session that are kept on shutdown; {@code <= 0}
+     * Target number of snapshots created by this session kept after release; {@code <= 0}
      * disables pruning. Defaults to {@code 0} (disabled), matching the historical no-pruning
      * behaviour.
      *
-     * <p>Pruning runs once in {@link E2bSandbox#shutdown} after the sandbox is killed (E2B locks a
-     * snapshot template while a sandbox restored from it is running, so deleting earlier returns
-     * HTTP 400). The session records every snapshot id it creates in {@link
+     * <p>Pruning runs in {@link E2bSandbox#shutdown} after destruction, or in
+     * {@link E2bSandbox#onRetained} after successful snapshot persistence under RETAIN. E2B locks a
+     * template while a sandbox restored from it runs; failed deletions remain recorded for retry.
+     * Retention is therefore a best-effort target, not a hard bound while a sandbox is retained.
+     * Provider expiry alone does not run cleanup: another release or explicit delete must do so.
+     * The session records every snapshot id it creates in {@link
      * E2bSandboxState#getSnapshotIds()} in creation order (most recent last); cleanup keeps the
      * last {@code snapshotRetention} recorded ids and deletes the rest via {@code DELETE
      * /templates/{snapshotId}} (404 is treated as already deleted). Snapshots never recorded in
      * this list — e.g. created by other sessions, or by a run whose state was never persisted —
      * are never touched. Blank ids are dropped and duplicates collapsed (first occurrence wins)
      * before counting. A snapshot whose deletion fails is kept in the record so a later
-     * shutdown can retry, which may temporarily leave more than {@code snapshotRetention} ids
+     * release or explicit delete can retry, which may temporarily leave more than
+     * {@code snapshotRetention} ids
      * recorded. A failed stop removes the id its own persist recorded, so the record always
      * matches the archive and unconditional cleanup never removes the referenced snapshot (ids
      * recorded concurrently by another session over the same state are left alone); the price is
