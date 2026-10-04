@@ -20,6 +20,8 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.util.MarkdownSkillParser;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolGroup;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.skill.SkillResources;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -50,6 +52,11 @@ import reactor.core.publisher.Mono;
  * ToolCallParam#getRuntimeContext() tool call's RuntimeContext}, keeping concurrent calls and
  * sessions isolated without re-registering the tool. A legacy catalog reference is consulted only
  * for deprecated callers that invoke the tool without any RuntimeContext.
+ *
+ * <p>On-demand tool disclosure: once a resource is found, every {@link
+ * io.agentscope.core.tool.SkillToolGroup} bound to the skill via {@code activateOnSkill} is
+ * activated on the call's toolkit, so the skill's tools become visible to the model for the
+ * following turns (see issue #2653).
  */
 @SuppressWarnings("deprecation")
 public final class SkillLoadTool implements AgentTool {
@@ -61,10 +68,11 @@ public final class SkillLoadTool implements AgentTool {
 
     private final AtomicReference<SkillCatalog> legacyCatalogRef;
     private final boolean exposeLegacyCatalogInSchema;
+    private final AtomicReference<Toolkit> toolkitRef;
 
     /** Creates a context-scoped loader with an empty context-free compatibility catalog. */
     public SkillLoadTool() {
-        this(new AtomicReference<>(SkillCatalog.empty()), false);
+        this(new AtomicReference<>(SkillCatalog.empty()), false, new AtomicReference<>());
     }
 
     /**
@@ -80,16 +88,24 @@ public final class SkillLoadTool implements AgentTool {
      */
     @Deprecated(since = "2.2.0")
     public SkillLoadTool(AtomicReference<SkillCatalog> catalogRef) {
-        this(catalogRef, true);
+        this(catalogRef, true, new AtomicReference<>());
     }
 
     SkillLoadTool(
             AtomicReference<SkillCatalog> legacyCatalogRef, boolean exposeLegacyCatalogInSchema) {
+        this(legacyCatalogRef, exposeLegacyCatalogInSchema, new AtomicReference<>());
+    }
+
+    SkillLoadTool(
+            AtomicReference<SkillCatalog> legacyCatalogRef,
+            boolean exposeLegacyCatalogInSchema,
+            AtomicReference<Toolkit> toolkitRef) {
         if (legacyCatalogRef == null) {
             throw new IllegalArgumentException("catalogRef must not be null");
         }
         this.legacyCatalogRef = legacyCatalogRef;
         this.exposeLegacyCatalogInSchema = exposeLegacyCatalogInSchema;
+        this.toolkitRef = toolkitRef != null ? toolkitRef : new AtomicReference<>();
     }
 
     @Override
@@ -177,7 +193,8 @@ public final class SkillLoadTool implements AgentTool {
                                         + "'. Check the available skills list."));
             }
 
-            return Mono.just(loadOne(entry, path));
+            Toolkit toolkit = toolkitFor(param);
+            return Mono.just(loadOne(entry, path, toolkit));
         } catch (Exception e) {
             log.error("load_skill_through_path failed", e);
             return Mono.just(ToolResultBlock.error(e.getMessage()));
@@ -192,17 +209,35 @@ public final class SkillLoadTool implements AgentTool {
         return legacy != null ? legacy : SkillCatalog.empty();
     }
 
-    private ToolResultBlock loadOne(HarnessSkillEntry entry, String path) {
+    /**
+     * Resolves the toolkit used to activate skill-bound tool groups. Prefers the call-scoped
+     * instance (installed by {@link SkillRuntime#install(SkillCatalog,
+     * io.agentscope.core.agent.RuntimeContext, Toolkit)}), falling back to the shared reference
+     * kept current by {@link SkillRuntime#prepareToolkit(Toolkit)} for context-free callers.
+     */
+    private Toolkit toolkitFor(ToolCallParam param) {
+        if (param.getRuntimeContext() != null) {
+            Toolkit toolkit = param.getRuntimeContext().get(Toolkit.class);
+            if (toolkit != null) {
+                return toolkit;
+            }
+        }
+        return toolkitRef.get();
+    }
+
+    private ToolResultBlock loadOne(HarnessSkillEntry entry, String path, Toolkit toolkit) {
         AgentSkill skill = entry.skill();
 
         // 1. Special case: SKILL.md returns the parsed body text.
         if (SKILL_FILE.equals(path)) {
+            activateSkillTools(toolkit, skill);
             return ToolResultBlock.text(formatSkillMarkdown(entry));
         }
 
         // 2. In-memory map (Layer 1/3 host repos + marketplace fully-loaded resources).
         Map<String, String> mem = skill.getResources();
         if (mem != null && mem.containsKey(path)) {
+            activateSkillTools(toolkit, skill);
             return ToolResultBlock.text(formatResource(entry, path, mem.get(path)));
         }
 
@@ -210,12 +245,55 @@ public final class SkillLoadTool implements AgentTool {
         if (entry.lazyResources() != null) {
             Optional<String> lazy = entry.lazyResources().read(path);
             if (lazy.isPresent()) {
+                activateSkillTools(toolkit, skill);
                 return ToolResultBlock.text(formatResource(entry, path, lazy.get()));
             }
         }
 
         // 4. Not found: enumerate both sources so the model sees real options.
         return ToolResultBlock.error(formatNotFound(entry, path));
+    }
+
+    /**
+     * Activates every {@link io.agentscope.core.tool.SkillToolGroup} bound to the loaded skill via
+     * {@code activateOnSkill} so its tools become visible to the model (on-demand tool disclosure).
+     *
+     * <p>Matches the activation semantics of the core skill access tool ({@code
+     * SkillToolFactory.activateSkill}): a group is only activated after a resource was actually
+     * found, and only when it is not already active. The toolkit's shared activation state is
+     * picked up by {@code ReActAgent}'s post-acting {@code syncToolkitToState}, which persists it
+     * into the session's {@code ToolContextState} for subsequent reasoning turns.
+     */
+    private void activateSkillTools(Toolkit toolkit, AgentSkill skill) {
+        if (toolkit == null || skill == null) {
+            return;
+        }
+        try {
+            List<String> boundGroups =
+                    toolkit.findSkillToolGroupsByActivateOnSkill(skill.getName());
+            if (boundGroups.isEmpty()) {
+                return;
+            }
+            List<String> toActivate = new ArrayList<>(boundGroups.size());
+            for (String group : boundGroups) {
+                ToolGroup existing = toolkit.getToolGroup(group);
+                if (existing != null && !existing.isActive()) {
+                    toActivate.add(group);
+                }
+            }
+            if (!toActivate.isEmpty()) {
+                toolkit.updateToolGroups(toActivate, true);
+                log.info(
+                        "Activated skill-bound tool groups {} for skill '{}'",
+                        toActivate,
+                        skill.getName());
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "Failed to activate skill-bound tool groups for skill '{}': {}",
+                    skill.getName(),
+                    e.getMessage());
+        }
     }
 
     // ---------------------------------------------------------------------
