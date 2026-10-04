@@ -387,6 +387,23 @@ The agent can read/write files under `/Users/alice/my-project` and `/Users/alice
 
 ---
 
+### Host-authoritative projected definitions
+
+Sandbox mode defaults to `hostAuthoritativeDefinitions(true)`. Agent context reads, workspace skill discovery, and lazy skill-resource reads use the host for paths owned by `workspaceProjectionRoots(...)`; sandbox edits and sandbox-only skills beneath those roots do not override the trusted definitions. Explicit `.filesystem(prefix, backend)` routes retain precedence.
+
+The default projection roots remain `AGENTS.md`, `skills`, `subagents`, `knowledge`, and `.skills-cache`. `MEMORY.md` is not added: its normal runtime reads, writes, and persistence are unchanged. Explicitly projecting `MEMORY.md` makes its context reads host-authoritative too; memory API writes still use the runtime filesystem.
+
+On each sandbox start, an unchanged host payload is skipped only after checking the current projected file contents. Divergence or failed verification triggers hydration from the host. Extra sandbox files are retained, but cannot enter the trusted catalog beneath projected roots. Ordinary unprojected files and shell execution remain writable.
+
+For applications that intentionally depend on sandbox definition overrides, opt back into the legacy behavior:
+
+```java
+.filesystem(new DockerFilesystemSpec()
+    .hostAuthoritativeDefinitions(false))
+```
+
+The opt-out restores filesystem-first definition reads, sandbox skill overrides, and host-hash-only projection checks. Alternatively, narrow `workspaceProjectionRoots(...)` to keep selected paths under runtime ownership. Disabling projection also leaves the existing runtime semantics intact.
+
 ## IsolationScope — bucketing across users and replicas
 
 Both mode 1 (shared store) and mode 2 (sandbox) use the same `IsolationScope` concept to decide **who shares state with whom**:

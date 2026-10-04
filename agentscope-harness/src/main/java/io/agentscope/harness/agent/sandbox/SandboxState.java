@@ -40,6 +40,7 @@ public abstract class SandboxState {
     private WorkspaceSpec workspaceSpec;
 
     private SandboxSnapshot snapshot;
+    // Hash of the last host payload; it does not attest to the current sandbox contents.
     private String workspaceProjectionHash;
     private boolean workspaceRootReady = false;
 

@@ -183,6 +183,8 @@ workspace/
 
 ## 同名冲突谁说了算
 
+沙箱模式下，configured projection roots 中的工作区 skills 默认以 host 为权威，覆盖 catalog 及延迟资源读取。改写沙箱 skill 或创建 `skills/evil/SKILL.md` 不会改变受信任 catalog；要在 projected root 下推广 skill，需要更新 host 定义。依赖沙箱自学习的应用可缩小 projection roots，或使用 `hostAuthoritativeDefinitions(false)` 恢复旧行为。未 projection 的 skills 和显式 filesystem routes 保留原有行为，见 [Filesystem](/v2/zh/docs/harness/filesystem#host-authoritative-projected-definitions)。
+
 四个来源都可能给出同名 skill。优先级从低到高：
 
 | 优先级 | 来源 | 怎么配 |
@@ -363,13 +365,14 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 AGENTS.md  skills/  subagents/  knowledge/  .skills-cache/
 ```
 
-所以 `workspace/skills/`（含 `<userId>/skills/`）和上一步物化出来的 `.skills-cache/` 会一起进沙箱。投影对所有被包含的文件按内容算一个整体 SHA-256，跟上次一样就跳过 hydrate，所以反复 `call()` 不会重复传一样的文件；只有内容变了才重新注入。
+所以 `workspace/skills/`（含 `<userId>/skills/`）和上一步物化出来的 `.skills-cache/` 会一起进沙箱。投影对所有被包含的文件计算整体 SHA-256。默认只有 host payload hash 和当前 sandbox projected files 均匹配时才跳过 hydration；内容被篡改或验证失败时，会重新从 host hydrate。
 
 可调项（在 `DockerFilesystemSpec` / `KubernetesFilesystemSpec` 等沙箱 spec 上）：
 
 | 方法 | 作用 |
 |------|------|
 | `workspaceProjectionRoots(List)` | 自定义投影哪些根目录（默认含 `skills`、`.skills-cache`） |
+| `hostAuthoritativeDefinitions(false)` | 恢复旧的沙箱定义覆盖和只检查 host hash 的 projection 行为 |
 | `workspaceProjectionEnabled(false)` | 完全关掉投影——关了之后沙箱里就没有 skill 文件，脚本自然跑不了 |
 
 ### 第三步：在容器里执行脚本

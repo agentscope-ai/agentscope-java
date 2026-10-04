@@ -68,7 +68,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Stateless accessor for workspace content using a two-layer read architecture.
  *
- * <p><strong>Read path:</strong> For every read (AGENTS.md, MEMORY.md, knowledge, etc.),
+ * <p><strong>Read path:</strong> Configured projected definitions are read exclusively from
+ * the host when host authority is enabled. For other reads (memory, runtime data, etc.),
  * the {@link AbstractFilesystem} is queried first. If it returns non-empty content, that
  * content is used (filesystem overrides). Otherwise, the local workspace disk is read as a
  * fallback. The filesystem layer applies user/session scoping transparently via
@@ -121,6 +122,7 @@ public class WorkspaceManager implements AutoCloseable {
 
     private final Path workspace;
     private final AbstractFilesystem filesystem;
+    private WorkspaceDefinitionAuthority definitionAuthority;
 
     /** Best-effort local file index; may be {@code null} if SQLite is unavailable. */
     private final WorkspaceIndex index;
@@ -247,6 +249,15 @@ public class WorkspaceManager implements AutoCloseable {
         return workspace.resolve(String.join("/", ns)).resolve(relativePath);
     }
 
+    /** Configures host authority for projected roots; ordinary tool/runtime writes are unchanged. */
+    public void setDefinitionAuthority(WorkspaceDefinitionAuthority authority) {
+        this.definitionAuthority = authority;
+    }
+
+    public WorkspaceDefinitionAuthority getDefinitionAuthority() {
+        return definitionAuthority;
+    }
+
     /** Reads AGENTS.md content, returns empty string if not found. */
     public String readAgentsMd(RuntimeContext rc) {
         return readWithOverride(rc, AGENTS_MD);
@@ -298,7 +309,10 @@ public class WorkspaceManager implements AutoCloseable {
         Set<String> relativePaths = new LinkedHashSet<>();
 
         if (filesystem != null) {
-            GlobResult glob = filesystem.glob(rc, "*", KNOWLEDGE_DIR);
+            GlobResult glob =
+                    definitionAuthority != null
+                            ? definitionAuthority.glob(rc, filesystem, "*", KNOWLEDGE_DIR)
+                            : filesystem.glob(rc, "*", KNOWLEDGE_DIR);
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
@@ -812,10 +826,14 @@ public class WorkspaceManager implements AutoCloseable {
     // ==================== Two-layer read/write helpers ====================
 
     /**
-     * Two-layer read: filesystem first (namespaced by {@link
+     * Projected definitions use the host exclusively. Other paths use filesystem first (namespaced by {@link
      * NamespaceFactory}), local disk fallback.
      */
     private String readWithOverride(RuntimeContext rc, String relativePath) {
+        if (definitionAuthority != null && definitionAuthority.owns(relativePath)) {
+            // Missing/empty host definitions never fall back to untrusted sandbox contents.
+            return readFileQuietly(workspace.resolve(relativePath));
+        }
         String fsContent = readTextThroughFilesystem(rc, relativePath);
         if (!fsContent.isEmpty()) {
             return fsContent;

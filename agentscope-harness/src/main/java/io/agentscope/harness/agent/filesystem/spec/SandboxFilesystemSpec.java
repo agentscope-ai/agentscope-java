@@ -45,6 +45,7 @@ public abstract class SandboxFilesystemSpec {
     private SandboxSnapshotSpec snapshotSpecOverride;
     private SandboxExecutionGuard executionGuard;
     private boolean workspaceProjectionEnabled = true;
+    private boolean hostAuthoritativeDefinitions = true;
     private List<String> workspaceProjectionRoots = DEFAULT_WORKSPACE_PROJECTION_ROOTS;
 
     protected abstract SandboxClient<?> createClient();
@@ -94,6 +95,27 @@ public abstract class SandboxFilesystemSpec {
         return executionGuard;
     }
 
+    /**
+     * Keeps projected definitions authoritative on the host (default). Set false to restore
+     * legacy sandbox overrides and host-hash-only projection checks.
+     */
+    public SandboxFilesystemSpec hostAuthoritativeDefinitions(boolean enabled) {
+        this.hostAuthoritativeDefinitions = enabled;
+        return this;
+    }
+
+    public boolean isHostAuthoritativeDefinitions() {
+        return hostAuthoritativeDefinitions;
+    }
+
+    public boolean isWorkspaceProjectionEnabled() {
+        return workspaceProjectionEnabled;
+    }
+
+    public List<String> getWorkspaceProjectionRoots() {
+        return workspaceProjectionRoots;
+    }
+
     public SandboxFilesystemSpec workspaceProjectionEnabled(boolean enabled) {
         this.workspaceProjectionEnabled = enabled;
         return this;
@@ -133,6 +155,7 @@ public abstract class SandboxFilesystemSpec {
         WorkspaceProjectionEntry projection = new WorkspaceProjectionEntry();
         projection.setSourceRoot(hostWorkspaceRoot.toAbsolutePath().normalize().toString());
         projection.setIncludeRoots(workspaceProjectionRoots);
+        projection.setHostAuthoritativeDefinitions(hostAuthoritativeDefinitions);
 
         Map<String, WorkspaceEntry> entries = new LinkedHashMap<>(effective.getEntries());
         entries.put("__workspace_projection__", projection);

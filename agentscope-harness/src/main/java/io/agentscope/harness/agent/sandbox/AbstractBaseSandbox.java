@@ -264,13 +264,25 @@ public abstract class AbstractBaseSandbox implements Sandbox {
      */
     protected abstract String getWorkspaceRoot();
 
+    private boolean projectionMatchesSandbox(WorkspaceProjectionApplier.ProjectionPayload payload) {
+        try {
+            return WorkspaceProjectionApplier.matchesSandbox(payload, this, getWorkspaceRoot());
+        } catch (Exception e) {
+            log.warn(
+                    "[sandbox] Projection verification failed; rehydrating host definitions: {}",
+                    e.getMessage());
+            return false;
+        }
+    }
+
     private void applyWorkspaceProjectionIfChanged(WorkspaceSpec spec) throws Exception {
         WorkspaceProjectionApplier.ProjectionPayload payload =
                 WorkspaceProjectionApplier.build(spec);
         if (payload == null) {
             return;
         }
-        if (Objects.equals(payload.hash(), state.getWorkspaceProjectionHash())) {
+        if (Objects.equals(payload.hash(), state.getWorkspaceProjectionHash())
+                && projectionMatchesSandbox(payload)) {
             log.debug("[sandbox] Workspace projection unchanged, skipping");
             return;
         }

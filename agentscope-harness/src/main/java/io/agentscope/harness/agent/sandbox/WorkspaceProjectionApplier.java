@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import io.agentscope.harness.agent.sandbox.layout.DirEntry;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceProjectionEntry;
@@ -58,6 +59,15 @@ public final class WorkspaceProjectionApplier {
         }
 
         Map<String, Path> projectedFiles = collectProjectedFiles(entries);
+        var authoritativePaths =
+                collectProjectedFiles(
+                                entries.stream()
+                                        .filter(
+                                                WorkspaceProjectionEntry
+                                                        ::isHostAuthoritativeDefinitions)
+                                        .toList())
+                        .keySet();
+        Map<String, String> fileHashes = new LinkedHashMap<>();
         List<Map.Entry<String, Path>> ordered = new ArrayList<>(projectedFiles.entrySet());
         ordered.sort(Comparator.comparing(Map.Entry::getKey));
 
@@ -69,6 +79,10 @@ public final class WorkspaceProjectionApplier {
                 String rel = file.getKey();
                 Path src = file.getValue();
                 byte[] content = Files.readAllBytes(src);
+                if (authoritativePaths.contains(rel)) {
+                    fileHashes.put(
+                            rel, bytesToHex(MessageDigest.getInstance("SHA-256").digest(content)));
+                }
 
                 digest.update(rel.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 digest.update((byte) 0);
@@ -84,7 +98,41 @@ public final class WorkspaceProjectionApplier {
         }
 
         String hash = bytesToHex(digest.digest());
-        return new ProjectionPayload(hash, baos.toByteArray(), ordered.size());
+        return new ProjectionPayload(hash, baos.toByteArray(), ordered.size(), fileHashes);
+    }
+
+    /**
+     * Checks the live copy, using bounded exec batches. A missing hashing utility, malformed
+     * output, timeout, or backend error must force hydration rather than trust the old hash.
+     */
+    static boolean matchesSandbox(ProjectionPayload payload, Sandbox sandbox, String workspaceRoot)
+            throws Exception {
+        List<Map.Entry<String, String>> files = new ArrayList<>(payload.fileHashes().entrySet());
+        for (int start = 0; start < files.size(); start += 64) {
+            List<Map.Entry<String, String>> batch =
+                    files.subList(start, Math.min(start + 64, files.size()));
+            StringBuilder command = new StringBuilder();
+            for (var file : batch) {
+                String path = FilesystemUtils.shellQuote(workspaceRoot + "/" + file.getKey());
+                command.append("test -f ")
+                        .append(path)
+                        .append(" && test ! -L ")
+                        .append(path)
+                        .append(" && sha256sum < ")
+                        .append(path)
+                        .append(" || exit 1;\n");
+            }
+            ExecResult result = sandbox.exec(null, command.toString(), 10);
+            if (!result.ok() || result.truncated() || result.stdout() == null) return false;
+            String[] lines = result.stdout().strip().split("\\R");
+            if (lines.length != batch.size()) return false;
+            for (int i = 0; i < lines.length; i++) {
+                if (!lines[i].matches("[0-9a-fA-F]{64}\\s+-")
+                        || !lines[i].substring(0, 64).equalsIgnoreCase(batch.get(i).getValue()))
+                    return false;
+            }
+        }
+        return true;
     }
 
     private static void collectProjectionEntries(
@@ -151,6 +199,17 @@ public final class WorkspaceProjectionApplier {
      * @param hash deterministic hash over projected file paths and bytes
      * @param tarBytes tar archive containing projected files
      * @param fileCount number of projected files
+     * @param fileHashes hashes of files whose live sandbox copies require verification
      */
-    public record ProjectionPayload(String hash, byte[] tarBytes, int fileCount) {}
+    public record ProjectionPayload(
+            String hash, byte[] tarBytes, int fileCount, Map<String, String> fileHashes) {
+        public ProjectionPayload {
+            fileHashes = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(fileHashes));
+        }
+
+        /** Preserves the original payload constructor for callers that do not request verification. */
+        public ProjectionPayload(String hash, byte[] tarBytes, int fileCount) {
+            this(hash, tarBytes, fileCount, Map.of());
+        }
+    }
 }

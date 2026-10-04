@@ -193,6 +193,8 @@ env:
 
 ### 两层读架构（filesystem-first + 本地兜底）
 
+沙箱模式下，属于配置的 `workspaceProjectionRoots(...)` 的路径默认只从 host 加载受信任上下文；host 文件为空或不存在时也不会回退到沙箱。projected knowledge roots 的目录列表同样排除沙箱注入文件。未 projection 的 runtime data（包括默认 `MEMORY.md`）继续使用下述双层读取，显式 filesystem 前缀路由仍优先。projection、迁移与 legacy opt-out 见 [Filesystem](/v2/zh/docs/harness/filesystem#host-authoritative-projected-definitions)。
+
 对所有"被注入到 prompt 的关键文件"（`AGENTS.md` / `MEMORY.md` / `knowledge/KNOWLEDGE.md` / `additionalContextFile`），`WorkspaceManager.readWithOverride()` 都走**两层读**：
 
 ```

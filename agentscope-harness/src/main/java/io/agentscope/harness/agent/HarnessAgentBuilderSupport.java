@@ -820,7 +820,14 @@ final class HarnessAgentBuilderSupport {
                 decl -> buildDeclaredFactory(b, decl, workspace, sandboxFs);
         DefaultAgentManager manager = new DefaultAgentManager(staticEntries, wsManager);
         return new DynamicSubagentsMiddleware(
-                staticEntries, fs, workspace, factoryFn, manager, b.externalSubagentTool, repo);
+                        staticEntries,
+                        fs,
+                        workspace,
+                        factoryFn,
+                        manager,
+                        b.externalSubagentTool,
+                        repo)
+                .setDefinitionAuthority(wsManager.getDefinitionAuthority());
     }
 
     private static TaskRepository resolveTaskRepository(
@@ -910,9 +917,11 @@ final class HarnessAgentBuilderSupport {
         // WorkspaceSkillRepository (replaces legacy FilesystemBackedSkillRepository).
         // Skipped when the user opts out with disableDefaultWorkspaceSkills().
         if (filesystem != null && !b.disableDefaultWorkspaceSkills) {
-            ordered.add(
+            var repository =
                     new io.agentscope.harness.agent.skill.WorkspaceSkillRepository(
-                            filesystem, "skills", "workspace-namespaced", false));
+                            filesystem, "skills", "workspace-namespaced", false);
+            repository.setDefinitionAuthority(wsManager.getDefinitionAuthority());
+            ordered.add(repository);
         }
 
         return ordered;
