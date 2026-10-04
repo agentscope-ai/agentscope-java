@@ -16,9 +16,11 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.accumulator.ToolCallsAccumulator;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -667,6 +669,347 @@ class ToolExecutorTest {
                             || errorText.contains("provided"),
                     "Error " + i + " should contain meaningful message: " + errorText);
         }
+    }
+
+    @Test
+    @DisplayName("Should return format correction instead of 'Tool not found: null'")
+    void shouldReturnFormatCorrectionForMissingToolName() {
+        ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
+        accumulator.add(
+                ToolUseBlock.builder().id("call-missing").content("{\"a\": 1, \"b\": 2}").build());
+        ToolUseBlock malformed = accumulator.buildAllToolCalls().get(0);
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(malformed), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        assertEquals(1, responses.size());
+        assertEquals("call-missing", responses.get(0).getId());
+        String text = extractFirstText(responses.get(0));
+        assertFalse(text.contains("Tool not found"), text);
+        assertTrue(text.contains("Malformed tool call was not executed"), text);
+        assertTrue(text.contains("The tool name (function.name) is missing."), text);
+        assertTrue(text.contains("Received arguments: {\"a\": 1, \"b\": 2}"), text);
+        assertTrue(text.contains("conforms to the tool's JSON schema"), text);
+        assertEquals(1, toolkit.getMalformedToolCallCount());
+    }
+
+    @Test
+    @DisplayName("Should reject unmarked tool calls with a null name in parallel mode")
+    void shouldRejectNullNameWithoutMarkerInParallelMode() {
+        Toolkit parallelToolkit = new Toolkit(ToolkitConfig.builder().parallel(true).build());
+        parallelToolkit.registerTool(new SampleTools());
+        ToolUseBlock nullName =
+                ToolUseBlock.builder().id("call-null").input(Map.of()).content("{}").build();
+
+        List<ToolResultBlock> responses =
+                parallelToolkit.callTools(List.of(nullName), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        String text = extractFirstText(responses.get(0));
+        assertTrue(text.contains("The tool name (function.name) is missing."), text);
+        assertEquals(1, parallelToolkit.getMalformedToolCallCount());
+    }
+
+    @Test
+    @DisplayName("Should not execute tool with invalid JSON arguments and echo schema")
+    void shouldReturnFormatCorrectionForInvalidArguments() {
+        AtomicInteger invocations = new AtomicInteger();
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "counting_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Counts invocations";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of(
+                                "type",
+                                "object",
+                                "properties",
+                                Map.of("query", Map.of("type", "string")));
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        invocations.incrementAndGet();
+                        return Mono.just(ToolResultBlock.text("ok"));
+                    }
+                });
+        ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call-bad-args")
+                        .name("counting_tool")
+                        .content("{\"query\": \"hello wor")
+                        .build());
+        ToolUseBlock malformed = accumulator.buildAllToolCalls().get(0);
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(malformed), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        assertEquals(0, invocations.get());
+        String text = extractFirstText(responses.get(0));
+        assertTrue(text.contains("Malformed tool call to 'counting_tool'"), text);
+        assertTrue(text.contains("The arguments are not a valid JSON object."), text);
+        assertTrue(text.contains("Received arguments: {\"query\": \"hello wor"), text);
+        assertTrue(text.contains("Expected JSON schema: {"), text);
+        assertTrue(text.contains("\"query\""), text);
+        assertEquals(1, toolkit.getMalformedToolCallCount());
+    }
+
+    @Test
+    @DisplayName("Should truncate long raw arguments in format correction")
+    void shouldTruncateLongRawArguments() {
+        String longRaw = "{\"a\": \"" + "x".repeat(ToolExecutor.MAX_ECHOED_ARGUMENTS_LENGTH * 2);
+        ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
+        accumulator.add(
+                ToolUseBlock.builder().id("call-long").name("add").content(longRaw).build());
+        ToolUseBlock malformed = accumulator.buildAllToolCalls().get(0);
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(malformed), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        String text = extractFirstText(responses.get(0));
+        assertTrue(text.contains("...(truncated, " + longRaw.length() + " chars total)"), text);
+        assertFalse(text.contains(longRaw), text);
+    }
+
+    @Test
+    @DisplayName("Should reject malformed calls even when there is nothing to echo")
+    void shouldRejectMalformedCallWithoutEchoableArguments() {
+        ToolUseBlock noContent =
+                ToolUseBlock.builder()
+                        .id("call-nocontent")
+                        .metadata(
+                                Map.of(
+                                        ToolUseBlock.METADATA_MALFORMED_REASONS,
+                                        List.of("MISSING_NAME")))
+                        .build();
+        ToolUseBlock emptyContent =
+                ToolUseBlock.builder()
+                        .id("call-empty")
+                        .name("add")
+                        .content("")
+                        .metadata(
+                                Map.of(
+                                        ToolUseBlock.METADATA_MALFORMED_REASONS,
+                                        List.of("INVALID_ARGUMENTS")))
+                        .build();
+        ToolUseBlock blankName =
+                ToolUseBlock.builder()
+                        .id("call-blank")
+                        .name("  ")
+                        .metadata(
+                                Map.of(
+                                        ToolUseBlock.METADATA_MALFORMED_REASONS,
+                                        List.of("MISSING_NAME")))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(noContent, emptyContent, blankName), null, null, null)
+                        .block(TIMEOUT);
+
+        assertNotNull(responses);
+        assertEquals(3, responses.size());
+        for (ToolResultBlock response : responses) {
+            String text = extractFirstText(response);
+            assertTrue(text.contains("Malformed tool call"), text);
+            assertFalse(text.contains("Received arguments"), text);
+        }
+        assertEquals(3, toolkit.getMalformedToolCallCount());
+    }
+
+    @Test
+    @DisplayName("Should not echo a schema when the resolved tool declares no parameters")
+    void shouldNotEchoSchemaForToolWithoutParameters() {
+        AtomicInteger invocations = new AtomicInteger();
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "bare_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "No parameters";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        invocations.incrementAndGet();
+                        return Mono.just(ToolResultBlock.text("ok"));
+                    }
+                });
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "nullable_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Null parameters";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return null;
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        invocations.incrementAndGet();
+                        return Mono.just(ToolResultBlock.text("ok"));
+                    }
+                });
+        ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call-bare")
+                        .name("bare_tool")
+                        .content("not json")
+                        .build());
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call-nullable")
+                        .name("nullable_tool")
+                        .content("not json")
+                        .build());
+        List<ToolUseBlock> malformed = accumulator.buildAllToolCalls();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(malformed, null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        assertEquals(2, responses.size());
+        assertEquals(0, invocations.get());
+        for (ToolResultBlock response : responses) {
+            String text = extractFirstText(response);
+            assertTrue(text.contains("Malformed tool call"), text);
+            assertFalse(text.contains("Expected JSON schema"), text);
+        }
+        assertEquals(2, toolkit.getMalformedToolCallCount());
+    }
+
+    @Test
+    @DisplayName("Should keep external (frontend-owned) tools on their normal path")
+    void shouldPreserveExternalToolPathForMalformedCall() {
+        toolkit.registerSchema(
+                ToolSchema.builder()
+                        .name("external_api")
+                        .description("Execute API outside the agent runtime")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("endpoint", Map.of("type", "string"))))
+                        .build());
+        ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call-ext")
+                        .name("external_api")
+                        .content("{\"endpoint\":")
+                        .build());
+        ToolUseBlock malformed = accumulator.buildAllToolCalls().get(0);
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(malformed), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        ToolResultBlock response = responses.get(0);
+        assertFalse(
+                extractFirstText(response).contains("Malformed tool call"),
+                "External tool must not get format-correction rejection");
+        assertTrue(response.isSuspended(), "External tool should still surface as suspended");
+        assertEquals(0, toolkit.getMalformedToolCallCount());
+    }
+
+    @Test
+    @DisplayName("Should truncate an oversized JSON schema echo")
+    void shouldTruncateLargeSchemaEcho() {
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "big_schema_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Huge schema";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of(
+                                "type",
+                                "object",
+                                "properties",
+                                Map.of(
+                                        "arg",
+                                        Map.of("type", "string", "description", "x".repeat(3000))));
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.just(ToolResultBlock.text("ok"));
+                    }
+                });
+        ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call-bigschema")
+                        .name("big_schema_tool")
+                        .content("not json")
+                        .build());
+        ToolUseBlock malformed = accumulator.buildAllToolCalls().get(0);
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(malformed), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        String text = extractFirstText(responses.get(0));
+        assertTrue(text.contains("Expected JSON schema: {"), text);
+        assertTrue(text.contains("...(truncated,"), text);
+        assertFalse(text.contains("x".repeat(3000)), text);
+    }
+
+    @Test
+    @DisplayName("Should not count well-formed tool calls as malformed")
+    void shouldNotCountWellFormedToolCalls() {
+        Map<String, Object> input = Map.of("a", 1, "b", 2);
+        ToolUseBlock call =
+                ToolUseBlock.builder()
+                        .id("call-ok")
+                        .name("add")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(call), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        assertFalse(extractFirstText(responses.get(0)).startsWith("Error:"));
+        assertEquals(0, toolkit.getMalformedToolCallCount());
     }
 
     private String extractFirstText(ToolResultBlock response) {
