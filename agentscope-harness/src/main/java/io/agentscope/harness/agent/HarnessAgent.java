@@ -58,6 +58,7 @@ import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import io.agentscope.harness.agent.gateway.HarnessGateway;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
 import io.agentscope.harness.agent.gateway.channel.Channel;
@@ -2366,6 +2367,39 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     });
         }
 
+        /**
+         * Chooses how skill paths are rewritten for the shell that will run them.
+         *
+         * <p>{@link OverlayFilesystem#of} with a sandbox upper returns a shell-aware overlay.
+         * That shape is sandbox-backed and uses {@link ShellPathPolicy#sandbox(String)}; a local
+         * shell upper keeps {@link ShellPathPolicy#localWithShell}.
+         */
+        static ShellPathPolicy selectShellPathPolicy(
+                boolean disableShellTool,
+                AbstractFilesystem filesystem,
+                Path resolvedWorkspace,
+                SandboxContext defaultSandboxContext) {
+            if (disableShellTool) {
+                return ShellPathPolicy.noShell();
+            }
+            if (filesystem instanceof LocalFilesystemWithShell) {
+                return ShellPathPolicy.localWithShell(resolvedWorkspace);
+            }
+            if (filesystem instanceof OverlayFilesystem ov
+                    && ov.getUpper() instanceof LocalFilesystemWithShell) {
+                return ShellPathPolicy.localWithShell(resolvedWorkspace);
+            }
+            if (FilesystemUtils.isSandboxBacked(filesystem)) {
+                String wsPrefix =
+                        defaultSandboxContext != null
+                                        && defaultSandboxContext.getClientOptions() != null
+                                ? defaultSandboxContext.getClientOptions().getWorkspaceRoot()
+                                : ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX;
+                return ShellPathPolicy.sandbox(wsPrefix);
+            }
+            return ShellPathPolicy.noShell();
+        }
+
         public HarnessAgent build() {
             // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
             // user-registered tools never bleed across builds.
@@ -2884,30 +2918,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 if (!shellToolAvailable) {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
-                } else if (filesystem instanceof LocalFilesystemWithShell) {
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
-                                    .localWithShell(resolvedWorkspace);
-                } else if (filesystem instanceof OverlayFilesystem ov
-                        && ov.getUpper() instanceof LocalFilesystemWithShell) {
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
-                                    .localWithShell(resolvedWorkspace);
-                } else if (filesystem instanceof SandboxBackedFilesystem
-                        || (filesystem instanceof RoutedSandboxFilesystem routed
-                                && routed.primary() instanceof SandboxBackedFilesystem)) {
-                    String wsPrefix =
-                            defaultSandboxContext != null
-                                            && defaultSandboxContext.getClientOptions() != null
-                                    ? defaultSandboxContext.getClientOptions().getWorkspaceRoot()
-                                    : io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
-                                            .SANDBOX_WORKSPACE_PREFIX;
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.sandbox(
-                                    wsPrefix);
                 } else {
                     shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
+                            selectShellPathPolicy(
+                                    false, filesystem, resolvedWorkspace, defaultSandboxContext);
                 }
 
                 HarnessSkillMiddleware skillMiddleware =
