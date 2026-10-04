@@ -372,4 +372,49 @@ class PermissionEngineTest {
                     .verifyComplete();
         }
     }
+
+    @Test
+    void addRuleIgnoresExactDuplicates() {
+        PermissionContextState context =
+                PermissionContextState.builder()
+                        .addAskRule(
+                                "Bash",
+                                new PermissionRule(
+                                        "Bash", "rm -rf", PermissionBehavior.ASK, "test"))
+                        .build();
+        PermissionEngine engine = new PermissionEngine(context);
+
+        PermissionRule accepted =
+                new PermissionRule("Bash", null, PermissionBehavior.ALLOW, "user_confirm");
+        engine.addRule(accepted);
+        engine.addRule(accepted);
+        engine.addRule(accepted);
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                1,
+                engine.getAllowRules().get("Bash").size(),
+                "identical re-accept must not grow the engine table");
+    }
+
+    @Test
+    void addRuleTreatsNullAndEmptyContentAsEquivalent() {
+        // ruleMatches evaluates null and empty ruleContent identically
+        // (both unconditional), so the engine table must not hold both.
+        PermissionContextState context =
+                PermissionContextState.builder()
+                        .addAskRule(
+                                "Bash",
+                                new PermissionRule(
+                                        "Bash", "rm -rf", PermissionBehavior.ASK, "test"))
+                        .build();
+        PermissionEngine engine = new PermissionEngine(context);
+
+        engine.addRule(new PermissionRule("Bash", null, PermissionBehavior.ALLOW, "user_confirm"));
+        engine.addRule(new PermissionRule("Bash", "", PermissionBehavior.ALLOW, "user_confirm"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                1,
+                engine.getAllowRules().get("Bash").size(),
+                "null and empty ruleContent are the same rule at evaluation time");
+    }
 }
