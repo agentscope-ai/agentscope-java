@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.sandbox.PinnedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
@@ -120,6 +121,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             }
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
+            PinnedSandboxFilesystem.markSandboxAcquired(sandbox);
             try {
                 sandbox.start();
                 // Bind the acquired sandbox per-call on this invocation's RuntimeContext rather
@@ -137,6 +139,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
                 ctx.put(SandboxAcquireResult.class, null);
                 filesystemProxy.clearSandboxIfCurrent(sandbox);
                 try {
+                    markMirrorSandboxReleased(result);
                     sandboxManager.release(result);
                 } catch (Exception releaseErr) {
                     log.warn(
@@ -177,6 +180,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         // Release (stop/persist workspace) first so state mutations made during stop — e.g.
         // workspaceRootReady or per-session snapshot records — are captured by the persist below.
         try {
+            markMirrorSandboxReleased(result);
             sandboxManager.release(result);
         } catch (Exception e) {
             log.warn("[sandbox-mw] Failed to release sandbox session: {}", e.getMessage(), e);
@@ -187,5 +191,11 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
         }
         result.getLease().close();
+    }
+
+    private static void markMirrorSandboxReleased(SandboxAcquireResult result) {
+        if (result.isSelfManaged()) {
+            PinnedSandboxFilesystem.markSandboxReleased(result.getSandbox());
+        }
     }
 }

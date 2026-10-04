@@ -32,6 +32,9 @@ public enum SandboxErrorCode {
     /** Failed to stop/persist the workspace store. */
     WORKSPACE_STOP_ERROR,
 
+    /** An operation was attempted after the sandbox connection was closed. */
+    SANDBOX_CONNECTION_CLOSED,
+
     /** Failed to read or parse a workspace archive (tar). */
     WORKSPACE_ARCHIVE_READ_ERROR,
 
