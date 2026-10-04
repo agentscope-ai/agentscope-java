@@ -223,7 +223,10 @@ class FuzzyTextMatcherTest {
     void crlfBehavesLikeLfTwin() {
         String lf = "header\n\nalpha   \n   beta\nfooter\n";
         String crlf = lf.replace("\n", "\r\n");
-        for (String needle : new String[] {"alpha\nbeta", "header\nalpha\nbeta\nfooter"}) {
+        for (String needle :
+                new String[] {
+                    "alpha\nbeta", "header\nalpha\nbeta\nfooter", "\nalpha\nbeta", "\n\nalpha\nbeta"
+                }) {
             SearchResult onLf = FuzzyTextMatcher.search(lf, needle);
             SearchResult onCrlf = FuzzyTextMatcher.search(crlf, needle);
             assertEquals(onLf.isEmpty(), onCrlf.isEmpty(), "emptiness differs for: " + needle);
@@ -244,21 +247,48 @@ class FuzzyTextMatcherTest {
     }
 
     @Test
-    @DisplayName("A newline-leading needle does not begin inside a CRLF terminator")
-    void crlfLeadingNewlineKeepsTerminatorOutsideSpan() {
-        String existing = "alpha\r\nbeta   \r\ngamma\r\n";
-        String needle = "\nbeta\ngamma";
-        SearchResult r = FuzzyTextMatcher.search(existing, needle);
-        assertEquals(Level.TRAILING_WS_STRIPPED, r.level());
-        assertEquals(1, r.matches().size());
+    @DisplayName("A newline-leading needle patches a CRLF document exactly as its LF twin")
+    void crlfLeadingNewlinePatchMatchesLfTwin() {
+        // Each case is {CRLF document, needle, replacement}; the LF twin is the same document with
+        // its terminators folded, so anything the patch leaves behind shows up as a difference
+        // instead of being absorbed by the comparison.
+        String[][] cases = {
+            // A needle whose first line is blank: the span opens on a terminator, not on content.
+            {"alpha\r\nbeta   \r\ngamma\r\n", "\nbeta\ngamma", "\nBETA"},
+            // Two leading newlines. The span opens on the second terminator, and an edge rule that
+            // steps over a single '\r' strands the first one as an orphan CR in the output.
+            {"one\r\n\r\nalpha beta\r\n", "\n\nalpha beta", "REPL"},
+            // Same shape, with a replacement that re-supplies both line breaks itself.
+            {"alpha\r\nbeta   \r\ngamma\r\n", "\nbeta\ngamma", "\nBETA\nGAMMA"},
+            // No leading newline at all: the span opens on ordinary content.
+            {"alpha\r\nbeta\r\ngamma\r\n", "beta\ngamma", "BETA"},
+        };
+        for (String[] c : cases) {
+            String onCrlf = patchOnce(c[0], c[1], c[2]);
+            String onLf = patchOnce(c[0].replace("\r\n", "\n"), c[1], c[2]);
+            // Folding only well-formed CRLF pairs keeps a stray '\r' visible: an orphan carriage
+            // return survives this normalisation and fails the comparison rather than hiding in it.
+            assertEquals(onLf, onCrlf.replace("\r\n", "\n"), "patched output differs for: " + c[1]);
+        }
+        // Pin the bytes, not just the parity. A leading newline is part of the span, so the
+        // replacement's own '\n' lands on that terminator while the untouched one after it stays
+        // CRLF — the mixed result is the replacement taking effect, not the matcher rewriting
+        // whitespace. Anchoring the start on the '\r' instead keeps this case uniformly CRLF but
+        // strands a '\r' in the two-newline case above, so both shapes are frozen together here.
+        assertEquals("alpha\nBETA\r\n", patchOnce(cases[0][0], cases[0][1], cases[0][2]));
+        // The blank-line case is carried by the trailing-whitespace level, not by the collapse
+        // level: a needle's own newlines match a CRLF document's folded terminators directly, so
+        // no more whitespace than necessary is ignored.
+        assertEquals(
+                Level.TRAILING_WS_STRIPPED,
+                FuzzyTextMatcher.search(cases[1][0], cases[1][1]).level());
+    }
+
+    /** Applies the first match the way {@code SkillManageTool#patch} does, splicing verbatim. */
+    private static String patchOnce(String document, String needle, String replacement) {
+        SearchResult r = FuzzyTextMatcher.search(document, needle);
+        assertEquals(1, r.matches().size(), "expected exactly one match for: " + needle);
         MatchRange m = r.matches().get(0);
-        // The span starts on the '\n' of the first terminator, so the '\r' in front of it stays
-        // outside. Resolving the start to the '\r' instead would let the replacement's LF stand
-        // in for a CRLF, silently downgrading that line's terminator.
-        assertEquals("\nbeta   \r\ngamma", existing.substring(m.start(), m.end()));
-        assertEquals('\r', existing.charAt(m.start() - 1));
-        // Patching therefore leaves the document fully CRLF rather than mixing styles.
-        String patched = existing.substring(0, m.start()) + "\nBETA" + existing.substring(m.end());
-        assertEquals("alpha\r\nBETA\r\n", patched);
+        return document.substring(0, m.start()) + replacement + document.substring(m.end());
     }
 }

@@ -44,10 +44,22 @@ import java.util.List;
  * </ul>
  *
  * <p>CRLF terminators are folded to {@code '\n'} so a Windows-authored file matches an LF-only
- * needle, and a span never begins or ends inside a terminator. A lone {@code '\r'} — classic Mac
- * line endings, or a file where only some lines end that way — is still treated as ordinary
- * content and matches nothing; that is out of scope here, but stated because the rest of this
- * class advertises newline tolerance.
+ * needle. An emitted {@code '\n'} maps back to the {@code '\r'} that starts a CRLF terminator,
+ * and both the leading and the trailing boundary resolve through that same map entry, so at the
+ * normalising levels a span edge always lands on a terminator boundary and never splits one.
+ * {@link Level#EXACT} carries no such guarantee: it is a raw {@code indexOf}, so a needle that
+ * begins with a newline can open on the {@code '\n'} of a CRLF terminator and leave its
+ * {@code '\r'} behind, exactly as it does before this change. Either way only the span itself is
+ * ever replaced, so nothing outside it is rewritten.
+ *
+ * <p>Because the replacement is spliced in verbatim, a needle that opens on a line break hands
+ * that terminator to the caller's own text — a replacement supplying {@code '\n'} leaves it as
+ * {@code '\n'}, so one patch over a CRLF document can leave both styles present. That is the
+ * caller's text taking effect rather than whitespace this class rewrote.
+ *
+ * <p>A lone {@code '\r'} — classic Mac line endings, or a file where only some lines end that way
+ * — is still treated as ordinary content and matches nothing; that is out of scope here, but
+ * stated because the rest of this class advertises newline tolerance.
  */
 final class FuzzyTextMatcher {
 
@@ -145,7 +157,7 @@ final class FuzzyTextMatcher {
         }
         int idx = 0;
         while ((idx = haystack.text.indexOf(needle.text, idx)) >= 0) {
-            int origStart = startOffset(haystack, idx);
+            int origStart = haystack.originalIndex[idx];
             int needleEndExcl = idx + needle.text.length();
             int origEnd;
             if (needleEndExcl < haystack.originalIndex.length) {
@@ -160,29 +172,17 @@ final class FuzzyTextMatcher {
     }
 
     /**
-     * Original-string offset at which a match beginning at normalised index {@code idx} starts.
-     * A span must never begin inside a CRLF terminator: when the needle's first character is a
-     * newline the normalised view points it at the terminator's {@code '\r'}, so start at the
-     * {@code '\n'} instead. The {@code '\r'} then stays outside the span and the caller's
-     * replacement text supplies the line break, which leaves the document's terminator style
-     * intact — the mirror image of the trailing boundary, where the terminator is likewise
-     * excluded from the span.
-     */
-    private static int startOffset(Normalized haystack, int idx) {
-        int orig = haystack.originalIndex[idx];
-        if (haystack.text.charAt(idx) == '\n'
-                && haystack.source.charAt(orig) == '\r'
-                && orig + 1 < haystack.originalLength()
-                && haystack.source.charAt(orig + 1) == '\n') {
-            return orig + 1;
-        }
-        return orig;
-    }
-
-    /**
      * A normalised view of a string plus a per-character map back to the original string. For
      * every {@code i} in {@code [0, text.length())}, {@code originalIndex[i]} is the offset in
      * the original string of the source character that emitted {@code text.charAt(i)}.
+     *
+     * <p>A folded terminator maps to the {@code '\r'} that <em>starts</em> it, never to the
+     * {@code '\n'} that ends it. Both span boundaries read this one map, so a match that opens or
+     * closes on a newline lands on a terminator boundary from either side, and no boundary can
+     * leave a stray {@code '\r'} behind. Resolving a leading newline forward to its {@code '\n'}
+     * instead would split the terminator: the replacement is spliced verbatim, so any patch whose
+     * text does not itself begin with a newline would strand the {@code '\r'} in the document and
+     * downgrade that line's terminator to LF.
      */
     private record Normalized(String source, String text, int[] originalIndex) {
         int originalLength() {
