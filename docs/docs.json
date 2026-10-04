@@ -351,7 +351,7 @@
                     "group": "Distributed storage",
                     "pages": [
                       "v2/en/integration/distributed/index",
-                      "v2/en/integration/distributed/mysql",
+                      "v2/en/integration/distributed/jdbc",
                       "v2/en/integration/distributed/mongodb",
                       "v2/en/integration/distributed/oss",
                       "v2/en/integration/distributed/redis"
@@ -859,7 +859,7 @@
                     "group": "分布式存储",
                     "pages": [
                       "v2/zh/integration/distributed/index",
-                      "v2/zh/integration/distributed/mysql",
+                      "v2/zh/integration/distributed/jdbc",
                       "v2/zh/integration/distributed/mongodb",
                       "v2/zh/integration/distributed/oss",
                       "v2/zh/integration/distributed/redis"
@@ -2399,7 +2399,12 @@
     },
     {
       "source": "/v2/en/integration/distributed/mysql.html",
-      "destination": "/v2/en/integration/distributed/mysql",
+      "destination": "/v2/en/integration/distributed/jdbc",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/distributed/mysql",
+      "destination": "/v2/en/integration/distributed/jdbc",
       "permanent": true
     },
     {
@@ -2974,7 +2979,12 @@
     },
     {
       "source": "/v2/zh/integration/distributed/mysql.html",
-      "destination": "/v2/zh/integration/distributed/mysql",
+      "destination": "/v2/zh/integration/distributed/jdbc",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/distributed/mysql",
+      "destination": "/v2/zh/integration/distributed/jdbc",
       "permanent": true
     },
     {

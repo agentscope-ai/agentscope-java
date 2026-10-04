@@ -37,6 +37,8 @@ import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Flux;
@@ -133,6 +135,13 @@ public class CustomizedMiddlewareExample {
      * tool call start/end, and tool progress chunks.
      */
     static class MonitoringMiddleware implements MiddlewareBase {
+
+        /** Declares participation only at the overridden extension points. */
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(
+                    ExtensionPoint.ON_AGENT, ExtensionPoint.ON_REASONING, ExtensionPoint.ON_ACTING);
+        }
 
         @Override
         public Flux<AgentEvent> onAgent(

@@ -110,6 +110,12 @@ public class DashScopeToolsHelper {
         if (responseFormat != null) {
             params.setResponseFormat(responseFormat);
         }
+
+        String reasoningEffort =
+                getOption(options, defaultOptions, GenerateOptions::getReasoningEffort);
+        if (reasoningEffort != null) {
+            params.setReasoningEffort(reasoningEffort);
+        }
     }
 
     /**

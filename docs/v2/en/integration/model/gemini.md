@@ -65,6 +65,36 @@ A signature that cannot be restored after persistence (for example, a corrupted 
 
 See [Gemini End-to-End Request Flow](/v2/en/integration/model/gemini-request-flow) for the complete single-request path.
 
+## Server-side tools
+
+Gemini built-in tools run on the model provider instead of the local AgentScope toolkit. Build a
+Google GenAI SDK `Tool` definition, then wrap it with `GeminiServerTool.of(...)`:
+
+```java
+import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
+import com.google.genai.types.GoogleSearch;
+import com.google.genai.types.Tool;
+import com.google.genai.types.UrlContext;
+
+GeminiChatModel model = GeminiChatModel.builder()
+    .apiKey(System.getenv("GEMINI_API_KEY"))
+    .modelName("gemini-3.8-flash")
+    .serverTools(List.of(
+        GeminiServerTool.of(Tool.builder()
+            .googleSearch(GoogleSearch.builder().build())
+            .build()),
+        GeminiServerTool.of(Tool.builder()
+            .urlContext(UrlContext.builder())
+            .build())
+    ))
+    .build();
+```
+
+When at least one server-side tool is configured, AgentScope enables Gemini server-side invocation
+context automatically and preserves returned calls and results in conversation history. Server-side
+tools can be combined with local function tools. Do not use `GeminiServerTool.of(...)` for custom
+function tools; it rejects those definitions.
+
 ## Spring Boot
 
 Spring Boot applications can use the Gemini starter:

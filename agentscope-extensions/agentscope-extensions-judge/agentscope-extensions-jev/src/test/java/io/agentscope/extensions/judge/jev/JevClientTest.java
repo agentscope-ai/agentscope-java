@@ -355,6 +355,80 @@ class JevClientTest {
     }
 
     @Test
+    void acceptsProbabilitiesRoundedToApiPrecision() {
+        // 34 options whose 4-decimal probabilities sum to 1.0001; captured from a real
+        // System One response that the previous tolerance (1e-6 per option) rejected.
+        double[] captured = {
+            0.0064, 0.0165, 0.0061, 0.0232, 0.0411, 0.007, 0.0357, 0.0227, 0.022,
+            0.0074, 0.0187, 0.0224, 0.0051, 0.0081, 0.0105, 0.0402, 0.0076, 0.0081,
+            0.02, 0.256, 0.0152, 0.1152, 0.0562, 0.0145, 0.0038, 0.0036, 0.0232,
+            0.0427, 0.0079, 0.0116, 0.01, 0.0072, 0.0223, 0.0819
+        };
+        Map<String, Double> probabilities = new LinkedHashMap<>();
+        for (int i = 0; i < captured.length; i++) {
+            probabilities.put("option_" + i, captured[i]);
+        }
+        when(transport.execute(any(HttpRequest.class)))
+                .thenReturn(response(200, choiceBody("option_19", probabilities)));
+
+        SystemOneResult result = client().systemOneBlocking(choiceRequest(34));
+
+        assertTrue(result.answers().containsKey("choice"));
+    }
+
+    @Test
+    void rejectsProbabilitySumDriftBeyondRoundingError() {
+        // Same shape, but option_0 is inflated by 0.01: the sum becomes 1.0101, far
+        // beyond n * 5e-5 = 1.7e-3, so the answer must still be rejected.
+        Map<String, Double> probabilities = new LinkedHashMap<>();
+        for (int i = 0; i < 34; i++) {
+            probabilities.put("option_" + i, 1.0 / 34);
+        }
+        probabilities.put("option_0", 1.0 / 34 + 0.01);
+        when(transport.execute(any(HttpRequest.class)))
+                .thenReturn(response(200, choiceBody("option_0", probabilities)));
+
+        JevException exception =
+                assertThrows(
+                        JevException.class, () -> client().systemOneBlocking(choiceRequest(34)));
+        assertTrue(exception.getMessage().contains("probabilities must sum to 1"));
+    }
+
+    private static String choiceBody(String choice, Map<String, Double> probabilities) {
+        return JevClient.MAPPER
+                .valueToTree(
+                        Map.of(
+                                "model",
+                                "jev-1.13.0",
+                                "answers",
+                                Map.of(
+                                        "choice",
+                                        Map.of(
+                                                "type",
+                                                "choice",
+                                                "choice",
+                                                choice,
+                                                "probabilities",
+                                                probabilities,
+                                                "confidence",
+                                                0.9)),
+                                "usage",
+                                Map.of("input_tokens", 100, "output_tokens", 20)))
+                .toString();
+    }
+
+    private static SystemOneRequest choiceRequest(int optionCount) {
+        Map<String, Object> criteria = new LinkedHashMap<>();
+        for (int i = 0; i < optionCount; i++) {
+            criteria.put("option_" + i, "Option " + i);
+        }
+        return SystemOneRequest.builder()
+                .state("Pick one")
+                .question("choice", new ChoiceQuestion("Pick one", criteria))
+                .build();
+    }
+
+    @Test
     void validatesClientAndRequestInput() {
         IllegalArgumentException missingKey =
                 assertThrows(
