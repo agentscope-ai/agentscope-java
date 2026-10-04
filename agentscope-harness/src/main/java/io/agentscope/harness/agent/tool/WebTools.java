@@ -34,6 +34,10 @@ import java.util.Objects;
  */
 public final class WebTools {
 
+    private static final int DEFAULT_MAX_CHARS = 20_000;
+    private static final int MAX_CHARS = 100_000;
+    private static final int ERROR_BODY_MAX_CHARS = 2_000;
+
     private WebTools() {}
 
     /**
@@ -79,7 +83,10 @@ public final class WebTools {
             if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
                 throw new IllegalArgumentException("only http/https URLs are allowed");
             }
-            int limit = maxChars != null && maxChars > 0 ? Math.min(maxChars, 100_000) : 20_000;
+            int limit =
+                    maxChars != null && maxChars > 0
+                            ? Math.min(maxChars, MAX_CHARS)
+                            : DEFAULT_MAX_CHARS;
             try {
                 HttpRequest request =
                         HttpRequest.newBuilder()
@@ -91,12 +98,9 @@ public final class WebTools {
                 HttpResponse<String> response =
                         client.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() >= 400) {
-                    throw new IllegalStateException("HTTP " + response.statusCode());
+                    throw new IllegalStateException(formatHttpError(response));
                 }
-                String body = response.body() == null ? "" : response.body();
-                if (body.length() > limit) {
-                    body = body.substring(0, limit) + "\n...[truncated]";
-                }
+                String body = truncate(response.body(), limit);
                 return "status=" + response.statusCode() + "\n\n" + body;
             } catch (Exception e) {
                 if (e instanceof InterruptedException) {
@@ -105,6 +109,30 @@ public final class WebTools {
                 throw new IllegalStateException("web_fetch failed: " + e.getMessage(), e);
             }
         }
+
+        /**
+         * Keep server-provided diagnostics available to the model without allowing an error
+         * response to consume an unbounded amount of context.
+         */
+        private static String formatHttpError(HttpResponse<String> response) {
+            String body = truncate(response.body(), ERROR_BODY_MAX_CHARS);
+            return body.isEmpty()
+                    ? "HTTP " + response.statusCode()
+                    : "HTTP " + response.statusCode() + "\n\n" + body;
+        }
+    }
+
+    private static String truncate(String value, int limit) {
+        String body = value == null ? "" : value;
+        if (body.length() <= limit) {
+            return body;
+        }
+        int end = limit;
+        if (Character.isHighSurrogate(body.charAt(end - 1))
+                && Character.isLowSurrogate(body.charAt(end))) {
+            end--;
+        }
+        return body.substring(0, end) + "\n...[truncated]";
     }
 
     public static final class WebSearchTool {

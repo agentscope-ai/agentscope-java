@@ -130,4 +130,111 @@ class WebToolsTest {
             server.stop(0);
         }
     }
+
+    @Test
+    void nonSuccessfulResponseIncludesBoundedBodyInError() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        String errorBody = "validation failed\n" + "x".repeat(3_000);
+        server.createContext(
+                "/",
+                exchange -> {
+                    byte[] body = errorBody.getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(422, body.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(body);
+                    }
+                });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
+            IllegalStateException error =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> new WebTools.WebFetchTool().webFetch(url, null));
+
+            assertTrue(error.getMessage().contains("HTTP 422"));
+            assertTrue(error.getMessage().contains("validation failed"));
+            assertTrue(error.getMessage().contains("\n...[truncated]"));
+            assertTrue(error.getMessage().length() < 2_100);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void successfulResponseHonorsRequestedAndDefaultCharacterLimits() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        String responseBody = "x".repeat(100_001);
+        server.createContext(
+                "/",
+                exchange -> {
+                    byte[] body = responseBody.getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, body.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(body);
+                    }
+                });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
+            WebTools.WebFetchTool tool = new WebTools.WebFetchTool();
+
+            assertEquals("status=200\n\nxxxxx\n...[truncated]", tool.webFetch(url, 5));
+            assertEquals(
+                    "status=200\n\n" + "x".repeat(20_000) + "\n...[truncated]",
+                    tool.webFetch(url, 0));
+            assertEquals(
+                    "status=200\n\n" + "x".repeat(100_000) + "\n...[truncated]",
+                    tool.webFetch(url, 200_000));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void errorWithoutBodyReportsStatusOnly() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    exchange.sendResponseHeaders(503, -1);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
+            IllegalStateException error =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> new WebTools.WebFetchTool().webFetch(url, null));
+
+            assertEquals("web_fetch failed: HTTP 503", error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void truncationDoesNotSplitSurrogatePairs() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    byte[] body = "a😀b".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, body.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(body);
+                    }
+                });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
+            WebTools.WebFetchTool tool = new WebTools.WebFetchTool();
+
+            assertEquals("status=200\n\na\n...[truncated]", tool.webFetch(url, 2));
+            assertEquals("status=200\n\na😀\n...[truncated]", tool.webFetch(url, 3));
+        } finally {
+            server.stop(0);
+        }
+    }
 }
