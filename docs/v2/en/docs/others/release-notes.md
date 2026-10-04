@@ -8,6 +8,26 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+### Media source migration
+
+- `MediaUtils.downloadUrlToBase64` accepts HTTP(S) only and now reports unsupported schemes
+  with `IOException`. For local paths use `fileToBase64`; for local paths, `file:` URIs, or HTTP(S)
+  use `urlToBase64DataUrl` (data URL) or `readUrlAsBytes` (raw bytes). `jar:` and other schemes are
+  not supported by these readers; load authorized content in application code if needed.
+- Shared byte/base64 readers and Gemini URL sources enforce a 50MB limit during reads, including
+  responses without `Content-Length`. HTTP(S) downloads follow at most five same-protocol redirects;
+  longer chains and invalid redirects fail with `IOException`. Applications must enforce network
+  restrictions on every destination; checking only the initial URL is insufficient.
+- Gemini validates explicit media hints against supported MIME types and normalizes `image/jpg`
+  to `image/jpeg`. A hint does not enable unsupported formats or replace access authorization.
+
+See [media source handling](/v2/en/docs/building-blocks/message-and-event#media-source-handling)
+for provider behavior and application responsibilities ([#3319](https://github.com/agentscope-ai/agentscope-java/pull/3319)).
+
+---
+
 ## 2.0.1
 
 > Released: 2026-08-05
