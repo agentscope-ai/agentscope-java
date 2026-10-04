@@ -43,7 +43,9 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
@@ -81,6 +83,8 @@ public class A2aAgent extends AgentBase {
 
     private final Memory memory;
 
+    private final List<MiddlewareBase> middlewares;
+
     private final ClientEventHandlerRouter clientEventHandlerRouter;
 
     private Client a2aClient;
@@ -101,10 +105,14 @@ public class A2aAgent extends AgentBase {
             boolean checkRunning,
             Memory memory,
             List<Hook> hooks,
+            List<MiddlewareBase> middlewares,
             AgentCardResolver agentCardResolver,
             A2aAgentConfig a2aAgentConfig) {
         super(name, description, checkRunning, hooks);
         this.a2aAgentConfig = a2aAgentConfig;
+        List<MiddlewareBase> sortedMiddlewares = new ArrayList<>(middlewares);
+        sortedMiddlewares.sort(Comparator.comparingInt(MiddlewareBase::order).reversed());
+        this.middlewares = List.copyOf(sortedMiddlewares);
         this.agentCardResolver = agentCardResolver;
         this.memory = memory;
         LoggerUtil.debug(log, "A2aAgent init with config: {}", a2aAgentConfig);
@@ -121,6 +129,7 @@ public class A2aAgent extends AgentBase {
         LoggerUtil.debug(log, "[{}] A2aAgent call with input messages: ", currentRequestId);
         LoggerUtil.logTextMsgDetail(log, memory.getMessages());
         clientEventContext.setHooks(getSortedHooks());
+        clientEventContext.setMiddlewares(middlewares);
         clientEventContext.setInputMessages(memory.getMessages());
         return Mono.defer(
                         () -> {
@@ -182,6 +191,15 @@ public class A2aAgent extends AgentBase {
 
     public Memory getMemory() {
         return memory;
+    }
+
+    /**
+     * Returns the immutable list of registered middlewares.
+     *
+     * @return the configured middlewares in execution order
+     */
+    public List<MiddlewareBase> getMiddlewares() {
+        return middlewares;
     }
 
     private Client buildA2aClient(String name) {
@@ -300,6 +318,8 @@ public class A2aAgent extends AgentBase {
 
         private final List<Hook> hooks = new ArrayList<>();
 
+        private final List<MiddlewareBase> middlewares = new ArrayList<>();
+
         /**
          * Set the name of the A2aAgent.
          *
@@ -408,6 +428,28 @@ public class A2aAgent extends AgentBase {
         }
 
         /**
+         * Add a middleware for intercepting A2A reasoning events.
+         *
+         * @param middleware the middleware to add
+         * @return the current Builder instance for method chaining
+         */
+        public Builder middleware(MiddlewareBase middleware) {
+            this.middlewares.add(middleware);
+            return this;
+        }
+
+        /**
+         * Add multiple middlewares for intercepting A2A reasoning events.
+         *
+         * @param middlewares the middlewares to add
+         * @return the current Builder instance for method chaining
+         */
+        public Builder middlewares(List<? extends MiddlewareBase> middlewares) {
+            this.middlewares.addAll(middlewares);
+            return this;
+        }
+
+        /**
          * Build the A2aAgent instance.
          *
          * @return the built A2aAgent instance
@@ -426,6 +468,7 @@ public class A2aAgent extends AgentBase {
                     this.checkRunning,
                     this.memory,
                     this.hooks,
+                    this.middlewares,
                     this.agentCardResolver,
                     this.a2aAgentConfig);
         }
