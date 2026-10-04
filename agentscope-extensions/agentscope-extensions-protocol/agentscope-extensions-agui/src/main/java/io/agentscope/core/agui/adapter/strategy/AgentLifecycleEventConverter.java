@@ -81,6 +81,7 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
             for (AguiEvent pendingEvent : context.finishPendingEvents()) {
                 context.emit(pendingEvent);
             }
+            context.emitFinalMessagesSnapshot((AgentEndEvent) event);
             List<AguiEvent.Interrupt> interrupts = context.getPendingInterrupts();
             AguiEvent.RunFinishedOutcome outcome =
                     interrupts.isEmpty()

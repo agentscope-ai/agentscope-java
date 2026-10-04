@@ -59,6 +59,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -101,14 +102,23 @@ public class AguiMessageConverter {
         if (content instanceof MessageContent.Text text) {
             addTextBlock(blocks, text.value(), aguiMessage);
         } else if (content instanceof MessageContent.Blocks blocksContent) {
-            if (!aguiMessage.isUserMessage()) {
-                throw new IllegalArgumentException(
-                        "Structured content blocks are only supported for AG-UI user messages");
-            }
+            List<ContentBlock> structuredBlocks = new ArrayList<>();
             for (InputContent input : blocksContent.parts()) {
-                blocks.add(toContentBlock(input));
+                structuredBlocks.add(toContentBlock(input));
             }
-        } else if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+            if (aguiMessage.isToolMessage() && hasToolCallId(aguiMessage)) {
+                blocks.add(
+                        ToolResultBlock.builder()
+                                .id(aguiMessage.getToolCallId())
+                                .output(structuredBlocks)
+                                .state(resolveToolResultState(aguiMessage))
+                                .build());
+            } else {
+                // Keep legacy history messages with missing/blank ids as ordinary TOOL content;
+                // only identified results can resolve a pending tool invocation.
+                blocks.addAll(structuredBlocks);
+            }
+        } else if (aguiMessage.isToolMessage()) {
             // Tool message with no content (e.g. frontend tool returning nothing): still
             // emit a ToolResultBlock so the pending tool call is resolved downstream.
             addTextBlock(blocks, "", aguiMessage);
@@ -132,38 +142,58 @@ public class AguiMessageConverter {
      */
     public AguiMessage toAguiMessage(Msg msg) {
         String role = convertRole(msg.getRole());
-        StringBuilder content = new StringBuilder();
+        List<InputContent> contentParts = new ArrayList<>();
         List<AguiToolCall> toolCalls = new ArrayList<>();
         String toolCallId = null;
 
         for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock tb) {
-                if (content.length() > 0) {
-                    content.append("\n");
-                }
-                content.append(tb.getText());
-            } else if (block instanceof ToolUseBlock tub) {
+            if (block instanceof ToolUseBlock tub) {
                 toolCalls.add(toAguiToolCall(tub));
             } else if (block instanceof ToolResultBlock trb) {
                 toolCallId = trb.getId();
-                // Extract text content from tool result
                 for (ContentBlock output : trb.getOutput()) {
-                    if (output instanceof TextBlock tb) {
-                        if (content.length() > 0) {
-                            content.append("\n");
-                        }
-                        content.append(tb.getText());
-                    }
+                    addAguiContentPart(contentParts, output);
                 }
+            } else {
+                addAguiContentPart(contentParts, block);
             }
         }
 
         return new AguiMessage(
                 msg.getId(),
                 role,
-                content.length() > 0 ? new MessageContent.Text(content.toString()) : null,
+                toMessageContent(contentParts),
                 toolCalls.isEmpty() ? null : toolCalls,
                 toolCallId);
+    }
+
+    private MessageContent toMessageContent(List<InputContent> contentParts) {
+        if (contentParts.isEmpty()) {
+            return null;
+        }
+        if (contentParts.stream().allMatch(TextInputContent.class::isInstance)) {
+            String text =
+                    contentParts.stream()
+                            .map(TextInputContent.class::cast)
+                            .map(TextInputContent::text)
+                            .collect(Collectors.joining("\n"));
+            return text.isEmpty() ? null : new MessageContent.Text(text);
+        }
+        return new MessageContent.Blocks(contentParts);
+    }
+
+    private void addAguiContentPart(List<InputContent> contentParts, ContentBlock block) {
+        if (block instanceof TextBlock text) {
+            if (text.getText() != null && !text.getText().isEmpty()) {
+                contentParts.add(new TextInputContent(text.getText()));
+            }
+        } else if (block instanceof ImageBlock image) {
+            contentParts.add(new ImageInputContent(toInputContentSource(image.getSource()), null));
+        } else if (block instanceof AudioBlock audio) {
+            contentParts.add(new AudioInputContent(toInputContentSource(audio.getSource()), null));
+        } else if (block instanceof VideoBlock video) {
+            contentParts.add(new VideoInputContent(toInputContentSource(video.getSource()), null));
+        }
     }
 
     /**
@@ -290,7 +320,7 @@ public class AguiMessageConverter {
      * @param aguiMessage the source message (for role/tool-call-id context)
      */
     private void addTextBlock(List<ContentBlock> blocks, String text, AguiMessage aguiMessage) {
-        if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+        if (aguiMessage.isToolMessage() && hasToolCallId(aguiMessage)) {
             // Tool results must always carry a ToolResultBlock, even when the frontend
             // returned empty content.
             String resultText = text != null ? text : "";
@@ -298,7 +328,7 @@ public class AguiMessageConverter {
                     ToolResultBlock.builder()
                             .id(aguiMessage.getToolCallId())
                             .output(TextBlock.builder().text(resultText).build())
-                            .state(ToolResultState.SUCCESS)
+                            .state(resolveToolResultState(aguiMessage))
                             .build());
             return;
         }
@@ -306,6 +336,35 @@ public class AguiMessageConverter {
             return;
         }
         blocks.add(TextBlock.builder().text(text).build());
+    }
+
+    private boolean hasToolCallId(AguiMessage aguiMessage) {
+        String toolCallId = aguiMessage.getToolCallId();
+        return toolCallId != null && !toolCallId.isBlank();
+    }
+
+    /**
+     * Resolve an optional AG-UI tool status while retaining the historical default.
+     *
+     * <p>AG-UI tool messages traditionally have no status field, so omitted or unknown values are
+     * treated as successful completed results. New clients can send the optional {@code status}
+     * extension to preserve error, interrupted, or denied outcomes.
+     */
+    private ToolResultState resolveToolResultState(AguiMessage aguiMessage) {
+        String status = aguiMessage.getStatus();
+        if (status == null || status.isBlank()) {
+            return ToolResultState.SUCCESS;
+        }
+        try {
+            return ToolResultState.valueOf(status.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            for (ToolResultState state : ToolResultState.values()) {
+                if (state.getValue().equalsIgnoreCase(status.trim())) {
+                    return state;
+                }
+            }
+            return ToolResultState.SUCCESS;
+        }
     }
 
     /**
@@ -360,6 +419,16 @@ public class AguiMessageConverter {
             return new Base64Source(data.mimeType(), data.value());
         }
         throw new IllegalStateException("Unhandled InputContentSource type: " + inputSource);
+    }
+
+    private InputContentSource toInputContentSource(Source source) {
+        if (source instanceof URLSource url) {
+            return new InputContentUrlSource(url.getUrl(), url.getMimeType());
+        }
+        if (source instanceof Base64Source data) {
+            return new InputContentDataSource(data.getData(), data.getMediaType());
+        }
+        throw new IllegalStateException("Unhandled Source type: " + source);
     }
 
     /**

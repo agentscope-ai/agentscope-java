@@ -99,6 +99,78 @@ class FinalAnswerFilterMiddlewareTest {
     }
 
     @Test
+    void childSourceEventsBypassParentReplyTracker() {
+        String childSource = "parent/worker";
+        String childTask = "task-1";
+        TextBlockDeltaEvent childText =
+                (TextBlockDeltaEvent)
+                        new TextBlockDeltaEvent("child-reply", "child-text", "child output")
+                                .withSource(childSource)
+                                .withMetadataEntry(AgentEvent.METADATA_TASK_ID, childTask);
+
+        List<AgentEvent> events =
+                apply(
+                        Flux.just(
+                                new ModelCallStartEvent(REPLY_ID),
+                                new ModelCallStartEvent("child-reply")
+                                        .withSource(childSource)
+                                        .withMetadataEntry(AgentEvent.METADATA_TASK_ID, childTask),
+                                childText,
+                                new ModelCallEndEvent("child-reply", (ChatUsage) null)
+                                        .withSource(childSource)
+                                        .withMetadataEntry(AgentEvent.METADATA_TASK_ID, childTask),
+                                new TextBlockDeltaEvent(REPLY_ID, "text", "final answer"),
+                                new ModelCallEndEvent(REPLY_ID, (ChatUsage) null)));
+
+        assertTrue(events.contains(childText));
+        assertTrue(
+                textDeltas(events).stream()
+                        .anyMatch(delta -> "final answer".equals(delta.getDelta())));
+    }
+
+    @Test
+    void childToolEventCannotClearUnflushedParentText() {
+        ToolCallStartEvent childToolCall =
+                (ToolCallStartEvent)
+                        new ToolCallStartEvent(REPLY_ID, "child-tool", "search")
+                                .withSource("parent/worker")
+                                .withMetadataEntry(AgentEvent.METADATA_TASK_ID, "child-task");
+
+        List<AgentEvent> events =
+                apply(
+                        Flux.just(
+                                new ModelCallStartEvent(REPLY_ID),
+                                new TextBlockDeltaEvent(REPLY_ID, "text", "parent answer"),
+                                childToolCall,
+                                new ModelCallEndEvent(REPLY_ID, (ChatUsage) null)));
+
+        assertTrue(
+                textDeltas(events).stream()
+                        .anyMatch(delta -> "parent answer".equals(delta.getDelta())));
+        assertTrue(events.contains(childToolCall));
+    }
+
+    @Test
+    void taskIdOnlyChildEventsAlsoBypassParentReplyTracker() {
+        ToolCallStartEvent childToolCall =
+                (ToolCallStartEvent)
+                        new ToolCallStartEvent(REPLY_ID, "child-tool", "search")
+                                .withMetadataEntry(AgentEvent.METADATA_TASK_ID, "child-task");
+
+        List<AgentEvent> events =
+                apply(
+                        Flux.just(
+                                new ModelCallStartEvent(REPLY_ID),
+                                new TextBlockDeltaEvent(REPLY_ID, "text", "parent answer"),
+                                childToolCall,
+                                new ModelCallEndEvent(REPLY_ID, (ChatUsage) null)));
+
+        assertTrue(
+                textDeltas(events).stream()
+                        .anyMatch(delta -> "parent answer".equals(delta.getDelta())));
+    }
+
+    @Test
     void stateIsolatedAcrossSubscriptions() {
         AtomicInteger subscriptionCount = new AtomicInteger();
         Flux<AgentEvent> events =
@@ -136,6 +208,36 @@ class FinalAnswerFilterMiddlewareTest {
                         .filter(TextBlockDeltaEvent.class::isInstance)
                         .map(TextBlockDeltaEvent.class::cast)
                         .anyMatch(event -> "final answer".equals(event.getDelta())));
+    }
+
+    @Test
+    void textFromAnIntermediateRoundIsNotLeakedIntoTheFinalRound() {
+        List<AgentEvent> events =
+                apply(
+                        Flux.just(
+                                new ModelCallStartEvent(REPLY_ID),
+                                new TextBlockDeltaEvent(REPLY_ID, "text", "checking"),
+                                new ToolCallStartEvent(REPLY_ID, "tool-1", "search"),
+                                new ModelCallEndEvent(REPLY_ID, (ChatUsage) null),
+                                new ModelCallStartEvent("reply-2"),
+                                new TextBlockStartEvent("reply-2", "text"),
+                                new TextBlockDeltaEvent("reply-2", "text", "final answer"),
+                                new TextBlockEndEvent("reply-2", "text"),
+                                new ModelCallEndEvent("reply-2", (ChatUsage) null)));
+
+        assertFalse(
+                textDeltas(events).stream().anyMatch(delta -> "checking".equals(delta.getDelta())),
+                "text from a round that produced a tool call must not reach the final answer");
+        assertTrue(
+                textDeltas(events).stream()
+                        .anyMatch(delta -> "final answer".equals(delta.getDelta())));
+    }
+
+    private static List<TextBlockDeltaEvent> textDeltas(List<AgentEvent> events) {
+        return events.stream()
+                .filter(TextBlockDeltaEvent.class::isInstance)
+                .map(TextBlockDeltaEvent.class::cast)
+                .toList();
     }
 
     private List<AgentEvent> apply(Flux<AgentEvent> source) {

@@ -354,10 +354,11 @@ public final class SubagentDeclaration {
 
     /**
      * How much of the remote event stream to forward. Defaults to {@link RemoteStreamDetail#FULL}
-     * (lifecycle, tool calls, text and thinking deltas). Use {@link RemoteStreamDetail#VERBOSE} to
-     * mirror a local subagent's stream in full — block boundaries, tool output deltas, model calls
-     * with token usage and every other event — at the cost of more traffic. Only relevant when
-     * {@link #isRemoteStreaming()} is true.
+     * (lifecycle, tool calls, text and thinking deltas, text output disposition, and authoritative
+     * agent result events). Use {@link RemoteStreamDetail#VERBOSE} to mirror a local subagent's
+     * stream in full — block boundaries, tool output deltas, model calls with token usage and every
+     * other event — at the cost of more traffic. Only relevant when {@link #isRemoteStreaming()} is
+     * true.
      */
     public RemoteStreamDetail getRemoteStreamDetail() {
         return remoteStreamDetail != null ? remoteStreamDetail : RemoteStreamDetail.FULL;
@@ -629,9 +630,10 @@ public final class SubagentDeclaration {
 
         /**
          * How much of the remote event stream to forward. {@code null} (default) is treated as
-         * {@link RemoteStreamDetail#FULL}; {@link RemoteStreamDetail#VERBOSE} forwards every event
-         * the remote agent emits, matching a local subagent. Only relevant when
-         * {@link #remoteStreaming(Boolean)} is enabled.
+         * {@link RemoteStreamDetail#FULL}, including text output disposition and authoritative
+         * agent result events; {@link RemoteStreamDetail#VERBOSE} forwards every event the remote
+         * agent emits, matching a local subagent. Only relevant when {@link
+         * #remoteStreaming(Boolean)} is enabled.
          */
         public Builder remoteStreamDetail(RemoteStreamDetail remoteStreamDetail) {
             this.remoteStreamDetail = remoteStreamDetail;

@@ -40,6 +40,8 @@ import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -53,7 +55,9 @@ import io.agentscope.core.tool.Toolkit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -832,6 +836,80 @@ class ReActAgentHitlTest {
         ToolResultEndEvent end =
                 (ToolResultEndEvent) events.get(indexOf(events, ToolResultEndEvent.class));
         assertEquals(ToolResultState.SUCCESS, end.getState());
+    }
+
+    @Test
+    void deniedToolResultEventsStayPublishedThroughActingMiddleware() {
+        List<AgentEvent> observedByMiddleware = new CopyOnWriteArrayList<>();
+        MiddlewareBase recordingMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(input).doOnNext(observedByMiddleware::add);
+                    }
+                };
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "blocked", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new DenyingTool("blocked")))
+                        .middleware(recordingMiddleware)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(
+                1,
+                countOf(events, ToolResultStartEvent.class),
+                "the denied tool result start must reach the published stream exactly once");
+        assertEquals(1, countOf(events, ToolResultEndEvent.class));
+        ToolResultEndEvent end =
+                (ToolResultEndEvent) events.get(indexOf(events, ToolResultEndEvent.class));
+        assertEquals("tc1", end.getToolCallId());
+        assertEquals(ToolResultState.DENIED, end.getState());
+        assertTrue(
+                observedByMiddleware.stream().anyMatch(ToolResultEndEvent.class::isInstance),
+                "the acting middleware must observe the same denied result the stream publishes");
+    }
+
+    @Test
+    void askingToolStopPathStaysPublishedThroughActingMiddleware() {
+        MiddlewareBase passThroughMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(input);
+                    }
+                };
+        ChatModelBase model =
+                new ScriptedModel(List.of(() -> Flux.just(toolUseResponse("tc1", "ask", "x"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new AskingTool("ask")))
+                        .middleware(passThroughMiddleware)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(1, countOf(events, RequireUserConfirmEvent.class));
+        assertEquals(1, countOf(events, RequestStopEvent.class));
     }
 
     @Test

@@ -40,6 +40,8 @@ import io.agentscope.core.agui.model.AguiContext;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiTool;
+import io.agentscope.core.agui.model.DocumentInputContent;
+import io.agentscope.core.agui.model.InputContentUrlSource;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -50,6 +52,7 @@ import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.DataBlockStartEvent;
 import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
@@ -96,6 +99,76 @@ class AguiAgentAdapterV2Test {
 
     @Nested
     class RuntimeContextAndLifecycleTests {
+
+        @Test
+        void inputConversionFailureBecomesRunErrorEvent() {
+            ReActAgent agent = mock(ReActAgent.class);
+            RunAgentInput invalidInput =
+                    inputBuilder()
+                            .messages(
+                                    List.of(
+                                            AguiMessage.userMessage(
+                                                    "msg-invalid",
+                                                    List.of(
+                                                            new DocumentInputContent(
+                                                                    new InputContentUrlSource(
+                                                                            "https://example.com/doc.pdf"),
+                                                                    null)))))
+                            .build();
+
+            List<AguiEvent> events =
+                    new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                            .run(invalidInput)
+                            .collectList()
+                            .block();
+
+            assertEquals(
+                    List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR), types(events));
+            AguiEvent.RunError error = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
+            assertEquals("INVALID_INPUT_ERROR", error.code());
+        }
+
+        @Test
+        void textOutputDispositionConfigIsAppliedToReActStreams() {
+            ReActAgent agent = mock(ReActAgent.class);
+            Msg result =
+                    AssistantMessage.builder()
+                            .id("reply-1")
+                            .content(TextBlock.builder().text("answer").build())
+                            .generateReason(GenerateReason.MODEL_STOP)
+                            .build();
+            Flux<AgentEvent> source =
+                    Flux.just(
+                            new AgentStartEvent("thread-v2", "run-v2", "react"),
+                            new ModelCallStartEvent("reply-1"),
+                            new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                            new AgentResultEvent(result),
+                            new AgentEndEvent("reply-1"));
+            when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(source);
+
+            List<AguiEvent> disabled =
+                    new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                            .run(input())
+                            .collectList()
+                            .block();
+            assertNotNull(disabled);
+            assertFalse(disabled.stream().anyMatch(AguiEvent.Custom.class::isInstance));
+            assertFalse(disabled.stream().anyMatch(AguiEvent.MessagesSnapshot.class::isInstance));
+
+            AguiAdapterConfig enabledConfig =
+                    AguiAdapterConfig.builder().textOutputDispositionEnabled(true).build();
+            List<AguiEvent> enabled =
+                    new AguiAgentAdapter(agent, enabledConfig).run(input()).collectList().block();
+            assertNotNull(enabled);
+            AguiEvent.Custom disposition =
+                    enabled.stream()
+                            .filter(AguiEvent.Custom.class::isInstance)
+                            .map(AguiEvent.Custom.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals("agentscope.text_output.disposition", disposition.name());
+            assertTrue(enabled.stream().anyMatch(AguiEvent.MessagesSnapshot.class::isInstance));
+        }
 
         @Test
         void testRunUsesReActStreamEventsWithRuntimeContext() {
@@ -304,6 +377,51 @@ class AguiAgentAdapterV2Test {
             assertEquals("run-v2", agent.getSeenContext().get("agui.runId"));
             assertEquals(1, agent.getSeenMessages().size());
             assertTrue(events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageContent));
+        }
+
+        @Test
+        void textOutputDispositionConfigIsAppliedToHarnessStreams() {
+            HarnessAgent agent = new HarnessAgent();
+            Msg result =
+                    AssistantMessage.builder()
+                            .id("reply-harness")
+                            .content(TextBlock.builder().text("answer").build())
+                            .generateReason(GenerateReason.MODEL_STOP)
+                            .build();
+            agent.setEvents(
+                    Flux.just(
+                            new AgentStartEvent("thread-v2", "run-v2", "harness"),
+                            new ModelCallStartEvent("reply-harness"),
+                            new TextBlockDeltaEvent("reply-harness", "block-1", "answer"),
+                            new AgentResultEvent(result),
+                            new AgentEndEvent("reply-harness")));
+
+            List<AguiEvent> disabled =
+                    new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                            .run(input())
+                            .collectList()
+                            .block();
+            assertNotNull(disabled);
+            assertFalse(disabled.stream().anyMatch(AguiEvent.Custom.class::isInstance));
+
+            List<AguiEvent> enabled =
+                    new AguiAgentAdapter(
+                                    agent,
+                                    AguiAdapterConfig.builder()
+                                            .textOutputDispositionEnabled(true)
+                                            .build())
+                            .run(input())
+                            .collectList()
+                            .block();
+            assertNotNull(enabled);
+            assertTrue(
+                    enabled.stream()
+                            .filter(AguiEvent.Custom.class::isInstance)
+                            .map(AguiEvent.Custom.class::cast)
+                            .anyMatch(
+                                    event ->
+                                            "agentscope.text_output.disposition"
+                                                    .equals(event.name())));
         }
     }
 
