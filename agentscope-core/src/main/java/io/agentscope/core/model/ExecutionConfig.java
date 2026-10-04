@@ -341,7 +341,7 @@ public class ExecutionConfig {
          *
          * @param timeout the timeout duration (must be &gt; 0, or {@link #NO_TIMEOUT}),
          *        or null to inherit from fallback; {@code Duration.ZERO} is not a synonym
-         *        for {@link #noTimeout()} and will cause immediate expiration
+         *        for {@link #noTimeout()} and is therefore rejected
          * @return this builder instance
          * @throws IllegalArgumentException if timeout is a negative duration other than
          *        {@link #NO_TIMEOUT}, or if timeout is {@code Duration.ZERO}
