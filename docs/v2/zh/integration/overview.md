@@ -50,6 +50,7 @@ en_link: /v2/en/integration/overview
 - [AgentRun（阿里云）](/v2/zh/docs/harness/sandbox) — `agentscope-extensions-sandbox-agentrun`
 - [Daytona](/v2/zh/docs/harness/sandbox) — `agentscope-extensions-sandbox-daytona`
 - [E2B](/v2/zh/docs/harness/sandbox) — `agentscope-extensions-sandbox-e2b`
+- [OpenSandbox](/v2/zh/docs/harness/sandbox) — `agentscope-extensions-sandbox-opensandbox`
 
 ## 记忆（Memory）
 
