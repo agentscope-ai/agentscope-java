@@ -25,10 +25,12 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -300,6 +302,110 @@ class ReActAgentNewLoopE2ETest {
                         .flatMap(m -> m.getContentBlocks(TextBlock.class).stream())
                         .anyMatch(tb -> tb.getText().equals("done-final"));
         assertTrue(hasFinalText, "final assistant text 'done-final' must be in state.context");
+    }
+
+    @Test
+    void actingMiddlewareStopPersistsCompletedToolResult() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("terminal-1", "respond", "done"))));
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(new AlwaysAllowTool("respond"));
+        MiddlewareBase terminalMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .concatWith(
+                                        Flux.just(new RequestStopEvent("terminal tool completed")));
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("use the terminal tool")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(terminalMiddleware)
+                        .build();
+
+        Msg result =
+                agent.call(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("respond now")
+                                                .build()))
+                        .block();
+
+        assertNotNull(result);
+        assertEquals(1, model.calls.get(), "stop must skip the next reasoning iteration");
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .flatMap(msg -> msg.getContent().stream())
+                        .anyMatch(
+                                block ->
+                                        block instanceof ToolResultBlock toolResult
+                                                && "terminal-1".equals(toolResult.getId())),
+                "completed tool result must be stored before honoring the stop request");
+    }
+
+    @Test
+    void permissionStopPersistsAlreadyCompletedToolResult() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("allowed-1", "respond", "done"))));
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(new AlwaysAllowTool("respond"));
+        MiddlewareBase permissionMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .concatWith(
+                                        Flux.just(
+                                                new RequestStopEvent(
+                                                        "permission asked",
+                                                        GenerateReason.PERMISSION_ASKING)));
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("use the terminal tool")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(permissionMiddleware)
+                        .build();
+
+        Msg result =
+                agent.call(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("respond now")
+                                                .build()))
+                        .block();
+
+        assertNotNull(result);
+        assertEquals(GenerateReason.PERMISSION_ASKING, result.getGenerateReason());
+        assertEquals(1, model.calls.get());
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .flatMap(msg -> msg.getContent().stream())
+                        .anyMatch(
+                                block ->
+                                        block instanceof ToolResultBlock toolResult
+                                                && "allowed-1".equals(toolResult.getId())),
+                "permission stop must preserve the result of an already completed tool");
     }
 
     @Test
