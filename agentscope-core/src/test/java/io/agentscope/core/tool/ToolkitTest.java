@@ -1537,33 +1537,62 @@ class ToolkitTest {
 
     @Test
     @DisplayName(
-            "callTool(ToolCallParam, ExecutionConfig) with noTimeout() should not abort a slow"
-                    + " tool")
-    void testCallToolPerCallConfigNoTimeoutDoesNotAbortSlowTool() {
-        SlowTool slowTool = new SlowTool();
-        toolkit.registerTool(slowTool);
+            "noTimeout() should override a short toolkit-level timeout so a slow tool completes")
+    void testNoTimeoutOverridesShortToolkitTimeout() {
+        ExecutionConfig toolkitTimeout =
+                ExecutionConfig.builder().timeout(Duration.ofMillis(100)).maxAttempts(1).build();
+        ToolkitConfig config = ToolkitConfig.builder().executionConfig(toolkitTimeout).build();
+        Toolkit shortTimeoutToolkit = new Toolkit(config);
+        shortTimeoutToolkit.registerTool(new SlowTool());
 
         Map<String, Object> input = Map.of("delayMs", 300);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
-                        .id("call-notimeout-slow")
+                        .id("call-no-timeout-ok")
                         .name("slow")
                         .input(input)
                         .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
-
         ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
 
-        ExecutionConfig perCallConfig =
+        ExecutionConfig noTimeoutConfig =
                 ExecutionConfig.builder().noTimeout().maxAttempts(1).build();
 
-        ToolResultBlock result = toolkit.callTool(param, perCallConfig).block();
+        ToolResultBlock result = shortTimeoutToolkit.callTool(param, noTimeoutConfig).block();
 
         assertNotNull(result);
-        assertEquals("call-notimeout-slow", result.getId());
-        assertEquals("slow", result.getName());
         assertEquals("\"done\"", ToolTestUtils.extractContent(result));
-        assertFalse(isErrorResult(result), "NO_TIMEOUT must not trigger the timeout path");
+        assertFalse(
+                isErrorResult(result),
+                "NO_TIMEOUT must disable the timeout operator on a 100ms toolkit-level timeout");
+    }
+
+    @Test
+    @DisplayName(
+            "A slow tool must timeout when no noTimeout() overrides a short toolkit-level timeout")
+    void testSlowToolTimesOutUnderShortToolkitTimeoutWithoutNoTimeout() {
+        ExecutionConfig toolkitTimeout =
+                ExecutionConfig.builder().timeout(Duration.ofMillis(100)).maxAttempts(1).build();
+        ToolkitConfig config = ToolkitConfig.builder().executionConfig(toolkitTimeout).build();
+        Toolkit shortTimeoutToolkit = new Toolkit(config);
+        shortTimeoutToolkit.registerTool(new SlowTool());
+
+        Map<String, Object> input = Map.of("delayMs", 300);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-short-timeout")
+                        .name("slow")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+        ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
+
+        ToolResultBlock result = shortTimeoutToolkit.callTool(param, null).block();
+
+        assertNotNull(result);
+        assertTrue(
+                isErrorResult(result),
+                "100ms timeout must trigger on a 300ms tool without noTimeout()");
     }
 
     @Test

@@ -204,4 +204,25 @@ class EmbeddingUtilsTest {
 
         StepVerifier.create(result).expectError(EmbeddingException.class).verify();
     }
+
+    @Test
+    @DisplayName("Should skip timeout when NO_TIMEOUT sentinel overrides a short parent timeout")
+    void testNoTimeoutSentinelSkipsTimeout() {
+        ExecutionConfig shortTimeout =
+                ExecutionConfig.builder().timeout(Duration.ofMillis(100)).build();
+        ExecutionConfig noTimeout = ExecutionConfig.builder().noTimeout().build();
+        ExecutionConfig merged = ExecutionConfig.mergeConfigs(noTimeout, shortTimeout);
+
+        double[] testEmbedding = new double[] {0.1, 0.2, 0.3};
+
+        // A slow Mono that would time out under the 100ms parent timeout
+        Mono<double[]> slowMono = Mono.just(testEmbedding).delayElement(Duration.ofMillis(300));
+
+        Mono<double[]> result =
+                EmbeddingUtils.applyTimeoutAndRetry(
+                        slowMono, merged, "test-model", "test-provider", log);
+
+        // Must complete successfully despite the delay — NO_TIMEOUT sentinel skips the guard
+        StepVerifier.create(result).expectNext(testEmbedding).verifyComplete();
+    }
 }

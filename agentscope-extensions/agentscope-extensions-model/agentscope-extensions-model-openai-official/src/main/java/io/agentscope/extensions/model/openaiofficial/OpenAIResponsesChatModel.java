@@ -36,6 +36,7 @@ import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -355,14 +356,17 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
             String resolvedBaseUrl =
                     ModelProviderSupport.firstNonBlank(
                             effectiveOptions.getBaseUrl(), System.getenv("OPENAI_BASE_URL"));
+            Duration clientTimeout = null;
+            if (effectiveOptions.getExecutionConfig() != null
+                    && !effectiveOptions.getExecutionConfig().isTimeoutDisabled()) {
+                clientTimeout = effectiveOptions.getExecutionConfig().getTimeout();
+            }
             OpenAIClient client =
                     OpenAISdkClientFactory.createClient(
                             resolvedApiKey,
                             resolvedBaseUrl,
                             additionalHeaders,
-                            effectiveOptions.getExecutionConfig() != null
-                                    ? effectiveOptions.getExecutionConfig().getTimeout()
-                                    : null,
+                            clientTimeout,
                             proxyConfig);
 
             OpenAIResponsesChatModel model =
