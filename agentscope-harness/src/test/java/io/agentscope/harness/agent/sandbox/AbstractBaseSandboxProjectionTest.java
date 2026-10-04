@@ -97,6 +97,36 @@ class AbstractBaseSandboxProjectionTest {
         assertEquals(1, sandbox.hydrations);
     }
 
+    @Test
+    void unsupportedVerificationIsCachedButStillRehydratesOnEveryStart() throws Exception {
+        var sandbox = sandbox();
+        sandbox.start();
+        sandbox.stop();
+        sandbox.unsupportedVerification = true;
+        sandbox.start();
+        sandbox.stop();
+        Files.writeString(sandbox.directory().resolve("AGENTS.md"), "INJECTED");
+        sandbox.start();
+        assertEquals(1, sandbox.verificationCalls);
+        assertEquals(3, sandbox.hydrations);
+        assertEquals("HOST", Files.readString(sandbox.directory().resolve("AGENTS.md")));
+    }
+
+    @Test
+    void interruptedVerificationRestoresInterruptFlagAndRehydrates() throws Exception {
+        var sandbox = sandbox();
+        sandbox.start();
+        sandbox.stop();
+        sandbox.interruptVerification = true;
+        try {
+            sandbox.start();
+            assertTrue(Thread.currentThread().isInterrupted());
+            assertEquals(2, sandbox.hydrations);
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
     private ProjectionTestClient.LocalSandbox sandbox() throws Exception {
         Path host = temp.resolve("host");
         Files.createDirectories(host);

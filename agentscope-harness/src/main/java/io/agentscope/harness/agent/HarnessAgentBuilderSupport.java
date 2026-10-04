@@ -49,6 +49,7 @@ import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
+import io.agentscope.harness.agent.workspace.WorkspaceDefinitionAuthority;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
@@ -878,6 +879,12 @@ final class HarnessAgentBuilderSupport {
     //  Skills
     // -----------------------------------------------------------------
 
+    /** Adds host user overrides to skill reads without changing shared workspace context. */
+    static WorkspaceDefinitionAuthority skillDefinitionAuthority(WorkspaceManager manager) {
+        var authority = manager.getDefinitionAuthority();
+        return authority == null ? null : authority.withNamespace(manager.getNamespaceFactory());
+    }
+
     /**
      * Assembles the ordered list of skill repositories used by this build (low-to-high priority).
      */
@@ -920,7 +927,7 @@ final class HarnessAgentBuilderSupport {
             var repository =
                     new io.agentscope.harness.agent.skill.WorkspaceSkillRepository(
                             filesystem, "skills", "workspace-namespaced", false);
-            repository.setDefinitionAuthority(wsManager.getDefinitionAuthority());
+            repository.setDefinitionAuthority(skillDefinitionAuthority(wsManager));
             ordered.add(repository);
         }
 

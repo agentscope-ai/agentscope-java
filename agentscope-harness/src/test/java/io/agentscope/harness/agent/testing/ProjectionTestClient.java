@@ -128,6 +128,9 @@ public final class ProjectionTestClient implements SandboxClient<SandboxClientOp
         private final Path dir;
         public int hydrations;
         public boolean failVerification;
+        public boolean unsupportedVerification;
+        public boolean interruptVerification;
+        public int verificationCalls;
 
         public LocalSandbox(SandboxState state) {
             super(state);
@@ -187,6 +190,14 @@ public final class ProjectionTestClient implements SandboxClient<SandboxClientOp
             Matcher tokens = Pattern.compile("'([^']*)'").matcher(command);
             while (tokens.find()) quoted.add(tokens.group(1));
             if (command.contains("sha256sum")) {
+                verificationCalls++;
+                if (interruptVerification) throw new InterruptedException("verification cancelled");
+                if (unsupportedVerification)
+                    return new ExecResult(
+                            127,
+                            "",
+                            "AGENTSCOPE_PROJECTION_VERIFICATION_UNSUPPORTED: sha256sum missing",
+                            false);
                 if (failVerification) return result(127, "");
                 StringBuilder out = new StringBuilder();
                 Matcher files = Pattern.compile("sha256sum < '([^']*)'").matcher(command);

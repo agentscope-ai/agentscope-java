@@ -394,6 +394,12 @@ agent 可以读写 `/Users/alice/my-project` 和 `/Users/alice/.config` 下的�
 
 每次启动沙箱时，即使 host payload 未变化，也必须验证当前 projected files 的内容后才可跳过 hydration。内容不一致或验证失败会重新从 host hydrate。额外的沙箱文件保留，但 projected roots 下的这些文件不会进入受信任 catalog。普通未 projection 的文件和 shell 执行仍可写。
 
+**迁移说明：** 升级后的新默认值会改变受信任定义的读取来源。Host 用户 skills 仍按配置的隔离命名空间覆盖共享 host skills，但 owned roots 下仅存在于沙箱的覆盖版本不再生效。可信变更应提升到 host；也可缩小 projection roots，或使用下方 legacy opt-out。
+
+Live verification 需要 `sha256sum` 和 shell `test` 命令。工具不可用时，沙箱记录一次警告，在当前沙箱实例中记住 verification 不受支持，并在每次启动时重新 hydrate。其他验证失败也会强制 hydration；DEBUG 日志指出对应文件或批次。该回退保持安全默认值，但恢复调用会增加传输开销。
+
+显式 projection `MEMORY.md` 会发出配置警告：正常 memory API 仍写 runtime filesystem，不会更新 host-authoritative 记忆上下文。需要正常可写记忆时，不要把它加入 projection roots；默认行为保持不变。
+
 若应用有意依赖沙箱定义覆盖，可恢复旧行为：
 
 ```java

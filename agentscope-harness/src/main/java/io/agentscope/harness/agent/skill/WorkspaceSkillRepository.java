@@ -173,7 +173,14 @@ public class WorkspaceSkillRepository
             log.debug("Filesystem glob for skills failed: {}", e.getMessage());
             return Collections.emptyList();
         }
-        if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
+        if (!glob.isSuccess()) {
+            log.warn(
+                    "Filesystem glob for skills in '{}' failed: {}",
+                    skillsRelativeDir,
+                    glob.error());
+            return Collections.emptyList();
+        }
+        if (glob.matches() == null || glob.matches().isEmpty()) {
             return Collections.emptyList();
         }
 

@@ -177,9 +177,9 @@ workspace/
 
 - **本机 + shell** —— 就是宿主磁盘上的 `workspace/alice/skills/...`；
 - **共享存储（remote filesystem）** —— `skills/` 前缀被路由到 KV，用户隔离体现为命名空间键 `agents/<agentId>/users/alice/skills/...`，多副本之间一致；管理台改完下一轮推理即可生效；
-- **沙箱（sandbox filesystem）** —— 宿主侧的用户目录在沙箱启动时通过 workspace projection 注入容器的 `/workspace`，agent 在沙箱里读到的是同一份。
+- **沙箱（sandbox filesystem）** —— 在 host-authoritative projection roots 下，catalog 和延迟资源按配置的隔离命名空间读取 host 上的用户定义，没有用户版本时回退到共享 host 定义。沙箱仍是可写的执行副本。
 
-不管跑在哪种模式，`<userId>/skills/` 都按同样的优先级覆盖共用版。各模式下的隔离键、物理表现以及 `userId` 的作用，详见[文件系统](/v2/zh/docs/harness/filesystem#多用户隔离怎么实现)。
+Host 上的 `<userId>/skills/` 按同样的优先级覆盖共用版。沙箱模式下，host-authoritative projection roots 中由沙箱创建的覆盖版本不会进入受信任 catalog；未 projection 的 skills 和 legacy opt-out 保留 runtime 覆盖行为。各模式下的隔离键、物理表现以及 `userId` 的作用，详见[文件系统](/v2/zh/docs/harness/filesystem#多用户隔离怎么实现)。
 
 ## 同名冲突谁说了算
 
@@ -192,7 +192,7 @@ workspace/
 | 1（最低） | 项目全局目录 | `projectGlobalSkillsDir(Path)`，如 `~/.agentscope/skills/` |
 | 2 | 市场 | `skillRepository(...)`，后注册的覆盖先注册的 |
 | 3 | 工作区共用 | `workspace/skills/` |
-| 4（最高） | 用户隔离 | `<userId>/skills/` |
+| 4（最高） | 用户隔离 | `<userId>/skills/`；沙箱 owned projection roots 使用 host 上的用户版本 |
 
 下层独有的 skill 仍然保留，只在重名时被上层覆盖。
 

@@ -18,10 +18,20 @@ package io.agentscope.harness.agent.workspace;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import java.nio.file.Files;
@@ -172,6 +182,103 @@ class WorkspaceManagerHostAuthoritativeReadsTest {
                     new WorkspaceDefinitionAuthority(host, List.of("skills"), routed));
             assertFalse(ws.getDefinitionAuthority().owns("skills/SKILL.md"));
             assertEquals("ROUTED", ws.readManagedWorkspaceFileUtf8(CTX, "skills/SKILL.md"));
+        }
+    }
+
+    @Test
+    void hostNamespacesPreserveUserSkillsAndLazyResourcesWithoutSandboxOverrides()
+            throws Exception {
+        host("skills/good/SKILL.md", skill("good", "SHARED"));
+        host("skills/good/guide.md", "SHARED_RESOURCE");
+        host("alice/skills/good/SKILL.md", skill("good", "ALICE"));
+        host("alice/skills/good/guide.md", "ALICE_RESOURCE");
+        host("alice/skills/personal/SKILL.md", skill("personal", "ALICE_ONLY"));
+        sandbox("skills/good/SKILL.md", skill("good", "INJECTED"));
+        sandbox("skills/evil/SKILL.md", skill("evil", "EVIL"));
+        var repo = new WorkspaceSkillRepository(runtime, "skills", "test", false);
+        repo.setDefinitionAuthority(
+                new WorkspaceDefinitionAuthority(
+                        host,
+                        List.of("skills"),
+                        runtime,
+                        IsolationScope.USER.toNamespaceFactory()));
+        var alice = RuntimeContext.builder().userId("alice").build();
+        var bob = RuntimeContext.builder().userId("bob").build();
+        assertEquals(
+                Set.of("good", "personal"),
+                new HashSet<>(repo.getAllSkills(alice).stream().map(s -> s.getName()).toList()));
+        assertEquals("ALICE", repo.getSkill("good", alice).getDescription());
+        assertEquals("SHARED", repo.getSkill("good", bob).getDescription());
+        assertEquals(
+                List.of("good"), repo.getAllSkills(bob).stream().map(s -> s.getName()).toList());
+        assertEquals(
+                Optional.of("ALICE_RESOURCE"), repo.resourcesFor("good", alice).read("guide.md"));
+        assertEquals(
+                Optional.of("SHARED_RESOURCE"), repo.resourcesFor("good", bob).read("guide.md"));
+        assertEquals(
+                "ALICE_RESOURCE",
+                new String(
+                        repo.resourcesFor("good", alice).readBinary("guide.md").orElseThrow(),
+                        java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void hostDefinitionReadsAcceptVirtualPathsButRejectTraversal() throws Exception {
+        host("AGENTS.md", "HOST");
+        secure("AGENTS.md");
+        assertEquals("HOST", manager.readManagedWorkspaceFileUtf8(CTX, "/AGENTS.md"));
+        assertEquals("HOST", manager.readManagedWorkspaceFileUtf8(CTX, "./AGENTS.md"));
+        Files.writeString(host.getParent().resolve("AGENTS.md"), "OUTSIDE_WORKSPACE");
+        // This accessor's existing contract returns empty for paths outside the workspace.
+        assertEquals("", manager.readManagedWorkspaceFileUtf8(CTX, "../AGENTS.md"));
+    }
+
+    @Test
+    void hostDefinitionsAboveSearchSizeLimitRemainReadable() throws Exception {
+        String content = "x".repeat(10 * 1024 * 1024 + 1);
+        host("knowledge/large.md", content);
+        secure("knowledge");
+        assertEquals(
+                content,
+                manager.getDefinitionAuthority()
+                        .readFilesystem("knowledge/large.md", runtime)
+                        .read(CTX, "knowledge/large.md", 0, 0)
+                        .fileData()
+                        .content());
+    }
+
+    @Test
+    void globPreservesErrorsWhenBothSourcesFail() {
+        var failingRuntime = mock(AbstractFilesystem.class);
+        when(failingRuntime.glob(any(), anyString(), anyString()))
+                .thenReturn(GlobResult.fail("runtime unavailable"));
+        try (var hosts =
+                mockConstruction(
+                        LocalFilesystem.class,
+                        (fs, context) ->
+                                when(fs.glob(any(), anyString(), anyString()))
+                                        .thenReturn(GlobResult.fail("host unavailable")))) {
+            var authority =
+                    new WorkspaceDefinitionAuthority(host, List.of("skills"), failingRuntime);
+            var result = authority.glob(CTX, failingRuntime, "SKILL.md", ".");
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("host unavailable"));
+            assertTrue(result.error().contains("runtime unavailable"));
+        }
+    }
+
+    @Test
+    void ownedGlobFailureDoesNotQueryUntrustedRuntime() {
+        var untrusted = mock(AbstractFilesystem.class);
+        try (var hosts =
+                mockConstruction(
+                        LocalFilesystem.class,
+                        (fs, context) ->
+                                when(fs.glob(any(), anyString(), anyString()))
+                                        .thenReturn(GlobResult.fail("host unavailable")))) {
+            var authority = new WorkspaceDefinitionAuthority(host, List.of("skills"), untrusted);
+            assertFalse(authority.glob(CTX, untrusted, "SKILL.md", "skills").isSuccess());
+            verify(untrusted, never()).glob(any(), anyString(), anyString());
         }
     }
 

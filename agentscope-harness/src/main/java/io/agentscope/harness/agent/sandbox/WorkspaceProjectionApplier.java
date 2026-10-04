@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.Map;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Builds a deterministic archive payload for workspace projection entries.
@@ -42,6 +44,15 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
  * </ul>
  */
 public final class WorkspaceProjectionApplier {
+
+    private static final Logger log = LoggerFactory.getLogger(WorkspaceProjectionApplier.class);
+    static final String UNSUPPORTED_VERIFICATION = "AGENTSCOPE_PROJECTION_VERIFICATION_UNSUPPORTED";
+
+    static final class UnsupportedVerificationException extends Exception {
+        UnsupportedVerificationException(String detail) {
+            super(detail);
+        }
+    }
 
     private WorkspaceProjectionApplier() {}
 
@@ -112,6 +123,14 @@ public final class WorkspaceProjectionApplier {
             List<Map.Entry<String, String>> batch =
                     files.subList(start, Math.min(start + 64, files.size()));
             StringBuilder command = new StringBuilder();
+            if (start == 0) {
+                command.append(
+                                "command -v sha256sum >/dev/null 2>&1 && command -v test >/dev/null"
+                                        + " 2>&1 || { printf '%s\n"
+                                        + "' '")
+                        .append(UNSUPPORTED_VERIFICATION)
+                        .append("' >&2; exit 127; };\n");
+            }
             for (var file : batch) {
                 String path = FilesystemUtils.shellQuote(workspaceRoot + "/" + file.getKey());
                 command.append("test -f ")
@@ -123,13 +142,35 @@ public final class WorkspaceProjectionApplier {
                         .append(" || exit 1;\n");
             }
             ExecResult result = sandbox.exec(null, command.toString(), 10);
-            if (!result.ok() || result.truncated() || result.stdout() == null) return false;
+            if (result.exitCode() == 127
+                    && result.stderr() != null
+                    && result.stderr().contains(UNSUPPORTED_VERIFICATION)) {
+                throw new UnsupportedVerificationException(
+                        result.stderr().substring(0, Math.min(result.stderr().length(), 256)));
+            }
+            if (!result.ok() || result.truncated() || result.stdout() == null) {
+                log.debug(
+                        "[sandbox] Projection verification failed at {}: exit={}, truncated={}",
+                        batch.get(0).getKey(),
+                        result.exitCode(),
+                        result.truncated());
+                return false;
+            }
             String[] lines = result.stdout().strip().split("\\R");
-            if (lines.length != batch.size()) return false;
+            if (lines.length != batch.size()) {
+                log.debug(
+                        "[sandbox] Projection verification output count mismatch at {}",
+                        batch.get(0).getKey());
+                return false;
+            }
             for (int i = 0; i < lines.length; i++) {
                 if (!lines[i].matches("[0-9a-fA-F]{64}\\s+-")
-                        || !lines[i].substring(0, 64).equalsIgnoreCase(batch.get(i).getValue()))
+                        || !lines[i].substring(0, 64).equalsIgnoreCase(batch.get(i).getValue())) {
+                    log.debug(
+                            "[sandbox] Projection verification mismatch or invalid hash for {}",
+                            batch.get(i).getKey());
                     return false;
+                }
             }
         }
         return true;

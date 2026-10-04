@@ -29,6 +29,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Declarative sandbox filesystem configuration.
@@ -37,6 +39,7 @@ import java.util.Objects;
  * It only describes how to create a sandbox-backed filesystem at build time.
  */
 public abstract class SandboxFilesystemSpec {
+    private static final Logger log = LoggerFactory.getLogger(SandboxFilesystemSpec.class);
 
     private static final List<String> DEFAULT_WORKSPACE_PROJECTION_ROOTS =
             List.of("AGENTS.md", "skills", "subagents", "knowledge", ".skills-cache");
@@ -151,6 +154,31 @@ public abstract class SandboxFilesystemSpec {
         WorkspaceSpec effective = base != null ? base.copy() : new WorkspaceSpec();
         if (!workspaceProjectionEnabled || hostWorkspaceRoot == null) {
             return effective;
+        }
+        if (hostAuthoritativeDefinitions) {
+            log.info(
+                    "[sandbox] Host-authoritative projected definitions enabled for roots: {}",
+                    workspaceProjectionRoots);
+            boolean projectsMemory =
+                    workspaceProjectionRoots.stream()
+                            .filter(root -> root != null && !root.isBlank())
+                            .anyMatch(
+                                    root -> {
+                                        String normalized =
+                                                Path.of(root.replace('\\', '/'))
+                                                        .normalize()
+                                                        .toString()
+                                                        .replace('\\', '/');
+                                        return normalized.isEmpty()
+                                                || normalized.equals(".")
+                                                || normalized.equals("MEMORY.md");
+                                    });
+            if (projectsMemory) {
+                log.warn(
+                        "[sandbox] MEMORY.md is host-authoritative, but memory API writes still"
+                            + " target the runtime filesystem; those writes will not update trusted"
+                            + " memory context");
+            }
         }
         WorkspaceProjectionEntry projection = new WorkspaceProjectionEntry();
         projection.setSourceRoot(hostWorkspaceRoot.toAbsolutePath().normalize().toString());

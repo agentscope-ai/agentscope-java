@@ -17,10 +17,12 @@ package io.agentscope.harness.agent.workspace;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,12 +30,23 @@ import java.util.Map;
 
 /** Selects the host authority for configured projection roots, without changing tool I/O. */
 public final class WorkspaceDefinitionAuthority {
+    private final Path workspace;
     private final List<String> roots;
     private final AbstractFilesystem host;
     private final AbstractFilesystem runtime;
 
     public WorkspaceDefinitionAuthority(
             Path workspace, List<String> roots, AbstractFilesystem runtime) {
+        this(workspace, roots, runtime, null);
+    }
+
+    /** Preserves host-authored namespace overrides while excluding sandbox definitions. */
+    public WorkspaceDefinitionAuthority(
+            Path workspace,
+            List<String> roots,
+            AbstractFilesystem runtime,
+            NamespaceFactory namespaceFactory) {
+        this.workspace = workspace;
         this.roots =
                 roots.stream()
                         .filter(
@@ -45,8 +58,26 @@ public final class WorkspaceDefinitionAuthority {
                         .filter(p -> !p.isEmpty())
                         .distinct()
                         .toList();
-        this.host = new LocalFilesystem(workspace, true, 10);
+        // Host authority must stay workspace-rooted, regardless of the runtime backend's mode.
+        // The size argument limits grep only; definition read/glob/download have no such cap.
+        AbstractFilesystem shared = new LocalFilesystem(workspace, true, 10);
+        this.host =
+                namespaceFactory == null
+                        ? shared
+                        : OverlayFilesystem.of(
+                                new LocalFilesystem(
+                                        workspace,
+                                        LocalFsMode.ROOTED,
+                                        PathPolicy.of(List.of(workspace)),
+                                        10,
+                                        namespaceFactory),
+                                shared);
         this.runtime = runtime;
+    }
+
+    /** Returns a request-scoped namespace view for catalogs that support user overrides. */
+    public WorkspaceDefinitionAuthority withNamespace(NamespaceFactory namespaceFactory) {
+        return new WorkspaceDefinitionAuthority(workspace, roots, runtime, namespaceFactory);
     }
 
     public boolean owns(String path) {
@@ -71,17 +102,33 @@ public final class WorkspaceDefinitionAuthority {
             RuntimeContext rc, AbstractFilesystem fallback, String pattern, String path) {
         Map<String, FileInfo> matches = new LinkedHashMap<>();
         // A fully owned directory needs no sandbox enumeration unless explicit routes exist.
+        GlobResult sandbox = null;
         if (!owns(path) || runtime instanceof RoutedSandboxFilesystem) {
-            GlobResult sandbox = fallback.glob(rc, pattern, path);
+            sandbox = fallback.glob(rc, pattern, path);
             if (sandbox.isSuccess() && sandbox.matches() != null)
                 for (FileInfo file : sandbox.matches()) {
                     if (!owns(file.path())) matches.put(normalize(file.path()), file);
                 }
         }
         GlobResult local = host.glob(rc, pattern, path);
+        if (!local.isSuccess() && (sandbox == null || !sandbox.isSuccess())) {
+            return GlobResult.fail(
+                    "Host definition glob failed: "
+                            + local.error()
+                            + (sandbox == null ? "" : "; runtime glob failed: " + sandbox.error()));
+        }
         if (local.isSuccess() && local.matches() != null)
             for (FileInfo file : local.matches()) {
-                if (owns(file.path())) matches.put(normalize(file.path()), file);
+                if (owns(file.path())) {
+                    String normalized = normalize(file.path());
+                    matches.put(
+                            normalized,
+                            new FileInfo(
+                                    normalized,
+                                    file.isDirectory(),
+                                    file.size(),
+                                    file.modifiedAt()));
+                }
             }
         return GlobResult.success(List.copyOf(matches.values()));
     }

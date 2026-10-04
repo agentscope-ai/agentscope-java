@@ -93,14 +93,36 @@ class SandboxDefinitionTamperRegressionTest {
         runScenario(IsolationScope.USER, true, true, true);
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void hostUserSkillsRemainTrustedAcrossCallsWithAndWithoutSkillManagement(
+            boolean skillManagement) throws Exception {
+        runScenario(IsolationScope.USER, true, false, skillManagement, true);
+    }
+
     private void runScenario(
             IsolationScope scope, boolean secure, boolean projectMemory, boolean skillManagement)
+            throws Exception {
+        runScenario(scope, secure, projectMemory, skillManagement, false);
+    }
+
+    private void runScenario(
+            IsolationScope scope,
+            boolean secure,
+            boolean projectMemory,
+            boolean skillManagement,
+            boolean hostUserSkill)
             throws Exception {
         Path host = temp.resolve("host");
         Files.createDirectories(host.resolve("skills/good"));
         Files.writeString(host.resolve("AGENTS.md"), "HOST_PERSONA");
         Files.writeString(host.resolve("MEMORY.md"), "HOST_MEMORY");
         Files.writeString(host.resolve("skills/good/SKILL.md"), skill("good", "HOST_SKILL"));
+        if (hostUserSkill) {
+            Files.createDirectories(host.resolve("alice/skills/good"));
+            Files.writeString(
+                    host.resolve("alice/skills/good/SKILL.md"), skill("good", "HOST_USER_SKILL"));
+        }
         ProjectionTestClient client = new ProjectionTestClient(temp.resolve("sandbox"));
         SandboxFilesystemSpec spec =
                 spec(client).isolationScope(scope).hostAuthoritativeDefinitions(secure);
@@ -182,7 +204,8 @@ class SandboxDefinitionTamperRegressionTest {
         assertEquals(2, prompts.size());
         String persona = secure ? "HOST_PERSONA" : "INJECTED_PERSONA";
         String memory = secure && projectMemory ? "HOST_MEMORY" : "INJECTED_MEMORY";
-        String skillDescription = secure ? "HOST_SKILL" : "INJECTED_SKILL";
+        String executionSkillDescription = secure ? "HOST_SKILL" : "INJECTED_SKILL";
+        String skillDescription = hostUserSkill ? "HOST_USER_SKILL" : executionSkillDescription;
         assertAll(
                 () -> assertEquals(List.of(persona), liveReads),
                 () -> assertTrue(prompts.get(1).contains(persona)),
@@ -201,7 +224,7 @@ class SandboxDefinitionTamperRegressionTest {
                                 Files.readString(client.last.directory().resolve("MEMORY.md"))),
                 () ->
                         assertEquals(
-                                skill("good", skillDescription),
+                                skill("good", executionSkillDescription),
                                 Files.readString(
                                         client.last.directory().resolve("skills/good/SKILL.md"))));
         assertEquals(

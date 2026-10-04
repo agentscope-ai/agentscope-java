@@ -2835,8 +2835,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 WorkspaceSkillRepository draftsWritableRepo =
                         new WorkspaceSkillRepository(
                                 filesystem, smConfig.draftsDir(), "workspace-drafts");
-                mainWritableRepo.setDefinitionAuthority(wsManager.getDefinitionAuthority());
-                draftsWritableRepo.setDefinitionAuthority(wsManager.getDefinitionAuthority());
+                var skillAuthority = HarnessAgentBuilderSupport.skillDefinitionAuthority(wsManager);
+                mainWritableRepo.setDefinitionAuthority(skillAuthority);
+                draftsWritableRepo.setDefinitionAuthority(skillAuthority);
                 SkillUsageStore usageStore =
                         distributedStore != null
                                 ? SkillUsageStore.baseStore(distributedStore.baseStore())

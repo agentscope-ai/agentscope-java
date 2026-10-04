@@ -832,7 +832,13 @@ public class WorkspaceManager implements AutoCloseable {
     private String readWithOverride(RuntimeContext rc, String relativePath) {
         if (definitionAuthority != null && definitionAuthority.owns(relativePath)) {
             // Missing/empty host definitions never fall back to untrusted sandbox contents.
-            return readFileQuietly(workspace.resolve(relativePath));
+            String normalized = requireSafeRelativePath(relativePath);
+            Path local = workspace.resolve(normalized).normalize();
+            if (!local.startsWith(workspace)) {
+                throw new IllegalArgumentException(
+                        "Refusing to read outside workspace: " + relativePath);
+            }
+            return readFileQuietly(local);
         }
         String fsContent = readTextThroughFilesystem(rc, relativePath);
         if (!fsContent.isEmpty()) {

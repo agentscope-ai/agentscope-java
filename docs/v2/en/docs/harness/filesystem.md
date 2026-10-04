@@ -395,6 +395,12 @@ The default projection roots remain `AGENTS.md`, `skills`, `subagents`, `knowled
 
 On each sandbox start, an unchanged host payload is skipped only after checking the current projected file contents. Divergence or failed verification triggers hydration from the host. Extra sandbox files are retained, but cannot enter the trusted catalog beneath projected roots. Ordinary unprojected files and shell execution remain writable.
 
+**Migration:** the new default changes where trusted definitions are read on upgrade. Host-authored user skills still override shared host skills according to the configured isolation namespace; sandbox-only overrides under owned roots no longer do. Promote trusted changes to the host, narrow projection roots, or use the legacy opt-out below.
+
+Live verification requires `sha256sum` and the shell `test` command. If unavailable, the sandbox logs one warning, remembers that verification is unsupported for that sandbox instance, and rehydrates on every start. Other verification failures also force hydration; debug logs identify the affected file or batch. This fallback preserves the security default but incurs transfer overhead on resumed calls.
+
+Explicitly projecting `MEMORY.md` emits a configuration warning: memory API writes still target the runtime filesystem and will not update the host-authoritative memory context. Leave it out of projection roots for normal writable memory; its default behavior is unchanged.
+
 For applications that intentionally depend on sandbox definition overrides, opt back into the legacy behavior:
 
 ```java
