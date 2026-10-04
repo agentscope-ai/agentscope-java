@@ -39,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Outbound-worker data plane for {@code self_hosted}: pending tool_use listing, tool_result
@@ -74,10 +75,11 @@ public class SelfHostedWorkerController {
             @PathVariable("sessionId") String sessionId,
             Authentication auth) {
         return Mono.fromCallable(
-                () -> {
-                    requireEnvironmentWorker(auth, environmentId, sessionId);
-                    return pendingHandsToolService.listPending(sessionId);
-                });
+                        () -> {
+                            requireEnvironmentWorker(auth, environmentId, sessionId);
+                            return pendingHandsToolService.listPending(sessionId);
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /** Posts one or more tool results and resumes the suspended turn. */
@@ -88,27 +90,33 @@ public class SelfHostedWorkerController {
             @RequestBody ToolResultsRequest body,
             Authentication auth) {
         return Mono.fromCallable(
-                () -> {
-                    ManagedSessionDto session =
-                            requireEnvironmentWorker(auth, environmentId, sessionId);
-                    if (body == null || body.results() == null || body.results().isEmpty()) {
-                        throw ApiException.invalidRequest(
-                                "missing_results", "results is required", "results");
-                    }
-                    List<ToolResultBlock> blocks = new ArrayList<>();
-                    List<SessionEventDto> recorded = new ArrayList<>();
-                    for (Map<String, Object> payload : body.results()) {
-                        ToolResultBlock block = SessionTurnRunner.toolResultFromPayload(payload);
-                        blocks.add(block);
-                        Map<String, Object> stored = new LinkedHashMap<>(payload);
-                        stored.putIfAbsent("tool_use_id", block.getId());
-                        recorded.add(
-                                eventLog.append(
-                                        sessionId, SessionEventTypes.USER_TOOL_RESULT, stored));
-                    }
-                    turnRunner.resumeWithToolResults(session, blocks);
-                    return recorded;
-                });
+                        () -> {
+                            ManagedSessionDto session =
+                                    requireEnvironmentWorker(auth, environmentId, sessionId);
+                            if (body == null
+                                    || body.results() == null
+                                    || body.results().isEmpty()) {
+                                throw ApiException.invalidRequest(
+                                        "missing_results", "results is required", "results");
+                            }
+                            List<ToolResultBlock> blocks = new ArrayList<>();
+                            List<SessionEventDto> recorded = new ArrayList<>();
+                            for (Map<String, Object> payload : body.results()) {
+                                ToolResultBlock block =
+                                        SessionTurnRunner.toolResultFromPayload(payload);
+                                blocks.add(block);
+                                Map<String, Object> stored = new LinkedHashMap<>(payload);
+                                stored.putIfAbsent("tool_use_id", block.getId());
+                                recorded.add(
+                                        eventLog.append(
+                                                sessionId,
+                                                SessionEventTypes.USER_TOOL_RESULT,
+                                                stored));
+                            }
+                            turnRunner.resumeWithToolResults(session, blocks);
+                            return recorded;
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /** Downloads the session agent's skills bundle for local staging on the worker. */
@@ -118,10 +126,11 @@ public class SelfHostedWorkerController {
             @PathVariable("sessionId") String sessionId,
             Authentication auth) {
         return Mono.fromCallable(
-                () -> {
-                    requireEnvironmentWorker(auth, environmentId, sessionId);
-                    return skillsBundleService.bundleForSession(sessionId);
-                });
+                        () -> {
+                            requireEnvironmentWorker(auth, environmentId, sessionId);
+                            return skillsBundleService.bundleForSession(sessionId);
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     private ManagedSessionDto requireEnvironmentWorker(

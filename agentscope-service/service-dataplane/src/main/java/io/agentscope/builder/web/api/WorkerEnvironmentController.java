@@ -37,6 +37,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * REST surface for out-of-process Environment Workers on {@code self_hosted} environments.
@@ -76,19 +77,20 @@ public class WorkerEnvironmentController {
             @RequestParam("workerId") String workerId,
             @RequestParam(name = "timeoutMs", defaultValue = "25000") long timeoutMs) {
         return Mono.fromCallable(
-                () -> {
-                    try {
-                        Optional<EnvironmentWorkQueue.WorkItem> item =
-                                workQueue.poll(environmentId, workerId, timeoutMs);
-                        return item.map(this::withSessionMetadata)
-                                .map(ResponseEntity::ok)
-                                .orElseGet(() -> ResponseEntity.noContent().build());
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        throw new ResponseStatusException(
-                                HttpStatus.SERVICE_UNAVAILABLE, "Poll interrupted");
-                    }
-                });
+                        () -> {
+                            try {
+                                Optional<EnvironmentWorkQueue.WorkItem> item =
+                                        workQueue.poll(environmentId, workerId, timeoutMs);
+                                return item.map(this::withSessionMetadata)
+                                        .map(ResponseEntity::ok)
+                                        .orElseGet(() -> ResponseEntity.noContent().build());
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                throw new ResponseStatusException(
+                                        HttpStatus.SERVICE_UNAVAILABLE, "Poll interrupted");
+                            }
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     private EnvironmentWorkQueue.WorkItem withSessionMetadata(EnvironmentWorkQueue.WorkItem item) {
@@ -109,7 +111,8 @@ public class WorkerEnvironmentController {
             @RequestParam(value = "state", required = false) String state,
             Authentication auth) {
         requireUserAuth(auth);
-        return Mono.fromCallable(() -> workQueue.list(environmentId, state));
+        return Mono.fromCallable(() -> workQueue.list(environmentId, state))
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /** Returns per-status counts and oldest queued age for the environment. */
@@ -117,7 +120,8 @@ public class WorkerEnvironmentController {
     public Mono<CoordinationStore.WorkStats> workStats(
             @PathVariable("id") String environmentId, Authentication auth) {
         requireUserAuth(auth);
-        return Mono.fromCallable(() -> workQueue.stats(environmentId));
+        return Mono.fromCallable(() -> workQueue.stats(environmentId))
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /** Returns a single work item by id. */
@@ -128,14 +132,15 @@ public class WorkerEnvironmentController {
             Authentication auth) {
         requireUserAuth(auth);
         return Mono.fromCallable(
-                () ->
-                        workQueue
-                                .get(workId)
-                                .orElseThrow(
-                                        () ->
-                                                new ResponseStatusException(
-                                                        HttpStatus.NOT_FOUND,
-                                                        "Unknown work item: " + workId)));
+                        () ->
+                                workQueue
+                                        .get(workId)
+                                        .orElseThrow(
+                                                () ->
+                                                        new ResponseStatusException(
+                                                                HttpStatus.NOT_FOUND,
+                                                                "Unknown work item: " + workId)))
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /**
