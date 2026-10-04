@@ -267,8 +267,7 @@ class ResponsesStreamingAssemblerTest {
                 List.of(
                         TestSdkFixtures.outputItemAddedEvent(item),
                         TestSdkFixtures.functionCallArgsDeltaEvent("{\"city\"", "fc_001"),
-                        TestSdkFixtures.functionCallArgsDoneEvent(
-                                "{\"city\":\"SF\"}", "fc_001", "get_weather"),
+                        TestSdkFixtures.functionCallArgsDoneEvent("{\"city\":\"SF\"}", "fc_001"),
                         TestSdkFixtures.completedEvent(
                                 TestSdkFixtures.completedResponse(List.of())));
         List<ChatResponse> results = assemble(events);
@@ -292,8 +291,7 @@ class ResponsesStreamingAssemblerTest {
                 List.of(
                         TestSdkFixtures.outputItemAddedEvent(item),
                         TestSdkFixtures.functionCallArgsDeltaEvent("{\"city\"", "fc_001"),
-                        TestSdkFixtures.functionCallArgsDoneEvent(
-                                "{\"city\":\"SF\"}", "fc_001", "get_weather"),
+                        TestSdkFixtures.functionCallArgsDoneEvent("{\"city\":\"SF\"}", "fc_001"),
                         TestSdkFixtures.completedEvent(
                                 TestSdkFixtures.completedResponse(List.of())));
         List<ChatResponse> results = assemble(events);
