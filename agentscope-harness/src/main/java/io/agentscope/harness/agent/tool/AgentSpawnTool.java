@@ -27,7 +27,9 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
@@ -469,8 +471,9 @@ public class AgentSpawnTool {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
+                                    Msg reply;
                                     try {
-                                        Msg reply =
+                                        reply =
                                                 manager.invokeAgent(
                                                                 agent,
                                                                 sessionId,
@@ -478,13 +481,13 @@ public class AgentSpawnTool {
                                                                 capturedTask,
                                                                 runtimeContext)
                                                         .block();
-                                        return reply != null ? reply.getTextContent() : "";
                                     } catch (RuntimeException e) {
                                         return "Error: "
                                                 + (e.getMessage() != null
                                                         ? e.getMessage()
                                                         : e.getClass().getSimpleName());
                                     }
+                                    return textOf(reply);
                                 });
             }
             taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
@@ -646,8 +649,9 @@ public class AgentSpawnTool {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
+                                    Msg reply;
                                     try {
-                                        Msg reply =
+                                        reply =
                                                 manager.invokeAgent(
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
@@ -655,13 +659,13 @@ public class AgentSpawnTool {
                                                                 capturedMessage,
                                                                 runtimeContext)
                                                         .block();
-                                        return reply != null ? reply.getTextContent() : "";
                                     } catch (RuntimeException e) {
                                         return "Error: "
                                                 + (e.getMessage() != null
                                                         ? e.getMessage()
                                                         : e.getClass().getSimpleName());
                                     }
+                                    return textOf(reply);
                                 });
             }
             taskRepository.putTask(
@@ -904,6 +908,7 @@ public class AgentSpawnTool {
                                                             task,
                                                             spawned,
                                                             runtimeContext)
+                                                    .map(AgentSpawnTool::requireNonSuspendedReply)
                                                     .contextWrite(
                                                             c ->
                                                                     reactor.util.context.Context.of(
@@ -1118,7 +1123,21 @@ public class AgentSpawnTool {
     }
 
     private static String textOf(Msg msg) {
+        requireNonSuspendedReply(msg);
         return msg != null ? msg.getTextContent() : "";
+    }
+
+    private static Msg requireNonSuspendedReply(Msg msg) {
+        if (msg != null && msg.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
+            List<String> tools =
+                    msg.getContentBlocks(ToolUseBlock.class).stream()
+                            .map(ToolUseBlock::getName)
+                            .distinct()
+                            .toList();
+            throw new IllegalStateException(
+                    "Subagent suspended awaiting external tool execution: " + tools);
+        }
+        return msg;
     }
 
     private static String formatTimeoutPromoted(String taskId, long timeoutMs) {
@@ -1646,8 +1665,9 @@ public class AgentSpawnTool {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
+                                    Msg reply;
                                     try {
-                                        Msg reply =
+                                        reply =
                                                 manager.invokeAgent(
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
@@ -1655,13 +1675,13 @@ public class AgentSpawnTool {
                                                                 capturedTask,
                                                                 runtimeContext)
                                                         .block();
-                                        return reply != null ? reply.getTextContent() : "";
                                     } catch (RuntimeException e) {
                                         return "Error: "
                                                 + (e.getMessage() != null
                                                         ? e.getMessage()
                                                         : e.getClass().getSimpleName());
                                     }
+                                    return textOf(reply);
                                 });
             }
             taskRepository.putTask(
