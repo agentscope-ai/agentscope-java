@@ -136,15 +136,25 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                         while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
                             rootCause = rootCause.getCause();
                         }
+                        String causeMessage =
+                                rootCause
+                                                instanceof
+                                                com.fasterxml.jackson.core.JsonProcessingException
+                                        ? rootCause.getMessage()
+                                        : null;
+                        if (causeMessage != null && causeMessage.length() > 512) {
+                            causeMessage = causeMessage.substring(0, 512);
+                        }
                         log.warn(
                                 "Failed to parse accumulated tool call arguments: "
                                         + "toolId={}, toolName={}, byteLength={}, sha256={}, "
-                                        + "causeType={}",
+                                        + "causeType={}, causeMessage={}",
                                 toolId,
                                 name,
                                 rawContentStr.getBytes(StandardCharsets.UTF_8).length,
                                 sha256(rawContentStr),
-                                rootCause.getClass().getName());
+                                rootCause.getClass().getName(),
+                                causeMessage);
                     }
                 }
             }
