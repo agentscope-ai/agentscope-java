@@ -372,8 +372,7 @@ class ModelTimeoutRetryTest {
                 Flux.just(createMockResponse()).delayElements(Duration.ofMillis(500));
 
         ExecutionConfig config = ExecutionConfig.builder().noTimeout().build();
-        GenerateOptions options =
-                GenerateOptions.builder().executionConfig(config).build();
+        GenerateOptions options = GenerateOptions.builder().executionConfig(config).build();
 
         StepVerifier.create(
                         ModelUtils.applyTimeoutAndRetry(
