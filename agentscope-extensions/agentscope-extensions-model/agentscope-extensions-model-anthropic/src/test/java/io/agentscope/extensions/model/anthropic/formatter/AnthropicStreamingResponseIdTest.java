@@ -24,6 +24,7 @@ import com.anthropic.models.messages.RawMessageStreamEvent;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.model.ChatResponse;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -76,6 +77,31 @@ class AnthropicStreamingResponseIdTest {
     }
 
     @Test
+    void switchesToTheNextProviderIdAtEachMessageStart() throws Exception {
+        StepVerifier.create(parse(concat(events("msg_first"), events("msg_second"))).collectList())
+                .assertNext(
+                        responses -> {
+                            assertResponseIds(responses.subList(0, 4), "msg_first");
+                            assertResponseIds(responses.subList(4, 8), "msg_second");
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void generatesAFreshFallbackIdAtEachMessageStartWithoutProviderId() throws Exception {
+        StepVerifier.create(parse(concat(events(null), events(null))).collectList())
+                .assertNext(
+                        responses -> {
+                            String firstId = responses.get(0).getId();
+                            String secondId = responses.get(4).getId();
+                            assertResponseIds(responses.subList(0, 4), firstId);
+                            assertResponseIds(responses.subList(4, 8), secondId);
+                            assertNotEquals(firstId, secondId);
+                        })
+                .verifyComplete();
+    }
+
+    @Test
     void isolatesIdsBetweenOverlappingSubscriptions() throws Exception {
         TestPublisher<RawMessageStreamEvent> firstSource = TestPublisher.create();
         TestPublisher<RawMessageStreamEvent> secondSource = TestPublisher.create();
@@ -115,6 +141,13 @@ class AnthropicStreamingResponseIdTest {
 
     private static Flux<ChatResponse> parse(List<RawMessageStreamEvent> events) {
         return AnthropicResponseParser.parseStreamEvents(Flux.fromIterable(events), Instant.now());
+    }
+
+    private static List<RawMessageStreamEvent> concat(
+            List<RawMessageStreamEvent> first, List<RawMessageStreamEvent> second) {
+        List<RawMessageStreamEvent> events = new ArrayList<>(first);
+        events.addAll(second);
+        return events;
     }
 
     private static void assertResponseIds(List<ChatResponse> responses, String expectedId) {
