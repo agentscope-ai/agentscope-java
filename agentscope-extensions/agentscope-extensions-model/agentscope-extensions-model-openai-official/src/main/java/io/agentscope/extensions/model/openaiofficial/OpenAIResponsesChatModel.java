@@ -359,17 +359,18 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
             // When timeout is disabled, pass null so the SDK uses its own default.
             // This differs from the tool / model-flux paths where noTimeout() is genuinely
             // unbounded — here it degrades to the SDK's own default request timeout.
+            ExecutionConfig exec = effectiveOptions.getExecutionConfig();
             Duration clientTimeout = null;
-            if (effectiveOptions.getExecutionConfig() != null
-                    && !effectiveOptions.getExecutionConfig().isTimeoutDisabled()) {
-                clientTimeout = effectiveOptions.getExecutionConfig().getTimeout();
-            } else if (effectiveOptions.getExecutionConfig() != null
-                    && effectiveOptions.getExecutionConfig().isTimeoutDisabled()) {
-                log.warn(
-                        "noTimeout() is set for model '{}' on the openai-official provider. "
-                                + "Unlike tool / model-flux paths this is not truly unbounded: "
-                                + "the SDK's own default request timeout will apply.",
-                        modelName);
+            if (exec != null) {
+                if (exec.isTimeoutDisabled()) {
+                    log.warn(
+                            "noTimeout() is set for model '{}' on the openai-official provider. "
+                                    + "Unlike tool / model-flux paths this is not truly unbounded: "
+                                    + "the SDK's own default request timeout will apply.",
+                            modelName);
+                } else {
+                    clientTimeout = exec.getTimeout();
+                }
             }
             OpenAIClient client =
                     OpenAISdkClientFactory.createClient(

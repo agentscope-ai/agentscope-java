@@ -167,11 +167,18 @@ public class ExecutionConfig {
      *
      * <p><b>Supported paths</b>: The sentinel is honoured on the <em>tool</em> path
      * ({@code ToolExecutor.applyTimeout}) and the <em>model-flux</em> path
-     * ({@code ModelUtils.applyTimeoutAndRetry}). Extension consumers that read
+     * ({@code ModelUtils.applyTimeoutAndRetry}), where it means genuinely unbounded
+     * (no timeout operator is applied). Extension consumers that read
      * {@link #getTimeout()} directly and pass the value to a framework timeout operator
-     * (e.g. {@code EmbeddingUtils.applyTimeoutAndRetry} in {@code rag-simple}, or the
-     * OpenAI SDK client timeout in {@code openai-official}) must apply the same guard
-     * via {@link #isTimeoutDisabled()}.
+     * must apply the same guard via {@link #isTimeoutDisabled()}:
+     * <ul>
+     *   <li>{@code EmbeddingUtils.applyTimeoutAndRetry} in {@code rag-simple} — honours the
+     *       sentinel by skipping the timeout operator, consistent with tool/model-flux.</li>
+     *   <li>{@code openai-official} provider — the sentinel is recognised but degrades to
+     *       the OpenAI SDK's own default request timeout rather than being truly unbounded,
+     *       because the SDK client does not accept an unbounded timeout value. A warning is
+     *       logged when this occurs.</li>
+     * </ul>
      */
     public static final Duration NO_TIMEOUT = Duration.ofNanos(-1);
 
@@ -351,7 +358,9 @@ public class ExecutionConfig {
                     && (timeout.isNegative() || timeout.isZero())
                     && !NO_TIMEOUT.equals(timeout)) {
                 throw new IllegalArgumentException(
-                        "timeout must be positive; use NO_TIMEOUT or noTimeout() to disable it");
+                        "timeout must be positive, got "
+                                + timeout
+                                + "; use NO_TIMEOUT or noTimeout() to disable it");
             }
             this.timeout = timeout;
             return this;
