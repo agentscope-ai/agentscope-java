@@ -16,18 +16,24 @@
 package io.agentscope.extensions.jdbc.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.JdbcDistributedStore;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
+import io.agentscope.extensions.jdbc.skill.JdbcAgentSkillRepository;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
+import java.sql.Connection;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -118,6 +124,56 @@ class PostgresIntegrationTest {
         lease.close();
     }
 
+    @Test
+    @DisplayName("06: build() blocks when a legacy table lacks the version column")
+    void buildBlocksOnLegacyTableMissingColumn() throws Exception {
+        DataSource ds = createDataSource();
+        // Current schema first, then regress the sessions table to the legacy shape the
+        // deprecated postgresql extension created (same table name, no version column).
+        AbstractJdbcDialect.from(ds).build();
+        try (Connection conn = ds.getConnection();
+                Statement stmt = conn.createStatement()) {
+            stmt.execute("ALTER TABLE agentscope_sessions DROP COLUMN version");
+        }
+
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class, () -> AbstractJdbcDialect.from(ds).build());
+
+        assertTrue(exception.getMessage().contains("version"), exception.getMessage());
+        assertTrue(exception.getMessage().contains("agentscope_sessions"), exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("07: skill repository round-trip on the skill table group")
+    void skillRepositoryRoundTrip() {
+        DataSource ds = createDataSource();
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).enableSkillTables(true).build();
+        var repo = new JdbcAgentSkillRepository(ds, dialect);
+
+        var skill =
+                new AgentSkill(
+                        Map.of(
+                                "name", "pg-skill",
+                                "description", "integration skill",
+                                "homepage", "https://example.com"),
+                        "content",
+                        Map.of("readme.md", "hello"),
+                        "integration");
+        assertTrue(repo.save(List.of(skill), false));
+
+        AgentSkill loaded = repo.getSkill("pg-skill");
+        assertEquals("https://example.com", loaded.getMetadataValue("homepage"));
+        assertEquals("hello", loaded.getResource("readme.md"));
+        assertTrue(repo.delete("pg-skill"));
+        assertFalse(repo.skillExists("pg-skill"));
+    }
+
+    /**
+     * A DataSource on the Testcontainers PostgreSQL database.
+     *
+     * @return the live DataSource
+     */
     private DataSource createDataSource() {
         PGSimpleDataSource ds = new PGSimpleDataSource();
         ds.setUrl(postgres.getJdbcUrl());

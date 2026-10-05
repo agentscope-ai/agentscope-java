@@ -30,6 +30,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -312,6 +313,47 @@ class AgentRunTest {
     }
 
     private record Label(String value) {}
+
+    @Test
+    void preparedCallRunIdMatchesContextRunId() {
+        try (ReActAgent agent =
+                ReActAgent.builder().name("runid-match").model(new MockModel("done")).build()) {
+            RuntimeContext ctx = context("a", "runid-session");
+            AgentRun<Msg> run = agent.prepareCall(input(), ctx);
+            assertEquals(ctx.getRunId(), run.runId());
+            assertNotNull(run.runId());
+
+            RuntimeContext explicit = RuntimeContext.builder().runId("explicit-run-id").build();
+            AgentRun<Msg> explicitRun = agent.prepareCall(input(), explicit);
+            assertEquals("explicit-run-id", explicitRun.runId());
+        }
+    }
+
+    @Test
+    void preparedCallWithNullContextSharesRunIdWithTheContextSeenInsideTheRun() {
+        ConcurrentLinkedQueue<String> observed = new ConcurrentLinkedQueue<>();
+        MiddlewareBase recorder =
+                new MiddlewareBase() {
+                    @Override
+                    public Mono<String> onSystemPrompt(
+                            Agent agent, RuntimeContext ctx, String prompt) {
+                        observed.add(ctx.getRunId());
+                        return Mono.just(prompt);
+                    }
+                };
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("runid-null-ctx")
+                        .model(new MockModel("done"))
+                        .middlewares(List.of(recorder))
+                        .build()) {
+            AgentRun<Msg> run = agent.prepareCall(input(), null);
+            assertNotNull(run.stream().single().block(TIMEOUT));
+            assertNotNull(run.runId());
+            assertEquals(1, observed.size());
+            assertEquals(run.runId(), observed.peek());
+        }
+    }
 
     private static RuntimeContext context(String label, String session) {
         return RuntimeContext.builder()

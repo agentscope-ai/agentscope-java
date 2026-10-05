@@ -97,7 +97,7 @@ Welcome to join our community on
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-harness</artifactId>
-    <version>2.0.1</version>
+    <version>2.0.3</version>
 </dependency>
 ```
 
@@ -107,7 +107,7 @@ Model providers are shipped as separate extension modules in 2.0. Add the one yo
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-model-dashscope</artifactId>
-    <version>2.0.1</version>
+    <version>2.0.3</version>
 </dependency>
 ```
 
@@ -201,7 +201,7 @@ Messages, events, and the extension model are smaller, more orthogonal — HITL 
 
 - **Event stream** — 31 typed events covering model calls, text deltas, tool execution, and user confirmations in real time
 - **Message model** — text / files / images / audio / video / tool results unified into `ContentBlock`, role-strict validation at construction
-- **Middleware** — `onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` five stages replace v1's flat hooks
+- **Middleware** — `onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` / `onAgentStateReady` six stages replace v1's flat hooks
 - **HITL first class** — confirm tool arguments, approve sensitive actions, hand off to external systems, agent pauses and resumes exactly
 
 For the complete architecture overview, see the [documentation](https://java.agentscope.io/v2/en/docs/index.html).
