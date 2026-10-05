@@ -83,7 +83,7 @@ Where snapshots land is decided by `snapshotSpec`:
 
 Host-side workspace files (`AGENTS.md` / `skills/` / `subagents/` / `knowledge/`) are synced into the sandbox at each start, content-hash-gated. So if you edit a script under `skills/`, the next `call()` has the new version inside the sandbox.
 
-Some writes finish after `call()` returns: the session log mirror and memory flush / maintenance. For a framework-managed sandbox, the end-of-call snapshot and container shutdown wait for those writes so they land in the snapshot, and the next `call()` in the same isolation scope waits for that snapshot. The wait is capped at 30 seconds by default; set `-Dagentscope.sandbox.release.maxDeferMillis` to change it (`0` releases immediately, as before).
+Some writes finish after `call()` returns: the session log mirror and memory flush / maintenance. For a framework-managed sandbox, the end-of-call snapshot and container shutdown wait for those writes so they land in the snapshot, and the next `call()` in the same isolation scope waits for that snapshot. The wait is capped at 30 seconds by default; set `-Dagentscope.sandbox.release.maxDeferMillis` to change it (`0` releases immediately, as before). This is a JVM-wide system property: it applies to every agent in the process, so in a multi-tenant deployment one value governs all tenants' release latency.
 
 ## Distributed deployment
 

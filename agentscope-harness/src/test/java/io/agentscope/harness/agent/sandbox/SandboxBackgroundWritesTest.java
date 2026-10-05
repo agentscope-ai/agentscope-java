@@ -24,7 +24,11 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -125,21 +129,72 @@ class SandboxBackgroundWritesTest {
     }
 
     @Test
-    void secondReleaseOfTheSameSandboxRunsImmediately() throws Exception {
+    void secondReleaseWhileDeferredRunsOnceAfterTheFirst() throws Exception {
         Sandbox sandbox = new TrackingSandbox(TrackingSandbox.newEventLog());
         SandboxBackgroundWrites.Hold hold = SandboxBackgroundWrites.tryHold(sandbox);
-        AtomicInteger runs = new AtomicInteger();
+        List<String> order = Collections.synchronizedList(new ArrayList<>());
 
         CompletableFuture<Void> first =
-                SandboxBackgroundWrites.releaseWhenIdle(sandbox, runs::incrementAndGet);
+                SandboxBackgroundWrites.releaseWhenIdle(sandbox, () -> order.add("first"));
         CompletableFuture<Void> second =
-                SandboxBackgroundWrites.releaseWhenIdle(sandbox, runs::incrementAndGet);
+                SandboxBackgroundWrites.releaseWhenIdle(sandbox, () -> order.add("second"));
 
-        assertTrue(second.isDone());
-        assertFalse(first.isDone());
+        assertFalse(second.isDone(), "a second release must not race the in-flight write");
+        assertEquals(List.of(), order);
         hold.close();
         first.get(5, TimeUnit.SECONDS);
-        assertEquals(2, runs.get());
+        second.get(5, TimeUnit.SECONDS);
+        assertEquals(List.of("first", "second"), order, "each teardown runs exactly once");
+    }
+
+    @Test
+    void secondReleaseDuringATeardownWaitsForIt() throws Exception {
+        Sandbox sandbox = new TrackingSandbox(TrackingSandbox.newEventLog());
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch finishFirst = new CountDownLatch(1);
+        List<String> order = Collections.synchronizedList(new ArrayList<>());
+        CompletableFuture<Void> first =
+                CompletableFuture.runAsync(
+                        () ->
+                                SandboxBackgroundWrites.releaseWhenIdle(
+                                        sandbox,
+                                        () -> {
+                                            firstStarted.countDown();
+                                            awaitQuietly(finishFirst);
+                                            order.add("first");
+                                        }));
+        try {
+            assertTrue(firstStarted.await(5, TimeUnit.SECONDS));
+
+            CompletableFuture<Void> second =
+                    SandboxBackgroundWrites.releaseWhenIdle(sandbox, () -> order.add("second"));
+
+            assertFalse(second.isDone(), "teardowns of one sandbox must never overlap");
+            finishFirst.countDown();
+            second.get(5, TimeUnit.SECONDS);
+            first.get(5, TimeUnit.SECONDS);
+            assertEquals(List.of("first", "second"), order);
+        } finally {
+            finishFirst.countDown();
+        }
+    }
+
+    @Test
+    void secondReleaseAfterAForcedReleaseRunsOnce() throws Exception {
+        System.setProperty(SandboxBackgroundWrites.MAX_DEFER_MILLIS_PROPERTY, "100");
+        Sandbox sandbox = new TrackingSandbox(TrackingSandbox.newEventLog());
+        SandboxBackgroundWrites.Hold stuck = SandboxBackgroundWrites.tryHold(sandbox);
+        AtomicInteger runs = new AtomicInteger();
+        try {
+            SandboxBackgroundWrites.releaseWhenIdle(sandbox, runs::incrementAndGet)
+                    .get(5, TimeUnit.SECONDS);
+
+            SandboxBackgroundWrites.releaseWhenIdle(sandbox, runs::incrementAndGet)
+                    .get(5, TimeUnit.SECONDS);
+        } finally {
+            stuck.close();
+        }
+        assertEquals(2, runs.get(), "closing the stuck hold must not run either teardown again");
     }
 
     @Test
@@ -237,5 +292,13 @@ class SandboxBackgroundWritesTest {
                 SandboxBackgroundWrites.maxDeferMillis());
         System.setProperty(SandboxBackgroundWrites.MAX_DEFER_MILLIS_PROPERTY, "-5");
         assertEquals(0L, SandboxBackgroundWrites.maxDeferMillis());
+    }
+
+    private static void awaitQuietly(CountDownLatch latch) {
+        try {
+            latch.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

@@ -553,16 +553,6 @@ public class SessionTree {
         if (transcriptStore == null || transcriptRef == null || entries.isEmpty()) {
             return;
         }
-        // Same pin as scheduleMirror: async segment upload must survive call unbind. Only the
-        // object-store transcript store writes through the (sandbox) filesystem.
-        final MirrorTarget target =
-                transcriptStore instanceof ObjectStoreTranscriptStore
-                        ? mirrorTarget()
-                        : new MirrorTarget(filesystem, null);
-        if (target == null) {
-            return;
-        }
-        final TranscriptStore store = transcriptStoreForMirror(target.fs());
         final TranscriptRef ref = transcriptRef;
         StringBuilder sb = new StringBuilder();
         for (SessionEntry entry : entries) {
@@ -570,6 +560,23 @@ public class SessionTree {
         }
         byte[] payload = sb.toString().getBytes(StandardCharsets.UTF_8);
         String wid = writerId;
+        // Same pin as scheduleMirror: async segment upload must survive call unbind. Only the
+        // object-store transcript store writes through the (sandbox) filesystem. The hold is
+        // taken last so nothing can throw before submitMirror owns it.
+        final MirrorTarget target =
+                transcriptStore instanceof ObjectStoreTranscriptStore
+                        ? mirrorTarget()
+                        : new MirrorTarget(filesystem, null);
+        if (target == null) {
+            return;
+        }
+        final TranscriptStore store;
+        try {
+            store = transcriptStoreForMirror(target.fs());
+        } catch (RuntimeException e) {
+            target.done();
+            throw e;
+        }
         submitMirror(
                 target,
                 () -> {
@@ -595,12 +602,13 @@ public class SessionTree {
         if (filesystem == null || workspaceRoot == null) {
             return;
         }
+        final String contextRel = resolveRelativePath(contextFile);
+        final String logRel = resolveRelativePath(logFile);
+        // Taken last so nothing can throw before submitMirror owns the hold.
         final MirrorTarget target = mirrorTarget();
         if (target == null) {
             return;
         }
-        final String contextRel = resolveRelativePath(contextFile);
-        final String logRel = resolveRelativePath(logFile);
         submitMirror(
                 target,
                 () -> {
@@ -627,7 +635,12 @@ public class SessionTree {
                     log.debug("Skipping session mirror: its sandbox is already being released");
                     return null;
                 }
-                return new MirrorTarget(new PinnedSandboxFilesystem(sb, hold), hold);
+                try {
+                    return new MirrorTarget(new PinnedSandboxFilesystem(sb, hold), hold);
+                } catch (RuntimeException e) {
+                    hold.close();
+                    throw e;
+                }
             }
         }
         return new MirrorTarget(filesystem, null);

@@ -173,9 +173,6 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         // flush must already be counted, or a quiescence check could observe an empty
         // in-flight set while work is still pending.
         MemoryBackgroundTasks.begin();
-        // The flush writes memory files after the call has released its sandbox; pin the call's
-        // sandbox now, while the call still owns it, so the release waits for the flush (#3415).
-        SandboxBackgroundWrites.Pin pin = SandboxBackgroundWrites.pinCallSandbox(rc);
         String key = compositeTimerKey(rc);
         // Coalescing key of the task: the conversation whose state the task reads when it
         // executes. The agent reference distinguishes agent instances serving the same user
@@ -183,6 +180,10 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         ConversationKey conversationKey =
                 new ConversationKey(
                         agent, blankToEmpty(rc.getUserId()), blankToEmpty(rc.getSessionId()));
+        // The flush writes memory files after the call has released its sandbox; pin the call's
+        // sandbox now, while the call still owns it, so the release waits for the flush (#3415).
+        // Pinned last, right before the task that closes it (when it runs or is displaced).
+        SandboxBackgroundWrites.Pin pin = SandboxBackgroundWrites.pinCallSandbox(rc);
         FlushTask task = new FlushTask(() -> runFlush(key, agent, pin), pin);
         FlushTask[] starter = new FlushTask[1];
         FlushTask[] displaced = new FlushTask[1];

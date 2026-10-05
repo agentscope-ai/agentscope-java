@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -49,9 +50,11 @@ import reactor.core.scheduler.Schedulers;
  * container alive indefinitely; writes still running at that point fail as they did before.
  *
  * <p>State is process-wide and keyed by sandbox identity, like the session mirror executor and
- * {@link io.agentscope.harness.agent.memory.MemoryBackgroundTasks}. An entry only exists while a
- * hold is outstanding or a teardown is pending, so the registry does not grow with the number of
- * calls.
+ * {@link io.agentscope.harness.agent.memory.MemoryBackgroundTasks}; {@link
+ * #MAX_DEFER_MILLIS_PROPERTY} is likewise a JVM-wide setting shared by every agent in the process.
+ * An entry only exists while a hold is outstanding or a teardown is pending, so the registry does
+ * not grow with the number of calls — provided every {@link Hold} is closed: the registry keeps
+ * its sandbox strongly reachable until then.
  */
 public final class SandboxBackgroundWrites {
 
@@ -124,6 +127,9 @@ public final class SandboxBackgroundWrites {
      * thread; otherwise runs it on {@code boundedElastic} once the last hold closes, or when
      * {@link #maxDeferMillis()} elapses, whichever comes first. The teardown runs exactly once.
      *
+     * <p>Releasing the same instance again is a caller bug (each acquire yields its own sandbox);
+     * the extra teardown then runs after the first one rather than racing it or the writes.
+     *
      * @param sandbox the sandbox being released
      * @param teardown stops the sandbox and persists its state; must not throw for expected
      *     failures
@@ -134,12 +140,27 @@ public final class SandboxBackgroundWrites {
         Objects.requireNonNull(teardown, "teardown");
         long maxDefer = maxDeferMillis();
         Entry entry;
+        CompletableFuture<Void> runningRelease = null;
         synchronized (LOCK) {
             entry = ENTRIES.get(sandbox);
             if (entry != null && entry.teardown != null) {
-                // Each acquire yields its own sandbox instance, so a second release is a caller
-                // bug; keep the old behaviour of releasing again right away.
-                entry = null;
+                log.warn(
+                        "[sandbox] Sandbox {} released twice; the second release runs after the"
+                                + " first",
+                        sessionIdOf(sandbox));
+                if (!entry.releasing) {
+                    Runnable first = entry.teardown;
+                    entry.teardown =
+                            () -> {
+                                try {
+                                    first.run();
+                                } finally {
+                                    teardown.run();
+                                }
+                            };
+                    return entry.done;
+                }
+                runningRelease = entry.done;
             } else {
                 if (entry == null) {
                     entry = new Entry();
@@ -164,9 +185,9 @@ public final class SandboxBackgroundWrites {
                 entry.releasing = true;
             }
         }
-        if (entry == null) {
-            teardown.run();
-            return CompletableFuture.completedFuture(null);
+        if (runningRelease != null) {
+            // Outside the lock: thenRun runs inline when the first release has already finished.
+            return runningRelease.thenRun(() -> runLogged(teardown));
         }
         runTeardown(sandbox, entry);
         return entry.done;
@@ -177,9 +198,12 @@ public final class SandboxBackgroundWrites {
      * timeout elapses. Intended for graceful shutdown ({@code HarnessAgent.close()}), after the
      * background writers themselves have been drained.
      *
+     * <p>The set of releases is a snapshot taken on entry: a release deferred after this method
+     * starts is not waited for, so {@code true} does not mean no release can run afterwards.
+     *
      * @param timeout maximum time to wait
      * @param unit time unit of {@code timeout}
-     * @return {@code true} if no deferred release is still pending
+     * @return {@code true} if every release in the snapshot has run
      */
     public static boolean awaitPendingReleases(long timeout, TimeUnit unit) {
         List<CompletableFuture<Void>> pending = new ArrayList<>();
@@ -201,10 +225,14 @@ public final class SandboxBackgroundWrites {
             Thread.currentThread().interrupt();
             return false;
         } catch (TimeoutException e) {
-            log.debug("[sandbox] {} deferred sandbox release(s) still pending", pending.size());
+            log.warn(
+                    "[sandbox] {} deferred sandbox release(s) still pending after {} ms",
+                    pending.size(),
+                    unit.toMillis(timeout));
             return false;
-        } catch (Exception e) {
-            return true;
+        } catch (ExecutionException e) {
+            log.warn("[sandbox] Deferred sandbox release failed: {}", e.getMessage(), e);
+            return false;
         }
     }
 
@@ -267,15 +295,21 @@ public final class SandboxBackgroundWrites {
 
     private static void runTeardown(Sandbox sandbox, Entry entry) {
         try {
-            entry.teardown.run();
-        } catch (RuntimeException e) {
-            log.warn("[sandbox] Sandbox release failed: {}", e.getMessage(), e);
+            runLogged(entry.teardown);
         } finally {
             synchronized (LOCK) {
                 entry.finished = true;
                 removeIfIdle(sandbox, entry);
             }
             entry.done.complete(null);
+        }
+    }
+
+    private static void runLogged(Runnable teardown) {
+        try {
+            teardown.run();
+        } catch (RuntimeException e) {
+            log.warn("[sandbox] Sandbox release failed: {}", e.getMessage(), e);
         }
     }
 

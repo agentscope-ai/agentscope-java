@@ -53,8 +53,8 @@ public class SandboxManager {
 
     private static final Logger log = LoggerFactory.getLogger(SandboxManager.class);
 
-    /** Extra wait, beyond the deferral budget, for a deferred teardown to finish stopping. */
-    private static final long DEFERRED_RELEASE_GRACE_MILLIS = 60_000L;
+    /** Extra wait, beyond the deferral budget, for a forced teardown to finish stopping. */
+    private static final long DEFERRED_RELEASE_GRACE_MILLIS = 5_000L;
 
     private final SandboxClient<?> client;
     private final SessionSandboxStateStore stateStore;
@@ -80,6 +80,17 @@ public class SandboxManager {
                 executionGuard != null ? executionGuard : SandboxExecutionGuard.noop();
     }
 
+    /**
+     * Acquires the sandbox for a call. This is a blocking call — resuming or creating a sandbox is
+     * remote I/O, and a harness-managed acquire also waits (at most {@link
+     * SandboxBackgroundWrites#maxDeferMillis()} plus a few seconds) for a release of the same
+     * scope that is still deferred — so reactive callers must invoke it off event-loop threads.
+     *
+     * @param sandboxContext the call's sandbox configuration
+     * @param runtimeContext the call's runtime context
+     * @return the acquired sandbox and its execution lease
+     * @throws Exception if the sandbox cannot be resumed or created
+     */
     public SandboxAcquireResult acquire(
             SandboxContext sandboxContext, RuntimeContext runtimeContext) throws Exception {
         // Priority 1: user-supplied sandbox — guard does not apply
