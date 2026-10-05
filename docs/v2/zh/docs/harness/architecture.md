@@ -68,6 +68,23 @@ Harness 在构建期按固定顺序串起所有内置 middleware。你通过 `.m
 - 通过 agent 上的 `RuntimeContext` 读当前调用的身份（`userId` / `sessionId`）。
 - 读写工作区用 `harnessAgent.getWorkspaceManager()`，它会按当前文件系统模式（本机 / 沙箱 / 远端）正确路由。直接 `java.nio.Files` 在沙箱或远端模式下会写错地方。
 
+## Team 通知的 namespace
+
+`LocalTeamClient` 在消息、任务分派和任务结果通知中传递 namespace。`TeamsMiddleware` 按 `(namespace, teamName, memberName)` 路由这些通知，因此不同 namespace 中的同名 Team 和成员会收到各自的通知。null 或空白 namespace 解析为 `default`，与 `TeamContext.resolvedNamespace()` 一致。
+
+直接唤醒成员时，使用四参数 overload：
+
+```java
+import io.agentscope.harness.agent.middleware.TeamsMiddleware;
+
+boolean accepted = TeamsMiddleware.wakeupTeamMember(
+        "namespace-a", "research", "worker-1", "The task is ready.");
+```
+
+不需要通知正文时，notice 传 `null`。原有二参数和三参数 overload 保留：按 Team 和成员名跨 namespace 查找，恰好匹配一个已注册成员时返回 `true`，没有匹配或有多个匹配时返回 `false`。带 namespace 的 overload 在精确目标不存在时返回 `false`。
+
+自定义 `TeamWakeups.Hook` 仍以原三参数方法作为函数式接口，现有 lambda 可以继续使用。新增的四参数 default 方法委托给原方法，不能自动提供 namespace 隔离。自定义 hook 若要按 namespace 路由，需要覆盖四参数方法并使用传入的 namespace。
+
 ## 相关文档
 
 - [工作区](/v2/zh/docs/harness/workspace) — 目录结构、注入到 system prompt 的内容、`tools.json`

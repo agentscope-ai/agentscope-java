@@ -20,6 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
@@ -29,14 +34,21 @@ import io.agentscope.harness.agent.team.TeamContext;
 import io.agentscope.harness.agent.team.TeamCreateSpec;
 import io.agentscope.harness.agent.team.TeamMessage;
 import io.agentscope.harness.agent.team.TeamTask;
+import io.agentscope.harness.agent.team.TeamWakeups;
 import io.agentscope.harness.agent.tool.TeamTool;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+@ResourceLock("team-wakeups")
 class TeamsMiddlewareTest {
 
     @Test
@@ -86,6 +98,204 @@ class TeamsMiddlewareTest {
         String injected = mw.drainPendingNotices();
         assertTrue(injected.contains("Task task-9 failed by w2"));
         assertTrue(mw.drainPendingNotices().isEmpty(), "notices drain once");
+    }
+
+    @Test
+    void scopedMemberWakeup_routesEachNamespaceAndDoesNotFallBack() {
+        RecordingMessageBus bus = new RecordingMessageBus();
+        TeamsMiddleware a = middleware(memberContext("scoped-routing", "worker", "namespace-a"));
+        TeamsMiddleware b = middleware(memberContext("scoped-routing", "worker", "namespace-b"));
+        a.wireMessageBus(bus, "agent-a");
+        b.wireMessageBus(bus, "agent-b");
+        a.bindSession("session-scoped-a");
+        b.bindSession("session-scoped-b");
+        try {
+            assertTrue(
+                    TeamsMiddleware.wakeupTeamMember(
+                            "namespace-a", "scoped-routing", "worker", "notice for A"));
+            assertTrue(
+                    bus.pushes
+                            .get("agentscope:inbox:session-scoped-a")
+                            .get("hint")
+                            .toString()
+                            .contains("notice for A"));
+            assertFalse(bus.pushes.containsKey("agentscope:inbox:session-scoped-b"));
+            assertEquals("session-scoped-a", bus.pushes.get("agentscope:wakeups").get("sessionId"));
+
+            bus.pushes.clear();
+            assertTrue(
+                    TeamsMiddleware.wakeupTeamMember(
+                            "namespace-b", "scoped-routing", "worker", "notice for B"));
+            assertTrue(
+                    bus.pushes
+                            .get("agentscope:inbox:session-scoped-b")
+                            .get("hint")
+                            .toString()
+                            .contains("notice for B"));
+            assertFalse(bus.pushes.containsKey("agentscope:inbox:session-scoped-a"));
+            assertEquals("session-scoped-b", bus.pushes.get("agentscope:wakeups").get("sessionId"));
+
+            bus.pushes.clear();
+            assertFalse(
+                    TeamsMiddleware.wakeupTeamMember(
+                            "namespace-c", "scoped-routing", "worker", "unknown namespace"));
+            assertTrue(bus.pushes.isEmpty(), "unknown scope must not use another namespace");
+        } finally {
+            TeamsMiddleware.unregisterSession("session-scoped-a");
+            TeamsMiddleware.unregisterSession("session-scoped-b");
+        }
+    }
+
+    @Test
+    void legacyMemberWakeup_rejectsAmbiguousNamespacesWithoutNotifyingEither() {
+        RecordingMessageBus bus = new RecordingMessageBus();
+        TeamsMiddleware a = middleware(memberContext("legacy-ambiguous", "worker", "namespace-a"));
+        TeamsMiddleware b = middleware(memberContext("legacy-ambiguous", "worker", "namespace-b"));
+        a.wireMessageBus(bus, "agent-a");
+        b.wireMessageBus(bus, "agent-b");
+        a.bindSession("session-ambiguous-a");
+        b.bindSession("session-ambiguous-b");
+        try {
+            assertFalse(TeamsMiddleware.wakeupTeamMember("legacy-ambiguous", "worker"));
+            assertFalse(
+                    TeamsMiddleware.wakeupTeamMember("legacy-ambiguous", "worker", "ambiguous"));
+            assertFalse(TeamWakeups.wake("legacy-ambiguous", "worker", "ambiguous hook"));
+            assertTrue(bus.pushes.isEmpty());
+
+            TeamsMiddleware.unregisterSession("session-ambiguous-a");
+
+            assertTrue(
+                    TeamsMiddleware.wakeupTeamMember("legacy-ambiguous", "worker", "now unique"));
+            assertTrue(
+                    bus.pushes
+                            .get("agentscope:inbox:session-ambiguous-b")
+                            .get("hint")
+                            .toString()
+                            .contains("now unique"));
+            assertEquals(
+                    "session-ambiguous-b", bus.pushes.get("agentscope:wakeups").get("sessionId"));
+        } finally {
+            TeamsMiddleware.unregisterSession("session-ambiguous-a");
+            TeamsMiddleware.unregisterSession("session-ambiguous-b");
+        }
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"   "})
+    void scopedMemberWakeup_usesDefaultForMissingNamespace(String namespace) {
+        RecordingMessageBus bus = new RecordingMessageBus();
+        TeamsMiddleware mw = middleware(memberContext("default-scope", "worker", namespace));
+        mw.wireMessageBus(bus, "default-agent");
+        mw.bindSession("session-default-scope");
+        try {
+            assertTrue(TeamWakeups.wake(namespace, "default-scope", "worker", "default notice"));
+            assertTrue(
+                    bus.pushes
+                            .get("agentscope:inbox:session-default-scope")
+                            .get("hint")
+                            .toString()
+                            .contains("default notice"));
+            assertTrue(
+                    TeamsMiddleware.wakeupTeamMember("default", "default-scope", "worker", null));
+
+            TeamsMiddleware.unregisterSession("session-default-scope");
+
+            assertFalse(
+                    TeamsMiddleware.wakeupTeamMember("default", "default-scope", "worker", null));
+        } finally {
+            TeamsMiddleware.unregisterSession("session-default-scope");
+        }
+    }
+
+    @Test
+    void scopedMemberWakeup_preservesNonBlankNamespaceWhitespace() {
+        TeamsMiddleware mw = middleware(memberContext("space-scope", "worker", " namespace "));
+        mw.bindSession("session-space-scope");
+        try {
+            assertFalse(
+                    TeamsMiddleware.wakeupTeamMember(
+                            "namespace", "space-scope", "worker", "wrong"));
+            assertTrue(
+                    TeamsMiddleware.wakeupTeamMember(
+                            " namespace ", "space-scope", "worker", "exact"));
+            assertTrue(reasoningSystemText(mw).contains("exact"));
+            assertFalse(reasoningSystemText(mw).contains("exact"), "notice is consumed once");
+        } finally {
+            TeamsMiddleware.unregisterSession("session-space-scope");
+        }
+    }
+
+    @Test
+    void scopedMemberWakeup_doesNotCollideWhenNamesContainSeparators() {
+        RecordingMessageBus bus = new RecordingMessageBus();
+        TeamsMiddleware a = middleware(memberContext("separator|team", "worker", "namespace"));
+        TeamsMiddleware b = middleware(memberContext("team", "worker", "namespace|separator"));
+        a.wireMessageBus(bus, "agent-a");
+        b.wireMessageBus(bus, "agent-b");
+        a.bindSession("session-separator-a");
+        b.bindSession("session-separator-b");
+        try {
+            assertTrue(
+                    TeamsMiddleware.wakeupTeamMember(
+                            "namespace", "separator|team", "worker", "A only"));
+            assertTrue(
+                    bus.pushes
+                            .get("agentscope:inbox:session-separator-a")
+                            .get("hint")
+                            .toString()
+                            .contains("A only"));
+            assertFalse(bus.pushes.containsKey("agentscope:inbox:session-separator-b"));
+        } finally {
+            TeamsMiddleware.unregisterSession("session-separator-a");
+            TeamsMiddleware.unregisterSession("session-separator-b");
+        }
+    }
+
+    @Test
+    void scopedMemberWakeup_buffersUnboundNoticeForOnlyTheMatchingReasoningContext() {
+        TeamsMiddleware a = middleware(memberContext("unbound-scoped", "worker", "namespace-a"));
+        TeamsMiddleware b = middleware(memberContext("unbound-scoped", "worker", "namespace-b"));
+        try {
+            assertTrue(
+                    TeamWakeups.wake(
+                            "namespace-a", "unbound-scoped", "worker", "buffered A notice"));
+
+            assertTrue(reasoningSystemText(a).contains("buffered A notice"));
+            assertFalse(reasoningSystemText(b).contains("buffered A notice"));
+            assertFalse(reasoningSystemText(a).contains("buffered A notice"));
+        } finally {
+            a.bindSession("session-unbound-a");
+            b.bindSession("session-unbound-b");
+            TeamsMiddleware.unregisterSession("session-unbound-a");
+            TeamsMiddleware.unregisterSession("session-unbound-b");
+        }
+    }
+
+    private static String reasoningSystemText(TeamsMiddleware mw) {
+        AtomicReference<ReasoningInput> captured = new AtomicReference<>();
+        ReasoningInput input =
+                new ReasoningInput(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("base system prompt")
+                                                        .build())
+                                        .build()),
+                        List.of(),
+                        null);
+        mw.onReasoning(
+                        null,
+                        RuntimeContext.empty(),
+                        input,
+                        rebuilt -> {
+                            captured.set(rebuilt);
+                            return Flux.empty();
+                        })
+                .blockLast();
+        return ((TextBlock) captured.get().messages().get(0).getContent().get(0)).getText();
     }
 
     @Test
@@ -315,16 +525,48 @@ class TeamsMiddlewareTest {
     }
 
     @Test
-    void unregisterSession_keepsMemberRebuiltUnderANewSession() {
-        TeamsMiddleware old = middleware(memberContext("cleanup-b", "worker-1"));
+    void unregisterSession_keepsScopedMemberRebuiltUnderANewSession() {
+        RecordingMessageBus bus = new RecordingMessageBus();
+        TeamsMiddleware old = middleware(memberContext("cleanup-b", "worker-1", "namespace-a"));
+        old.wireMessageBus(bus, "old-agent");
         old.bindSession("sess-old");
-        TeamsMiddleware current = middleware(memberContext("cleanup-b", "worker-1"));
+        TeamsMiddleware current = middleware(memberContext("cleanup-b", "worker-1", "namespace-a"));
+        current.wireMessageBus(bus, "current-agent");
         current.bindSession("sess-new");
+        TeamsMiddleware other = middleware(memberContext("cleanup-b", "worker-1", "namespace-b"));
+        other.wireMessageBus(bus, "other-agent");
+        other.bindSession("sess-other-namespace");
+        try {
+            TeamsMiddleware.unregisterSession("sess-old");
 
-        TeamsMiddleware.unregisterSession("sess-old");
-
-        assertTrue(TeamsMiddleware.wakeupTeamMember("cleanup-b", "worker-1"));
-        assertTrue(TeamsMiddleware.wakeupSession("sess-new"));
+            assertFalse(TeamsMiddleware.wakeupSession("sess-old"));
+            assertTrue(
+                    TeamsMiddleware.wakeupTeamMember(
+                            "namespace-a", "cleanup-b", "worker-1", "new session"));
+            assertTrue(
+                    bus.pushes
+                            .get("agentscope:inbox:sess-new")
+                            .get("hint")
+                            .toString()
+                            .contains("new session"));
+            assertFalse(bus.pushes.containsKey("agentscope:inbox:sess-old"));
+            assertFalse(bus.pushes.containsKey("agentscope:inbox:sess-other-namespace"));
+            assertEquals("sess-new", bus.pushes.get("agentscope:wakeups").get("sessionId"));
+            assertTrue(TeamsMiddleware.wakeupSession("sess-new"));
+            assertTrue(
+                    TeamsMiddleware.wakeupTeamMember(
+                            "namespace-b", "cleanup-b", "worker-1", "other session"));
+            assertTrue(
+                    bus.pushes
+                            .get("agentscope:inbox:sess-other-namespace")
+                            .get("hint")
+                            .toString()
+                            .contains("other session"));
+        } finally {
+            TeamsMiddleware.unregisterSession("sess-old");
+            TeamsMiddleware.unregisterSession("sess-new");
+            TeamsMiddleware.unregisterSession("sess-other-namespace");
+        }
     }
 
     private static TeamContext memberContext(String teamName, String memberName) {
