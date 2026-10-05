@@ -21,6 +21,7 @@ import io.agentscope.extensions.jdbc.dialect.BoundSql;
 import io.agentscope.extensions.jdbc.dialect.table.StoreDialect;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
+import io.agentscope.harness.agent.filesystem.remote.store.VersionedBaseStore;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -44,7 +45,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author shanhongyu
  */
-public class JdbcStore implements BaseStore {
+public class JdbcStore implements VersionedBaseStore {
 
     private static final Logger LOG = LoggerFactory.getLogger(JdbcStore.class);
 

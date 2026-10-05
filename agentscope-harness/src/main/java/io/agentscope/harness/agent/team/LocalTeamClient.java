@@ -15,8 +15,10 @@
  */
 package io.agentscope.harness.agent.team;
 
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
+import io.agentscope.harness.agent.filesystem.remote.store.VersionedBaseStore;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -40,6 +42,20 @@ public final class LocalTeamClient implements TeamClient {
 
     public LocalTeamClient(BaseStore store) {
         this.store = Objects.requireNonNull(store, "store");
+    }
+
+    /**
+     * Explicitly enables persistent associations for existing Sessions on a versioned store.
+     *
+     * @param relationDomain stable shared App relationship domain, independent of Team namespace
+     * @param stateStores stable state store domain IDs mapped to the actual Session stores;
+     *     clients sharing the same physical store must use the same ID
+     * @return usable adoption, binding, query and safe removal operations
+     * @throws IllegalArgumentException if the store does not declare atomic version support
+     */
+    public TeamSessionMembership sessionMembership(
+            String relationDomain, Map<String, AgentStateStore> stateStores) {
+        return new TeamSessionMembership(store, relationDomain, stateStores);
     }
 
     @Override
@@ -462,6 +478,12 @@ public final class LocalTeamClient implements TeamClient {
     public Mono<List<TeamMemberInfo>> listMembers(String namespace, String teamName) {
         return Mono.fromCallable(
                         () -> {
+                            List<TeamMemberInfo> projected =
+                                    TeamSessionMembership.projectMembers(
+                                            store, namespace, teamName);
+                            if (projected != null) {
+                                return projected;
+                            }
                             List<StoreItem> items =
                                     store.search(memberNs(namespace, teamName), 100, 0);
                             List<TeamMemberInfo> out = new ArrayList<>();
@@ -536,6 +558,34 @@ public final class LocalTeamClient implements TeamClient {
     public Mono<Void> completeTeam(String namespace, String teamName) {
         return Mono.<Void>fromRunnable(
                         () -> {
+                            if (store instanceof VersionedBaseStore) {
+                                // A stale unconditional fallback could erase concurrent adoption.
+                                for (int attempt = 0; attempt < 10; attempt++) {
+                                    StoreItem current =
+                                            store.get(teamNs(namespace, teamName), "meta");
+                                    if (current != null && current.version() <= 0) {
+                                        throw new IllegalStateException(
+                                                "Store must return positive item versions");
+                                    }
+                                    Map<String, Object> latest =
+                                            current == null || current.value() == null
+                                                    ? new LinkedHashMap<>()
+                                                    : new LinkedHashMap<>(current.value());
+                                    if ("Completed".equals(latest.get("phase"))) {
+                                        return;
+                                    }
+                                    latest.put("phase", "Completed");
+                                    if (store.putIfVersion(
+                                            teamNs(namespace, teamName),
+                                            "meta",
+                                            latest,
+                                            current == null ? 0 : current.version())) {
+                                        return;
+                                    }
+                                }
+                                throw new TeamConflictException(
+                                        "completeTeam CAS retry limit exceeded");
+                            }
                             StoreItem item = store.get(teamNs(namespace, teamName), "meta");
                             Map<String, Object> meta =
                                     item == null || item.value() == null
