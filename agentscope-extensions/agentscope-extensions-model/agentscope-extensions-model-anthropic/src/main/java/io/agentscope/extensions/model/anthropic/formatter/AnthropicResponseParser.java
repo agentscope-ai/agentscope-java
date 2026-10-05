@@ -154,25 +154,19 @@ public class AnthropicResponseParser {
         return Flux.defer(
                 () -> {
                     StreamState streamState = new StreamState();
-                    return eventFlux
-                            .flatMap(
-                                    event -> {
-                                        try {
-                                            return Flux.just(
-                                                    parseStreamEvent(
-                                                            event, startTime, streamState));
-                                        } catch (Exception e) {
-                                            log.warn(
-                                                    "Error parsing stream event: {}",
-                                                    e.getMessage());
-                                            return Flux.empty();
-                                        }
-                                    })
-                            .filter(
-                                    response ->
-                                            response != null
-                                                    && (!response.getContent().isEmpty()
-                                                            || response.getUsage() != null));
+                    return eventFlux.handle(
+                            (event, sink) -> {
+                                try {
+                                    ChatResponse response =
+                                            parseStreamEvent(event, startTime, streamState);
+                                    if (!response.getContent().isEmpty()
+                                            || response.getUsage() != null) {
+                                        sink.next(response);
+                                    }
+                                } catch (Exception e) {
+                                    log.warn("Error parsing stream event: {}", e.getMessage());
+                                }
+                            });
                 });
     }
 
