@@ -291,6 +291,8 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
     **ToolCallEndEvent** — tool-call arguments complete.
 
+If accumulated tool-call arguments are invalid JSON, AgentScope logs the tool-call ID and name, payload length and digest, and parser error type without logging the raw arguments. That call is rejected instead of dispatching partial arguments; valid sibling calls can still run.
+
 </Accordion>
 
 

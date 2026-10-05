@@ -502,13 +502,11 @@ public final class TestSdkFixtures {
         return event;
     }
 
-    public static ResponseStreamEvent functionCallArgsDoneEvent(
-            String arguments, String itemId, String name) {
+    public static ResponseStreamEvent functionCallArgsDoneEvent(String arguments, String itemId) {
         ResponseFunctionCallArgumentsDoneEvent evt =
                 ResponseFunctionCallArgumentsDoneEvent.builder()
                         .arguments(arguments)
                         .itemId(itemId)
-                        .name(name)
                         .outputIndex(0L)
                         .sequenceNumber(0L)
                         .build();

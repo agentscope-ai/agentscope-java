@@ -291,6 +291,8 @@ sequenceDiagram
 
     **ToolCallEndEvent** — 工具调用参数完成。
 
+累计的工具调用参数不是有效 JSON 时，AgentScope 会记录包含工具调用 ID 和名称、参数长度与摘要、解析错误类型的警告日志，但不会记录原始参数。该调用会被拒绝，不会分发部分参数；同批有效调用仍可继续执行。
+
 </Accordion>
 
 

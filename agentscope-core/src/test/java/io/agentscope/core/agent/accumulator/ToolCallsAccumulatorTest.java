@@ -19,11 +19,15 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JacksonJsonCodec;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -123,6 +127,31 @@ class ToolCallsAccumulatorTest {
         assertEquals("{}", toolCall.getContent());
         assertEquals(ToolCallState.PENDING, toolCall.getState());
         assertEquals(true, toolCall.getMetadata().get(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
+    }
+
+    @Test
+    @DisplayName("Should propagate non-JSON codec failures")
+    void testNonJsonCodecFailureIsPropagated() {
+        JsonCodec originalCodec = JsonUtils.getJsonCodec();
+        JsonUtils.setJsonCodec(
+                new JacksonJsonCodec() {
+                    @Override
+                    public <T> T fromJson(String json, Class<T> type) {
+                        throw new IllegalStateException("codec failure");
+                    }
+                });
+        try {
+            accumulator.add(
+                    ToolUseBlock.builder()
+                            .id("call_codec_failure")
+                            .name("search")
+                            .content("{}")
+                            .build());
+
+            assertThrows(IllegalStateException.class, () -> accumulator.buildAllToolCalls());
+        } finally {
+            JsonUtils.setJsonCodec(originalCodec);
+        }
     }
 
     @Test

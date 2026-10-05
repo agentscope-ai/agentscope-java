@@ -19,6 +19,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -64,6 +65,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         Map<String, Object> args = new HashMap<>();
         StringBuilder rawContent = new StringBuilder();
         Map<String, Object> metadata = new HashMap<>();
+        ToolCallState state;
 
         void merge(ToolUseBlock block) {
             // Update ID if present
@@ -97,11 +99,12 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             if (block.getMetadata() != null && !block.getMetadata().isEmpty()) {
                 this.metadata.putAll(block.getMetadata());
             }
+
+            this.state = block.getState();
         }
 
         ToolUseBlock build(boolean finalBuild) {
             Map<String, Object> finalArgs = new HashMap<>(args);
-            ToolCallState state = ToolCallState.PENDING;
             Map<String, Object> finalMetadata = new HashMap<>(metadata);
             String rawContentStr = this.rawContent.toString();
 
@@ -124,7 +127,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                             }
                         }
                     }
-                } catch (Exception e) {
+                } catch (JsonException e) {
                     // Intermediate snapshots must not expose stale or partial arguments to hooks.
                     finalArgs.clear();
                     if (finalBuild) {
@@ -163,8 +166,8 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .name(name)
                     .input(finalArgs)
                     .content(contentStr)
-                    .state(state)
                     .metadata(finalMetadata.isEmpty() ? null : finalMetadata)
+                    .state(state)
                     .build();
         }
 
