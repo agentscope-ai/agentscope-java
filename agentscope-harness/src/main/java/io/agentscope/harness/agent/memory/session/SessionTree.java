@@ -21,7 +21,9 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.sandbox.PinnedSandboxFilesystem;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxAware;
+import io.agentscope.harness.agent.sandbox.SandboxBackgroundWrites;
 import io.agentscope.harness.agent.transcript.ObjectStoreTranscriptStore;
 import io.agentscope.harness.agent.transcript.TranscriptRef;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
@@ -44,6 +46,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -550,9 +553,16 @@ public class SessionTree {
         if (transcriptStore == null || transcriptRef == null || entries.isEmpty()) {
             return;
         }
-        // Same pin as scheduleMirror: async segment upload must survive call unbind.
-        final AbstractFilesystem mirrorFs = pinIfSandbox(filesystem);
-        final TranscriptStore store = transcriptStoreForMirror(mirrorFs);
+        // Same pin as scheduleMirror: async segment upload must survive call unbind. Only the
+        // object-store transcript store writes through the (sandbox) filesystem.
+        final MirrorTarget target =
+                transcriptStore instanceof ObjectStoreTranscriptStore
+                        ? mirrorTarget()
+                        : new MirrorTarget(filesystem, null);
+        if (target == null) {
+            return;
+        }
+        final TranscriptStore store = transcriptStoreForMirror(target.fs());
         final TranscriptRef ref = transcriptRef;
         StringBuilder sb = new StringBuilder();
         for (SessionEntry entry : entries) {
@@ -560,7 +570,8 @@ public class SessionTree {
         }
         byte[] payload = sb.toString().getBytes(StandardCharsets.UTF_8);
         String wid = writerId;
-        MIRROR_EXECUTOR.execute(
+        submitMirror(
+                target,
                 () -> {
                     try {
                         store.appendSegment(ref, seqStart, seqEnd, wid, payload);
@@ -584,28 +595,82 @@ public class SessionTree {
         if (filesystem == null || workspaceRoot == null) {
             return;
         }
-        final AbstractFilesystem mirrorFs = pinIfSandbox(filesystem);
+        final MirrorTarget target = mirrorTarget();
+        if (target == null) {
+            return;
+        }
         final String contextRel = resolveRelativePath(contextFile);
         final String logRel = resolveRelativePath(logFile);
-        MIRROR_EXECUTOR.execute(
+        submitMirror(
+                target,
                 () -> {
-                    mirrorToFilesystem(mirrorFs, contextFile, contextRel);
-                    mirrorToFilesystem(mirrorFs, logFile, logRel);
+                    mirrorToFilesystem(target.fs(), contextFile, contextRel);
+                    mirrorToFilesystem(target.fs(), logFile, logRel);
                 });
     }
 
     /**
-     * When {@code fs} is a call-scoped sandbox proxy with an active binding, return a pinned
-     * filesystem that keeps that sandbox for async uploads. Otherwise return {@code fs} as-is.
+     * Resolves where an async mirror writes. When {@code filesystem} is a call-scoped sandbox
+     * proxy with an active binding, the mirror gets a pinned filesystem that keeps that sandbox
+     * after the call unbinds it, plus a hold that defers the sandbox release until the upload is
+     * done (issue #3415). Otherwise the filesystem is used as-is.
+     *
+     * @return the target, or {@code null} when the sandbox is already being released and the
+     *     mirror should be skipped (the local file stays the working copy)
      */
-    private static AbstractFilesystem pinIfSandbox(AbstractFilesystem fs) {
-        if (fs instanceof SandboxAware aware) {
-            Sandbox sb = aware.getSandbox();
+    private MirrorTarget mirrorTarget() {
+        if (filesystem instanceof SandboxAware aware) {
+            Sandbox sb = boundSandbox(aware);
             if (sb != null) {
-                return new PinnedSandboxFilesystem(sb);
+                SandboxBackgroundWrites.Hold hold = SandboxBackgroundWrites.tryHold(sb);
+                if (hold == null) {
+                    log.debug("Skipping session mirror: its sandbox is already being released");
+                    return null;
+                }
+                return new MirrorTarget(new PinnedSandboxFilesystem(sb, hold), hold);
             }
         }
-        return fs;
+        return new MirrorTarget(filesystem, null);
+    }
+
+    /**
+     * The sandbox this tree's call is bound to: the per-call binding on {@link #fsRc} first, so
+     * concurrent sessions on one agent bean never pin each other's sandbox (issue #2490), then the
+     * proxy's shared fallback field.
+     */
+    private Sandbox boundSandbox(SandboxAware aware) {
+        SandboxAcquireResult bound = fsRc.get(SandboxAcquireResult.class);
+        if (bound != null && bound.getSandbox() != null) {
+            return bound.getSandbox();
+        }
+        return aware.getSandbox();
+    }
+
+    /** Runs {@code upload} on the mirror executor and closes the target's hold when it is done. */
+    private static void submitMirror(MirrorTarget target, Runnable upload) {
+        try {
+            MIRROR_EXECUTOR.execute(
+                    () -> {
+                        try {
+                            upload.run();
+                        } finally {
+                            target.done();
+                        }
+                    });
+        } catch (RejectedExecutionException e) {
+            target.done();
+            throw e;
+        }
+    }
+
+    /** Filesystem an async mirror writes through, and the sandbox hold to close afterwards. */
+    private record MirrorTarget(AbstractFilesystem fs, SandboxBackgroundWrites.Hold hold) {
+
+        void done() {
+            if (hold != null) {
+                hold.close();
+            }
+        }
     }
 
     private TranscriptStore transcriptStoreForMirror(AbstractFilesystem mirrorFs) {

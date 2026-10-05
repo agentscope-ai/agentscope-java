@@ -15,8 +15,15 @@
  */
 package io.agentscope.harness.agent.filesystem.sandbox;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxBackgroundWrites;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * {@link SandboxBackedFilesystem} that holds a fixed {@link Sandbox} reference for the lifetime of
@@ -28,18 +35,49 @@ import java.util.Objects;
  * must not unpin this mirror filesystem.
  *
  * <p>Safe for DataAgent-style <em>user-managed</em> sandboxes that stay alive across
- * acquire/release. Self-managed sandboxes that stop on release may still fail if the async upload
- * races past shutdown.
+ * acquire/release. A self-managed sandbox stops on release, so the mirror also takes a {@link
+ * SandboxBackgroundWrites.Hold} that defers that release until the upload is done; if the
+ * deferral budget runs out first, uploads are skipped instead of exec'ing into a stopped
+ * container.
  */
 public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
 
+    private static final Logger log = LoggerFactory.getLogger(PinnedSandboxFilesystem.class);
+
+    private final SandboxBackgroundWrites.Hold hold;
+
     public PinnedSandboxFilesystem(Sandbox sandbox) {
+        this(sandbox, null);
+    }
+
+    /**
+     * @param sandbox the sandbox to pin
+     * @param hold the hold keeping {@code sandbox} alive for this mirror, or {@code null}; the
+     *     caller closes it when the mirror finishes
+     */
+    public PinnedSandboxFilesystem(Sandbox sandbox, SandboxBackgroundWrites.Hold hold) {
         Objects.requireNonNull(sandbox, "sandbox");
         super.setSandbox(sandbox);
+        this.hold = hold;
     }
 
     @Override
     public synchronized void clearSandboxIfCurrent(Sandbox expected) {
         // Keep the pin for out-of-call mirror uploads.
+    }
+
+    @Override
+    public List<FileUploadResponse> uploadFiles(
+            RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+        if (hold != null && hold.isReleased()) {
+            log.warn(
+                    "[sandbox-fs] Skipping mirror upload of {} file(s): the pinned sandbox was"
+                            + " released before the upload ran",
+                    files.size());
+            return files.stream()
+                    .map(f -> FileUploadResponse.fail(f.getKey(), "Sandbox already released"))
+                    .toList();
+        }
+        return super.uploadFiles(runtimeContext, files);
     }
 }

@@ -19,10 +19,12 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
+import io.agentscope.harness.agent.sandbox.SandboxBackgroundWrites;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +48,10 @@ import org.slf4j.LoggerFactory;
  *       {@link io.agentscope.harness.agent.sandbox.SessionSandboxStateStore}</li>
  *   <li>Clear this call's session binding from the {@link RuntimeContext}</li>
  * </ol>
+ *
+ * <p>For a self-managed sandbox, the stop/persist steps wait for background writes this call
+ * started and that still target the sandbox (session mirror, memory flush and maintenance), see
+ * {@link SandboxBackgroundWrites}. They run inline when nothing is in flight.
  *
  * <p>Post-call failures (persist, release) are logged but do not propagate — this ensures
  * the agent call result is always returned to the caller even if sandbox cleanup fails.
@@ -174,6 +180,21 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         // sibling's binding (issue #2490); it only clears the field when it still points here.
         filesystemProxy.clearSandboxIfCurrent(result.getSandbox());
         SandboxContext sandboxContext = ctx.get(SandboxContext.class);
+        if (!result.isSelfManaged() || result.getSandbox() == null) {
+            // Nothing is stopped for a user-managed sandbox, so background writes are unaffected.
+            teardown(result, sandboxContext, ctx);
+            return;
+        }
+        // Writes this call left in flight (session mirror, memory flush/maintenance) must reach the
+        // sandbox before stop() snapshots it and shutdown() removes it (issue #3415).
+        CompletableFuture<Void> released =
+                SandboxBackgroundWrites.releaseWhenIdle(
+                        result.getSandbox(), () -> teardown(result, sandboxContext, ctx));
+        sandboxManager.trackDeferredRelease(sandboxContext, ctx, released);
+    }
+
+    private void teardown(
+            SandboxAcquireResult result, SandboxContext sandboxContext, RuntimeContext ctx) {
         // Release (stop/persist workspace) first so state mutations made during stop — e.g.
         // workspaceRootReady or per-session snapshot records — are captured by the persist below.
         try {
