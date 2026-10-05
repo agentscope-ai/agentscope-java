@@ -155,6 +155,9 @@ class WebToolsTest {
             assertTrue(error.getMessage().contains("HTTP 422"));
             assertTrue(error.getMessage().contains("validation failed"));
             assertTrue(error.getMessage().contains("\n...[truncated]"));
+            // The echoed body is server-controlled, so it is labelled rather than presented as
+            // framework output.
+            assertTrue(error.getMessage().contains("response body (untrusted): "));
             assertTrue(error.getMessage().length() < 2_100);
         } finally {
             server.stop(0);
@@ -215,7 +218,7 @@ class WebToolsTest {
     }
 
     @Test
-    void truncationDoesNotSplitSurrogatePairs() throws Exception {
+    void truncationCountsCharactersAndDoesNotSplitSurrogatePairs() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext(
                 "/",
@@ -231,8 +234,35 @@ class WebToolsTest {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
             WebTools.WebFetchTool tool = new WebTools.WebFetchTool();
 
-            assertEquals("status=200\n\na\n...[truncated]", tool.webFetch(url, 2));
-            assertEquals("status=200\n\na😀\n...[truncated]", tool.webFetch(url, 3));
+            // The astral character counts as one, and the cut never lands inside the pair.
+            assertEquals("status=200\n\na😀\n...[truncated]", tool.webFetch(url, 2));
+            assertEquals("status=200\n\na😀b", tool.webFetch(url, 3));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void oneCharacterLimitStillReturnsTheAstralCharacter() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    byte[] body = "😀bc".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, body.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(body);
+                    }
+                });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
+
+            // A limit of one must not degrade to a marker with no content, and must not
+            // return a lone surrogate either.
+            assertEquals(
+                    "status=200\n\n😀\n...[truncated]",
+                    new WebTools.WebFetchTool().webFetch(url, 1));
         } finally {
             server.stop(0);
         }

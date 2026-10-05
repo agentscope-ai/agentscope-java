@@ -111,27 +111,34 @@ public final class WebTools {
         }
 
         /**
-         * Keep server-provided diagnostics available to the model without allowing an error
-         * response to consume an unbounded amount of context.
+         * Keep server-provided diagnostics available to the model without letting an error
+         * response flood the context window.
+         *
+         * <p>The truncation bounds the text handed to the model; it does not bound what the HTTP
+         * client buffers while receiving the response. The body is also server-controlled text
+         * that may quote the offending request, so it is labelled as untrusted rather than
+         * presented as framework output.
          */
         private static String formatHttpError(HttpResponse<String> response) {
             String body = truncate(response.body(), ERROR_BODY_MAX_CHARS);
             return body.isEmpty()
                     ? "HTTP " + response.statusCode()
-                    : "HTTP " + response.statusCode() + "\n\n" + body;
+                    : "HTTP " + response.statusCode() + "\n\nresponse body (untrusted): " + body;
         }
     }
 
+    /**
+     * Truncates to {@code limit} characters, counted as Unicode code points so the result matches
+     * what the model is told it asked for. Counting code points also keeps a cut from landing
+     * between the halves of a surrogate pair, which would emit a lone surrogate and break JSON
+     * encoding of the tool result.
+     */
     private static String truncate(String value, int limit) {
         String body = value == null ? "" : value;
-        if (body.length() <= limit) {
+        if (body.codePointCount(0, body.length()) <= limit) {
             return body;
         }
-        int end = limit;
-        if (Character.isHighSurrogate(body.charAt(end - 1))
-                && Character.isLowSurrogate(body.charAt(end))) {
-            end--;
-        }
+        int end = body.offsetByCodePoints(0, limit);
         return body.substring(0, end) + "\n...[truncated]";
     }
 
