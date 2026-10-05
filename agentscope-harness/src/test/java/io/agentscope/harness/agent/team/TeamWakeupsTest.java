@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.middleware.TeamsMiddleware;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,29 +36,23 @@ import org.junit.jupiter.params.provider.ValueSource;
 @ResourceLock("team-wakeups")
 class TeamWakeupsTest {
 
+    private TeamWakeups.Hook previousHook;
+
     @BeforeEach
-    void clearHook() {
+    void clearHook() throws ReflectiveOperationException {
         // Initialize the middleware's built-in hook before replacing it for this test.
         TeamsMiddleware.wakeupTeamMember("team-wakeups-test-initialization", "missing");
+        // Capture only the fixture state, so cleanup restores the actual production hook
+        // instead of a duplicate implementation that makes coverage depend on class order.
+        Field hookField = TeamWakeups.class.getDeclaredField("HOOK");
+        hookField.setAccessible(true);
+        previousHook = (TeamWakeups.Hook) ((AtomicReference<?>) hookField.get(null)).get();
         TeamWakeups.register(null);
     }
 
     @AfterEach
-    void restoreBuiltInHook() {
-        TeamWakeups.register(
-                new TeamWakeups.Hook() {
-                    @Override
-                    public boolean wake(String teamName, String memberName, String notice) {
-                        return TeamsMiddleware.wakeupTeamMember(teamName, memberName, notice);
-                    }
-
-                    @Override
-                    public boolean wake(
-                            String namespace, String teamName, String memberName, String notice) {
-                        return TeamsMiddleware.wakeupTeamMember(
-                                namespace, teamName, memberName, notice);
-                    }
-                });
+    void restorePreviousHook() {
+        TeamWakeups.register(previousHook);
     }
 
     @Test

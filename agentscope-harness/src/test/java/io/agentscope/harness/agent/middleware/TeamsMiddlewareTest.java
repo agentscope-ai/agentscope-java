@@ -183,6 +183,74 @@ class TeamsMiddlewareTest {
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = {"   "})
+    void memberWakeup_withInvalidTargetDoesNotNotify(String invalid) {
+        RecordingMessageBus bus = new RecordingMessageBus();
+        TeamsMiddleware mw = middleware(memberContext("invalid-target", "worker", "namespace"));
+        mw.wireMessageBus(bus, "worker-agent");
+        mw.bindSession("session-invalid-target");
+        try {
+            assertFalse(TeamsMiddleware.wakeupTeamMember(invalid, "worker", "invalid team"));
+            assertFalse(
+                    TeamsMiddleware.wakeupTeamMember("invalid-target", invalid, "invalid member"));
+            assertFalse(
+                    TeamsMiddleware.wakeupTeamMember(
+                            "namespace", invalid, "worker", "invalid scoped team"));
+            assertFalse(
+                    TeamsMiddleware.wakeupTeamMember(
+                            "namespace", "invalid-target", invalid, "invalid scoped member"));
+            assertTrue(bus.pushes.isEmpty(), "invalid targets must not enqueue a notice or wakeup");
+        } finally {
+            TeamsMiddleware.unregisterSession("session-invalid-target");
+        }
+    }
+
+    @Test
+    void legacyMemberWakeup_matchesOnlyTheRequestedMemberWithinSameTeam() {
+        RecordingMessageBus bus = new RecordingMessageBus();
+        TeamsMiddleware a = middleware(memberContext("legacy-member-routing", "worker-a", "ns"));
+        TeamsMiddleware b = middleware(memberContext("legacy-member-routing", "worker-b", "ns"));
+        a.wireMessageBus(bus, "agent-a");
+        b.wireMessageBus(bus, "agent-b");
+        a.bindSession("session-legacy-member-a");
+        b.bindSession("session-legacy-member-b");
+        try {
+            assertTrue(TeamWakeups.wake("legacy-member-routing", "worker-a", "A only"));
+            assertTrue(
+                    bus.pushes
+                            .get("agentscope:inbox:session-legacy-member-a")
+                            .get("hint")
+                            .toString()
+                            .contains("A only"));
+            assertFalse(bus.pushes.containsKey("agentscope:inbox:session-legacy-member-b"));
+            assertEquals(
+                    "session-legacy-member-a",
+                    bus.pushes.get("agentscope:wakeups").get("sessionId"));
+
+            bus.pushes.clear();
+            assertTrue(TeamWakeups.wake("legacy-member-routing", "worker-b", "B only"));
+            assertFalse(bus.pushes.containsKey("agentscope:inbox:session-legacy-member-a"));
+            assertTrue(
+                    bus.pushes
+                            .get("agentscope:inbox:session-legacy-member-b")
+                            .get("hint")
+                            .toString()
+                            .contains("B only"));
+            assertEquals(
+                    "session-legacy-member-b",
+                    bus.pushes.get("agentscope:wakeups").get("sessionId"));
+
+            bus.pushes.clear();
+            assertFalse(TeamWakeups.wake("legacy-member-routing", "missing", "unknown member"));
+            assertTrue(bus.pushes.isEmpty());
+        } finally {
+            TeamsMiddleware.unregisterSession("session-legacy-member-a");
+            TeamsMiddleware.unregisterSession("session-legacy-member-b");
+        }
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"   "})
     void scopedMemberWakeup_usesDefaultForMissingNamespace(String namespace) {
         RecordingMessageBus bus = new RecordingMessageBus();
         TeamsMiddleware mw = middleware(memberContext("default-scope", "worker", namespace));
@@ -197,7 +265,16 @@ class TeamsMiddlewareTest {
                             .toString()
                             .contains("default notice"));
             assertTrue(
-                    TeamsMiddleware.wakeupTeamMember("default", "default-scope", "worker", null));
+                    TeamsMiddleware.wakeupTeamMember(
+                            namespace, "default-scope", "worker", "direct default notice"));
+            assertTrue(
+                    bus.pushes
+                            .get("agentscope:inbox:session-default-scope")
+                            .get("hint")
+                            .toString()
+                            .contains("direct default notice"));
+            assertEquals(
+                    "session-default-scope", bus.pushes.get("agentscope:wakeups").get("sessionId"));
 
             TeamsMiddleware.unregisterSession("session-default-scope");
 
