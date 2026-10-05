@@ -159,6 +159,14 @@ TracerRegistry.register(TelemetryTracer.builder().tracer(tracer).build());
 
 Middleware 从 `GlobalOpenTelemetry` 读取 SDK，因此必须先注册 SDK，再让 agent 使用 middleware。所需依赖、完整 OTLP 配置以及自定义认证 header 示例见 [Middleware — OtelTracingMiddleware](/v2/zh/docs/building-blocks/middleware#oteltracingmiddleware)。
 
+#### A.9 `ExecutionConfig.Builder.timeout()` 校验收紧
+
+`ExecutionConfig.Builder.timeout(Duration)` 现在拒绝 `Duration.ZERO` 和负值时长（`NO_TIMEOUT` 哨兵除外），直接抛出 `IllegalArgumentException`。之前传入 `Duration.ZERO` 或负值的行为为 undefined，现在这类值在 builder 调用时即被拦截。
+
+需要禁用 timeout 时，请使用 `.noTimeout()` 方法。
+
+该校验同时作用于 `ExecutionConfig.mergeConfigs` 路径——如果合并前的 config 中带有非法的 timeout 值，合并时也会触发异常。
+
 ---
 
 ### Part B —— 推荐迁移（`@Deprecated(forRemoval = true)`，仍可调用）
