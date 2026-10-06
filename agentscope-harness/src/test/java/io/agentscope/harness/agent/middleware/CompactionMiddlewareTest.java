@@ -111,16 +111,17 @@ class CompactionMiddlewareTest {
         assertEquals(1, nextCalls.get());
     }
 
-    /** A summary-model fallback is visible as a degraded finished event. */
+    /** An emergency summary-model fallback is visible as a degraded finished event. */
     @Test
-    void streamEventsMarksSummaryFailureAsDegraded() {
-        SummaryFailureThenSuccessModel model = new SummaryFailureThenSuccessModel();
+    void streamEventsMarksEmergencySummaryFailureAsDegraded() {
+        OverflowThenSummaryFailureThenRecoveryModel model =
+                new OverflowThenSummaryFailureThenRecoveryModel();
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("compaction-test-agent")
                         .sysPrompt("test")
                         .model(model)
-                        .middleware(new CompactionMiddleware(null, model, eventConfig()))
+                        .middleware(new CompactionMiddleware(null, model, noCompactionConfig()))
                         .build();
 
         List<AgentEvent> events =
@@ -129,14 +130,15 @@ class CompactionMiddlewareTest {
                                         userMessage("A".repeat(200)),
                                         userMessage("B".repeat(200)),
                                         userMessage("C".repeat(200))),
-                                context("user", "summary-failure-session"))
+                                context("user", "emergency-summary-failure-session"))
                         .collectList()
                         .block();
 
         CustomEvent finished =
                 customEvent(events, CompactionMiddleware.CONTEXT_COMPACTION_FINISHED);
+        assertEquals("emergency", finished.getValue().get("mode"));
         assertEquals("degraded", finished.getValue().get("status"));
-        assertEquals(2, model.callCount.get());
+        assertEquals(3, model.callCount.get());
     }
 
     /** An empty summary placeholder is visible as a degraded finished event. */
@@ -668,19 +670,23 @@ class CompactionMiddlewareTest {
         }
     }
 
-    /** Falls back on the summary call, then returns a normal reasoning response. */
-    private static final class SummaryFailureThenSuccessModel extends ChatModelBase {
+    /** Overflows, falls back on the emergency summary, then recovers on retry. */
+    private static final class OverflowThenSummaryFailureThenRecoveryModel extends ChatModelBase {
         private final AtomicInteger callCount = new AtomicInteger();
 
         @Override
         public String getModelName() {
-            return "summary-failure-then-success";
+            return "overflow-summary-failure-recovery";
         }
 
         @Override
         protected Flux<ChatResponse> doStream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-            if (callCount.incrementAndGet() == 1) {
+            int call = callCount.incrementAndGet();
+            if (call == 1) {
+                return Flux.error(new IllegalStateException("context_length_exceeded"));
+            }
+            if (call == 2) {
                 return Flux.error(new IllegalStateException("summary provider unavailable"));
             }
             return Flux.just(
