@@ -244,7 +244,13 @@ public final class TeamSessionMembership {
                             break;
                         }
                         validateInitial(owner, address, initial);
-                        prepareOwner(owner, initial);
+                        if (!prepareOwner(owner, initial)) {
+                            // A matching adoption may have committed since the first meta read.
+                            if (marker(requireMeta(address)) != null) {
+                                continue;
+                            }
+                            throw new TeamConflictException("Session is already associated");
+                        }
                         Marker next =
                                 new Marker(
                                         1,
@@ -520,14 +526,14 @@ public final class TeamSessionMembership {
         return readOwner(store, domain, owner);
     }
 
-    private void prepareOwner(String owner, List<MemberSession> initial) {
-        // Reject known conflicts and check storage before installing the Team's adoption marker.
+    private boolean prepareOwner(String owner, List<MemberSession> initial) {
+        // Check Session availability and storage before installing the Team's adoption marker.
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             OwnerItem current = readOwner(owner);
             for (Membership existing : current.state().memberships()) {
                 if (initial.stream()
                         .anyMatch(m -> m.session().equals(existing.member().session()))) {
-                    throw new TeamConflictException("Session is already associated");
+                    return false;
                 }
             }
             if (current.version() > 0
@@ -536,7 +542,7 @@ public final class TeamSessionMembership {
                             current,
                             current.state().receipts(),
                             current.state().memberships())) {
-                return;
+                return true;
             }
         }
         throw contention();

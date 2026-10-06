@@ -959,6 +959,60 @@ class TeamSessionMembershipTest {
         assertEquals(replacement, service.findMembership(lead.session()).block());
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void adoptionRechecksConcurrentTeamMarkerBeforeRejectingOccupiedSession(boolean identical) {
+        AtomicReference<Runnable> afterMetaRead = new AtomicReference<>();
+        InMemoryStore interleaved =
+                new InMemoryStore() {
+                    @Override
+                    public StoreItem get(List<String> ns, String key) {
+                        StoreItem item = super.get(ns, key);
+                        if (ns.equals(List.of("teams", "ns-a", "a")) && key.equals("meta")) {
+                            Runnable concurrentAdoption = afterMetaRead.getAndSet(null);
+                            if (concurrentAdoption != null) {
+                                concurrentAdoption.run();
+                            }
+                        }
+                        return item;
+                    }
+                };
+        store = interleaved;
+        client = new LocalTeamClient(store);
+        create(a);
+        service = client.sessionMembership("app", Map.of("state", states));
+        TeamSessionMembership other =
+                new LocalTeamClient(store).sessionMembership("app", Map.of("state", states));
+        MemberSession lead = member(states, "alice", "lead", "one", "leader-agent");
+        AtomicReference<TeamView> committed = new AtomicReference<>();
+        AtomicReference<StoreItem> committedMeta = new AtomicReference<>();
+        afterMetaRead.set(
+                () -> {
+                    committed.set(other.adoptTeam("alice", a, "a", List.of(lead)).block());
+                    committedMeta.set(store.get(List.of("teams", "ns-a", "a"), "meta"));
+                });
+
+        if (identical) {
+            TeamView replayed = service.adoptTeam("alice", a, "a", List.of(lead)).block();
+            assertEquals(committed.get(), replayed);
+        } else {
+            TeamConflictException conflict =
+                    assertThrows(
+                            TeamConflictException.class,
+                            () ->
+                                    service.adoptTeam("alice", a, "different", List.of(lead))
+                                            .block());
+            assertEquals("Team has a different adoption request", conflict.getMessage());
+        }
+
+        assertEquals(committed.get(), service.getTeam("alice", a).block());
+        assertEquals(committedMeta.get(), store.get(List.of("teams", "ns-a", "a"), "meta"));
+        assertEquals(
+                committed.get().memberships().get(0),
+                service.findMembership(lead.session()).block());
+        assertEquals(1, service.listMemberships("alice", a).block().size());
+    }
+
     @Test
     void concurrentSameAdoptionHasOneLogicalIdAndOnePersistentBinding() throws Exception {
         RacingStore racing = new RacingStore();
@@ -975,7 +1029,8 @@ class TeamSessionMembershipTest {
         CompletableFuture<Object> second =
                 attempt(() -> other.adoptTeam("alice", a, "a", List.of(lead)).block());
         Object x = first.get(10, TimeUnit.SECONDS), y = second.get(10, TimeUnit.SECONDS);
-        assertTrue(x instanceof TeamView);
+        assertTrue(x instanceof TeamView, () -> "First adoption result: " + x);
+        assertTrue(y instanceof TeamView, () -> "Second adoption result: " + y);
         assertEquals(x, y);
         assertEquals(1, service.listMemberships("alice", a).block().size());
     }
