@@ -155,6 +155,19 @@ class ToolCallsAccumulatorTest {
     }
 
     @Test
+    @DisplayName("Should limit parser diagnostic messages")
+    void testDiagnosticMessageLimit() {
+        String maxLengthMessage = "x".repeat(512);
+
+        assertEquals(
+                maxLengthMessage, ToolCallsAccumulator.truncateDiagnosticMessage(maxLengthMessage));
+        assertEquals(
+                maxLengthMessage,
+                ToolCallsAccumulator.truncateDiagnosticMessage(maxLengthMessage + "x"));
+        assertNull(ToolCallsAccumulator.truncateDiagnosticMessage(null));
+    }
+
+    @Test
     @DisplayName("Should not mark malformed intermediate snapshots as parse failures")
     void testIntermediateSnapshotDoesNotFailBeforeStreamCompletes() {
         accumulator.add(

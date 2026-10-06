@@ -48,6 +48,14 @@ import org.slf4j.LoggerFactory;
 public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
     private static final Logger log = LoggerFactory.getLogger(ToolCallsAccumulator.class);
+    private static final int MAX_DIAGNOSTIC_MESSAGE_LENGTH = 512;
+
+    static String truncateDiagnosticMessage(String message) {
+        if (message != null && message.length() > MAX_DIAGNOSTIC_MESSAGE_LENGTH) {
+            return message.substring(0, MAX_DIAGNOSTIC_MESSAGE_LENGTH);
+        }
+        return message;
+    }
 
     // Map to support multiple parallel tool calls
     // Key: tool identifier (ID, name, or index)
@@ -142,9 +150,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                                                 com.fasterxml.jackson.core.JsonProcessingException
                                         ? rootCause.getMessage()
                                         : null;
-                        if (causeMessage != null && causeMessage.length() > 512) {
-                            causeMessage = causeMessage.substring(0, 512);
-                        }
+                        causeMessage = truncateDiagnosticMessage(causeMessage);
                         log.warn(
                                 "Failed to parse accumulated tool call arguments: "
                                         + "toolId={}, toolName={}, byteLength={}, sha256={}, "
