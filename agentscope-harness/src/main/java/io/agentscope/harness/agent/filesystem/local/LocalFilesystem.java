@@ -30,6 +30,7 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
+import io.agentscope.harness.agent.skill.runtime.MarketplaceStager;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.BufferedReader;
@@ -78,13 +79,6 @@ public class LocalFilesystem implements AbstractFilesystem {
     private static final Logger log = LoggerFactory.getLogger(LocalFilesystem.class);
 
     private static final int DEFAULT_MAX_FILE_SIZE_MB = 10;
-
-    /**
-     * Workspace-root directory that {@code MarketplaceStager} materialises non-workspace skills
-     * into. The stager writes it with plain {@code java.nio} at the workspace root, never under a
-     * namespace prefix.
-     */
-    private static final String SKILLS_CACHE_DIR = ".skills-cache";
 
     private final Path cwd;
     private final LocalFsMode mode;
@@ -705,13 +699,15 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (isAbsolutePathString(key)) {
             return key;
         }
-        // The skill cache lives at the workspace root and is isolated by the stager's own scope
-        // segment, so its relative spelling (which ls/glob/grep hand back) must not be scoped.
-        if (isSkillsCachePath(key)) {
-            return key;
-        }
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
+            return key;
+        }
+        // MarketplaceStager writes the skill cache at the workspace root, one subtree per
+        // identity. The relative spelling ls/glob/grep hand back for the caller's own subtree
+        // must round-trip, but every other identity's subtree stays behind the namespace.
+        if (ns.size() == 1
+                && isOwnSkillsCachePath(key, MarketplaceStager.scopeSegment(ns.get(0)))) {
             return key;
         }
         String prefix = String.join("/", ns);
@@ -739,26 +735,23 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     /**
-     * Returns {@code true} when {@code key} is a relative path into the workspace-root
-     * {@code .skills-cache} tree. Paths with a {@code ..} segment are excluded so they keep
-     * the regular namespace handling.
+     * Returns {@code true} when {@code key} is a relative path into the caller's own
+     * {@code .skills-cache/<scopeSegment>} subtree. The cache root itself and other scopes'
+     * subtrees do not qualify, and neither does any path with a {@code ..} segment.
      */
-    private static boolean isSkillsCachePath(String key) {
-        String[] segments = key.replace('\\', '/').split("/");
-        int first = 0;
-        while (first < segments.length
-                && (segments[first].isEmpty() || ".".equals(segments[first]))) {
-            first++;
-        }
-        if (first == segments.length || !SKILLS_CACHE_DIR.equals(segments[first])) {
-            return false;
-        }
-        for (String segment : segments) {
+    private static boolean isOwnSkillsCachePath(String key, String scopeSegment) {
+        List<String> parts = new ArrayList<>();
+        for (String segment : key.replace('\\', '/').split("/")) {
             if ("..".equals(segment)) {
                 return false;
             }
+            if (!segment.isEmpty() && !".".equals(segment)) {
+                parts.add(segment);
+            }
         }
-        return true;
+        return parts.size() >= 2
+                && MarketplaceStager.CACHE_DIR.equals(parts.get(0))
+                && scopeSegment.equals(parts.get(1));
     }
 
     protected String toVirtualPath(Path path) {

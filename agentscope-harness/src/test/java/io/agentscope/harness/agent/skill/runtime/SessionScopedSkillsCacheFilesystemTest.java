@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.skill.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -94,6 +95,44 @@ class SessionScopedSkillsCacheFilesystemTest {
         ReadResult script = fs.read(rc, scripts.entries().get(0).path(), 0, 0);
         assertTrue(script.isSuccess(), () -> "staged script must be readable: " + script.error());
         assertTrue(script.fileData().content().contains("echo order"));
+    }
+
+    @Test
+    void anotherSessionsStagedSkillStaysUnreachable(
+            @TempDir Path workspace, @TempDir Path project) {
+        IsolationScope scope = IsolationScope.SESSION;
+        HarnessSkillMiddleware middleware =
+                new HarnessSkillMiddleware(
+                        List.of(new DatabaseLikeRepo()),
+                        new Toolkit(),
+                        null,
+                        null,
+                        new MarketplaceStager(workspace),
+                        ShellPathPolicy.localWithShell(workspace));
+        middleware.isolationScope(scope);
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec()
+                        .isolationScope(scope)
+                        .project(project)
+                        .toFilesystem(workspace, scope.toNamespaceFactory());
+        RuntimeContext sessA = RuntimeContext.builder().sessionId("sess-a").build();
+        RuntimeContext sessB = RuntimeContext.builder().sessionId("sess-b").build();
+        assertNotNull(middleware.onSystemPrompt(null, sessA, "").block());
+        assertNotNull(middleware.onSystemPrompt(null, sessB, "").block());
+
+        String script = "database/sales-order-manager/scripts/query.sh";
+        ReadResult own = fs.read(sessA, ".skills-cache/sess-a/" + script, 0, 0);
+        assertTrue(own.isSuccess(), () -> "own staged script must be readable: " + own.error());
+
+        ReadResult foreign = fs.read(sessA, ".skills-cache/sess-b/" + script, 0, 0);
+        assertFalse(foreign.isSuccess(), "another session's staged script must not be readable");
+
+        LsResult cacheRoot = fs.ls(sessA, ".skills-cache");
+        if (cacheRoot.isSuccess()) {
+            assertTrue(
+                    cacheRoot.entries().stream().noneMatch(e -> e.path().contains("sess-b")),
+                    () -> "cache root listing exposed another session: " + cacheRoot.entries());
+        }
     }
 
     /** Stands in for the reporter's Postgres-backed repository: resources live in memory. */

@@ -185,8 +185,14 @@ public final class MarketplaceStager {
      * {@code alice_corp.com}, and two identities sharing a subtree is exactly what the scope
      * exists to prevent. Anything that is not already a distinct, filesystem-safe segment keeps
      * a readable prefix and is disambiguated by a digest of the original.
+     *
+     * <p>Public so the filesystem can recognise the caller's own subtree without re-deriving
+     * the mapping.
+     *
+     * @param scope per-call isolation key; blank maps to {@value #SHARED_SCOPE}
+     * @return the {@code .skills-cache} child directory name for {@code scope}
      */
-    private static String scopeSegment(String scope) {
+    public static String scopeSegment(String scope) {
         if (scope == null || scope.isBlank()) {
             return SHARED_SCOPE;
         }

@@ -22,10 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.skill.runtime.MarketplaceStager;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.IOException;
@@ -239,6 +241,76 @@ class LocalFilesystemModeTest {
         ReadResult r = fs.read(rc, scriptEntry, 0, 0);
         assertTrue(r.isSuccess(), () -> "entry path should round-trip: " + r.error());
         assertEquals("echo demo", r.fileData().content());
+    }
+
+    @Test
+    void rooted_otherSessionSkillsCacheStaysNamespaced(@TempDir Path workspace) throws IOException {
+        for (String sid : List.of("sess-a", "sess-b")) {
+            Path secret = workspace.resolve(".skills-cache/" + sid + "/database/x/secret.txt");
+            Files.createDirectories(secret.getParent());
+            Files.writeString(secret, sid + " only", StandardCharsets.UTF_8);
+        }
+        LocalFilesystem fs =
+                new LocalFilesystem(
+                        workspace,
+                        LocalFsMode.ROOTED,
+                        PathPolicy.empty(),
+                        10,
+                        IsolationScope.SESSION.toNamespaceFactory());
+        RuntimeContext rc = RuntimeContext.builder().sessionId("sess-a").build();
+
+        ReadResult own = fs.read(rc, ".skills-cache/sess-a/database/x/secret.txt", 0, 0);
+        assertTrue(own.isSuccess(), () -> "own cache must stay reachable: " + own.error());
+        assertEquals("sess-a only", own.fileData().content());
+
+        for (String foreign :
+                List.of(
+                        ".skills-cache/sess-b/database/x/secret.txt",
+                        "./.skills-cache/./sess-b/database/x/secret.txt",
+                        ".skills-cache//sess-b/database/x/secret.txt")) {
+            ReadResult r = fs.read(rc, foreign, 0, 0);
+            assertFalse(r.isSuccess(), () -> "another session's cache leaked via " + foreign);
+        }
+        // A '..' hop out of the caller's own subtree keeps the namespace, which ROOTED rejects.
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> fs.read(rc, ".skills-cache/sess-a/../sess-b/database/x/secret.txt", 0, 0));
+
+        LsResult cacheRoot = fs.ls(rc, ".skills-cache");
+        if (cacheRoot.isSuccess()) {
+            assertTrue(
+                    cacheRoot.entries().stream().noneMatch(e -> e.path().contains("sess-b")),
+                    () -> "cache root listing exposed another session: " + cacheRoot.entries());
+        }
+    }
+
+    @Test
+    void rooted_skillsCacheOwnScopeFollowsStagerSegment(@TempDir Path workspace)
+            throws IOException {
+        String uid = "alice@corp.com";
+        String segment = MarketplaceStager.scopeSegment(uid);
+        Path own = workspace.resolve(".skills-cache/" + segment + "/database/x/run.sh");
+        Files.createDirectories(own.getParent());
+        Files.writeString(own, "alice", StandardCharsets.UTF_8);
+        // What a different identity spelled "alice_corp.com" would be staged under.
+        Path lookalike = workspace.resolve(".skills-cache/alice_corp.com/database/x/run.sh");
+        Files.createDirectories(lookalike.getParent());
+        Files.writeString(lookalike, "someone else", StandardCharsets.UTF_8);
+        LocalFilesystem fs =
+                new LocalFilesystem(
+                        workspace,
+                        LocalFsMode.ROOTED,
+                        PathPolicy.empty(),
+                        10,
+                        IsolationScope.USER.toNamespaceFactory());
+        RuntimeContext rc = RuntimeContext.builder().userId(uid).build();
+
+        ReadResult r = fs.read(rc, ".skills-cache/" + segment + "/database/x/run.sh", 0, 0);
+        assertTrue(r.isSuccess(), () -> "own cache must stay reachable: " + r.error());
+        assertEquals("alice", r.fileData().content());
+        assertFalse(
+                fs.read(rc, ".skills-cache/alice_corp.com/database/x/run.sh", 0, 0).isSuccess(),
+                "only the stager's segment for this identity is exempt");
     }
 
     @Test
