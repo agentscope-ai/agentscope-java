@@ -70,7 +70,17 @@ public final class JournalSessionLog implements SessionLog {
         return head(storage.read(path("head.json")));
     }
 
+    private String sealPath(String owner) {
+        return path("writer-seals/" + hash(owner.getBytes(StandardCharsets.UTF_8)) + ".json");
+    }
+
+    private boolean sealed(String owner) {
+        return storage.read(sealPath(owner)) != null;
+    }
+
     private void owned(Head head, Writer writer) {
+        if (sealed(writer.owner()))
+            throw new SessionLogException("Session writer is permanently sealed");
         if (head.epoch() != writer.epoch()
                 || !Objects.equals(head.owner(), writer.owner())
                 || head.leaseUntil() <= clock.millis())
@@ -90,6 +100,8 @@ public final class JournalSessionLog implements SessionLog {
         Objects.requireNonNull(owner);
         if (lease.isNegative() || lease.isZero()) throw new IllegalArgumentException("lease");
         for (int i = 0; i < 32; i++) {
+            if (sealed(owner))
+                throw new SessionLogException("Session writer is permanently sealed");
             var value = storage.read(path("head.json"));
             var h = head(value);
             if (h.owner() != null && h.leaseUntil() > clock.millis())
@@ -102,10 +114,37 @@ public final class JournalSessionLog implements SessionLog {
                             clock.millis() + lease.toMillis(),
                             h.commitId());
             if (storage.compareAndSet(
-                    path("head.json"), value == null ? 0 : value.version(), bytes(next)))
+                    path("head.json"), value == null ? 0 : value.version(), bytes(next))) {
+                // A seal can land between the initial check and reading this head. Do not
+                // return a writer until that race is resolved, and release any raced claim.
+                if (sealed(owner)) {
+                    sealWriter(owner);
+                    throw new SessionLogException("Session writer is permanently sealed");
+                }
                 return new Writer(owner, next.epoch());
+            }
         }
         throw new SessionLogException("Writer acquisition contention");
+    }
+
+    @Override
+    public Head sealWriter(String owner) {
+        Objects.requireNonNull(owner);
+        storage.compareAndSet(sealPath(owner), 0, bytes(Map.of("owner", owner)));
+        for (int i = 0; i < 32; i++) {
+            var value = storage.read(path("head.json"));
+            var h = head(value);
+            var next =
+                    owner.equals(h.owner())
+                            ? new Head(h.seq(), h.epoch() + 1, null, 0, h.commitId())
+                            : h;
+            // Even an unchanged head must advance its storage version. This fences a
+            // paused acquisition/commit without revoking an unrelated active writer.
+            if (storage.compareAndSet(
+                    path("head.json"), value == null ? 0 : value.version(), bytes(next)))
+                return next;
+        }
+        throw new SessionLogException("Writer sealing contention");
     }
 
     @Override

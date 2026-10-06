@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"net/http"
 	"time"
 
@@ -144,6 +145,11 @@ func externalConversationCandidate(instance *controlmodel.AgentInstance, binding
 func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmodel.Agent, requestedSessionID,
 	originType, originRef string) (*store.Session, error) {
 	policy, err := s.store.Orchestration().GetRuntimePolicy(ctx, agent.Tenant, agent.Namespace, agent.ID.String())
+	if frozen := serviceapi.ContextContract(ctx); frozen != nil {
+		if pinned, ok := frozen.Policies[agent.ID.String()]; ok {
+			policy, err = pinned, nil
+		}
+	}
 	if err != nil || policy.SelectionMode != "ordered" || len(policy.Candidates) == 0 {
 		return nil, fmt.Errorf("Agent has no runtime policy")
 	}

@@ -8,6 +8,8 @@ zh_link: /v2/zh/docs/harness/architecture
 
 `ReActAgent` provides the reasoning loop, tools, permissions and conversation context APIs. Harness composes these capabilities with additional defaults and integrations. Both support `call` and `streamEvents`.
 
+Configure a shared `HarnessAgent.Builder` at startup, build a fresh instance for each direct request, and close it after execution. Stable identity and the same log backend preserve the conversation. See [Instance lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle) for code and the shared-instance option. A session manager retains the Agent for background `AgentSession` execution.
+
 ## Core working principle
 
 An execution loads the conversation state, builds model input, calls tools as needed and saves its results. Workspace, memory and compaction capabilities take effect during these steps. Applications customize behavior through the builder, tools and middleware.
@@ -32,8 +34,8 @@ Configure capabilities and use session operations as your application needs them
 | State and execution history | Full facts, checkpoints, cross-request/node recovery | EVENT_LOG by default; override sessionLogStore | [Session logs](/v2/en/docs/harness/session-log) |
 | Session task management | Background work, durable queueing, guidance and recovery | `agent.session(ctx)` | [Session operations](/v2/en/docs/harness/session-log) |
 | Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | on by default; `.memory(...)` customizes prompts / trigger policy | [Memory](/v2/en/docs/harness/memory) |
-| Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Compaction](/v2/en/docs/harness/compaction) |
-| Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Compaction](/v2/en/docs/harness/compaction) |
+| Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Context management](/v2/en/docs/harness/context) |
+| Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Context management](/v2/en/docs/harness/context) |
 | Subagent orchestration | Delegate to children, sync or background, with auto push-back | `.subagent(...)` or drop spec in `workspace/subagents/` | [Subagent](/v2/en/docs/harness/subagent) |
 | Pluggable filesystem | Local + shell / shared store / sandbox without code changes | `.filesystem(...)` | [Filesystem](/v2/en/docs/harness/filesystem) |
 | Sandbox isolation | Files and commands isolated; cross-call recovery; multi-replica | `.filesystem(new DockerFilesystemSpec()...)` | [Sandbox](/v2/en/docs/harness/sandbox) |
@@ -67,11 +69,11 @@ To insert custom behaviour without bypassing Harness's plumbing:
 ## Related pages
 
 - [Session operations, events and recovery](/v2/en/docs/harness/session-log) — background tasks, queues, interaction and continuation
-- [Recoverable chat example](/v2/en/docs/harness/session-chat) — a complete application from submission to frontend reconnection
+- [Recoverable chat example](/v2/en/blogs/best-practices/session-chat) — a complete application from submission to frontend reconnection
 - [Workspace](/v2/en/docs/harness/workspace) — directory layout, instruction and reference sources, `tools.json`
 - [Context & AgentState](/v2/en/docs/building-blocks/context) — `AgentState`, `RuntimeContext`, `AgentStateStore` persistence, multi-user isolation
 - [Memory](/v2/en/docs/harness/memory) — two-layer memory
-- [Compaction](/v2/en/docs/harness/compaction) — summary compaction, large-result offloading, overflow recovery
+- [Context management](/v2/en/docs/harness/context) — build model input, track long-running tasks, summarize history, and offload large results
 - [Filesystem](/v2/en/docs/harness/filesystem) — local + shell / shared store / sandbox
 - [Sandbox](/v2/en/docs/harness/sandbox) — isolated execution, cross-call recovery, distributed
 - [Subagent](/v2/en/docs/harness/subagent) — declarations, sync/background, streaming forwarding
@@ -81,4 +83,4 @@ To insert custom behaviour without bypassing Harness's plumbing:
 
 ## Final model input construction
 
-Harness organizes System, conversation, task state and references at the final model-call boundary. Supply dynamic business information through contextSource. See [Context construction](/v2/en/docs/harness/context) for configuration, defaults and limits.
+Harness organizes System, conversation, task state and references at the final model-call boundary. Supply dynamic business information through contextSource. See [Context management](/v2/en/docs/harness/context) for configuration, defaults and limits.

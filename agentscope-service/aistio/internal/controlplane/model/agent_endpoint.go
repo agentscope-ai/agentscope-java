@@ -63,6 +63,7 @@ type Endpoint struct {
 	InvocationMode     EndpointInvocationMode `json:"invocationMode"`
 	InputSchema        json.RawMessage        `json:"inputSchema,omitempty"`
 	OutputSchema       json.RawMessage        `json:"outputSchema,omitempty"`
+	ResultMapping      json.RawMessage        `json:"resultMapping,omitempty"`
 	EventSchemaVersion string                 `json:"eventSchemaVersion"`
 	TimeoutSeconds     int                    `json:"timeoutSeconds"`
 	MaxPayloadBytes    int64                  `json:"maxPayloadBytes"`
@@ -81,6 +82,7 @@ type Endpoint struct {
 // Endpoint. Deploying or rolling back always appends a release, which keeps
 // the public slug and contract stable while preserving target history.
 type EndpointRelease struct {
+	Contract    json.RawMessage    `json:"-"`
 	ID          uuid.UUID          `json:"id"`
 	EndpointID  uuid.UUID          `json:"endpointId"`
 	Number      int                `json:"number"`
@@ -101,11 +103,12 @@ const (
 )
 
 type EndpointCredential struct {
-	ID         uuid.UUID `json:"id"`
-	EndpointID uuid.UUID `json:"endpointId"`
-	Name       string    `json:"name"`
-	KeyPrefix  string    `json:"keyPrefix"`
-	SecretHash []byte    `json:"-"`
+	ApplicationID uuid.UUID `json:"applicationId"`
+	ID            uuid.UUID `json:"id"`
+	EndpointID    uuid.UUID `json:"endpointId"`
+	Name          string    `json:"name"`
+	KeyPrefix     string    `json:"keyPrefix"`
+	SecretHash    []byte    `json:"-"`
 	// SecretCiphertext is AES-GCM encrypted at rest and is never serialized in
 	// normal credential responses. It exists solely for authorized reveal.
 	SecretCiphertext []byte                   `json:"-"`
@@ -122,20 +125,29 @@ type EndpointCredential struct {
 type EndpointInvocationStatus string
 
 const (
-	EndpointInvocationAccepted    EndpointInvocationStatus = "accepted"
-	EndpointInvocationDispatching EndpointInvocationStatus = "dispatching"
-	EndpointInvocationRunning     EndpointInvocationStatus = "running"
-	EndpointInvocationWaiting     EndpointInvocationStatus = "waiting"
-	EndpointInvocationCompleted   EndpointInvocationStatus = "completed"
-	EndpointInvocationFailed      EndpointInvocationStatus = "failed"
-	EndpointInvocationCancelled   EndpointInvocationStatus = "cancelled"
-	EndpointInvocationTimedOut    EndpointInvocationStatus = "timed_out"
+	EndpointInvocationAccepted         EndpointInvocationStatus = "accepted"
+	EndpointInvocationDispatching      EndpointInvocationStatus = "dispatching"
+	EndpointInvocationRunning          EndpointInvocationStatus = "running"
+	EndpointInvocationWaiting          EndpointInvocationStatus = "waiting"
+	EndpointInvocationCancelRequested  EndpointInvocationStatus = "cancel_requested"
+	EndpointInvocationCompleted        EndpointInvocationStatus = "completed"
+	EndpointInvocationPartialSucceeded EndpointInvocationStatus = "partial_succeeded"
+	EndpointInvocationFailed           EndpointInvocationStatus = "failed"
+	EndpointInvocationCancelled        EndpointInvocationStatus = "cancelled"
+	EndpointInvocationTimedOut         EndpointInvocationStatus = "timed_out"
 )
 
 // EndpointInvocation is the public execution identity. It prevents callers
 // from having to treat Issue IDs, Run IDs, or runtime Session IDs as public Job
 // identifiers.
 type EndpointInvocation struct {
+	ConsumedTokens int64                    `json:"consumedTokens"`
+	ApplicationID  *uuid.UUID               `json:"applicationId,omitempty"`
+	CredentialID   *uuid.UUID               `json:"credentialId,omitempty"`
+	Actor          Actor                    `json:"actor"`
+	NextPollAt     time.Time                `json:"-"`
+	ReleaseID      *uuid.UUID               `json:"releaseId,omitempty"`
+	Contract       json.RawMessage          `json:"-"`
 	ID             uuid.UUID                `json:"id"`
 	EndpointID     uuid.UUID                `json:"endpointId"`
 	Mode           EndpointInvocationMode   `json:"mode"`
@@ -168,6 +180,8 @@ const (
 )
 
 type EndpointConversation struct {
+	ReleaseID          *uuid.UUID                 `json:"releaseId,omitempty"`
+	Contract           json.RawMessage            `json:"-"`
 	ID                 uuid.UUID                  `json:"id"`
 	EndpointID         uuid.UUID                  `json:"endpointId"`
 	AgentID            uuid.UUID                  `json:"agentId"`

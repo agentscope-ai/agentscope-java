@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"io"
 	"log"
 	"net/http"
@@ -390,8 +391,11 @@ func (s *Server) FindOrCreateSession(ctx context.Context, ownerID, agentID, envi
 		}
 	}
 	_, memIDs, vaultIDs := mergeSessionMounts(a, envID, nil, nil, false, false)
-	return s.insertSession(ctx, ownerID, agentID, ownerID,
-		a.HeadVersion, "latest", envID, externalKey, memIDs, vaultIDs, nil, nil)
+	version, refType := a.HeadVersion, "latest"
+	if pinned := serviceapi.ContextVersion(ctx, agentID); pinned > 0 {
+		version, refType = pinned, "version"
+	}
+	return s.insertSession(ctx, ownerID, agentID, ownerID, version, refType, envID, externalKey, memIDs, vaultIDs, nil, nil)
 }
 
 // FindOrCreateSessionID returns the session selected by the runtime binding resolver.

@@ -7,7 +7,7 @@ en_link: /v2/en/service/team-collaboration
 此为预览文档，正式版本尚未发布。
 </Note>
 
-Team 适合目标明确、实现步骤需要动态决定的工作。与 Workflow 的固定拓扑相比，Lead 根据上下文选择成员、拆分任务和汇总结果。配置入口见 [Teams](/v2/zh/service/teams)。
+Team 适合目标明确、实现步骤需要动态决定的工作。与 Workflow 的固定拓扑相比，Lead 根据上下文选择成员、拆分任务和汇总结果。创建与派发入口见 [Team API 指南](/v2/zh/service/create-team)。
 
 ## 设计可协作的角色
 
@@ -17,9 +17,25 @@ Team 适合目标明确、实现步骤需要动态决定的工作。与 Workflow
 
 ## 从 Issue 观察一次协作
 
-创建“比较两种部署方案” Issue，提供限制、资料和验收标准并选择 Team。查看 Lead 的计划、成员评论、子 Issue、产物和 Task map，核对每个输出如何被 Lead 引用。
+通过 `POST /api/v1/issues` 创建“比较两种部署方案”，在请求中提供限制、资料、验收标准与 Team 负责人。读取 Lead 的计划、成员评论、子 Issue、产物和 Run graph，核对每个输出如何被 Lead 引用。
 
 工作归属关系是：Issue 保存目标和验收；Run 保存本次协作；Node 表示步骤；AgentTask 表示派发；Attempt 表示实际执行。同一工作可以有多次执行，结果和失败证据仍关联原 Issue。
+
+## 业务应用的协作 API
+
+以下操作使用用户 Bearer token 和相应工作授权。它们操作持久业务记录，不要求调用方知道成员当前在哪个运行时执行。
+
+| 操作 | API 与关键参数 |
+| --- | --- |
+| 补充信息、请求成员处理 | `POST /api/v1/issues/{issueId}/comments`：`content`、可选 `parentId`、`type`、`mentions:[{type,ref}]` |
+| 预览评论路由 | `POST /api/v1/issues/{issueId}/comments/preview-routing`：与评论相同的输入，返回 `targets` |
+| 读取讨论 | `GET /api/v1/issues/{issueId}/comments`：`limit`、`cursor`、可选 `threadId`、`rootsOnly`；返回 `items`、`nextCursor` |
+| 创建独立子目标 | `POST /api/v1/issues/{issueId}/children`：标题、说明、负责人及验收字段，返回 `issue`、`agentTask` |
+| 查询子工作 | `GET /api/v1/issues`：`tenant`、`namespace`、`parentIssueId` |
+| 文件交付 | `POST /api/v1/artifacts/uploads`：multipart 的 `tenant`、`namespace`、`issueId`、`relation`、`file` |
+| 读取产物 | `GET /api/v1/issues/{issueId}/artifacts`，随后 `POST /api/v1/artifacts/{artifactId}/download` |
+
+`mentions[].type` 选择 `agent`、`team` 或 `human`，`ref` 使用对应身份标识。正文中的名字不是结构化路由。提交评论后检查返回的 `routes`，确认是已排队、已合并还是被策略阻止；这些结果比“评论写入成功”更能说明是否产生了后续工作。仅记录进度时使用 `type:"progress"`，不设置 mentions，避免隐式派发。
 
 ## 持久沟通
 
@@ -47,13 +63,13 @@ agentscope task run graph
 
 ## 结束与验收
 
-检查 Lead 最终汇总是否包含所有必要成员的结果，未完成的部分是否明确说明。Run succeeded 或 partial_succeeded 不能单独证明整个目标已达成。人工验收的 Issue 仍需在 Inbox 接受结果。
+检查 Lead 最终汇总是否包含所有必要成员的结果，未完成的部分是否明确说明。Run succeeded 或 partial_succeeded 不能单独证明整个目标已达成。人工验收的 Issue 仍需通过 [Issue 验收 API](/v2/zh/service/inbox)接受结果。
 
 用于应用集成时发布 Team job [Endpoint](/v2/zh/service/endpoints)，让调用方通过 invocation 状态与结果跟踪工作。
 
 ## 交付模板：让另一个成员能够复核
 
-[研发闭环案例](/v2/zh/service/cases/sdlc-team)使用全 Hosted 团队。Developer 的交付评论建议包含以下内容，并附 PR 和实际测试记录：
+当[代码修复服务](/v2/zh/service/cases/incident-to-pr)需要扩展为多角色团队时，Developer 的交付评论可包含以下内容，并附 PR 和实际测试记录：
 
 ```text
 目标：实现订单筛选与分页；保留原验收检查并补充边界测试。
@@ -64,3 +80,11 @@ agentscope task run graph
 ```
 
 模板只是交付结构，不能把其中的占位内容当作已发生的执行。Lead 打开真实 Artifact 并核对证据后再汇总；成员各自的工作目录不自动共享，评论中的本地绝对路径也不等于另一个成员可以读取的文件。
+
+## 运行时回报的身份与参数
+
+执行适配器使用平台下发的任务凭据访问 `/api/v1/agent-tasks/{taskId}` 下的协议入口，业务用户 token 不能冒充正在执行的任务。`GET .../context` 返回当前工作上下文；`POST .../progress` 接受 `content`、可选 `parentId` 与 `mentions`；`POST .../complete` 可回报 `expectedVersion`、`summary`、`result`、`usage` 及已处理输入 ID。失败回报 `POST .../fail` 使用 `expectedVersion`、`code`、`message`。
+
+Hosted provider 通常通过注入的 CLI / MCP 使用这些能力，External 适配器按[任务接入协议](/v2/zh/service/external-agent-execution)接入。协调节点完成/失败还有专门的 coordinator 权限；普通成员的结果回报不会自动取得 Leader 权限。
+
+页面操作见[控制台：团队与编排](/v2/zh/service/console/orchestration)与[任务反馈](/v2/zh/service/console/tasks)。

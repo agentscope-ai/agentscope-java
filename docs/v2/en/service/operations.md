@@ -52,20 +52,34 @@ Check administrator login, existing Agents and Session history, workspace files,
 
 A backup is qualified only when database, files and keys recover together. Plan maintenance windows for this single-replica installation.
 
+## Check recovered services through APIs
+
+Read existing resources before submitting a clearly new test task:
+
+| Check | API |
+| --- | --- |
+| Agents and bindings | `GET /api/v1/agents`, `GET /api/v1/agents/{id}/bindings` |
+| Published configuration | `GET /api/v1/endpoints/{id}`, `GET /api/v1/endpoints/{id}/releases` |
+| Existing business results and UI | `GET /invoke/v1/invocations/{id}`, `GET .../{id}/snapshot` |
+| Orchestration and actual attempts | `GET /api/v1/orchestration-runs/{id}/graph`, `GET /api/v1/execution-attempts/{id}` |
+| Notification and automation | Inspect original Webhook/Automation delivery records and deduplication state |
+
+Use the original invocation ownership credentials or authorized platform identity. Recover Invocation data, native Managed logs, workspace files, and encryption keys together. Expired event cursors require a fresh snapshot, not resubmission of completed work. See [API reference](/v2/en/service/api-reference).
+
 ## Reopen service after recovery
 
 Keep scheduled rules and external traffic controlled while verifying login, history, files and credentials with test work. Confirm Runtime Hosts reconnect before restoring schedules and application traffic. Restoring a snapshot does not undo external messages or writes made after it; reconcile idempotency records and unfinished work before rerunning.
 
 ## Use fixed cases for upgrade regression
 
-Before upgrading, retain the sample knowledge and acceptance results from the [presales team case](/v2/en/service/cases/presales-team). Ask the same questions in an isolated restored environment. Model wording may differ; compare these facts and persistent records:
+Before upgrading, retain the fixed request, source versions, and acceptance results from the [CRM proposal case](/v2/en/service/cases/in-product-delivery). Repeat the call in an isolated restored environment. Model wording may differ; compare these facts and persistent records:
 
 | Check | Evidence |
 | --- | --- |
-| Knowledge recovery | All three document bodies match the backup and the Agent actually reads them |
+| Source recovery | All three inline sources and versions match; separately verify reads if production uses Memory |
 | File recovery | Previous Artifacts download and match the recorded content |
 | New work | A new Invocation / Run completes with correct sources and no unsupported capability promises |
-| History | Pre-upgrade Issues, events, and acceptance states remain readable |
-| Host and automation, if used | Run the engineering and fulfillment cases against test targets and inspect linked records |
+| History | Previous Invocations, events, artifacts, and application acceptance records remain readable |
+| Host and scheduling, if used | Run code repair or recurring research against test targets and inspect linked records |
 
 Record versions, backup batch, inputs, execution IDs, and differences. Validate credentials through the integrations that use them; the knowledge-only case has no external credential and cannot establish that Vault decryption works.

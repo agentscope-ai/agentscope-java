@@ -29,6 +29,7 @@ import (
 
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -374,7 +375,7 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 				if parseErr != nil {
 					return e.failNode(ctx, node, fmt.Errorf("subrun requires definitionRevisionId"))
 				}
-				revision, loadErr := e.Store.Orchestration().GetRevision(ctx, revisionID)
+				revision, loadErr := serviceapi.Revision(ctx, e.Store, run.RootIssueID, revisionID)
 				if loadErr != nil {
 					return e.failNode(ctx, node, loadErr)
 				}

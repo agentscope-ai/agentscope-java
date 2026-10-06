@@ -42,6 +42,7 @@ var (
 )
 
 type managedSessionEventReport struct {
+	PublicEvent map[string]any `json:"publicEvent,omitempty"`
 	ID          string         `json:"id"`
 	SessionID   string         `json:"sessionId"`
 	Seq         int64          `json:"seq"`
@@ -92,6 +93,15 @@ func (s *Server) reportManagedSessionEvent(c *gin.Context) {
 		duplicate, err := s.sessionEventSourceExists(lockCtx, session.ID, sourceKey)
 		if err != nil || duplicate {
 			return err
+		}
+		historical, err := s.managedReportIsHistorical(lockCtx, session, &report)
+		if err != nil {
+			return err
+		}
+		if historical {
+			// A delayed, authenticated outbox row is still part of its original
+			// attempt history. It must never mutate the current retry or its lease.
+			return s.appendSessionEventLocked(lockCtx, session.ID, sourceKey, event)
 		}
 		if applyErr := s.applyManagedSessionStatus(lockCtx, session, &report, event.OccurredAt); applyErr != nil {
 			return applyErr
@@ -189,6 +199,11 @@ func managedReportToSessionEvent(report *managedSessionEventReport) *store.Sessi
 			metadata[key] = value
 		}
 	}
+	if report.PublicEvent != nil {
+		if kind, ok := report.PublicEvent["type"].(string); ok && publicServiceRuntimeType(kind) {
+			metadata["public_event"] = report.PublicEvent
+		}
+	}
 	event.FrameworkMeta, _ = json.Marshal(metadata)
 	return event
 }
@@ -262,25 +277,28 @@ func (s *Server) projectManagedEndpointTurn(ctx context.Context, session *store.
 		messagePositions := make(map[string]int)
 		for _, event := range events {
 			var meta map[string]any
-			if event.EventType != "agent.message" || json.Unmarshal(event.FrameworkMeta, &meta) != nil {
+			if json.Unmarshal(event.FrameworkMeta, &meta) != nil {
+				continue
+			}
+			text, identity, final, assistant := managedConversationMessage(event, meta)
+			if !assistant {
 				continue
 			}
 			seq, _ := meta["managedSeq"].(float64)
 			if int64(seq) > sourceSeq && int64(seq) < report.Seq {
-				if final, _ := meta["final_output"].(bool); final {
-					finalAnswer, hasFinalAnswer = event.Content, true
+				if final {
+					finalAnswer, hasFinalAnswer = text, true
 				}
-				if event.Content == "" {
+				if text == "" {
 					continue
 				}
-				identity := firstPayloadString(meta, "message_id")
 				if position, exists := messagePositions[identity]; identity != "" && exists {
-					answer[position] = event.Content
+					answer[position] = text
 				} else {
 					if identity != "" {
 						messagePositions[identity] = len(answer)
 					}
-					answer = append(answer, event.Content)
+					answer = append(answer, text)
 				}
 			}
 		}
@@ -296,6 +314,37 @@ func (s *Server) projectManagedEndpointTurn(ctx context.Context, session *store.
 	conversation.LastTurnAt = &at
 	_, err = s.store.Endpoints().UpdateConversation(ctx, conversation)
 	return err
+}
+
+// Native session logs mirror completed messages through public_event. Their
+// wire type and nested content differ from the direct agent.message envelope.
+func managedConversationMessage(event *store.SessionEvent, meta map[string]any) (text, identity string, final, assistant bool) {
+	if public, ok := meta["public_event"].(map[string]any); ok {
+		if public["type"] != "item.completed" {
+			return "", "", false, false
+		}
+		payload, _ := public["payload"].(map[string]any)
+		item, _ := payload["item"].(map[string]any)
+		if !strings.EqualFold(firstPayloadString(item, "role"), "assistant") {
+			return "", "", false, false
+		}
+		var parts []string
+		content, _ := item["content"].([]any)
+		for _, value := range content {
+			block, _ := value.(map[string]any)
+			if block["type"] == "text" {
+				parts = append(parts, firstPayloadString(block, "text"))
+			}
+		}
+		identity = firstPayloadString(item, "message_id", "id")
+		if identity == "" {
+			identity = firstPayloadString(payload, "item_id")
+		}
+		final, _ = payload["final_output"].(bool)
+		return strings.Join(parts, "\n"), identity, final, true
+	}
+	final, _ = meta["final_output"].(bool)
+	return event.Content, firstPayloadString(meta, "message_id"), final, event.EventType == "agent.message"
 }
 
 // Project both remote MCP errors and errors raised locally before any request
@@ -516,6 +565,40 @@ func (s *Server) managedIncompleteTurnMessage(ctx context.Context, session *stor
 		return base + "\nLast response: " + string(text)
 	}
 	return base
+}
+
+// The immutable attempt fence authenticates history even after a retry or terminal
+// transition. Only the current live attempt is eligible for lifecycle side effects.
+func (s *Server) managedReportIsHistorical(ctx context.Context, session *store.Session, report *managedSessionEventReport) (bool, error) {
+	if report.AgentTaskID == "" && report.AttemptID == "" && session.AgentTaskID == nil {
+		return false, nil
+	}
+	taskID, err := uuid.Parse(report.AgentTaskID)
+	if err != nil {
+		return false, store.ErrConflict
+	}
+	attemptID, err := uuid.Parse(report.AttemptID)
+	if err != nil {
+		return false, store.ErrConflict
+	}
+	attempt, err := s.store.ExecutionAttempts().Get(ctx, attemptID)
+	if err != nil {
+		return false, err
+	}
+	task, err := s.store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return false, err
+	}
+	if attempt.BackendKind != controlmodel.DataPlaneManaged || attempt.AgentTaskID != taskID ||
+		attempt.SessionID != session.SessionID || attempt.DispatchGeneration != report.DispatchGen ||
+		report.DispatchGen <= 0 || report.TurnID == "" || attempt.TurnID != report.TurnID ||
+		task.Tenant != session.Tenant || task.Namespace != session.Namespace {
+		return false, store.ErrConflict
+	}
+	return session.AgentTaskID == nil || *session.AgentTaskID != taskID ||
+		task.CurrentAttemptID == nil || *task.CurrentAttemptID != attemptID ||
+		controlmodel.IsAgentTaskTerminal(task.Status) || controlmodel.IsExecutionAttemptTerminal(attempt.State) ||
+		attempt.State == controlmodel.ExecutionCancelRequested, nil
 }
 
 func (s *Server) managedReportMatchesAttempt(ctx context.Context, task *controlmodel.AgentTask, report *managedSessionEventReport) (bool, error) {

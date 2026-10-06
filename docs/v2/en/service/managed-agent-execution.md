@@ -7,7 +7,7 @@ zh_link: /v2/zh/service/managed-agent-execution
 This is preview documentation. The official release is not yet available.
 </Note>
 
-Service owns the Managed runtime lifecycle. The browser submits work and reads events. The model loop runs in Dataplane; Environment routes file and Shell operations.
+Service owns the Managed runtime lifecycle. Applications and browsers submit work and read events through APIs. The model loop runs in Dataplane; Environment routes file and Shell operations.
 
 ```mermaid
 flowchart TD
@@ -38,6 +38,12 @@ Session state, events and coordination records use the deployment's persistent s
 
 Shared Memory is live platform knowledge accessed on demand, not a full copy inserted into every prompt. Maintain it as shared knowledge; an Agent definition version does not freeze all external knowledge.
 
+## Observe a published service through unified APIs
+
+A Managed Endpoint target uses the same Invocation interface as other Agents. Submit a Job or Conversation, read `/invoke/v1/invocations/{id}/snapshot`, and follow `/events/stream` after as_of. Commands use `/inputs`, `/actions`, `/cancel`, and `/resume`, with Idempotency-Key and state/capability checks.
+
+Use invocation.status and result for the business outcome. Related Run, Attempt, and Managed session records explain execution. Applications should not bypass Invocation and report internal task completion themselves. See [Unified service API](/v2/en/service/service-api) for parameters.
+
 ## Integrate a Managed Agent through Agent API
 
 Create `/api/v1/agent-sessions`, POST turns with an idempotency key, load snapshot, then stream events after as_of. Browser observation is separate from execution; disconnects do not cancel work. Console's Execution tab follows this flow.
@@ -46,10 +52,10 @@ Service saves execution history and checkpoints. Applications restore messages, 
 
 Refreshing a page resumes observation. Use actions for confirmation/results and explicit resume for inspected interrupted work. Unknown dispatched-tool outcomes require reconciliation. See [Agent API](/v2/en/service/session-event-log) and [SSE integration](/v2/en/service/sse-events) for storage and frontend examples.
 
-Agent API also provides steer/inject, structured/file input, partial message/tool snapshots, child resources, checkpoint restore/fork, webhooks and usage budgets. Choose operations in the [Agent API guide](/v2/en/service/session-event-log) and restore frontend state using the [SSE guide](/v2/en/service/sse-events).
+The native Managed session API also provides steer/inject, structured/file input, partial message/tool snapshots, child resources, checkpoint restore/fork, webhooks and usage budgets. Choose operations in the [Agent API guide](/v2/en/service/session-event-log) and restore frontend state using the [SSE guide](/v2/en/service/sse-events).
 
 ## Execution and acceptance
 
-Finishing a Chat turn is separate from accepting an Issue. Issue/Team execution must record Attempt outcomes, and coordinators must complete or fail the corresponding Run node. For human review, inspect the deliverable and accept it in Inbox. See [Managed task outcomes](/v2/en/service/managed-harness-task-outcomes).
+Finishing a Chat turn is separate from accepting an Issue. Issue/Team execution must record Attempt outcomes, and coordinators must complete or fail the corresponding Run node. For human review, inspect the deliverable and submit an Issue accept/reject decision through the API. See [Managed task outcomes](/v2/en/service/managed-harness-task-outcomes).
 
 During diagnosis, distinguish model connection failures, pending tool approval, offline Workers, denied tools and completed execution awaiting business acceptance. Use Session, Run and Attempt identifiers to correlate logs.

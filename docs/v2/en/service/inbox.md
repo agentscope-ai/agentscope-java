@@ -1,5 +1,5 @@
 ---
-title: "Console Inbox: notifications, approvals and reviews"
+title: "Notification, approval, and review APIs"
 zh_link: /v2/zh/service/inbox
 ---
 
@@ -7,47 +7,85 @@ zh_link: /v2/zh/service/inbox
 This is preview documentation. The official release is not yet available.
 </Note>
 
-Inbox brings together work updates, approvals and result reviews that concern you. Start with items that need a decision, then read informational updates.
-
-Handle feedback related to your [console Issues](/v2/en/service/issues) here. Applications receive execution feedback through [SSE and status APIs](/v2/en/service/sse-events#endpoint-protocol-scope); work that requires human review still follows its acceptance policy.
-
-## Interface tour
-
-<Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/inbox.png" alt="Inbox review request with its linked issue" />
-</Frame>
-
-Select a notification in the message list, then read the linked issue and its result on the right. Reading a notification does not complete the review; inspect the deliverable before using the review actions.
+Execution feedback can require two different decisions: accepting a completed deliverable, or authorizing an operation while work is running. An application can read the current user's Inbox, then call either Issue review or Approval decision APIs. Reading a notification does not make either decision.
 
 ## Find actionable items
 
-Open **WORK → Inbox**. Status filters include Needs attention, Needs action, Unread, All messages and Archived. Unread tracks reading; Needs action tracks unresolved decisions. Reading a message does not complete its work.
+The examples use Bash, `curl`, and `jq`. Set `SERVICE_URL` to your Service address, `TOKEN` to a user Bearer token, and `TENANT` / `NAMESPACE` to your authorized scope; see [API authentication](/v2/en/service/api-reference). Define this request helper:
 
-Select a message to see its Issue or approval details. Use Open issue for the full record. If the list is empty, check filters, your account and scope before concluding that execution generated no events.
+```bash
+api() {
+  curl --fail-with-body --silent --show-error \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H 'Content-Type: application/json' "$@"
+}
+```
+
+
+Inbox belongs to the authenticated user; a request parameter cannot turn it into another person's Inbox. Query it with a user identity:
+
+```bash
+api "$SERVICE_URL/api/v1/inbox" --get \
+  --data-urlencode "tenant=$TENANT" --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode 'view=action' --data-urlencode 'limit=50'
+api "$SERVICE_URL/api/v1/inbox/summary" --get \
+  --data-urlencode "tenant=$TENANT" --data-urlencode "namespace=$NAMESPACE"
+```
+
+The list returns `items`, `hasMore`, and `nextCursor`. Pass `cursor` for the next page. Use `view=action` for unresolved decisions, `unread` for unread items, `attention` for items needing attention, or `all` for all unarchived items. Add `archived=true` to read archived notifications.
+
+Read a selected item with `GET /api/v1/inbox/{inboxId}`, then follow its work or approval reference. Show the actual object, current result, and version before asking the user to decide.
 
 ## Review a deliverable
 
-1. Open a review request and confirm the Issue being reviewed.
-2. Compare the result and attachments with Acceptance criteria. Inspect child results when present.
-3. Select **Accept result** when the criteria are met, and confirm that the Issue becomes Done.
-4. Otherwise select **Request changes**, describe the missing work and expected outcome, then select **Send review**.
+Continue with `ISSUE_ID` from the [task guide](/v2/en/service/issues). Load the result and confirm the Issue is currently `in_review`:
 
-Requesting changes returns the Issue to In progress and records feedback. It **does not start another execution automatically**. Previewing a child Issue does not change the Issue addressed by this review. Resolving a comment thread is also separate from acceptance.
+```bash
+review=$(api "$SERVICE_URL/api/v1/issues/$ISSUE_ID")
+api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/artifacts"
+api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/comments?limit=50"
+printf '%s\n' "$review" | jq '.issue | {title,status,version,acceptanceCriteria}'
+```
 
-If the work changed while you were reading, select Refresh review and inspect the current result before deciding. Your decision about an older result is not silently applied to a newer version.
+Let the user inspect the acceptance criteria, final report, and relevant child results. Once they accept, submit the version they reviewed:
 
-## Decide an approval
+```bash
+api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/accept" --data "$(jq -n \
+  --argjson version "$(jq '.issue.version' <<<"$review")" \
+  '{expectedVersion:$version,reason:"The report and evidence meet the acceptance criteria"}')"
+```
 
-Review the requester, target operation, reason and linked work. Approve or reject the current request and add an explanation when useful. This can resume or fail a waiting execution; it is separate from deciding whether a final deliverable meets its acceptance criteria.
+For requested changes, use `/reject` with `expectedVersion` and an explicit `reason`. Rejection returns work to `in_progress` without automatically executing it again. Follow the [comment and assignment flow](/v2/en/service/issues#assign-existing-work-and-add-input) to ask the owner to continue. Viewing a child or resolving a comment thread does not accept the current Issue.
 
-Interactive tool confirmation in Chat belongs to that conversation and runtime. Do not assume that every such prompt also becomes an Inbox approval.
+On a version conflict, reload the result and let the user reconsider. Do not silently substitute the latest version and repeat an old review decision.
 
-## Organize notifications
+## Decide an execution approval
 
-Archive informational messages after reading them. Archive cannot replace a decision for a Needs action item. Archived messages remain available, and archiving does not delete their Issues or executions.
+An approval may originate from a Workflow's human gate or a runtime operation. Obtain `APPROVAL_ID` from the notification reference or query `GET /api/v1/approvals?tenant=...&namespace=...`. Read the requester, target, and reason first. Only the designated approver may decide:
 
-For access failures, contact the scope or work owner. Administrative identity is not a substitute for authorization to private work.
+```bash
+approval=$(api "$SERVICE_URL/api/v1/approvals/$APPROVAL_ID")
+printf '%s\n' "$approval" | jq .
+```
 
-Next: [Automations](/v2/en/service/automation) · [Accounts and permissions](/v2/en/service/access).
+After the user chooses to approve:
 
-Practice with the [engineering case](/v2/en/service/cases/sdlc-team): inspect the final commit, actual tests, GitHub review, and CI before accepting delivery. Service acceptance and GitHub approval remain separate records.
+```bash
+api "$SERVICE_URL/api/v1/approvals/$APPROVAL_ID/decide" --data "$(jq -n \
+  --argjson version "$(jq '.approval.version' <<<"$approval")" \
+  '{expectedVersion:$version,status:"approved",decision:{reason:"Operation scope reviewed"}}')"
+```
+
+Reject with `status:"rejected"`. The decision may resume or fail waiting execution; it does not accept the final deliverable. Reload expired requests or requests that no longer match the current execution.
+
+Sessions invoked directly through Agent API may use pending session inputs for tool confirmations; see [session input and confirmation](/v2/en/service/session-event-log). Not every session confirmation is an Inbox Approval.
+
+## Reading, archiving, and refreshing
+
+Mark a notification read with `POST /api/v1/inbox/{inboxId}/read`. Archive it with `/archive` when it no longer belongs in the current list. These actions do not delete Issues, cancel execution, or replace decisions. Refresh counts through `/inbox/summary`.
+
+Poll Inbox or refresh it when platform WebSocket notifications arrive. Inbox is a view of the user's pending work, not a complete execution log. Use [SSE and state APIs](/v2/en/service/sse-events) for execution streaming and reconnection.
+
+For the platform UI workflow, see [Console: tasks and feedback](/v2/en/service/console/tasks).

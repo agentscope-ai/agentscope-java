@@ -19,6 +19,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,12 +28,17 @@ import (
 )
 
 type EndpointInvocationFilter struct {
-	EndpointID uuid.UUID
-	RunID      uuid.UUID
-	Mode       controlmodel.EndpointInvocationMode
-	Status     controlmodel.EndpointInvocationStatus
-	ActiveOnly bool
-	Limit      int
+	ConversationID uuid.UUID
+	ApplicationID  uuid.UUID
+	DueBefore      *time.Time
+	EndpointID     uuid.UUID
+	RunID          uuid.UUID
+	Mode           controlmodel.EndpointInvocationMode
+	Status         controlmodel.EndpointInvocationStatus
+	ActiveOnly     bool
+	OldestFirst    bool
+	Offset         int
+	Limit          int
 }
 
 type EndpointRepository interface {
@@ -41,7 +47,7 @@ type EndpointRepository interface {
 	GetBySlug(context.Context, string) (*controlmodel.Endpoint, error)
 	List(context.Context, string, string) ([]*controlmodel.Endpoint, error)
 	Update(context.Context, *controlmodel.Endpoint, int64) (*controlmodel.Endpoint, error)
-	DeployRelease(context.Context, uuid.UUID, controlmodel.EndpointTargetType, uuid.UUID, int64, controlmodel.Actor, string) (*controlmodel.Endpoint, *controlmodel.EndpointRelease, error)
+	DeployRelease(context.Context, uuid.UUID, controlmodel.EndpointTargetType, uuid.UUID, int64, controlmodel.Actor, string, ...json.RawMessage) (*controlmodel.Endpoint, *controlmodel.EndpointRelease, error)
 	GetRelease(context.Context, uuid.UUID, uuid.UUID) (*controlmodel.EndpointRelease, error)
 	ListReleases(context.Context, uuid.UUID) ([]*controlmodel.EndpointRelease, error)
 
@@ -49,12 +55,19 @@ type EndpointRepository interface {
 	ListCredentials(context.Context, uuid.UUID) ([]*controlmodel.EndpointCredential, error)
 	GetCredentialByPrefix(context.Context, uuid.UUID, string) (*controlmodel.EndpointCredential, error)
 	UpdateCredential(context.Context, *controlmodel.EndpointCredential) (*controlmodel.EndpointCredential, error)
+	TouchCredential(context.Context, uuid.UUID, time.Time) error
 	ConsumeRateLimit(context.Context, uuid.UUID, string, int, int, time.Time) (bool, time.Duration, error)
 
 	ReserveInvocation(context.Context, *controlmodel.EndpointInvocation) (*controlmodel.EndpointInvocation, bool, error)
 	GetInvocation(context.Context, uuid.UUID) (*controlmodel.EndpointInvocation, error)
+	GetInvocationByIdempotency(context.Context, uuid.UUID, controlmodel.EndpointInvocationMode, string, string) (*controlmodel.EndpointInvocation, error)
+	CountActiveInvocations(context.Context, EndpointInvocationFilter) (int, error)
+	ClaimInvocationPoll(context.Context, uuid.UUID, time.Time, time.Time) (bool, error)
 	ListInvocations(context.Context, EndpointInvocationFilter) ([]*controlmodel.EndpointInvocation, error)
 	UpdateInvocation(context.Context, *controlmodel.EndpointInvocation) (*controlmodel.EndpointInvocation, error)
+	ScheduleInvocation(context.Context, uuid.UUID, time.Time) error
+	// RecordInvocationTokens monotonically records usage and atomically charges its Application once.
+	RecordInvocationTokens(context.Context, uuid.UUID, int64) error
 
 	CreateConversation(context.Context, *controlmodel.EndpointConversation) (*controlmodel.EndpointConversation, error)
 	GetConversation(context.Context, uuid.UUID) (*controlmodel.EndpointConversation, error)

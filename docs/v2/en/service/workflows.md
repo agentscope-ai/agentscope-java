@@ -1,5 +1,5 @@
 ---
-title: "Workflow: multi-Agent process orchestration"
+title: "Orchestrate Workflows through APIs"
 zh_link: /v2/zh/service/workflows
 ---
 
@@ -7,53 +7,99 @@ zh_link: /v2/zh/service/workflows
 This is preview documentation. The official release is not yet available.
 </Note>
 
-**DESIGN → Workflows** is for work with explicit steps, dependencies and human gates. A definition has an editable draft; publishing creates an immutable revision. Each Run pins a revision, so later edits do not change its topology.
+Use a Workflow when business logic prescribes steps such as “draft a report → approve it → deliver.” Define, publish, and execute the process through APIs. Use a [Team](/v2/en/service/create-team) when its Leader should choose and delegate the steps dynamically. Both can serve as Job Endpoint targets.
 
-## Interface tour
+A Workflow has an editable definition and immutable published revisions. Each Run pins a revision, so editing a draft does not change an existing execution.
 
-<Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/workflows.png" alt="Workflow Design tab and step dependencies" />
-</Frame>
+## Create and validate the process
 
-In **Workflow Design**, inspect steps and dependencies before editing a selected step. Save and validate the draft, then publish a version. **Run Workflow** uses a published version; changing a draft does not update work already running.
+The examples use Bash, `curl`, and `jq`. Set `SERVICE_URL` to your Service address, `TOKEN` to a user Bearer token, and `TENANT` / `NAMESPACE` to your authorized scope; see [API authentication](/v2/en/service/api-reference). Define this request helper:
 
-## Start with one Agent step
+```bash
+api() {
+  curl --fail-with-body --silent --show-error \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H 'Content-Type: application/json' "$@"
+}
+```
 
-1. Create a Workflow, name it and choose the Initial Workflow Agent.
-2. Set the node key and Agent in the designer. Keys must be unique within the Workflow.
-3. Save and validate the draft. Resolve missing targets, unknown references and cycles.
-4. Publish a version. Select it in the execution form, choose a new or existing Issue and supply JSON input.
-5. Inspect the execution graph, node output and Issue result before adding more steps.
 
-## Node types
+Set `AGENT_ID` to a task-capable Agent and `APPROVER_ID` to the reviewer's account identifier. This process drafts a report, then waits for approval:
 
-| Type | Purpose |
+```bash
+defined=$(api "$SERVICE_URL/api/v1/orchestration-definitions" --data "$(jq -n \
+  --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
+  --arg agent "$AGENT_ID" --arg approver "$APPROVER_ID" \
+  '{tenant:$tenant,namespace:$namespace,name:"Report review workflow",
+    draftSpec:{nodes:[
+      {key:"draft",type:"agent",agentId:$agent,input:{request:"run.input.request"}},
+      {key:"review",type:"approval",approval:{approverType:"human",approverRef:$approver,prompt:"Review the report and evidence"}}
+    ],edges:[{from:"draft",to:"review",on:["succeeded"]}]}}')")
+WORKFLOW_ID=$(jq -r '.definition.id' <<<"$defined")
+api "$SERVICE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/validate" --data '{}'
+```
+
+Each node `key` is unique. Edges connect an upstream state to downstream work. `input` maps field names to CEL expressions; here it passes the request's `request` field to the draft node. Expressions can read `run`, `issue`, `trigger`, and predecessor `nodes`, rather than execute arbitrary scripts. Validation checks types, references, expressions, and cycles; verify target availability separately.
+
+## Publish and start execution
+
+Publish the validated definition and save the revision ID. To edit later, call `PATCH /api/v1/orchestration-definitions/{definitionId}` with `draftSpec` and `expectedVersion`, then publish again.
+
+```bash
+published=$(api "$SERVICE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/publish" \
+  --data "$(jq -n --argjson version "$(jq '.definition.version' <<<"$defined")" \
+  '{expectedVersion:$version}')")
+REVISION_ID=$(jq -r '.revision.id' <<<"$published")
+started=$(api "$SERVICE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/runs" \
+  --data "$(jq -n --arg revision "$REVISION_ID" \
+  '{revisionId:$revision,idempotencyKey:"weekly-report-001",
+    input:{request:"Summarize this weeks Workspace material into a report with sources"},
+    issue:{title:"Weekly project report",description:"Deliver the reviewed report",access:{mode:"private"}}}')")
+RUN_ID=$(jq -r '.run.id' <<<"$started")
+ISSUE_ID=$(jq -r '.run.rootIssueId' <<<"$started")
+```
+
+Use `issue` to create work alongside execution, or `issueId` to attach existing work; supply exactly one. Reuse `idempotencyKey` when retransmitting the same submission. Save both IDs to follow execution and business acceptance separately.
+
+## Follow nodes, output, and approval
+
+```bash
+api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID"
+api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID/graph"
+api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID/events?after=0&limit=200"
+```
+
+Details include `run.state`, output, and failure information. The graph includes nodes, tasks, attempts, and child runs. Events are a JSON history query ordered by `sequence`; use the last processed sequence as the next `after`. This is not SSE. When exposing the process through an Endpoint, applications can follow the Invocation's [SSE stream](/v2/en/service/sse-events).
+
+The review node creates an approval for the designated user to decide through the [Approval API](/v2/en/service/inbox#decide-an-execution-approval). Node approval permits the process to proceed, while final Issue review accepts the business deliverable. Subsequent publication or external modifications still require the executing Agent's tools and permissions.
+
+## Add process capabilities gradually
+
+| Node | Purpose and key fields |
 | --- | --- |
-| agent | Execute with one Agent |
-| team | Delegate to a Team |
-| condition | Choose a path using CEL conditions |
-| join | Join branches according to the configured dependency policy |
-| approval | Wait for a designated reviewer |
-| timer | Wait for a duration |
-| signal | Wait for a named external signal |
-| subrun | Invoke a pinned, published Workflow revision |
+| `agent` / `team` | Execute an Agent or Team through `agentId` / `teamRef` |
+| `condition` | Evaluate `condition`; edges can also specify conditions |
+| `join` | Join using `join.mode`: `all`, `any`, or `quorum` |
+| `approval` | Designate a reviewer with `approval.approverRef` |
+| `timer` | Wait with `timer.durationSeconds` or `timer.at` |
+| `signal` | Wait for the named `signalName` |
+| `subrun` | Invoke a pinned `definitionRevisionId` |
 
-For “draft → human approval → publication preparation,” connect agent, approval and agent nodes. Approval permits the next step; the Agent still needs actual tools and authorization for external operations.
+After adding a signal node waiting for `report.ready`, a business system can send:
 
-## Map data and validate
+```bash
+api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID/signals/report.ready" \
+  --data '{"idempotencyKey":"report-upload-001","payload":{"artifactId":"YOUR_ARTIFACT_ID"}}'
+```
 
-Input mapping associates input names with CEL expressions such as `run.input.request`. Expressions can reference run input, variables, Issue, trigger and predecessor status, output and artifacts. Inspect real node output before mapping downstream fields.
+Signals provide external process input; they do not replace approval. Run small examples and inspect real output before writing downstream mappings. Different runtimes do not necessarily return identical result structures.
 
-CEL is a restricted expression language, not an arbitrary script runner. Workflows must be acyclic, and subruns pin a revision. Graphical and JSON editors modify the same definition; both require server-side validation before publication.
+## Pause, cancel, and rerun
 
-## Control execution
+`POST /api/v1/orchestration-runs/{runId}/pause` stops new node dispatch while running steps may still return. `/resume` resumes scheduling; `/cancel` requests cancellation of nodes, tasks, and child runs without deleting or accepting the Issue. Use `{}` as the request body.
 
-Pause prevents new node dispatch while running steps can still return results. Resume restarts dispatch. Cancel requests cancellation of nodes, tasks and subruns without accepting or deleting the Issue.
+After a terminal state, post `{"idempotencyKey":"weekly-report-retry-001"}` to `/rerun` to create a new Run with lineage. Include `input` to replace the input. Nodes support `timeoutSeconds`, `retry`, and `failurePolicy`, including `fail_fast`, `continue`, and `partial_success`. Retries do not undo existing external side effects.
 
-Rerun after a terminal state creates a new Run with lineage. Choose `fail_fast`, `continue` or `partial_success` according to whether partial output meets the business goal. Do not expect automatic compensation of external side effects.
-
-## Expose the process
-
-Select a specific revision when publishing an Endpoint. Publishing a new Workflow revision alone does not switch callers; update the Endpoint release and verify the invoked revision.
-
-Next: [Endpoint integration](/v2/en/service/endpoints) · [Execution states](/v2/en/service/sessions).
+Publish through the [Endpoint API](/v2/en/service/endpoints) with `targetType:"orchestration_revision"` and a specific revision ID. Publishing another Workflow revision requires an Endpoint release update before callers switch to it. See [Console: Teams and orchestration](/v2/en/service/console/orchestration) for designer and execution-graph operations.

@@ -21,7 +21,7 @@ en_link: /v2/en/service/troubleshooting
 | 刷新后历史丢失 | 是否误用了 memory 存储、数据库与原卷是否一致 |
 | OAuth 回调失败 | 公开 origin、平台回调 URL、HTTPS 可达性 |
 | Runtime Host 离线 | provider 是否安装可运行、Host 凭据、网络和 daemon 日志 |
-| SDK gRPC 连接失败 | 当前部署是否启用 Kubernetes-native ASDP，端口是否正确 |
+| SDK gRPC 连接失败 | 当前部署是否启用 ASDP、传输选择和端口是否正确；HTTP worker 无需访问 gRPC 端口 |
 
 ## 获取组件日志
 
@@ -49,9 +49,25 @@ Gateway 正常不代表模型或工具执行正常。Managed 会话故障查看 
 
 先查询已有 Delivery/Invocation 的状态。保持同一逻辑请求的幂等键和内容，只有新的业务请求才使用新 key。事件被过滤看 trigger 的 event 配置；请求被拒绝看认证头和 schema。SSE 断线后优先查询返回的 statusUrl。
 
+## 统一服务 API 调用排障
+
+先保存 invocationId、endpointId/releaseId、请求幂等键和错误码。使用 `GET /invoke/v1/invocations/{id}` 查看整体结果，`/snapshot` 恢复视图，`/capabilities` 检查当前允许的命令。
+
+| 现象 | 核对方法 |
+| --- | --- |
+| 创建 Endpoint 后没有 key | 先创建 Application，再 POST Endpoint credentials；显式提供 applicationId 和 scopes |
+| 401/403 | 检查 Endpoint 的 platform/api_key 策略、Application 状态与 scope、待办指定审批人 |
+| 409 | 区分资源版本冲突、幂等键内容不一致、目标能力不匹配或活动 Conversation 冲突 |
+| 输入命令已接收但没生效 | 查询返回的 command 状态；持久接收不代表模型已消费 |
+| SSE 返回 410/cursor_expired | 重新读取 snapshot 替换界面，再从新的 as_of 继续；不重发任务 |
+| 某个成员完成但调用仍运行 | 检查 Invocation 与 steps，不把成员结果当成根工作终态 |
+| 恢复按钮不可用 | 按 available_commands 展示；并非所有后端支持 resume，公共 API 不支持 checkpoint restore |
+
+`/api/v1/events` 是 WebSocket 刷新通知，不能替代持久 Invocation SSE。具体请求和响应字段见[统一服务 API](/v2/zh/service/service-api)。
+
 ## Agent API 与 SSE
 
-先保存 session ID、turn ID、最近事件 ID、HTTP 状态码和脱敏错误。区分页面连接、任务执行和上下文恢复：
+以下针对 Managed 原生会话。先保存 session ID、turn ID、最近事件 ID、HTTP 状态码和脱敏错误。区分页面连接、任务执行和上下文恢复：
 
 | 现象 | 处理方式 |
 | --- | --- |

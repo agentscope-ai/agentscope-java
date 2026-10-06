@@ -85,9 +85,15 @@ Scenario tutorials live in `v2/{en,zh}/service/cases/`; downloadable inputs live
 serves them as static downloads; guides specify the executable or JSON filename
 to use after saving. Each case must have fixed inputs, explicit acceptance criteria,
 and a distinction between expected output and observed execution. Keep both
-languages and the functional-guide links aligned. Current cases cover an all-Hosted GitHub development cycle, an External
-fulfillment Team built with AgentScope, and a Managed presales Team with mixed
-execution extensions.
+languages and the functional-guide links aligned. The use-case entry page organizes
+application patterns around triggers, API calls, delivery, and acceptance: in-product
+file generation, code repair, document verification, conversations, recurring work,
+and specialist services called by other Agents. Each pattern has its own detailed
+bilingual tutorial and fixed request data. Managed,
+External, Hosted, Team, and Workflow remain implementation choices. Distinguish
+industry evidence, expected fixture outputs, and actual AgentScope execution records.
+Retired team-oriented tutorial URLs redirect to the corresponding new case or the
+use-case index; do not restore those tutorials as a second scenario taxonomy.
 
 From `docs/`, validate the local code and JSON fixtures with Python 3 and JDK 17+:
 
@@ -95,13 +101,13 @@ From `docs/`, validate the local code and JSON fixtures with Python 3 and JDK 17
 python3 scripts/check-service-examples.py
 ```
 
-The order-query starting file intentionally fails three of five acceptance checks.
-The checker compiles it in a temporary directory with `javac --release 17`, verifies
-that baseline, applies a reference repair only in the copy, and checks the repaired
-result. It also checks the fulfillment JSON and presales source paths. Do not fix
-the published starting file or commit generated classes and logs. This check does
-not run GitHub, models, enterprise APIs, or Service scenarios. The fulfillment
-fixture is data for application tool development, not a bundled business server.
+The incident-repair Java fixture intentionally fails three of five acceptance checks.
+The checker compiles it in a temporary directory, verifies the baseline, applies a
+reference repair only in that copy, and checks the repaired result. It also checks
+six API request fixtures, source versions, the document-verification contradiction,
+conversation ownership data, and Bash syntax in all twelve case pages. It does not
+execute network commands or run models, GitHub, business APIs, or Service. Do not
+fix the published starting code or commit generated classes and logs.
 
 For an actual scenario walkthrough, record Service and SDK/provider versions,
 configuration choices, input data, Issue/Run/Invocation IDs, artifacts, observed

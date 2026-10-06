@@ -30,23 +30,23 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.observation.ActionObservation;
 import io.agentscope.core.observation.ActionObserver;
-import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 class HarnessActionObservationTest {
     @TempDir Path workspace;
-    @TempDir Path stateDirectory;
 
     @Test
     void defaultHarnessPersistsBeforePublishingSettledEvent() {
@@ -74,14 +74,14 @@ class HarnessActionObservationTest {
                                         "stop")));
         var toolkit = new Toolkit();
         toolkit.registerTool(new Probe());
-        var store = new JsonFileAgentStateStore(stateDirectory);
-        var reader = new StateStoreActionObserver(store);
+        var store = new WorkspaceSessionLogStore(new LocalFilesystem(workspace));
+        var context = RuntimeContext.builder().userId("user").sessionId("session").build();
         try (var agent =
                 HarnessAgent.builder()
                         .name("observed")
                         .model(model)
                         .workspace(workspace)
-                        .stateStore(store)
+                        .sessionLogStore(store)
                         .toolkit(toolkit)
                         .build()) {
             var events =
@@ -91,10 +91,7 @@ class HarnessActionObservationTest {
                                                     .role(MsgRole.USER)
                                                     .textContent("go")
                                                     .build()),
-                                    RuntimeContext.builder()
-                                            .userId("user")
-                                            .sessionId("session")
-                                            .build())
+                                    context)
                             .doOnNext(
                                     event -> {
                                         if (event instanceof CustomEvent custom
@@ -104,13 +101,36 @@ class HarnessActionObservationTest {
                                                         .equals(custom.getValue().get("status"))) {
                                             String actionId =
                                                     (String) custom.getValue().get("action_id");
+                                            var log = agent.getDelegate().sessionLog(context);
                                             var record =
-                                                    reader.load("user", "session", actionId, false)
+                                                    StreamSupport.stream(
+                                                                    log.scan(0, log.head().seq())
+                                                                            .spliterator(),
+                                                                    false)
+                                                            .filter(
+                                                                    entry ->
+                                                                            entry.type()
+                                                                                    .equals(
+                                                                                            "action/end"))
+                                                            .map(entry -> entry.data())
+                                                            .filter(
+                                                                    data ->
+                                                                            actionId.equals(
+                                                                                    ((Map<?, ?>)
+                                                                                                    data
+                                                                                                            .get(
+                                                                                                                    "observation"))
+                                                                                            .get(
+                                                                                                    "actionId")))
+                                                            .findFirst()
                                                             .orElseThrow();
                                             assertEquals(
-                                                    ActionObservation.Status.RETURNED,
-                                                    record.observation().status());
-                                            assertEquals("call", record.result().getId());
+                                                    "RETURNED",
+                                                    ((Map<?, ?>) record.get("observation"))
+                                                            .get("status"));
+                                            assertEquals(
+                                                    "call",
+                                                    ((Map<?, ?>) record.get("result")).get("id"));
                                         }
                                     })
                             .collectList()

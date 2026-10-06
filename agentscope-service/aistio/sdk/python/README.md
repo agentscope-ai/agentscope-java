@@ -12,9 +12,13 @@ Python 3.9+ is required by the package metadata. grpcio and protobuf constraints
 
 ## Choose a transport before connecting
 
-The complete Service Compose/Helm deployment runs standalone HTTP mode without ASDP gRPC. Framework instrumentation requiring ASDP needs a Kubernetes-native Aistio installation and a reachable gRPC listener. Do not use the public HTTP port as a gRPC address. The control plane must also reach your application's advertised HTTP contract endpoint.
+Standard Service deployments support outbound HTTP execution: `instrument(..., control_plane_http=base, transport="http")`. The worker registers using its bootstrap credential, then uses its scoped registration credential at `/api/v1/agent-runtime/exchange`. Commands are acknowledged after acceptance; event batches retain their durable journal until the separate event ACK. No inbound worker port is needed; set `start_http=False` when the optional observation contract server is not used.
 
-See the [AgentScope Service documentation](https://java.agentscope.io/v2/en/service/integrations.html) and the examples in this package's source tree for integration paths. Service image versions and SDK package versions are independent; use the matching release manifest.
+`transport="grpc"` selects ASDP for deployments with a reachable gRPC listener; pass `control_plane="host:port"`. The legacy parameter name `start_grpc=False` disables either selected push transport and its advertised execution/reporting capabilities. It is only useful for standalone observation. Do not use an HTTP port as a gRPC address.
+
+`ServiceClient` provides snapshot, paginated events, SSE, capabilities, commands, actions, usage, artifacts and webhooks. `ManagementClient` provides Applications, Agents, Teams, Workflow definitions, runtime policies, Endpoints, releases and credentials. Management uses a platform token; invocation uses an application API key or an authorized platform token. API keys require an Application and explicit scopes.
+
+See `../../examples/service-api/README.md` for a complete API-only bootstrap and reconnect/approval flow. `AsyncInvokeAdapter` and `AgentScopeRunnerAdapter` execute fresh framework instances with explicit input mapping. Automatic framework detection selects observation adapters, not execution runners.
 
 ## Develop
 
@@ -25,3 +29,5 @@ python -m build
 ```
 
 Licensed under Apache-2.0; see `LICENSE`.
+
+Event journal records are limited to 16 MiB. HTTP batches target 16 MiB and requests allow 32 MiB; gRPC messages allow 32 MiB. Oversized execution events raise explicitly rather than truncating. Store large tool output as an artifact and emit its reference.

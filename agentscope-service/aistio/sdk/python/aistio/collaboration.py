@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
@@ -75,9 +76,27 @@ class CollaborationClient:
     def respond(self, task_id: str, task_token: str, content: str, *, parent_id: str | None = None, mentions: list[dict[str, str]] | None = None) -> dict[str, Any]:
         return self._task_send("POST", task_id, "respond", task_token, {"content": content, "parentId": parent_id, "mentions": mentions or [], "type": "result"}, "task.respond")
 
-    def complete(self, task_id: str, task_token: str, *, summary: str = "", result: Any = None, processed_input_ids: list[str] | None = None, deferred_input_ids: list[str] | None = None, expected_version: int = 0) -> dict[str, Any]:
+    def complete(self, task_id: str, task_token: str, *, summary: str = "", result: Any = None, processed_input_ids: list[str] | None = None, deferred_input_ids: list[str] | None = None, expected_version: int = 0, outcome: str = "") -> dict[str, Any]:
         body = {"summary": summary, "result": result or {}, "processedInputIds": processed_input_ids or [], "deferredInputIds": deferred_input_ids or [], "expectedVersion": expected_version}
+        if outcome:
+            body["outcome"] = outcome
         return self._task_send("POST", task_id, "complete", task_token, body, "task.complete")
+
+    def call_tool(self, task_token: str, name: str, arguments: dict[str, Any]) -> Any:
+        """Use the task-scoped MCP API; it never grants sibling-issue write access."""
+        response = self._send("POST", "/mcp/collaboration", {
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        }, operation=name, headers={"X-Agent-Task-Token": task_token})
+        if response.get("error"):
+            raise RuntimeError(str(response["error"]))
+        result = response.get("result", {})
+        if result.get("isError"):
+            raise RuntimeError(str(result.get("structuredContent", result.get("content"))))
+        return result.get("structuredContent", result)
+
+    def accept_current_issue(self, task_token: str, reason: str) -> Any:
+        return self.call_tool(task_token, "issue.accept", {"reason": reason})
 
     def fail(self, task_id: str, task_token: str, code: str, message: str, *, expected_version: int = 0) -> dict[str, Any]:
         return self._task_send("POST", task_id, "fail", task_token, {"code": code, "message": message, "expectedVersion": expected_version}, "task.fail")
@@ -134,12 +153,40 @@ class CollaborationClient:
             request_headers["Content-Type"] = "application/json"
             data = json.dumps(body).encode()
         request = Request(self.base_url.rstrip("/") + path, data=data, headers=request_headers, method=method)
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                raw = response.read()
-                return json.loads(raw) if raw else {}
-        except HTTPError as exc:
-            raise CollaborationError(operation, exc.code, exc.read().decode(errors="replace")) from exc
+        # Read-only calls may cross a brief control-plane restart. All attempts
+        # and backoff share this timeout; writes require operation-specific
+        # idempotency and are never retried here.
+        deadline = time.monotonic() + self.timeout
+        delay = 0.1
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"{operation} exceeded its {self.timeout:g}s timeout")
+            try:
+                with urlopen(request, timeout=remaining) as response:
+                    raw = response.read()
+                    return json.loads(raw) if raw else {}
+            except HTTPError as exc:
+                try:
+                    error = CollaborationError(operation, exc.code, exc.read().decode(errors="replace"))
+                finally:
+                    exc.close()
+                if method != "GET" or exc.code not in {500, 502, 503, 504}:
+                    raise error from exc
+                if not self._wait_for_read_retry(deadline, delay):
+                    raise error from exc
+            except (URLError, TimeoutError):
+                if method != "GET" or not self._wait_for_read_retry(deadline, delay):
+                    raise
+            delay = min(delay * 2, 1.0)
+
+    @staticmethod
+    def _wait_for_read_retry(deadline: float, delay: float) -> bool:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(delay, remaining))
+        return time.monotonic() < deadline
 
     def _send_bytes(self, method: str, path: str, body: bytes, *, operation: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
         request = Request(self.base_url.rstrip("/") + path, data=body, headers=self._headers(headers), method=method)

@@ -52,8 +52,18 @@ Leader 根据上下文选择成员。需要固定节点顺序、条件和汇合�
 
 人工验收需要检查最终结果、重要来源和失败说明，再接受结果或要求修改。查看 Run succeeded/partial_succeeded 时也要核对业务验收要求。
 
+## 通过 API 观察一次协作
+
+业务提交先得到 Issue ID，再通过 `GET /api/v1/orchestration-runs?tenant=...&namespace=...&issueId=...` 查询关联 Run。`GET /api/v1/orchestration-runs/{runId}/graph` 一次返回 `run`、`nodes`、`edges`、`tasks`、`attempts` 及可选 `childRuns`，适合构建业务侧任务地图。
+
+`GET /api/v1/orchestration-runs/{runId}/events?after=0&limit=200` 返回 `{events}`；事件的 `sequence` 是下一次 `after` 的游标，`nodeId`、`agentTaskId`、`attemptId` 关联具体执行。它是持久事件的 JSON 查询；平台 `/api/v1/events` WebSocket 只是刷新通知。已发布服务的调用方优先使用 [Invocation snapshot 与 SSE](/v2/zh/service/service-api)，避免把内部编排结构当作稳定的应用协议。
+
+Run 暂停、继续和取消分别调用 `/pause`、`/resume`、`/cancel`。这些控制作用于执行，不能代替 Issue 的验收。状态、重试层次和 Session 关联见[执行 API 参考](/v2/zh/service/sessions)。
+
 ## 扩展与恢复
 
 新增成员前先单独验证它的能力，再检查 Leader 是否能正确使用该角色。混合 Managed、Hosted、External 时，用[成员配置](/v2/zh/service/team-configuration)中的检查条件逐个验收。
 
 恢复依赖持久工作和执行状态；Runtime fresh fallback 重建上下文，不迁移旧进程。排障时沿 Issue → Run → Node → Task → Attempt 检查：未派发看就绪度与策略，执行卡住看后端与确认请求，交付未结束看成员义务和协调节点状态。
+
+操作示例见 [Team API 指南](/v2/zh/service/create-team)，页面诊断见[控制台：团队与编排](/v2/zh/service/console/orchestration)。

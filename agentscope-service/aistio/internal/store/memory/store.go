@@ -97,6 +97,7 @@ type Store struct {
 	issueExternalRefs     map[string]*controlmodel.IssueExternalRef
 	commentExternalRefs   map[uuid.UUID]*controlmodel.CommentExternalRef
 	externalLinks         map[uuid.UUID]*controlmodel.ExternalLink
+	applications          map[uuid.UUID]*controlmodel.Application
 	endpoints             map[uuid.UUID]*controlmodel.Endpoint
 	endpointReleases      map[uuid.UUID]*controlmodel.EndpointRelease
 	endpointCredentials   map[uuid.UUID]*controlmodel.EndpointCredential
@@ -182,6 +183,7 @@ func Open(_ context.Context, cfg store.Config) (store.Store, error) {
 		issueExternalRefs:     make(map[string]*controlmodel.IssueExternalRef),
 		commentExternalRefs:   make(map[uuid.UUID]*controlmodel.CommentExternalRef),
 		externalLinks:         make(map[uuid.UUID]*controlmodel.ExternalLink),
+		applications:          make(map[uuid.UUID]*controlmodel.Application),
 		endpoints:             make(map[uuid.UUID]*controlmodel.Endpoint),
 		endpointReleases:      make(map[uuid.UUID]*controlmodel.EndpointRelease),
 		endpointCredentials:   make(map[uuid.UUID]*controlmodel.EndpointCredential),
@@ -385,3 +387,5 @@ func cloneSession(s *store.Session) *store.Session {
 func nextID(counter *int64) int64 {
 	return atomic.AddInt64(counter, 1)
 }
+
+func (s *Store) Applications() store.ApplicationRepository { return &applicationRepo{s} }

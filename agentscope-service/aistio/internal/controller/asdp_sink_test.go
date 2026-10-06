@@ -28,6 +28,7 @@ import (
 
 	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/store/memory"
 )
@@ -91,7 +92,7 @@ func TestApplyExecutionAttemptReportRequiresSelectedTenantInstance(t *testing.T)
 		t.Run(tc.name, func(t *testing.T) {
 			err := sink.ApplyExecutionAttemptReport(ctx, tc.tenant, "ns-a", agent.ID.String(), catalogBinding.ID.String(), tc.instance, selected.Generation,
 				attempt.ID, task.ID, task.OrchestrationRunID, task.RunNodeID, attempt.DispatchGeneration,
-				"start", nil, "", nil, nil, nil, "", "", "")
+				"start", nil, "", nil, nil, nil, "", "", "", "")
 			if !errors.Is(err, store.ErrNotFound) {
 				t.Fatalf("expected not found, got %v", err)
 			}
@@ -99,7 +100,7 @@ func TestApplyExecutionAttemptReportRequiresSelectedTenantInstance(t *testing.T)
 	}
 	if err := sink.ApplyExecutionAttemptReport(ctx, "tenant-a", "ns-a", agent.ID.String(), catalogBinding.ID.String(), "instance-a", selected.Generation,
 		attempt.ID, task.ID, task.OrchestrationRunID, task.RunNodeID, attempt.DispatchGeneration,
-		"start", nil, "", nil, nil, nil, "", "", ""); err != nil {
+		"start", nil, "", nil, nil, nil, "", "", "", ""); err != nil {
 		t.Fatalf("selected instance report rejected: %v", err)
 	}
 	started, err := st.Collaboration().GetAgentTask(ctx, task.ID)
@@ -301,10 +302,13 @@ func TestApplyConversationTurnReportRequiresFrozenRuntimeIdentity(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	endpoint.ResultMapping = json.RawMessage(`{"message":"/answer"}`)
+	endpoint.OutputSchema = json.RawMessage(`{"type":"object","required":["message"]}`)
+	contract, _ := json.Marshal(map[string]any{"endpoint": endpoint})
 	turnID := uuid.New()
 	invocation, _, err := st.Endpoints().ReserveInvocation(ctx, &controlmodel.EndpointInvocation{EndpointID: endpoint.ID,
 		Mode: controlmodel.EndpointConversationMode, PrincipalRef: "caller", Status: controlmodel.EndpointInvocationDispatching,
-		ConversationID: &conversation.ID, TurnID: &turnID, SessionID: session.SessionID, CorrelationID: "corr-1"})
+		ConversationID: &conversation.ID, TurnID: &turnID, SessionID: session.SessionID, CorrelationID: "corr-1", Contract: contract})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,8 +329,26 @@ func TestApplyConversationTurnReportRequiresFrozenRuntimeIdentity(t *testing.T) 
 		t.Fatalf("valid report rejected: %v", err)
 	}
 	stored, err := st.Endpoints().GetInvocation(ctx, invocation.ID)
-	if err != nil || stored.Status != controlmodel.EndpointInvocationCompleted || stored.CompletedAt == nil {
-		t.Fatalf("invocation not completed: invocation=%+v err=%v", stored, err)
+	if err != nil || stored.Status != controlmodel.EndpointInvocationCompleted || stored.CompletedAt == nil || string(stored.Result) != `{"message":"ok"}` {
+		t.Fatalf("invocation not completed with published result: invocation=%+v err=%v", stored, err)
+	}
+	for _, action := range []string{"completed", "started", "accepted"} {
+		report.Action = action
+		if err = sink.ApplyConversationTurnReport(ctx, identity, report); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stored, _ = st.Endpoints().GetInvocation(ctx, invocation.ID)
+	if stored.Status != controlmodel.EndpointInvocationCompleted {
+		t.Fatal("late report reverted terminal state")
+	}
+	events, _, _, err := (serviceapi.Journal{Store: st, Tenant: identity.Tenant, InvocationID: invocation.ID}).Events(ctx, "", 100)
+	if err != nil || len(events) != 2 || events[0].Type != "invocation.accepted" || events[1].Type != "execution.ended" {
+		t.Fatalf("lifecycle should commit once before terminal projection: %+v %v", events, err)
+	}
+	observerEvents, err := st.Events().List(ctx, session.ID)
+	if err != nil || len(observerEvents) != 0 {
+		t.Fatal("lifecycle must not consume observer session sequences")
 	}
 }
 

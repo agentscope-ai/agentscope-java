@@ -65,7 +65,7 @@ The chosen scope materializes differently per filesystem mode (path prefix on lo
 
 > IsolationScope selects the Filesystem bucket. Native history additionally uses `(userId, stableAgentId, sessionId)`; legacy AgentStateStore uses `(userId, sessionId)`. Migrate data when changing routing or backends.
 
-A single `HarnessAgent` instance can serve thousands of concurrent users with zero cross-user data leakage.
+For multi-user applications, share a Builder and build an Agent per request. Configure identities, isolation and authorization explicitly; see [Instance lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle).
 
 **4. Workspace decouples from filesystem.** The same directory layout lands in one of three places: local disk, shared KV store (Redis / JDBC), or sandbox container. This decoupling is what lets you switch deployment shape without touching agent code. See [Filesystem](/v2/en/docs/harness/filesystem) for the three modes.
 
@@ -191,7 +191,7 @@ the request. MEMORY.md is excluded when both memory tools and hooks are disabled
 Knowledge loads the entry and index; other files are read on demand.
 
 Write ordinary Markdown in AGENTS.md. Files are not automatically refreshed within a call;
-the next call reloads them. See [Context construction](/v2/en/docs/harness/context)
+the next call reloads them. See [Context management](/v2/en/docs/harness/context)
 for message examples, dynamic sources and budgeting.
 
 ### Two-layer reads (filesystem-first + local fallback)
@@ -211,7 +211,7 @@ This pattern earns its keep in **shared-store mode**: the first replica starts w
 
 ### Override precedence with multiple users sharing one workspace
 
-`RuntimeContext.userId` is the multi-user key — it lets one agent instance serve many users without crosstalk.
+`RuntimeContext.userId` identifies the current user. Each request instance built from the shared Builder uses it to select the corresponding workspace data.
 
 For **runtime data** (sessions / tasks / memory), the framework prefixes paths via the configured `NamespaceFactory` (local-mode → path prefix, remote-mode → KV namespace, sandbox-mode → state slot). Details in the next section, "How runtime data and memory are stored".
 
@@ -233,7 +233,7 @@ When called with `RuntimeContext.userId="alice"`, the framework looks in `alice/
 
 #### One agent logic, customized per user
 
-This override mechanism is what lets a **single `HarnessAgent` instance behave like a different agent for every tenant** — without forking code or spinning up separate deployments. You ship one binary, one agent definition; each user gets their own slice on top:
+One Agent definition can serve multiple tenants. Each request instance built from the shared Builder loads workspace configuration for its user. You maintain one binary and common definition, with per-user customization on top:
 
 | Per-user layer | What it customizes | Resolution |
 |----------------|--------------------|------------|
@@ -361,7 +361,7 @@ Beyond its static definition, the workspace is where the agent's *accumulated ex
 | **Long-term memory** | `MEMORY.md` + `memory/YYYY-MM-DD.md` | `.compaction(...)` | `MemoryFlushMiddleware` extracts facts from the conversation prefix before compaction; a throttled background task merges + dedups them into `MEMORY.md`, reloaded as reference material on the next call | [Memory](/v2/en/docs/harness/memory) |
 | **Self-learning skills** | `skills/`, `skills/_drafts/`, `skills/.archive/` | `.enableSkillManageTool(...)` | the agent calls `propose_skill` to draft a skill from a working pattern → an optional promotion gate approves it → a background curator marks unused skills stale (30d) and archives them (90d) | [Skills — Self-learning loop](/v2/en/docs/harness/skill#self-learning-loop-optional) |
 | **Plans** | `plans/PLAN.md` | `.enablePlanMode()` | a read-only planning phase writes the plan via `plan_write`; it persists across calls and drives the execution phase, decoupling intent from action | [Plan Mode](/v2/en/docs/harness/plan-mode) |
-| **Offloaded tool results** | the eviction directory under the workspace | `.toolResultEviction(...)` | when a single tool result exceeds the threshold (default 80K chars), the full output is written to disk and the in-context message is replaced with a head/tail preview + a `read_file` pointer | [Compaction](/v2/en/docs/harness/compaction) |
+| **Offloaded tool results** | the eviction directory under the workspace | `.toolResultEviction(...)` | when a single tool result exceeds the threshold (default 80K chars), the full output is written to disk and the in-context message is replaced with a head/tail preview + a `read_file` pointer | [Context management](/v2/en/docs/harness/context) |
 | **Session logs** | Reserved Filesystem partition / custom SessionLogStore; compatibility JSONL also retained | EVENT_LOG by default | Execution facts and native message history; existing index supports discovery | [Session logs](/v2/en/docs/harness/session-log) |
 
 Memory, skills, plans and offloaded results follow Workspace isolation/routing. Native history additionally requires atomic storage and reserves its commit structure; compatibility JSONL cannot replace full execution records.

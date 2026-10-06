@@ -70,6 +70,8 @@ class EventJournal:
 
     def append(self, event: "asdp_pb2.SessionEventMsg") -> None:
         payload = event.SerializeToString()
+        if len(payload) > _MAX_RECORD_BYTES:
+            raise ValueError("session event exceeds the 16 MiB journal limit; publish large tool output as an artifact")
         with self._path.open("ab", buffering=0) as output:
             output.write(struct.pack(">I", len(payload)))
             output.write(payload)
@@ -79,6 +81,12 @@ class EventJournal:
 
     def first(self, limit: int) -> List["asdp_pb2.SessionEventMsg"]:
         return list(self._pending[:limit])
+
+    def has_pending(self, session_id: str, through_seq: int) -> bool:
+        return any(
+            event.session_id == session_id and event.seq <= through_seq
+            for event in self._pending
+        )
 
     def acknowledge(self, committed: Dict[str, int]) -> None:
         if not committed:

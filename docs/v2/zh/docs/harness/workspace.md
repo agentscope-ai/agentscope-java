@@ -63,7 +63,7 @@ en_link: /v2/en/docs/harness/workspace
 
 > `IsolationScope` 决定 Filesystem 分桶。原生日志在桶内继续以 `(userId, stableAgentId, sessionId)` 隔离；旧 AgentStateStore 以 `(userId, sessionId)` 寻址。改变 scope 或日志后端前应迁移数据。
 
-单个 `HarnessAgent` 实例可服务数千并发用户，用户间数据零泄漏。
+多用户应用推荐共享 Builder、每请求创建 Agent；用户和会话身份、隔离范围与访问权限由应用明确配置，见[实例生命周期](/v2/zh/docs/building-blocks/agent#实例生命周期)。
 
 **4. 工作区与 filesystem 解耦。** 同一份目录布局可以落在三种地方：本机磁盘、共享 KV 存储（Redis / JDBC）、沙箱容器。这是 `HarnessAgent` 能"代码不动、部署形态切换"的根因。详细见 [filesystem](/v2/zh/docs/harness/filesystem) 的三种模式。
 
@@ -186,7 +186,7 @@ MEMORY.md 在记忆工具和 Hooks 都关闭时不加载。
 
 AGENTS.md 不需要 XML 标签。同一次 call 内文件变化不自动刷新；
 下一次 call 重新加载。消息示例、动态业务来源及预算设置见
-[上下文构建](/v2/zh/docs/harness/context)。
+[上下文管理](/v2/zh/docs/harness/context)。
 
 ### 两层读架构（filesystem-first + 本地兜底）
 
@@ -205,7 +205,7 @@ AGENTS.md 不需要 XML 标签。同一次 call 内文件变化不自动刷新�
 
 ### 多用户同一工作区时的覆盖优先级
 
-`RuntimeContext.userId` 是切多用户的钥匙——让同一个 agent 实例服务多个用户而互不串读。
+`RuntimeContext.userId` 用于标识当前用户；共享 Builder 构建的各请求实例通过它选择对应的工作区数据。
 
 对**运行时数据**（sessions / tasks / memory），框架按 `NamespaceFactory` 配的命名空间给路径加前缀（本机模式是路径前缀、远端模式是 KV 命名空间、沙箱模式是状态 slot）。详见下一节"运行时数据与 Memory 怎么存"。
 
@@ -227,7 +227,7 @@ workspace/
 
 #### 同一套 agent 逻辑，按用户定制
 
-这套覆盖机制正是让**单个 `HarnessAgent` 实例对每个租户表现得像一个不同的 agent** 的根本——不用 fork 代码、不用多套部署。你只交付一份二进制、一份 agent 定义；每个用户在共享底座之上拿到属于自己的那一层：
+同一份 Agent 定义可以服务多个租户：共享 Builder 构建请求实例后，工作区按用户身份加载对应配置。你只需维护一份二进制和公共定义，每个用户可以在此基础上定制自己的内容：
 
 | 用户级层 | 定制什么 | 解析方式 |
 |---------|---------|---------|
@@ -355,7 +355,7 @@ workspace/
 | **长期记忆** | `MEMORY.md` + `memory/YYYY-MM-DD.md` | `.compaction(...)` | 压缩前 `MemoryFlushMiddleware` 从对话前缀抽取事实；后台节流任务合并去重写回 `MEMORY.md`，下一次 call 重新加载 | [记忆](/v2/zh/docs/harness/memory) |
 | **自学习技能** | `skills/`、`skills/_drafts/`、`skills/.archive/` | `.enableSkillManageTool(...)` | agent 调 `propose_skill` 从有效模式起草技能 → 可选审批闸门放行 → 后台 curator 把长期未用的标记为 stale（30 天）并归档（90 天） | [技能 — 自学习闭环](/v2/zh/docs/harness/skill#自学习闭环可选) |
 | **计划文件** | `plans/PLAN.md` | `.enablePlanMode()` | 只读规划阶段用 `plan_write` 写计划；跨调用保留并驱动执行阶段，让意图与动作解耦 | [Plan Mode](/v2/zh/docs/harness/plan-mode) |
-| **工具结果落盘** | 工作区下的 eviction 目录 | `.toolResultEviction(...)` | 单个工具结果超阈值（默认 80K 字符）时，完整输出写盘，上下文消息替换为 head/tail 预览 + `read_file` 指针 | [上下文压缩](/v2/zh/docs/harness/compaction) |
+| **工具结果落盘** | 工作区下的 eviction 目录 | `.toolResultEviction(...)` | 单个工具结果超阈值（默认 80K 字符）时，完整输出写盘，上下文消息替换为 head/tail 预览 + `read_file` 指针 | [上下文管理](/v2/zh/docs/harness/context) |
 | **会话日志** | Filesystem 保留分区 / 自定义 SessionLogStore，另有兼容 JSONL | 默认 EVENT_LOG | 保存执行事实；工具可读原生消息历史，旧索引用于发现 | [会话日志](/v2/zh/docs/harness/session-log) |
 
 记忆、技能、计划和卸载结果沿用 Workspace 的租户隔离与 Filesystem 路由。原生日志另需原子存储能力，并通过保留分区保护提交结构；兼容 JSONL 不能替代完整执行记录。

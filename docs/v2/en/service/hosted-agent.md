@@ -32,13 +32,13 @@ Confirm that the Host is online and provider detection succeeds. An online Host 
 
 ## Create the Agent
 
-Under **DESIGN → Agents**, select a discovered Runtime instead of AgentScope Managed. Set responsibilities, an optional model override and a Workspace. Review the Runtime's supported instruction, tool, skill and subagent mappings before configuring them.
+Call `GET /api/v1/agents/runtime-options?tenant=...&namespace=...` and select a provider from `runtimes`, retaining `runtimeProfileId` and `runtimePoolId`. Create the Agent through `POST /api/v1/agents`, set `binding.kind: "hosted-runtime"`, put both IDs in `binding.configuration`, and supply a portable `definition`. See the [creation guide](/v2/en/service/connect-hosted-agent) for the complete request.
 
-Runtime profiles and pools select execution capacity. The Runtime picker handles ordinary setup; administrators manage capacity and policy for multiple machines. A path on one Host is not necessarily available on every Host.
+The returned `agent.id` is the stable reference for assignments, Team membership, and Endpoints. Read `/api/v1/agents/{agentId}/hosted-settings` for the binding and concurrency configuration. Management uses a platform credential authorized for the namespace; see [configuration](/v2/en/service/hosted-agent-configuration) for fields, responses, and version checks.
 
 ## Deliver a small task
 
-Create an Issue asking the Agent to read an example repository README and return three suggestions without edits. Inspect its Execution, provider events and final comment. Then try a file-writing task and upload deliverables as Artifacts so collaborators can access them outside the Host.
+Create a task through the [Issue API](/v2/en/service/issues), with `assigneeType: "agent"` and `assigneeRef: agent.id`. Ask for three improvements to supplied README text without editing files. Read `/api/v1/agent-tasks/{taskId}` and `/api/v1/execution-attempts?tenant=...&namespace=...&taskId=...`, then inspect Issue comments and Artifacts. Upload deliverable files as Artifacts so collaborators can access them outside the Host.
 
 The Host manages task directories under its state directory by default. These are not automatically your open local Git checkout. Prepare repository content and branches through the task's workspace configuration.
 
@@ -53,3 +53,9 @@ The Host supplies `agentscope-collaboration` MCP or task-scoped CLI access for c
 Inspect active work before stopping a Host. Cancellation must reach the provider; confirm the final Attempt state. Preserve Host identity and state across restarts. Retried execution creates another Attempt and does not imply preservation of another backend's in-memory context.
 
 If no Runtime is selectable, inspect `runtime probe`. For denied tools, inspect provider authentication and permission settings. For missing deliverables, inspect artifact upload and reporting logs.
+
+## Publish it as a service
+
+Publish the Agent, its Team, or a Workflow as an [Endpoint](/v2/en/service/endpoints). Applications invoke the unified [Agent API](/v2/en/service/service-api) for snapshots, Artifacts, and SSE. Native provider Session resume does not imply arbitrary checkpoint restoration through the unified API. Query Endpoint and invocation capabilities before using recovery features.
+
+For the visual workflow, see [Console: Agent management](/v2/en/service/console/agents).

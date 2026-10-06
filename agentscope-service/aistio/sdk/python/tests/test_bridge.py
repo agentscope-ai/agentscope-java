@@ -182,6 +182,7 @@ def _wait_for(predicate, timeout=5.0, interval=0.05):
 def _make_bridge(fake_cp, claude, **kwargs):
     addr, _ = fake_cp[1], None
     kwargs.setdefault("control_plane", fake_cp[1])
+    kwargs.setdefault("transport", "grpc")
     kwargs.setdefault("agent_key", "test-agent")
     kwargs.setdefault("agent_id", "00000000-0000-0000-0000-000000000001")
     kwargs.setdefault("binding_id", "00000000-0000-0000-0000-000000000002")
@@ -518,6 +519,7 @@ def test_bypass_failure_never_raises(fake_cp, claude, fast_periods):
     bridge = aistio.instrument(
         claude,
         control_plane="127.0.0.1:1",  # 无监听
+        transport="grpc",
         agent_key="test-agent",
         agent_id="00000000-0000-0000-0000-000000000001",
         binding_id="00000000-0000-0000-0000-000000000002",

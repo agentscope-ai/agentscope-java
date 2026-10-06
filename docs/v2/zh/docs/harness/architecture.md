@@ -8,6 +8,8 @@ en_link: /v2/en/docs/harness/architecture
 
 `ReActAgent` 提供推理循环、工具、权限和会话上下文等基础 API；Harness 在这些能力上提供开箱即用的组合与默认配置。两者都支持 `call` 和 `streamEvents`。
 
+推荐在应用启动时配置共享 `HarnessAgent.Builder`，每次直接调用前用 `builder.build()` 创建新实例，执行结束后关闭。会话通过稳定身份与同一日志后端延续；具体代码和共享实例的适用方式见[实例生命周期](/v2/zh/docs/building-blocks/agent#实例生命周期)。后台 `AgentSession` 的实例则由会话管理器持有到后台执行结束。
+
 ## 核心工作原理
 
 一次执行会读取当前会话状态，构建模型输入，按需调用工具，再保存结果。工作区、记忆和压缩等能力在这些步骤中生效；业务通过 builder、工具和 middleware 定制行为。
@@ -32,8 +34,8 @@ en_link: /v2/en/docs/harness/architecture
 | 状态持久化与执行日志 | 完整事实、checkpoint、跨请求和跨节点恢复 | 默认 EVENT_LOG；`.sessionLogStore(...)` 替换 | [会话日志](/v2/zh/docs/harness/session-log) |
 | 会话任务管理 | 后台执行、持久排队、补充信息和恢复 | `agent.session(ctx)` | [会话操作](/v2/zh/docs/harness/session-log) |
 | 双层长期记忆 | 长会话里有价值的事实自动沉淀到 `MEMORY.md` | 默认开启；`.memory(...)` 定制 prompt / 触发策略 | [记忆](/v2/zh/docs/harness/memory) |
-| 对话压缩 | 上下文有界；模型真的溢出时强制重试 | `.compaction(...)` | [上下文压缩](/v2/zh/docs/harness/compaction) |
-| 大工具结果卸载 | 超 80K 字符的结果落盘 + 占位符 | `.toolResultEviction(...)` | [上下文压缩](/v2/zh/docs/harness/compaction) |
+| 对话压缩 | 上下文有界；模型真的溢出时强制重试 | `.compaction(...)` | [上下文管理](/v2/zh/docs/harness/context) |
+| 大工具结果卸载 | 超 80K 字符的结果落盘 + 占位符 | `.toolResultEviction(...)` | [上下文管理](/v2/zh/docs/harness/context) |
 | 子 agent 编排 | 委派给子 agent，支持同步或后台，自动反向通知 | `.subagent(...)` 或 `workspace/subagents/` | [子 Agent](/v2/zh/docs/harness/subagent) |
 | 可插拔文件系统 | 本机 + shell / 共享存储 / 沙箱，不改代码切换 | `.filesystem(...)` | [文件系统](/v2/zh/docs/harness/filesystem) |
 | 沙箱隔离 | 文件与命令隔离，跨调用恢复，多副本部署 | `.filesystem(new DockerFilesystemSpec()...)` | [沙箱](/v2/zh/docs/harness/sandbox) |
@@ -67,11 +69,11 @@ en_link: /v2/en/docs/harness/architecture
 ## 相关文档
 
 - [会话操作、事件与恢复](/v2/zh/docs/harness/session-log) — 后台任务、排队、交互和续做
-- [可恢复聊天示例](/v2/zh/docs/harness/session-chat) — 从提交任务到前端断线续传的完整应用
+- [可恢复聊天示例](/v2/zh/blogs/best-practices/session-chat) — 从提交任务到前端断线续传的完整应用
 - [工作区](/v2/zh/docs/harness/workspace) — 目录结构、指令与参考材料的来源、`tools.json`
 - [上下文与 AgentState](/v2/zh/docs/building-blocks/context) — `AgentState`、`RuntimeContext`、`AgentStateStore` 持久化、多用户隔离
 - [记忆](/v2/zh/docs/harness/memory) — 两层记忆
-- [上下文压缩](/v2/zh/docs/harness/compaction) — 摘要压缩、大结果卸载、溢出兜底
+- [上下文管理](/v2/zh/docs/harness/context) — 构建模型输入、跟进长程任务、压缩对话和卸载大结果
 - [文件系统](/v2/zh/docs/harness/filesystem) — 本机 + shell / 共享存储 / 沙箱
 - [沙箱](/v2/zh/docs/harness/sandbox) — 隔离执行、跨调用恢复、分布式
 - [子 Agent](/v2/zh/docs/harness/subagent) — 声明、同步/后台、流式转发
@@ -81,4 +83,4 @@ en_link: /v2/en/docs/harness/architecture
 
 ## 模型输入的统一构建
 
-Harness 在最终模型调用边界统一组织 System、对话、任务状态和参考材料；动态业务信息通过 contextSource 接入。配置、默认行为和限制见 [上下文构建](/v2/zh/docs/harness/context)。
+Harness 在最终模型调用边界统一组织 System、对话、任务状态和参考材料；动态业务信息通过 contextSource 接入。配置、默认行为和限制见 [上下文管理](/v2/zh/docs/harness/context)。

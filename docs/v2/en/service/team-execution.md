@@ -52,8 +52,18 @@ Member replies, Attempt success, coordinator completion, Run terminal state and 
 
 Human reviewers should check the final result, key evidence and failure explanations before accepting or requesting changes. Run succeeded/partial_succeeded still needs comparison with business acceptance criteria.
 
+## Observe collaboration through APIs
+
+Start from the Issue ID returned by submission. Query associated Runs with `GET /api/v1/orchestration-runs?tenant=...&namespace=...&issueId=...`. `GET /api/v1/orchestration-runs/{runId}/graph` returns `run`, `nodes`, `edges`, `tasks`, `attempts`, and optional `childRuns`, suitable for an application's task map.
+
+`GET /api/v1/orchestration-runs/{runId}/events?after=0&limit=200` returns `{events}`. Use each event's `sequence` for the next `after`; `nodeId`, `agentTaskId`, and `attemptId` link execution records. This is a durable JSON history query. Platform `/api/v1/events` WebSocket messages are refresh notifications. Published-service callers should prefer [Invocation snapshots and SSE](/v2/en/service/service-api) rather than treating internal orchestration structure as their application contract.
+
+Pause, resume, and cancel Runs through `/pause`, `/resume`, and `/cancel`. Execution controls do not replace Issue acceptance. See the [execution API reference](/v2/en/service/sessions) for states, retry layers, and Session links.
+
 ## Extension and recovery
 
 Test a new member independently before verifying that the Leader uses the role correctly. For mixed Managed, Hosted and External teams, follow the [member configuration checks](/v2/en/service/team-configuration).
 
 Recovery relies on persistent work and execution state. Fresh fallback reconstructs context without migrating the old process. Diagnose along Issue → Run → Node → Task → Attempt: check readiness/policy for missing dispatch, backend/approvals for stuck execution, and outstanding obligations/coordinator state for incomplete delivery.
+
+See the [Team API guide](/v2/en/service/create-team) for requests and [Console: Teams and orchestration](/v2/en/service/console/orchestration) for UI diagnostics.

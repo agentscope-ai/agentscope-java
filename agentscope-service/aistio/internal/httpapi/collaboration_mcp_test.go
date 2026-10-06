@@ -801,6 +801,7 @@ func startHostedMCPConversation(t *testing.T, message string) (store.Store, *Ser
 	if createOut.Code != http.StatusCreated || json.Unmarshal(createOut.Body.Bytes(), &endpointResource) != nil {
 		t.Fatalf("create hosted Endpoint: %d %s", createOut.Code, createOut.Body)
 	}
+	endpointResource.Credential, _ = createTestApplicationCredential(t, server, endpointResource.Endpoint.ID)
 	publishBody, _ := json.Marshal(map[string]any{"version": endpointResource.Endpoint.Version})
 	publishReq := httptest.NewRequest(http.MethodPost,
 		"/api/v1/endpoints/"+endpointResource.Endpoint.ID.String()+"/publish", bytes.NewReader(publishBody))

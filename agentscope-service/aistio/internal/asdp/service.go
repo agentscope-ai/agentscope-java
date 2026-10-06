@@ -16,6 +16,7 @@ package asdp
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 
@@ -153,7 +154,9 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 		case *Upstream_SessionReport:
 			s.handleSessionReport(meta, p.SessionReport)
 		case *Upstream_ExecutionAttempt:
-			s.handleExecutionAttempt(meta, p.ExecutionAttempt)
+			if err := s.handleExecutionAttempt(meta, p.ExecutionAttempt); err != nil {
+				return err
+			}
 		case *Upstream_EventReport:
 			ack := s.handleEventReport(meta, p.EventReport)
 			if err := conn.Send(&Downstream{Payload: &Downstream_EventAck{EventAck: ack}}); err != nil {
@@ -164,7 +167,9 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 		case *Upstream_Inventory:
 			s.handleInventoryReport(meta, p.Inventory)
 		case *Upstream_ConversationTurn:
-			s.handleConversationTurnReport(meta, p.ConversationTurn)
+			if err := s.handleConversationTurnReport(meta, p.ConversationTurn); err != nil {
+				return err
+			}
 		case *Upstream_Heartbeat:
 			if err := conn.Send(&Downstream{
 				Payload: &Downstream_Heartbeat{Heartbeat: &Heartbeat{Timestamp: p.Heartbeat.Timestamp}},
@@ -235,17 +240,19 @@ func (s *service) handleSessionReport(meta *UpstreamMeta, report *SessionReport)
 	}
 }
 
-func (s *service) handleExecutionAttempt(meta *UpstreamMeta, report *ExecutionAttemptReport) {
+func (s *service) handleExecutionAttempt(meta *UpstreamMeta, report *ExecutionAttemptReport) error {
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleExecutionAttemptReport(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.BindingId,
+		return s.server.eventSink.HandleExecutionAttemptReport(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.BindingId,
 			meta.InstanceKey, meta.Generation, report)
 	}
+	return fmt.Errorf("event sink unavailable")
 }
 
-func (s *service) handleConversationTurnReport(meta *UpstreamMeta, report *ConversationTurnReport) {
+func (s *service) handleConversationTurnReport(meta *UpstreamMeta, report *ConversationTurnReport) error {
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleConversationTurnReport(reportIdentity(meta), report)
+		return s.server.eventSink.HandleConversationTurnReport(reportIdentity(meta), report)
 	}
+	return fmt.Errorf("event sink unavailable")
 }
 
 func (s *service) handleEventReport(meta *UpstreamMeta, report *EventReport) *EventReportAck {

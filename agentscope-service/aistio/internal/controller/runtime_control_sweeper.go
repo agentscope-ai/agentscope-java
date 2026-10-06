@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"time"
 
 	"github.com/google/uuid"
@@ -108,7 +109,7 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 		logger.Error(err, "listing queued AgentTasks for policy timeout")
 	} else {
 		for _, task := range queued {
-			policy, policyErr := w.Store.Orchestration().GetRuntimePolicy(ctx, task.Tenant, task.Namespace, task.AgentRef)
+			policy, policyErr := serviceapi.RuntimePolicy(ctx, w.Store, task)
 			if policyErr != nil || policy.QueueTimeoutSeconds <= 0 || now.Before(task.CreatedAt.Add(time.Duration(policy.QueueTimeoutSeconds)*time.Second)) {
 				continue
 			}
@@ -150,7 +151,7 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 				continue
 			}
 			absoluteExpired := false
-			if policy, policyErr := w.Store.Orchestration().GetRuntimePolicy(ctx, task.Tenant, task.Namespace, task.AgentRef); policyErr == nil &&
+			if policy, policyErr := serviceapi.RuntimePolicy(ctx, w.Store, task); policyErr == nil &&
 				policy.AttemptTimeoutSeconds > 0 && attempt.StartedAt != nil {
 				absoluteExpired = !now.Before(attempt.StartedAt.Add(time.Duration(policy.AttemptTimeoutSeconds) * time.Second))
 			}
@@ -315,6 +316,10 @@ func (w *RuntimeControlSweeper) reconcileEndpointJobInvocations(ctx context.Cont
 		return err
 	}
 	for _, invocation := range invocations {
+		// Published service contracts are reconciled by the durable Invocation worker.
+		if len(invocation.Contract) > 0 {
+			continue
+		}
 		if invocation.RunID == nil {
 			continue
 		}

@@ -15,7 +15,7 @@ flowchart TD
   B --> C[HTTP 注册：Agent、Binding、Instance]
   C --> D[控制面目录与能力判断]
   D --> E[回连应用 HTTP 合约]
-  B --> F[可选 ASDP 事件通道]
+  B --> F[HTTP 或 gRPC 运行通道]
   D --> G[支持任务的适配器接受派发]
   G --> A
 ```
@@ -28,11 +28,11 @@ flowchart TD
 
 只有第二层的应用仍然有用：可以观察独立应用的运行情况。平台会根据真实 capability 判断 Chat、命令和派发是否可用。
 
-## HTTP contract 与 ASDP 的分工
+## 查询合约与运行传输的分工
 
 HTTP 注册建立目录身份；应用合约提供可查询的能力和会话操作。HTTP 请求的可达方向与应用向控制面注册的方向不同，部署时必须同时验证。
 
-ASDP 提供长连接事件/控制传输。Java 可以单独使用 HTTP 注册；Python 当前的自动注册和 ASDP 初始化关联。标准 standalone 部署与 ASDP 部署的区别见[连接配置](/v2/zh/service/external-agent-configuration)。
+Python 默认使用 HTTP exchange 接收执行并上报事件，也可选择 ASDP gRPC。Java HTTP 注册与查询合约可独立使用；任务接收与上报需启用当前 Java SDK 的 gRPC 运行通道。实际参数与网络方向见[连接配置](/v2/zh/service/external-agent-configuration)。
 
 事件 journal 帮助断线恢复，但不保存所有业务状态，也不代替框架自己的 Session store。应用需保留自己的数据、工具连接和任务幂等处理。
 
@@ -45,3 +45,16 @@ ASDP 提供长连接事件/控制传输。Java 可以单独使用 HTTP 注册；
 ## 参与 Team
 
 普通成员交付自己承担的结果；Leader 还负责调度、汇总和节点收敛。把 External Agent 放进成员名单，不会自动赋予 coordinator 协议能力。先在[支持框架与扩展](/v2/zh/service/external-agent-frameworks)完成任务适配，再进行 [Team 协作验收](/v2/zh/service/team-collaboration)。
+
+## 用 API 观察和控制一次执行
+
+业务侧通过 `POST /api/v1/issues` 指定 Agent，或调用已发布的 Endpoint。控制面生成任务并异步派发；应用无需自己向目录创建 ExecutionAttempt。
+
+| 使用者 | 操作 | 接口与字段 |
+| --- | --- | --- |
+| 业务管理者 | 查询任务与物理尝试 | `GET /api/v1/agent-tasks/{taskId}`、`GET /api/v1/execution-attempts?tenant=...&namespace=...&taskId=...` |
+| 业务管理者 | 请求取消或重试 | `POST /api/v1/agent-tasks/{taskId}/cancel`、`/retry`；并发版本等字段见 [Issue API](/v2/zh/service/issues) |
+| 任务执行者 | 读取上下文、开始、进度、结果 | `/api/v1/agent-tasks/{taskId}/context`、`/start`、`/progress`、`/respond`、`/complete`、`/fail`，使用分配给该任务的 token |
+| 应用消费者 | 读取快照并续传事件 | `GET /invoke/v1/invocations/{invocationId}/snapshot` 与 `/events/stream`，使用调用凭据 |
+
+管理 token 不应替代运行协议注入的 task token；取消请求被接受后，仍需读取任务与 Attempt 的最终状态。Endpoint 的 External conversation 当前只在实例声明 `session-abort` 时提供取消能力，其他中途交互以 capabilities 返回为准。

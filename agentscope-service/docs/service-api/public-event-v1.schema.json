@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "type",
+    "invocation_id",
+    "created_at",
+    "cursor",
+    "data"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "examples": [
+        "item.delta",
+        "required_action.created",
+        "step.failed",
+        "invocation.partial_succeeded"
+      ]
+    },
+    "invocation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "created_at": {
+      "type": "integer"
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object"
+    }
+  },
+  "description": "Committed public invocation event; unknown types must be ignored while advancing cursor."
+}

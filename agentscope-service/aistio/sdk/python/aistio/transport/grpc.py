@@ -267,7 +267,10 @@ class GrpcTransport:
     def _run(self) -> None:
         backoff = BACKOFF_INITIAL
         while not self._stop.is_set():
-            channel = grpc.insecure_channel(self._addr)
+            channel = grpc.insecure_channel(self._addr, options=[
+                ("grpc.max_send_message_length", 32 * 1024 * 1024),
+                ("grpc.max_receive_message_length", 32 * 1024 * 1024),
+            ])
             self._channel = channel
             try:
                 stub = asdp_pb2_grpc.AgentDataPlaneServiceStub(channel)
@@ -296,7 +299,7 @@ class GrpcTransport:
             self._stop.wait(backoff)
             backoff = min(backoff * 2, BACKOFF_MAX)
 
-    def _handle_downstream(self, down: "asdp_pb2.Downstream") -> None:
+    def _handle_downstream(self, down: "asdp_pb2.Downstream") -> bool:
         kind = down.WhichOneof("payload")
         try:
             if kind == "connect_ack":
@@ -337,5 +340,6 @@ class GrpcTransport:
             elif kind == "event_ack" and self._on_event_ack is not None:
                 self._on_event_ack(down.event_ack)
             # heartbeat 下行无需处理。
+            return True
         except Exception:
-            pass  # 旁路原则：任何处理异常都不扩散
+            return False  # HTTP callers retain commands until local acceptance.

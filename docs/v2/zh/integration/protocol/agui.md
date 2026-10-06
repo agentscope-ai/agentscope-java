@@ -45,11 +45,15 @@ Spring Boot 应用直接使用 starter：
 
 ## 快速上手
 
+先按[快速开始](/v2/zh/docs/quickstart)配置共享的 `HarnessAgent.Builder agentBuilder`。每次请求创建一个 Agent，SSE 流结束或取消时关闭：
+
 ```java
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.harness.agent.HarnessAgent;
+import java.time.Duration;
 import reactor.core.publisher.Flux;
 
 AguiAdapterConfig config = AguiAdapterConfig.builder()
@@ -58,10 +62,10 @@ AguiAdapterConfig config = AguiAdapterConfig.builder()
     .runTimeout(Duration.ofMinutes(5))
     .build();
 
-AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
-
-// 前端通过 SSE 拿到的事件
-Flux<AguiEvent> events = adapter.run(runAgentInput);
+Flux<AguiEvent> events = Flux.using(
+    agentBuilder::build,
+    agent -> new AguiAgentAdapter(agent, config).run(runAgentInput),
+    HarnessAgent::close);
 ```
 
 `RunAgentInput` 由前端传入，包含 `threadId`、`runId`、`messages`、`tools`、`state`等。适配器内部完成消息转换、调用 Agent 流式 API，再把事件映射到 AG-UI。
@@ -202,7 +206,7 @@ agentscope:
 | `agui.forwardedProps` | `RunAgentInput.forwardedProps` |
 | `agui.resume` | `RunAgentInput.resume` |
 
-由于 `sessionId` 始终来自 `threadId`，同一个 agent 实例在不同 AG-UI thread 之间保持会话隔离。
+`sessionId` 来自 `threadId`。沿用相同的用户、thread 和持久存储配置，新实例可以继续原会话；不同 thread 使用各自的会话身份。
 
 ## Spring Boot 集成
 

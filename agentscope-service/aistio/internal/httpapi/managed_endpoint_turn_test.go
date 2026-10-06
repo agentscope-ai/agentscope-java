@@ -50,9 +50,13 @@ func TestManagedEndpointTurnsProjectResultAndFailureToTheirInvocation(t *testing
 		t.Fatal(err)
 	}
 	srv := NewServer(ServerOptions{Store: st, InternalToken: "test-internal"})
-	report := func(seq int64, typ string, payload map[string]any) {
+	report := func(seq int64, typ string, payload map[string]any, public ...map[string]any) {
 		t.Helper()
-		body, _ := json.Marshal(managedSessionEventReport{ID: fmt.Sprintf("evt-%d", seq), SessionID: session.SessionID, Seq: seq, Type: typ, Payload: payload, CreatedAt: time.Now().UnixMilli()})
+		event := managedSessionEventReport{ID: fmt.Sprintf("evt-%d", seq), SessionID: session.SessionID, Seq: seq, Type: typ, Payload: payload, CreatedAt: time.Now().UnixMilli()}
+		if len(public) > 0 {
+			event.PublicEvent = public[0]
+		}
+		body, _ := json.Marshal(event)
 		req := httptest.NewRequest(http.MethodPost, "/api/internal/runtime-sessions/"+session.SessionID+"/events", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Builder-Internal-Token", "test-internal")
@@ -62,7 +66,7 @@ func TestManagedEndpointTurnsProjectResultAndFailureToTheirInvocation(t *testing
 			t.Fatalf("report %d: %d %s", seq, w.Code, w.Body)
 		}
 	}
-	for i := int64(0); i < 3; i++ {
+	for i := int64(0); i < 4; i++ {
 		turnID := uuid.New()
 		inv, _, err := st.Endpoints().ReserveInvocation(ctx, &controlmodel.EndpointInvocation{EndpointID: ep.ID, ConversationID: &conversation.ID, SessionID: session.SessionID, TurnID: &turnID, Mode: controlmodel.EndpointConversationMode, IdempotencyKey: fmt.Sprint(i), Status: controlmodel.EndpointInvocationRunning})
 		if err != nil {
@@ -84,6 +88,21 @@ func TestManagedEndpointTurnsProjectResultAndFailureToTheirInvocation(t *testing
 		}
 		if i == 2 {
 			report(base+3, "session.error", map[string]any{"code": "provider_unavailable", "message": "provider failed"})
+		} else if i == 3 {
+			// Native exports carry the message inside the public item envelope;
+			// user/tool text and earlier reasoning must not become the result.
+			for j, role := range []string{"USER", "TOOL", "ASSISTANT", "ASSISTANT"} {
+				text := "not the final answer"
+				if j == 3 {
+					text = "answer 3"
+				}
+				report(base+3+int64(j), "item.completed", nil, map[string]any{"type": "item.completed", "payload": map[string]any{
+					"final_output": j == 3, "item_id": fmt.Sprint(j), "item": map[string]any{
+						"role": role, "message_id": fmt.Sprint(j), "content": []any{map[string]any{"type": "text", "text": text}},
+					},
+				}})
+			}
+			report(base+7, "session.status_idle", nil)
 		} else if i == 1 {
 			// A native user fact does not overwrite the earlier command's invocation fence.
 			report(base+3, "user.message", map[string]any{"text": "question", "message_id": "user"})
@@ -109,7 +128,7 @@ func TestManagedEndpointTurnsProjectResultAndFailureToTheirInvocation(t *testing
 		}
 	}
 	turns, err := st.Turns().List(ctx, session.ID, 10)
-	if err != nil || len(turns) != 3 {
+	if err != nil || len(turns) != 4 {
 		t.Fatalf("turns=%+v err=%v", turns, err)
 	}
 }

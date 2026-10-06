@@ -1,67 +1,76 @@
 ---
-title: "注册或者创建 Agent"
+title: "创建、注册与管理 Agent"
+description: 用 API 建立统一 Agent 身份、连接运行时，并确认任务和服务能力。
 en_link: /v2/en/service/agents
 ---
 
-<Note>
-此为预览文档，正式版本尚未发布。
-</Note>
+Agent 是可以被业务调用、任务分派和团队编排复用的能力定义。先把它接入统一目录，再确认运行时是否就绪，最后提交工作。创建定义本身不会执行模型推理。
 
-**DESIGN → Agents** 管理 Agent 的身份、行为和执行方式。Agent 定义可以被 Chat、Issue、Team 和 Endpoint 复用；保存定义本身不会执行任务。
+本组文档以 API 为主。希望通过页面完成操作时，阅读[控制台中的 Agent 管理](/v2/zh/service/console/agents)。
 
-## 按运行方式接入
+## 选择如何接入
 
-- **Managed Agent**：在控制台创建云端 Agent，再配置模型和资源。
-- **AgentScope 框架**：注册你编写并部署的应用，以 External Agent 方式接入；任务执行能力需要相应适配。
-- **Hosted**：连接 Runtime Host，选择已经安装并登录的 Coding Agent provider。
-
-左侧三个子菜单用于完成创建、注册和验证。详细参数、资源配置与工作原理统一收录于下方的参考手册。完成接入后，继续[通过 Endpoint 分派任务](/v2/zh/service/endpoints)或[在控制台创建 Issue](/v2/zh/service/issues)。
-
-## 界面导览
-
-<Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/agents.png" alt="Agent 目录与 Managed、Hosted、External 筛选" />
-</Frame>
-
-顶部筛选用于区分运行方式，卡片说明 Agent 的用途。点击卡片进入配置；需要新能力时点击 **New agent**。示例中三类 Agent 并列展示，实际可用性仍需检查各自的运行环境。
-
-## 选择运行方式
-
-| 方式 | 谁运行 Agent | 如何接入 |
+| 运行方式 | 谁运行 Agent | API 操作 |
 | --- | --- | --- |
-| Managed | Service 的 Harness 与 Dataplane | 在控制台创建并选择 AgentScope Managed |
-| Hosted | 你电脑或服务器上的 Coding Agent provider | 先连接 Runtime Host，再选择发现的 Runtime |
-| External | 你独立部署的 Agent 应用 | 应用通过 SDK 注册，进入统一 Agent 目录 |
+| Managed | Service 的 Harness 与 Dataplane | `POST /api/v1/agents`，提供 `binding.kind=managed` 和 `definition` |
+| External | 自己部署的应用 | SDK 或 `POST /api/v1/agent-registrations` 注册实例；应用提供执行适配 |
+| Hosted | Runtime Host 上的 Coding Agent | 查询 `GET /api/v1/agents/runtime-options`，再用 `POST /api/v1/agents` 绑定 `hosted-runtime` |
 
-三种方式共享工作入口，但模型、工具、会话恢复和配置投影能力不同。不要把“目录中可见”当成“具备所有会话和派发能力”。接入细节见 [Managed](/v2/zh/service/managed-agent)、[Hosted](/v2/zh/service/hosted-agent) 和 [External](/v2/zh/service/external-agent)。
+三种方式共用 Agent 身份和目录。Managed 适合让平台负责推理与工具循环，External 适合保留代码应用，Hosted 适合复用已安装的 Coding Agent。按你的情况继续[创建 Managed](/v2/zh/service/create-managed-agent)、[注册 External](/v2/zh/service/register-agentscope-agent)或[接入 Hosted](/v2/zh/service/connect-hosted-agent)。
 
-## 创建一个 Agent
+## 准备身份和空间
 
-1. 点击创建按钮，填写 Name、用途和 Instructions。
-2. 按需要关联 Workspace，复用其中的操作说明、技能、工具和子 Agent 定义。
-3. 在 Execution 中明确选择 Runtime。存在在线 Host 时页面可能优先选择 Hosted provider；体验托管 Agent 时请主动选择 **AgentScope Managed**。
-4. Model 留空使用运行时默认值，或填写该 provider 接受的模型标识。
-5. Managed Agent 在 Advanced settings 中选择 Environment；只有管理员允许 Local 时才使用自动本地默认环境。
-6. 点击 **Create & open agent**，进入详情检查配置。
+管理 API 使用平台用户 Bearer token。以下示例使用 `curl` 和 `jq`；`BASE_URL` 是 Gateway 地址，`TENANT` 和 `NAMESPACE` 使用账号已获授权的空间，不要将示例值当成平台预设资源。登录方式见 [API 认证](/v2/zh/service/api-reference#认证与范围)。
 
-Agent key 是稳定身份，用于区分同一空间中的 Agent；显示名称用于让同事理解用途。
+```bash
+export BASE_URL='https://YOUR_SERVICE_HOST'
+export TOKEN='YOUR_PLATFORM_USER_TOKEN'
+export TENANT='YOUR_TENANT'
+export NAMESPACE='YOUR_NAMESPACE'
+```
 
-## 按详情菜单配置
+创建请求中的空间字段、查询参数和 `X-AgentScope-Tenant` / `X-AgentScope-Namespace` 请求头应保持一致。调用已发布 Endpoint 的 API key、Runtime Host 凭据和应用注册信息各有用途，不能替代平台管理身份。
 
-| 页面 | 主要内容 | 验证方式 |
-| --- | --- | --- |
-| Behavior | 职责、指令与模型 | 发送职责边界明确的小请求 |
-| Workspace | 关联资料与执行资源 | 读取一份已知文件 |
-| Skills | 可复用任务流程和辅助文件 | 指定一个技能任务并核对输出 |
-| Tools | 工具和 MCP 连接 | 执行只读工具调用，检查认证与确认策略 |
-| Subagents | 可委派的专项能力 | 检查子任务结果如何返回主 Agent |
-| Versions | 查看定义版本 | 用新工作验证目标版本 |
-| Connections → Channels | 消息入口关联 | 从实际渠道发送请求并检查路由 |
+## 查询 Agent 并保存稳定 ID
 
-## 一次只扩展一种能力
+```bash
+curl --fail-with-body -sS -G "$BASE_URL/api/v1/agents" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data-urlencode "tenant=$TENANT" --data-urlencode "namespace=$NAMESPACE"
+```
 
-先验证纯对话，再加文件读取、一个外部工具和一个专项技能。将需要的凭据放入 [Vault](/v2/zh/service/vault)，共享知识放入 [Memory](/v2/zh/service/memory)。添加配置文件不会给运行时自动安装二进制工具，也不会授予外部系统权限。
+结果位于 `items`。`agentKey` 是空间中的稳定业务标识，`displayName` 用于展示，`id` 是后续 API 使用的 Agent ID。保存创建或注册响应中的 `agent.id`，不要用显示名称代替它。
 
-修改共享 Workspace 可能影响多个 Agent。保存前查看消费者，保存后使用新 Chat 或 Issue 验证；正在运行的任务不应被假定会即时切换到新定义。
+目录记录描述身份和生命周期，绑定描述执行位置；一个身份可有多个绑定和实例。创建成功之后，再读取绑定确认接入的是预期运行方式：
 
-下一步：[Teams](/v2/zh/service/teams) · [Workspaces](/v2/zh/service/workspaces)。
+```bash
+export AGENT_ID='RETURNED_AGENT_ID'
+curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/bindings" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+Agent 为 `active` 只说明目录和配置已建立，不保证此刻所有模型、凭据、工具和执行资源都可用。发布前检查 Endpoint readiness，再用一个只读的小任务确认实际执行路径。
+
+## 修改配置与管理生命周期
+
+| 需要修改的内容 | 操作 |
+| --- | --- |
+| 名称、描述、目录状态 | `GET /api/v1/agents/{id}` → `PATCH /api/v1/agents/{id}` |
+| Managed / Hosted 的行为定义 | `GET /api/v1/agents/{id}/definition` → `PATCH /api/v1/agents/{id}/definition` |
+| 运行绑定 | `GET/POST /api/v1/agents/{id}/bindings`；从列表中读取目标绑定，再用 `PATCH /api/v1/agents/{id}/bindings/{bindingId}` 更新 |
+| 多运行位置的选择策略 | `GET/PUT /api/v1/agent-runtime-policies/{id}` |
+| 归档 Agent | `PATCH /api/v1/agents/{id}`，`{"version": CURRENT_VERSION, "status":"archived"}` |
+
+更新前先读取当前版本，按对应接口传入版本条件。行为定义更新应保留未修改的字段；缺省值可能覆盖已有工具、技能或资源绑定。完整配置见各运行方式的参考手册，首次接入无需手工配置复杂路由策略。
+
+绑定更新需要当前绑定的 `version`，并完整提交 `configuration`、`priority` 和 `enabled`。这些字段会整体替换，遗漏 `enabled` 会将绑定停用；仅想修改一项时，也应保留其余字段的原值。
+
+External 的业务行为主要由应用代码维护，不要把修改平台定义当成热更新外部进程。修改已发布能力时，还应更新对应 Endpoint release；已有调用继续遵循自己的发布契约。
+
+## 接入后怎样使用
+
+需要业务系统直接调用时，按[发布 Endpoint](/v2/zh/service/endpoints)建立稳定服务入口，然后通过[统一服务 API](/v2/zh/service/service-api)提交工作、读取快照和事件、处理交互。需要带负责人、讨论和验收的工作时，通过 [Issue API](/v2/zh/service/issues)分派。
+
+多个 Agent 的协作从[创建 Team](/v2/zh/service/create-team)开始；固定流程使用 [Workflow](/v2/zh/service/workflows)。这些操作都引用已有 Agent ID，不需要重新注册一份 Agent。Managed 的会话、文件和 checkpoint 等额外能力见[原生会话 API](/v2/zh/service/session-event-log)。

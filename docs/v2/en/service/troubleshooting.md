@@ -49,7 +49,25 @@ Inspect the Run, Node and latest Attempt from Issue Executions, not just the las
 
 Query the existing Delivery/Invocation first. Reuse the same key and content for the same logical request; assign a new key only to new work. Check trigger event filters, authentication and schemas. After SSE disconnects, query the returned statusUrl before resubmitting.
 
+## Diagnose unified service API calls
+
+Keep invocationId, endpoint/release IDs, the request idempotency key, and error codes. Read `/invoke/v1/invocations/{id}` for the outcome, `/snapshot` for the UI, and `/capabilities` for currently available commands.
+
+| Symptom | Check |
+| --- | --- |
+| No key after Endpoint creation | Create an Application, then POST credentials with applicationId and explicit scopes |
+| 401/403 | Endpoint auth policy, Application status/scopes, and designated approver identity |
+| 409 | Resource version, reused key with changed input, incompatible target, or active Conversation conflict |
+| Accepted input has no visible effect | Query the command receipt; acceptance does not mean model consumption |
+| SSE 410/cursor_expired | Replace the UI from a fresh snapshot and resume after as_of without resubmitting work |
+| A member finished but the call is active | Inspect Invocation and steps, not just member output |
+| Resume unavailable | Respect available_commands; backend support differs and public checkpoint restore is unavailable |
+
+`/api/v1/events` is a WebSocket refresh notification, not durable Invocation SSE. See [Unified service API](/v2/en/service/service-api).
+
 ## Agent API and SSE
+
+The following applies to native Managed sessions.
 
 Keep the session ID, turn ID, latest event ID, HTTP status and sanitized error. Distinguish the page connection, task execution and context recovery:
 

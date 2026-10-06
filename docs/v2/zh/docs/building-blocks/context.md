@@ -4,11 +4,13 @@ description: 无状态 Agent 引擎、AgentState 生命周期、状态持久化�
 en_link: /v2/en/docs/building-blocks/context
 ---
 
-## 本页与 Harness 上下文构建的关系
+<span id="本页与-harness-上下文构建的关系" />
+
+## 本页与上下文管理的关系
 
 本页介绍 **会话状态放在哪里、如何保存恢复，以及工具如何访问本次调用状态**。
-模型消息布局、动态业务材料接入、预算与提示示例见
-[Harness 上下文构建](/v2/zh/docs/harness/context)。
+每轮推理如何组织模型输入、接入动态业务材料、跟进任务和压缩历史，见
+[上下文管理](/v2/zh/docs/harness/context)。
 
 | 概念 | 职责 | 是否直接发给模型 |
 | --- | --- | --- |
@@ -22,30 +24,19 @@ Harness 的材料组织与预算策略。
 
 ## 无状态 Agent 引擎
 
-`ReActAgent`(以及封装它的 `HarnessAgent`)采用**无状态引擎**设计:Agent 实例复用配置——system prompt、模型、工具集、中间件链——会话可恢复的可变数据放在 `AgentState` 里；实例仍持有状态缓存、执行门等运行设施,以 `(userId, sessionId)` 为索引。一个 agent 实例可以同时服务多个用户和会话,调用方只需在每次 `call()` 时传入不同的 `RuntimeContext`。
+`ReActAgent` 和 `HarnessAgent` 将模型、工具等执行配置与会话状态分开。推荐在应用启动时配置共享 Builder，每次请求构建并关闭独立的 Agent；同一会话通过稳定身份与存储延续，不依赖保留上一次请求的 Java 对象。实例生命周期和共享实例的说明集中在[智能体](/v2/zh/docs/building-blocks/agent#实例生命周期)。
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                     HarnessAgent (单例)                          │
-│  不可变配置: sysPrompt, model, toolkit, middlewares               │
-│                                                                  │
-│  ┌─ state cache ─────────────────────────────────────────────┐   │
-│  │  ("alice","s1") → AgentState  ← call(…, RC(alice,s1))       │
-│  │  ("bob","s2")   → AgentState  ← call(…, RC(bob,s2))        │
-│  └───────────────────────────────────────────────────────────┘   │
-│                                                                  │
-│  per-session 门: 同 (uid,sid) 串行, 不同 (uid,sid) 并行           │
-└──────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    B["共享 Builder：模型、工具、存储配置"] --> A["请求 A：新 Agent + RuntimeContext"]
+    B --> C["请求 B：新 Agent + RuntimeContext"]
+    A <--> S["按会话身份寻址的持久状态"]
+    C <--> S
 ```
 
-### 这意味着什么
+Agent 实例仍持有执行门、状态缓存和后台资源，应在执行结束后关闭。新实例只能恢复已成功提交的状态；如果普通 Core Agent 没有配置日志或状态存储，旧实例里的内存上下文不会自动传给新实例。
 
-- **不需要 agent-per-user 注册表。** 一个 `HarnessAgent` 实例就能服务全部用户——每次请求只需传入不同的 `RuntimeContext.userId` 和 `RuntimeContext.sessionId`。
-- **会话级并发。** 同一实例中，不同 `(userId, sessionId)` 可并行，同一槽位按执行门串行；这不是跨进程分布式锁。共享工具、中间件和业务依赖仍须线程安全。
-- **自动保存恢复。** 配置状态存储后，框架负责加载和保存。普通对话不需要手工维护 state；业务若使用任务目标、需求决策或证据版本，仍需显式维护相应内容。
-- **按调用访问状态。** 中间件和工具通过框架注入的 `RuntimeContext.getAgentState()` 访问当前会话。不要保存全局“当前状态”引用；该 API 不是授权检查，也不为外部共享对象提供隔离。
-
----
+工具和中间件通过框架注入的 `RuntimeContext.getAgentState()` 访问当前会话，不保存全局“当前状态”引用。新建 Agent 不会复制所有业务依赖，也不替代权限检查；共享依赖应支持并发访问。同一会话跨实例执行需要应用调度协调，详见下方[并发使用](#并发使用)。
 
 ## AgentState
 
@@ -90,7 +81,7 @@ HarnessAgent 默认 EVENT_LOG：已有原生日志时，AgentState 从日志 che
 ```
 call(msgs, RuntimeContext(userId, sessionId))
   │
-  ├─ per-session 门: 相同 (uid, sid) 串行, 不同会话并行
+  ├─ 实例内 per-session 门: 相同 (uid, sid) 串行, 不同会话并行
   │
   ▼
   配置 store 时每次 call 重新加载；否则使用槽位缓存
@@ -278,46 +269,35 @@ agent.interrupt("alice", "session-001", new UserMessage("请停止。"));
 
 ### 并发使用
 
-同一实例可处理不同会话的并发请求；下面示例的共享工具和中间件应是线程安全的：
+以下 Builder 由应用启动时配置，分别为 Alice 和 Bob 的请求创建实例。这里的 `workspace` 应指向可持久保留的工作区；多副本部署还需共享原生日志后端。
 
 ```java
-HarnessAgent agent = HarnessAgent.builder()
-    .name("SharedAssistant")
-    .model(model)
-    .workspace(workspace)
-    .stateStore(redisStore)
-    .build();
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.harness.agent.HarnessAgent;
+import reactor.core.publisher.Mono;
 
-// 不同用户槽位可并行；共享业务依赖仍可能竞争
-Mono<Msg> aliceCall = agent.call(aliceMsg, RuntimeContext.builder()
-    .userId("alice").sessionId("s1").build());
-Mono<Msg> bobCall = agent.call(bobMsg, RuntimeContext.builder()
-    .userId("bob").sessionId("s2").build());
+HarnessAgent.Builder agentBuilder = HarnessAgent.builder()
+        .name("Assistant").agentId("assistant")
+        .model(model).workspace(workspace);
 
-Mono.zip(aliceCall, bobCall).block();  // 并行执行
+Mono<Msg> aliceCall = Mono.using(
+        agentBuilder::build,
+        agent -> agent.call(aliceMsg, RuntimeContext.builder()
+                .userId("alice").sessionId("s1").build()),
+        HarnessAgent::close);
+Mono<Msg> bobCall = Mono.using(
+        agentBuilder::build,
+        agent -> agent.call(bobMsg, RuntimeContext.builder()
+                .userId("bob").sessionId("s2").build()),
+        HarnessAgent::close);
 
-// 同一用户、同一 session —— 自动串行
-Mono<Msg> call1 = agent.call(msg1, RuntimeContext.builder()
-    .userId("alice").sessionId("s1").build());
-Mono<Msg> call2 = agent.call(msg2, RuntimeContext.builder()
-    .userId("alice").sessionId("s1").build());
-
-// 相同槽位按进入执行门的顺序执行；声明变量的顺序不保证订阅顺序
-Flux.merge(call1, call2).collectList().block();
+Mono.zip(aliceCall, bobCall).block();
 ```
 
-**并发规则:**
-- **不同 `(userId, sessionId)`** → 可并行，使用不同会话状态；共享业务资源仍需协调。
-- **同一实例、相同 `(userId, sessionId)`** → per-session 异步门按进入顺序串行化；跨实例需另外协调。
-- **`interrupt(userId, sessionId)`** → 精确命中单个 session,其他在飞 call 不受影响。
+不同会话可以并行；同一会话的多个请求应由应用按顺序调度，或交给持有后台生命周期的 `AgentSession` 排队。单实例的执行门不会协调其他实例；原生日志的 writer 隔离避免并发提交，不保证跨实例请求自动等待或按 FIFO 执行。
 
-
-<Tip>
-
-内存中的状态缓存会随单个 agent 实例服务过的不同 session 数量增长。大多数部署场景(几百个 session)的开销可以忽略。对于超大规模场景(单进程百万级 session),可以考虑 agent factory + 有界实例池——但由于 `AgentState` 对象本身很轻量,这种情况很少出现。
-
-</Tip>
-
+跨请求中断必须找到正在执行的实例；新建实例不持有旧调用的中断信号。请求结束后关闭 Agent，释放该实例的缓存与运行资源；模型、连接池等应用级共享依赖在应用退出时统一关闭。
 
 ---
 
@@ -370,9 +350,7 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 
 ## 相关文档
 
-- [Harness 上下文构建](/v2/zh/docs/harness/context) —— 最终消息布局、动态来源、任务投影与预算
-
+- [上下文管理](/v2/zh/docs/harness/context) —— 组织模型输入、跟进任务进度，并通过摘要和工具结果卸载控制上下文大小
 - [智能体（Agent）](/v2/zh/docs/building-blocks/agent) —— `ReActAgent` 完整接口与 Builder 参数
-- [上下文压缩](/v2/zh/docs/harness/compaction) —— 对话摘要、工具结果卸载、溢出恢复(建立在本页描述的 AgentState 基础之上)
 - [记忆](/v2/zh/docs/harness/memory) —— 长期记忆与后台维护
 - [权限系统](/v2/zh/docs/building-blocks/permission-system) —— 权限规则的持久化

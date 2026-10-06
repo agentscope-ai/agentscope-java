@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -37,7 +38,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	}
 	defer conn.Release()
 
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, advisoryLockKey); err != nil {
+	if err := acquireMigrationLock(ctx, conn); err != nil {
 		return fmt.Errorf("postgres migrate: lock: %w", err)
 	}
 	defer func() {
@@ -112,6 +113,28 @@ func (s *Store) Migrate(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// A blocking advisory-lock SELECT retains its statement snapshot while waiting.
+// CREATE INDEX CONCURRENTLY in the lock holder can wait for that same snapshot,
+// creating a deadlock during simultaneous replica startup. Wait outside SQL.
+func acquireMigrationLock(ctx context.Context, conn *pgxpool.Conn) error {
+	for {
+		var acquired bool
+		if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, advisoryLockKey).Scan(&acquired); err != nil {
+			return err
+		}
+		if acquired {
+			return nil
+		}
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 // noTransactionStatements splits the deliberately simple DDL used by

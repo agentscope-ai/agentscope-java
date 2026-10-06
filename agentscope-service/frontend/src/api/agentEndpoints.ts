@@ -22,7 +22,7 @@ export type EndpointInvocationMode = 'conversation' | 'job';
 export type EndpointStatus = 'draft' | 'published' | 'disabled' | 'archived';
 export type EndpointInvocationStatus =
   | 'accepted' | 'dispatching' | 'running' | 'waiting'
-  | 'completed' | 'failed' | 'cancelled' | 'timed_out';
+  | 'completed' | 'partial_succeeded' | 'cancel_requested' | 'failed' | 'cancelled' | 'timed_out';
 
 export interface Endpoint {
   id: string;
@@ -36,6 +36,7 @@ export interface Endpoint {
   invocationMode: EndpointInvocationMode;
   inputSchema?: unknown;
   outputSchema?: unknown;
+  resultMapping?: Record<string, string>;
   eventSchemaVersion: string;
   timeoutSeconds: number;
   maxPayloadBytes: number;
@@ -65,6 +66,7 @@ export interface EndpointRelease {
 export interface EndpointCredential {
   id: string;
   endpointId: string;
+  applicationId: string;
   name: string;
   keyPrefix: string;
   recoverable?: boolean;
@@ -115,6 +117,7 @@ export interface CreateEndpointRequest {
   rateLimit?: { requests: number; windowSeconds: number };
   inputSchema?: unknown;
   outputSchema?: unknown;
+  resultMapping?: Record<string, string>;
   timeoutSeconds?: number;
   maxPayloadBytes?: number;
 }
@@ -133,7 +136,7 @@ export const createEndpoint = (body: CreateEndpointRequest) =>
   api.post<{ endpoint: Endpoint; credential?: string; credentialResource?: EndpointCredential }>('/api/v1/endpoints', body);
 
 export const patchEndpoint = (endpoint: Endpoint, body: Partial<Pick<Endpoint,
-  'name' | 'description' | 'inputSchema' | 'outputSchema' | 'rateLimit' | 'timeoutSeconds' | 'maxPayloadBytes'>>) =>
+  'name' | 'description' | 'inputSchema' | 'outputSchema' | 'resultMapping' | 'rateLimit' | 'timeoutSeconds' | 'maxPayloadBytes'>>) =>
   api.patch<{ endpoint: Endpoint }>(`/api/v1/endpoints/${encodeURIComponent(endpoint.id)}`, { ...body, version: endpoint.version });
 
 export const getEndpointReadiness = (endpointId: string) =>
@@ -166,7 +169,7 @@ export const archiveEndpoint = (endpoint: Endpoint) =>
 export const listEndpointCredentials = (endpointId: string) =>
   api.get<{ items: EndpointCredential[] }>(`/api/v1/endpoints/${encodeURIComponent(endpointId)}/credentials`);
 
-export const createEndpointCredential = (endpointId: string, body: { name: string; expiresAt?: string }) =>
+export const createEndpointCredential = (endpointId: string, body: { name: string; applicationId: string; scopes: string[]; expiresAt?: string }) =>
   api.post<{ credential: EndpointCredential; secret: string }>(`/api/v1/endpoints/${encodeURIComponent(endpointId)}/credentials`, body);
 
 export const rotateEndpointCredential = (endpointId: string, credentialId: string) =>
@@ -207,3 +210,7 @@ export const startEndpointConversation = (endpoint: Endpoint, credential: string
 
 export const continueEndpointConversation = (endpoint: Endpoint, conversationId: string, credential: string, message: string, idempotencyKey = crypto.randomUUID()) =>
   publicRequest(endpoint, `/invoke/v1/conversations/${encodeURIComponent(conversationId)}/turns`, credential, { message }, idempotencyKey);
+
+export interface Application { id: string; name: string; tenant: string; namespace: string; status: string; version: number; ownerUserId?: string; maxConcurrent?: number; tokenBudget?: number; tokensUsed?: number; members?: { userId: string; roles: string[] }[] }
+export const listApplications = (tenant: string, namespace: string) => api.get<{ items: Application[] }>(`/api/v1/applications?${new URLSearchParams({ tenant, namespace })}`);
+export const createApplication = (body: { tenant: string; namespace: string; name: string }) => api.post<{ application: Application }>('/api/v1/applications', body);

@@ -24,7 +24,7 @@ Start with the [practical guide](/v2/en/service/register-agentscope-agent) for c
 | Java HTTP contract | Application reaches registration API; control plane reaches its contract | Registration, contract queries and adapter-supported commands |
 | ASDP instrumentation | The same HTTP paths plus a reachable ASDP gRPC listener | Event reporting and adapter-supported ExecutionAttempt dispatch |
 
-The standard Service Compose/Helm deployment runs standalone HTTP without ASDP. Python `instrument()` couples automatic registration to its ASDP connection; `start_grpc=False` is not a complete HTTP registration path. Ask the administrator for an ASDP-enabled Kubernetes-native Aistio deployment and its real gRPC address when using this integration.
+Python now supports standard Service over outbound HTTP: use `control_plane_http=base, transport="http"` (the default), without exposing an ASDP gRPC port or inbound worker port. See the [unified Service API executable example](/v2/en/service/service-api#runnable-example-and-clients) for Agent, Team and Workflow workers. The example below uses the default HTTP runtime transport.
 
 Verify three separate levels: catalog visibility, Session functionality and work dispatch. An observation-only adapter does not acquire task execution merely by registering.
 
@@ -50,7 +50,7 @@ import io.agentscope.extensions.aistio.SessionBridge;
 SessionBridge bridge = Aistio.instrument(agent,
     AistioConfig.builder("report-service")
         .controlPlaneHttp(System.getenv("AISTIO_CONTROL_HTTP"))
-        .internalToken(System.getenv("AISTIO_BOOTSTRAP_TOKEN"))
+        .registrationCredential(System.getenv("AISTIO_REGISTRATION_CREDENTIAL"))
         .tenant(System.getenv("AISTIO_TENANT"))
         .namespace(System.getenv("AISTIO_NAMESPACE"))
         .instanceKey(System.getenv("AISTIO_INSTANCE_KEY"))
@@ -62,9 +62,11 @@ SessionBridge bridge = Aistio.instrument(agent,
 // Call bridge.close() during application shutdown.
 ```
 
-Use an administrator-provided trusted workload/bootstrap credential for first registration and a registration credential for an existing identity where appropriate. Do not distribute internal component tokens to browsers or ordinary callers. Available contract history and commands depend on the adapter. For event streaming, install adapter middleware while building the Agent and configure ASDP.
+Obtain `registrationCredential` through the [registration guide](/v2/en/service/register-agentscope-agent) and supply it as `AISTIO_REGISTRATION_CREDENTIAL`. The current Java bridge skips automatic registration when both the registration credential and bootstrap setting are empty. The preview registration endpoint itself does not authenticate callers; restrict it to a controlled network or gateway. The returned registration credential authenticates subsequent runtime connections and does not protect registration itself. Contract history and commands depend on the adapter. Java event reporting also requires adapter middleware at Agent construction and an ASDP runtime connection.
 
-## Python with ASDP
+<span id="python-with-asdp" />
+
+## Python with HTTP runtime transport
 
 Install the SDK version selected for your release:
 
@@ -84,9 +86,8 @@ bridge = aistio.instrument(
     instance_key=os.environ["AISTIO_INSTANCE_KEY"],
     tenant=os.environ["AISTIO_TENANT"],
     namespace=os.environ["AISTIO_NAMESPACE"],
-    control_plane=os.environ["AISTIO_CONTROL_GRPC"],
+    transport="http",
     control_plane_http=os.environ["AISTIO_CONTROL_HTTP"],
-    internal_token=os.environ["AISTIO_BOOTSTRAP_TOKEN"],
     contract_http_port=18090,
     contract_http_base_url=os.environ["AGENT_CONTRACT_URL"],
     event_journal_dir="/var/lib/report-agent/events",
@@ -94,7 +95,7 @@ bridge = aistio.instrument(
 # Call bridge.stop() during application shutdown.
 ```
 
-`AISTIO_CONTROL_GRPC` is `host:port`, not an HTTP Gateway URL. Use a distinct instance key per replica and stable identity across its restarts. Persist the event journal for recovery.
+Python defaults to outbound HTTP exchange (`POST /api/v1/agent-runtime/exchange`) without a gRPC listener. To use gRPC, set `transport="grpc"` and `control_plane="host:port"`. Give each replica a distinct instance key and retain identity and the event journal across restarts. Automatically selected observation adapters do not execute Issue/Team work. For task execution, explicitly supply the SDK's `AsyncInvokeAdapter`, `AgentScopeRunnerAdapter`, or `ExecutableAdapter` through `adapter=`, or implement your own task entry point. See [Adapter selection](/v2/en/service/external-agent-frameworks).
 
 ## Execute Issue and Team work
 
@@ -109,3 +110,18 @@ Implement Python `FrameworkAdapter` and pass it through `adapter=` to add contex
 Verify registration and restart identity, an application-side conversation, history, contract reachability, supported task dispatch, failure and cancellation. Container localhost, one-way networking, incorrect gRPC ports and inaccurate capabilities are common integration problems.
 
 Related: [SDK selection](/v2/en/service/integrations) · [API reference](/v2/en/service/api-reference).
+
+## API entry points and identity
+
+Use a platform account Bearer token for management, the registered instance identity for runtime connections, and an Endpoint credential for published business calls. These credentials serve different purposes.
+
+| Operation | API and key parameters | Response |
+| --- | --- | --- |
+| Register Agent and replica | `POST /api/v1/agent-registrations` with `agentKey`, `instanceKey`, scope, `routingKey`, and `capabilities` | `agent`, `binding`, `instance`, `registrationCredential` |
+| Read Agent | `GET /api/v1/agents/{agentId}` | `agent` |
+| Read bindings and instances | `GET /api/v1/agents/{agentId}/bindings`, `/instances` | `items` |
+| Read reported inventory | `GET /api/v1/agents/{agentId}/runtime-inventory` | `status`, `items`; `not_reporting` when no report exists |
+| Update lifecycle | `PATCH /api/v1/agents/{agentId}` with current `version` and fields such as `status` | Updated `agent` |
+| Rotate/revoke runtime registration credential | `POST /api/v1/agent-registrations/{agentId}/credentials/rotate`; `DELETE /api/v1/agent-registrations/{agentId}/credentials/{credentialId}` | New credential on rotation; 204 on revocation |
+
+See [registration and connection settings](/v2/en/service/external-agent-configuration) for fields and SDK options. After implementing task execution, assign work through the [Issue API](/v2/en/service/issues), or publish an [Endpoint](/v2/en/service/endpoints) for results and SSE through the unified [Agent API](/v2/en/service/service-api).

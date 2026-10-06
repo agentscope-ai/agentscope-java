@@ -29,7 +29,21 @@ Use `.env` for Docker. On Kubernetes, keep sensitive settings in an existing Sec
 | `DASHSCOPE_API_KEY` | Default DashScope model credentials | Required only for that model path |
 | `BUILDER_E2B_API_KEY` | E2B environment credentials | Required only for the corresponding Sandbox path |
 
-## Agent API settings
+<span id="agent-api-settings" />
+
+## Unified service invocation settings
+
+Endpoint/Invocation calls, events, commands, and Webhooks are stored by the control plane. Durable storage supports process recovery. These settings are separate from Managed Dataplane settings below:
+
+| Configuration | Default / source | Purpose |
+| --- | --- | --- |
+| `aistiod --service-event-retention` | `720h`; `0` disables pruning | Prunes old terminal Invocation event increments while retaining cumulative snapshots; reload snapshot after cursor expiry (410) |
+| `AISTIO_ENDPOINT_CREDENTIAL_KEY` | Falls back to platform JWT secret | Encrypts Endpoint credentials; keep consistent across replicas and preserve with backups |
+| `aistiod --enable-asdp` | `true` | Initializes execution-channel handlers also used by HTTP workers; HTTP workers need no gRPC port access |
+
+Application concurrency/token budgets and Endpoint rateLimit/timeouts/payload limits are resource configuration updated through APIs; see [API parameters](/v2/en/service/api-reference). Unified Invocation Webhook destination validation is separate from Managed session allowed-hosts configuration.
+
+## Native Managed session API settings
 
 These are **Dataplane Spring properties**. Supply them through a loaded application.yml, startup arguments or process environment configuration. Adding a line only to Compose `.env` does not pass it to a container; map it in the service definition and recreate the data container.
 
@@ -80,10 +94,10 @@ Distinguish deployment settings from Agent configuration before choosing a check
 | --- | --- |
 | Compose `.env` | Recreate affected containers; `docker compose restart` does not apply new environment variables to existing containers |
 | Helm values / Secret | Follow the production installation procedure and confirm affected Pods use the new configuration; environment variables do not refresh in running processes |
-| Agent Instructions / Definition | Save, publish, and bind the intended revision as required by the editor; start new work and inspect its actual definition |
+| Agent Instructions / Definition | Update through definition APIs; publish the appropriate Workspace revision or Endpoint release, then verify new work |
 | Session defaults | Start a new Session to check inheritance; inspect explicit selections in existing Sessions separately |
 | Memory document content | Ask the Agent to read it again; previous replies do not update automatically |
 
-For example, after changing default model credentials, recreate services using the Compose procedure in [local installation](/v2/en/service/quickstart), check health, and send a simple request in a new Managed Chat. Once model access works, run the knowledge checks in the [presales team case](/v2/en/service/cases/presales-team) to isolate resource-binding problems.
+For example, after changing default model credentials, recreate services using the Compose procedure in [local installation](/v2/en/service/quickstart), check health, and create a new Managed session through the API and submit a simple request. Once model access works, run the fixed inputs in the [CRM proposal case](/v2/en/service/cases/in-product-delivery). If you then connect Memory, verify its reads separately to isolate resource-binding problems.
 
 Record setting names, application version, recreation time, and the new Session ID without secret values. Changing bootstrap settings does not overwrite an existing administrator password; see [accounts](/v2/en/service/access).

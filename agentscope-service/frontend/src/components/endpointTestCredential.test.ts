@@ -24,6 +24,7 @@ const credential = (
 ): EndpointCredential => ({
   id,
   endpointId: 'endpoint-1',
+  applicationId: 'application-1',
   name: id,
   keyPrefix: id,
   recoverable: true,

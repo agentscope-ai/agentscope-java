@@ -1,80 +1,42 @@
 # AgentScope Service
 
-## 发布部署与文档
-
-发布版使用已构建镜像，参见 [Docker / Helm 部署](deploy/README.md) 和 [中文发布维护手册](release/README_zh.md)。完整用户文档位于 [AgentScope Service 专区](../docs/v2/zh/service/index.md)。以下本地启动流程用于开发，包含演示账号和可选数据库重置。
-
-
-> **基于 AgentScope Harness 构建的 Agent 管控与治理平台，为企业提供统一的控制面与编排中心。**
+> **面向业务应用的 Agent as a Service 平台：通过 API 提交工作、持续交互，并获取可复核的结果与交付物。**
 
 [English](README.md)
 
-AgentScope Service 的目标不是替换你现有的 Agent 框架，而是提供一层统一控制面，让你把用不同框架、不同技术栈（Claude、OpenClaw、QwenPaw 等）搭建的智能体统一管控、协作起来。
+AgentScope Service 将能够研究、使用工具和验证结果的 Agent 发布为服务。业务应用可以在 CRM 中生成客户方案，在文档流水线中核验材料，在研发平台中调查故障并生成 PR，也可以提供连续对话的专业助手或定期运行后台任务。
 
-![AgentScope Service](/docs/imgs/agentservice/agentscope-service-dashboard.png)
-
-- **AgentScope Service 是一个控制面。** 为企业内的所有 Agent 提供智能体注册、查询、分布式协调服务，兼容 AgentScope、LangChain、ADK、Claude / Qoder 等主流 Agent 运行时；企业可以有一个集中的 Agent 指标查看入口，同时可以对运行中的 Session 进行上下文压缩等操作。
-- **AgentScope Service 提供低代码 Agent 创建与部署能力。** 底层基于 AgentScope Harness 运行时，可快速将多个 Agent 运行在一套统一管理的 Managed Agents 平台上；平台提供 Harness 能力托管，工具执行则可委托给用户自己控制的 Sandbox。
-- **注册在 AgentScope Service 中的智能体，可以被组建为一个或多个 Teams。** 不论是自行部署的 AgentScope 运行时，还是低代码托管的 Agent Harness 运行时，都可以被编排在一起，共同协作完成更复杂的任务。
-
-这些路径并不互斥。一家公司里，研发可能用 Coding Agent，业务中台用 AgentScope，新项目想直接上托管 Harness——这很常见。AgentScope Service 不绑定任何智能体框架或平台，它为所有智能体运行时提供统一的管控能力。
+用户在原有产品中发起工作和检查交付；Service 承接 Agent 的运行、协调与交互。应用团队负责业务工具、数据授权、界面和结果验收。完整接入设计见[场景案例](../docs/v2/zh/service/usecases.md)。
 
 ## 产品能力
 
-### Control Plane
-Control Plane（控制面，组件名称 Aistio）是 AgentScope Service 的核心组件。Managed Agent、用户自部署的 External Application 与 Runtime Host 统一执行持久化的 `ExecutionAttempt` 契约。
+### 通过 API 从任务走向交付
 
+创建或接入 Agent，配置资源并发布 Endpoint。应用使用 Application 凭证调用服务，保存 Invocation ID，读取状态、快照、事件、待办与产物。Job 用于独立后台任务，Conversation 用于支持会话的单 Agent；每个任务或会话轮次都有自己的 Invocation。
 
+Endpoint 定义输入输出契约和发布版本。应用可以通过查询、SSE 或 Webhook 获取变化，参与人工确认，并把经过验证的结果接回业务流程。执行完成与业务验收分别处理。
 
-Dashboard 则是控制面的可视化 UI 控制台，为整个集群提供在线 agent 列表、部署实例信息、活跃 session 信息、token 消耗等全局观测信息，方便了解集群工作状况。
+从 [API 快速开始](../docs/v2/zh/service/first-session.md)开始，按[发布 Endpoint](../docs/v2/zh/service/endpoints.md)与[统一服务 API](../docs/v2/zh/service/service-api.md)完成接入。Managed 原生会话、文件、子 Agent 和 checkpoint 接口用于相应扩展能力，不能与公共 Invocation 的 ID、认证和事件游标混用。
 
+### 按任务选择执行方式
 
+- **Managed：** 用指令、模型、工具和资源定义专业 Agent，由 Service 运行 AgentScope Harness；工具在配置的 Environment 中执行。平台可部署在自己的基础设施中。
+- **External：** 接入已有 AgentScope 或其他框架应用，保留其进程与部署；实现任务执行适配、事件回报和支持的控制操作。
+- **Hosted：** 通过 Runtime Host 复用 Codex、Claude Code 等 Coding Agent，按任务管理 provider 进程与工作目录。
 
-<!-- 这是一张图片，ocr 内容为：AISTIO AS FLEET OVERVIEW CONTROL PLANE CONSOLE CROSS-FRAMEWORK AGENT INSTANCES AND RUNTIME SESSIONS REPORTED INTO AISTIOD. 品 DASHBOARD TOKENS (24H. HEALTHY IDLE SESSIONS STALE ERRORS (24H) AGENTS ACTIVE OVERVIEW 4) INSTANCES INSTANCES SESSIONS 1 R R AGENTS O 1 6,319 3 SESSIONS GOVERNANCE AGENTS COUNTS LIVE INSTANCES ONLY.3 HISTORICAL MANAGED AGENTS TOKEN USAGE(24H) 8 TEAMS HOURLY SUM OF USAGE DELTAS (NOT CUMULATIVE SNAPSHOTS) 14:00:6,319 TOKENS TOP 10 AGENTS BY TOKENS TOP 10 SESSIONS BY TOKENS RANKED BY TOKEN USAGE DELTAS `LAST 24H RANKED BY TOKEN USAGE DELTAS `LAST 24H SESSION TOKENS ACTIVE ERRORS # PHASE AGENT TOKENS ADMIN MAIN-ED0098A8-E94E-42A9-9578 DEFAULT 1 6,319 6,319 B5FAD881F839 DEFAULT ACTIVE PROFILE USERS DEFAULT -->
-![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785934371848-7b1b934e-11ed-4625-97cc-820f2fe5d214.png)
+先用一个 Agent 验证交付。需要动态分工时组合 Team；需要明确步骤、条件和人工关卡时使用 Workflow。调用方仍通过 Endpoint 使用能力，通过 Invocation 跟踪结果。Team 与 Workflow 当前提供 Job；具体交互以 runtime capabilities 为准。
 
+### 统一管理与观察
 
-此外，还可以在 dashboard 中查看 session 会话信息，查看活跃 session 的实时上下文状态（各部分数据占比），动态调整或压缩会话上下文，介入会话过程等。
+Control Plane（Aistio）管理 Agent 目录、绑定、发布、应用身份、任务协调与公共调用。Managed Agent、External Application 和 Runtime Host 通过持久执行契约协作。Console 提供 API 能力的可视化配置、任务查看与运维入口；业务用户可以留在自己的产品中。
 
-<!-- 这是一张图片，ocr 内容为：AISTIO S SESSIONS CONTROL PLANE CONSOLE 7818AE8D-D486-4B41-BD2A ABORT TUM RESTORE EXIT PLAN ENTER PLAN COMPRESS TERMINATE CF8B7EB67224 品 DASHBOARD AGENTSCOPE-PAW - DEFAULT - AGENTSCOPE-JAVA - TURN #7 OVERVIEW AGENTS LIFETIME USAGE PHASE LAST ACTIVE INSTANCE MODEL PRESSURE SESSIONS 31% 46,777 2026/7/30 HEALTHY 22:55:01 GOVERNANCE ZPROMPT+COMPLETION U-FF406114-1819... HTTP://LOCALHOS MANAGED AGENTS WINDOW-IN 45,260/ OUT 1.517 TEAMS CONTEXT VIEW COMPACTED. 6 CFFECTIVE MSGS -7 TOOLS - WINDOW 125/ 32,768 -->
-![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785946414310-ff29cee8-2b2b-40df-9ec8-0211ee03fe8c.png)
-
-### Managed Agents
-Managed Agents 是由 `agentscope-builder` 平台升级而来，它的定位仍旧是一个低代码 Agent 平台，为开发者提供 Agent 定义、Agent 托管运行的 SaaS 化平台能力。同时更强调推理与工具执行的分离，推理 harness 能力更彻底的托管，工具执行则开放给用户更多的控制权。
-
-
-<!-- 这是一张图片，ocr 内容为：AISTIO AGENTS NEW AGENT CONTROL PLANE CONSOLE LOW-CODE MANAGED AGENTS. EACH AGENT IS SHAPED BY ITS WORKSPACE - AGENTS.MD, TOOLS, SKILLS AND SUBAGENTS. 品 DASHBOARD CLONE-ONLY O ALL 4 SHARED WITH ME O MINE 4 GLOBAL MANAGED AGENTS AGENTS SESSIONS BBB PPP OWNER OWNER OWNER CCC 调用专用AGENT 擅长做微服务相关搜索 WORKSPACES BBB TEST AG_4ECD3838B3CD AG_1426C299ADF8 AG_5AF01156E61F ENVIRONMENTS WORKSPACE LINKED WORKSPACE LINKED WORKSPACE LINKED MEMORY VAULTS DEPLOYMENTS OWNER AAA CHANNELS XXXXX AG_CECC0395E056 8 TEAMS WORKSPACE LINKED ADMIN PROFILE USERS -->
-![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785948183107-014a5cb1-6fcf-4b04-93cb-f01341b35350.png)
-
-
-Agent 定义总体围绕 AgentScope Harness 的核心设计理念设计，首先定义好 Workspace、Memory 等基础概念，通过将 workspace、memory 与 agent 关联即可创建一个智能体。
-
-
-“创建 Agent → 创建 Environment → 创建 Session → 发送第一条消息 → 在 Dashboard 观察事件流”，Session 创建本身不会立刻跑 Agent。对长任务场景，Managed Agents 尤其关键的是**可恢复**：事件落库、状态可重建、HITL 可暂停续跑。前端刷新或服务副本切换，不应等于任务从头开始。
-
-在运行架构上，设计与 Claude Managed Agents 非常类似，Harness 基础设施与运行时全托管（底层依赖AgentScope Harness Runtime），基于 Brain/Hands 分离的架构让用户对工具执行环境有更多控制权。部署架构上，分为控制面、托管数据面两大组件，具体可参考后面的部署架构章节。
-
-### Agent API：把 Agent 作为托管推理服务
-
-业务应用可通过 Agent API 创建持久会话、提交后台任务，以 snapshot + SSE 展示消息、工具调用和待办。刷新页面恢复已有内容；人工确认、steer、取消和 resume 都围绕原 session/turn 操作。还可接入文件与产物、子 Agent、checkpoint 分支、用量预算和 Webhook 通知。
-
-从[可恢复聊天示例](../docs/v2/zh/service/agent-api-chat.md)开始，按[操作指南](../docs/v2/zh/service/session-event-log.md)选择 API，并对照 [SSE 事件目录](../docs/v2/zh/service/sse-events.md)实现前端。需要 API key、schema、发布版本或 Team/Workflow 服务时使用 [Endpoint](../docs/v2/zh/service/endpoints.md)，其认证与事件协议独立。
-
-### Agent Teams
-注册在 AgentScope Service 控制面的所有智能体，不论是使用框架开发部署、自行注册到控制面的（Langchain、AgentScope、ADK、Claude SDK等）智能体，或者是使用 Managed Agents 低代码方式直接创建的托管 Agent，都可以把它们按照你想要的方式编排在一起，形成一个可以互相协作的 Agent Teams 来协作处理复杂。
-
-<!-- 这是一张图片，ocr 内容为：AISTIO IS TEAM1 BACK COMPLETE TEAM FORCE DELETE LEAD CLOSE CONTROL PLANE CONSOLE CCC SOSS_025CA811A27B 帮我分析E2B沙箱和DAYTONA沙箱 SESS_E25CA811A27B FULL PAGE TEAM CHAT DASHBOARD IDLE NS-DEFAULT TASKS 1/2COMPLETE 1 IN PROGRESS 0 PENDING TASK-1.I ALSO LET THEM KNOW THAT THEY CAN REACH OUT IF THEY NEED ANY MANAGED AGENTS SPECIFIC RESOURCES OR HAVE ANY TOPOLOGY AGENTS QUESTIONS. SESSIONS WORKER1 LEAD IS THERE ANYTHING ELSE YOU WOULD LIKE TO ADDRESS AT THIS MOMENT? WORKS PACES ENVIRONMENTS OPEN CHAT CHAT OPEN [TEAM:TEAM1 FROM WORKER1]I HAVE MEMORY CLAIMED TASK-1 AND WILL START THE VAULTS ANALYSIS OF THE E2B SANDBOX.I WILL REACH OUT IF I NEED ANY SPECIFIC DEPLOYMENTS TASK BOARD MEMBERS MESSAGES RESOURCES OR HAVE ANY QUESTIONS. CHANNELS NEW TASK SUBJECT ADD TASK TEAMS TOOL:CLAIMTASK CA11_78816 UNASSIGNED(0) BLOCKED((() COMPLETED(1) IN PROGRESS(1) ASSIGNED(0) TOOL: CA11_5B2 TEAMS 分析E2B治理沙箱 分析DAYTONA 治理沙 箱 TEMPLATES TOOL:TEAM COMPLETE UNCLAIM SEND MESSAGE AG_4ECD3838B3CD... FAILED(0) ADMIN PROFILE USERS -->
-![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785948895276-d0221173-9683-4a94-b281-55f9372cee65.png)
-
-在 AgentScope Service 设计中，Teams 团队不是聊天室，而是一套可运营的协作单元：任务可认领、计划可审批、成员可唤醒，状态也不会因为某个 Session 结束而全部消失。一个常见模式是 Lead 负责任务拆解与验收，Member 按能力认领调研、编码、核验等子任务，平台负责消息路由、任务板与生命周期，而不是让业务代码手写一套临时多进程通信。
-
-值得特别说明的是，AgentScope 框架原生支持 Agent Teams 能力，这套机制是基于 AgentScope Service 控制面做分布式任务管理与调度，所以您既可以使用 AgentScope Framework 原生的 Teams 能力在主 agent 编码阶段实现多 agent 编排，也可以在控制台上根据需求将多个独立的 agent 动态编排在一起完成某一项复杂任务。具体取决于您的使用场景。
+Workspace、Environment、Memory 和 Vault 组织执行资源。应用身份与业务终端用户身份需要分别处理；共享 Application 的不同凭证不会自动提供用户级任务隔离。CRM、GitHub、订单系统等连接由接入方配置。
 
 ## 整体架构
 
 ### 基本工作原理
 
-Human 通过 Dashboard（浏览器）或 REST API（SDK / curl / 第三方系统集成）进入 Control Plane；控制面统一管理三类数据面：
+业务应用通过 Endpoint / Invocation API 提交与观察工作，开发者通过管理 API 或 Console 配置能力；控制面协调三类数据面：
 
 - `managed`：AgentScope Harness 托管运行；
 - `external-application`：AgentScope、LangChain、Claude Agent SDK 等用户应用通过 Application SDK / ASDP 注册；
@@ -93,19 +55,18 @@ Human 通过 Dashboard（浏览器）或 REST API（SDK / curl / 第三方系统
 | 平面 | 负责 | 不负责 |
 | --- | --- | --- |
 | Gateway | 公共入口、认证与 API 路由 | 业务状态与 Agent 执行 |
-| Control Plane（`aistiod`） | 产品资源、控制台、Agent 状态、Session、Team 与运行时命令 | Harness 推理、Session 流传输 |
+| Control Plane（`aistiod`） | 产品资源、发布与 Invocation、公共事件、任务协调和运行时命令 | Harness 推理、原生 Managed Session 事件生成 |
 | Dataplane | Managed Harness Runtime、事件日志、SSE、Turn Lease、HITL 与 Work Queue | 直读产品 Catalog 表 |
 | Scheduler | Channel、Cron、出站任务与 Self-hosted Hands Worker | 推理循环 |
 
 
 ## Agent 如何接入
 
-AgentScope Service 同时服务两类用户：
+业务开发者从 [API 快速开始](../docs/v2/zh/service/first-session.md)验证调用；平台团队准备模型、执行环境、身份与发布资源。已有 Agent 应用按 [External 接入指南](../docs/v2/zh/service/register-agentscope-agent.md)实现执行适配，再发布为服务。
 
-1. **平台服务型团队**：用 Console / API 创建 Managed Agent，快速构建托管智能体。
-2. **业务研发团队**：已有不同技术栈的 Agent 应用，希望纳入统一治理——通过 Application SDK / ASDP 接入控制面。
+## 发布部署与文档
 
-目前支持 Agent Framework、Coding Agent、
+发布版使用已构建镜像，参见 [Docker / Helm 部署](deploy/README.md) 和 [中文发布维护手册](release/README_zh.md)。完整用户文档位于 [AgentScope Service 专区](../docs/v2/zh/service/index.md)。以下本地启动流程用于开发，包含演示账号和可选数据库重置。
 
 ## 快速开始
 
@@ -264,22 +225,15 @@ Java Service 使用 `builder.*` 属性与 `BUILDER_*` 环境变量。各平面�
 
 ## Roadmap
 
-AgentScope Service 把不同模式构建的 Agent（Framework、Coding Agent、Managed Agents）收敛在统一控制平面内，为 Agent 间协作提供统一视图。无论你从 Console 新建第一个 Agent，把 Harness 运行托管给平台，还是把现有 AgentScope / LangChain / Claude 应用接入控制面，目标都一样——**让企业拥有一站式的 Agent 管控与治理中心**。
-
-近期重点包括：
-
-1. **围绕 AgentScope Framework 原生能力持续迭代**
-2. **支持更多 Agent 框架与 Coding Agent 接入** — 补齐并深化 LangChain、ADK、Claude、Qoder、OpenAI Agents 等适配，降低 BYO 接入成本
-3. **Automation** — 围绕 Deployment、Cron、Webhook、Channel 扩展自动触发与闭环执行，让 Agent 走向事件驱动的任务处理
-4. **更多事件驱动集成** — 接入 GitHub / GitLab、钉钉、企微等入口，把代码变更、工单、群消息直接变成 Issue、Comment 或 AgentTask
+后续演进围绕业务应用的接入与交付：完善终端用户授权和文件输入契约，让自动触发复用公开调用链路，并持续验证长任务、复杂编排和费用治理。具体设计与优先级见[场景与实现评估](../internal/implementation/service-aaas-scenario-assessment-20261005.md)；其中建议尚不代表已发布能力。
 
 企业级云产品亦可关注阿里云 [Agent Teams](https://help.aliyun.com/zh/agentteams/magic-console-product-overview)、[Agent Loop](https://help.aliyun.com/zh/document_detail/3033860.html)。
 
 ## 文档
 
-- [Agent API：托管会话与任务](../docs/v2/zh/service/session-event-log.md)
-- [可恢复聊天接入示例](../docs/v2/zh/service/agent-api-chat.md)
-- [SSE 事件与前端接入](../docs/v2/zh/service/sse-events.md)
+- [Service 定位与介绍](../docs/v2/zh/service/index.md)
+- [场景案例与接入设计](../docs/v2/zh/service/usecases.md)
+- [API 快速开始](../docs/v2/zh/service/first-session.md)
+- [统一服务 API](../docs/v2/zh/service/service-api.md)
+- [Managed 原生会话与任务](../docs/v2/zh/service/session-event-log.md)
 - [API 参考](../docs/v2/zh/service/api-reference.md)
-
-关于 AgentScope Service 更多详细讲解，请参考博客文章[《AgentScope Service -企业级智能体管控与治理中心》](https://java.agentscope.io/v2/zh/blogs/agentscope-v2-release.html)

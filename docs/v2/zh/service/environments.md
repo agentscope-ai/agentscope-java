@@ -7,7 +7,36 @@ en_link: /v2/en/service/environments
 此为预览文档，正式版本尚未发布。
 </Note>
 
-**Resources → Environments** 定义 Managed Agent 在哪里执行文件、Shell 等工具。它与保存定义的 Workspace 分工不同，也不是 Hosted Agent 的 Runtime Host。
+Environment 定义 Managed Agent 在哪里执行文件、Shell 等工具，通过 `/api/environments` 管理。它与保存定义的 Workspace 分工不同，也不是 Hosted Agent 的 Runtime Host。控制台对应 **Resources → Environments**，操作入口见 [Console](/v2/zh/service/console/index)。
+
+## 管理 API
+
+使用平台用户 Bearer token 和 `X-AgentScope-Tenant`、`X-AgentScope-Namespace` 请求头，变量准备见[API 快速开始](/v2/zh/service/first-session)。列表按当前身份可检查的资源过滤；读取需要 inspect，修改需要 edit，创建需要空间资源创建权限。
+
+| 操作 | API | 参数与响应 |
+| --- | --- | --- |
+| 列表 | `GET /api/environments` | 返回数组；可用 `limit`（1–500）、`offset`（非负，须同时提供 limit）；总数在 `X-Total-Count` |
+| 创建 | `POST /api/environments` | `name`、`type`、可选 `config`；返回 Environment 和只显示一次的 `apiKey` |
+| 详情 | `GET /api/environments/{id}` | `id`、`name`、`type`、`config`、`ownerId`、`archivedAt`、时间戳；不返回 key |
+| 更新 | `PATCH /api/environments/{id}` | 可选 `name`、`config`；config 整体替换，type 不可变 |
+| 归档 | `POST /api/environments/{id}/archive` | 返回带 `archivedAt` 的 Environment；不再出现在活动列表 |
+| 轮换 key | `POST /api/environments/{id}/rotate-key` | 返回新的 `apiKey`，旧 key 随即失效 |
+| 删除 | `DELETE /api/environments/{id}` | 返回 204 |
+
+这些 Environment 修改接口没有版本条件参数。更新 config 前先读取并保留其他需要的设置；归档后的资源不能继续 PATCH。删除或归档前检查 Agent 与 Session 的使用情况，资源维护不是取消正在运行任务的接口。
+
+例如创建一个 self-hosted 工具执行环境：
+
+```bash
+ENVIRONMENT_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/environments" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data '{"name":"Report worker","type":"self_hosted","config":{}}')
+ENVIRONMENT_ID=$(printf '%s' "$ENVIRONMENT_JSON" | jq -er '.id')
+ENVIRONMENT_KEY=$(printf '%s' "$ENVIRONMENT_JSON" | jq -er '.apiKey')
+```
+
+保存 Environment ID 和 key，并按本页后面的命令连接 Worker。其他类型使用下面的类型与配置说明；创建 local 需要部署允许本地执行，否则返回 403。
 
 ## 界面导览
 
@@ -28,13 +57,13 @@ en_link: /v2/en/service/environments
 
 Docker 下 Local 指 Dataplane 容器内部，并不是宿主机的任意目录。生产环境按工具隔离和网络需求选择后端。
 
-## 创建与配置
+## 绑定与配置
 
-在 Environments 创建名称和类型，随后在详情配置该类型所需的 JSON 连接参数。类型创建后只读。后端所需凭据和能力必须与所选 provider 匹配；不要把 Runtime Host 的 enrollment 凭据用于 Worker。
+通过 [Agent 定义 API](/v2/zh/service/managed-agent-configuration)设置 `defaultEnvironmentId`。更新时先读取完整定义，保留其他字段并携带当前定义版本。创建 Managed session 的 `environmentId` 可以覆盖该次会话的环境选择；省略时采用 Agent 默认配置。
 
-在 **DESIGN → Agents** 打开 Managed Agent，在 **Runtime → Session defaults → Default environment** 选择环境，保存为 `defaultEnvironmentId`。创建页也可以通过 Advanced settings 选择环境。Session API 的 `environmentId` 可以为该会话指定环境。
+后端所需凭据和能力必须与所选 provider 匹配；不要把 Runtime Host 的 enrollment 凭据用于 Worker。保存后建立新 Session，用只读文件操作验证连接、工作目录和权限，再验证写入或执行命令。即使使用 self_hosted，Managed 模型推理仍在 Dataplane 中运行。
 
-保存后建立新 Chat，用只读文件操作验证连接、工作目录和权限，再验证写入或执行命令的工具。该绑定选择工具执行位置；即使使用 self_hosted，Managed 的模型推理仍在 Dataplane 中运行。
+`config.memoryAccess` 可以按 Memory Store ID 指定挂载权限，例如 `{"memoryAccess":{"STORE_ID":"read_only"}}`。支持 `read_only`、`read_write`，未配置的 Store 默认可读写；这是已绑定共享知识的运行时访问策略，不会自动绑定 Store。详见 [Memory](/v2/zh/service/memory)。
 
 ## Self-hosted 接入
 

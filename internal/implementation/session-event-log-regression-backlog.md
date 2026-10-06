@@ -1,6 +1,6 @@
 # Deferred concentrated regression pass
 
-Per user direction (2026-09-30), implement the complete capability first. Current pass uses compilation and a small number of critical contract checks; the following need a dedicated later regression campaign.
+This is the historical backlog collected during implementation on 2026-09-30 and 2026-10-01. The concentrated regression was executed on 2026-10-02; see [the consolidated results, fixes and remaining coverage](session-service-regression-20261002.md). The cases below are preserved for traceability and are not all still pending or all complete. Capacity, external-environment and exhaustive fault matrices remain explicitly identified in that report.
 
 - Fault injection after blob/commit writes, head CAS, lost ACK, export ACK, public DB commit, inbox admission and worker dispatch; verify committed prefix, idempotency and no tool replay.
 - Cross-process writer fencing/lease expiry, clock skew, takeover during long tool/model calls, local/NAS semantics, Redis persistence configuration, PostgreSQL/MySQL/Mongo/ControlPlane CAS contract.

@@ -1,100 +1,112 @@
 ---
 title: "What is AgentScope Service?"
+description: Publish Agents as services for background tasks, interactive assistants, and reusable specialist capabilities inside business applications.
 zh_link: /v2/zh/service/index
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+These are preview docs. The formal release is not yet available.
 </Note>
 
-**AgentScope Service is a platform for running, managing and orchestrating Agent applications, turning individual Agents and multi-Agent collaboration into callable, traceable services.**
+**AgentScope Service is an Agent as a Service platform for business applications. Developers publish Agent capabilities through APIs so applications can submit work, follow progress, handle human interaction, and retrieve results and deliverables.** It serves work that involves research, tools, system operations, and repeated verification: preparing customer proposals, checking documents, investigating order exceptions, or turning a diagnosis into a repair PR.
 
-Create cloud Agents in the console without writing code, connect applications built with AgentScope, or use Coding Agents such as Codex. Shared conversation, task, collaboration and API entry points let you track execution and deliverables across these runtime models.
+Users can stay in their existing product: assign work on a task board, request an investigation from an order page, supply missing details in a support conversation, and review the result in the same interface. Service runs and coordinates Agents in the background. The application owns its business objects, user experience, authorization, and use of the results.
+
+## How Service relates to Harness: two ways to use Agents
+
+**With AgentScope, you can develop your own Agent application using the Harness SDK, or use managed Agent services directly through the Service platform.** The SDK embeds Agent execution in application code. Service runs and manages those capabilities centrally for applications to consume through APIs. With Managed Agents, you can start without building a separate SDK application or a runtime service for every Agent application.
+
+**Managed Agents in AgentScope Service are built on the AgentScope HarnessAgent core.** HarnessAgent provides reasoning and tool loops, context, workspaces, and sessions. Service adds configuration, publishing, invocation, task management, and operational controls on top of this core. Configure instructions, models, tools, and resources on the platform to publish an Agent as a callable business service.
+
+| Decision | Harness SDK: build your own application | Service: use managed Agent services |
+| --- | --- | --- |
+| Best fit | Deep Java / Spring Boot integration, custom runtime behavior and application lifecycle | Integrate assistants or background tasks and centrally manage execution and invocation across Agents |
+| Development | Compose Harness, business tools, and application logic in code | Configure and publish a Managed Agent on the platform, then call it through APIs |
+| Runtime ownership | The SDK provides execution capabilities; the application team owns runtime services, deployment, scaling, and operations | Service handles Agent execution, sessions, tasks, and interaction; the platform team maintains shared infrastructure and execution resources |
+| Application team's focus | Agent implementation, business integration, and application operations | Instructions and tools, business data and authorization, product interaction, and acceptance |
+
+For example, to generate a customer proposal in a CRM, the SDK approach embeds Harness in your Java service and leaves deployment with your team. With Service, you publish a proposal Agent on the platform; the CRM calls its API, displays progress, and retrieves the proposal. You can also combine the approaches: an existing Harness application can connect as an [External Agent](/v2/en/service/register-agentscope-agent), retaining its own process while using the platform's publishing, invocation, and task coordination capabilities. Start with the [Harness quickstart](/v2/en/docs/quickstart) for SDK development or the [Service API quickstart](/v2/en/service/first-session) for managed services.
+
+## Applications it serves
+
+| Application need | Integration pattern | Delivery |
+| --- | --- | --- |
+| Add “complete this work for me” to a SaaS or internal product | A button or task transition starts a background Job | Proposals, reports, files, reviewable changes |
+| Handle exceptions that cannot be fully enumerated in advance | A business process calls an investigation, verification, or resolution step | Structured findings, evidence, recommendations, execution receipts |
+| Provide an assistant that needs ongoing conversation | The application maintains a Conversation and submits turns | Contextual replies, tool results, questions requiring input |
+| Research, inspect, or process many business objects | A scheduler or event handler submits independent Jobs | A traceable result or exception for each object |
+| Let another Agent use a specialist capability | A parent Agent or tool adapter calls an Endpoint | A specialist result with an input/output contract |
+
+These patterns can be combined. An order investigation may start as a background Job, ask the application to notify a designated decision maker, continue after approval, and return an execution receipt to the order system. See [Use cases](/v2/en/service/usecases) for inputs, integration flows, and acceptance criteria.
+
+## One API path from task to delivery
+
+Consider “generate a customer proposal” inside a CRM. The application collects requirements and authorized source material, calls the published proposal service, and saves the Invocation ID. The user can leave the page. On return, the application reads a snapshot and resumes events to display progress, questions, and artifacts. A business reviewer checks the proposal and its sources before deciding whether to send it.
 
 ```mermaid
-flowchart TB
-  U["Console: Chat / Issue"] --> G["Gateway: unified entry and authentication"]
-  A["Business applications: Agent API / Endpoint / SSE"] --> G
-  G --> C["Control: Agent catalog, Teams, Workflows and work records"]
-  C --> S["Scheduler: scheduling and execution coordination"]
-  S --> M["Managed: Agents hosted by Dataplane"]
-  S --> E["External: independent applications with SDK integration"]
-  S --> H["Hosted: Coding Agents on Runtime Host"]
-  G -->|Session execution API and SSE| M
-  M --> R["Environment / Memory / Vault"]
-  C --- P["Persistent storage: PostgreSQL, Workspace, Artifact"]
-  M --- P
+flowchart LR
+    B["Application, event handler, or scheduler"] --> E["Endpoint: published capability and contract"]
+    E --> I["Invocation: one durable call"]
+    I --> X["Agent execution, optionally Team / Workflow"]
+    X --> R["Results, evidence, and deliverables"]
+    I --> P["Snapshots, events, and pending actions"]
+    P --> B
+    R --> B
+    B --> H["Business review and follow-through"]
 ```
 
-The diagram summarizes component responsibilities. Control stores definitions and work; Scheduler coordinates execution. Managed model loops run in Dataplane, External retains an application process, and Hosted starts a provider on a connected host. Developers can use Docker Compose for [local installation](/v2/en/service/quickstart); administrators can use Helm for [production installation](/v2/en/service/kubernetes).
+1. **Define the capability.** Configure instructions, models, tools, and resources, or connect an existing Agent application.
+2. **Publish the service.** An Endpoint defines the address, input/output schemas, authentication policy, and release.
+3. **Submit work.** Use a Job for an independent background task or a Conversation for a session-capable Agent. Each task or conversation turn produces an Invocation.
+4. **Stay involved.** Read status, snapshots, events, and artifacts through the same Invocation. Handle additional input, pending actions, and cancellation according to capabilities.
+5. **Continue the business process.** Use queries, SSE, or Webhooks to receive changes, validate delivery, and update business systems.
 
-## Three ways to manage and orchestrate Agents
+Acceptance of a request, completion of execution, and business approval are distinct stages. A page refresh restores the existing Invocation; submission retries reuse the same idempotency key. External effects performed by tools also need idempotency and reconciliation in the business system.
 
-### Build without code: fully managed cloud Agents
+## What Service owns
 
-**Managed Agent** lets you configure responsibilities, models, knowledge and tools in the console. Service starts the Agent, runs its model and tool loop, and persists Session state. You do not need to write an Agent application or operate its process separately.
+Service provides capability publishing, caller identity and quotas, durable task coordination, execution state and events, human interaction, and artifact access. For Managed Agents, Service hosts Agents built on the AgentScope HarnessAgent core and manages their execution and session lifecycles. You can deploy the platform on your own infrastructure; managed execution means Service runs the Agent and does not require a particular public cloud.
 
-Cloud refers to the Service deployment you use; administrators first configure models and execution resources. Bind Workspaces, Environments, Memory and Vault as needed. See [Managed Agent](/v2/en/service/managed-agent).
+Application teams still provide business tools and data connections, map user permissions to calls, design the interface, and define acceptance and writeback rules. Publishing an Endpoint does not automatically grant access to a CRM, GitHub, or an order system.
 
-### Develop with AgentScope: connect your application
+APIs are the primary interface: applications, scripts, and SDKs can manage Agents, resources, orchestration, and releases as well as submit work. Console is the visual interface to these capabilities. Business users can consume Agents inside their own products without opening Console.
 
-**External Agent** fits applications with custom code, existing deployments or direct framework control. Build and run your Agent with AgentScope, then register it through the SDK to expose its identity, Sessions and integrated capabilities in Service.
+## Choose execution and coordination for the task
 
-You still manage the application's models, dependencies and process. With task execution implemented in its adapter, it can receive Issues or join Teams. Registration and executable capabilities depend on that adapter. See [External Agent](/v2/en/service/external-agent).
+First decide what the service must deliver, then select an execution model:
 
-### Use Agents such as Codex: connect existing execution tools
-
-**Hosted Agent** reuses Codex, Claude Code, Qoder, QwenPaw or OpenClaw. Install and authenticate a provider on your computer or server, then connect Runtime Host so Service can dispatch work there.
-
-Service manages tasks and deliverables; Runtime Host manages provider processes and working directories. Tool, Subagent, approval and recovery support varies by provider. See [Hosted Agent](/v2/en/service/hosted-agent) and the [capability comparison](/v2/en/service/hosted-agent-providers).
-
-Agents from all three modes can participate in orchestration according to their implemented task capabilities. A **Team** lets a Leader delegate and combine member results dynamically. A **Workflow** defines fixed steps, conditions and human gates.
-
-## Integrate a Managed Agent into your application
-
-Use **Agent API** for a custom chat interface with tool progress and human confirmation: create a persistent session, submit background turns, and render snapshot + SSE. The service saves messages, tool calls and execution state. Work continues while the user is away, and returning restores committed content.
-
-| What you need | Entry point | Start here |
+| Execution model | Starting point | Responsibility |
 | --- | --- | --- |
-| Hosted conversations with messages, tools, confirmation, cancellation and recovery | Agent API with a user Bearer token | [Resumable chat example](/v2/en/service/agent-api-chat) → [API guide](/v2/en/service/session-event-log) → [SSE events](/v2/en/service/sse-events) |
-| Published Agent, Team or Workflow services with schemas, API keys and releases | Endpoint Conversation / Job | [Publish and invoke](/v2/en/service/endpoints) |
-| An Agent running in your own Java application | SDK call / streamEvents; AgentSession for persistent conversations | [SDK guide](/v2/en/docs/harness/session-log) |
+| [Managed](/v2/en/service/create-managed-agent) | Configure instructions, models, tools, and resources for a specialist Agent | Service hosts the HarnessAgent core; tools execute in the configured Environment |
+| [External](/v2/en/service/register-agentscope-agent) | Reuse an Agent application, custom business logic, or your own framework | The application owns its process and implements task execution, reporting, and supported controls |
+| [Hosted](/v2/en/service/connect-hosted-agent) | Reuse a Coding Agent such as Codex or Claude Code | Runtime Host starts the provider, manages the work directory, and reports execution |
 
-Agent API also supports structured/file input, steering, child Agent tracing, checkpoint restore and forks, usage budgets and webhooks. Endpoints have their own invocation and event contracts; choose the appropriate entry point without interchanging tokens, IDs or cursors.
+A focused service can use a single Agent. Use a **Team** for dynamic delegation or a **Workflow** for explicit steps, conditions, and human gates. These are implementation choices behind an Endpoint; callers still retrieve results through an Invocation. Registration, runtime availability, and actual task readiness are separate checks.
 
-## Core concepts
+A common API does not mean every runtime supports the same interactions. Teams and Workflows currently provide Jobs. Conversations require a session-capable single Agent. Read capabilities before enabling controls; Managed native checkpoint, file, and subagent operations use their own protocol.
 
-### Capability definitions
+## Understand the public API objects
 
-| Concept | Purpose |
+| Object | Meaning for an application |
 | --- | --- |
-| Agent | Reusable responsibilities and runtime configuration; the basic unit that performs work |
-| Team | A Leader and members collaborating dynamically toward a goal |
-| Workflow | Steps, dependencies, branches and human gates executed from a published revision |
-| Endpoint | An authenticated API exposing an Agent, Team or Workflow |
-| Automation / Channel | Start work from schedules or events, and from messaging platforms, respectively |
+| Endpoint / Release | Published address and contract; a Release fixes the selected target and configuration |
+| Application / Credential | Business caller identity, credentials, permissions, and usage limits |
+| Invocation | One logical call with state, events, interactions, results, and artifacts |
+| Conversation | A multi-turn session, with a separate Invocation for each turn |
+| Required action / Artifact | A pending interaction or an actual deliverable |
 
-### Work and execution
+Agents, Bindings, and runtime instances define capabilities and locate execution. Workspaces, Environments, Memory, and Vault configure resources. A Team's Issues, Tasks, and Attempts, and a Workflow's Runs and Nodes, coordinate internal work. Applications normally integrate through Endpoints and Invocations, viewing internal progress when useful without reproducing the task coordinator.
 
-| Concept | Purpose |
-| --- | --- |
-| Chat / Session | Chat is the console conversation entry; Session stores continuing runtime context |
-| Issue | Work objective, owner, discussion and acceptance criteria |
-| Run / Node | An orchestration execution and its steps |
-| AgentTask / Attempt | Assigned work and one actual execution; retries can create new Attempts |
-| Comment / Artifact | Discussion, progress and shared deliverable files |
-| Approval | Permission for an operation to proceed; deliverable acceptance is handled separately |
+An Application represents the calling application. Different credentials belonging to the same Application do not automatically isolate different end users. The application backend must check access to tasks and source material. Namespaces, resource visibility, and approval permissions have their own boundaries.
 
-Ordinary Chat can start directly. Work-oriented requests use Issues and execution records to track progress. After execution succeeds, inspect or accept the result according to the work's completion policy.
+| Operation | Interface | Guide |
+| --- | --- | --- |
+| Manage Agents, Teams, Workflows, resources, and releases | Management APIs, primarily `/api/v1/` | [Publish an Endpoint](/v2/en/service/endpoints) |
+| Invoke a published service | `/invoke/v1/` | [Unified service API](/v2/en/service/service-api) |
+| Use Managed-specific session and recovery capabilities | Native APIs such as `/api/v1/agent-sessions` | [Managed sessions and tasks](/v2/en/service/session-event-log) |
 
-### Resources and permissions
+Identities, resource IDs, and event cursors are not interchangeable between protocols. See [API reference](/v2/en/service/api-reference).
 
-**Workspace** stores instructions, skills, tools and Subagent definitions. **Environment** selects where Managed tools execute. **Memory** stores shared knowledge; **Vault** stores connection credentials. The Managed Agent section explains how to bind and verify these resources.
+## Where to start
 
-**Namespace** organizes resources and permissions. A Workspace is a capability resource, not a Namespace. Seeing an Agent does not grant access to all private work involving it.
-
-### Versions
-
-Agent, Workspace, Team and Workflow configurations evolve. A Workflow revision fixes the process version; an Endpoint release selects the target currently exposed by its API. Publish or update the appropriate binding after editing a draft, then verify with new work.
-
-Follow the [quickstart](/v2/en/service/first-session) to create a cloud Agent, publish an API, register an application and organize a Team.
+Choose a business entry point in [Use cases](/v2/en/service/usecases), then complete a publish–invoke–retrieve cycle with the [API quickstart](/v2/en/service/first-session). Use [Console](/v2/en/service/console/index) for visual configuration and diagnosis. For deployment, see [Local installation](/v2/en/service/quickstart) and [Production installation](/v2/en/service/kubernetes).

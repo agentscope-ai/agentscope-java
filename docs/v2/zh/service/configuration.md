@@ -29,7 +29,21 @@ Docker 在 `.env` 中配置；Kubernetes 将敏感项放入已有 Secret，通�
 | `DASHSCOPE_API_KEY` | 默认 DashScope 模型凭据 | 只在使用该模型路径时需要 |
 | `BUILDER_E2B_API_KEY` | E2B 环境凭据 | 仅对应 Sandbox 路径需要 |
 
-## Agent API 配置
+<span id="agent-api-配置" />
+
+## 统一服务调用的配置
+
+Endpoint / Invocation 在控制面保存调用、事件、命令和 Webhook 状态，使用持久 Store 后可跨进程恢复。以下属于控制面进程配置，与后面的 Managed Dataplane 配置分别生效：
+
+| 配置 | 默认或来源 | 用途 |
+| --- | --- | --- |
+| `aistiod --service-event-retention` | `720h`，`0` 关闭清理 | 清理超过保留期的终态 Invocation 增量事件，累计快照保留；旧 cursor 返回 410 后重新读取 snapshot |
+| `AISTIO_ENDPOINT_CREDENTIAL_KEY` | 未设置时回退平台 JWT secret | 加密 Endpoint 凭据；多副本和恢复环境保持一致，独立保管并随备份保存 |
+| `aistiod --enable-asdp` | `true` | 初始化运行通道处理器；当前 HTTP worker 也复用它，HTTP 传输不要求 worker 可访问 gRPC 端口 |
+
+Application 的并发/Token 预算、Endpoint 的 rateLimit/超时/输入大小属于资源配置，通过对应 API 更新，详见[调用与发布参数](/v2/zh/service/api-reference)。统一 Invocation Webhook 的目标校验与 Managed 会话 Webhook 的 allowed-hosts 配置是不同链路，不能混用。
+
+## Managed 原生会话 API 配置
 
 这些是 **Dataplane 的 Spring 配置项**。通过实际加载的 application.yml、启动参数或传入进程的环境配置设置；仅往 Compose 的 `.env` 加一行不会自动传给容器，需要在服务定义中映射并重建 data 容器。
 
@@ -80,10 +94,10 @@ Dataplane/Scheduler 默认使用 Hibernate `update`，Go 在启动时执行迁�
 | --- | --- |
 | Compose `.env` | 重新创建受影响容器；仅 `docker compose restart` 不会把新的环境变量应用到已有容器 |
 | Helm values / Secret | 按生产安装流程更新，并确认受影响 Pod 使用新配置；环境变量不会在已有进程中自动刷新 |
-| Agent Instructions / Definition | 按编辑页面保存、发布并绑定目标 revision，然后新建工作验证实际使用的定义 |
+| Agent Instructions / Definition | 通过 definition API 更新；按需发布 Workspace revision 或 Endpoint release，用新工作验证 |
 | Session defaults | 新建 Session 验证继承值；已有 Session 的显式选择需要单独检查 |
 | Memory 文档正文 | 要求 Agent 再次读取；旧回复不会因知识更新自动改写 |
 
-例如修改默认模型凭据后，在安装目录按[本地安装](/v2/zh/service/quickstart)的 Compose 流程重新创建服务，检查健康状态，再新建 Managed Chat 提交一句简单请求。模型请求成功后，再执行[售前方案团队](/v2/zh/service/cases/presales-team)的知识读取检查，可以分别定位模型配置和资源绑定问题。
+例如修改默认模型凭据后，在安装目录按[本地安装](/v2/zh/service/quickstart)的 Compose 流程重新创建服务，检查健康状态，再通过 API 创建新 Managed 会话并提交简单请求。模型请求成功后，再执行[CRM 方案交付案例](/v2/zh/service/cases/in-product-delivery)的固定输入检查；如果进一步接入 Memory，再验证资源读取，可以分别定位模型配置和资源绑定问题。
 
 验收记录保留修改项名称、应用版本、重建时间和新 Session ID；不记录密钥原文。修改 bootstrap 配置不会覆盖数据库中已存在的管理员密码，处理方式见[账号参考](/v2/zh/service/access)。

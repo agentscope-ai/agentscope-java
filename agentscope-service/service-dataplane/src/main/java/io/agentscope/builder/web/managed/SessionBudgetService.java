@@ -1,5 +1,6 @@
 package io.agentscope.builder.web.managed;
 
+import io.agentscope.builder.control.ControlPlaneClient;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.model.ChatUsage;
@@ -226,13 +227,16 @@ public final class SessionBudgetService {
                     data.put("turn_id", recorder.turnId());
                     data.put("run_id", recorder.runId());
                 }
-                events.appendIdempotent(
+                var execution = context.get(ManagedTurnContext.class);
+                events.appendIdempotentScoped(
                         session,
                         "budget.exceeded",
                         data,
                         "budget_"
                                 + JournalSessionLog.hash(call.getBytes(StandardCharsets.UTF_8))
-                                        .substring(0, 56));
+                                        .substring(0, 56),
+                        ControlPlaneClient.eventScope(
+                                execution == null ? null : execution.scope()));
                 throw new BudgetExceededException(exceeded);
             }
             var reservation = new LinkedHashMap<String, Object>();

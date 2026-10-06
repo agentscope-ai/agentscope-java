@@ -1,12 +1,14 @@
 ---
 title: "Example: a resumable chat application"
-description: Connect multi-turn chat, tools, refresh recovery, human confirmation and task cancellation through Agent API.
+description: Connect multi-turn chat, tools, refresh recovery, human confirmation and task cancellation through the Managed native session API.
 zh_link: /v2/zh/service/agent-api-chat
 ---
 
 Connect a Managed “Notes assistant” to your application. The user submits material, the Agent uses tools and summarizes results, and returning to the same session restores committed messages, tool arguments, results and pending actions.
 
-[Create a Managed Agent](/v2/en/service/create-managed-agent), configure its model and Environment, and verify one console Chat first. Tool examples require available tools; confirmation requires `permissionPolicy.type=always_ask` on the relevant tool. Without tools, start with text and refresh recovery.
+This example uses the Managed native session API to manage hosted sessions, messages, tools, and pending actions directly. To consume published services across Agent types or invoke Teams and Workflows, start with the [Unified service API](/v2/en/service/service-api).
+
+[Create a Managed Agent](/v2/en/service/create-managed-agent), configure its model and Environment, and verify inference with the session request on that page. Tool examples require available tools; confirmation requires `permissionPolicy.type=always_ask` on the relevant tool. Without tools, start with text and refresh recovery.
 
 ## 1. Create a session and submit work
 

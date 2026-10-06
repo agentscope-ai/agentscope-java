@@ -181,14 +181,6 @@ func (d *Distributor) SendSessionCommand(tenant, namespace, agentID, instanceID,
 // SendSessionCommandWithParams is like SendSessionCommand but includes params
 // (for example an AgentTask locator and task-scoped token).
 func (d *Distributor) SendSessionCommandWithParams(tenant, namespace, agentID, instanceID, sessionID, command string, params []byte) error {
-	logger := log.Log.WithName("asdp-distributor")
-
-	conn, ok := d.server.GetConnectionForAgentInstance(tenant, namespace, agentID, instanceID)
-	if !ok {
-		logger.Info("instance not connected for session command",
-			"instance", instanceID, "session", sessionID, "command", command)
-		return ErrInstanceNotConnected
-	}
 
 	cmd := &SessionCommand{
 		SessionId: sessionID,
@@ -204,26 +196,18 @@ func (d *Distributor) SendSessionCommandWithParams(tenant, namespace, agentID, i
 		},
 	}
 
-	return conn.Send(down)
+	return d.server.sendRuntime(tenant, namespace, agentID, instanceID, down)
 }
 
 // SendConversationTurn delivers one fenced online turn to a connected Agent
 // instance. Unlike SessionCommand this command carries a public Invocation ID
 // and must be acknowledged through ConversationTurnReport.
 func (d *Distributor) SendConversationTurn(tenant, namespace, instanceID string, command *ConversationTurnCommand) error {
-	conn, ok := d.server.GetConnectionForAgentInstance(tenant, namespace, command.GetAgentId(), instanceID)
-	if !ok {
-		return ErrInstanceNotConnected
-	}
-	return conn.Send(&Downstream{Payload: &Downstream_ConversationTurn{ConversationTurn: command}})
+	return d.server.sendRuntime(tenant, namespace, command.GetAgentId(), instanceID, &Downstream{Payload: &Downstream_ConversationTurn{ConversationTurn: command}})
 }
 
 // SendExecutionAttemptCommand sends a task wake only to the selected tenant's stream.
 func (d *Distributor) SendExecutionAttemptCommand(tenant, namespace, agentID, instanceID, sessionID, command string, params []byte) error {
-	conn, ok := d.server.GetConnectionForAgentInstance(tenant, namespace, agentID, instanceID)
-	if !ok {
-		return ErrInstanceNotConnected
-	}
 	var payload struct {
 		AttemptID, AgentTaskID, RunID, NodeID string
 		Generation                            int64
@@ -240,7 +224,7 @@ func (d *Distributor) SendExecutionAttemptCommand(tenant, namespace, agentID, in
 		RunId: payload.RunID, NodeId: payload.NodeID, Generation: payload.Generation, Command: command,
 		ContextUrl: payload.ContextURL, TaskToken: payload.TaskToken, AttemptToken: payload.AttemptToken,
 		RuntimeBinding: payload.RuntimeBinding, Payload: params, Timestamp: time.Now().UnixMilli()}
-	return conn.Send(&Downstream{Payload: &Downstream_ExecutionAttempt{ExecutionAttempt: cmd}})
+	return d.server.sendRuntime(tenant, namespace, agentID, instanceID, &Downstream{Payload: &Downstream_ExecutionAttempt{ExecutionAttempt: cmd}})
 }
 
 // GetConnectedInstance returns the instance ID of a connected instance for the

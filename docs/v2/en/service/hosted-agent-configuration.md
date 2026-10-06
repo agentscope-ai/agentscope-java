@@ -40,7 +40,64 @@ The default file is `~/.agentscope/runtime-host/config.json`. Its `controlPlane`
 
 Agent `system` defines responsibilities and `model` provides an optional override. A nonempty Agent model takes precedence over Profile `model`. When both are empty, the provider uses its own default.
 
-`runtimeProfileId` selects provider configuration; `runtimePoolId` selects the Host pool. Most authors select a discovered Runtime in the console while administrators maintain Profiles and pools. Raising Host capacity does not increase model quota or remove Agent/task policy limits.
+`runtimeProfileId` selects provider configuration; `runtimePoolId` selects the Host pool. Agent authors select a discovered Runtime through `runtime-options`; administrators maintain Profiles and pools. Raising Host capacity does not increase model quota or remove Agent/task policy limits.
+
+## Agent and runtime configuration APIs
+
+Use a platform account Bearer token authorized for the target namespace. See [connect and create an Agent](/v2/en/service/connect-hosted-agent) for a complete creation request.
+
+| Operation | API | Key request and response fields |
+| --- | --- | --- |
+| Discover runtimes | `GET /api/v1/agents/runtime-options?tenant=...&namespace=...` | Returns `runtimes`, `profiles`, `pools`; options include `provider`, `runtimeProfileId`, `runtimePoolId`, `hostCount`, `capabilities` |
+| Create Hosted Agent | `POST /api/v1/agents` | `agentKey`, scope, `binding.kind: "hosted-runtime"`, `binding.configuration`, and `definition`; returns `agent`, `binding`, `policy`, `definition` |
+| Read definition | `GET /api/v1/agents/{agentId}/definition` | `agentId`, `definition`; retain definition `version` |
+| Update definition | `PATCH /api/v1/agents/{agentId}/definition` | Requires `name` and current `version` with the definition to save; returns `agent`, `definition` |
+| Read runtime settings | `GET /api/v1/agents/{agentId}/hosted-settings` | `settings` with binding, profile/pool, overrides, concurrency, and both version numbers |
+| Update runtime settings | `PATCH /api/v1/agents/{agentId}/hosted-settings` | Fields below; returns updated `settings` |
+| Read definition history | `GET /api/v1/agents/{agentId}/versions`, `/versions/{version}` | Saved versions or an individual version |
+
+Creation requires `runtimeProfileId` and `runtimePoolId` in `binding.configuration`, in the same scope, with optional `executionOverrides`. The portable `definition` uses the Managed format: commonly `name`, `system`, `model`, `tools`, `mcpServers`, `skills`, `workspaceId`, and `workspaceBinding`. Provider capabilities determine how these fields take effect. Read the complete definition before updating it; do not assume PATCH preserves every omitted field as a shallow merge.
+
+### Hosted settings fields
+
+| Field | Meaning |
+| --- | --- |
+| `bindingVersion` | Required current binding version for concurrent update checks |
+| `policyVersion` | Return the current policy version to protect against concurrent changes |
+| `runtimeProfileId`, `runtimePoolId` | Optional new runtime configuration/pool; omission retains the current value |
+| `executionOverrides` | Optional `reasoningEffort`, `serviceTier`, `providerConfiguration`, `customArgs`; omission retains current overrides |
+| `maxConcurrency` | Optional 0–50; 0 leaves the Agent-level limit unset, while Host and other limits still apply |
+
+`providerConfiguration` is an object and `customArgs` is an argv string array. Provider validation rejects invalid or reserved options. Prefer per-Agent overrides for individual preferences instead of changing a shared Profile.
+
+This example updates only concurrency. `AGENT_ID` is an existing Agent UUID; `SERVICE_URL` and `TOKEN` configure management access:
+
+```bash
+curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/hosted-settings" \
+  -H "Authorization: Bearer $TOKEN" > hosted-settings.json
+
+jq '{bindingVersion: .settings.bindingVersion,
+     policyVersion: .settings.policyVersion,
+     maxConcurrency: 2}' hosted-settings.json > hosted-settings-update.json
+
+curl -sS -X PATCH "$SERVICE_URL/api/v1/agents/$AGENT_ID/hosted-settings" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data-binary @hosted-settings-update.json
+```
+
+On a version conflict, read the current settings, merge your changes, and retry.
+
+### Manage shared Profiles and Pools
+
+`GET /api/v1/runtime-profiles` and `/runtime-pools` accept `tenant` and `namespace` and return `items`. Read individual resources through `/runtime-profiles/{name}` or `/runtime-pools/{name}`, returning `profile` or `pool`.
+
+| Save API | JSON fields |
+| --- | --- |
+| `POST /api/v1/runtime-profiles` or `PUT /api/v1/runtime-profiles/{name}` | `tenant`, `namespace`, `name`, `provider`; optional `runtime`, `configuration`, `requirements` |
+| `POST /api/v1/runtime-pools` or `PUT /api/v1/runtime-pools/{name}` | `tenant`, `namespace`, `name`; optional `hostSelector`, `configuration` |
+
+For PUT, the path name selects the resource. Submit the complete desired configuration and retain returned UUIDs for Agent bindings. See [Runtime Host APIs](/v2/en/service/runtime-host#host-enrollment-and-management-apis) for enrollment, capacity, and pausing new work.
 
 ## Provider parameters
 
@@ -48,9 +105,9 @@ These fields belong to Runtime Profile `configuration`, not to `connect` and not
 
 | Provider | Common fields | Behavior |
 | --- | --- | --- |
-| Codex | `model`, `profile`, `sandbox`, `reasoningEffort`, `serviceTier` | Starts/resumes app-server threads; default sandbox is `workspace-write`, with adapter-managed approval integration |
+| Codex | `model`, `profile`, `sandbox`, `reasoningEffort`, `serviceTier`, `skipGitRepoCheck` | Starts/resumes app-server threads; default sandbox is `workspace-write`, with adapter-managed approval integration |
 | Claude Code | `model`, `permissionMode`, `allowedTools`, `disallowedTools`, `maxTurns`, `appendSystemPrompt`, `reasoningEffort` | Uses supported CLI parameters and provider tool names |
-| Qoder | `model`, `reasoningEffort`, `contextWindow`, `permissionMode`, `allowedTools`, `disallowedTools`, `maxTurns`, `appendSystemPrompt`, `agent` | Requires matching installed version and task approval behavior |
+| Qoder | `model`, `reasoningEffort`, `contextWindow`, `permissionMode`, `allowedTools`, `disallowedTools`, `maxTurns`, `maxOutputTokens`, `strictMCPConfig`, `appendSystemPrompt`, `agent` | Requires matching installed version and task approval behavior |
 | QwenPaw | `agent`, `model`, `permissionMode`, `runtimeProvider`, `localDiagnostics` | Uses ACP Session and permission requests |
 | OpenClaw | `model`, `fallbacks`, `thinking`, `codeMode`, `timeoutSeconds`, `localModelLean`, `isolated`, `authEnvOnly`, `reasoningEffort` | Runs `agent exec`; this adapter does not provide MCP or Session resume |
 

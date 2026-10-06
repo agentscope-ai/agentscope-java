@@ -7,7 +7,36 @@ zh_link: /v2/zh/service/environments
 This is preview documentation. The official release is not yet available.
 </Note>
 
-**Resources → Environments** defines where Managed Agents execute file, Shell and other tools. It is separate from a definition Workspace and from a Hosted Agent's Runtime Host.
+An Environment defines where Managed Agents execute file, Shell, and other tools and is managed through `/api/environments`. It is separate from a definition Workspace and a Hosted Agent's Runtime Host. Its console entry is **Resources → Environments**; see [Console](/v2/en/service/console/index) for graphical operations.
+
+## Management APIs
+
+Use a platform user Bearer token with `X-AgentScope-Tenant` and `X-AgentScope-Namespace`; prepare variables as in the [API quickstart](/v2/en/service/first-session). Listings are filtered to inspectable resources. Reads require inspect, mutations require edit, and creation requires namespace resource creation rights.
+
+| Operation | API | Parameters and response |
+| --- | --- | --- |
+| List | `GET /api/environments` | Returns an array; optional `limit` (1–500), `offset` (nonnegative, requires limit); total in `X-Total-Count` |
+| Create | `POST /api/environments` | `name`, `type`, optional `config`; returns the Environment and a one-time `apiKey` |
+| Read | `GET /api/environments/{id}` | `id`, `name`, `type`, `config`, `ownerId`, `archivedAt`, timestamps; no key |
+| Update | `PATCH /api/environments/{id}` | Optional `name`, `config`; config replaces the entire object, type is immutable |
+| Archive | `POST /api/environments/{id}/archive` | Returns the Environment with `archivedAt`; removed from active listings |
+| Rotate key | `POST /api/environments/{id}/rotate-key` | Returns a new `apiKey`; the old key stops working immediately |
+| Delete | `DELETE /api/environments/{id}` | Returns 204 |
+
+These mutations have no version condition. Read config and retain other required settings before replacing it. Archived resources cannot be patched. Check Agent and Session usage before archival or deletion; resource maintenance does not cancel running work.
+
+For example, create an environment for a self-hosted tool worker:
+
+```bash
+ENVIRONMENT_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/environments" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data '{"name":"Report worker","type":"self_hosted","config":{}}')
+ENVIRONMENT_ID=$(printf '%s' "$ENVIRONMENT_JSON" | jq -er '.id')
+ENVIRONMENT_KEY=$(printf '%s' "$ENVIRONMENT_JSON" | jq -er '.apiKey')
+```
+
+Save the ID and key, then connect a Worker using the commands later on this page. For other types, follow the configuration below. Creating local requires deployment permission for local execution; otherwise it returns 403.
 
 ## Interface tour
 
@@ -28,13 +57,13 @@ Choose an environment according to where execution should happen. **Local develo
 
 In Docker, Local means inside the Dataplane container, not arbitrary access to the host filesystem. Choose a backend according to production isolation and networking requirements.
 
-## Configure and verify
+## Bind and configure
 
-Create an Environment with a name and type, then edit its backend-specific JSON connection settings. Type is read-only after creation. Credentials and capabilities must match the selected backend; Runtime Host enrollment credentials are not Worker credentials.
+Set `defaultEnvironmentId` through the [Agent definition API](/v2/en/service/managed-agent-configuration). Read the full definition first, retain other fields, and supply its current version when updating. Creating a Managed session with `environmentId` overrides its environment; omission uses the Agent default.
 
-Open a Managed Agent in **DESIGN → Agents** and select **Runtime → Session defaults → Default environment**, saved as `defaultEnvironmentId`. The creation form also exposes the choice in Advanced settings. A Session API request can use `environmentId` to select an environment for that Session.
+Credentials and capabilities must match the backend; Runtime Host enrollment credentials are not Worker credentials. Create a new Session and verify the connection, working directory, and permissions with a read-only file operation, then check writes and commands. Managed model inference remains in the Dataplane even with self_hosted tool execution.
 
-After saving, start a new Chat and verify the connection, working directory and permissions with a read-only file operation, then check writes or commands. This binding selects tool execution; Managed model inference remains in the Dataplane even with self_hosted execution.
+`config.memoryAccess` sets mount access by Memory Store ID, for example `{"memoryAccess":{"STORE_ID":"read_only"}}`. Values are `read_only` or `read_write`, defaulting to read-write for unconfigured stores. This controls runtime access to bound stores; it does not bind a Store. See [Memory](/v2/en/service/memory).
 
 ## Self-hosted execution
 

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -27,7 +28,7 @@ import (
 // deterministic so a process crash between writes can be resumed by any worker.
 // The caller holds the cross-replica Run lock until graph creation completes.
 func (e *Engine) materialize(ctx context.Context, run *controlmodel.OrchestrationRun) error {
-	revision, err := e.Store.Orchestration().GetRevision(ctx, *run.DefinitionRevisionID)
+	revision, err := serviceapi.Revision(ctx, e.Store, run.RootIssueID, *run.DefinitionRevisionID)
 	if err != nil {
 		return err
 	}

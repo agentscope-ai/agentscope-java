@@ -132,8 +132,11 @@ public final class AgentSessionTurnsController {
     @PostMapping("/{id}/resume")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public Mono<SessionTurnInbox.Turn> resume(
-            @PathVariable String session, @PathVariable String id, Authentication auth) {
-        return Mono.fromCallable(() -> inbox.resume((String) auth.getPrincipal(), session, id))
+            @PathVariable String session,
+            @PathVariable String id,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            Authentication auth) {
+        return Mono.fromCallable(() -> inbox.resume((String) auth.getPrincipal(), session, id, key))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 }

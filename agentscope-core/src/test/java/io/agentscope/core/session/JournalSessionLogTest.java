@@ -103,4 +103,53 @@ class JournalSessionLogTest {
         storage.values.keySet().removeIf(path -> path.contains("/commits/"));
         assertThrows(SessionLogException.class, () -> log.readAfter(0, 10));
     }
+
+    @Test
+    void permanentSealFencesPausedAcquisitionAndCommitButAllowsANewRun() {
+        class Storage implements AtomicSessionStorage {
+            final Map<String, Value> values = new HashMap<>();
+            Runnable beforeHeadRead;
+            Runnable beforeHeadCas;
+
+            public Value read(String path) {
+                if (path.endsWith("head.json") && beforeHeadRead != null) {
+                    Runnable callback = beforeHeadRead;
+                    beforeHeadRead = null;
+                    callback.run();
+                }
+                return values.get(path);
+            }
+
+            public boolean compareAndSet(String path, long version, byte[] bytes) {
+                if (path.endsWith("head.json") && beforeHeadCas != null) {
+                    Runnable callback = beforeHeadCas;
+                    beforeHeadCas = null;
+                    callback.run();
+                }
+                var old = values.get(path);
+                if ((old == null ? 0 : old.version()) != version) return false;
+                values.put(path, new Value(version + 1, bytes));
+                return true;
+            }
+        }
+        var storage = new Storage();
+        var log = new JournalSessionLog(storage, "sealed");
+        // The seal arrives after acquisition checked for a seal but before it reads head.
+        storage.beforeHeadRead = () -> log.sealWriter("paused");
+        assertThrows(SessionLogException.class, () -> log.acquire("paused", Duration.ofMinutes(2)));
+        var fresh = log.acquire("fresh", Duration.ofMinutes(2));
+        log.commit(fresh, "first", 0, List.of(event(1, "run/start")));
+        storage.beforeHeadCas = () -> log.sealWriter("fresh");
+        assertThrows(
+                SessionLogException.class,
+                () -> log.commit(fresh, "late", 1, List.of(event(2, "run/end"))));
+        assertEquals(1, log.head().seq());
+        var restarted = new JournalSessionLog(storage, "sealed");
+        assertThrows(
+                SessionLogException.class, () -> restarted.acquire("fresh", Duration.ofMinutes(2)));
+        var resume = restarted.acquire("resume-with-new-id", Duration.ofMinutes(2));
+        restarted.sealWriter("paused"); // must not revoke this unrelated writer
+        restarted.commit(resume, "resumed", 1, List.of(event(2, "run/start")));
+        assertEquals(2, restarted.head().seq());
+    }
 }

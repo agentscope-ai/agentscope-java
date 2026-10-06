@@ -26,6 +26,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.builder.control.ControlPlaneClient;
+import io.agentscope.builder.control.ControlPlaneClient.ManagedExecutionScope;
 import io.agentscope.builder.web.catalog.HarnessAgentBuildService;
 import io.agentscope.builder.web.coord.CoordinationStore;
 import io.agentscope.builder.web.coord.TurnLeaseService;
@@ -59,6 +60,28 @@ import reactor.core.publisher.Flux;
  * lease is held would be written once per retry.
  */
 class SessionTurnAdmissionTest {
+    @Test
+    void rejectedManagedStartCannotAdmitInputOrScheduleTheModel() {
+        var controlPlane = mock(ControlPlaneClient.class);
+        var scope = new ManagedExecutionScope("tenant", "task", "attempt", 2, "turn");
+        when(controlPlane.beginManagedExecution("sess_lead")).thenReturn(scope);
+        doThrow(new ResponseStatusException(HttpStatus.GONE, "attempt replaced"))
+                .when(controlPlane)
+                .startManagedExecution("sess_lead", scope);
+        var leases = freeLease();
+        var heldLease = mock(TurnLeaseService.TurnLease.class);
+        when(leases.acquireOrConflictFenced(anyString(), anyString(), any())).thenReturn(heldLease);
+        var runner = runnerWithLease(leases, controlPlane, mock(ToolConfirmationCoordinator.class));
+        var recorded = new AtomicInteger();
+
+        assertThatThrownBy(() -> runner.runTurnAsync(session(), "input", recorded::incrementAndGet))
+                .isInstanceOf(ResponseStatusException.class);
+
+        assertThat(recorded).hasValue(0);
+        verify(controlPlane).endManagedExecution("sess_lead", scope);
+        verify(heldLease).close();
+    }
+
     @Test
     void normalPublisherCompletionDoesNotOverrideLogicalOutcome() throws Exception {
         for (var entry :

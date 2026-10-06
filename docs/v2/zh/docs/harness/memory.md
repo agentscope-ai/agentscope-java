@@ -61,7 +61,11 @@ Flush（路径 1）会在以下三个时机被触发：
 
 每轮结束后的长期记忆 Flush 在后台执行；压缩前 Flush 属于压缩步骤。原生 Session Log 在执行边界提交，不能把它当作异步日志副本：关键事实提交失败会阻止继续执行。
 
-## 开启压缩
+<span id="开启压缩" />
+
+## 调整上下文压缩
+
+Harness 默认启用上下文压缩，下面的配置用于调整触发和保留策略。它如何参与每次模型请求的构建，见[上下文管理](/v2/zh/docs/harness/context)。
 
 ```java
 HarnessAgent agent = HarnessAgent.builder()
@@ -70,6 +74,7 @@ HarnessAgent agent = HarnessAgent.builder()
     .workspace(workspace)
     .compaction(CompactionConfig.builder()
         .triggerMessages(30)     // 消息条数到 30 触发
+        .keepTokens(0)           // 按消息条数保留尾部
         .keepMessages(10)        // 压缩后保留最近 10 条
         .build())
     .build();
@@ -80,14 +85,14 @@ HarnessAgent agent = HarnessAgent.builder()
 | 参数 | 默认 | 含义 |
 |------|------|------|
 | `triggerMessages` | `50` | 按条数触发（`0` 表示关闭） |
-| `triggerTokens` | `0` | 按 token 估算触发（`0` 表示动态计算，基于模型上下文窗口减去 `reserved`） |
+| `triggerTokens` | `0` | 按 token 估算触发（`0` 表示动态计算，依据最终模型请求为对话历史留下的预算） |
 | `keepMessages` | `20` | 保留尾部条数 |
-| `keepTokens` | `-1` | `-1` 表示动态计算（基于模型上下文窗口自动计算）；`0` 表示使用 `keepMessages`；`>0` 表示固定 token 预算并覆盖 `keepMessages` |
+| `keepTokens` | `-1` | `-1` 表示动态计算（基于最终模型请求的对话剩余预算）；`0` 表示使用 `keepMessages`；`>0` 表示固定 token 预算并覆盖 `keepMessages` |
 | `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账（路径 2） |
 | `summaryPrompt` | 见 `DEFAULT_SUMMARY_PROMPT` | 路径 3 的摘要 prompt（必须含 `{messages}` 占位符） |
 | `model` | `null`（使用 agent 主模型） | 压缩摘要使用的独立模型 |
 
-**上下文溢出自动恢复**：模型真的返回 `context_length_exceeded` 等错误时，框架会强制做一轮压缩然后重试一次——前提是你配了 `compaction(...)`，否则错误直接抛回上层。
+**上下文溢出自动恢复**：模型返回 `context_length_exceeded` 等错误时，只要没有禁用压缩，框架就会尝试强制压缩。默认的 `EVENT_LOG` 执行模式会在本次执行内重试当前推理一次，无需手工调用 `.compaction(...)` 开启；如果仍然溢出，错误会返回调用方。
 
 ### 想再轻一些？预处理参数截断
 
@@ -209,7 +214,7 @@ HarnessAgent.builder()
 
 ## 大工具结果卸载
 
-跟压缩独立。某次工具返回超过阈值时，全文写到一个目录、上下文里只留首尾预览 + 占位符——agent 想要全文就 `read_file`：
+工具结果卸载与对话摘要独立，Harness 默认已启用。在准备模型输入时，如果历史中的某条工具结果超过阈值，全文会写入工作区，上下文中只保留首尾预览和文件位置；agent 需要原文时可通过 `read_file` 按需读取。下面展示默认配置，调整阈值和更多说明见[上下文管理](/v2/zh/docs/harness/context)：
 
 ```java
 HarnessAgent.builder()
@@ -269,6 +274,6 @@ HarnessAgent.builder()
 - [会话日志与恢复](/v2/zh/docs/harness/session-log) — 完整历史、checkpoint 与历史检索
 - [架构](/v2/zh/docs/harness/architecture) — 长会话事实如何沉淀进 `MEMORY.md`
 
-消息位置、刷新时机和最终预算见 [上下文构建](/v2/zh/docs/harness/context)。
+消息位置、刷新时机和最终预算见 [上下文管理](/v2/zh/docs/harness/context)。
 
 旧 JSONL 清理任务及 `sessionRetentionDays` 已移除；原生日志目前没有自动清理策略，已有旧档案也不会由记忆维护任务删除。

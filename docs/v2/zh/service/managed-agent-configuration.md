@@ -1,68 +1,88 @@
 ---
-title: "Managed 参数与模型配置"
+title: "Managed 定义与会话 API 参数"
+description: 创建和更新 Agent 定义、选择模型与资源，配置原生会话的请求参数。
 en_link: /v2/en/service/managed-agent-configuration
 ---
 
-<Note>
-此为预览文档，正式版本尚未发布。
-</Note>
+Managed 配置分为 Agent 定义、会话资源和 Dataplane 部署配置。API 创建流程见[创建与测试](/v2/zh/service/create-managed-agent)，本页集中说明请求字段、默认值和更新规则。
 
-Managed Agent 的配置分为 Agent 定义、会话资源和 Dataplane 部署配置。先完成[创建与首次对话](/v2/zh/service/managed-agent)，再按本页调整参数。
+## 定义 API
+
+| 操作 | API | 请求与响应 |
+| --- | --- | --- |
+| 创建身份、定义和运行绑定 | `POST /api/v1/agents` | 提供 `agentKey`、空间、`binding:{kind:"managed"}` 和 `definition`；返回 `agent,binding,policy,definition` |
+| 读取定义 | `GET /api/v1/agents/{id}/definition` | 返回 `agentId` 与 `definition` |
+| 更新定义 | `PATCH /api/v1/agents/{id}/definition` | 顶层传行为字段和当前定义的 `version`；`name` 必填；返回 `agent,definition` |
+| 定义版本列表 / 单版 | `GET /api/v1/agents/{id}/versions`、`GET /api/v1/agents/{id}/versions/{version}` | 分别返回 `versions`、`version`，并包含 `agentId` |
+
+使用平台 Bearer token 和已授权 Namespace。创建时的行为字段位于 `definition` 中；更新时直接放在请求顶层。目录 `agent.version` 与 `definition.version` 分别控制各自更新，不能混用。
 
 ## Agent 定义参数
 
-下表使用 API 字段名。控制台在 Behavior、Workspace 和 Runtime/资源设置中编辑这些字段；创建页的 Advanced settings 可以选择环境。
-
-| 字段 | 用途 | 配置建议 |
+| 字段 | 类型与默认 | 用途 |
 | --- | --- | --- |
-| `name` / `description` | 显示名称与职责说明 | 写清输入、输出和适用任务 |
-| `system` | Instructions，加入 Agent 指令 | 明确工作边界和验收标准；不保存 secret |
-| `model` | 模型注册名或 `provider:model` 标识 | 留空使用 Dataplane 默认模型 |
-| `maxIters` | 单次 Agent 推理/工具迭代上限 | 当前控制台范围 1–64，未配置时表单显示 12；不是 token 预算 |
-| `workspaceId` | 关联共享能力定义 | 选择已准备的 Workspace |
-| `workspaceBinding` | 发布版本、覆盖项和附加指令 | 用 Workspace 页面选择版本与覆盖范围 |
-| `defaultEnvironmentId` | 新会话默认执行环境 | 先创建并验证 Environment |
-| `defaultMemoryStoreIds` | 新会话默认知识 Store | 使用 Store ID，不是显示名称 |
-| `defaultVaultIds` | 新会话默认凭据集合 | 只绑定该 Agent 需要的 Vault |
-| `tools` / `mcpServers` / `skills` | 工具权限、MCP 连接和技能选择 | 逐项增加并验证 |
+| `name` / `description` | string；创建可由 displayName 补 name，更新要求 name | 展示名称与职责说明 |
+| `system` | string | 稳定职责与行为规则；不保存 secret |
+| `model` | string，空值使用部署默认模型 | 模型注册名或 `provider:model` |
+| `maxIters` | int，未配置或非正值时按 20 保存 | 推理/工具迭代上限；不是 token 预算，控制台表单范围不代表 API 校验范围 |
+| `workspaceId` | string | 关联共享能力资源 ID |
+| `workspaceBinding` | object | `version` 选择已发布版本，`overrides` 选择显式覆盖项，`instructions` 保存附加指令；见 [Workspace](/v2/zh/service/workspaces) |
+| `workspacePath` | string | 显式工作区路径，是否可用取决于部署和运行环境 |
+| `defaultEnvironmentId` | string | 新会话默认工具执行环境；创建 Managed 时按部署规则验证或准备环境 |
+| `defaultMemoryStoreIds` | string[] | 新会话默认知识 Store ID |
+| `defaultVaultIds` | string[] | 新会话默认工具凭据集合 ID |
+| `tools` / `mcpServers` / `skills` | 结构化配置 | 工具策略、连接与技能；结构见[能力参考](/v2/zh/service/managed-agent-capabilities) |
+| `multiagent` | 结构化配置 | Agent 内部委派配置，与平台 Team 区分 |
+| `version` | 正整数，仅更新使用 | 从最新 definition 读取；冲突后重新读取并审阅 |
 
-保存时保留版本检查；配置冲突后重新加载再修改。Agent key 是目录中的稳定身份，不通过改显示名称来迁移身份。
+定义更新不是任意字段的局部合并。应读取原定义、保留未修改的可写字段，再发出 PATCH，避免清空其他人配置的工具或资源。以下例子沿用[创建指南](/v2/zh/service/create-managed-agent)中的环境变量，仅修改 system：
+
+```bash
+DEFINITION=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+UPDATED=$(printf '%s' "$DEFINITION" | jq '.definition | {
+  name, description, system, model, maxIters, tools, mcpServers, skills, multiagent,
+  workspaceId, workspacePath, workspaceBinding, defaultEnvironmentId,
+  defaultVaultIds, defaultMemoryStoreIds, version
+} | .system = "Read supplied sources. Cite evidence and list open questions."')
+curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data "$UPDATED"
+```
+
+有 Workspace 绑定时，指令和工具覆盖还需遵循 `workspaceBinding.overrides` 与 `instructions` 的规则。Agent key 是目录中的稳定身份，不通过改显示名称来迁移。
 
 ## 默认模型与显式模型
 
-标准 Dataplane 配置包含 DashScope 模型扩展。管理员在 **Dataplane 进程/容器** 中提供 `DASHSCOPE_API_KEY`；`BUILDER_MODEL_NAME` 选择默认模型，部署配置的默认值是 `qwen-max`。修改部署环境变量后需要重启相应服务。
+标准 Dataplane 包含 DashScope 模型扩展。管理员在 Dataplane 进程或容器中提供 `DASHSCOPE_API_KEY`，通过 `BUILDER_MODEL_NAME` 选择默认模型；标准配置默认值是 `qwen-max`。修改部署变量后需要重启相应组件。
 
-当 Agent 的 Model 留空时使用这个默认 Model。显式填写 `dashscope:qwen-max` 时，通过模型注册表加载 DashScope provider，并读取它的凭据。不要把 Hosted provider 的账号配置当作 Managed 模型凭据。
-
-```json
-{
-  "model": "dashscope:qwen-max",
-  "system": "Read the supplied sources. Cite evidence and list open questions.",
-  "maxIters": 12
-}
-```
-
-这是定义字段片段，不是完整创建请求。扩展模型的条件见[支持的能力与接入类型](/v2/zh/service/managed-agent-capabilities)。仅把 Model 改成另一个厂商的名称，不能给部署安装缺失的扩展或配置凭据。
+Agent 的 model 留空时使用默认 Model；显式 `dashscope:qwen-max` 通过模型注册表解析。其他 provider 需要发行包包含相应扩展并配置凭据，仅改模型名称不会安装扩展。模型连接、用户登录与 Vault 工具凭据各有用途。
 
 ## 会话资源如何选择
 
-普通 Chat 和 Issue 使用 Agent 的资源设置。通过 Managed Session API 创建会话时，也可以指定 `environmentId`、`memoryStoreIds` 和 `vaultIds`。省略资源列表与显式传入空列表的含义不同：省略使用默认绑定，空列表表示不挂载该类默认资源。
+`POST /api/v1/agent-sessions` 创建原生 Managed 会话，接受以下常用字段：
+
+| 字段 | 用途 |
+| --- | --- |
+| `agent` | 要运行的 Agent ID |
+| `environmentId` | 本次会话工具环境；省略时使用 Agent 默认绑定 |
+| `memoryStoreIds` / `vaultIds` | 会话知识与凭据资源；省略继承默认，空数组表示不挂载该类默认资源 |
 
 ```json
 {
+  "agent": "YOUR_AGENT_ID",
   "environmentId": "YOUR_ENVIRONMENT_ID",
   "memoryStoreIds": ["YOUR_MEMORY_STORE_ID"],
-  "vaultIds": ["YOUR_VAULT_ID"]
+  "vaultIds": []
 }
 ```
 
-此片段应放入所用 Session API 的请求中，并补全该接口的 Agent 等必填参数。资源必须在当前身份可用的范围内。对话、知识与凭据都在建立运行上下文时解析；保存定义之后用新 Chat 或 Issue 检查结果。
+创建响应包含 session `id`，随后提交 turn。资源需对当前身份可用；不要把 Environment key 用作用户 Bearer token。输入、文件、动作、预算和恢复请求体见[Managed 会话 API](/v2/zh/service/session-event-log)，路径索引见 [API 参考](/v2/zh/service/api-reference)。
+
+普通 Chat、Issue 和 Endpoint 使用各自入口解析资源；不要把上述会话 JSON 原样发送给 Invocation。Endpoint release 固定发布契约，修改定义后需按[发布流程](/v2/zh/service/endpoints)更新服务入口，再用新工作验证。
 
 ## 一次调整一个层次
 
-1. Model 留空完成第一轮问答，验证部署默认模型。
-2. 调整 Instructions 和 `maxIters`，验证职责与迭代边界。
-3. 绑定 [Workspace](/v2/zh/service/workspaces) 和 [Environment](/v2/zh/service/environments)，验证文件工具。
-4. 再绑定 [Memory](/v2/zh/service/memory) 与 [Vault](/v2/zh/service/vault)，分别验证知识读取和工具认证。
-
-遇到 model cannot resolve 一类错误，检查 Model 标识和部署扩展；401/403 检查相应 provider 的认证；等待 Worker 应检查 Environment，不要通过增加迭代次数处理连接故障。
+先用默认模型验证文本请求，再调整职责和迭代上限；随后绑定 Workspace、Environment、Memory 和 Vault，逐项检查工具行为。模型解析错误应检查 provider 与部署，工具等待应检查 Environment 或待确认事项；增加 `maxIters` 不能修复连接故障。

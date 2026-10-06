@@ -1,251 +1,324 @@
 ---
-title: 上下文构建
+title: 上下文管理
 en_link: /v2/en/docs/harness/context
-description: 了解 Harness 如何组织 System、会话与任务状态，接入动态业务信息，配置预算并排查构建失败
+description: 沿着 ReAct 推理与工具执行过程，组织模型可见的信息、跟进长程任务，并通过工具结果卸载和对话压缩控制上下文大小。
 ---
 
-HarnessAgent 默认在模型调用前统一构建上下文。通常只需设置 `sysPrompt`、
-工作区和工具，不需要自己拼接消息或编写 XML。普通 ReActAgent 不自动安装这套 Harness 策略。
+用户让 Agent 修复一个问题时，Agent 往往需要先读代码、拟定方案、修改文件，再运行测试。每次决定下一步之前，模型都需要知道：用户要什么、已经做过什么、刚才的工具返回了什么，以及还有哪些工作没完成。任务越长，这些信息越多；把全部内容一直放进请求，既增加开销，也可能超出模型的上下文窗口。
 
-本页聚焦“实际发给模型什么”。会话状态保存恢复、RuntimeContext 与并发访问规则，
-请先阅读 [上下文与 AgentState](/v2/zh/docs/building-blocks/context)。
-本页的 taskContext 是投影配置，不替代状态维护和持久化。
+上下文管理就是在这个过程中，持续为模型准备**足以继续工作的输入**。`HarnessAgent` 以 `ReActAgent` 的推理与工具执行循环为基础，内置了材料加载、任务状态展示、预算控制和历史压缩。普通 `ReActAgent` 的循环相同，但不会自动安装这套 Harness 策略。
 
-## 模型会看到什么
+大多数应用可以先使用默认配置。本页沿着一次任务的执行过程，说明什么时候需要补充业务信息、如何让 Agent 跟进长程任务，以及上下文变长后框架如何处理。
 
-最终顺序是：**一条 System → 对话历史 → 临时状态 → 参考材料**。
-工具 Schema 作为模型请求的独立部分传入，也计入预算。
+## 从一次推理开始理解上下文
 
-| 内容 | 来源 | 位置 |
+一次 `call` 可能包含多轮模型推理和工具调用。Harness 在**每次请求模型之前**重新准备上下文，而不是在任务开始时拼一次提示词，之后一直沿用。
+
+```mermaid
+flowchart TD
+    A["开始调用：加载会话状态与工作区材料"] --> B["准备本轮输入：历史、最新业务信息与任务进度"]
+    B --> C["控制大小：卸载大结果、选择材料、按需压缩历史"]
+    C --> D["校验后请求模型"]
+    D --> E{"下一步"}
+    E -->|调用工具| F["执行工具，把调用与结果加入历史"]
+    F --> B
+    E -->|回复用户| G["结束本次调用，保存工作状态"]
+```
+
+这里需要区分“保存的状态”和“发给模型的内容”。`AgentState` 保存会话历史、任务、计划模式等工作状态；模型收到的是从这些状态和外部材料中组织出的本轮输入。`RuntimeContext` 则携带用户、会话等调用信息，其中任意一个属性都不会自动变成模型提示。关于状态如何保存和恢复，见[上下文与 AgentState](/v2/zh/docs/building-blocks/context)。
+
+下面以修复问题的助手为例。应用启动时配置共享 Builder，每次请求创建一个 Agent；保持稳定的用户、Agent 和会话身份，才能延续同一段对话。`model` 是已经配置好的[模型](/v2/zh/docs/building-blocks/model)。
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.harness.agent.HarnessAgent;
+import java.nio.file.Path;
+
+HarnessAgent.Builder builder = HarnessAgent.builder()
+        .name("项目助手")
+        .agentId("project-assistant")
+        .model(model)
+        .workspace(Path.of("/data/project-workspace"));
+
+// 每次请求创建实例，执行结束后关闭。
+try (HarnessAgent agent = builder.build()) {
+    RuntimeContext ctx = RuntimeContext.builder()
+            .userId("alice").sessionId("fix-login-001").build();
+    Msg input = Msg.builder().role(MsgRole.USER)
+            .textContent("修复登录失败的问题，完成后运行相关测试。").build();
+    Msg reply = agent.call(input, ctx).block();
+    System.out.println(reply.getTextContent());
+}
+```
+
+后续示例都是对这个 `builder` 的配置，应在应用启动时、第一次 `build()` 之前完成。上下文管理不要求使用 `AgentSession`；需要任务在页面关闭后继续执行、运行中补充要求或中断后续做时，再参考[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)。
+
+<span id="材料与稳定指令" />
+
+## 开始调用：准备规则与已有材料
+
+修复问题之前，Agent 首先要了解项目约定。稳定的角色和行为规则可以写在 `sysPrompt` 或工作区的 `AGENTS.md` 中，也可以通过 `instruction` 添加可信的业务指令：
+
+```java
+builder.instruction("test-policy", "修改代码后运行相关测试；无法运行时说明原因。");
+```
+
+这些规则进入 System。Harness 还会加入内置工作原则、环境信息，以及当前模式的行为规则。工作区中的 `MEMORY.md`、知识材料和额外上下文文件则作为**参考资料**提供，不会因为来自文件就成为 System 指令。
+
+工作区材料在一次 Agent 调用开始时加载。因此，执行期间修改 `AGENTS.md` 或 `MEMORY.md`，不会自动改变本次调用已经加载的材料；下一次调用才会重新读取。若某项业务数据需要在工具执行后立即刷新，应使用下一节的动态来源。
+
+<span id="模型会看到什么" />
+<span id="请求内容示例" />
+
+## 每轮推理：让模型看到当前需要的信息
+
+假设 Agent 已经读过代码，并得到一次失败的测试结果。下一轮请求模型时，Harness 会按照下面的顺序组织输入：
+
+| 顺序 | 内容 | 修复问题时的例子 |
 | --- | --- | --- |
-| Agent 指令 | `sysPrompt()` | System，保持用户写法 |
-| 项目规则 | AGENTS.md | System 的 `project_rules` |
-| 通用上下文约定 | 框架内置资源 | System 的 `instruction_rules` |
-| 工作区使用规则、环境、模式 | 框架与当前配置 | System 的 `working_principles`、`environment`、`mode_rules` |
-| 稳定业务指令 | `instruction()` | System 的 `business_instruction` |
-| 当前 Todo | 会话的 TaskContextState | 最新完整工具回执，或临时 `TASK_STATE`，不重复展示 |
-| 需求、验证摘要 | 调用方维护的任务状态 | 显式开启后进入 `TASK_STATE` |
-| PLAN/BUILD 与计划路径 | PlanModeContext | 临时 `RUNTIME_STATE` |
-| 业务状态 | `contextSource()` | 临时 `HARNESS_CONTEXT` |
-| MEMORY.md、知识资料、额外文件 | 工作区 | 参考资料 `HARNESS_CONTEXT`，不进入 System |
+| System | 合并后的稳定指令、项目规则和模式规则 | 项目编码约定、修改后需要运行测试 |
+| 对话历史 | 用户输入、Assistant 消息、工具调用与结果；必要时包含历史摘要 | 用户报告的问题、已读代码、刚才的测试结果 |
+| 当前状态 | 从任务、计划和动态来源生成的临时消息 | 当前待办、计划模式、最新构建状态 |
+| 参考材料 | 工作区记忆、知识资料和动态参考资料 | 项目背景、相关文档片段 |
 
-临时状态和参考资料使用合成的 USER 角色消息，不追加进持久化历史。
-System 中可以保留“如何使用记忆”的规则，但 MEMORY.md 正文是参考资料，不是更高优先级指令。
+工具 Schema 随请求单独提供，也占用上下文预算。模型能否选择某个工具，取决于这一轮暴露的工具集合；工具能否真正执行，还由权限系统检查。
 
-框架标签用于分隔来源和用途，块内允许 Markdown。AGENTS.md 仍写普通 Markdown，
-不需要预先加标签。原始 sysPrompt 和第三方 Middleware 的提示不被自动重写。
-标签和正文转义不是安全隔离机制，访问权限仍需在代码中控制。
+任务与计划状态分别以 `TASK_STATE`、`RUNTIME_STATE` 等标记展示，业务材料和参考资料放在 `HARNESS_CONTEXT` 中。它们是临时组织出的模型输入，不会每轮重复追加到持久化对话历史。应用通过 API 提供内容即可，不需要自行拼接这些标记。
 
-## 接入动态业务信息
+这也给出了控制模型可见内容的几个入口：稳定规则放进指令，最新业务事实由动态来源读取，长篇资料按相关性选择片段，工具则通过工具配置和权限控制。**来源读取时仍应按用户和会话校验访问权限。** 将内容标为“参考资料”、设置优先级或关闭某项状态展示，都不会清除已经写入历史的内容，也不能替代权限检查。
 
-`contextSource(name, source)` 表示“每次推理请求准备时，读取这些信息给模型”。
-它不是工具，不需要模型主动调用；注册和构建 Agent 时不会读取。
-如果没有额外业务信息需要主动注入，可以完全不配置。
+<span id="接入动态业务信息" />
 
-下面的片段使用已经设置 model、workspace 等参数的 `HarnessAgent.Builder builder`：
+### 接入会变化的业务信息
+
+例如，修复助手需要在每次推理时了解当前构建状态。可以注册一个 `contextSource`；下面先用固定值演示返回结构，实际应用中将它替换为按当前用户和会话查询业务服务的逻辑：
 
 ```java
 import io.agentscope.harness.agent.context.ContextBlock;
 import java.util.List;
 import reactor.core.publisher.Mono;
 
-builder.contextSource(
-        "order-status",
-        request -> Mono.just(List.of(
-                ContextBlock.runtime("status", "订单 483：等待审批"))));
+builder.contextSource("build-status", request -> Mono.just(List.of(
+        ContextBlock.runtime("latest", "当前构建：测试失败，登录模块有 2 项失败。")
+)));
 ```
 
-示例返回固定文字；实际可以按 `request.userId()`、`request.sessionId()` 查询授权数据。
-来源必须只读，不要在这里执行发布、写库或测试命令。
-复杂逻辑可实现函数式接口 `ContextSource`，其方法为
-`Mono<List<ContextBlock>> load(ContextRequest request)`，无需 Extension 或 Registry。
+注册和 `build()` 不会执行查询。Harness 在每次推理请求准备时调用来源，因此工具完成工作后，下一轮可以读到更新的数据。来源收到的 `ContextRequest` 包含 `agentId`、`userId`、`sessionId`、模型调用 `callId` 和用途 `purpose`，可以据此选择数据，但业务服务仍需自行鉴权。
 
-ContextRequest 提供 agentId、userId、sessionId、callId、purpose，不暴露可修改的 AgentState。
-身份可能为空，也不等于授权证明。来源实例可能跨会话、跨复制的 Agent 共享，
-必须线程安全，不能用实例字段保存“当前用户”。
+使用 `ContextBlock.runtime` 提供当前事实，例如审批状态或剩余额度；使用 `ContextBlock.reference` 提供文档、检索片段等参考材料。动态来源不能创建 System 指令。需要稳定业务规则时，使用前面的 `instruction`。
 
-### 材料与稳定指令
+对于参考资料，可以附上版本并设置取舍优先级：
 
 ```java
-ContextBlock.runtime("status", "审批状态：等待审批");
-ContextBlock.reference("policy", "退款政策参考内容");
-
-// 可选控制：方法返回新对象。
-ContextBlock.runtime("status", "审批状态：已批准")
-        .withRevision("order-version-7")
-        .withPriority(20)
-        .required();
-
-// 只用于可信应用配置，不要将外部业务数据提升为 System。
-builder.instruction("approval-policy", "未取得有效审批前，不得发布。");
+builder.contextSource("project-guide", request -> Mono.just(List.of(
+        ContextBlock.reference("login", "登录接口约定：会话过期后返回 401。")
+                .withRevision("guide-v3")
+                .withPriority(20)
+)));
 ```
 
-动态块只能是 runtime 或 reference，不能生成 SYSTEM。
-默认 revision 是内容摘要；业务可指定版本，但它不自动证明新鲜度或验收通过。
-默认可因预算移除，required 禁止预算移除；较低 priority 在同类材料中更早被考虑移除。
+预算不足时，同一类可选材料中较低优先级的内容先被省略。如果某块材料缺失就不能正确工作，可以调用 `.required()`，要求构建时保留它；但过大的必需材料仍可能导致整个请求超出预算。优先传入精简、相关的内容，不要将整份业务数据库标为必需上下文。
 
-来源名称允许字母、数字、下划线、点、短横线，首字符为字母或数字；不能重复。
-块 ID 在同一来源内唯一且非空。Manifest 中会出现 `source/order-status/status`
-等来源标识，不要把凭证或敏感正文放进 ID。
+<span id="超时与失败" />
 
-### 超时与失败
+### 来源失败时如何处理
+
+如果构建状态是作出决定的必要依据，查询失败就应停止准备请求。动态来源默认采用这一行为，超时为 5 秒。对于可有可无的推荐材料，可以允许失败时跳过：
 
 ```java
-import io.agentscope.harness.agent.context.ContextBlock;
 import io.agentscope.harness.agent.context.SourceFailurePolicy;
 import java.time.Duration;
-import java.util.List;
-import reactor.core.publisher.Mono;
 
-builder.contextSource(
-        "order-status",
-        request -> Mono.just(List.of(ContextBlock.runtime("status", "等待审批"))),
-        options -> options
-                .timeout(Duration.ofSeconds(2))
-                .onFailure(SourceFailurePolicy.OMIT));
+builder.contextSource("related-notes", request -> Mono.just(List.of(
+        ContextBlock.reference("note", "历史排查记录：优先检查会话过期处理。")
+)), options -> options
+        .timeout(Duration.ofSeconds(2))
+        .onFailure(SourceFailurePolicy.OMIT));
 ```
 
-| 设置 | 行为 |
-| --- | --- |
-| 默认 | 每个来源超时 5 秒，失败则拒绝构建（FAIL） |
-| OMIT | 读取失败时省略来源，不使用旧值；记录 Manifest，不自动把异常发给模型 |
-| required | 成功读取后禁止预算删除；不能与 OMIT 来源组合 |
+`OMIT` 会省略这次失败的来源，不会悄悄沿用上次读取的旧值；它也不能用于包含 `required` 块的来源。重复 ID、非法块等结构错误仍会报错。
 
-空列表表示没有材料；Mono.empty() 属于读取失败。重复块、空块等结构错误不会被 OMIT 吞掉。
-需要模型知道状态未知时，来源应显式返回“状态不可用”，不要伪造事实。
-来源顺序执行，总耗时可能累积；取消沿 Reactor 传播，但不保证远端或阻塞 I/O 立即停止。
+来源应只读，并能安全地重复调用。一次执行可能准备多个模型请求，回退或重新准备请求时也可能再次读取；不要在这里扣费、更新订单或执行其他业务动作。共享 Builder 中的来源回调和它依赖的客户端，也应支持并发访问。
 
-## 什么时候刷新
+<Accordion title="动态来源的返回约定">
 
-| 信息 | 刷新时机 |
-| --- | --- |
-| 工作区 AGENTS.md、MEMORY.md 等 | 每次 Agent call 读取一次；同一次 call 内不自动监听文件变化 |
-| 动态 contextSource | 每次 REASONING 请求准备读取一次；预算和渲染复用结果 |
-| Todo、模式、需求、验证摘要 | 每次请求取当前状态快照 |
-| 重试、fallback | 重新准备请求，动态来源重新读取 |
+`ContextSource.load(ContextRequest)` 返回 `Mono<List<ContextBlock>>`。没有相关内容时返回空列表；`Mono.empty()` 不等同于“没有材料”，会作为来源加载失败处理。
 
-SUMMARY 不读取动态来源或注入任务投影；经同一构建器处理时保留稳定指令。
-辅助摘要或 Memory Flush 若使用独立构建器，不隐式继承业务来源。
-复制 Agent 保留来源配置与读取函数，不重复执行 options 配置回调。
+来源名必须唯一，同一来源中的块 ID 也必须唯一。未指定 `revision` 时使用内容哈希，便于诊断同一块资料是否发生变化。多个来源按注册顺序加载；取消后的外部查询能否及时结束，取决于业务客户端的取消支持。
 
-## 可选任务信息
+</Accordion>
 
-Todo 通过 `enableTaskList()` 开启，不附带候选需求工具。
-只需进度列表时不用开启其他任务能力。
+<span id="可选任务信息" />
+
+## 工具执行之后：持续跟进长程任务
+
+修复登录问题可能经历“定位原因、调整实现、补充测试、验证结果”多个步骤。仅靠很早以前的一条用户消息或一段计划，模型容易忘记哪些已经完成。可以开启任务列表，让 Agent 用 `todo_write` 更新工作进度：
+
+```java
+builder.enableTaskList();
+```
+
+Todo 保存在结构化任务状态中。最新的完整 Todo 工具回执仍在历史里时，Harness 会避免重复展示同一份列表；旧回执被裁剪或摘要后，会从当前任务状态重新生成 `TASK_STATE`。这样，即使早期对话不再逐字发送，模型仍能看到当前进度。
+
+如果工作需要先确定方案再执行，可以结合 [Plan Mode](/v2/zh/docs/harness/plan-mode)：计划文件保存较完整的方案，Todo 跟踪正在做的步骤，当前模式和计划文件路径帮助模型知道接下来应如何行动。框架不会自动把 `PLAN.md` 中的段落同步成 Todo，二者需要由 Agent 的工具操作或应用明确维护。
+
+业务对完成标准有更严格要求时，还可以展示任务目标、已确认要求和验证结果：
 
 ```java
 import io.agentscope.harness.agent.context.TaskContextOptions;
 
-builder.enableTaskList();
-builder.taskContext(
-        TaskContextOptions.builder()
-                .includeRequirements()
-                .includeVerificationResults()
-                .build());
+builder.taskContext(TaskContextOptions.builder()
+        .includeRequirements()
+        .includeVerificationResults()
+        .build());
 ```
 
-两个展示开关独立，默认关闭。需要模型提出候选要求时加
-`allowRequirementProposals()`，它也会开启需求投影。taskContext 配置整体替换旧配置，不累加。
+这两个开关默认关闭，彼此独立；开启任意一个后也会展示已设置的任务范围和目标。它们决定模型能看到什么，并不会自动从用户消息中提取要求或自动执行验证。应用通过 `TaskContextState.beginTask` 设置目标，可信业务逻辑确认或拒绝要求，并显式调用 `VerificationService` 记录检查结果。需要模型提出候选要求时，可以额外使用 `allowRequirementProposals()`；提出候选不等于批准。
 
-这些开关不自动运行 Verifier、不确认要求、不决定任务完成。普通用户消息和 PLAN.md
-不会被自动解析为需求；计划复选框也不与 Todo 双向同步。
+例如，“补充登录测试”这一条 Todo 已完成，只能说明该工作项被标记完成；测试是否通过，应看实际验证结果。代码之后再次变化，旧的验证结论也可能不再适用，需要应用更新被验证对象的版本并重新检查。不要仅根据 Todo 全部完成就判定整个业务任务成功。
 
-| TaskContextState 字段 | 谁更新 |
-| --- | --- |
-| tasks | 模型调用 todo_write 后由工具更新，或应用显式更新 |
-| revision | 状态变更方法自动递增 |
-| scope | 应用通过 beginTask 设置任务身份、目标与来源 |
-| requirements | propose / 可选候选工具创建；可信调用方通过 decide 确认或拒绝 |
-| contractVersion | 任务、要求决策、被校验对象版本变化时由方法递增 |
-| subjectVersion | 应用用 setSubjectVersion / invalidateSubject 维护，不自动监听文件 |
-| verifications | 调用方显式运行 VerificationService.verify，保存结论后更新摘要 |
+## 请求变长时：先减少负担，再压缩历史
 
-状态随 AgentState 保存恢复；TASK_STATE 只是读取视图。
-修改应在所属会话的受控调用中完成，多数变更方法检查 expectedRevision。
-当前完整 Todo 回执足以表达进度时不重复输出列表；回执被截断或压缩后补回当前状态。
-关闭投影不删除历史中已经存在的信息，也不是保密机制。
+随着代码片段和测试输出不断累积，上下文大小也会增长。Harness 默认启用大工具结果卸载与对话压缩，并在最终模型请求中一起计算消息、工具 Schema 等内容的预算。通常不需要先写配置，遇到明确的成本、窗口或保留需求时再调整。
 
-语义区分：Todo completed 是进度记录；要求 CONFIRMED 是授权认可；
-验证 PASSED 只表示限定检查通过；STALE 不能作为当前验收证据。没有一个自动代表整体完成。
+<span id="harnessagent-内置的几种策略" />
+<span id="2-大工具结果卸载-toolresultevictionmiddleware" />
 
-## 配置预算与观测
+### 把大工具结果留在文件中，按需读取
+
+一次测试可能输出很长的日志。准备下一轮模型请求时，Harness 会把超大的工具结果写入 Workspace Filesystem，在上下文中保留首尾预览和文件位置，模型需要细节时再通过 `read_file` 分段读取。这个文件可以位于本地或分布式后端，取决于 [Filesystem 配置](/v2/zh/docs/harness/filesystem)。
+
+默认阈值为 80,000 字符，预览保留首尾各 2,000 字符，文件位于工作区逻辑路径 `large_tool_results/` 下。需要更小的预览时，可以调整：
+
+```java
+import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+
+builder.toolResultEviction(ToolResultEvictionConfig.builder()
+        .maxResultChars(40000)
+        .previewChars(1000)
+        .build());
+```
+
+`read_file`、`write_file`、`edit_file`、`memory_search`、`memory_get` 和 `session_search` 默认不参与这种卸载。`execute` 等工具仍可卸载；读取工具本身应合理分页，避免一次读回全部内容又占满窗口。
+
+<span id="配置预算与观测" />
+
+### 为必要信息和模型输出留出空间
+
+处理大结果后，Harness 会检查整体预算。空间不足时，先省略可选的记忆和知识材料，再省略其他可选材料；保留 System 与标为 `required` 的块，并为任务状态和工具 Schema 等内容计入开销。剩下的空间才是对话历史可以使用的预算。
+
+默认预算根据模型报告的窗口大小，为输出和安全余量预留空间；模型没有报告窗口时，输入预算回退到 64,000 token。估算不是供应商的精确计数，尤其是包含图片等内容时，应给实际请求留有余量。若希望主动限制输入成本，可以配置：
 
 ```java
 import io.agentscope.harness.agent.context.ContextPolicy;
 import io.agentscope.harness.agent.context.ContextTokenEstimator;
 
 builder.contextPolicy(new ContextPolicy(
-        24000, // 输入上限；0 表示由模型窗口推导
-        4096,  // 输出预留；0 使用默认推导
-        1024,  // 安全余量；0 使用默认推导
+        24000,  // 最大输入预算
+        4096,   // 为模型输出预留
+        1024,   // 安全余量
         ContextTokenEstimator.approximate(),
-        manifest -> {
-            // 可选：将不含正文的构建记录交给你的日志/观测系统。
-        }));
+        manifest -> System.out.println("本轮估算 token：" + manifest.estimatedInputTokens())));
 ```
 
-默认估算包括消息、工具 Schema 和多模态占位成本，不是供应商精确 token 计数。
-已知模型窗口时默认输出预留为窗口的 1/8、最多 4096，安全余量为 2%（均至少 1）。
-显式请求更大的输出量时保留更多空间。未知窗口时输入回退上限为 64000，应按模型配置。
-工作区的 maxContextTokens（默认 8000）只影响工作区材料准备，不替代最终请求预算。
+最终输入上限还会受到模型窗口与输出设置约束。`maxContextTokens` 是工作区材料的加载预算，不是整个模型请求的总上限，不要用它替代 `contextPolicy`。
 
-超预算时先考虑移除可选 memory、knowledge，再考虑其他可选来源，随后按配置压缩历史。
-System 和必需材料不被直接淘汰，仍超限则抛出 ContextBudgetExceededException。
-高级用户可用 contextSelectionPolicy 提供省略顺序；不能返回未知/重复 ID 或必需来源。
+<span id="1-对话摘要压缩-compactionmiddleware" />
 
-Manifest 记录来源、版本、哈希、估算方法、预算、变换和检查结果，不含正文。
-观察回调应快速返回；元数据仍可能有文件名等敏感信息。
-构建也检查工具调用配对。失败时不提交压缩后的候选历史；异步期间状态或历史变化则拒绝旧快照。
-这不等于外部数据库事务，也不回滚已经写入的卸载文件或归档。
+### 保留近期工作，把早期对话整理成摘要
 
-## 请求内容示例
+选定材料后，Harness 根据留给历史的空间处理对话。它会先做不需要模型的轻量处理，例如裁剪较旧的大量工具输出；如果仍满足压缩条件，再调用模型将较早的对话整理为摘要，保留近期消息供后续推理使用。
 
-以下是按当前格式整理的示意，哈希简写、业务值虚构，不是线上抓包；
-只展示相关块，省略其他规则、完整历史与工具 Schema。
+默认摘要包含会话目标、重要结论、文件或其他产物、下一步工作。对于修复任务，模型可以据此知道之前定位了什么、修改过哪些文件、还需要验证什么，而不必每轮重新阅读完整的早期日志。
 
-System 中的项目规则：
+默认在对话达到 50 条消息，或达到当前可用的对话 token 预算时触发摘要检查；近期保留范围按对话预算动态计算。若希望更早压缩，并按消息条数保留近期内容，可以这样配置：
 
-```xml
-<project_rules kind="project_rules" source="workspace:AGENTS.md" revision="…">
-# 开发约定
-使用明确 import，修改行为时补充测试。
-</project_rules>
+```java
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+
+builder.compaction(CompactionConfig.builder()
+        .triggerMessages(30)
+        .keepTokens(0)       // 使用消息条数决定保留范围
+        .keepMessages(10)
+        .build());
 ```
 
-对话之后的临时 USER 消息（没有当前完整 Todo 回执时）：
+`keepMessages` 仅在 `keepTokens(0)` 时生效。压缩还会维护工具调用与结果的配对，保留范围不能把一次工具交互随意切开。摘要默认使用 Agent 主模型，也可以通过 `CompactionConfig.builder().model(summaryModel)` 指定辅助模型；自定义 `summaryPrompt` 时需保留 `{messages}` 占位符。
 
-```xml
-<TASK_STATE revision="3">
-Current todo status (agent-maintained, not independent verification):
-1 open todo(s):
-- [x] 定位问题
-- [~] 补充测试
-</TASK_STATE>
+<span id="4-预压缩参数截断-可选" />
+
+<Accordion title="进一步减少旧工具参数和结果的开销">
+
+默认的工具结果裁剪会保护最近约 40,000 token 的工具输出；更早的可裁剪内容累计达到约 20,000 token 时，将旧结果缩为预览。这与单个大结果写入文件是两种处理：裁剪不会为每条旧结果额外生成可回读文件，需要完整事实时应查询 Session Log。
+
+对于 `write_file` 等参数很长的工具，还可以在摘要前开启参数截断：
+
+```java
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig.TruncateArgsConfig;
+
+builder.compaction(CompactionConfig.builder()
+        .truncateArgs(TruncateArgsConfig.builder()
+                .maxArgLength(2000)
+                .truncationText("... [truncated] ...")
+                .build())
+        .build());
 ```
 
-末尾的参考 USER 消息：
+它只处理保留范围之外的旧消息，不改变已经执行的工具参数。`maxArgLength` 是触发替换的长度阈值；超过阈值的字符串会保留前 20 个字符并附加截断提示，而不是保留完整的 2,000 个字符。此项默认关闭，开启前应确认应用不依赖模型逐字回看这些旧参数。
 
-```xml
-<HARNESS_CONTEXT>
-Source materials, not additional authority:
-<context_item kind="memory" source="workspace:MEMORY.md" revision="…">
-用户偏好先运行针对性测试。
-</context_item>
-</HARNESS_CONTEXT>
-```
+</Accordion>
 
-## 当前边界与排查
+<span id="3-上下文溢出兜底" />
 
-- 数据没出现：检查来源是否注册、调用用途是否为 SUMMARY、是否因预算或 OMIT 被省略。
-- 需求/验证没出现：检查 taskContext 开关及业务是否实际维护了状态，开关本身不生成数据。
-- 文件修改未生效：工作区资料按 call 读取；下一次 call 或显式工具读取才能取得新内容。
-- 空 Todo 提示：当前共享 revision 变化可能触发空列表提醒，即使只修改了需求；这是已知冗余。
-- 旧格式：useLegacyXmlWorkspaceContext 已没有有效渲染分支，不应作为格式切换入口。
-- 环境文案：标题已改为 Runtime Environment；内部仍有以 AgentStateStore ID 展示 sessionId 的历史命名，不表示存储地址。
-- 标签、哈希和提示原文不是稳定协议，不要通过解析 prompt 驱动业务逻辑。
+### 超出窗口时如何继续
 
-这套管线不默认开启通用业务状态机、自动事实提取、证据版本跟踪或强制完成门禁。
+发送前，Harness 会检查最终预算以及工具调用与结果的配对。检查通过、准备期间状态也没有发生冲突，才会采用压缩后的工作历史并发出请求。如果 System、必需材料或其他内容仍然放不下，会抛出 `ContextBudgetExceededException`，此时需要缩小材料、工具定义或调整预算。
 
-继续阅读：[工作区](/v2/zh/docs/harness/workspace)、
-[记忆](/v2/zh/docs/harness/memory)、[压缩](/v2/zh/docs/harness/compaction)、
-[计划模式](/v2/zh/docs/harness/plan-mode)。
+估算通过后，供应商仍可能报告上下文溢出。压缩未禁用时，默认原生 Session Log 模式会尝试强制压缩，并在**同一次执行中重新发起这一轮推理一次**；它不会因此重新提交用户任务，也不会把之前已经完成的工具从头再执行。如果无法进一步压缩或重试仍失败，错误会返回给调用方。
+
+<span id="什么时候刷新" />
+
+## 继续任务：哪些信息会重新读取
+
+完成一次工具执行后，新的调用与结果进入对话历史，下一轮重新走上面的准备过程。不同内容的更新时间取决于它的来源：
+
+| 内容 | 何时更新 |
+| --- | --- |
+| `AGENTS.md`、`MEMORY.md` 和工作区知识材料 | 下一次 Agent 调用开始时重新加载 |
+| `contextSource` 业务来源 | 每次准备推理请求时重新读取 |
+| Todo、要求、验证和计划模式 | 工具或应用先更新状态，下一轮准备时读取当前快照 |
+| 工具调用与结果 | 执行后加入历史，供下一轮推理使用 |
+
+模型回退或重试如果重新经过请求准备，也会重新读取动态来源；不能把这一点等同于所有底层网络重试都会重新加载。摘要和长期记忆提取使用辅助模型请求，不会递归加载这套动态业务来源或重复展示任务状态。
+
+<span id="压缩与-memory-的联动" />
+<span id="压缩不会触碰的内容" />
+<span id="用-agent-自己查历史会话" />
+
+### 摘要、长期记忆和完整历史各用在什么地方
+
+压缩后的工作历史用于“接着做”。Todo、计划模式和权限等结构化状态独立保存，不会被当作普通对话一起摘要掉；子 Agent 的任务记录也独立保存，但已经进入对话的子 Agent 工具结果仍会参与上下文处理。
+
+长期记忆用于“以后还值得记住”。默认摘要前会尝试从待压缩部分提取长期事实到 Memory，供后续会话使用。摘要和记忆提取都可能遗漏细节，不能代替完整记录，具体配置见[记忆](/v2/zh/docs/harness/memory)。
+
+完整执行历史用于“回看当时发生了什么”。默认原生 Session Log 保存消息与执行事实，压缩只改变模型继续工作的上下文，不会删除这些已提交记录。需要精确回看一段输出时，Agent 可以在工具已启用且权限允许的情况下使用 `session_history`、`session_search`，也可以通过 `session_list` 查找历史会话。应用展示历史、恢复页面或从 checkpoint 继续时，应使用[会话日志 API](/v2/zh/docs/harness/session-log)，而不是把摘要当成完整聊天记录。
+
+<span id="当前边界与排查" />
+
+## 检查模型实际拿到了什么
+
+当模型似乎没看到某条信息时，先确认它的来源和刷新时机：工作区文件是否在本次调用之后才修改，动态来源是否返回了该内容，任务展示是否已经开启且有状态，材料是否因为预算不足被省略。
+
+`ContextPolicy` 的观察回调会收到 `ContextManifest`，其中包含来源、版本、内容哈希、估算 token、实际预算、卸载或省略等处理记录，以及校验结果。它不包含正文，适合用来诊断某块材料是否进入本轮请求、为何没有进入，而不用把完整提示词写入日志。
+
+如果可选材料的默认取舍顺序不适合业务，可以进一步配置 `contextSelectionPolicy`；它只决定可省略材料的顺序，不能移除 System 或 `required` 内容。通常先精简来源返回值、减少无关工具 Schema，再调整这类策略，会更容易理解和维护。
+
+## 相关文档
+
+- [工作区](/v2/zh/docs/harness/workspace)：组织项目规则、知识和记忆文件。
+- [计划模式](/v2/zh/docs/harness/plan-mode)：先形成方案，再推进执行。
+- [上下文与 AgentState](/v2/zh/docs/building-blocks/context)：访问、保存和恢复结构化状态。
+- [记忆](/v2/zh/docs/harness/memory)：跨会话积累长期事实。
+- [会话操作、事件与恢复](/v2/zh/docs/harness/session-log)：后台任务、完整历史与中断续做。

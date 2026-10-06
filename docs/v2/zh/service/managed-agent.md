@@ -11,7 +11,7 @@ Managed Agent 由 Service 管理 Harness、会话和模型执行。你配置职�
 
 首次使用请先按[操作指南](/v2/zh/service/create-managed-agent)完成创建或接入。本分类集中提供详细配置、支持能力和工作原理。
 
-如果要把 Agent 接入自己的业务系统，从 [Agent API：托管会话与任务](/v2/zh/service/session-event-log) 开始，再按 [SSE 事件与前端接入](/v2/zh/service/sse-events)实现聊天界面、工具进度与重连。服务负责后台执行，客户端负责提交、展示和交互。
+面向业务应用发布能力，使用 [Endpoint 与统一服务 API](/v2/zh/service/endpoints)，与 External、Hosted、Team 共用调用方式。需要直接管理托管会话、文件和 checkpoint 时，再使用 [Managed 原生会话 API](/v2/zh/service/session-event-log)。服务负责后台执行，客户端负责提交、展示和交互。
 
 [可恢复聊天示例](/v2/zh/service/agent-api-chat)把创建、发送、刷新恢复、工具确认和取消串成一条完整接入流程。
 
@@ -27,7 +27,7 @@ Managed Agent 由 Service 管理 Harness、会话和模型执行。你配置职�
 
 ## 准备并创建
 
-先完成[安装](/v2/zh/service/quickstart)，准备模型凭据和一个可用 [Environment](/v2/zh/service/environments)。创建 Agent 时选择 **AgentScope Managed**，填写 Instructions；Model 可使用默认模型或所配置 provider 的标识。在 Advanced settings 选择环境，保存后用 [Chat](/v2/zh/service/issues#先对话再派发) 验证第一轮回复。
+先完成[安装](/v2/zh/service/quickstart)，准备模型和可用 [Environment](/v2/zh/service/environments)。调用 `POST /api/v1/agents`，提供 `binding.kind=managed` 和 `definition`，再通过会话或 Endpoint 提交验证任务。完整请求见[创建指南](/v2/zh/service/create-managed-agent)，字段与版本更新规则见[参数参考](/v2/zh/service/managed-agent-configuration)。页面入口见 [Console](/v2/zh/service/console/agents)。
 
 Instructions 示例：
 
@@ -49,10 +49,10 @@ Instructions 示例：
 
 | 能力 | 如何添加 | 应检查什么 |
 | --- | --- | --- |
-| MCP 工具 | 在 Tools 配置连接，用 Vault 引用凭据 | endpoint、认证、工具权限与确认行为 |
-| Skill | 在 Workspace/Skills 添加说明及辅助文件 | Agent 能否发现并实际使用文件 |
-| Subagent | 在 Subagents 定义专项角色 | 委派边界、上下文与结果回传 |
-| Team 成员 | 把 Agent 加入 Team 并指定角色 | 独立派发能力、资源和协作结果 |
+| MCP 工具 | 通过 definition 的 tools/mcpServers 配置连接，引用 Vault | endpoint、认证、工具权限与确认行为 |
+| Skill | 通过 Workspace 文件与 Skill API 添加说明和文件 | Agent 能否发现并实际使用文件 |
+| Subagent | 通过 Workspace Subagent API 或 multiagent 配置专项角色 | 委派边界、上下文与结果回传 |
+| Team 成员 | POST Team members，传 Agent ID 与角色 | 独立派发能力、资源和协作结果 |
 
 Skill 描述流程，不自动安装系统依赖。Subagent 属于 Agent 内部委派；Team 提供跨成员的持久工作协作，两者适用层次不同。
 
@@ -60,7 +60,7 @@ Skill 描述流程，不自动安装系统依赖。Subagent 属于 Agent 内部�
 
 先验证纯问答，再验证只读工具，最后分派带验收标准的 Issue。执行出现工具确认或等待 Worker 时，检查真实等待原因；不能一律作为模型卡住处理。
 
-任务结束后检查产物与 Issue 状态。对于人工验收，成功执行之后还要在 Inbox 接受结果。详细结果语义见[任务结果与失败处理](/v2/zh/service/managed-harness-task-outcomes)。
+任务结束后检查产物与 Issue 状态。对于人工验收，成功执行之后还要通过 Issue accept/reject API 作出验收决定。详细结果语义见[任务结果与失败处理](/v2/zh/service/managed-harness-task-outcomes)。
 
 ## 调整与运营
 

@@ -19,6 +19,7 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"time"
 
@@ -41,6 +42,7 @@ func cloneEndpoint(v *controlmodel.Endpoint) *controlmodel.Endpoint {
 	}
 	c := *v
 	c.InputSchema, c.OutputSchema = cloneJSON(v.InputSchema), cloneJSON(v.OutputSchema)
+	c.ResultMapping = cloneJSON(v.ResultMapping)
 	c.AuthPolicy, c.RateLimit = cloneJSON(v.AuthPolicy), cloneJSON(v.RateLimit)
 	if v.ActiveReleaseID != nil {
 		id := *v.ActiveReleaseID
@@ -66,6 +68,7 @@ func cloneEndpointRelease(v *controlmodel.EndpointRelease) *controlmodel.Endpoin
 		return nil
 	}
 	c := *v
+	c.Contract = cloneJSON(v.Contract)
 	return &c
 }
 
@@ -75,6 +78,15 @@ func cloneEndpointInvocation(v *controlmodel.EndpointInvocation) *controlmodel.E
 	}
 	c := *v
 	c.Input, c.Result = cloneJSON(v.Input), cloneJSON(v.Result)
+	if v.ApplicationID != nil {
+		id := *v.ApplicationID
+		c.ApplicationID = &id
+	}
+	if v.CredentialID != nil {
+		id := *v.CredentialID
+		c.CredentialID = &id
+	}
+	c.Contract = cloneJSON(v.Contract)
 	return &c
 }
 
@@ -83,6 +95,7 @@ func cloneEndpointConversation(v *controlmodel.EndpointConversation) *controlmod
 		return nil
 	}
 	c := *v
+	c.Contract = cloneJSON(v.Contract)
 	return &c
 }
 
@@ -176,7 +189,7 @@ func (r *endpointRepo) Update(_ context.Context, in *controlmodel.Endpoint, expe
 
 func (r *endpointRepo) DeployRelease(_ context.Context, endpointID uuid.UUID,
 	targetType controlmodel.EndpointTargetType, targetRef uuid.UUID, expected int64,
-	actor controlmodel.Actor, reason string) (*controlmodel.Endpoint, *controlmodel.EndpointRelease, error) {
+	actor controlmodel.Actor, reason string, contracts ...json.RawMessage) (*controlmodel.Endpoint, *controlmodel.EndpointRelease, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	endpoint := r.s.endpoints[endpointID]
@@ -196,6 +209,9 @@ func (r *endpointRepo) DeployRelease(_ context.Context, endpointID uuid.UUID,
 	release := &controlmodel.EndpointRelease{ID: uuid.New(), EndpointID: endpointID, Number: number,
 		TargetType: targetType, TargetRef: targetRef, CreatedBy: actor, Reason: reason,
 		CreatedAt: now, ActivatedAt: now}
+	if len(contracts) > 0 {
+		release.Contract = cloneJSON(contracts[0])
+	}
 	r.s.endpointReleases[release.ID] = release
 	updated := cloneEndpoint(endpoint)
 	updated.TargetRef = targetRef
@@ -333,7 +349,7 @@ func (r *endpointRepo) ReserveInvocation(_ context.Context, in *controlmodel.End
 		c.Status = controlmodel.EndpointInvocationAccepted
 	}
 	now := time.Now().UTC()
-	c.CreatedAt, c.UpdatedAt = now, now
+	c.CreatedAt, c.UpdatedAt, c.NextPollAt = now, now, now
 	r.s.endpointInvocations[c.ID] = c
 	return cloneEndpointInvocation(c), true, nil
 }
@@ -353,6 +369,12 @@ func (r *endpointRepo) ListInvocations(_ context.Context, filter store.EndpointI
 	defer r.s.mu.RUnlock()
 	out := []*controlmodel.EndpointInvocation{}
 	for _, v := range r.s.endpointInvocations {
+		if filter.ConversationID != uuid.Nil && (v.ConversationID == nil || *v.ConversationID != filter.ConversationID) {
+			continue
+		}
+		if filter.ApplicationID != uuid.Nil && (v.ApplicationID == nil || *v.ApplicationID != filter.ApplicationID) {
+			continue
+		}
 		if filter.EndpointID != uuid.Nil && v.EndpointID != filter.EndpointID {
 			continue
 		}
@@ -365,12 +387,26 @@ func (r *endpointRepo) ListInvocations(_ context.Context, filter store.EndpointI
 		if filter.Status != "" && v.Status != filter.Status {
 			continue
 		}
+		if filter.DueBefore != nil && v.NextPollAt.After(*filter.DueBefore) {
+			continue
+		}
 		if filter.ActiveOnly && endpointInvocationTerminal(v.Status) {
 			continue
 		}
 		out = append(out, cloneEndpointInvocation(v))
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	sort.Slice(out, func(i, j int) bool {
+		if filter.OldestFirst {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if filter.Offset > 0 {
+		if filter.Offset >= len(out) {
+			return []*controlmodel.EndpointInvocation{}, nil
+		}
+		out = out[filter.Offset:]
+	}
 	if filter.Limit > 0 && len(out) > filter.Limit {
 		out = out[:filter.Limit]
 	}
@@ -378,7 +414,7 @@ func (r *endpointRepo) ListInvocations(_ context.Context, filter store.EndpointI
 }
 
 func endpointInvocationTerminal(status controlmodel.EndpointInvocationStatus) bool {
-	return status == controlmodel.EndpointInvocationCompleted || status == controlmodel.EndpointInvocationFailed ||
+	return status == controlmodel.EndpointInvocationCompleted || status == controlmodel.EndpointInvocationPartialSucceeded || status == controlmodel.EndpointInvocationFailed ||
 		status == controlmodel.EndpointInvocationCancelled || status == controlmodel.EndpointInvocationTimedOut
 }
 
@@ -389,6 +425,13 @@ func (r *endpointRepo) UpdateInvocation(_ context.Context, in *controlmodel.Endp
 		return nil, store.ErrNotFound
 	}
 	c := cloneEndpointInvocation(in)
+	c.NextPollAt = r.s.endpointInvocations[in.ID].NextPollAt
+	c.ConsumedTokens = r.s.endpointInvocations[in.ID].ConsumedTokens
+	c.PrincipalType = r.s.endpointInvocations[in.ID].PrincipalType
+	c.PrincipalRef = r.s.endpointInvocations[in.ID].PrincipalRef
+	c.ApplicationID = r.s.endpointInvocations[in.ID].ApplicationID
+	c.CredentialID = r.s.endpointInvocations[in.ID].CredentialID
+	c.Actor = r.s.endpointInvocations[in.ID].Actor
 	c.UpdatedAt = time.Now().UTC()
 	r.s.endpointInvocations[c.ID] = c
 	return cloneEndpointInvocation(c), nil
@@ -435,4 +478,84 @@ func (r *endpointRepo) UpdateConversation(_ context.Context, in *controlmodel.En
 	c.UpdatedAt = time.Now().UTC()
 	r.s.endpointConversations[c.ID] = c
 	return cloneEndpointConversation(c), nil
+}
+
+func (r *endpointRepo) ScheduleInvocation(_ context.Context, id uuid.UUID, at time.Time) error {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	v := r.s.endpointInvocations[id]
+	if v == nil {
+		return store.ErrNotFound
+	}
+	v.NextPollAt = at.UTC().Truncate(time.Microsecond)
+	return nil
+}
+func (r *endpointRepo) TouchCredential(_ context.Context, id uuid.UUID, at time.Time) error {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	v := r.s.endpointCredentials[id]
+	if v == nil {
+		return store.ErrNotFound
+	}
+	v.LastUsedAt = &at
+	return nil
+}
+
+func (r *endpointRepo) RecordInvocationTokens(_ context.Context, id uuid.UUID, total int64) error {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	inv := r.s.endpointInvocations[id]
+	if inv == nil {
+		return store.ErrNotFound
+	}
+	if total <= inv.ConsumedTokens {
+		return nil
+	}
+	if inv.ApplicationID != nil {
+		app := r.s.applications[*inv.ApplicationID]
+		if app == nil {
+			return store.ErrNotFound
+		}
+		app.TokensUsed += total - inv.ConsumedTokens
+	}
+	inv.ConsumedTokens = total
+	return nil
+}
+
+func (r *endpointRepo) GetInvocationByIdempotency(_ context.Context, endpointID uuid.UUID, mode controlmodel.EndpointInvocationMode, principal, key string) (*controlmodel.EndpointInvocation, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	if key != "" {
+		for _, v := range r.s.endpointInvocations {
+			if v.EndpointID == endpointID && v.Mode == mode && v.PrincipalRef == principal && v.IdempotencyKey == key {
+				return cloneEndpointInvocation(v), nil
+			}
+		}
+	}
+	return nil, store.ErrNotFound
+}
+func (r *endpointRepo) CountActiveInvocations(_ context.Context, f store.EndpointInvocationFilter) (int, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	count := 0
+	for _, v := range r.s.endpointInvocations {
+		if endpointInvocationTerminal(v.Status) || f.EndpointID != uuid.Nil && v.EndpointID != f.EndpointID || f.ApplicationID != uuid.Nil && (v.ApplicationID == nil || *v.ApplicationID != f.ApplicationID) || f.ConversationID != uuid.Nil && (v.ConversationID == nil || *v.ConversationID != f.ConversationID) {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+func (r *endpointRepo) ClaimInvocationPoll(_ context.Context, id uuid.UUID, expected, next time.Time) (bool, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	v := r.s.endpointInvocations[id]
+	if v == nil {
+		return false, store.ErrNotFound
+	}
+	if !v.NextPollAt.Truncate(time.Microsecond).Equal(expected.Truncate(time.Microsecond)) {
+		return false, nil
+	}
+	v.NextPollAt = next.UTC().Truncate(time.Microsecond)
+	return true, nil
 }

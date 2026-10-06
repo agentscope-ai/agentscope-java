@@ -708,8 +708,28 @@ func TestStaleManagedTurnCannotFailRetryAttempt(t *testing.T) {
 	req.Header.Set("X-Builder-Internal-Token", "internal-secret")
 	response := httptest.NewRecorder()
 	srv.router.ServeHTTP(response, req)
-	if response.Code != http.StatusGone {
+	if response.Code != http.StatusNoContent {
 		t.Fatalf("stale event report: status=%d body=%s", response.Code, response.Body.String())
+	}
+	// Replay remains idempotent and preserves the original attempt, even though
+	// it is no longer allowed to change task or session lifecycle state.
+	replay := httptest.NewRequest(http.MethodPost, "/api/internal/runtime-sessions/managed-retry-1/events", bytes.NewReader(body))
+	replay.Header.Set("Content-Type", "application/json")
+	replay.Header.Set("X-Builder-Internal-Token", "internal-secret")
+	replayed := httptest.NewRecorder()
+	srv.router.ServeHTTP(replayed, replay)
+	if replayed.Code != http.StatusNoContent {
+		t.Fatalf("replay: %d %s", replayed.Code, replayed.Body.String())
+	}
+	sessions, _ := st.Sessions().List(ctx, store.SessionFilter{SessionID: "managed-retry-1"})
+	events, _ := st.Events().List(ctx, sessions[0].ID)
+	if len(events) != 1 {
+		t.Fatalf("historical events: %d", len(events))
+	}
+	var meta map[string]any
+	_ = json.Unmarshal(events[0].FrameworkMeta, &meta)
+	if meta["attemptId"] != oldAttempt.ID.String() {
+		t.Fatalf("lost original fence: %s", events[0].FrameworkMeta)
 	}
 	current, _ := st.Collaboration().GetAgentTask(ctx, claimed.ID)
 	currentAttempt, _ := st.ExecutionAttempts().Get(ctx, newAttempt.ID)

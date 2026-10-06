@@ -1,67 +1,76 @@
 ---
-title: "Register or create an Agent"
+title: "Create, register, and manage Agents"
+description: Establish Agent identities through APIs, bind execution, and verify task and service capabilities.
 zh_link: /v2/zh/service/agents
 ---
 
-<Note>
-This is preview documentation. The official release is not yet available.
-</Note>
+An Agent is a reusable capability for service calls, assigned work, and orchestration. Connect it to the shared catalog, verify execution readiness, and then submit work. Creating a definition does not itself run model inference.
 
-**DESIGN → Agents** manages identity, behavior and execution. Reuse an Agent in Chat, Issues, Teams and Endpoints. Saving its definition does not start work.
+This group uses APIs throughout. For visual operation, see [Agents in Console](/v2/en/service/console/agents).
 
-## Choose an integration path
+## Choose an execution model
 
-- **Managed Agent**: create a cloud Agent in the console, then configure its model and resources.
-- **AgentScope framework**: register your own deployed application as an External Agent; task execution requires the corresponding adapter support.
-- **Hosted**: connect Runtime Host and select an installed, authenticated Coding Agent provider.
-
-The three submenus cover creation, registration and verification. Detailed parameters, resource configuration and execution principles are collected in Reference. After connecting an Agent, [submit work through an Endpoint](/v2/en/service/endpoints) or [create an Issue in the console](/v2/en/service/issues).
-
-## Interface tour
-
-<Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/agents.png" alt="Agent catalog with Managed, Hosted and External filters" />
-</Frame>
-
-Use the filters to distinguish runtime types and the cards to identify each Agent’s purpose. Open a card to configure it, or choose **New agent** to add one. The example shows all three types; verify runtime availability for each Agent before using it.
-
-## Choose an execution type
-
-| Type | Where it runs | Onboarding |
+| Model | Who runs it | API operation |
 | --- | --- | --- |
-| Managed | Service Harness and Dataplane | Create an Agent using AgentScope Managed |
-| Hosted | A Coding Agent provider on your machine or server | Connect a Runtime Host, then select a discovered Runtime |
-| External | Your independently deployed application | Register through the SDK to enter the Agent catalog |
+| Managed | Service Harness and Dataplane | `POST /api/v1/agents` with `binding.kind=managed` and `definition` |
+| External | Your application | SDK or `POST /api/v1/agent-registrations`; application supplies execution adapters |
+| Hosted | A Coding Agent on Runtime Host | `GET /api/v1/agents/runtime-options`, then `POST /api/v1/agents` with a `hosted-runtime` binding |
 
-The work entry points are shared, but models, tools, recovery and configuration projection differ. Catalog visibility does not guarantee every conversation or dispatch capability. See the dedicated [Managed](/v2/en/service/managed-agent), [Hosted](/v2/en/service/hosted-agent) and [External](/v2/en/service/external-agent) guides.
+All three share Agent identity and catalog management. Use Managed for platform-run inference and tools, External for your own code application, or Hosted for an installed Coding Agent. Continue with [Managed creation](/v2/en/service/create-managed-agent), [External registration](/v2/en/service/register-agentscope-agent), or [Hosted connection](/v2/en/service/connect-hosted-agent).
 
-## Create an Agent
+## Prepare identity and scope
 
-1. Start creation and enter its name, purpose and Instructions.
-2. Link a Workspace when it should reuse operating guidance, skills, tools or subagent definitions.
-3. Explicitly choose Runtime under Execution. An online Hosted provider may be selected initially; choose **AgentScope Managed** for a Managed Agent.
-4. Leave Model empty for the runtime default, or enter a model identifier supported by that provider.
-5. For Managed Agents, choose an Environment in Advanced settings. The automatic local default requires administrator permission for Local execution.
-6. Select **Create & open agent**, then review the resulting configuration.
+Management APIs use a platform user Bearer token. Examples use `curl` and `jq`; `BASE_URL` is the Gateway origin. Choose a tenant and namespace authorized for your account rather than assuming the placeholders identify existing resources. See [API authentication](/v2/en/service/api-reference).
 
-Agent key is a stable identity within the scope. The display name communicates purpose to colleagues.
+```bash
+export BASE_URL='https://YOUR_SERVICE_HOST'
+export TOKEN='YOUR_PLATFORM_USER_TOKEN'
+export TENANT='YOUR_TENANT'
+export NAMESPACE='YOUR_NAMESPACE'
+```
 
-## Configure the detail pages
+Keep scope fields, query parameters, and the `X-AgentScope-Tenant` / `X-AgentScope-Namespace` headers consistent. Endpoint API keys, host credentials, and registration information are separate from platform management identity.
 
-| Page | Purpose | First verification |
-| --- | --- | --- |
-| Behavior | Responsibilities, instructions and model | Ask a bounded question |
-| Workspace | Materials and execution resources | Read a known file |
-| Skills | Reusable procedures and supporting files | Run a task matching a skill |
-| Tools | Tools and MCP connections | Make a read-only call and check authentication |
-| Subagents | Delegated specialist capabilities | Inspect a delegated result |
-| Versions | Definition history | Use new work to verify the intended version |
-| Connections → Channels | Messaging bindings | Send a request through the actual channel |
+## Find Agents and retain their IDs
 
-## Add capabilities incrementally
+```bash
+curl --fail-with-body -sS -G "$BASE_URL/api/v1/agents" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data-urlencode "tenant=$TENANT" --data-urlencode "namespace=$NAMESPACE"
+```
 
-Verify conversation first, then file access, an external tool and a specialist skill. Store credentials in [Vault](/v2/en/service/vault) and shared knowledge in [Memory](/v2/en/service/memory). Configuration does not automatically install executable tools or grant external permissions.
+The response contains `items`. `agentKey` is a stable business identifier within the scope, `displayName` is for presentation, and `id` is the Agent ID used by other APIs. Save `agent.id` from creation or registration instead of using the display name as an ID.
 
-A shared Workspace can affect multiple Agents. Check its consumers before editing and verify with a new Chat or Issue. Do not assume that running work switches definitions immediately.
+The catalog describes identity and lifecycle; bindings describe execution locations. An identity can have multiple bindings and instances. After creation, inspect the bindings:
 
-Next: [Teams](/v2/en/service/teams) · [Workspaces](/v2/en/service/workspaces).
+```bash
+export AGENT_ID='RETURNED_AGENT_ID'
+curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/bindings" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+An `active` catalog entry does not guarantee that its model, credentials, tools, and execution resources are currently usable. Check Endpoint readiness before publishing, then verify the actual route with a small read-only task.
+
+## Update configuration and lifecycle
+
+| Change | Operation |
+| --- | --- |
+| Name, description, catalog status | `GET /api/v1/agents/{id}` → `PATCH /api/v1/agents/{id}` |
+| Managed / Hosted behavior | `GET /api/v1/agents/{id}/definition` → `PATCH /api/v1/agents/{id}/definition` |
+| Execution bindings | `GET/POST /api/v1/agents/{id}/bindings`; read the target binding from the list, then update with `PATCH /api/v1/agents/{id}/bindings/{bindingId}` |
+| Runtime selection | `GET/PUT /api/v1/agent-runtime-policies/{id}` |
+| Archive an Agent | `PATCH /api/v1/agents/{id}` with `{"version": CURRENT_VERSION, "status":"archived"}` |
+
+Read the current version before updating and supply the concurrency condition required by the endpoint. Preserve unchanged definition fields: omitted values may replace existing tools, skills, or resource bindings. Refer to each runtime's configuration guide; simple registration does not require advanced routing policies.
+
+Binding updates require the binding's current `version` and complete `configuration`, `priority`, and `enabled` values. These fields are replaced together; omitting `enabled` disables the binding. Preserve the other values when changing only one field.
+
+External application behavior is primarily maintained in its code. Editing a platform definition does not hot-update that process. Update the Endpoint release when changing a published capability; existing calls retain their release contract.
+
+## Use the connected capability
+
+[Publish an Endpoint](/v2/en/service/endpoints) for application calls, then use the [Unified service API](/v2/en/service/service-api) for submissions, snapshots, events, and interactions. Use [Issues](/v2/en/service/issues) for assigned work with discussion and acceptance.
+
+Create a [Team](/v2/en/service/create-team) for collaboration or a [Workflow](/v2/en/service/workflows) for an explicit process. Both reference existing Agent IDs. Managed-specific session, file, and checkpoint features use the [Native session API](/v2/en/service/session-event-log).

@@ -146,7 +146,7 @@ func namespaceAction(c *gin.Context) string {
 			return "configure"
 		}
 		return "resource.write"
-	case "endpoints", "work-sources", "modelconfigs", "mcpservers", "agent-registrations", "agent-runtime-policies":
+	case "applications", "endpoints", "work-sources", "modelconfigs", "mcpservers", "agent-registrations", "agent-runtime-policies":
 		if read {
 			return "configure"
 		}
@@ -285,7 +285,7 @@ func (s *Server) accessFailure(c *gin.Context, err error) {
 
 func (s *Server) resolveAccessObjectScope(c *gin.Context) (string, string, string, bool, error) {
 	ctx := c.Request.Context()
-	for _, key := range []string{"agentId", "sessionId", "chatId", "endpointId", "workSourceId", "instanceId", "hostId", "bindingId", "proposalId"} {
+	for _, key := range []string{"agentId", "sessionId", "chatId", "applicationId", "endpointId", "workSourceId", "instanceId", "hostId", "bindingId", "proposalId"} {
 		raw := c.Param(key)
 		if raw == "" {
 			continue
@@ -309,6 +309,12 @@ func (s *Server) resolveAccessObjectScope(c *gin.Context) (string, string, strin
 			return v.Tenant, v.Namespace, raw, true, nil
 		case "chatId":
 			v, e := s.store.Chats().Get(ctx, id)
+			if e != nil {
+				return "", "", "", true, e
+			}
+			return v.Tenant, v.Namespace, raw, true, nil
+		case "applicationId":
+			v, e := s.store.Applications().Get(ctx, id)
 			if e != nil {
 				return "", "", "", true, e
 			}

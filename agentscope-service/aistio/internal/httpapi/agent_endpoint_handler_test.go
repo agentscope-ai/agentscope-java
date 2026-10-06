@@ -192,6 +192,7 @@ func TestEndpointJobIsIdempotent(t *testing.T) {
 	if err = json.Unmarshal(created.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
+	out.Credential, out.CredentialResource.ID = createTestApplicationCredential(t, server, out.Endpoint.ID)
 	published := request(http.MethodPost, "/api/v1/endpoints/"+out.Endpoint.ID.String()+"/publish", fmt.Sprintf(`{"version":%d}`, out.Endpoint.Version), "console", false)
 	if published.Code != http.StatusOK {
 		t.Fatalf("publish endpoint: %d %s", published.Code, published.Body.String())
@@ -308,7 +309,7 @@ func TestEndpointJobIsIdempotent(t *testing.T) {
 	if newCall.Code != http.StatusNotFound {
 		t.Fatalf("disabled endpoint accepted new call: %d %s", newCall.Code, newCall.Body)
 	}
-	status := request(http.MethodGet, "/invoke/v1/jobs/"+a.InvocationID.String(), "", rotatedOut.Secret, false)
+	status := request(http.MethodGet, "/invoke/v1/invocations/"+a.InvocationID.String(), "", rotatedOut.Secret, false)
 	if status.Code != http.StatusOK {
 		t.Fatalf("rotated credential could not read existing job after disable: %d %s", status.Code, status.Body)
 	}
@@ -364,6 +365,7 @@ func TestWorkflowEndpointRecordsTargetAndRequestsReview(t *testing.T) {
 	if err = json.Unmarshal(created.Body.Bytes(), &resource); err != nil {
 		t.Fatal(err)
 	}
+	resource.Credential, _ = createTestApplicationCredential(t, server, resource.Endpoint.ID)
 	published := request(http.MethodPost, "/api/v1/endpoints/"+resource.Endpoint.ID.String()+"/publish",
 		fmt.Sprintf(`{"version":%d}`, resource.Endpoint.Version), "console", "")
 	if published.Code != http.StatusOK {
@@ -456,6 +458,7 @@ func TestEndpointConversationFreezesExternalRuntimeAndIsIdempotent(t *testing.T)
 		} `json:"endpoint"`
 	}
 	_ = json.Unmarshal(created.Body.Bytes(), &resource)
+	resource.Credential, _ = createTestApplicationCredential(t, server, resource.Endpoint.ID)
 	published := request(http.MethodPost, "/api/v1/endpoints/"+resource.Endpoint.ID.String()+"/publish",
 		fmt.Sprintf(`{"version":%d}`, resource.Endpoint.Version), "console", "")
 	if published.Code != http.StatusOK {
@@ -496,6 +499,34 @@ func TestEndpointConversationFreezesExternalRuntimeAndIsIdempotent(t *testing.T)
 	if err != nil || len(sessions) != 1 || sessions[0].OriginType != "endpoint" || sessions[0].OriginRef != resource.Endpoint.ID.String() {
 		t.Fatalf("Endpoint Session identity was not stored: sessions=%+v err=%v", sessions, err)
 	}
+	previous, err := st.Endpoints().GetInvocation(ctx, firstOut.InvocationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous.Status = controlmodel.EndpointInvocationCompleted
+	if _, err = st.Endpoints().UpdateInvocation(ctx, previous); err != nil {
+		t.Fatal(err)
+	}
+	followup := request(http.MethodPost, "/invoke/v1/conversations/"+firstOut.ConversationID.String()+"/turns",
+		`{"message":"continue"}`, resource.Credential, "turn-2")
+	if followup.Code != http.StatusAccepted {
+		t.Fatalf("follow-up turn: %d %s", followup.Code, followup.Body)
+	}
+	if err = json.Unmarshal(followup.Body.Bytes(), &secondOut); err != nil {
+		t.Fatal(err)
+	}
+	next, err := st.Endpoints().GetInvocation(ctx, secondOut.InvocationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.ID == previous.ID || next.SessionID == "" || next.SessionID != previous.SessionID ||
+		next.ConversationID == nil || *next.ConversationID != *previous.ConversationID ||
+		next.TurnID == nil || *next.TurnID == *previous.TurnID {
+		t.Fatalf("follow-up did not retain session with a new turn: previous=%+v next=%+v", previous, next)
+	}
+	if len(commands.turns) != 2 || commands.turns[1].GetSessionId() != command.GetSessionId() {
+		t.Fatalf("follow-up was not dispatched to the existing session: %+v", commands.turns)
+	}
 }
 
 func TestHostedEndpointConversationCompletesPublicInvocation(t *testing.T) {
@@ -532,6 +563,7 @@ func TestHostedEndpointConversationCompletesPublicInvocation(t *testing.T) {
 	if err := json.Unmarshal(created.Body.Bytes(), &resource); err != nil {
 		t.Fatal(err)
 	}
+	resource.Credential, _ = createTestApplicationCredential(t, server, resource.Endpoint.ID)
 	published := request(http.MethodPost, "/api/v1/endpoints/"+resource.Endpoint.ID.String()+"/publish",
 		fmt.Sprintf(`{"version":%d}`, resource.Endpoint.Version), "console", "")
 	if published.Code != http.StatusOK {
@@ -583,4 +615,35 @@ func TestHostedEndpointConversationCompletesPublicInvocation(t *testing.T) {
 		hostedResultOutput(invocation.Result) != "hosted answer" || invocation.CompletedAt == nil {
 		t.Fatalf("hosted endpoint terminal state was not projected: %+v err=%v", invocation, err)
 	}
+}
+
+func createTestApplicationCredential(t *testing.T, server *Server, endpointID uuid.UUID) (string, uuid.UUID) {
+	t.Helper()
+	request := func(path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
+		req.Header.Set("Authorization", "Bearer console")
+		req.Header.Set("Content-Type", "application/json")
+		out := httptest.NewRecorder()
+		server.router.ServeHTTP(out, req)
+		if out.Code != http.StatusCreated {
+			t.Fatalf("create Application credential: %d %s", out.Code, out.Body)
+		}
+		return out
+	}
+	app := request("/api/v1/applications", `{"tenant":"t","namespace":"n","name":"test-client"}`)
+	var created struct {
+		Application controlmodel.Application `json:"application"`
+	}
+	if err := json.Unmarshal(app.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	key := request("/api/v1/endpoints/"+endpointID.String()+"/credentials", fmt.Sprintf(`{"applicationId":%q,"name":"test-key","scopes":["invoke","read","interact","cancel"]}`, created.Application.ID.String()))
+	var result struct {
+		Secret     string                          `json:"secret"`
+		Credential controlmodel.EndpointCredential `json:"credential"`
+	}
+	if err := json.Unmarshal(key.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	return result.Secret, result.Credential.ID
 }

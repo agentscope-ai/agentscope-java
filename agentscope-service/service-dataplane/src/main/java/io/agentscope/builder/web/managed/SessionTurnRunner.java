@@ -366,6 +366,11 @@ public class SessionTurnRunner {
             }
             if (command != null) publicTurns.put(session.id(), command.turnId());
             ManagedExecutionScope admittedScope = executionScope;
+            // The event outbox is asynchronous. Its running event cannot serve as a
+            // barrier for a fast task.complete or child-delegation tool call.
+            controlPlaneClient.startManagedExecution(session.id(), admittedScope);
+            if (nativeLogs != null)
+                nativeLogs.beginAdmission(session, lease.coordinationId(), admittedScope);
             onAdmitted.run();
             sessionService.updateStatus(
                     session.ownerId(),
@@ -382,6 +387,7 @@ public class SessionTurnRunner {
                                     controlPlaneClient.endManagedExecution(
                                             session.id(), admittedScope);
                                     lease.close();
+                                    finishMirrorAdmission(lease.coordinationId());
                                     if (command != null)
                                         publicTurns.remove(session.id(), command.turnId());
                                     if (command != null)
@@ -440,6 +446,7 @@ public class SessionTurnRunner {
                                     controlPlaneClient.endManagedExecution(
                                             session.id(), admittedScope);
                                     lease.close();
+                                    finishMirrorAdmission(lease.coordinationId());
                                     if (command != null)
                                         publicTurns.remove(session.id(), command.turnId());
                                     if (command != null)
@@ -459,7 +466,17 @@ public class SessionTurnRunner {
             interruptedTurns.remove(session.id(), interrupted);
             controlPlaneClient.endManagedExecution(session.id(), executionScope);
             lease.close();
+            finishMirrorAdmission(lease.coordinationId());
             throw ex;
+        }
+    }
+
+    private void finishMirrorAdmission(String admission) {
+        if (nativeLogs == null) return;
+        try {
+            nativeLogs.finishAdmission(admission);
+        } catch (RuntimeException error) {
+            log.warn("Mirror admission close pending lease expiry: {}", admission, error);
         }
     }
 
@@ -468,6 +485,7 @@ public class SessionTurnRunner {
             ManagedExecutionScope expectedScope,
             TurnLeaseService.TurnLease expectedLease) {
         try {
+            if (nativeLogs != null) nativeLogs.renewAdmission(expectedLease.coordinationId());
             controlPlaneClient.heartbeatManagedExecution(sessionId, expectedScope);
         } catch (RuntimeException ex) {
             if (isPermanentManagedHeartbeatFailure(ex)) {
@@ -589,6 +607,8 @@ public class SessionTurnRunner {
     }
 
     private boolean interruptLocalLocked(String sessionId, String source) {
+        ManagedExecutionScope interruptedScope =
+                controlPlaneClient.managedExecutionScope(sessionId);
         // Establish cancellation before releasing a blocked confirmation future. Otherwise the
         // middleware can observe false and advance the agent between future completion and stream
         // disposal.
@@ -613,10 +633,12 @@ public class SessionTurnRunner {
         if (!active) {
             return false;
         }
-        eventLog.append(
+        appendTurnEvent(
                 sessionId,
                 SessionEventTypes.SESSION_INTERRUPTED,
-                Map.of("status", "interrupted", "source", source));
+                Map.of("status", "interrupted", "source", source),
+                null,
+                interruptedScope);
         TurnLeaseService.TurnLease lease = activeTurnLeases.remove(sessionId);
         if (lease != null) {
             handsLeaseService.release(sessionId, lease.coordinationId());
@@ -800,6 +822,7 @@ public class SessionTurnRunner {
                 };
         AgentRun<AgentEvent> run = agent.prepareRun(inputMsgs, rc);
         jevRunId.set(run.runId());
+        if (nativeLogs != null) nativeLogs.bindRun(session, lease.coordinationId(), run.runId());
         synchronized (turnMutex(session.id())) {
             // A stale turn may finish agent construction after a replacement was admitted. Never
             // let its late registrations overwrite the replacement's cancellation handles.
@@ -975,20 +998,8 @@ public class SessionTurnRunner {
             Map<String, Object> payload,
             String eventId,
             ManagedExecutionScope executionScope) {
-        if (executionScope == null) {
-            return eventLog.append(sessionId, type, payload, eventId);
-        }
-        SessionEventDto event = eventLog.appendLocal(sessionId, type, payload, eventId);
-        try {
-            controlPlaneClient.appendSessionEvent(event, executionScope);
-        } catch (RuntimeException ex) {
-            log.warn(
-                    "Scoped session event mirror failed: sessionId={}, eventId={}, error={}",
-                    sessionId,
-                    event.id(),
-                    ex.getMessage());
-        }
-        return event;
+        return eventLog.appendScoped(
+                sessionId, type, payload, eventId, ControlPlaneClient.eventScope(executionScope));
     }
 
     /** Builds a {@link ToolResultBlock} from a worker/user tool_result payload. */

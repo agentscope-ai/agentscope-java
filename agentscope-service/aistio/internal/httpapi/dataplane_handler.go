@@ -59,7 +59,7 @@ func (s *Server) heartbeatDataPlane(c *gin.Context) {
 		Capabilities   []string `json:"capabilities,omitempty"`
 	}
 	_ = c.ShouldBindJSON(&req)
-	capabilities, _ := json.Marshal(req.Capabilities)
+	capabilities := controlmodel.CapabilityFlags(req.Capabilities)
 	if req.Capabilities == nil {
 		capabilities = nil
 	}

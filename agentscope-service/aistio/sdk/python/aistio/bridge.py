@@ -25,12 +25,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import json
 import socket
 import threading
 import time
 import uuid
+from concurrent.futures import wait
 from typing import Any, Dict, List, Optional
 
+from .adapters.executable import ExecutableAdapter, TaskResult
 from .adapters.base import (
     AgentTaskAssignment,
     COMMAND_ABORT,
@@ -38,6 +41,7 @@ from .adapters.base import (
     COMMAND_TERMINATE,
     FrameworkAdapter,
 )
+from .collaboration import CollaborationClient, CollaborationError
 from .context import ContextSnapshot, ContextTracker
 from .events import (
     EVENT_COMPACTION,
@@ -50,6 +54,7 @@ from .event_journal import EventJournal
 from .inventory import InstanceHealth, Inventory
 from .proto import asdp_pb2
 from .transport.grpc import GrpcTransport
+from .transport.http_pull import HttpPullTransport
 from .transport.http_server import ContractHTTPServer, ContractNotFoundError
 from .transport.registration import RegisteredIdentity, register_external_agent
 
@@ -96,6 +101,7 @@ class SessionBridge:
         session_affinity: str = "",
         start_http: bool = True,
         start_grpc: bool = True,
+        transport: str = "http",
     ) -> None:
         self._control_plane = control_plane
         self._tenant = tenant
@@ -114,6 +120,9 @@ class SessionBridge:
         self._http_base_url = contract_http_base_url
         self._session_affinity = session_affinity
         self._start_http = start_http
+        if transport not in {"http", "grpc"}:
+            raise ValueError("transport must be http or grpc")
+        self._transport_kind = transport
         self._start_grpc = start_grpc
 
         self._adapter: Optional[FrameworkAdapter] = None
@@ -156,6 +165,9 @@ class SessionBridge:
         self._grpc: Optional[GrpcTransport] = None
         self._http: Optional[ContractHTTPServer] = None
         self._registered_identity: Optional[RegisteredIdentity] = None
+        self._attempt_futures: dict[str, Any] = {}
+        self._attempt_reports: dict[str, Any] = {}
+        self._attempt_cancellations: dict[str, Any] = {}
         self._started = False
 
     # ─── 适配器挂载 ───
@@ -184,6 +196,7 @@ class SessionBridge:
             self._http = ContractHTTPServer(self._http_host, self._http_port, provider=self)
             self._http.start()
 
+        self._ensure_registration()
         if self._start_grpc:
             self._ensure_grpc_transport()
 
@@ -196,6 +209,12 @@ class SessionBridge:
         if not self._started:
             return
         self._stop.set()
+        with self._lock:
+            attempts = list(self._attempt_futures.values())
+            for cancel in self._attempt_cancellations.values():
+                self._loop.call_soon_threadsafe(cancel.set)
+        if attempts:
+            wait(attempts, timeout=5.0)
         if self._grpc is not None:
             self._grpc.stop()
         if self._http is not None:
@@ -239,9 +258,7 @@ class SessionBridge:
         host = self._http_host or socket.getfqdn() or "127.0.0.1"
         return f"http://{host}:{self.http_port}"
 
-    def _ensure_grpc_transport(self) -> None:
-        if self._grpc is not None or not self._start_grpc:
-            return
+    def _ensure_registration(self) -> None:
         if not (self._agent_id and self._binding_id and self._generation > 0):
             if not self._control_plane_http:
                 return
@@ -267,8 +284,18 @@ class SessionBridge:
             self._generation = identity.generation
             self._registration_credential = identity.registration_credential
 
-        self._grpc = GrpcTransport(
-            self._control_plane,
+    def _ensure_grpc_transport(self) -> None:
+        if self._grpc is not None or not self._start_grpc:
+            return
+        self._ensure_registration()
+        if not (self._agent_id and self._binding_id and self._generation > 0):
+            return
+        transport_class = HttpPullTransport if self._transport_kind == "http" else GrpcTransport
+        address = self._control_plane_http if self._transport_kind == "http" else self._control_plane
+        if not address:
+            raise ValueError("control_plane_http is required for HTTP runtime transport")
+        self._grpc = transport_class(
+            address,
             tenant=self._tenant,
             credential=self._registration_credential or self._internal_token,
             agent_id=self._agent_id,
@@ -294,6 +321,8 @@ class SessionBridge:
             caps.add("event-reporting")
         if self._adapter is not None:
             caps.update(self._adapter.capabilities())
+        if not self._start_grpc:
+            caps.difference_update({"agent-task", "session-reporting", "event-reporting", "context-reporting"})
         return sorted(caps)
 
     # ─── 事件入口（适配器 emit）───
@@ -327,7 +356,10 @@ class SessionBridge:
             if self._enable_events:
                 assert self._event_journal is not None
                 try:
-                    self._event_journal.append(event.to_proto())
+                    wire_event = event.to_proto()
+                    if self._transport_kind == "http":
+                        HttpPullTransport.validate_event(wire_event)
+                    self._event_journal.append(wire_event)
                 except OSError:
                     # Observability must not break the Agent's conversation. The failed
                     # sequence is deliberately not reused, and the gap remains visible.
@@ -359,7 +391,14 @@ class SessionBridge:
             ):
                 return
             report_id = str(uuid.uuid4())
-            batch = self._event_journal.first(EVENT_BATCH_SIZE)
+            batch = []
+            size = 0
+            for value in self._event_journal.first(EVENT_BATCH_SIZE):
+                length = HttpPullTransport.event_wire_size(value) if self._transport_kind == "http" else value.ByteSize()
+                if batch and size + length > 8 * 1024 * 1024:
+                    break
+                batch.append(value)
+                size += length
             self._inflight_event_report_id = report_id
             self._inflight_event_report_at = now
         try:
@@ -386,6 +425,24 @@ class SessionBridge:
             has_more = len(self._event_journal) > 0
         if has_more and not ack.error:
             self._flush_events()
+
+    async def _drain_attempt_events(self, session_id: str) -> bool:
+        """Fence completion on durable event ACKs, keeping the attempt lease alive.
+
+        Capture only this execution's prefix, so other sessions can keep emitting.
+        On shutdown, leave unacknowledged events in the outbox and let the server
+        recover the attempt instead of announcing a terminal state ahead of them.
+        """
+        with self._lock:
+            through_seq = self._seq.get(session_id, 0)
+        while True:
+            with self._lock:
+                if self._event_journal is None or not self._event_journal.has_pending(session_id, through_seq):
+                    return True
+            if self._stop.is_set():
+                return False
+            self._flush_events()
+            await asyncio.sleep(0.05)
 
     # ─── Level 4：Context 推送 ───
 
@@ -490,6 +547,8 @@ class SessionBridge:
         next_inventory = now  # 连接建立后立即一次
         while not self._stop.wait(0.5):
             now = time.monotonic()
+            if not self._agent_id:
+                self._ensure_registration()
             if self._start_grpc and self._grpc is None:
                 self._ensure_grpc_transport()
             if now >= next_events:
@@ -531,41 +590,103 @@ class SessionBridge:
             generation=generation,
             attempt_token=attempt_token,
         )
-        self._grpc.report_execution_attempt(
-            asdp_pb2.ExecutionAttemptReport(**base, action="ack")
-        )
-        if command == "cancel":
-            self._grpc.report_execution_attempt(
-                asdp_pb2.ExecutionAttemptReport(**base, action="cancelled")
-            )
-            return
-        assignment = AgentTaskAssignment(
-            attempt_id,
-            agent_task_id,
-            run_id,
-            node_id,
-            generation,
-            command,
-            context_url,
-            task_token,
-            attempt_token,
-            payload,
-            timestamp,
-        )
-        self._grpc.report_execution_attempt(
-            asdp_pb2.ExecutionAttemptReport(**base, action="start")
-        )
-        try:
-            self._run_async(self._adapter.handle_agent_task(assignment))
-        except Exception as exc:
-            self._grpc.report_execution_attempt(
-                asdp_pb2.ExecutionAttemptReport(
-                    **base,
-                    action="fail",
-                    error_code="adapter_execution_failed",
-                    error_message=str(exc),
-                )
-            )
+        with self._lock:
+            previous = self._attempt_reports.get(attempt_id)
+            if previous is not None:
+                self._grpc.report_execution_attempt(previous)
+                return
+            running = self._attempt_futures.get(attempt_id)
+            if command == "cancel":
+                if running is not None:
+                    self._loop.call_soon_threadsafe(self._attempt_cancellations[attempt_id].set)
+                else:
+                    report = asdp_pb2.ExecutionAttemptReport(**base, action="cancelled")
+                    self._attempt_reports[attempt_id] = report
+                    self._grpc.report_execution_attempt(report)
+                return
+            if running is not None:
+                self._grpc.report_execution_attempt(asdp_pb2.ExecutionAttemptReport(**base, action="heartbeat"))
+                return
+            assignment = AgentTaskAssignment(attempt_id, agent_task_id, run_id, node_id,
+                                             generation, command, context_url, task_token,
+                                             attempt_token, payload, timestamp)
+
+            cancelled = asyncio.Event()
+            self._attempt_cancellations[attempt_id] = cancelled
+
+            async def execute() -> None:
+                async def heartbeat() -> None:
+                    while True:
+                        await asyncio.sleep(10)
+                        self._grpc.report_execution_attempt(asdp_pb2.ExecutionAttemptReport(**base, action="heartbeat"))
+                pulse = asyncio.create_task(heartbeat())
+                report = None
+                result = None
+                try:
+                    if cancelled.is_set():
+                        raise asyncio.CancelledError()
+                    if not isinstance(self._adapter, ExecutableAdapter):
+                        self._grpc.report_execution_attempt(asdp_pb2.ExecutionAttemptReport(**base, action="start"))
+                    work = asyncio.create_task(self._adapter.handle_agent_task(assignment))
+                    cancellation = asyncio.create_task(cancelled.wait())
+                    try:
+                        await asyncio.wait({work, cancellation}, return_when=asyncio.FIRST_COMPLETED)
+                        if cancelled.is_set() and not work.done():
+                            work.cancel()
+                        result = await work
+                    finally:
+                        cancellation.cancel()
+                    if isinstance(result, TaskResult):
+                        report = asdp_pb2.ExecutionAttemptReport(
+                            **base, action="complete", result=json.dumps(result.result, ensure_ascii=False).encode(),
+                            content=result.summary, usage=json.dumps(result.usage).encode(),
+                            input_ids=result.processed_input_ids,
+                        )
+                except asyncio.CancelledError:
+                    report = asdp_pb2.ExecutionAttemptReport(**base, action="cancelled")
+                except Exception as exc:
+                    report = asdp_pb2.ExecutionAttemptReport(**base, action="fail",
+                        error_code="adapter_execution_failed", error_message=str(exc))
+                finally:
+                    try:
+                        if report is not None and await self._drain_attempt_events(assignment.session_id):
+                            coordinated = False
+                            if isinstance(result, TaskResult) and (result.complete_run or result.outcome == "waiting"):
+                                client = CollaborationClient(self._control_plane_http)
+                                try:
+                                    if result.complete_run:
+                                        try:
+                                            await asyncio.to_thread(client.complete_run_node, assignment.agent_task_id,
+                                                                    assignment.task_token, result.result)
+                                        except CollaborationError as error:
+                                            pending = ("coordinator has pending leader outcome task ",
+                                                       "coordinator has active worker task ",
+                                                       "coordinator has active node ")
+                                            if error.status not in {400, 409} or not any(text in error.body for text in pending):
+                                                raise
+                                            # Another outcome already has its own follow-up. Release this
+                                            # leader turn; do not occupy its only execution slot waiting.
+                                            await asyncio.to_thread(client.complete, assignment.agent_task_id,
+                                                assignment.task_token, summary="Current result accepted; waiting for pending coordinator work",
+                                                result=result.result, processed_input_ids=result.processed_input_ids, outcome="waiting")
+                                    else:
+                                        await asyncio.to_thread(client.complete, assignment.agent_task_id,
+                                            assignment.task_token, summary=result.summary, result=result.result,
+                                            processed_input_ids=result.processed_input_ids, outcome="waiting")
+                                    coordinated = True
+                                except Exception as error:
+                                    report = asdp_pb2.ExecutionAttemptReport(**base, action="fail",
+                                        error_code="coordinator_completion_failed", error_message=str(error))
+                            with self._lock:
+                                self._attempt_reports[attempt_id] = report
+                            if not coordinated:
+                                self._grpc.report_execution_attempt(report)
+                    finally:
+                        pulse.cancel()
+                        with self._lock:
+                            self._attempt_futures.pop(attempt_id, None)
+                            self._attempt_cancellations.pop(attempt_id, None)
+            self._attempt_futures[attempt_id] = asyncio.run_coroutine_threadsafe(execute(), self._loop)
 
     def _dispatch_command(
         self, session_id: str, command: str, params: Optional[bytes] = None

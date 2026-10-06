@@ -62,7 +62,11 @@ All three sites share the **same** `flushPrompt`, so customizing it changes all 
 
 Per-call long-term memory flush runs in the background; pre-compaction flush belongs to the compaction step. Native Session Log commits at execution boundaries: it is not a background copy, and failure to commit required facts stops further execution.
 
-## Enable compaction
+<span id="enable-compaction" />
+
+## Tune context compaction
+
+Harness enables context compaction by default. The following configuration adjusts its triggers and retention policy. See [Context management](/v2/en/docs/harness/context) for how compaction fits into each model request.
 
 ```java
 HarnessAgent agent = HarnessAgent.builder()
@@ -71,6 +75,7 @@ HarnessAgent agent = HarnessAgent.builder()
     .workspace(workspace)
     .compaction(CompactionConfig.builder()
         .triggerMessages(30)     // fire at 30 messages
+        .keepTokens(0)           // retain the tail by message count
         .keepMessages(10)        // keep the last 10 after compaction
         .build())
     .build();
@@ -81,14 +86,14 @@ Common options:
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `triggerMessages` | `50` | Trigger by message count (`0` = off) |
-| `triggerTokens` | `0` | Trigger by estimated tokens; `0` = dynamic (model context window minus `reserved`) |
+| `triggerTokens` | `0` | Trigger by estimated tokens; `0` = dynamic, based on the budget left for conversation history in the final model request |
 | `keepMessages` | `20` | Number of tail messages to keep |
-| `keepTokens` | `-1` | `-1` = dynamic (auto-computed from the model context window); `0` = use `keepMessages`; `>0` = fixed token budget, overriding `keepMessages` |
+| `keepTokens` | `-1` | `-1` = dynamic (based on the remaining conversation budget in the final model request); `0` = use `keepMessages`; `>0` = fixed token budget, overriding `keepMessages` |
 | `flushBeforeCompact` | `true` | Extract new facts to the daily log before compacting (path 2) |
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
 | `model` | `null` (uses the agent's primary model) | Dedicated model for the compaction summarization call |
 
-**Auto-recovery on overflow**: when the model returns `context_length_exceeded` (or similar), the framework forces one compaction and retries — but only when `compaction(...)` is configured; otherwise the error propagates.
+**Auto-recovery on overflow**: when the model returns `context_length_exceeded` or a similar error, the framework attempts forced compaction unless compaction is disabled. In the default `EVENT_LOG` execution mode, it retries the current reasoning step once within the same execution. No explicit `.compaction(...)` call is needed to enable this; a repeated overflow propagates to the caller.
 
 ### Want it lighter? Trim arguments first
 
@@ -210,7 +215,7 @@ HarnessAgent.builder()
 
 ## Large tool-result offloading
 
-Independent of compaction. When a single tool call returns more than the threshold, the full text is written to a directory and only a head/tail preview + a placeholder is left in context. The agent can `read_file` for the full content:
+Tool-result offloading works independently of conversation summarization and is enabled by default in Harness. While preparing model input, an oversized tool result in history is written to the workspace. The model receives a head/tail preview and a file path, which it can use with `read_file` to retrieve the full text as needed. The following shows the default configuration; see [Context management](/v2/en/docs/harness/context) for tuning and details:
 
 ```java
 HarnessAgent.builder()
@@ -270,6 +275,6 @@ Together these also skip memory material in `HARNESS_CONTEXT` (`MEMORY.md`) inje
 - [Session logs and recovery](/v2/en/docs/harness/session-log) — full history, checkpoints and search
 - [Architecture](/v2/en/docs/harness/architecture) — how facts in long conversations settle into `MEMORY.md`
 
-For message placement, refresh timing and final budgeting, see [Context construction](/v2/en/docs/harness/context).
+For message placement, refresh timing and final budgeting, see [Context management](/v2/en/docs/harness/context).
 
 Legacy JSONL pruning and `sessionRetentionDays` have been removed. Native history has no automatic retention policy, and memory maintenance no longer deletes old archives.

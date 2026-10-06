@@ -7,7 +7,7 @@ en_link: /v2/en/service/teams
 此为预览文档，正式版本尚未发布。
 </Note>
 
-**DESIGN → Teams** 把多个 Agent 组织成一个可分派工作的团队。Lead 负责理解目标、选择成员和汇总结果；成员提供专项能力。需要固定顺序和分支规则时选择 [Workflow](/v2/zh/service/workflows)。
+Team 把多个已注册 Agent 组织成一个可分派工作、可发布为 API 的团队。Lead 负责理解目标、选择成员和汇总结果；成员提供专项能力。需要固定顺序和分支规则时选择 [Workflow](/v2/zh/service/workflows)。
 
 首次使用请先按[操作指南](/v2/zh/service/create-team)完成创建或接入。本分类集中提供详细配置、支持能力和工作原理。
 
@@ -17,21 +17,15 @@ en_link: /v2/en/service/teams
 - [角色、成员与策略参数](/v2/zh/service/team-configuration)
 - [工作原理与结果收敛](/v2/zh/service/team-execution)
 
-## 界面导览
+## API 与资源关系
 
-<Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/teams.png" alt="创建 Team 时选择 Leader 和成员" />
-</Frame>
+`POST /api/v1/teams` 创建团队，`GET /api/v1/teams/{teamId}` 读取定义，`GET /api/v1/teams/{teamId}/overview` 查看概览。列表查询 `GET /api/v1/teams` 要传入 `tenant` 和 `namespace`。这些管理操作使用用户 Bearer token 和空间授权，返回的 `team.id` 用于分派和发布。
 
-填写职责后，在 **Leader Agent** 中选择统一接收任务的 Agent，在 **Additional members** 中选择可协作成员。需要进一步约束委派行为时，再展开 **Advanced coordination instructions**。
+给 Team 分派工作使用 `POST /api/v1/issues` 的 `assigneeType:"team"` 与 `assigneeRef`；Automation 使用相同负责人类型。Workflow 的 team 节点通过 `teamRef` 引用团队。为应用发布服务时，Endpoint 使用 `targetType:"team"`、`targetRef` 与 job 模式。字段名字属于各自资源的协议，不应互相替换。
 
-## 建立第一个团队
+团队配置定义可用能力，并不是固定执行图。以报告团队为例，Researcher 提供带来源的事实，Reviewer 检查证据，Leader 决定何时使用成员并交付统一报告。每个角色都应有独立可验证的输出。
 
-先分别验证成员 Agent 可以完成小任务，再创建 Team。以报告团队为例，选择一个能协调任务的 Agent 作为 Lead，添加 Researcher 和 Reviewer 两个成员。
-
-在 **Roles & members** 中写清每个角色的职责与输出：Researcher 提供带来源的事实，Reviewer 检查证据与不确定性。在团队 Instructions 中写清共同目标、协作边界和最终交付格式。不要把相同的宽泛指令复制给所有成员。
-
-Lead 决定一项请求需要哪些成员，并不保证每次都会运行整个名单。团队配置描述可用能力，不是固定执行图。
+创建与调用的完整请求见 [Team API 指南](/v2/zh/service/create-team)，修改字段与并发控制见[配置参数](/v2/zh/service/team-configuration)。图形操作移至[控制台：团队与编排](/v2/zh/service/console/orchestration)。
 
 ## 检查就绪度
 
@@ -45,7 +39,7 @@ Lead 决定一项请求需要哪些成员，并不保证每次都会运行整个
 
 ## 试运行与发布
 
-在 Issues 创建一个范围很小的任务并选择该 Team。查看工作讨论、Task map 和各执行结果，确认 Lead 能交付汇总，且失败或缺少信息时能解释原因。需要复核的工作保留人工验收。
+通过 Issue API 创建一个范围很小的任务并指定该 Team。读取工作讨论、Run graph 和各执行结果，确认 Lead 能交付汇总，且失败或缺少信息时能解释原因。需要复核的工作保留人工验收。
 
 Team 可以作为 Issue 和 Automation 的执行目标，也可以通过 Endpoint 向应用提供 job 能力。更新团队后验证新执行使用的成员配置；旧执行保留其团队快照供追溯。
 

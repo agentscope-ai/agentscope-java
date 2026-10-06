@@ -67,11 +67,8 @@
                     "pages": [
                       "v2/en/docs/harness/architecture",
                       "v2/en/docs/harness/context",
-                      "v2/en/docs/harness/compaction",
                       "v2/en/docs/harness/workspace",
                       "v2/en/docs/harness/session-log",
-                      "v2/en/docs/harness/session-log-reference",
-                      "v2/en/docs/harness/session-chat",
                       "v2/en/docs/harness/memory",
                       "v2/en/docs/harness/filesystem",
                       "v2/en/docs/harness/sandbox",
@@ -110,7 +107,7 @@
                     ]
                   },
                   {
-                    "group": "Agent and task management",
+                    "group": "Agent and task management (API)",
                     "pages": [
                       {
                         "group": "Register or create an Agent",
@@ -124,10 +121,11 @@
                       {
                         "group": "Assign tasks to Agents",
                         "pages": [
-                          "v2/en/service/session-event-log",
-                          "v2/en/service/agent-api-chat",
                           "v2/en/service/endpoints",
-                          "v2/en/service/issues"
+                          "v2/en/service/service-api",
+                          "v2/en/service/issues",
+                          "v2/en/service/session-event-log",
+                          "v2/en/service/agent-api-chat"
                         ]
                       },
                       {
@@ -154,12 +152,25 @@
                     ]
                   },
                   {
+                    "group": "Console",
+                    "pages": [
+                      "v2/en/service/console/index",
+                      "v2/en/service/console/agents",
+                      "v2/en/service/console/tasks",
+                      "v2/en/service/console/orchestration",
+                      "v2/en/service/console/automation"
+                    ]
+                  },
+                  {
                     "group": "Use cases",
                     "pages": [
                       "v2/en/service/usecases",
-                      "v2/en/service/cases/sdlc-team",
-                      "v2/en/service/cases/order-fulfillment",
-                      "v2/en/service/cases/presales-team"
+                      "v2/en/service/cases/in-product-delivery",
+                      "v2/en/service/cases/incident-to-pr",
+                      "v2/en/service/cases/document-verification",
+                      "v2/en/service/cases/business-assistant",
+                      "v2/en/service/cases/scheduled-research",
+                      "v2/en/service/cases/agent-as-tool"
                     ]
                   },
                   {
@@ -234,12 +245,6 @@
                           "v2/en/service/troubleshooting"
                         ]
                       }
-                    ]
-                  },
-                  {
-                    "group": "Release maintainers",
-                    "pages": [
-                      "v2/en/service/releasing"
                     ]
                   }
                 ]
@@ -379,7 +384,7 @@
                 "tab": "Blog",
                 "groups": [
                   {
-                    "group": "Blogs",
+                    "group": "Publications",
                     "pages": [
                       "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
@@ -394,16 +399,22 @@
                       "v2/en/blogs/agentscope-v2-coding-agent",
                       "v2/en/blogs/managed-agents-agentscope-rumtime",
                       "v2/en/blogs/agentscope-service-release",
-                      "v2/en/blogs/agentscope-service-release-tech",
-                      {
-                        "group": "Customer Use Cases",
-                        "pages": [
-                          "v2/en/blogs/usecases/index",
-                          "v2/en/blogs/usecases/finxscope",
-                          "v2/en/blogs/usecases/logistics",
-                          "v2/en/blogs/usecases/aidc-logistics"
-                        ]
-                      }
+                      "v2/en/blogs/agentscope-service-release-tech"
+                    ]
+                  },
+                  {
+                    "group": "Best Practices",
+                    "pages": [
+                      "v2/en/blogs/best-practices/session-chat"
+                    ]
+                  },
+                  {
+                    "group": "User Case Studies",
+                    "pages": [
+                      "v2/en/blogs/usecases/index",
+                      "v2/en/blogs/usecases/finxscope",
+                      "v2/en/blogs/usecases/logistics",
+                      "v2/en/blogs/usecases/aidc-logistics"
                     ]
                   }
                 ]
@@ -580,11 +591,8 @@
                     "pages": [
                       "v2/zh/docs/harness/architecture",
                       "v2/zh/docs/harness/context",
-                      "v2/zh/docs/harness/compaction",
                       "v2/zh/docs/harness/workspace",
                       "v2/zh/docs/harness/session-log",
-                      "v2/zh/docs/harness/session-log-reference",
-                      "v2/zh/docs/harness/session-chat",
                       "v2/zh/docs/harness/memory",
                       "v2/zh/docs/harness/filesystem",
                       "v2/zh/docs/harness/sandbox",
@@ -623,7 +631,7 @@
                     ]
                   },
                   {
-                    "group": "智能体与任务管理",
+                    "group": "智能体与任务管理（API）",
                     "pages": [
                       {
                         "group": "注册或者创建 Agent",
@@ -637,10 +645,11 @@
                       {
                         "group": "给 Agent 分派任务",
                         "pages": [
-                          "v2/zh/service/session-event-log",
-                          "v2/zh/service/agent-api-chat",
                           "v2/zh/service/endpoints",
-                          "v2/zh/service/issues"
+                          "v2/zh/service/service-api",
+                          "v2/zh/service/issues",
+                          "v2/zh/service/session-event-log",
+                          "v2/zh/service/agent-api-chat"
                         ]
                       },
                       {
@@ -667,12 +676,25 @@
                     ]
                   },
                   {
+                    "group": "控制台 Console",
+                    "pages": [
+                      "v2/zh/service/console/index",
+                      "v2/zh/service/console/agents",
+                      "v2/zh/service/console/tasks",
+                      "v2/zh/service/console/orchestration",
+                      "v2/zh/service/console/automation"
+                    ]
+                  },
+                  {
                     "group": "场景案例",
                     "pages": [
                       "v2/zh/service/usecases",
-                      "v2/zh/service/cases/sdlc-team",
-                      "v2/zh/service/cases/order-fulfillment",
-                      "v2/zh/service/cases/presales-team"
+                      "v2/zh/service/cases/in-product-delivery",
+                      "v2/zh/service/cases/incident-to-pr",
+                      "v2/zh/service/cases/document-verification",
+                      "v2/zh/service/cases/business-assistant",
+                      "v2/zh/service/cases/scheduled-research",
+                      "v2/zh/service/cases/agent-as-tool"
                     ]
                   },
                   {
@@ -747,12 +769,6 @@
                           "v2/zh/service/troubleshooting"
                         ]
                       }
-                    ]
-                  },
-                  {
-                    "group": "发布维护者",
-                    "pages": [
-                      "v2/zh/service/releasing"
                     ]
                   }
                 ]
@@ -982,8 +998,9 @@
                 "tab": "博客",
                 "groups": [
                   {
-                    "group": "博客",
+                    "group": "内容发布",
                     "pages": [
+                      "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
                       "v2/zh/blogs/how-to-build-agent-harness/03-context-and-state",
@@ -996,16 +1013,22 @@
                       "v2/zh/blogs/agentscope-v2-coding-agent",
                       "v2/zh/blogs/managed-agents-agentscope-rumtime",
                       "v2/zh/blogs/agentscope-service-release",
-                      "v2/zh/blogs/agentscope-service-release-tech",
-                      {
-                        "group": "客户实践案例",
-                        "pages": [
-                          "v2/zh/blogs/usecases/index",
-                          "v2/zh/blogs/usecases/finxscope",
-                          "v2/zh/blogs/usecases/logistics",
-                          "v2/zh/blogs/usecases/aidc-logistics"
-                        ]
-                      }
+                      "v2/zh/blogs/agentscope-service-release-tech"
+                    ]
+                  },
+                  {
+                    "group": "最佳实践",
+                    "pages": [
+                      "v2/zh/blogs/best-practices/session-chat"
+                    ]
+                  },
+                  {
+                    "group": "用户案例",
+                    "pages": [
+                      "v2/zh/blogs/usecases/index",
+                      "v2/zh/blogs/usecases/finxscope",
+                      "v2/zh/blogs/usecases/logistics",
+                      "v2/zh/blogs/usecases/aidc-logistics"
                     ]
                   }
                 ]
@@ -1163,33 +1186,93 @@
   },
   "redirects": [
     {
+      "source": "/v2/en/service/cases/sdlc-team",
+      "destination": "/v2/en/service/cases/incident-to-pr",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/cases/sdlc-team.html",
+      "destination": "/v2/en/service/cases/incident-to-pr",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/cases/presales-team",
+      "destination": "/v2/en/service/cases/in-product-delivery",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/cases/presales-team.html",
+      "destination": "/v2/en/service/cases/in-product-delivery",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/cases/order-fulfillment",
+      "destination": "/v2/en/service/usecases",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/cases/order-fulfillment.html",
+      "destination": "/v2/en/service/usecases",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/cases/sdlc-team",
+      "destination": "/v2/zh/service/cases/incident-to-pr",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/cases/sdlc-team.html",
+      "destination": "/v2/zh/service/cases/incident-to-pr",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/cases/presales-team",
+      "destination": "/v2/zh/service/cases/in-product-delivery",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/cases/presales-team.html",
+      "destination": "/v2/zh/service/cases/in-product-delivery",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/cases/order-fulfillment",
+      "destination": "/v2/zh/service/usecases",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/cases/order-fulfillment.html",
+      "destination": "/v2/zh/service/usecases",
+      "permanent": true
+    },
+    {
       "source": "/v2/en/service/cases/release-brief",
-      "destination": "/v2/en/service/cases/presales-team",
+      "destination": "/v2/en/service/cases/in-product-delivery",
       "permanent": true
     },
     {
       "source": "/v2/en/service/cases/build-webhook",
-      "destination": "/v2/en/service/cases/order-fulfillment",
+      "destination": "/v2/en/service/usecases",
       "permanent": true
     },
     {
       "source": "/v2/en/service/cases/coding-team",
-      "destination": "/v2/en/service/cases/sdlc-team",
+      "destination": "/v2/en/service/cases/incident-to-pr",
       "permanent": true
     },
     {
       "source": "/v2/zh/service/cases/release-brief",
-      "destination": "/v2/zh/service/cases/presales-team",
+      "destination": "/v2/zh/service/cases/in-product-delivery",
       "permanent": true
     },
     {
       "source": "/v2/zh/service/cases/build-webhook",
-      "destination": "/v2/zh/service/cases/order-fulfillment",
+      "destination": "/v2/zh/service/usecases",
       "permanent": true
     },
     {
       "source": "/v2/zh/service/cases/coding-team",
-      "destination": "/v2/zh/service/cases/sdlc-team",
+      "destination": "/v2/zh/service/cases/incident-to-pr",
       "permanent": true
     },
     {
@@ -2399,7 +2482,12 @@
     },
     {
       "source": "/v2/en/docs/harness/compaction.html",
-      "destination": "/v2/en/docs/harness/compaction",
+      "destination": "/v2/en/docs/harness/context",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/harness/compaction",
+      "destination": "/v2/en/docs/harness/context",
       "permanent": true
     },
     {
@@ -2828,11 +2916,6 @@
       "permanent": true
     },
     {
-      "source": "/v2/en/service/releasing.html",
-      "destination": "/v2/en/service/releasing",
-      "permanent": true
-    },
-    {
       "source": "/v2/en/service/runtime-host.html",
       "destination": "/v2/en/service/runtime-host",
       "permanent": true
@@ -2974,7 +3057,12 @@
     },
     {
       "source": "/v2/zh/docs/harness/compaction.html",
-      "destination": "/v2/zh/docs/harness/compaction",
+      "destination": "/v2/zh/docs/harness/context",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/harness/compaction",
+      "destination": "/v2/zh/docs/harness/context",
       "permanent": true
     },
     {
@@ -3408,11 +3496,6 @@
       "permanent": true
     },
     {
-      "source": "/v2/zh/service/releasing.html",
-      "destination": "/v2/zh/service/releasing",
-      "permanent": true
-    },
-    {
       "source": "/v2/zh/service/runtime-host.html",
       "destination": "/v2/zh/service/runtime-host",
       "permanent": true
@@ -3654,6 +3737,38 @@
     {
       "source": "/v2/zh/jev/references",
       "destination": "/v2/zh/jev/sdk-reference"
+    },
+    {
+      "source": "/v2/en/docs/harness/session-chat",
+      "destination": "/v2/en/blogs/best-practices/session-chat"
+    },
+    {
+      "source": "/v2/en/docs/harness/session-chat.html",
+      "destination": "/v2/en/blogs/best-practices/session-chat"
+    },
+    {
+      "source": "/v2/zh/docs/harness/session-chat",
+      "destination": "/v2/zh/blogs/best-practices/session-chat"
+    },
+    {
+      "source": "/v2/zh/docs/harness/session-chat.html",
+      "destination": "/v2/zh/blogs/best-practices/session-chat"
+    },
+    {
+      "source": "/v2/zh/docs/harness/session-log-reference",
+      "destination": "/v2/zh/docs/harness/session-log"
+    },
+    {
+      "source": "/v2/zh/docs/harness/session-log-reference.html",
+      "destination": "/v2/zh/docs/harness/session-log"
+    },
+    {
+      "source": "/v2/en/docs/harness/session-log-reference",
+      "destination": "/v2/en/docs/harness/session-log"
+    },
+    {
+      "source": "/v2/en/docs/harness/session-log-reference.html",
+      "destination": "/v2/en/docs/harness/session-log"
     }
   ]
 }

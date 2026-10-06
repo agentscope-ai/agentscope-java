@@ -9,6 +9,14 @@ en_link: /v2/en/service/managed-agent-capabilities
 
 Managed Agent 执行平台提供的 Harness。扩展能力时，区分模型连接、执行环境、工具连接与工作入口。
 
+## 从 API 查询并配置能力
+
+Managed 行为通过 `GET/PATCH /api/v1/agents/{id}/definition` 管理；创建、版本和字段结构见[定义参数](/v2/zh/service/managed-agent-configuration)。关联 Workspace 时，`GET /api/v1/agents/{id}/workspace-capabilities` 检查运行目标支持的投影能力。文件、工具、技能和子 Agent 配置的资源 API 见 [Workspace](/v2/zh/service/workspaces)。
+
+发布后，`GET /invoke/v1/endpoints/{slug}/capabilities` 返回各发布候选共同保证的能力。提交后再读 `GET /invoke/v1/invocations/{id}/capabilities`，其中 `available_commands` 随选定运行绑定和工作状态变化。按钮应依据此结果展示，不能仅凭“这是 Managed”就允许当前调用继续或审批。
+
+公共 Invocation 支持消息、工具、步骤与产物事件；原生 Managed 会话额外提供文件上传、子会话读取和 checkpoint restore/fork。两套接口的 ID、快照形状与 cursor 不可互换，见 [SSE](/v2/zh/service/sse-events)。
+
 ## 模型接入
 
 | 接入方式 | 需要准备什么 |
@@ -43,11 +51,11 @@ Java SDK 提供 OpenAI 及兼容接口、Anthropic、Gemini、Ollama 等[模型�
 
 ## 知识、凭据与入口
 
-- [Memory Store](/v2/zh/service/memory)：已绑定的共享知识，执行期间按需只读访问。
+- [Memory Store](/v2/zh/service/memory)：已绑定的共享知识，按需读取；写入由工具和挂载访问策略控制，默认并非只读。
 - [Vault](/v2/zh/service/vault)：解析工具连接凭据，不自动配置所有模型连接。
 - Chat：个人多轮会话；Issue：工作交付与验收。
 - Automation、Workflow、Team：安排、组合或委派 Managed 工作。
-- [Agent API](/v2/zh/service/session-event-log)：托管会话、后台任务、人工交互与恢复；通过 [SSE](/v2/zh/service/sse-events)展示消息、工具、子 Agent 和产物。
+- [Managed 原生会话 API](/v2/zh/service/session-event-log)：托管会话、后台任务、人工交互与恢复；通过 [SSE](/v2/zh/service/sse-events)展示消息、工具、子 Agent 和产物。
 - [Endpoint](/v2/zh/service/endpoints) 与 Channel：按发布的协议和路由将能力提供给应用或消息平台。
 
 验证新能力时，保留一个最小输入、预期工具调用和可核对的输出。先单独验证 Agent，再加入 Team 或 Workflow。

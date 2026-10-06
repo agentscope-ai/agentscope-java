@@ -1,12 +1,15 @@
 ---
-title: "Agent API: hosted sessions and tasks"
+title: "Managed native API: sessions and tasks"
 description: Create Managed Agent sessions, submit background tasks, read results, answer interactions, cancel and resume over HTTP.
 zh_link: /v2/zh/service/session-event-log
 ---
 
-The Agent API exposes Managed Agents as a hosted inference service. The service runs Agents, stores conversations and schedules tasks; your application supplies input, displays results and handles user interaction. Execution continues when a page or SSE connection closes.
+The Managed native session API is one part of the platform’s Agent APIs, providing direct control of the hosted runtime. The service runs Agents, stores conversations and schedules tasks; your application supplies input, displays results and handles user interaction. Execution continues when a page or SSE connection closes.
 
 Use `/api/v1/agent-sessions` on the Gateway. First [create a Managed Agent](/v2/en/service/create-managed-agent), then follow the workflow below. To run an Agent inside your own Java process, use the separate [AgentSession guide](/v2/en/docs/harness/session-log).
+
+
+To publish an Agent or Team to applications, start with the [unified Service API](/v2/en/service/service-api). This page covers native capabilities for direct Managed session control.
 
 ## Choose capabilities by scenario
 
@@ -127,10 +130,11 @@ A cancellation request is distinct from execution stopping. Wait for the explici
 ### Resume interrupted execution
 
 ```bash
-curl --fail-with-body -sS -X POST "$SESSION_URL/turns/$TURN_ID/resume" -H "Authorization: Bearer $TOKEN"
+curl --fail-with-body -sS -X POST "$SESSION_URL/turns/$TURN_ID/resume" \
+  -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: resume-001'
 ```
 
-Resume keeps the logical turn and starts another attempt from committed state. It accepts failed/interrupted turns and requires_action without unanswered interactions. Answer actions or reconcile unknown tools first. It does not restore threads or undo effects. After an ambiguous HTTP result, inspect GET `/turns/{turn}`; queued/running turns cannot be resumed again.
+Resume keeps the logical turn and starts another attempt from committed state. It accepts failed/interrupted turns and requires_action without unanswered interactions. Answer actions or reconcile unknown tools first. It does not restore threads or undo effects. Send a stable `Idempotency-Key`: retrying it after a lost response returns the current state without resuming twice. A later intentional resume uses a new key; queued/running turns cannot accept a new resume.
 
 ### Administrator checkpoint and tool reconciliation
 

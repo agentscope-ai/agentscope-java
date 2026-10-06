@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -86,12 +87,13 @@ type InventoryProvider interface {
 
 // ServerOptions configures the REST API server.
 type ServerOptions struct {
-	AccountDirectory AccountDirectory
-	Client           client.Client
-	Store            store.Store
-	Prober           prober.DataPlaneProber
-	Addr             string
-	Experimental     bool
+	ServiceEventRetention time.Duration
+	AccountDirectory      AccountDirectory
+	Client                client.Client
+	Store                 store.Store
+	Prober                prober.DataPlaneProber
+	Addr                  string
+	Experimental          bool
 	// ASDPCommands, when non-nil, delivers session commands over live ASDP
 	// streams before falling back to the HTTP data-plane contract.
 	ASDPCommands SessionCommandSender
@@ -172,6 +174,7 @@ type Server struct {
 	runtimeBindings       *runtimebinding.Resolver
 	taskTokens            taskauth.Manager
 	runtimeTokens         runtimeauth.Manager
+	serviceEventRetention time.Duration
 	endpointCredentialKey []byte
 	artifactProvider      artifact.Provider
 	collaborationEvents   *realtime.Hub
@@ -283,6 +286,7 @@ func NewServer(opts ServerOptions) *Server {
 		// durable deployment always configures one of the secrets above.
 		credentialMaster = "aistio-local-endpoint-credential-key"
 	}
+	s.serviceEventRetention = opts.ServiceEventRetention
 	s.endpointCredentialKey = secretcrypto.DeriveKey(credentialMaster)
 
 	if s.transcriptMessages == nil {
@@ -325,6 +329,9 @@ func NewServer(opts ServerOptions) *Server {
 		if s.product != nil {
 			s.configureChannelWork()
 			s.taskPlane.ResolveDefinition = func(ctx context.Context, agentID uuid.UUID) (json.RawMessage, error) {
+				if raw, ok := serviceapi.ContextDefinition(ctx, agentID.String()); ok {
+					return raw, nil
+				}
 				agent, err := s.store.AgentCatalog().GetAgent(ctx, agentID)
 				if err != nil {
 					return nil, err
@@ -387,13 +394,28 @@ func (s *Server) registerRoutes() {
 		s.router.POST("/invoke/v1/endpoints/:slug/conversations", s.invokeEndpointConversation)
 		s.router.POST("/invoke/v1/conversations/:conversationId/turns", s.continueEndpointConversation)
 		s.router.GET("/invoke/v1/conversations/:conversationId", s.getEndpointConversation)
-		s.router.GET("/invoke/v1/conversations/:conversationId/events", s.getEndpointConversationEvents)
 		s.router.POST("/invoke/v1/endpoints/:slug/jobs", s.invokeEndpointJob)
-		s.router.GET("/invoke/v1/jobs/:invocationId", s.getEndpointJob)
-		s.router.GET("/invoke/v1/jobs/:invocationId/events", s.getEndpointJobEvents)
-		s.router.GET("/invoke/v1/jobs/:invocationId/artifacts", s.getEndpointJobArtifacts)
-		s.router.GET("/invoke/v1/jobs/:invocationId/artifacts/:artifactId", s.downloadEndpointJobArtifact)
-		s.router.POST("/invoke/v1/jobs/:invocationId/cancel", s.cancelEndpointJob)
+		s.router.GET("/invoke/v1/endpoints/:slug/capabilities", s.getServiceCapabilities)
+		service := s.router.Group("/invoke/v1/invocations/:invocationId")
+		service.GET("", s.getServiceInvocation)
+		service.GET("/snapshot", s.getServiceSnapshot)
+		service.GET("/capabilities", s.getServiceInvocationCapabilities)
+		service.GET("/events", s.getServiceEvents)
+		service.GET("/events/stream", s.streamServiceEvents)
+		service.GET("/actions", s.getServiceSnapshot)
+		service.GET("/usage", s.getServiceSnapshot)
+		service.GET("/artifacts", s.getServiceSnapshot)
+		service.GET("/artifacts/:artifactId", s.downloadServiceArtifact)
+		service.POST("/actions", s.createServiceCommand)
+		service.POST("/inputs", s.createServiceCommand)
+		service.POST("/cancel", s.createServiceCommand)
+		service.POST("/resume", s.createServiceCommand)
+		service.GET("/commands/:commandId", s.getServiceCommand)
+		service.POST("/webhooks", s.createServiceWebhook)
+		service.GET("/webhooks", s.listServiceWebhooks)
+		service.DELETE("/webhooks/:webhookId", s.updateServiceWebhook)
+		service.POST("/webhooks/:webhookId/retry", s.updateServiceWebhook)
+
 	}
 
 	// Managed Agents control plane. Mounted on an unprefixed group so its
@@ -409,9 +431,13 @@ func (s *Server) registerRoutes() {
 		managedRuntime := s.router.Group("/api/internal/runtime-sessions")
 		managedRuntime.Use(s.internalTokenMiddleware())
 		managedRuntime.POST("/:sessionId/events", s.reportManagedSessionEvent)
+		managedRuntime.POST("/:sessionId/start", s.startManagedSession)
 		managedRuntime.POST("/:sessionId/heartbeat", s.heartbeatManagedSession)
 	}
 
+	if runtime, ok := s.asdpInventory.(interface{ HTTPHandler() http.Handler }); ok {
+		s.router.POST("/api/v1/agent-runtime/exchange", gin.WrapH(runtime.HTTPHandler()))
+	}
 	v1 := s.router.Group("/api/v1")
 	v1.Use(s.authMiddleware())
 	v1.Use(s.scopeMiddleware())
@@ -442,6 +468,10 @@ func (s *Server) registerRoutes() {
 			v1.POST("/chats/:chatId/turns", s.sendChatTurn)
 			v1.POST("/issues/:issueId/team-proposals", s.createTeamProposal)
 			v1.POST("/issues/:issueId/team-proposals/:proposalId/confirm", s.confirmTeamProposal)
+			v1.GET("/applications", s.listApplications)
+			v1.POST("/applications", s.createApplication)
+			v1.GET("/applications/:applicationId", s.getApplication)
+			v1.PATCH("/applications/:applicationId", s.patchApplication)
 			v1.GET("/endpoints", s.listEndpoints)
 			v1.POST("/endpoints", s.createEndpoint)
 			v1.GET("/endpoints/:endpointId", s.getEndpoint)
@@ -1104,6 +1134,9 @@ func (s *Server) kubeAuth(c *gin.Context) {
 
 // Start begins serving HTTP (or HTTPS when TLS cert/key are configured).
 func (s *Server) Start(ctx context.Context) error {
+	if s.store != nil {
+		go s.runServiceInvocations(ctx)
+	}
 	if s.product != nil {
 		go s.product.RunChannelWork(ctx)
 	}

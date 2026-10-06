@@ -71,7 +71,7 @@ type agentRegistrationRequest struct {
 	Framework        string          `json:"framework,omitempty"`
 	FrameworkVersion string          `json:"frameworkVersion,omitempty"`
 	SDKVersion       string          `json:"sdkVersion,omitempty"`
-	Capabilities     json.RawMessage `json:"capabilities,omitempty"`
+	Capabilities     []string        `json:"capabilities,omitempty"`
 	Labels           json.RawMessage `json:"labels,omitempty"`
 	RoutingKey       string          `json:"routingKey,omitempty"`
 	Capacity         int32           `json:"capacity,omitempty"`
@@ -142,7 +142,7 @@ func (s *Server) registerExternalAgent(c *gin.Context) {
 		Tenant: req.Tenant, Namespace: req.Namespace, AgentKey: req.AgentKey,
 		DisplayName: req.DisplayName, Description: req.Description, OwnerType: req.OwnerType, OwnerRef: req.OwnerRef,
 		InstanceKey: req.InstanceKey, Framework: req.Framework, FrameworkVersion: req.FrameworkVersion,
-		SDKVersion: req.SDKVersion, RoutingKey: req.RoutingKey, Capabilities: req.Capabilities,
+		SDKVersion: req.SDKVersion, RoutingKey: req.RoutingKey, Capabilities: controlmodel.CapabilityFlags(req.Capabilities),
 		Labels: req.Labels, Capacity: req.Capacity, TrustedBootstrap: true,
 		NewCredentialHash:   newHash,
 		CredentialExpiresAt: expires,

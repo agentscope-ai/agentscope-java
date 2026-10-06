@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import json
 from typing import Any, Callable, List, Optional
 
 from ..context import ContextSnapshot
@@ -53,6 +54,12 @@ class AgentTaskAssignment:
     attempt_token: str
     payload: bytes
     timestamp: int
+
+    @property
+    def session_id(self) -> str:
+        payload = json.loads(self.payload or b"{}")
+        binding = payload.get("runtimeBinding") or {}
+        return binding.get("sessionId") or self.attempt_id
 
 
 def get_field(obj: Any, name: str, default: Any = None) -> Any:

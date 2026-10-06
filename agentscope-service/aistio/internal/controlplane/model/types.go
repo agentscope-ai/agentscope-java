@@ -29,6 +29,19 @@ import (
 	"github.com/google/uuid"
 )
 
+// CapabilityFlags converts wire-level named capabilities to the registry and
+// policy JSON object contract. ASDP advertises names; each name enables a flag.
+func CapabilityFlags(names []string) json.RawMessage {
+	flags := make(map[string]bool, len(names))
+	for _, name := range names {
+		if name != "" {
+			flags[name] = true
+		}
+	}
+	raw, _ := json.Marshal(flags)
+	return raw
+}
+
 // JSONContains reports whether actual contains every recursively specified
 // key/value in required. It is shared by capability and security admission so
 // memory and PostgreSQL stores enforce the same JSON containment semantics.

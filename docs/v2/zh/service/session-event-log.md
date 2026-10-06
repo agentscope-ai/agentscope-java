@@ -1,12 +1,15 @@
 ---
-title: "Agent API：托管会话与任务"
+title: "Managed 原生 API：会话与任务"
 description: 通过 HTTP 创建 Managed Agent 会话、提交后台任务、读取结果，并处理人工交互、取消和恢复。
 en_link: /v2/en/service/session-event-log
 ---
 
-Agent API 把 Managed Agent 作为托管推理服务提供给业务应用：服务负责运行 Agent、保存会话和调度任务，应用负责提交输入、展示结果和处理用户交互。Agent 在后台运行，关闭页面或断开 SSE 不会取消任务。
+Managed 原生会话 API 是平台 Agent API 的一部分，提供托管运行时的会话控制：服务负责运行 Agent、保存会话和调度任务，应用负责提交输入、展示结果和处理用户交互。Agent 在后台运行，关闭页面或断开 SSE 不会取消任务。
 
 入口是 Gateway 的 `/api/v1/agent-sessions`。先完成 [Managed Agent 创建](/v2/zh/service/create-managed-agent)，再按下面的步骤接入。如果在自己的 Java 进程内运行 Agent，阅读 [AgentSession 指南](/v2/zh/docs/harness/session-log)。
+
+
+向业务应用提供 Agent、Team 或 Workflow 服务时，通常从[统一服务 API](/v2/zh/service/service-api)开始。本页介绍直接管理 Managed 会话时的原生能力。
 
 ## 按使用场景选择能力
 
@@ -140,10 +143,11 @@ curl --fail-with-body -sS -X POST "$SESSION_URL/turns/$TURN_ID/cancel" -H "Autho
 ### 执行中断后恢复
 
 ```bash
-curl --fail-with-body -sS -X POST "$SESSION_URL/turns/$TURN_ID/resume" -H "Authorization: Bearer $TOKEN"
+curl --fail-with-body -sS -X POST "$SESSION_URL/turns/$TURN_ID/resume" \
+  -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: resume-001'
 ```
 
-resume 保留 turn ID，恢复已提交状态并开始新的执行。它适用于 failed/interrupted，或没有未答交互的 requires_action；有待办先答复，有未知工具结果先核对。它不恢复线程或撤销外部副作用。响应丢失时先查 `GET /turns/{turn}`，不要盲目重复恢复。正在运行或排队的任务不能再次 resume。
+resume 保留 turn ID，恢复已提交状态并开始新的执行。它适用于 failed/interrupted，或没有未答交互的 requires_action；有待办先答复，有未知工具结果先核对。它不恢复线程或撤销外部副作用。建议携带稳定的 `Idempotency-Key`：响应丢失时复用该 key，只返回当前状态，不重复恢复。再次主动恢复使用新 key；正在运行或排队的任务不能发起新的 resume。
 
 ### 管理员检查 checkpoint 与工具结果
 

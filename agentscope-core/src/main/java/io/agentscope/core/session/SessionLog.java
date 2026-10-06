@@ -54,6 +54,15 @@ public interface SessionLog {
 
     Writer acquire(String owner, Duration lease);
 
+    /**
+     * Permanently fences this writer identity, including an acquisition that has not started yet.
+     * Other writer identities may continue this session. Returns a stable prefix for the sealed
+     * writer; implementations must serialize sealing against acquisition and commit.
+     */
+    default Head sealWriter(String owner) {
+        throw new UnsupportedOperationException("This session backend cannot seal a writer");
+    }
+
     void renew(Writer writer, Duration lease);
 
     void release(Writer writer);

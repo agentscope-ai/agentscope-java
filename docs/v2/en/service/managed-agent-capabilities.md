@@ -9,6 +9,14 @@ This is preview documentation. The official release is not yet available.
 
 Managed Agents execute the platform Harness. Distinguish model connections, execution environments, tools and work entry points when extending an Agent.
 
+## Discover and configure capabilities through APIs
+
+Manage behavior through `GET/PATCH /api/v1/agents/{id}/definition`; see [Definition parameters](/v2/en/service/managed-agent-configuration). `GET /api/v1/agents/{id}/workspace-capabilities` checks supported Workspace projection. File, tool, skill, and subagent resource APIs are documented under [Workspace](/v2/en/service/workspaces).
+
+After publishing, read `GET /invoke/v1/endpoints/{slug}/capabilities` for capabilities guaranteed across release candidates. After submission, read `GET /invoke/v1/invocations/{id}/capabilities`; available_commands depends on the selected binding and current state. An Agent being Managed alone does not authorize every command at every moment.
+
+Invocation events cover messages, tools, steps, and artifacts. Native Managed sessions add file, subagent, and checkpoint restore/fork operations. IDs, snapshot shapes, and cursors are not interchangeable; see [SSE](/v2/en/service/sse-events).
+
 ## Model integrations
 
 | Integration | Requirements |
@@ -43,11 +51,11 @@ Use a [Team](/v2/en/service/teams) for independent ownership, persistent discuss
 
 ## Knowledge, credentials and entry points
 
-- [Memory Store](/v2/en/service/memory): bound shared knowledge read on demand during execution.
+- [Memory Store](/v2/en/service/memory): bound shared knowledge accessed on demand; writes depend on tool and mount policy during execution.
 - [Vault](/v2/en/service/vault): tool connection credentials; it does not configure every model connection.
 - Chat: personal conversations. Issue: delivery and acceptance.
 - Automation, Workflow and Team: schedule, compose or delegate Managed work.
-- [Agent API](/v2/en/service/session-event-log): hosted sessions, background tasks, interactions and recovery; [SSE](/v2/en/service/sse-events) exposes messages, tools, children and artifacts.
+- [Managed native session API](/v2/en/service/session-event-log): hosted sessions, background tasks, interactions and recovery; [SSE](/v2/en/service/sse-events) exposes messages, tools, children and artifacts.
 - [Endpoint](/v2/en/service/endpoints) and Channel: expose capabilities through published protocols and message routing.
 
 Keep a minimal input, expected tool call and checkable output for each added capability. Verify the Agent alone before adding it to a Team or Workflow.

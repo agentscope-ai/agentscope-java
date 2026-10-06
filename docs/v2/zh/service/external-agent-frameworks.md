@@ -28,7 +28,17 @@ External 的支持范围由 SDK 适配器及其所接入对象共同决定。这
 
 自动识别使用 `can_handle(target)`，并按注册顺序选择首个匹配项。遇到包装对象无法识别或多个适配器可能匹配时，通过 `adapter=` 显式指定目标适配器。
 
-**当前 Python 内置适配器没有实现 `handle_agent_task`。** 它们可以接入观测与各自实现的会话能力，但不自动获得 Issue/Team 派发能力。框架名相同也不代表 External 与 Hosted 的能力相同，例如 Claude Agent SDK 集成与 Runtime Host 启动 Claude Code CLI 是两条路径。
+上表中自动识别的适配器负责观测及各自实现的会话能力，不执行 Issue/Team 派发的任务。需要接收任务时，可通过 `adapter=` 显式传入 SDK 已提供的执行适配器：
+
+| 执行适配器 | 适用对象与参数 |
+| --- | --- |
+| `AsyncInvokeAdapter` | 提供异步 `ainvoke(input)` 的框架对象；传入 `control_plane_http`、`factory`、`input_builder`，可选 `result_mapper` |
+| `AgentScopeRunnerAdapter` | 异步可调用的 AgentScope Agent，并挂载原生观测 hook；参数同上 |
+| `ExecutableAdapter` | 自定义异步 `runner(TaskContext)`；传入 `control_plane_http` 与 `runner`，可选 `framework` |
+
+`factory` 为每个任务创建新的 Agent 或框架实例，`input_builder` 将平台任务上下文映射为框架接受的输入；自定义 runner 也应隔离各任务的会话状态。返回值必须能序列化为 JSON，特殊类型可通过 `result_mapper` 转换。执行示例见[统一服务 API](/v2/zh/service/service-api#可运行示例与客户端)。
+
+框架名相同也不代表 External 与 Hosted 的能力相同，例如 Claude Agent SDK 集成与 Runtime Host 启动 Claude Code CLI 是两条路径。
 
 ## 自定义适配器实现哪些部分
 
@@ -48,3 +58,11 @@ External 的支持范围由 SDK 适配器及其所接入对象共同决定。这
 先验证两个并行 Attempt 不共享会话状态，再验证重试、取消、事件恢复和 Artifact 上传。只显示最终 assistant 消息不等于完成 Attempt；团队协调角色还必须处理节点完成与失败。应用自行维护所需模型、工具和部署依赖。
 
 相关：[连接参数](/v2/zh/service/external-agent-configuration) · [工作原理](/v2/zh/service/external-agent-execution) · [Team 协作](/v2/zh/service/team-collaboration)。
+
+## 从 API 检查适配能力
+
+用平台账户 Bearer 请求 `GET /api/v1/agents/{agentId}/instances`，读取返回 `items` 中每个实例的 `capabilities`。例如 `context-query`、`message-query` 是查询能力，`session-abort` 是取消能力，`agent-task` 才是平台任务入口。实例能力可能随适配器配置变化，不能仅根据 `framework` 名称判断。
+
+`GET /api/v1/agents/{agentId}/runtime-inventory` 返回已上报的 Workspace/Subagent 信息；`status: "not_reporting"` 表示没有对应遥测，不应解释为此 Agent 从未执行过任务。发布为 Endpoint 后，还应查询 `GET /invoke/v1/endpoints/{slug}/capabilities` 和对应 invocation 的 `/capabilities`，确认业务 API 能提供哪些交互。原生框架能力不一定都已映射到统一调用层。
+
+能力注册参数见[连接参数](/v2/zh/service/external-agent-configuration)，实际执行与回报接口见[任务派发](/v2/zh/service/external-agent-execution)。

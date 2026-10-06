@@ -15,7 +15,7 @@ flowchart TD
   B --> C[HTTP registration: Agent, Binding, Instance]
   C --> D[Catalog and capability checks]
   D --> E[Application HTTP contract]
-  B --> F[Optional ASDP transport]
+  B --> F[HTTP or gRPC runtime transport]
   D --> G[Task-capable adapter accepts dispatch]
   G --> A
 ```
@@ -28,11 +28,11 @@ flowchart TD
 
 An observation-only application remains useful for runtime visibility. Service uses actual capabilities to determine availability for Chat, commands and dispatch.
 
-## HTTP contract and ASDP
+## Query contract and runtime transport
 
 HTTP registration establishes identity. The application contract exposes queryable capabilities and session operations. Control-plane callback reachability is separate from outbound registration; verify both directions.
 
-ASDP provides persistent event/control transport. Java supports independent HTTP registration; Python currently registers as part of ASDP initialization. See [connection settings](/v2/en/service/external-agent-configuration) for standalone versus ASDP deployments.
+Python defaults to HTTP exchange for execution and event reporting, with ASDP gRPC as an option. Java HTTP registration and query contracts operate independently; receiving platform tasks requires the current Java SDK’s gRPC runtime channel. See [connection settings](/v2/en/service/external-agent-configuration) for parameters and network direction.
 
 An event journal supports connection recovery but does not store all business state or replace the framework's Session store. The application retains responsibility for its data, tool connections and idempotent task handling.
 
@@ -45,3 +45,16 @@ Associate results with that same Attempt. Respect stale-identity rejection rathe
 ## Joining a Team
 
 Members deliver their assigned results. A Leader additionally coordinates work, combines outcomes and closes the coordinator node. Adding an External Agent to the roster does not implement coordinator behavior. Complete [task adaptation](/v2/en/service/external-agent-frameworks) before [Team acceptance checks](/v2/en/service/team-collaboration).
+
+## Observe and control an execution through the API
+
+Business code assigns an Agent through `POST /api/v1/issues` or invokes a published Endpoint. The control plane creates and dispatches tasks asynchronously; applications do not create ExecutionAttempt records directly.
+
+| Caller | Operation | API and parameters |
+| --- | --- | --- |
+| Work manager | Read task and physical attempts | `GET /api/v1/agent-tasks/{taskId}`; `GET /api/v1/execution-attempts?tenant=...&namespace=...&taskId=...` |
+| Work manager | Request cancellation or retry | `POST /api/v1/agent-tasks/{taskId}/cancel`, `/retry`; see [Issue API](/v2/en/service/issues) for version fields |
+| Task executor | Context, start, progress, response, completion | `/api/v1/agent-tasks/{taskId}/context`, `/start`, `/progress`, `/respond`, `/complete`, `/fail`, using the assigned task token |
+| Business application | Snapshot and resumable events | `GET /invoke/v1/invocations/{invocationId}/snapshot` and `/events/stream`, using invocation credentials |
+
+Do not substitute a management token for the runtime-injected task token. After cancellation is accepted, read the task and Attempt to confirm the terminal state. External conversation Endpoints expose cancellation when the selected instance advertises `session-abort`; query capabilities for other interactions.

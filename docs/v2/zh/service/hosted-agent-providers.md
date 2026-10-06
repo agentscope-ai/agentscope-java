@@ -11,7 +11,7 @@ en_link: /v2/en/service/hosted-agent-providers
 
 ## 选择运行类型
 
-| 控制台名称 | `--providers` 值 | 默认可执行文件 | 执行方式 |
+| Provider 名称 | `--providers` 值 | 默认可执行文件 | 执行方式 |
 | --- | --- | --- | --- |
 | Codex | `codex` | `codex` | app-server 线程与事件 |
 | Claude Code | `claude-code` | `claude` | CLI 流式 JSON |
@@ -42,3 +42,18 @@ Codex、Qoder 和 QwenPaw 适配器提供控制面工具确认接入。Claude Co
 同一 Team 可以使用不同 provider。先验证每个成员的独立任务与协作工具，再检查 Leader 的委派和汇总。原生子 Agent 能力与 Service Team 的多成员协作是不同层次。
 
 下一步：[参数配置](/v2/zh/service/hosted-agent-configuration) · [运行原理](/v2/zh/service/hosted-agent-execution)。
+
+## 从 API 获取当前主机的能力
+
+文中的表格用于理解映射方式，实际可用项以主机上报为准。用平台账户 Bearer 请求：
+
+```bash
+curl -sS "$SERVICE_URL/api/v1/agents/runtime-options?tenant=default&namespace=default" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+在返回的 `runtimes` 中选择 provider；每项提供 `provider`、`version`、`runtimeProfileId`、`runtimePoolId`、`hostCount` 和 `capabilities`。能力对象包含 `instructions`、`workspace`、`skills`、`subagents`、`tools`、`shell`、`mcp`、`model`、`customArgs`、`approval` 和 `resume`。除 `resume` 为布尔值外，能力项通过 `supported`、`mode`、`target` 说明是否支持及如何映射。
+
+可以从 `GET /api/v1/runtime-hosts?tenant=...&namespace=...` 返回的 `items[].capabilities` 查看各 Host 的 provider 版本和描述。创建 Agent 时，把选项的 profile/pool UUID 写入 binding；更新 provider 专属参数使用 `/api/v1/agents/{agentId}/hosted-settings`，字段见[配置参考](/v2/zh/service/hosted-agent-configuration)。
+
+这里的 `resume` 表示原生 provider 会话恢复；统一 Agent API 的 `capabilities.resume` 表示调用层当前是否有恢复命令，二者范围不同。对外服务应读取 Endpoint/invocation 的 capabilities，而非用 provider 能力直接推导所有业务操作可用。

@@ -237,43 +237,45 @@ func reportIdentity(identity asdp.ReportIdentity) controller.RuntimeReportIdenti
 	}
 }
 
-func (a *sessionSinkAdapter) HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *asdp.ExecutionAttemptReport) {
+func (a *sessionSinkAdapter) HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *asdp.ExecutionAttemptReport) error {
 	if report == nil {
-		return
+		return store.ErrForbidden
 	}
 	attemptID, err := uuid.Parse(report.GetAttemptId())
 	if err != nil {
-		return
+		return store.ErrForbidden
 	}
 	taskID, err := uuid.Parse(report.GetAgentTaskId())
 	if err != nil {
-		return
+		return store.ErrForbidden
 	}
 	runID, err := uuid.Parse(report.GetRunId())
 	if err != nil {
-		return
+		return store.ErrForbidden
 	}
 	nodeID, err := uuid.Parse(report.GetNodeId())
 	if err != nil {
-		return
+		return store.ErrForbidden
 	}
 	inputIDs := make([]uuid.UUID, 0, len(report.GetInputIds()))
 	for _, raw := range report.GetInputIds() {
 		if id, parseErr := uuid.Parse(raw); parseErr == nil {
 			inputIDs = append(inputIDs, id)
+		} else {
+			return store.ErrForbidden
 		}
 	}
-	_ = a.sink.ApplyExecutionAttemptReport(context.Background(), tenant, namespace, agentID, bindingID, instanceKey, instanceGeneration,
+	return a.sink.ApplyExecutionAttemptReport(context.Background(), tenant, namespace, agentID, bindingID, instanceKey, instanceGeneration,
 		attemptID, taskID, runID, nodeID, report.GetGeneration(), report.GetAction(), inputIDs,
 		report.GetContent(), report.GetResult(), report.GetCheckpoint(), report.GetUsage(),
-		report.GetErrorCode(), report.GetErrorMessage(), report.GetAttemptToken())
+		report.GetErrorCode(), report.GetErrorMessage(), report.GetAttemptToken(), report.GetIdempotencyKey())
 }
 
-func (a *sessionSinkAdapter) HandleConversationTurnReport(identity asdp.ReportIdentity, report *asdp.ConversationTurnReport) {
+func (a *sessionSinkAdapter) HandleConversationTurnReport(identity asdp.ReportIdentity, report *asdp.ConversationTurnReport) error {
 	if report == nil {
-		return
+		return store.ErrForbidden
 	}
-	_ = a.sink.ApplyConversationTurnReport(context.Background(), reportIdentity(identity), controller.ObservedConversationTurn{
+	return a.sink.ApplyConversationTurnReport(context.Background(), reportIdentity(identity), controller.ObservedConversationTurn{
 		InvocationID: report.GetInvocationId(), ConversationID: report.GetConversationId(), TurnID: report.GetTurnId(),
 		SessionID: report.GetSessionId(), Generation: report.GetGeneration(), Action: report.GetAction(),
 		Sequence: report.GetSequence(), Payload: report.GetPayload(), ErrorCode: report.GetErrorCode(),
@@ -304,25 +306,26 @@ func init() {
 
 func main() {
 	var (
-		metricsAddr          string
-		probeAddr            string
-		httpAddr             string
-		grpcAddr             string
-		enableLeaderElection bool
-		enableASDP           bool
-		enableExperimental   bool
-		enableWebhook        bool
-		showVersion          bool
-		apiAuthToken         string
-		apiTLSCert           string
-		apiTLSKey            string
-		enableKubeAuth       bool
-		logFormat            string
-		otelEndpoint         string
-		traceSampling        float64
-		grpcTLSCert          string
-		grpcTLSKey           string
-		grpcTLSCA            string
+		metricsAddr           string
+		probeAddr             string
+		httpAddr              string
+		grpcAddr              string
+		enableLeaderElection  bool
+		serviceEventRetention time.Duration
+		enableASDP            bool
+		enableExperimental    bool
+		enableWebhook         bool
+		showVersion           bool
+		apiAuthToken          string
+		apiTLSCert            string
+		apiTLSKey             string
+		enableKubeAuth        bool
+		logFormat             string
+		otelEndpoint          string
+		traceSampling         float64
+		grpcTLSCert           string
+		grpcTLSKey            string
+		grpcTLSCA             string
 
 		healthCheck      bool
 		enableKubernetes bool
@@ -370,6 +373,7 @@ func main() {
 		"The address the REST API server binds to. Serves the Kubernetes-native API, the Managed Agents API, and the console SPA.")
 	flag.StringVar(&grpcAddr, "grpc-bind-address", ":15010", "The address the ASDP gRPC server binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election.")
+	flag.DurationVar(&serviceEventRetention, "service-event-retention", 30*24*time.Hour, "Retention of completed public Invocation events; 0 disables pruning. Snapshots remain available.")
 	flag.BoolVar(&enableASDP, "enable-asdp", true,
 		"Enable the ASDP data plane protocol (gRPC coordination, config push). On by default.")
 	flag.BoolVar(&enableExperimental, "enable-experimental", false,
@@ -618,6 +622,7 @@ func main() {
 			return validateErr
 		})
 		asdpServer.SetEventSink(&sessionSinkAdapter{sink: sessionSink})
+		asdpServer.ConfigureHTTP(runtimeStore)
 		logger.Info("ASDP application protocol enabled", "kubernetes", mgr != nil)
 	}
 	if mgr != nil {
@@ -714,6 +719,7 @@ func main() {
 	// Build REST API server options. One listener serves the Kubernetes-native
 	// API, the Managed Agents API, and the console SPA.
 	apiOpts := httpapi.ServerOptions{
+		ServiceEventRetention:    serviceEventRetention,
 		Store:                    runtimeStore,
 		Prober:                   httpProber,
 		Addr:                     httpAddr,

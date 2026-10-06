@@ -1,192 +1,163 @@
 ---
-title: "快速开始"
+title: "API 快速开始"
+description: 通过 API 创建 Agent、发布服务、提交任务，并使用快照和 SSE 获取结果。
 en_link: /v2/en/service/first-session
 ---
 
-<Note>
-此为预览文档，正式版本尚未发布。
-</Note>
+本教程用“整理会议待办”完成一次 API 接入：创建 Agent，发布 Endpoint，提交工作，再读取结果和持续事件。示例选择由 Service 运行的 Managed Agent 起步；Agent API 同样用于接入 External、Hosted Agent，并将 Agent、Team 或 Workflow 发布为服务。
 
-本教程用“整理会议待办”串起云端 Agent、API 发布、代码应用注册和多 Agent 编排。
+你需要已经部署的 Service、具有当前空间资源创建与使用权限的平台用户 token，以及 `curl` 和 `jq`。管理员应已配置可用模型与 Environment。安装见[本地安装](/v2/zh/service/quickstart)，页面操作见 [Console](/v2/zh/service/console/index)。下面的创建与发布请求不启动模型，提交 Job 后会执行实际推理。
 
-开始前，你需要一个可登录的 Service 控制台，以及可以创建 Agent 和发布 Endpoint 的账号。管理员需已配置可用模型与 Environment；尚未安装时先按[本地安装](/v2/zh/service/quickstart)或[生产安装](/v2/zh/service/kubernetes) 完成部署。下面的云端 Agent 运行在该 Service 部署中。
+## 1. 准备身份与运行环境
 
-## 1. 创建一个云端 Agent
-
-1. 打开 **DESIGN → Agents**，创建“资料助手”。
-2. Runtime 选择 **AgentScope Managed**。Model 留空以使用管理员配置的默认模型。
-3. 在 Instructions 中填写以下职责，在 Advanced settings 选择可用 Environment，然后保存。
-
-```text
-根据用户提供的材料整理待办清单，列出任务、负责人、期限与待确认事项。
-区分事实和推测；缺少资料时明确说明，不虚构来源或时间。
-```
-
-首次使用只处理文本，完成后再按 [Managed Agent 指南](/v2/zh/service/managed-agent)添加知识、技能和外部工具。
-
-### 快速测试：在控制台发起 Chat 会话
-
-打开 **WORK → Chat → New chat**，选择“资料助手”，发送：
-
-```text
-请将以下会议记录整理为待办清单：
-周五前完成安装说明，负责人小李。下周一评审，具体时间待确认。
-```
-
-检查回复是否包含负责人、期限及“评审时间待确认”，继续追问“还缺少哪些信息？”。刷新后重新打开这个 Chat，确认两轮历史保留。
-
-<Frame caption="Chat 界面示例，使用固定演示数据；实际 Agent 名称和消息以本教程输入为准。">
-  <img src="/imgs/service/chat.png" alt="在控制台选择 Agent 并进行多轮对话" />
-</Frame>
-
-## 2. 从业务应用调用 Agent
-
-| 场景 | 接入方式 |
-| --- | --- |
-| 自己实现聊天 UI、工具卡、人工确认与刷新恢复 | [Agent API 聊天示例](/v2/zh/service/agent-api-chat)：用户 Bearer token，创建 session → 提交 turn → 快照 + SSE；无需发布 Endpoint |
-| 发布可复用 API，配置 API key、输入输出 schema 或面向 Team/Workflow | 按下面步骤创建 Endpoint，使用返回的 statusUrl/eventsUrl |
-
-### 发布 Endpoint
-
-
-回到“资料助手”详情，打开 **Connections → Published APIs**，在 **Publish as API** 中点击 **New Endpoint**：
-
-1. Name 填“资料助手 API”，Slug 填 `notes-assistant`，Mode 选择 **Conversation**。
-2. 点击 **Create & publish**，确认状态为 `published`，保存生成的 API key。
-3. 点击 **Test API** 验证调用；**API integration examples** 提供该发布版本的请求、状态查询与事件订阅示例。
-
-在终端中设置 `BASE_URL` 为 Gateway 地址（末尾不带 `/`），`ENDPOINT_TOKEN` 为刚生成的 API key，再提交一轮对话：
+`BASE_URL` 使用 Gateway 的完整 origin，末尾不带斜杠。平台身份与获取方式见[账号与权限](/v2/zh/service/access)。在同一个终端按顺序执行：
 
 ```bash
 export BASE_URL='https://YOUR_SERVICE_HOST'
-export ENDPOINT_TOKEN='YOUR_ENDPOINT_API_KEY'
+export TOKEN='YOUR_PLATFORM_USER_TOKEN'
+export TENANT='YOUR_TENANT'
+export NAMESPACE='YOUR_NAMESPACE'
 
-curl --fail-with-body "$BASE_URL/invoke/v1/endpoints/notes-assistant/conversations" \
-  -H "X-API-Key: $ENDPOINT_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: notes-chat-001' \
-  --data '{"message":"整理会议待办：小李周五完成安装说明，下周一评审，时间待确认。"}'
+curl --fail-with-body -sS "$BASE_URL/api/environments" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" | jq '.[] | {id, name, type}'
+
+export ENVIRONMENT_ID='CHOSEN_ENVIRONMENT_ID'
 ```
 
-接口先返回 `202 Accepted` 和调用标识。下面是响应字段示例，实际 ID 与状态以返回值为准：
+选择可用 Environment 的 `id` 填入变量。Environment 决定工具的执行位置；模型来自部署配置。未列出可用环境时，先按 [Environment](/v2/zh/service/environments)准备资源。
 
-```json
-{
-  "invocationId": "INVOCATION_ID",
-  "conversationId": "CONVERSATION_ID",
-  "status": "running",
-  "statusUrl": "/invoke/v1/conversations/CONVERSATION_ID",
-  "eventsUrl": "/invoke/v1/conversations/CONVERSATION_ID/events?invocationId=INVOCATION_ID"
+## 2. 创建资料助手
+
+下面同时创建统一 Agent 身份、Managed 运行绑定和行为定义：
+
+```bash
+AGENT_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data "$(jq -n --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
+    --arg env "$ENVIRONMENT_ID" '{
+      tenant:$tenant, namespace:$namespace,
+      agentKey:"notes-assistant", displayName:"资料助手",
+      binding:{kind:"managed"},
+      definition:{name:"资料助手", maxIters:20, defaultEnvironmentId:$env,
+        system:"根据材料整理任务、负责人、期限和待确认事项。缺失的信息标为待确认，不虚构事实。"}
+    }')")
+AGENT_ID=$(printf '%s' "$AGENT_JSON" | jq -er '.agent.id')
+printf '%s' "$AGENT_JSON" | jq '{agent, binding}'
+```
+
+保存返回的 `agent.id`。`agentKey` 是稳定业务标识，这里省略模型字段以使用默认模型。重复练习时，复用已创建的 Agent 或改用新的 key；创建接口不用于覆盖已有定义。工具、Workspace 和模型配置见[创建 Managed Agent](/v2/zh/service/create-managed-agent)。
+
+## 3. 发布 Job Endpoint
+
+Endpoint 给业务应用提供稳定地址和调用契约。本例采用 Job 模式，并用平台身份认证，后续查询仍使用同一个 `TOKEN`。为方便首次体验，输入输出不附加 schema；正式业务可按 [Endpoint](/v2/zh/service/endpoints)配置约束与应用凭据。
+
+```bash
+export ENDPOINT_SLUG='notes-assistant-job'
+ENDPOINT_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/endpoints" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data "$(jq -n --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
+    --arg agent "$AGENT_ID" --arg slug "$ENDPOINT_SLUG" '{
+      tenant:$tenant, namespace:$namespace,
+      name:"资料助手 API", slug:$slug,
+      targetType:"agent", targetRef:$agent, invocationMode:"job",
+      authPolicy:{type:"platform"}, timeoutSeconds:300
+    }')")
+ENDPOINT_ID=$(printf '%s' "$ENDPOINT_JSON" | jq -er '.endpoint.id')
+ENDPOINT_VERSION=$(printf '%s' "$ENDPOINT_JSON" | jq -er '.endpoint.version')
+
+curl --fail-with-body -sS "$BASE_URL/api/v1/endpoints/$ENDPOINT_ID/readiness" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" | jq
+```
+
+检查 `readiness.state`、`reason` 和 `compatible`。目标不兼容或运行时不可用时，先处理原因；创建成功只说明草稿已经保存。Slug 是对外地址的一部分，须使用尚未被占用的值。
+
+目标就绪后，带上创建响应中的版本发布：
+
+```bash
+curl --fail-with-body -sS "$BASE_URL/api/v1/endpoints/$ENDPOINT_ID/publish" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data "$(jq -n --argjson version "$ENDPOINT_VERSION" '{version:$version}')" \
+  | jq '{endpoint, readiness}'
+
+curl --fail-with-body -sS "$BASE_URL/invoke/v1/endpoints/$ENDPOINT_SLUG/capabilities" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" | jq
+```
+
+确认 Endpoint 为 `published`。发布生成的 release 固定本次对外契约；capabilities 返回这个发布版本保证的能力。如果发布遇到版本冲突，重新读取 Endpoint 并核对配置后再提交当前版本。
+
+## 4. 提交一次工作
+
+```bash
+INVOCATION_JSON=$(curl --fail-with-body -sS \
+  "$BASE_URL/invoke/v1/endpoints/$ENDPOINT_SLUG/jobs" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  -H 'Idempotency-Key: notes-job-001' \
+  --data '{
+    "title":"整理会议待办",
+    "description":"小李周五完成安装说明，下周一评审，时间待确认。请整理任务、负责人、期限与待确认事项。",
+    "input":{}
+  }')
+printf '%s' "$INVOCATION_JSON" | jq
+```
+
+接口返回 `202 Accepted`、`invocationId`、`statusUrl`、`snapshotUrl` 和 `eventsUrl`。这表示工作已接收，执行可能仍在排队或运行。保存这些值；业务请求超时重传时复用相同 `Idempotency-Key` 和内容，真正的新任务才换新 key。
+
+## 5. 先读快照，再订阅后续事件
+
+三个返回地址分别用于查询状态、加载已有内容、订阅后续变化。下面兼容相对 URL 与绝对 URL，避免自己拼接内部执行地址：
+
+```bash
+service_url() {
+  case "$1" in
+    http://*|https://*) printf '%s' "$1" ;;
+    *) printf '%s%s' "$BASE_URL" "$1" ;;
+  esac
 }
+STATUS_URL=$(service_url "$(printf '%s' "$INVOCATION_JSON" | jq -er '.statusUrl')")
+SNAPSHOT_URL=$(service_url "$(printf '%s' "$INVOCATION_JSON" | jq -er '.snapshotUrl')")
+EVENTS_URL=$(service_url "$(printf '%s' "$INVOCATION_JSON" | jq -er '.eventsUrl')")
+
+SNAPSHOT_JSON=$(curl --fail-with-body -sS "$SNAPSHOT_URL" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+printf '%s' "$SNAPSHOT_JSON" | jq
+CURSOR=$(printf '%s' "$SNAPSHOT_JSON" | jq -er '.as_of')
+
+curl -N --fail-with-body "$EVENTS_URL" \
+  -H "Authorization: Bearer $TOKEN" -H 'Accept: text/event-stream' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  -H "Last-Event-ID: $CURSOR"
 ```
 
-将响应中的 `eventsUrl` 和 `statusUrl` 分别填入以下变量。提交请求和订阅 SSE 是两个步骤：
+快照中的 `items`、`tools`、`steps` 和 `artifacts` 包含已经产生的消息、工具进度、步骤和产物。`as_of` 标记快照包含到哪里；SSE 从它之后继续，所以读快照与建立连接之间发生的事件也能补回。如果快照已经包含终态，直接读取结果即可。
+
+实际前端先呈现快照，再按事件 ID 去重更新视图，并保存最后成功应用的 SSE `id`。连接断开后从该游标续订；页面重新加载时，也可以重新读取完整快照再续订。不要仅恢复游标却丢弃之前的内容。事件格式、工具展示与过期游标处理见 [SSE 指南](/v2/zh/service/sse-events)。
+
+## 6. 核对最终结果
+
+SSE 结束或网络断开后，都可以用状态接口核对执行：
 
 ```bash
-export EVENTS_PATH='PASTE_RETURNED_EVENTS_URL'
-export STATUS_PATH='PASTE_RETURNED_STATUS_URL'
-
-curl -N --fail-with-body "$BASE_URL$EVENTS_PATH" \
-  -H "X-API-Key: $ENDPOINT_TOKEN" \
-  -H 'Accept: text/event-stream'
-
-curl --fail-with-body "$BASE_URL$STATUS_PATH" \
-  -H "X-API-Key: $ENDPOINT_TOKEN"
+curl --fail-with-body -sS "$STATUS_URL" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  | jq '.invocation | {id, status, result, error}'
 ```
 
-这里按返回相对 URL 的形式演示；若返回绝对 URL，直接使用该 URL。订阅时保留 `invocationId` 查询参数。继续多轮对话时向 `/invoke/v1/conversations/{conversationId}/turns` 发送新的 `message`，并使用新的 Idempotency-Key；重传同一请求则复用原 key 和内容。
+`completed` 表示成功，结果在 `invocation.result` 中；检查输出是否保留了“评审时间待确认”。`partial_succeeded` 是部分成功，需要按业务要求检查缺失结果；`failed`、`cancelled`、`timed_out` 是其他终态。`accepted`、`dispatching`、`running`、`waiting` 和 `cancel_requested` 都还没有结束。单个工具或成员完成，以及 SSE 连接关闭，都不能代替 Invocation 的整体终态。
 
-此时，你已经把控制台中的 Agent 发布成应用可调用的服务。完整契约、认证和错误处理见 [Endpoint](/v2/zh/service/endpoints)。
+需要人工输入时，根据快照中的 `required_actions` 和调用的 capabilities 展示相应操作。补充信息、审批、取消与恢复的完整契约见[统一调用 API](/v2/zh/service/service-api)。
 
-## 3. 注册 AgentScope 开发的 Agent
+## 接下来
 
-已有 AgentScope Java 应用时，可以保留自己的进程并注册为 **External Agent**。以下演示适用于标准 Service 部署的 HTTP 注册路径。
+将目标换成已就绪的 External 或 Hosted Agent，可以继续使用同一套 Job 提交、快照、SSE 与结果读取方式；事件的细节粒度取决于运行时。Team 和 Workflow 同样发布为 Job Endpoint，其中 Workflow 的目标是已发布 revision。按[注册应用](/v2/zh/service/register-agentscope-agent)、[连接 Hosted Agent](/v2/zh/service/connect-hosted-agent)、[创建 Team](/v2/zh/service/create-team)或 [Workflow](/v2/zh/service/workflows)准备目标，再按 [Endpoint](/v2/zh/service/endpoints)发布。
 
-在应用中添加扩展依赖，`agentscope.version` 使用与你的应用一致、已发布的 SDK 版本：
-
-```xml
-<dependency>
-  <groupId>io.agentscope</groupId>
-  <artifactId>agentscope-extensions-aistio</artifactId>
-  <version>${agentscope.version}</version>
-</dependency>
-```
-
-准备以下部署环境变量：
-
-| 变量 | 填写内容 |
-| --- | --- |
-| `AISTIO_CONTROL_HTTP` | 应用可访问的 Service HTTP 注册地址 |
-| `AISTIO_BOOTSTRAP_TOKEN` | 管理员提供的受信任 workload/bootstrap 凭据，区别于上一步的 Endpoint API key |
-| `AISTIO_TENANT` / `AISTIO_NAMESPACE` | 该应用应注册到的范围 |
-| `AISTIO_INSTANCE_KEY` | 当前应用副本的稳定标识；多个副本使用不同值 |
-| `AGENT_CONTRACT_URL` | 控制面可回连的应用地址，例如 `http://report-agent:18090` |
-
-把下面片段放到已有 Agent 初始化之后；`agent` 是你已经创建的 Agent 对象：
-
-```java
-import io.agentscope.extensions.aistio.Aistio;
-import io.agentscope.extensions.aistio.AistioConfig;
-import io.agentscope.extensions.aistio.SessionBridge;
-
-SessionBridge bridge = Aistio.instrument(agent,
-    AistioConfig.builder("report-service")
-        .controlPlaneHttp(System.getenv("AISTIO_CONTROL_HTTP"))
-        .internalToken(System.getenv("AISTIO_BOOTSTRAP_TOKEN"))
-        .tenant(System.getenv("AISTIO_TENANT"))
-        .namespace(System.getenv("AISTIO_NAMESPACE"))
-        .instanceKey(System.getenv("AISTIO_INSTANCE_KEY"))
-        .contractHttpPort(18090)
-        .publicBaseUrl(System.getenv("AGENT_CONTRACT_URL"))
-        .startHttpRegister(true)
-        .startGrpc(false)
-        .build());
-// 应用退出时调用 bridge.close()。
-```
-
-启动应用，确认 **DESIGN → Agents** 出现 `report-service`，检查实例及合约地址。从应用自身运行一轮对话，再检查平台能否读取适配器提供的会话信息。应用到 Service、控制面到应用的两个方向都必须可达。
-
-这一步完成注册和会话合约接入。接受 Issue/Team 派发还需接入 `AgentTaskStarter` 等任务执行入口；该片段不自动获得任务派发或实时事件流能力。Python 接入及 ASDP 的部署要求见 [External Agent](/v2/zh/service/external-agent)。下一步先用已验证的 Managed Agent 完成编排，再逐个加入具备任务能力的 External 或 Hosted 成员。
-
-## 4. 将 Agent 编排在一起
-
-先用 Team 完成一次动态协作：复用“资料助手”，再按第 1 步创建一个 Managed“复核助手”，其 Instructions 为“检查材料是否支持每项结论，指出缺失的负责人、期限和待确认信息”。
-
-在 **DESIGN → Teams** 新建“会议整理团队”，Leader Agent 选择“资料助手”，Additional members 添加“复核助手”。在协作指令中填写：
-
-```text
-Leader 先整理待办，再委派复核助手检查事实与缺失项。
-复核助手返回需要修正的内容；Leader 修订后交付一份统一清单。
-没有依据的内容标为待确认，不补造事实。成员完成各自任务后，由 Leader 汇总并完成团队工作。
-```
-
-保存并检查 Team 就绪信息。需要固定“整理 → 审批 → 汇总”等步骤时，改用 [Workflow](/v2/zh/service/workflows)：配置节点和依赖，校验并发布 revision，再进行下面的发布或运行。
-
-### 发布为标准 Agent 服务：使用相同的 SSE 订阅方式
-
-在 Team 的 **Connections → Publish as API → New Endpoint** 创建 `meeting-team`，点击 **Create & publish** 并保存这个 Endpoint 自己的 API key。Team 使用 **Job** 模式；Workflow 需先发布 revision，再从该版本发布 Job Endpoint。
-
-```bash
-export ENDPOINT_TOKEN='YOUR_TEAM_ENDPOINT_API_KEY'
-
-curl --fail-with-body "$BASE_URL/invoke/v1/endpoints/meeting-team/jobs" \
-  -H "X-API-Key: $ENDPOINT_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: meeting-team-001' \
-  --data '{"title":"整理会议待办","description":"小李周五完成安装说明，下周一评审，时间待确认。请整理并复核待办，交付统一清单。","input":{}}'
-```
-
-与前面的 Endpoint Conversation 一样，调用方先提交请求，再使用响应中的 `eventsUrl` 订阅 `text/event-stream`，使用 `statusUrl` 查询状态。复用第 2 步的 SSE 命令，替换本次 URL 和 Team API key 即可。
-
-**相同的是 Endpoint 的认证、提交后订阅 SSE 的接入方式。** Conversation 提供一轮会话的事件，Job 提供编排运行事件；二者的请求体、事件内容和结果语义不同。若希望单 Agent 与 Team/Workflow 都采用相同的 Job 契约，也可以将单 Agent 发布为 Job Endpoint。
-
-Job 达到 `completed` 后，从状态响应的 `invocation.result` 读取结果；`failed`、`cancelled` 或 `timed_out` 按失败处理。`202 Accepted` 仅表示请求被接受，SSE 断开后可继续通过状态接口确认执行情况。
-
-### 在控制台通过 Issue 处理
-
-1. 打开 **WORK → Issues** 创建“整理会议待办”，在说明中写入上述材料和验收要求：清单包含任务、负责人、期限及待确认事项。
-2. 负责人选择“会议整理团队”，检查共享范围后提交工作。也可以从 Chat 的 **Create issue** 开始，再选择 Team。
-3. 查看讨论、Task map 和 Executions，确认 Leader 委派复核、成员提交结果，并最终汇总。读取评论和 Artifact 中的实际交付物。
-4. 使用人工验收策略时，在工作进入 **In review** 后打开 **WORK → Inbox → Review result**。满足要求选择 **Accept result**；需要补充则选择 **Request changes** 并说明缺失项。
-
-若没有开始执行，先检查 Team 就绪信息、Leader 和成员的运行时；若成员已完成但团队仍未结束，查看 Leader 的汇总与协调状态。更多用法见 [Team 协作](/v2/zh/service/team-collaboration)与 [Issue 指南](/v2/zh/service/issues)。
+支持会话的 Agent 还可以发布 Conversation Endpoint；需要 Managed 原生 steer、会话日志与 checkpoint 时，使用[原生会话 API](/v2/zh/service/session-event-log)。需要负责人、协作讨论和人工验收的业务工作，则继续使用 [Issue API](/v2/zh/service/issues)。

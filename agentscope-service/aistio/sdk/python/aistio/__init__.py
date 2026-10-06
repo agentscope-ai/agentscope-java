@@ -64,7 +64,7 @@ from .orchestration import OrchestrationClient, OrchestrationError
 def instrument(
     target: Any,
     *,
-    control_plane: str,
+    control_plane: str = "",
     agent_key: str,
     tenant: str = "default",
     internal_token: Optional[str] = None,
@@ -82,6 +82,7 @@ def instrument(
     session_affinity: str = "",
     start_http: bool = True,
     start_grpc: bool = True,
+    transport: str = "http",
     adapter: Optional[FrameworkAdapter] = None,
 ) -> SessionBridge:
     """一行代码接入任何框架（framework-integration §3.1 / sdk-design §5.4）。
@@ -125,6 +126,7 @@ def instrument(
         session_affinity=session_affinity,
         start_http=start_http,
         start_grpc=start_grpc,
+        transport=transport,
     )
     bridge.attach_target(target, adapter=adapter)
     bridge.start()
@@ -165,3 +167,15 @@ __all__ = [
     "InstanceHealth",
     "Inventory",
 ]
+
+from .adapters.executable import ExecutableAdapter, TaskContext, TaskResult
+from .service import ServiceClient
+__all__ += ["ExecutableAdapter", "TaskContext", "TaskResult", "ServiceClient"]
+
+from .adapters.runners import AgentScopeRunnerAdapter, AsyncInvokeAdapter
+
+__all__ += ["AgentScopeRunnerAdapter", "AsyncInvokeAdapter"]
+
+from .management import ManagementClient
+
+__all__ += ["ManagementClient"]

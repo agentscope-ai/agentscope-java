@@ -32,6 +32,7 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/conversation"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/taskauth"
 )
@@ -91,86 +92,138 @@ func (s *SessionEventSink) ApplyConversationTurnReport(ctx context.Context, iden
 	if err != nil {
 		return store.ErrNotFound
 	}
-	invocation, err := s.Store.Endpoints().GetInvocation(ctx, invocationID)
-	if errors.Is(err, store.ErrNotFound) {
-		// Personal Chat turns have no published Endpoint. Their admission and
-		// frozen runtime identity are persisted on the control-plane Session.
-		session, sessionErr := s.Store.Sessions().GetByID(ctx, conversationID)
-		if sessionErr != nil || session.Tenant != identity.Tenant || session.Namespace != identity.Namespace ||
-			session.SessionID != report.SessionID || session.AgentID != resolved.AgentUUID ||
-			session.BindingID != resolved.BindingUUID || session.AgentInstanceID != resolved.AgentInstanceUUID ||
-			session.InstanceGeneration != identity.InstanceGeneration || report.Generation != identity.InstanceGeneration {
+	return s.Store.WithSessionLock(ctx, "service-invocation:"+invocationID.String(), func(ctx context.Context) error {
+		inv, err := s.Store.Endpoints().GetInvocation(ctx, invocationID)
+		if errors.Is(err, store.ErrNotFound) {
+			session, err := s.Store.Sessions().GetByID(ctx, conversationID)
+			if err != nil {
+				return err
+			}
+			if session.Tenant != identity.Tenant || session.Namespace != identity.Namespace || session.SessionID != report.SessionID || session.AgentID != resolved.AgentUUID || session.BindingID != resolved.BindingUUID || session.AgentInstanceID != resolved.AgentInstanceUUID || session.InstanceGeneration != identity.InstanceGeneration || report.Generation != identity.InstanceGeneration {
+				return store.ErrNotFound
+			}
+			return conversation.Apply(ctx, s.Store, session, conversation.Report{InvocationID: invocationID, ConversationID: conversationID, TurnID: turnID, AgentID: resolved.AgentUUID, BindingID: resolved.BindingUUID, InstanceID: resolved.AgentInstanceUUID, Generation: report.Generation, Action: report.Action, Sequence: report.Sequence, Payload: report.Payload, ErrorCode: report.ErrorCode, ErrorMessage: report.ErrorMessage}, time.Now().UTC())
+		}
+		if err != nil {
+			return err
+		}
+		if inv.Mode != controlmodel.EndpointConversationMode || inv.ConversationID == nil || *inv.ConversationID != conversationID || inv.TurnID == nil || *inv.TurnID != turnID || inv.SessionID != report.SessionID {
 			return store.ErrNotFound
 		}
-		return conversation.Apply(ctx, s.Store, session, conversation.Report{
-			InvocationID: invocationID, ConversationID: conversationID, TurnID: turnID,
-			AgentID: resolved.AgentUUID, BindingID: resolved.BindingUUID, InstanceID: resolved.AgentInstanceUUID,
-			Generation: report.Generation, Action: report.Action, Sequence: report.Sequence, Payload: report.Payload,
-			ErrorCode: report.ErrorCode, ErrorMessage: report.ErrorMessage,
-		}, time.Now().UTC())
+		conv, err := s.Store.Endpoints().GetConversation(ctx, conversationID)
+		if err != nil {
+			return err
+		}
+		if conv.EndpointID != inv.EndpointID || conv.AgentID != resolved.AgentUUID || conv.BindingID != resolved.BindingUUID || conv.AgentInstanceID != resolved.AgentInstanceUUID || conv.InstanceGeneration != identity.InstanceGeneration || report.Generation != identity.InstanceGeneration || conv.SessionID != report.SessionID {
+			return store.ErrNotFound
+		}
+		// Terminal state was published only after its events committed. Delayed starts and replayed
+		// terminal reports are acknowledgements, never a transition back to running.
+		if serviceapi.Terminal(inv.Status) {
+			return nil
+		}
+		now := time.Now().UTC()
+		old := inv.Status
+		switch report.Action {
+		case "accepted", "started":
+			inv.Status = controlmodel.EndpointInvocationRunning
+			if inv.StartedAt == nil {
+				inv.StartedAt = &now
+			}
+		case "delta":
+			if report.Sequence <= 0 {
+				return fmt.Errorf("%w: delta sequence must be positive", store.ErrForbidden)
+			}
+			if inv.Status == controlmodel.EndpointInvocationAccepted || inv.Status == controlmodel.EndpointInvocationDispatching {
+				inv.Status = controlmodel.EndpointInvocationRunning
+			}
+		case "completed":
+			ep, err := serviceapi.BoundEndpoint(ctx, s.Store, inv)
+			if err != nil {
+				return err
+			}
+			inv.Status, inv.CompletedAt = controlmodel.EndpointInvocationCompleted, &now
+			serviceapi.CompleteResult(ep, inv, report.Payload)
+		case "failed":
+			inv.Status, inv.ErrorCode, inv.ErrorMessage, inv.CompletedAt = controlmodel.EndpointInvocationFailed, report.ErrorCode, report.ErrorMessage, &now
+		case "cancelled":
+			inv.Status, inv.CompletedAt = controlmodel.EndpointInvocationCancelled, &now
+		default:
+			return fmt.Errorf("%w: unsupported ConversationTurn action %q", store.ErrForbidden, report.Action)
+		}
+		if old == controlmodel.EndpointInvocationCancelRequested && !serviceapi.Terminal(inv.Status) {
+			inv.Status = old
+		}
+		if serviceapi.Terminal(inv.Status) && inv.ErrorCode == "endpoint_timeout" {
+			inv.Status = controlmodel.EndpointInvocationTimedOut
+		}
+		if err = s.appendEndpointConversationReport(ctx, identity.Tenant, resolved.AgentUUID, inv, turnID, report); err != nil {
+			return err
+		}
+		conv.LastTurnAt = &now
+		if _, err = s.Store.Endpoints().UpdateConversation(ctx, conv); err != nil {
+			return err
+		}
+		if _, err = s.Store.Endpoints().UpdateInvocation(ctx, inv); err != nil {
+			return err
+		}
+		return s.Store.Endpoints().ScheduleInvocation(ctx, inv.ID, now)
+	})
+}
+
+// Lifecycle reports use the invocation journal directly. Observer event sequences remain
+// exclusively owned by the runtime; no second writer allocates session_events sequence numbers.
+func (s *SessionEventSink) appendEndpointConversationReport(ctx context.Context, tenant string, agentID uuid.UUID, inv *controlmodel.EndpointInvocation, turnID uuid.UUID, report ObservedConversationTurn) error {
+	journal := serviceapi.Journal{Store: s.Store, Tenant: tenant, InvocationID: inv.ID}
+	accepted := serviceapi.View(inv)
+	accepted["status"] = "accepted"
+	delete(accepted, "result")
+	delete(accepted, "error")
+	if _, err := journal.Append(ctx, "admission:"+inv.ID.String(), "invocation.accepted", accepted); err != nil {
+		return err
 	}
-	if err != nil || invocation.Mode != controlmodel.EndpointConversationMode || invocation.ConversationID == nil ||
-		*invocation.ConversationID != conversationID || invocation.TurnID == nil || *invocation.TurnID != turnID ||
-		invocation.SessionID != report.SessionID {
-		return store.ErrNotFound
+	source := fmt.Sprintf("conversation:%s:%s:%d", turnID, report.Action, report.Sequence)
+	data := map[string]any{"execution_id": inv.ID.String(), "agent_id": agentID.String()}
+	text := ""
+	if json.Unmarshal(report.Payload, &text) != nil {
+		var payload struct {
+			Content string `json:"content"`
+		}
+		_ = json.Unmarshal(report.Payload, &payload)
+		text = payload.Content
 	}
-	conversation, err := s.Store.Endpoints().GetConversation(ctx, conversationID)
-	if err != nil || conversation.EndpointID != invocation.EndpointID || conversation.AgentID != resolved.AgentUUID ||
-		conversation.BindingID != resolved.BindingUUID || conversation.AgentInstanceID != resolved.AgentInstanceUUID ||
-		conversation.InstanceGeneration != identity.InstanceGeneration || report.Generation != identity.InstanceGeneration ||
-		conversation.SessionID != report.SessionID {
-		return store.ErrNotFound
+	itemID := inv.ID.String() + ":response"
+	content := []any{map[string]any{"type": "text", "text": text}}
+	appendEvent := func(suffix, kind string, value map[string]any) error {
+		_, err := journal.Append(ctx, source+suffix, kind, value)
+		return err
 	}
-	now := time.Now().UTC()
 	switch report.Action {
 	case "accepted", "started":
-		invocation.Status = controlmodel.EndpointInvocationRunning
-		if invocation.StartedAt == nil {
-			invocation.StartedAt = &now
-		}
+		return appendEvent("", "execution.started", data)
 	case "delta":
-		if invocation.Status == controlmodel.EndpointInvocationAccepted || invocation.Status == controlmodel.EndpointInvocationDispatching {
-			invocation.Status = controlmodel.EndpointInvocationRunning
-		}
+		data["item_id"], data["content"] = itemID, content
+		return appendEvent("", "item.delta", data)
 	case "completed":
-		invocation.Status, invocation.Result, invocation.CompletedAt = controlmodel.EndpointInvocationCompleted, report.Payload, &now
-	case "failed":
-		invocation.Status, invocation.ErrorCode = controlmodel.EndpointInvocationFailed, report.ErrorCode
-		invocation.ErrorMessage, invocation.CompletedAt = report.ErrorMessage, &now
-	case "cancelled":
-		invocation.Status, invocation.CompletedAt = controlmodel.EndpointInvocationCancelled, &now
-	default:
-		return fmt.Errorf("unsupported ConversationTurn action %q", report.Action)
+		if text != "" {
+			item := map[string]any{"execution_id": inv.ID.String(), "agent_id": agentID.String(), "item_id": itemID, "item": map[string]any{"id": itemID, "type": "message", "role": "assistant", "content": content}}
+			if err := appendEvent(":item", "item.completed", item); err != nil {
+				return err
+			}
+		}
 	}
-	if _, err = s.Store.Endpoints().UpdateInvocation(ctx, invocation); err != nil {
-		return err
+	data["status"] = inv.Status
+	if inv.ErrorCode != "" {
+		data["error"] = map[string]any{"code": inv.ErrorCode, "message": inv.ErrorMessage}
 	}
-	conversation.LastTurnAt = &now
-	if _, err = s.Store.Endpoints().UpdateConversation(ctx, conversation); err != nil {
-		return err
-	}
-	sessions, err := s.Store.Sessions().List(ctx, store.SessionFilter{Tenant: identity.Tenant,
-		Namespace: identity.Namespace, AgentID: resolved.AgentUUID, SessionID: report.SessionID, Limit: 1})
-	if err != nil || len(sessions) == 0 || report.Sequence <= 0 {
-		return err
-	}
-	content := ""
-	var payload struct {
-		Content string `json:"content"`
-	}
-	if json.Unmarshal(report.Payload, &payload) == nil {
-		content = payload.Content
-	}
-	return s.Store.Events().Append(ctx, &store.SessionEvent{SessionFK: sessions[0].ID, Seq: int(report.Sequence),
-		EventType: "endpoint." + report.Action, Role: "assistant", Content: content,
-		FrameworkMeta: report.Payload, OccurredAt: now})
+	return appendEvent("", "execution.ended", data)
 }
 
 // ApplyExecutionAttemptReport projects a fenced external-runtime report into
 // the shared Attempt/Task/Node/Run transaction boundary.
 func (s *SessionEventSink) ApplyExecutionAttemptReport(ctx context.Context, tenant, namespace, agentIDRaw, bindingIDRaw, instanceKey string, instanceGeneration int64,
 	attemptID, taskID, runID, nodeID uuid.UUID, generation int64, action string, inputIDs []uuid.UUID,
-	content string, result, checkpoint, usage json.RawMessage, errorCode, errorMessage, attemptToken string) error {
+	content string, result, checkpoint, usage json.RawMessage, errorCode, errorMessage, attemptToken, idempotencyKey string) error {
 	if s == nil || s.Store == nil {
 		return fmt.Errorf("session event sink store is required")
 	}
@@ -186,7 +239,10 @@ func (s *SessionEventSink) ApplyExecutionAttemptReport(ctx context.Context, tena
 		return store.ErrNotFound
 	}
 	attempt, err := s.Store.ExecutionAttempts().Get(ctx, attemptID)
-	if err != nil || attempt.DispatchGeneration != generation || attempt.BackendKind != controlmodel.DataPlaneExternalApplication ||
+	if err != nil {
+		return err
+	}
+	if attempt.DispatchGeneration != generation || attempt.BackendKind != controlmodel.DataPlaneExternalApplication ||
 		attempt.AgentID != agentID || attempt.BindingID != bindingID || attempt.AgentInstanceID == nil {
 		return store.ErrNotFound
 	}
@@ -211,6 +267,15 @@ func (s *SessionEventSink) ApplyExecutionAttemptReport(ctx context.Context, tena
 	if !selected {
 		return store.ErrNotFound
 	}
+	if controlmodel.IsExecutionAttemptTerminal(attempt.State) {
+		return nil
+	}
+	if (action == "start" || action == "preparing") && (attempt.State == controlmodel.ExecutionRunning || attempt.State == controlmodel.ExecutionWaiting || attempt.State == controlmodel.ExecutionCancelRequested) {
+		return nil
+	}
+	if action == "waiting" && attempt.State == controlmodel.ExecutionCancelRequested {
+		return nil
+	}
 	service := &collaboration.Service{Store: s.Store}
 	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
 	switch action {
@@ -232,11 +297,23 @@ func (s *SessionEventSink) ApplyExecutionAttemptReport(ctx context.Context, tena
 			BackendKind: controlmodel.DataPlaneExternalApplication, State: controlmodel.ExecutionWaiting,
 			Checkpoint: checkpoint, Usage: usage})
 	case "progress", "respond":
+		if strings.TrimSpace(idempotencyKey) == "" {
+			return fmt.Errorf("%w: progress/respond requires idempotency_key", store.ErrForbidden)
+		}
+		commentID := uuid.NewSHA1(attempt.ID, []byte(action+":"+idempotencyKey))
+		if previous, err := s.Store.Collaboration().GetComment(ctx, commentID); err == nil {
+			if previous.Content != strings.TrimSpace(content) {
+				return fmt.Errorf("%w: idempotency_key was reused with different content", store.ErrForbidden)
+			}
+			return nil
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
 		commentType := controlmodel.CommentResult
 		if action == "progress" {
 			commentType = controlmodel.CommentProgress
 		}
-		_, err = service.AddComment(ctx, collaboration.AddCommentRequest{IssueID: task.IssueID,
+		_, err = service.AddComment(ctx, collaboration.AddCommentRequest{ID: commentID, IssueID: task.IssueID,
 			Author: actor, Content: content, Type: commentType, SourceTaskID: &task.ID, SourceAttemptID: &attempt.ID,
 			SuppressImplicitRouting: action == "progress"})
 	case "complete":
@@ -254,7 +331,7 @@ func (s *SessionEventSink) ApplyExecutionAttemptReport(ctx context.Context, tena
 			AgentInstanceID: *attempt.AgentInstanceID, DispatchGeneration: generation,
 			BackendKind: controlmodel.DataPlaneExternalApplication, State: controlmodel.ExecutionCancelled})
 	default:
-		return fmt.Errorf("unsupported ExecutionAttempt action %q", action)
+		return fmt.Errorf("%w: unsupported ExecutionAttempt action %q", store.ErrForbidden, action)
 	}
 	return err
 }
@@ -356,20 +433,26 @@ func (s *SessionEventSink) resolveRuntimeReportIdentity(ctx context.Context, ide
 	}
 	agentID, err := uuid.Parse(identity.AgentID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid agentId")
+		return nil, fmt.Errorf("%w: invalid agentId", store.ErrForbidden)
 	}
 	bindingID, err := uuid.Parse(identity.BindingID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid bindingId")
+		return nil, fmt.Errorf("%w: invalid bindingId", store.ErrForbidden)
 	}
 	agent, err := s.Store.AgentCatalog().GetAgent(ctx, agentID)
-	if err != nil || agent.Status != controlmodel.AgentActive || agent.Tenant != identity.Tenant ||
+	if err != nil {
+		return nil, err
+	}
+	if agent.Status != controlmodel.AgentActive || agent.Tenant != identity.Tenant ||
 		agent.Namespace != identity.Namespace || agent.AgentKey != identity.AgentKey {
-		return nil, fmt.Errorf("runtime report Agent identity does not match the Catalog")
+		return nil, fmt.Errorf("%w: runtime report Agent identity does not match the Catalog", store.ErrForbidden)
 	}
 	binding, err := s.Store.AgentCatalog().GetBinding(ctx, bindingID)
-	if err != nil || binding.AgentID != agentID || !binding.Enabled || binding.ArchivedAt != nil {
-		return nil, fmt.Errorf("runtime report Binding is disabled or does not match the Agent")
+	if err != nil {
+		return nil, err
+	}
+	if binding.AgentID != agentID || !binding.Enabled || binding.ArchivedAt != nil {
+		return nil, fmt.Errorf("%w: runtime report Binding is disabled or does not match the Agent", store.ErrForbidden)
 	}
 	instances, err := s.Store.RuntimeRegistry().ListAgentInstances(ctx, identity.Tenant, identity.Namespace, agentID)
 	if err != nil {
@@ -382,7 +465,7 @@ func (s *SessionEventSink) resolveRuntimeReportIdentity(ctx context.Context, ide
 				BindingUUID: bindingID, AgentInstanceUUID: instance.ID}, nil
 		}
 	}
-	return nil, fmt.Errorf("runtime report instance or generation does not match the Catalog")
+	return nil, fmt.Errorf("%w: runtime report instance or generation does not match the Catalog", store.ErrForbidden)
 }
 
 // ApplyInstanceConnect observes an already registered ASDP application. ASDP
@@ -410,7 +493,7 @@ func (s *SessionEventSink) ApplyInstanceConnect(ctx context.Context, tenant, nam
 		agent.Tenant != tenant || agent.Namespace != namespace {
 		return
 	}
-	encoded, _ := json.Marshal(capabilities)
+	encoded := controlmodel.CapabilityFlags(capabilities)
 	instances, err := s.Store.RuntimeRegistry().ListAgentInstances(ctx, tenant, namespace, agentID)
 	if err != nil {
 		return
@@ -528,79 +611,85 @@ func (s *SessionEventSink) ApplyEventReport(ctx context.Context, identity Runtim
 			failed[sessionID] = true
 			continue
 		}
-		latest := int32(0)
-		stored, err := s.Store.Events().List(ctx, fk)
-		if err != nil {
-			logger.Error(err, "failed to read session event watermark", "sessionID", sessionID)
-			failed[sessionID] = true
-			continue
-		}
-		// Derive the largest contiguous prefix, not merely MAX(seq). Older
-		// writers may have left a hole; a replay that fills it must not be
-		// mistaken for an already committed duplicate.
-		storedSeqs := make(map[int32]struct{}, len(stored))
-		for _, persisted := range stored {
-			if persisted.Seq > 0 {
-				storedSeqs[int32(persisted.Seq)] = struct{}{}
+		err = s.Store.WithSessionLock(ctx, "service-session-events:"+fk.String(), func(ctx context.Context) error {
+			latest := int32(0)
+			stored, err := s.listSessionReportEvents(ctx, fk)
+			if err != nil {
+				logger.Error(err, "failed to read session event watermark", "sessionID", sessionID)
+				return err
 			}
-		}
-		for {
-			if _, ok := storedSeqs[latest+1]; !ok {
-				break
-			}
-			latest++
-		}
-		for _, event := range sessionEvents {
-			if event.Seq <= latest {
-				// Re-run the idempotent diagnostic projection on replay. This heals
-				// the case where the session event was committed but its RunEvent
-				// projection briefly failed.
-				if toolFailure, ok := observedToolFailure(event); ok {
-					if projectionErr := s.projectToolFailure(ctx, fk, event, toolFailure); projectionErr != nil {
-						logger.Error(projectionErr, "failed to repair tool failure projection", "sessionID", sessionID,
-							"seq", event.Seq, "tool", event.ToolName)
-					}
-				}
-				committed[sessionID] = latest // replay of an already committed prefix
-				continue
-			}
-			if event.Seq != latest+1 {
-				logger.Info("refusing non-contiguous session event", "sessionID", sessionID, "expected", latest+1, "seq", event.Seq)
-				failed[sessionID] = true
-				break
-			}
-			occurredAt := event.OccurredAt
-			if occurredAt.IsZero() {
-				occurredAt = time.Now().UTC()
-			}
-			err = s.Store.Events().Append(ctx, &store.SessionEvent{
-				SessionFK: fk, Seq: int(event.Seq), EventType: event.EventType, Role: event.Role,
-				Content: event.Content, ToolName: event.ToolName, ToolInput: event.ToolInput,
-				ToolOutput: event.ToolOutput, TokensIn: int(event.TokensIn), TokensOut: int(event.TokensOut),
-				DurationMs: int(event.DurationMs), FrameworkMeta: event.FrameworkMeta, OccurredAt: occurredAt,
-			})
-			if err != nil && !errors.Is(err, store.ErrConflict) {
-				logger.Error(err, "failed to append session event", "sessionID", sessionID, "seq", event.Seq)
-				failed[sessionID] = true
-				break
-			}
-			if toolFailure, ok := observedToolFailure(event); ok {
-				if projectionErr := s.projectToolFailure(ctx, fk, event, toolFailure); projectionErr != nil {
-					// Session durability is authoritative and must not be retried just
-					// because an operator-facing diagnostic projection failed.
-					logger.Error(projectionErr, "failed to project tool failure", "sessionID", sessionID,
-						"seq", event.Seq, "tool", event.ToolName)
+			// Derive the largest contiguous prefix, not merely MAX(seq). Older
+			// writers may have left a hole; a replay that fills it must not be
+			// mistaken for an already committed duplicate.
+			storedSeqs := make(map[int32]struct{}, len(stored))
+			for _, persisted := range stored {
+				if persisted.Seq > 0 {
+					storedSeqs[int32(persisted.Seq)] = struct{}{}
 				}
 			}
-			latest = event.Seq
 			for {
 				if _, ok := storedSeqs[latest+1]; !ok {
 					break
 				}
 				latest++
 			}
-			committed[sessionID] = latest
+			for _, event := range sessionEvents {
+				if event.Seq <= latest {
+					// Re-run the idempotent diagnostic projection on replay. This heals
+					// the case where the session event was committed but its RunEvent
+					// projection briefly failed.
+					if toolFailure, ok := observedToolFailure(event); ok {
+						if projectionErr := s.projectToolFailure(ctx, fk, event, toolFailure); projectionErr != nil {
+							logger.Error(projectionErr, "failed to repair tool failure projection", "sessionID", sessionID,
+								"seq", event.Seq, "tool", event.ToolName)
+						}
+					}
+					committed[sessionID] = latest // replay of an already committed prefix
+					continue
+				}
+				if event.Seq != latest+1 {
+					logger.Info("refusing non-contiguous session event", "sessionID", sessionID, "expected", latest+1, "seq", event.Seq)
+					failed[sessionID] = true
+					break
+				}
+				occurredAt := event.OccurredAt
+				if occurredAt.IsZero() {
+					occurredAt = time.Now().UTC()
+				}
+				err = s.Store.Events().Append(ctx, &store.SessionEvent{
+					SessionFK: fk, Seq: int(event.Seq), EventType: event.EventType, Role: event.Role,
+					Content: event.Content, ToolName: event.ToolName, ToolInput: event.ToolInput,
+					ToolOutput: event.ToolOutput, TokensIn: int(event.TokensIn), TokensOut: int(event.TokensOut),
+					DurationMs: int(event.DurationMs), FrameworkMeta: event.FrameworkMeta, OccurredAt: occurredAt,
+				})
+				if err != nil && !errors.Is(err, store.ErrConflict) {
+					logger.Error(err, "failed to append session event", "sessionID", sessionID, "seq", event.Seq)
+					failed[sessionID] = true
+					break
+				}
+				if toolFailure, ok := observedToolFailure(event); ok {
+					if projectionErr := s.projectToolFailure(ctx, fk, event, toolFailure); projectionErr != nil {
+						// Session durability is authoritative and must not be retried just
+						// because an operator-facing diagnostic projection failed.
+						logger.Error(projectionErr, "failed to project tool failure", "sessionID", sessionID,
+							"seq", event.Seq, "tool", event.ToolName)
+					}
+				}
+				latest = event.Seq
+				for {
+					if _, ok := storedSeqs[latest+1]; !ok {
+						break
+					}
+					latest++
+				}
+				committed[sessionID] = latest
+			}
+			return nil
+		})
+		if err != nil {
+			failed[sessionID] = true
 		}
+
 	}
 	if len(grouped) == 0 && len(events) > 0 {
 		return committed, fmt.Errorf("event report contains no valid session sequence")
@@ -909,4 +998,24 @@ func parseTimePtr(s string) *time.Time {
 		}
 	}
 	return nil
+}
+
+func (s *SessionEventSink) listSessionReportEvents(ctx context.Context, sessionID uuid.UUID) ([]*store.SessionEvent, error) {
+	result := []*store.SessionEvent{}
+	after := 0
+	for {
+		page, err := s.Store.Events().List(ctx, sessionID, store.WithEventAfterSeq(after), store.WithEventLimit(1000))
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, page...)
+		if len(page) < 1000 {
+			return result, nil
+		}
+		next := page[len(page)-1].Seq
+		if next <= after {
+			return nil, fmt.Errorf("session event cursor did not advance")
+		}
+		after = next
+	}
 }

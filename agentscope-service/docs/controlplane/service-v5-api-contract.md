@@ -63,13 +63,17 @@ Work Source adapters implement `HandleEvent`, `FetchWork`, `ApplyIssueCommand`, 
 - `POST /invoke/v1/endpoints/{slug}/conversations`
 - `POST /invoke/v1/conversations/{conversationId}/turns`
 - `GET /invoke/v1/conversations/{conversationId}`
-- `GET /invoke/v1/conversations/{conversationId}/events`
 - `POST /invoke/v1/endpoints/{slug}/jobs`
-- `GET /invoke/v1/jobs/{invocationId}`
-- `GET /invoke/v1/jobs/{invocationId}/events`
-- `GET /invoke/v1/jobs/{invocationId}/artifacts`
-- `GET /invoke/v1/jobs/{invocationId}/artifacts/{artifactId}`
-- `POST /invoke/v1/jobs/{invocationId}/cancel`
+- `GET /invoke/v1/invocations/{invocationId}`
+- `GET /invoke/v1/invocations/{invocationId}/snapshot`
+- `GET /invoke/v1/invocations/{invocationId}/events`
+- `GET /invoke/v1/invocations/{invocationId}/events/stream`
+- `GET /invoke/v1/invocations/{invocationId}/capabilities`
+- `GET /invoke/v1/invocations/{invocationId}/actions|usage|artifacts`
+- `POST /invoke/v1/invocations/{invocationId}/actions|inputs|cancel|resume`
+- `GET /invoke/v1/invocations/{invocationId}/commands/{commandId}`
+
+完整 Application、Endpoint 和 Invocation 契约以 `docs/service-api/openapi-v1.json` 为准。公共事件使用不透明 cursor；旧 Job/Conversation 事件路由已移除。
 
 An Endpoint is a stable, governed API façade, not the Agent's native API and not a runtime instance address. Agent publication is optional; Team and Workflow publication is the canonical external API. Conversation mode targets one Agent whose selected Binding supports interactive sessions: Managed provides that capability through the product Session service, External instances advertise `conversation-inbound`, and Hosted Runtime materializes each turn as a hidden operational AgentTask/ExecutionAttempt while retaining one durable control-plane Session. Hosted providers resume with their opaque provider session ID when available; otherwise the persisted transcript is replayed. Job mode targets an Agent, Team, or immutable orchestration revision and creates the native Issue → Run → AgentTask → Attempt chain. The Issue created for an Endpoint Job is an `endpoint_job` operational record with automatic completion: it stays out of the default Work Hub list and moves to `done` when the root Run succeeds. Human-created Work remains review-gated. Team and Workflow targets remain Job-only.
 
@@ -79,7 +83,7 @@ Endpoints start as `draft` and must pass a side-effect-free readiness check befo
 
 Agent, Team, and Workflow detail pages are the publication and discovery context: the target is selected by the owner page, not re-entered by the user, and every API belonging to that object is listed there. The standalone Published APIs catalog is removed. Each listed API links to its complete detail surface for lifecycle, metadata, contract, credentials, release history, traffic, rollback, and public-path testing, then returns to its owning object.
 
-Every call requires an idempotency key. It is scoped by Endpoint, mode, and authenticated principal. The public identity is `invocationId`; internal `issueId`, `runId`, or `sessionId` are links rather than public identifiers. Job creation returns `202` with `invocationId`, `issueId`, `runId`, `statusUrl`, and `eventsUrl`. Conversation turns return `invocationId`, `conversationId`, `turnId`, `sessionId`, and event/status URLs. Event streams are resumable SSE streams using `Last-Event-ID`. Endpoint `Test API` uses these same Gateway routes.
+Every call requires an idempotency key. It is scoped by Endpoint, mode, and authenticated principal. The public identity is `invocationId`; internal `issueId`, `runId`, or `sessionId` are links rather than public identifiers. Job creation returns `202` with `invocationId`, `statusUrl`, `snapshotUrl`, and `eventsUrl`. Conversation turns additionally return `conversationId`. Internal Issue, Run, turn and Session identities are not required for public calls. Event streams are resumable SSE streams using `Last-Event-ID`. Endpoint `Test API` uses these same Gateway routes.
 
 ## Scope and Runtime Host enrollment
 

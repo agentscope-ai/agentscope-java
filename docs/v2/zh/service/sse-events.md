@@ -1,20 +1,45 @@
 ---
 title: "SSE 事件与前端接入"
-description: 订阅托管 Agent 的持久事件，展示消息和工具状态，处理人工交互、断线续传与任务结果。
+description: 区分统一服务调用与 Managed 原生会话事件，展示消息、工具和编排进度，处理人工交互与断线续传。
 en_link: /v2/en/service/sse-events
 ---
 
-使用 AgentScope Service 托管 Agent 时，应用通过 HTTP 提交任务，通过 SSE 观察执行。一次任务可以产生多条助手消息、多个工具调用，并暂停等待用户答复。关闭 SSE 只停止观察；停止任务需要调用 cancel API。
+通过 AgentScope Service 调用 Agent、Team 或 Workflow 时，应用用 HTTP 提交任务，用 SSE 观察执行。一次任务可以产生多条助手消息、多个工具调用，并暂停等待用户答复。关闭 SSE 只停止观察；停止任务需要调用 cancel API。
 
-先按 [Agent API 使用指南](/v2/zh/service/session-event-log)创建 session、提交 turn，取得 `SESSION_URL`、`TOKEN` 和 `TURN_ID`。本页接着介绍如何展示结果、重连和处理每类事件。
+已发布服务从[统一服务 API](/v2/zh/service/service-api)取得 Invocation。直接操作 Managed 原生会话时，按[会话指南](/v2/zh/service/session-event-log)取得 `SESSION_URL`、`TOKEN` 和 `TURN_ID`。先选定事件资源，再接入对应快照和 SSE。
 
 ## 先选择事件协议
 
 | 使用场景 | 入口 | 协议 |
 | --- | --- | --- |
 | Managed Agent 的托管会话 | `/api/v1/agent-sessions/{id}/events/stream` | 本页的持久 session 事件，用户 Bearer token |
-| 已发布 Endpoint 的调用 | 调用响应的 `eventsUrl` | 本页后半部分的 Endpoint 协议；API key 与 Run DTO 独立 |
+| 已发布 Endpoint 的调用 | 调用响应的 `eventsUrl` | 统一 Invocation 协议；使用 Endpoint 凭据 |
 | 自己的 Java 进程内运行 Agent | AgentSession / agent.streamEvents | [SDK 使用指南](/v2/zh/docs/harness/session-log)，不是 HTTP SSE |
+
+## Endpoint 协议范围
+
+已发布的 Agent、Team、Workflow 使用统一的 **Invocation 事件协议**。提交 Job 或 Conversation 后，使用响应中的 snapshotUrl 和 eventsUrl；完整流程见[统一服务 API](/v2/zh/service/service-api)。
+
+| 对比 | Managed session API | 公共 Invocation API |
+| --- | --- | --- |
+| 身份 | session_id，事件中可包含 turn_id/run_id | invocation_id，成员执行使用 execution_id |
+| 事件入口 | `/api/v1/agent-sessions/{id}/events/stream` | `/invoke/v1/invocations/{id}/events/stream` |
+| 快照资源 | 事件 envelope 数组 | 按资源 ID 索引的累计数据对象 |
+| 事件续传 | session 的不透明 cursor | Invocation 自己的不透明 cursor |
+| 交互 | 原生 turn 的 steer/actions/cancel/resume | Invocation 的 inputs/actions/cancel/resume |
+| 恢复边界 | UI、原生会话与 checkpoint 能力 | 业务调用视图及公共操作；原生 checkpoint 独立使用 |
+
+两者都采用 snapshot + as_of + SSE，但不能交换 cursor 或直接复用不同形状的快照。Invocation 复用 item.*、tool.*、required_action.* 等事件语义，另外提供 invocation.*、step.updated / step.failed、command.* 等服务事件。
+
+```text
+id: <invocation-cursor>
+event: tool.completed
+data: {"schema_version":1,"id":"event-id","type":"tool.completed","invocation_id":"invocation-id","created_at":1790928000000,"cursor":"<invocation-cursor>","data":{"execution_id":"member-execution","tool_call_id":"lookup-1","output":[{"type":"text","text":"已完成核对"}]}}
+```
+
+统一使用响应中的 Invocation URL。历史 Job/Conversation 事件入口已经移除，公共观察通过 Invocation snapshot 和不透明事件 cursor 完成。cursor 过期返回 410/cursor_expired，应重载 snapshot 并从新的 as_of 续订。TypeScript 客户端与累计视图见 `serviceInvocations.ts`，可运行示例见 `aistio/examples/service-api`。
+
+以下章节介绍 **Managed 原生会话** 的事件与前端接入。调用统一服务时，请使用上面的 Invocation 资源与对应客户端。
 
 ## 一个聊天页面需要接入哪些能力
 
@@ -29,7 +54,7 @@ en_link: /v2/en/service/sse-events
 | 下载交付物 | GET `/artifacts`、`/files/{file}/content` | artifact.published / artifact.deleted |
 | 展示消耗 / 离线通知 | GET `/usage`；注册 `/webhooks` | usage.recorded / budget.exceeded；Webhook 通知后读取事件详情 |
 
-可运行的创建、提交和页面生命周期代码见[可恢复聊天示例](/v2/zh/service/agent-api-chat)。所有请求通过 Gateway；Agent API 使用用户 Bearer token，业务后端也可代为访问。客户端提交动作，SSE 负责反馈，两者不共用一条连接。
+可运行的创建、提交和页面生命周期代码见[可恢复聊天示例](/v2/zh/service/agent-api-chat)。所有请求通过 Gateway；Managed 原生会话 API 使用用户 Bearer token，业务后端也可代为访问。客户端提交动作，SSE 负责反馈，两者不共用一条连接。
 
 ```mermaid
 sequenceDiagram
@@ -228,117 +253,3 @@ snapshot.tools 是当前累计卡片。需要每个请求、分派和进度的�
 | run.ended 后仍无 turn 结果 | 继续观察；后台需提交对应任务结果 |
 
 完整 HTTP 契约见 `agentscope-service/docs/agent-api/openapi-v1.json`，事件 schema 见同目录的 `public-event-v1.schema.json`。实现客户端时使用本文的 AgentScope 协议。
-
-## Endpoint 协议范围
-
-以下示例专门用于 Endpoint Conversation/Job 返回的 eventsUrl/statusUrl，包括数字游标规则；不适用于上面的 Agent API v1。
-
-### 提交、订阅和查询
-
-1. 向 Conversation 或 Job Endpoint 提交请求，保存 `invocationId`、`eventsUrl` 和 `statusUrl`；Conversation 还会返回 `conversationId`、`turnId` 等会话标识。
-2. 用同一个调用凭据向 `eventsUrl` 发起 GET，请求 `Accept: text/event-stream`。
-3. 按 SSE 帧解析事件，保存已处理的游标，并按事件类型更新界面。
-4. 流结束或连接中断时查询 `statusUrl`，确认本次调用的状态与结果。
-
-`202 Accepted` 表示已接受请求。SSE 是事件传输方式，接到一个事件或连接关闭都不能单独作为工作成功的依据。
-
-### SSE 帧格式
-
-每条业务事件包含 `id`、`event` 和 JSON `data`，以空行结束。下面是一条会话事件的示例，ID、时间和内容均为演示值：
-
-```text
-id: 7
-event: assistant.message
-data: {"id":145,"sessionFk":"11111111-1111-4111-8111-111111111111","seq":7,"eventType":"assistant.message","role":"assistant","content":"已整理待办清单。","occurredAt":"2026-09-10T09:00:00Z"}
-
-```
-
-| 字段 | 处理方式 |
-| --- | --- |
-| SSE `id` | 该流的顺序游标，用于断线续传；不是调用 ID |
-| SSE `event` | 事件类型；按类型分派处理，并容忍未知类型 |
-| SSE `data` | 一个 JSON 事件对象；按 Conversation/Job 结构分别解析 |
-| 空行 | 一帧结束；网络读取的一块数据不一定对应完整一帧 |
-
-服务等待新事件时可能发送 `: heartbeat` 注释行。忽略此注释，不把它当成 JSON 或工作进展。
-
-```text
-: heartbeat
-
-```
-
-这里使用标准 SSE 帧封装。业务事件是 Service 的会话或编排事件，不能假设 `data` 是某个模型厂商的 token 增量协议，也不能依赖固定的 `[DONE]` 标记。
-
-### Conversation 与 Job 的事件内容
-
-| | Conversation | Job |
-| --- | --- | --- |
-| 事件来源 | 运行时 Session 事件 | Run 编排事件 |
-| SSE `id` 对应字段 | `seq` | `sequence` |
-| 类型字段 | `eventType` | `type` |
-| 关联标识 | `sessionFk`；运行时可能提供 `frameworkMeta` | `runId`，以及可选 `nodeId`、`agentTaskId`、`attemptId` |
-| 常用内容 | `role`、`content`、`toolName`、`toolInput`、`toolOutput` | `actor`、`payload`、`occurredAt` |
-| 类型示例 | `assistant.message`、`turn.completed`、`turn.failed` | `run.started`、`node.succeeded`、`node.failed` |
-
-字段和事件类型取决于实际执行路径，不保证每个 provider 都发送相同种类或粒度的事件。可选字段可能省略。Conversation 的 JSON `id` 是存储记录标识，续传应使用 SSE `id` / `seq`；Job JSON 的 `id` 也不能代替 `sequence`。
-
-下面是一条 Job 事件的字段示例：
-
-```text
-id: 1
-event: run.started
-data: {"id":"22222222-2222-4222-8222-222222222222","runId":"33333333-3333-4333-8333-333333333333","tenant":"default","namespace":"default","sequence":1,"type":"run.started","actor":{"type":"system","ref":"endpoint:example"},"occurredAt":"2026-09-10T09:00:00Z"}
-
-```
-
-Conversation 事件按 Session 游标读取。返回 URL 中的 `invocationId` 关联当前调用的终止判断，并不把 Session 历史过滤成仅当前一轮；从游标 0 订阅可能收到早先会话事件。保留已处理游标，按实际提供的 `frameworkMeta.turnId` 等关联信息区分轮次，不把历史输出重复显示为新回复。
-
-### 订阅与断线续传
-
-将 `BASE_URL` 设置为 Gateway origin，`ENDPOINT_TOKEN` 设置为提交请求时的调用凭据，`EVENTS_PATH` 填完整返回的相对 `eventsUrl`，包括其查询参数：
-
-```bash
-curl -N --fail-with-body "$BASE_URL$EVENTS_PATH" \
-  -H "X-API-Key: $ENDPOINT_TOKEN" \
-  -H 'Accept: text/event-stream'
-```
-
-Endpoint 使用 `platform` 认证时，将认证头替换为 `Authorization: Bearer $ENDPOINT_TOKEN`。若返回绝对 URL，直接使用该 URL，不再拼接 BASE_URL。
-
-应用成功处理一帧后保存其 SSE `id`。断线时先查询状态；仍需接收事件则使用同一 URL 和凭据重新订阅，`LAST_EVENT_ID` 为最后成功处理的游标：
-
-```bash
-curl -N --fail-with-body "$BASE_URL$EVENTS_PATH" \
-  -H "X-API-Key: $ENDPOINT_TOKEN" \
-  -H 'Accept: text/event-stream' \
-  -H "Last-Event-ID: $LAST_EVENT_ID"
-```
-
-两个接口也接受 `after` 查询参数；同时提供时采用它与 `Last-Event-ID` 中较大的有效数值，读取其后的事件。按对应 Session 或 Run 保存游标，不在无关流之间复用。客户端可能在处理后、保存游标前断线，因此应按“流标识 + SSE id”去重，避免重复通知或重复业务操作。
-
-重新订阅不会重新提交工作；提交重试才使用原 Idempotency-Key。遇到 401/403 先修复认证或授权，不能仅靠重连解决。代理需要及时转发事件、关闭事件流缓冲并设置足够长的读取超时。
-
-### 读取最终结果与文件
-
-将提交响应中的 `statusUrl` 填入 `STATUS_PATH`：
-
-```bash
-curl --fail-with-body "$BASE_URL$STATUS_PATH" \
-  -H "X-API-Key: $ENDPOINT_TOKEN"
-```
-
-- **Conversation**：状态响应包含 `conversation` 和 `turns`。在返回的 `turns` 中按提交时的 `invocationId` 匹配 `id`，查看这一轮的状态与错误；回复内容由会话事件提供。
-- **Job**：读取 `invocation.status`。`completed` 后使用 `invocation.result`，失败时查看 `errorCode`、`errorMessage`。状态响应还可能包含 `run`、`issue` 的摘要。
-- **交付文件**：Job 使用 `GET /invoke/v1/jobs/{invocationId}/artifacts` 获取列表，再用返回的 `downloadUrl` 和同一凭据下载。
-
-`accepted`、`dispatching`、`running`、`waiting` 都不是终态。`completed` 表示调用完成；`failed`、`cancelled`、`timed_out` 是未成功的终态。单个节点成功不代表整个 Run 成功；Job 结果仍需按发布的 output schema 和业务标准检查，部分成功是否足够由业务决定。
-
-人工审批或交付验收按工作策略在[控制台信箱](/v2/zh/service/inbox)处理，读取 SSE 不会自动批准操作或接受交付。
-
-可用[订单履约案例的 Job 调用](/v2/zh/service/cases/order-fulfillment)练习订阅进度、保存游标和查询最终处置结果。游标来自对应运行，断线后继续观察原调用。
-
-## 相关文档
-
-- [Agent API 使用指南](/v2/zh/service/session-event-log)：创建会话、提交任务、答复、取消和恢复。
-- [SDK 会话操作](/v2/zh/docs/harness/session-log)：在自己的 Java 应用内管理 AgentSession。
-- [可恢复聊天示例](/v2/zh/service/agent-api-chat)：串起消息、工具、人工交互与刷新恢复。

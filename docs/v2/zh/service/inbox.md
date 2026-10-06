@@ -1,5 +1,5 @@
 ---
-title: "控制台信箱：通知、审批与验收"
+title: "通知、审批与验收 API"
 en_link: /v2/en/service/inbox
 ---
 
@@ -7,47 +7,85 @@ en_link: /v2/en/service/inbox
 此为预览文档，正式版本尚未发布。
 </Note>
 
-Inbox 汇集与你相关的工作更新、审批和结果验收。每天先处理需要你作出决定的事项，再阅读普通通知。
-
-从[控制台 Issue](/v2/zh/service/issues)发起工作后，在这里处理与你相关的反馈。应用侧通过[SSE 与状态接口](/v2/zh/service/sse-events#endpoint-协议范围)接收执行反馈；需要人工验收的工作仍要按其完成策略处理。
-
-## 界面导览
-
-<Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/inbox.png" alt="Inbox 中的待验收通知与关联 Issue" />
-</Frame>
-
-先在通知列表中选择需要处理的条目，再在右侧阅读关联 Issue 的说明和交付结果。阅读通知与完成验收是两件事；检查结果后再使用验收操作。
+执行反馈包含两种不同的决策：工作完成后，需要判断交付是否满足要求；执行过程中，也可能需要批准一次操作。业务应用可以读取 Inbox 找到当前用户的待办，再分别调用 Issue 验收接口或 Approval 决策接口。阅读、审批与验收都有独立状态，标记“已读”不会替用户作出决定。
 
 ## 找到需要处理的消息
 
-打开 **WORK → Inbox**，使用 Status 筛选：Needs attention、Needs action、Unread、All messages 或 Archived。Unread 表示尚未阅读，Needs action 表示仍需要决策；读过消息不等于处理完工作。
+以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与范围)准备 `SERVICE_URL`（Service 地址）、`TOKEN`（用户 Bearer token）、`TENANT`、`NAMESPACE`，并定义请求函数：
 
-选择消息后，右侧显示关联 Issue 或审批详情。Open issue 可进入完整工作记录。消息为空时先检查筛选条件和账号/空间，不要直接认定执行没有产生事件。
+```bash
+api() {
+  curl --fail-with-body --silent --show-error \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H 'Content-Type: application/json' "$@"
+}
+```
+
+
+Inbox 代表当前登录用户的信箱，不能通过请求参数把它切换成其他人的信箱。使用用户身份访问：
+
+```bash
+api "$SERVICE_URL/api/v1/inbox" --get \
+  --data-urlencode "tenant=$TENANT" --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode 'view=action' --data-urlencode 'limit=50'
+api "$SERVICE_URL/api/v1/inbox/summary" --get \
+  --data-urlencode "tenant=$TENANT" --data-urlencode "namespace=$NAMESPACE"
+```
+
+列表返回 `items`、`hasMore` 和 `nextCursor`；继续翻页时传入 `cursor`。`view=action` 只看待决策事项，`unread` 只看未读，`attention` 查看需要关注的内容，`all` 查看全部未归档消息；查归档时增加 `archived=true`。
+
+选择一条消息后，通过 `GET /api/v1/inbox/{inboxId}` 读取内容，再用其中的工作或审批引用加载详情。页面应展示用户正在决定的对象、当前结果及版本，不能仅凭通知标题完成验收。
 
 ## 验收工作结果
 
-1. 打开 review request，确认正在验收的 Issue 标题。
-2. 阅读结果、Acceptance criteria 和附件；有子 Issue 时查看其结果。
-3. 满足标准时点击 **Accept result**，确认 Issue 变为 Done。
-4. 不满足时点击 **Request changes**，填写具体缺失项和期望结果，再点击 **Send review**。
+沿用[任务指南](/v2/zh/service/issues)中的 `ISSUE_ID`。先加载完整结果，确认 Issue 当前为 `in_review`：
 
-要求修改会把 Issue 退回 In progress 并记录反馈，**不会自动发起新的执行**。查看子 Issue 预览不会把当前验收对象切换为子 Issue。评论线程的 Resolve 也不会完成验收。
+```bash
+review=$(api "$SERVICE_URL/api/v1/issues/$ISSUE_ID")
+api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/artifacts"
+api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/comments?limit=50"
+printf '%s\n' "$review" | jq '.issue | {title,status,version,acceptanceCriteria}'
+```
 
-若页面提示工作已变化，点击 Refresh review 后重新核对结果再决策。系统不会把你针对旧结果的确认静默应用到新版本。
+应用让用户检查验收标准、最终报告和必要的子任务结果。用户确认通过后，提交刚才检查的版本：
 
-## 处理审批
+```bash
+api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/accept" --data "$(jq -n \
+  --argjson version "$(jq '.issue.version' <<<"$review")" \
+  '{expectedVersion:$version,reason:"已核对报告与证据，满足验收要求"}')"
+```
 
-审批详情说明请求者、操作目标、原因以及关联的工作。根据当前请求给出批准或拒绝决定，必要时附上原因。审批决定可能使等待中的执行继续或失败；它与“结果是否达到交付要求”的 Issue 验收是两个独立决策。
+不通过时改用 `/reject`，请求体仍包含 `expectedVersion`，并在 `reason` 写清缺失项。退回把工作置为 `in_progress`，不会自动重新执行；随后按[评论与分派流程](/v2/zh/service/issues#分派已有工作与补充信息)通知负责人继续。不要把查看子 Issue 或解决评论线程当作对当前 Issue 的验收。
 
-Chat 内的工具确认由相应会话与运行时处理，不要假设所有交互式确认都必然出现在 Inbox。
+若返回版本冲突，重新加载并让用户检查更新后的结果。不要自动换成最新版本重发旧的验收决定。
 
-## 清理通知
+## 处理执行中的审批
 
-阅读后可以归档不再需要操作的消息。仍然 Needs action 的消息不能用 Archive 代替决策。历史可从 Archived 查看；消息归档不会删除 Issue 或执行记录。
+审批可以来自 Workflow 的人工节点或运行时的操作请求。`APPROVAL_ID` 来自通知的审批引用，也可以用 `GET /api/v1/approvals?tenant=...&namespace=...` 查询。先读取请求者、操作对象与原因；只有指定的审批人可以决定：
 
-遇到无权限时联系该空间或工作的所有者。管理员账号也不应通过更换凭据绕过私有工作授权。
+```bash
+approval=$(api "$SERVICE_URL/api/v1/approvals/$APPROVAL_ID")
+printf '%s\n' "$approval" | jq .
+```
 
-下一步：[Automations](/v2/zh/service/automation) · [账号与权限](/v2/zh/service/access)。
+在用户明确作出批准决定后调用：
 
-练习验收可使用[研发闭环案例](/v2/zh/service/cases/sdlc-team)：核对最终提交、实际测试、GitHub Review 和 CI，再决定是否接受交付。Service 验收与 GitHub Approve 分别记录。
+```bash
+api "$SERVICE_URL/api/v1/approvals/$APPROVAL_ID/decide" --data "$(jq -n \
+  --argjson version "$(jq '.approval.version' <<<"$approval")" \
+  '{expectedVersion:$version,status:"approved",decision:{reason:"已核对操作范围"}}')"
+```
+
+拒绝使用 `status:"rejected"`。决定可能使等待执行继续或失败；这不会同时验收最终交付。过期或与当前执行不再匹配的请求需要重新读取和判断。
+
+直接通过 Agent API 发起会话时，工具确认还可能通过会话的待处理输入来完成，见[输入与工具确认](/v2/zh/service/session-event-log)。不要假定所有会话确认都会成为 Inbox Approval。
+
+## 已读、归档与页面更新
+
+读完通知后调用 `POST /api/v1/inbox/{inboxId}/read`；不再需要保留在当前列表时调用 `/archive`。这些操作不会删除 Issue、取消执行或替代审批。Inbox 的计数通过 `/inbox/summary` 更新。
+
+应用可以定时刷新 Inbox，或在平台 WebSocket 收到工作更新后重新查询。它是当前用户的待办投影，不是完整的执行日志；执行过程与断点续传使用 [SSE 与状态 API](/v2/zh/service/sse-events)。
+
+需要直接在平台页面完成这些操作，见[控制台：任务与反馈](/v2/zh/service/console/tasks)。

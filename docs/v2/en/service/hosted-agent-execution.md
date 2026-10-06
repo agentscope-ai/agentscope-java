@@ -44,3 +44,20 @@ Cancellation propagates through execution; check Attempt terminal state and prov
 Use `agentscope runtime logs -f` with Task/Attempt diagnostics. If no work is claimed, check scope, pool, bindings, capacity and required capabilities. If claimed work fails, check provider login, parameters, task directory and tool dependencies.
 
 Related: [installation](/v2/en/service/runtime-host), [providers](/v2/en/service/hosted-agent-providers) and [Team collaboration](/v2/en/service/team-collaboration).
+
+## Track and control work through the API
+
+Platform accounts assign work through Issues or Endpoints. Host credentials are for daemon claims, renewals, and reports. Business callers do not handle `leaseToken` values or provider processes.
+
+| Scenario | API and parameters | Response/purpose |
+| --- | --- | --- |
+| Read AgentTask | `GET /api/v1/agent-tasks/{taskId}` | Task state and execution references |
+| List physical attempts | `GET /api/v1/execution-attempts?tenant=...&namespace=...&taskId=...`; optional `state`, `limit` | `attempts`; retries have separate records |
+| Read an Attempt | `GET /api/v1/execution-attempts/{attemptId}` | `attempt`, including backend, Host, lease, failure, and recovery data |
+| Request cancellation or retry | `POST /api/v1/agent-tasks/{taskId}/cancel`, `/retry` | Submit version fields as described in [Issue API](/v2/en/service/issues); then inspect final state |
+| Read Workflow progress | `GET /api/v1/orchestration-runs/{runId}/graph`, `/events` | Node graph and run events reflecting execution results |
+| Restore an application view | `GET /invoke/v1/invocations/{invocationId}/snapshot`, then `/events/stream` | Resume SSE from the snapshot cursor with the invocation credential |
+
+The Host protocol's `/checkpoint` operation saves `providerSessionId` and checkpoint data for supported adapter recovery. It is not an application API for restoring any backend from an arbitrary checkpoint. Unified invocations currently report `checkpoint_restore: false`. Hosted conversations support cancellation; do not assume Managed input, approval, or resume features are available. Read `available_commands` from `/invoke/v1/invocations/{invocationId}/capabilities` before offering interactions.
+
+SSE reconnection restores recorded output. It does not rerun tools or recover a Host process. Upload durable deliverables as Artifacts; Host files, provider sessions, and framework state retain their own lifecycles. See [Runtime Host protocol](/v2/en/service/runtime-host#runtime-host-protocol) for API parameters.

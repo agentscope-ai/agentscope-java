@@ -24,7 +24,7 @@ External Agent 保留你的应用进程、框架和部署方式，同时接入�
 | Java HTTP contract | 应用可访问注册 API；控制面可回连应用合约地址 | 注册、合约查询及适配器实现的命令 |
 | ASDP 框架接入 | 上述 HTTP 连通性，加上可达的 ASDP gRPC listener | 实时事件上报及适配器实现的 ExecutionAttempt 派发 |
 
-标准 Service Compose/Helm 使用 standalone HTTP，不提供 ASDP listener。Python `instrument()` 的自动注册与 ASDP 连接绑定；不能通过 `start_grpc=False` 把它当作完整 HTTP 注册方案。需要这条路径时，先由管理员提供启用 ASDP 的 Kubernetes-native Aistio 部署与真实 gRPC 地址。
+Python 现在可通过出站 HTTP 接入标准 Service：使用 `control_plane_http=base, transport="http"`（默认值），无需对外暴露 ASDP gRPC 端口或 worker 入站端口。Agent、Team 和 Workflow 可执行接入见[统一服务 API 示例](/v2/zh/service/service-api#可运行示例与客户端)。下方 Python 示例使用默认 HTTP 运行传输。
 
 选择接入方式后，区分三个验收层次：目录可见、会话可用、可接受工作派发。只有观察能力的应用不会因为注册成功就自动拥有任务执行能力。
 
@@ -50,7 +50,7 @@ import io.agentscope.extensions.aistio.SessionBridge;
 SessionBridge bridge = Aistio.instrument(agent,
     AistioConfig.builder("report-service")
         .controlPlaneHttp(System.getenv("AISTIO_CONTROL_HTTP"))
-        .internalToken(System.getenv("AISTIO_BOOTSTRAP_TOKEN"))
+        .registrationCredential(System.getenv("AISTIO_REGISTRATION_CREDENTIAL"))
         .tenant(System.getenv("AISTIO_TENANT"))
         .namespace(System.getenv("AISTIO_NAMESPACE"))
         .instanceKey(System.getenv("AISTIO_INSTANCE_KEY"))
@@ -62,9 +62,11 @@ SessionBridge bridge = Aistio.instrument(agent,
 // 应用退出时调用 bridge.close()。
 ```
 
-首次注册使用管理员提供的受信任 workload/bootstrap 凭据，后续身份可使用 registration credential。不要把组件内部令牌分发给浏览器或普通调用者。HTTP contract 可读到的历史与命令取决于适配器实现；需要实时事件时，在创建 Agent 阶段装入适配器 middleware，并配置 ASDP。
+先按[注册指南](/v2/zh/service/register-agentscope-agent)取得 `registrationCredential`，将其设置为 `AISTIO_REGISTRATION_CREDENTIAL`。当前 Java bridge 在未配置注册凭据或 bootstrap 参数时会跳过自动注册。当前预览版本的服务端注册入口不验证调用者身份，应限制在受控网络或网关内使用。返回的 registration credential 用于后续运行连接，不能替代注册入口的访问控制。HTTP contract 可读到的历史与命令取决于适配器；Java 实时上报还需在构建 Agent 时装入适配器 middleware，并启用 ASDP 运行连接。
 
-## Python：连接支持 ASDP 的部署
+<span id="python连接支持-asdp-的部署" />
+
+## Python：使用 HTTP 运行连接
 
 在应用环境安装 `aistio-sdk` 的对应发布版本：
 
@@ -84,9 +86,8 @@ bridge = aistio.instrument(
     instance_key=os.environ["AISTIO_INSTANCE_KEY"],
     tenant=os.environ["AISTIO_TENANT"],
     namespace=os.environ["AISTIO_NAMESPACE"],
-    control_plane=os.environ["AISTIO_CONTROL_GRPC"],
+    transport="http",
     control_plane_http=os.environ["AISTIO_CONTROL_HTTP"],
-    internal_token=os.environ["AISTIO_BOOTSTRAP_TOKEN"],
     contract_http_port=18090,
     contract_http_base_url=os.environ["AGENT_CONTRACT_URL"],
     event_journal_dir="/var/lib/report-agent/events",
@@ -94,7 +95,7 @@ bridge = aistio.instrument(
 # 应用退出时调用 bridge.stop()。
 ```
 
-`AISTIO_CONTROL_GRPC` 是 `host:port`，不是带 HTTP scheme 的 Gateway URL。每个副本使用不同 instance key，同一副本重启保持身份稳定。保存 event journal 以支持事件恢复。
+Python 默认使用出站 HTTP exchange（`POST /api/v1/agent-runtime/exchange`），无需开启 gRPC listener。需要 gRPC 时设置 `transport="grpc"` 和 `control_plane="host:port"`。每个副本使用不同 instance key，同一副本重启保持身份稳定，并保存 event journal。自动识别的观测适配器不会执行 Issue/Team 工作；接收任务时，通过 `adapter=` 显式选择 SDK 的 `AsyncInvokeAdapter`、`AgentScopeRunnerAdapter` 或 `ExecutableAdapter`，也可以自行实现任务入口，详见[适配器选择](/v2/zh/service/external-agent-frameworks)。
 
 ## 接受 Issue / Team 工作
 
@@ -109,3 +110,18 @@ Python 可实现 `FrameworkAdapter` 并通过 `adapter=` 传入，按需要扩�
 依次验证：注册与重启身份、应用侧一轮对话、历史读取、控制面可达的合约、一次支持的工作派发、失败和取消回报。容器 `localhost`、只有单向网络、错误 gRPC 端口和虚报 capability 是常见接入问题。
 
 相关：[SDK 与组件选择](/v2/zh/service/integrations) · [API 参考](/v2/zh/service/api-reference)。
+
+## API 入口与身份
+
+业务管理使用平台账户 Bearer，运行连接使用注册所得的实例身份；发布给业务应用的 Endpoint 则使用对应调用凭据。三者不应混用。
+
+| 操作 | API 与关键参数 | 响应 |
+| --- | --- | --- |
+| 登记 Agent 与副本 | `POST /api/v1/agent-registrations`，`agentKey`、`instanceKey`、范围、`routingKey`、`capabilities` | `agent`、`binding`、`instance`、`registrationCredential` |
+| 查询逻辑 Agent | `GET /api/v1/agents/{agentId}` | `agent` |
+| 查询绑定与副本 | `GET /api/v1/agents/{agentId}/bindings`、`/instances` | `items` |
+| 查询已上报目录 | `GET /api/v1/agents/{agentId}/runtime-inventory` | `status`、`items`；未上报时为 `not_reporting` |
+| 更新生命周期 | `PATCH /api/v1/agents/{agentId}`，当前 `version` 与需要更新的 `status` 等字段 | 更新后的 `agent` |
+| 轮换/撤销运行注册凭据 | `POST /api/v1/agent-registrations/{agentId}/credentials/rotate`；`DELETE /api/v1/agent-registrations/{agentId}/credentials/{credentialId}` | 轮换返回新凭据；撤销返回 204 |
+
+完整字段和 SDK 开关见[注册与连接参数](/v2/zh/service/external-agent-configuration)。完成任务适配后，通过 [Issue API](/v2/zh/service/issues) 分派工作，或发布 [Endpoint](/v2/zh/service/endpoints)，让应用通过统一 [Agent API](/v2/zh/service/service-api) 获取结果与 SSE 事件。

@@ -1,39 +1,82 @@
 ---
-title: "AgentScope framework: register an application"
+title: "External: register an existing Agent"
 zh_link: /v2/zh/service/register-agentscope-agent
+description: Register an application through the API, connect its runtime, and make it available for tasks or published services
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This is preview documentation. The release is not yet generally available.
 </Note>
 
-Register a running AgentScope application as an External Agent while retaining its deployment. Establish catalog and Session access first, then verify the task capabilities you need.
+Register an application you already operate as an **External Agent**. You continue to deploy and run the application; Service gives it a stable `agentId` that can join a Team, receive tasks, or become a published [Endpoint](/v2/en/service/endpoints).
 
-## Prepare registration details
+Registration records the Agent and its instances. A runtime integration must also receive requests, execute work, and report outcomes. Sending a registration request alone does not make an arbitrary HTTP application runnable by the platform.
 
-Obtain the registration scope, a reachable Service HTTP address and initial credentials from an administrator. Give each replica a stable instance key and provide an application HTTP contract URL reachable from the control plane.
+## Register the application and instance
 
-| Detail | Check |
-| --- | --- |
-| tenant / namespace | Matches the intended Agent catalog scope |
-| Credential | Trusted workload/bootstrap or subsequent registration credential, distinct from an Endpoint API key |
-| Instance key | Different across replicas and stable across ordinary restarts |
-| Contract URL | Reachable from the control plane; container localhost usually refers only to that container |
+Prepare the Service address, target `tenant` and `namespace`, application `agentKey`, and replica `instanceKey`. Replicas share the same `agentKey` and use different instance keys. Keep a replica's key stable across restarts.
 
-## Register a Java application
+The following request demonstrates the registration protocol. It registers identity without advertising execution capabilities. An integrated SDK should report the capabilities its adapter actually implements.
 
-1. Add `agentscope-extensions-aistio` matching the application's SDK version.
-2. Call `Aistio.instrument(agent, config)` after creating the Agent and retain the returned `SessionBridge`.
-3. For standard Service deployments, set `controlPlaneHttp`, credentials, scope and `publicBaseUrl`. Enable `startHttpRegister(true)` and the HTTP contract, and set `startGrpc(false)`.
-4. Start the application and inspect the registered Agent, instance and contract URL in **DESIGN → Agents**.
-5. Run a conversation in the application and verify the Session information exposed by the adapter. Close the bridge when the application shuts down.
+```bash
+export SERVICE_URL="http://localhost:8081"
 
-Copy the Maven and Java fragments from the [External Agent reference](/v2/en/service/external-agent).
+curl -sS "$SERVICE_URL/api/v1/agent-registrations" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "tenant": "default",
+    "namespace": "default",
+    "agentKey": "report-service",
+    "displayName": "Report assistant",
+    "instanceKey": "replica-1",
+    "framework": "agentscope-java",
+    "routingKey": "http://report-agent:18090",
+    "capacity": 1,
+    "capabilities": []
+  }' > registration.json
+```
 
-## Receive platform tasks
+`routingKey` is the application's contract address reachable from the control plane. A container's `localhost` usually does not point to another container.
 
-To receive Issues or join Teams, configure a real task entry such as `AgentTaskStarter` and verify successful, failed and cancelled execution. Catalog registration and Session visibility alone do not provide task execution.
+The response contains `agent`, `binding`, `instance`, and `registrationCredential`. Use `agent.id` when creating Teams or Endpoints. The runtime connection also needs `binding.id`, `instance.id`, `instance.generation`, and the registration credential. Keep the credential and the complete response out of browser code.
 
-Python automatic registration is tied to ASDP initialization. Prepare an ASDP-capable deployment before calling `aistio.instrument()`. The [framework and adapter guide](/v2/en/service/external-agent-frameworks) describes implemented capabilities.
+<Note>
+The current preview registration endpoint does not authenticate callers. Supplying a Bearer token does not add an identity check to this request. Expose registration within a controlled network or gateway. The returned registration credential is used by subsequent runtime connections; it does not mean registration itself is access controlled.
+</Note>
 
-Once connected, use [Endpoints](/v2/en/service/endpoints) or [console Issues](/v2/en/service/issues) according to available capabilities. See the [External Agent reference](/v2/en/service/external-agent) for configuration and lifecycle details.
+## Connect the runtime
+
+In an application integration, the SDK normally performs registration, heartbeat, and runtime communication. You do not need to reproduce the curl request on every application startup.
+
+Java applications use `agentscope-extensions-aistio` and obtain a `SessionBridge` from `Aistio.instrument(agent, config)`. Configure the Service HTTP address, scope, stable instance key, and reachable application contract URL. See the [External Agent reference](/v2/en/service/external-agent) for the dependency and setup snippet. HTTP registration and the contract provide discovery, queries, and supported adapter commands. Receiving platform AgentTasks also requires an `AgentTaskStarter` and the ASDP runtime channel supported by the current Java SDK. Close the bridge when the application exits.
+
+Python's `aistio.instrument()` supports HTTP runtime transport with `transport="http"` and `control_plane_http`, as well as an explicit gRPC option. Task execution is implemented by the framework adapter's `handle_agent_task`. Check [framework and adapter capabilities](/v2/en/service/external-agent-frameworks) before relying on particular commands, events, or task behavior.
+
+`capabilities` declares working behavior; it does not implement it. For example, `agent-task` means the application accepts platform tasks. The Java adapter declares it when a task starter is configured; Python checks the adapter implementation and runtime transport configuration. `session-abort` likewise requires an implementation that can interrupt execution.
+
+## Verify registration through the API
+
+Here, `TOKEN` is a platform account access token authorized for the target namespace. It is different from the registration credential.
+
+```bash
+AGENT_ID=$(jq -r '.agent.id' registration.json)
+
+curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/instances" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/runtime-inventory" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+The Agent record confirms the logical identity. Instance records describe actual replicas and their capabilities. `runtime-inventory` contains runtime reports and returns `status: "not_reporting"` when none are available. Registration success alone does not confirm that an instance can execute work.
+
+## Verify a task, then publish a service
+
+Assign a small task to the `agentId` through the [Issue API](/v2/en/service/issues). Verify start, progress, result, and failure reporting. Give each execution an isolated Agent instance and use task-scoped credentials for comments, artifacts, and completion. A final assistant message alone does not complete a platform task.
+
+You can then add the Agent to a [Team](/v2/en/service/create-team) or publish an [Endpoint](/v2/en/service/endpoints). Business applications use the unified [Agent API](/v2/en/service/service-api) for results and SSE events. Query capabilities before depending on interactions that vary by runtime.
+
+For the visual workflow, see [Console: Agent management](/v2/en/service/console/agents).

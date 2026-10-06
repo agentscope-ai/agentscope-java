@@ -1,12 +1,14 @@
 ---
 title: "接入示例：可恢复的聊天应用"
-description: 用 Agent API 串起多轮聊天、多个工具调用、刷新恢复、人工确认与任务取消。
+description: 用 Managed 原生会话 API 串起多轮聊天、工具调用、刷新恢复、人工确认与任务取消。
 en_link: /v2/en/service/agent-api-chat
 ---
 
 本例把一个 Managed“资料助手”接到业务聊天页面：用户发送材料，Agent 调用工具并整理结果；用户离开后，返回同一会话仍能看到完整的已提交消息、工具参数、结果和待办。
 
-先按[创建 Managed Agent](/v2/zh/service/create-managed-agent)配置模型和 Environment，并完成一次 Chat 验证。工具演示需要绑定可用的工具；人工确认演示需要该工具的 `permissionPolicy.type=always_ask`。没有工具的 Agent 也可以先验证文字和刷新恢复。
+本例使用 Managed 原生会话 API，适合直接管理托管会话及其消息、工具和待办。若要通过发布的服务统一接入不同类型的 Agent，或调用 Team、Workflow，从[统一服务 API](/v2/zh/service/service-api)开始。
+
+先按[创建 Managed Agent](/v2/zh/service/create-managed-agent)配置模型和 Environment，并用该页的会话请求验证一次推理。工具演示需要绑定可用的工具；人工确认演示需要该工具的 `permissionPolicy.type=always_ask`。没有工具的 Agent 也可以先验证文字和刷新恢复。
 
 ## 1. 创建会话，提交任务
 

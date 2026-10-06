@@ -40,6 +40,7 @@ type Store interface {
 	Outbox() OutboxRepository
 	Collaboration() CollaborationRepository
 	WorkSources() WorkSourceRepository
+	Applications() ApplicationRepository
 	Endpoints() EndpointRepository
 	TeamProposals() TeamProposalRepository
 	Chats() ChatRepository

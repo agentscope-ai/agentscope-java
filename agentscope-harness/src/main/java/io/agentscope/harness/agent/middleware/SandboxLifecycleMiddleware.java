@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
  *   <li>Release the session via {@link SandboxManager} (stop + optional shutdown)</li>
  *   <li>Persist sandbox session state via {@link SandboxManager} and
  *       {@link io.agentscope.harness.agent.sandbox.SessionSandboxStateStore}</li>
- *   <li>Clear this call's session binding from the {@link RuntimeContext}</li>
+ *   <li>Invalidate this call's session binding across {@link RuntimeContext} copies</li>
  * </ol>
  *
  * <p>Post-call failures (persist, release) are logged but do not propagate — this ensures
@@ -158,7 +158,10 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         if (result == null) {
             return;
         }
-        ctx.put(SandboxAcquireResult.class, null);
+        // Retain an invalidated binding so this context cannot fall back to a sibling call.
+        if (!result.beginRelease()) {
+            return;
+        }
         // Compare-and-clear the fallback field so a releasing call never nulls a concurrent
         // sibling's binding (issue #2490); it only clears the field when it still points here.
         filesystemProxy.clearSandboxIfCurrent(result.getSandbox());

@@ -2475,7 +2475,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     });
         }
 
-        public HarnessAgent build() {
+        /**
+         * Builds a fresh runtime from this reusable configuration. Configure the builder before
+         * sharing it; builds are serialized, while the resulting agents can execute concurrently.
+         */
+        public synchronized HarnessAgent build() {
+            var configuredMessageBus = messageBus;
+            var configuredAsyncToolRegistry = asyncToolRegistry;
+            try {
+                return buildInstance(inner.copy());
+            } finally {
+                // Workspace-derived collaborators belong to this build's filesystem, especially
+                // when sandbox bindings or workspace indexes have per-agent lifetimes.
+                messageBus = configuredMessageBus;
+                asyncToolRegistry = configuredAsyncToolRegistry;
+            }
+        }
+
+        private HarnessAgent buildInstance(ReActAgent.Builder inner) {
             // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
             // user-registered tools never bleed across builds.
             Toolkit agentToolkit = this.toolkit.copy();
@@ -2507,7 +2524,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 if (stateStoreOverride == null
                         && (legacySessionHistory || sandboxFilesystemSpec != null)) {
                     stateStoreOverride = distributedStore.agentStateStore();
-                    if (legacySessionHistory) inner.stateStore(stateStoreOverride);
                 }
                 if (remoteFilesystemSpec != null) {
                     remoteFilesystemSpec.injectStoreIfAbsent(distributedStore.baseStore());
@@ -2551,8 +2567,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (effectiveSession == null
                     && (legacySessionHistory || sandboxFilesystemSpec != null)) {
                 effectiveSession = new JsonFileAgentStateStore(defaultStateDir(resolvedAgentId));
-                if (legacySessionHistory) inner.stateStore(effectiveSession);
             }
+            if (legacySessionHistory) inner.stateStore(effectiveSession);
 
             if (legacySessionHistory
                     && remoteFilesystemSpec != null

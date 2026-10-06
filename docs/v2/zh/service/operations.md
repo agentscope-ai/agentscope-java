@@ -52,20 +52,34 @@ pg_restore --no-owner --no-acl --dbname="$RESTORE_DATABASE_URL" backup/database.
 
 只有数据库、文件和密钥都能共同恢复，备份才算通过验证。升级按维护窗口执行；单副本安装不提供多副本 HA 或无停机升级保证。
 
+## 用 API 检查恢复后的服务
+
+恢复后先做读取，再提交一个明确的新测试任务：
+
+| 核对内容 | API |
+| --- | --- |
+| Agent 与运行绑定 | `GET /api/v1/agents`、`GET /api/v1/agents/{id}/bindings` |
+| 发布配置与版本 | `GET /api/v1/endpoints/{id}`、`GET /api/v1/endpoints/{id}/releases` |
+| 已有业务结果与页面 | `GET /invoke/v1/invocations/{id}`、`GET .../{id}/snapshot` |
+| 未完成编排与实际执行 | `GET /api/v1/orchestration-runs/{id}/graph`、`GET /api/v1/execution-attempts/{id}` |
+| 通知与自动化 | 查询原 Webhook/Automation 的投递记录，核对回调去重与运行状态 |
+
+读取使用原调用归属的凭据或已授权平台身份。Invocation 数据、Managed 原生日志、Workspace 文件和凭据加密密钥都需恢复；只恢复其中一层不能保证任务可继续。过期事件 cursor 应重新获取 snapshot，不重新提交已完成工作。接口和认证见 [API 参考](/v2/zh/service/api-reference)。
+
 ## 恢复后重新开放服务
 
 先保持定时规则和外部入口受控，在测试工作上验证登录、历史、文件和凭据。确认 Runtime Host 重新上线，再逐个恢复计划触发与业务流量。数据库快照恢复不会撤销备份之后已经发出的消息或外部写入；对照业务系统核对幂等记录和未完成工作后再重跑。
 
 ## 用固定案例做升级回归
 
-在升级前保存[售前方案团队](/v2/zh/service/cases/presales-team)的样例知识与验收结果，在隔离的恢复环境中执行同一组问题。模型措辞可以不同，下面的事实和持久化结果应可核对：
+在升级前保存[CRM 方案交付案例](/v2/zh/service/cases/in-product-delivery)的固定请求、来源版本与验收结果，在隔离的恢复环境中重复调用。模型措辞可以不同，下面的事实和持久化结果应可核对：
 
 | 检查 | 验收依据 |
 | --- | --- |
-| 知识恢复 | 三条文档正文与备份一致，Agent 实际读取成功 |
+| 来源恢复 | 请求中的三份资料与版本一致；若生产接入了 Memory，另外验证实际读取 |
 | 文件恢复 | 原 Artifact 可以下载，内容与备份记录一致 |
 | 新任务 | 新 Invocation / Run 完成，引用正确来源，未把未确认产品能力写成承诺 |
-| 历史 | 升级前的 Issue、事件与验收状态仍能查看 |
-| Host 与自动化（如果使用） | 在测试目标上分别运行研发与订单履约案例，检查关联记录 |
+| 历史 | 升级前的 Invocation、事件、产物与应用验收记录仍能查看 |
+| Host 与调度（如果使用） | 在测试目标上运行代码修复或周期研究案例，检查关联记录 |
 
 记录升级前后版本、备份批次、用例输入、执行 ID 和差异。只在需要对应集成时验证其凭据可用性；知识读取案例本身没有外部凭据，不能证明 Vault 解密路径也已验证。

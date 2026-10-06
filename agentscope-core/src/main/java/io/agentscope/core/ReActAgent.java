@@ -5554,6 +5554,57 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Builder() {}
 
         /**
+         * Copies configuration without sharing mutable registration collections. Configured model,
+         * tool, middleware and storage instances retain their application-managed lifetimes.
+         * Configure the source before sharing it; concurrent setter calls are not supported.
+         */
+        public synchronized Builder copy() {
+            Builder copy = new Builder();
+            copy.sessionHistoryMode = this.sessionHistoryMode;
+            copy.sessionLogStore = this.sessionLogStore;
+            copy.sessionLogAgentId = this.sessionLogAgentId;
+            copy.name = this.name;
+            copy.description = this.description;
+            copy.sysPrompt = this.sysPrompt;
+            copy.model = this.model;
+            copy.toolkit = this.toolkit;
+            copy.maxIters = this.maxIters;
+            copy.modelExecutionConfig = this.modelExecutionConfig;
+            copy.toolExecutionConfig = this.toolExecutionConfig;
+            copy.generateOptions = this.generateOptions;
+            copy.modelRequestPreparer = this.modelRequestPreparer;
+            copy.actionObserver = this.actionObserver;
+            copy.enableMetaTool = this.enableMetaTool;
+            copy.taskListEnabled = this.taskListEnabled;
+            copy.taskRequirementsEnabled = this.taskRequirementsEnabled;
+            copy.toolExecutionContext = this.toolExecutionContext;
+            copy.enablePendingToolRecovery = this.enablePendingToolRecovery;
+            copy.permissionContext = this.permissionContext;
+            copy.flatMaxRetries = this.flatMaxRetries;
+            copy.flatFallbackModel = this.flatFallbackModel;
+            copy.flatFailoverListener = this.flatFailoverListener;
+            copy.flatStopOnReject = this.flatStopOnReject;
+            copy.stateStore = this.stateStore;
+            copy.conflictPolicy = this.conflictPolicy;
+            copy.defaultSessionId = this.defaultSessionId;
+            copy.longTermMemory = this.longTermMemory;
+            copy.longTermMemoryMode = this.longTermMemoryMode;
+            copy.longTermMemoryAsyncRecord = this.longTermMemoryAsyncRecord;
+            copy.ragMode = this.ragMode;
+            copy.retrieveConfig = this.retrieveConfig;
+            copy.skillBox = this.skillBox;
+            copy.skillFilter = this.skillFilter;
+            copy.dynamicSkillsEnabled = this.dynamicSkillsEnabled;
+            copy.skillCodeExecutionEnabled = this.skillCodeExecutionEnabled;
+            copy.skillWorkDir = this.skillWorkDir;
+            copy.hooks.addAll(this.hooks);
+            copy.middlewares.addAll(this.middlewares);
+            copy.knowledgeBases.addAll(this.knowledgeBases);
+            copy.skillRepositories.addAll(this.skillRepositories);
+            return copy;
+        }
+
+        /**
          * Sets the name for this agent.
          *
          * @param name The agent name, must not be null
@@ -6256,6 +6307,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @throws IllegalArgumentException if required parameters are missing or invalid
          */
         public ReActAgent build() {
+            return copy().buildInstance();
+        }
+
+        private ReActAgent buildInstance() {
             // Isolate registrations added by this agent while sharing existing tool instances.
             // Request-specific visibility is composed at execution time, without copying.
             Toolkit agentToolkit = this.toolkit.copy();

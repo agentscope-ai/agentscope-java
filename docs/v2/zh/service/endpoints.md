@@ -1,70 +1,144 @@
 ---
-title: "应用接入：Endpoint 与 SSE"
+title: "通过 API 发布与调用 Endpoint"
+description: 为 Agent、Team 或 Workflow 发布稳定契约，配置调用凭据，再提交和观察工作。
 en_link: /v2/en/service/endpoints
 ---
 
-<Note>
-此为预览文档，正式版本尚未发布。
-</Note>
+Endpoint 将 Agent、Team 或已发布的 Workflow revision 提供为稳定的业务 API。调用方只需知道服务地址、输入输出约定和凭据，无需了解成员 Agent 在哪里运行或内部如何调度。
 
-Endpoint 是提供给应用调用的稳定入口，将 Agent、Team 或已发布 Workflow revision 包装为具有认证、输入输出 schema 和调用记录的服务。调用方无需了解内部调度和运行时地址。
-
-本页介绍如何从应用发布入口并提交工作；收到调用标识后，按[SSE 格式与任务反馈](/v2/zh/service/sse-events#endpoint-协议范围)消费事件、恢复连接并读取最终结果。
-
-需要直接控制 Managed Agent 的 session、steer、人工交互或 checkpoint 时，使用 [Agent API](/v2/zh/service/session-event-log)。本页的 Endpoint 适合发布稳定调用契约；其 Conversation/Job SSE 不直接提供 Agent API 的 snapshot、公共事件 envelope 和恢复接口。
+本页用 HTTP 完成创建、发布、签发调用凭据和第一次调用。任务进行中的事件、人工交互、输入、取消和恢复，继续阅读[统一服务 API](/v2/zh/service/service-api)。页面发布入口见[控制台编排与发布](/v2/zh/service/console/orchestration)。
 
 ## 选择调用形式
 
-| 形式 | 用途 | 请求入口 |
+| 形式 | 目标与用途 | 提交入口 |
 | --- | --- | --- |
-| conversation | 支持会话能力的目标，多轮交互 | `/invoke/v1/endpoints/{slug}/conversations` |
-| job | 一次可跟踪的工作，适用于 Agent、Team、Workflow | `/invoke/v1/endpoints/{slug}/jobs` |
+| `job` | Agent、Team 或 Workflow，完成一次有结果的工作 | `/invoke/v1/endpoints/{slug}/jobs` |
+| `conversation` | 具有会话能力的单个 Agent，多轮交互 | `/invoke/v1/endpoints/{slug}/conversations` |
 
-在目标详情的 Endpoint 发布区域创建入口，设置 slug、模式、schema、认证、超时和请求大小限制。发布前查看 Readiness，处理目标缺失或能力不匹配。不要强行将只支持 job 的 Team/Workflow 作为会话目标。
+Managed、External、Hosted 都可以作为 Agent 目标，但必须具备对应执行能力。Team 和 Workflow 当前使用 Job。发布前检查 readiness，发布后读取 capabilities；目录中存在该目标，不代表所有交互操作都可用。
 
-## 发布与凭据
+## 创建一个服务入口
 
-Draft 不接收正式调用；Publish 后产生可用发布版本。选择 `api_key` 时创建调用凭据，并以 `X-API-Key` 发送；选择 `platform` 时使用 `Authorization: Bearer`。两种凭据用途不能互换。
-
-把 key 保存在应用后端的 secret 配置中。为不同调用方建立独立凭据，按需要设置到期时间、轮换或撤销。浏览器前端应调用你自己的后端，不嵌入长期 key。
-
-## 发起一个 job
-
-从 Endpoint 详情复制生成的调用示例。下面假设你的 slug 为 `report`，input schema 允许 `request` 字段；实际调用必须匹配发布的 schema：
-
-先将 `BASE_URL` 设为 Gateway 的公开 origin（例如 `https://agentscope.example.com`，末尾不带斜杠），`ENDPOINT_TOKEN` 设为该入口的调用凭据。
+先准备一个可用 Agent。下面用 Bash、`curl` 和 `jq`，平台用户需拥有目标空间和发布资源的相应权限。`platform_api` 仅用于管理请求，调用凭据稍后单独创建。
 
 ```bash
-curl --fail-with-body "$BASE_URL/invoke/v1/endpoints/report/jobs" \
-  -H "X-API-Key: $ENDPOINT_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: report-order-001' \
-  --data '{"title":"Prepare report","description":"Summarize the supplied material","input":{"request":"List the open questions"}}'
+export BASE_URL='https://YOUR_SERVICE_HOST'
+export TOKEN='YOUR_PLATFORM_USER_TOKEN'
+export TENANT='YOUR_TENANT'
+export NAMESPACE='YOUR_NAMESPACE'
+export AGENT_ID='YOUR_AGENT_ID'
+
+platform_api() {
+  local api_path="$1"
+  shift
+  curl --fail-with-body -sS "$BASE_URL$api_path" \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" "$@"
+}
 ```
 
-响应提供 `invocationId`、`status`、`statusUrl`、`eventsUrl`。保存这些值，使用返回的 URL 查询状态或订阅事件，不自行拼接假定的内部 Run 地址：
+本例发布一个接受 `request` 字段的 Job：
 
 ```bash
-curl --fail-with-body "$BASE_URL$STATUS_PATH" -H "X-API-Key: $ENDPOINT_TOKEN"
-curl -N --fail-with-body "$BASE_URL$EVENTS_PATH" -H "X-API-Key: $ENDPOINT_TOKEN" -H 'Accept: text/event-stream'
+ENDPOINT_JSON=$(platform_api /api/v1/endpoints \
+  --data "$(jq -n --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
+    --arg agent "$AGENT_ID" '{
+      tenant:$tenant, namespace:$namespace, name:"Notes service", slug:"notes-service",
+      targetType:"agent", targetRef:$agent, invocationMode:"job",
+      authPolicy:{type:"api_key"},
+      inputSchema:{type:"object", required:["request"],
+        properties:{request:{type:"string"}}}
+    }')")
+ENDPOINT_ID=$(printf '%s' "$ENDPOINT_JSON" | jq -er '.endpoint.id')
+ENDPOINT_VERSION=$(printf '%s' "$ENDPOINT_JSON" | jq -er '.endpoint.version')
+platform_api "/api/v1/endpoints/$ENDPOINT_ID/readiness"
 ```
 
-`STATUS_PATH` 和 `EVENTS_PATH` 填返回的相对 URL；如响应为绝对 URL，直接使用，不再拼接 BASE_URL。终态查询中的 `invocation.result` 承载结果，按该 Endpoint 的 output schema 读取。
+创建返回 `endpoint`，状态为 draft；此时不接收正式调用。`slug` 决定公开 URL，名称和 slug 冲突会返回 `409`。发布 Team 时设置 `targetType:"team"` 和 Team ID；发布 Workflow 时设置 `targetType:"orchestration_revision"`，`targetRef` 必须是已发布 revision ID，而不是草稿定义 ID。
+
+除了输入 schema，还可以配置 `outputSchema`、`resultMapping`、`timeoutSeconds`、`maxPayloadBytes` 与 `rateLimit`。字段含义见 [API 参数参考](/v2/zh/service/api-reference)；先验证最小契约，再逐步增加约束。
+
+<span id="发布与凭据" />
+
+## 校验并发布版本
+
+检查 readiness 是否允许当前目标与模式组合，并验证目标运行资源就绪。确认后，携带刚读取的版本发布：
+
+```bash
+platform_api "/api/v1/endpoints/$ENDPOINT_ID/publish" \
+  --data "$(jq -n --argjson version "$ENDPOINT_VERSION" '{version:$version}')"
+```
+
+发布会建立 release，固定本次对外契约及目标配置。响应中的 `endpoint.status` 应为 `published`。遇到版本冲突时重新读取并核对修改，不要直接换成新版本号重放旧的发布决定。
+
+## 给调用应用签发凭据
+
+本例使用 `api_key` 认证。先创建代表业务调用方的 Application，再为这个 Endpoint 签发该 Application 的凭据：
+
+```bash
+APPLICATION_JSON=$(platform_api /api/v1/applications \
+  --data "$(jq -n --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
+    '{tenant:$tenant, namespace:$namespace, name:"Notes application"}')")
+APPLICATION_ID=$(printf '%s' "$APPLICATION_JSON" | jq -er '.application.id')
+
+CREDENTIAL_JSON=$(platform_api "/api/v1/endpoints/$ENDPOINT_ID/credentials" \
+  --data "$(jq -n --arg app "$APPLICATION_ID" \
+    '{applicationId:$app, name:"backend", scopes:["invoke","read","cancel","interact"]}')")
+export ENDPOINT_KEY=$(printf '%s' "$CREDENTIAL_JSON" | jq -er '.secret')
+```
+
+保存响应中的 `secret` 到业务后端的凭据存储，调用时用 `X-API-Key`。创建或发布 Endpoint **不会自动生成 API key**；`applicationId` 和非空 `scopes` 必须明确指定。这里授予提交、读取、取消和交互；管理 Webhook 还需要 `webhooks:write`。
+
+Application 让同一业务方的多把 key 共享调用归属，便于轮换后继续读取原调用。轮换不会立即撤销旧 key：先迁移调用方，再撤销旧凭据。浏览器通过你的业务后端调用，不应内置长期 key。
+
+如果调用方本身是已授权的平台用户，可以在创建 Endpoint 时选择 `authPolicy:{type:"platform"}`，直接用用户 Bearer token，不需要这一步签发 key。[快速开始](/v2/zh/service/first-session)采用这种方式。两种认证策略不能随意混用。
+
+<span id="发起一个-job" />
+
+## 提交工作并观察同一次调用
+
+```bash
+curl --fail-with-body -sS "$BASE_URL/invoke/v1/endpoints/notes-service/capabilities" \
+  -H "X-API-Key: $ENDPOINT_KEY"
+
+RECEIPT=$(curl --fail-with-body -sS "$BASE_URL/invoke/v1/endpoints/notes-service/jobs" \
+  -H "X-API-Key: $ENDPOINT_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: notes-job-001' \
+  --data '{"title":"Prepare notes","input":{"request":"Lee owns the Friday installation notes. Review is Monday, time unconfirmed. Extract the action items."}}')
+INVOCATION_ID=$(printf '%s' "$RECEIPT" | jq -er '.invocationId')
+INVOCATION_URL="$BASE_URL/invoke/v1/invocations/$INVOCATION_ID"
+
+SNAPSHOT=$(curl --fail-with-body -sS "$INVOCATION_URL/snapshot" -H "X-API-Key: $ENDPOINT_KEY")
+CURSOR=$(printf '%s' "$SNAPSHOT" | jq -er '.as_of')
+curl --fail-with-body -N -G "$INVOCATION_URL/events/stream" \
+  -H "X-API-Key: $ENDPOINT_KEY" --data-urlencode "after=$CURSOR"
+```
+
+提交返回 `202`、`invocationId` 及状态、快照、事件 URL。保存响应；先渲染 snapshot，再用 `as_of` 续读事件，就能包含订阅前已经生成的消息和工具结果。上面为便于复制使用标准 Invocation 路径，也可以直接采用响应返回的 URL。
+
+SSE 连接可以在客户端停止观察，后台工作仍继续。用另一个请求 `GET /invoke/v1/invocations/{id}` 查询 `invocation.status` 和最终 `invocation.result`。只有整个 Invocation 的终态代表调用结果；某个成员或工具完成并不代表 Team 已完成。`partial_succeeded` 表示有部分输出但存在失败，应查看步骤详情。
 
 ## 多轮 conversation
 
-首次请求 body 为 `{"message":"请介绍你的职责"}`。保存 `conversationId`；下一轮发送到 `/invoke/v1/conversations/{conversationId}/turns`，仍使用 `{"message":"..."}` 和新的 Idempotency-Key。订阅每轮响应返回的 eventsUrl，保留其中的 invocationId 查询参数。
+将具有会话能力的 Agent 发布为 `conversation` 后，首次提交 `{"message":"请整理会议记录"}`。保存返回的 `conversationId`；后续轮次向 `POST /invoke/v1/conversations/{conversationId}/turns` 发送新的 message 和幂等键，每轮仍有独立的 Invocation。
+
+一个 Conversation 同时只接受一个活动 Invocation。不同运行时的执行中输入、审批或恢复支持不同，通过 capabilities 决定展示哪些交互。需要直接操作 Managed 文件、子会话和 checkpoint 时，使用 [Managed 原生会话 API](/v2/zh/service/session-event-log)。
 
 ## 重试和状态
 
-同一业务请求超时重传时使用相同 Idempotency-Key 和内容；用户明确发起的新工作使用新 key。accepted、dispatching、running、waiting 都不是完成。只有 completed 表示成功终态；failed、cancelled、timed_out 应交给对应错误处理。
+同一业务请求因网络错误重传时，沿用原 Idempotency-Key 和请求体；用户发起新的工作才使用新 key。accepted、dispatching、running、waiting 都不是完成；取消先进入 cancel_requested，最终状态以服务确认结果为准。
 
-SSE 断开不代表任务失败，先按 statusUrl 查询。遇到 401/403 检查认证和权限，429 按返回的限流提示退避，输入错误先修复 schema；不要无条件换 key 重试，防止重复业务副作用。
+断线后重新读取快照或从最后已处理 cursor 续读，不重新提交任务。处理流程和事件字段见[统一服务 API](/v2/zh/service/service-api)；[SSE 文档](/v2/zh/service/sse-events)区分统一调用与 Managed 原生会话两套事件资源。
 
-## 更新版本
+## 更新版本与停用入口
 
-发布新的 Endpoint release 切换目标版本，保留发布记录。Rollback 用于把入口指回此前 release，不回滚数据库或已经执行的外部操作。Disable 停止新的使用；需要取消某次工作时查看具体 invocation/执行状态。
+| 操作 | API 与参数 |
+| --- | --- |
+| 修改草稿配置或运行限制 | `PATCH /api/v1/endpoints/{id}`，携带 `version` 与修改字段 |
+| 查看发布记录 | `GET /api/v1/endpoints/{id}/releases` |
+| 发布新的目标版本 | `POST /api/v1/endpoints/{id}/releases`，`version`、`targetRef`、可选 `reason` |
+| 回到已有 release | `POST /api/v1/endpoints/{id}/releases/{releaseId}/rollback`，`version` |
+| 停用新调用 | `POST /api/v1/endpoints/{id}/disable`，`version` |
+| 轮换 / 撤销凭据 | `POST /api/v1/endpoints/{id}/credentials/{credentialId}/rotate`；`DELETE /api/v1/endpoints/{id}/credentials/{credentialId}` |
 
-相关：[API 参考](/v2/zh/service/api-reference) · [Workflow](/v2/zh/service/workflows)。
-
-完整业务接入见[订单履约案例](/v2/zh/service/cases/order-fulfillment)：发布 Team Job、约束输入、展示调查进度，再用 Workflow 衔接业务审批和执行。
+已发布的 schema 不通过普通 PATCH 原地改变。更新发布入口不会改写已有 Invocation 的契约，也不会撤销已经发生的外部操作。停用服务不等于取消现有任务；需要停止某次工作时，对它的 Invocation 发出取消命令。

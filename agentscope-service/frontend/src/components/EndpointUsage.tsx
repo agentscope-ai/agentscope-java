@@ -18,11 +18,13 @@ export function EndpointUsage({ endpoint }: { endpoint: Endpoint }) {
       <p className="text-xs text-muted-foreground">Replace the credential and request ID, then edit the example input for your published contract. Reuse the same request ID only when retrying the same submission. Use the same credential for status, events and artifacts.</p>
       <CopyCode title="1. Submit a request" code={samples.submit} />
       <CopyCode title="202 Accepted response (example)" code={JSON.stringify(samples.accepted, null, 2)} />
-      <CopyCode title="2. Check status" code={samples.status} />
-      <p className="text-xs text-muted-foreground">{job ? 'Poll statusUrl at a reasonable interval, such as every 2 seconds. Read invocation.status and stop at completed, failed, cancelled or timed_out. A completed job exposes invocation.result; failures expose invocation.errorCode and invocation.errorMessage.' : 'Use statusUrl to inspect the conversation and eventsUrl to receive the current turn’s output. Submit subsequent messages to /invoke/v1/conversations/CONVERSATION_ID/turns with a new Idempotency-Key.'}</p>
+      <CopyCode title="2. Restore snapshot" code={samples.snapshot} />
+      <CopyCode title="Check status and final result" code={samples.status} />
+      <p className="text-xs text-muted-foreground">Render items, tools, required_actions, steps, artifacts and usage from the snapshot. Continue SSE from snapshot.as_of and save each applied event cursor. Terminal statuses: completed, partial_succeeded, failed, cancelled and timed_out. A partial result must not be treated as a fully successful result.</p>
       {job && <CopyCode title="Completed status response (example)" code={JSON.stringify(samples.completed, null, 2)} />}
       <CopyCode title="3. Stream events" code={samples.events} />
-      {job && <p className="text-xs text-muted-foreground">List artifacts at GET /invoke/v1/jobs/INVOCATION_ID/artifacts. Resume events with the last received event ID in the Last-Event-ID header.</p>}
+      <CopyCode title="4. Respond to a required action" code={samples.actions} />
+      <p className="text-xs text-muted-foreground">Actions require interact scope. Human approvals also require the designated signed-in approver. Commands return 202: poll their status_url or wait for command.completed/command.failed. Use /inputs, /cancel and /resume with fresh Idempotency-Key values. Artifacts and usage are available below /invoke/v1/invocations/INVOCATION_ID. Reconnecting observation does not restart execution.</p>
       <details><summary className="cursor-pointer text-sm">Published input and output schemas</summary><div className="mt-3 grid gap-4 lg:grid-cols-2"><CopyCode title={job ? 'Schema for input' : 'Request schema'} code={JSON.stringify(endpoint.inputSchema ?? {}, null, 2)} /><CopyCode title="Result schema" code={JSON.stringify(endpoint.outputSchema ?? {}, null, 2)} /></div></details>
       <p className="text-xs text-muted-foreground">400: invalid input or missing request ID. 401: invalid credential. 409: incompatible state or reused ID with different input. 413: payload too large. 429: rate limit reached. Inspect the response error and retry only after correcting the cause.</p>
     </div>

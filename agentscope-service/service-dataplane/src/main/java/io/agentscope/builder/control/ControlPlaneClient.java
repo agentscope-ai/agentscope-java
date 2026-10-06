@@ -21,6 +21,8 @@ import io.agentscope.builder.web.auth.InternalTokenAuthFilter;
 import io.agentscope.builder.web.managed.EnvironmentDto;
 import io.agentscope.builder.web.managed.LegacySessionEventAdapter;
 import io.agentscope.builder.web.managed.SessionEventDto;
+import io.agentscope.builder.web.managed.service.SessionEventScope;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -76,18 +78,27 @@ public class ControlPlaneClient {
         return controlPlaneUrl + "/mcp/collaboration";
     }
 
-    /** Mirrors one durable managed event into the control-plane session read model. */
-    public void appendSessionEvent(SessionEventDto event) {
-        appendSessionEvent(event, managedExecutionScopes.get(event.sessionId()));
+    public static SessionEventScope eventScope(ManagedExecutionScope scope) {
+        return scope == null
+                ? SessionEventScope.NONE
+                : new SessionEventScope(
+                        scope.tenant(),
+                        scope.agentTaskId(),
+                        scope.attemptId(),
+                        scope.dispatchGeneration(),
+                        scope.turnId());
     }
 
-    /** Mirrors one event with an explicit immutable fence, including from a different replica. */
     @SuppressWarnings("unchecked")
-    public void appendSessionEvent(SessionEventDto event, ManagedExecutionScope scope) {
+    public Map<String, Object> sessionEventReport(SessionEventDto event, SessionEventScope scope) {
         Map<String, Object> body =
                 objectMapper.convertValue(
                         LegacySessionEventAdapter.adapt(event), LinkedHashMap.class);
-        if (scope != null) {
+        Map<String, Object> publicPayload =
+                new LinkedHashMap<>(event.payload() == null ? Map.of() : event.payload());
+        publicPayload.remove("source");
+        body.put("publicEvent", Map.of("type", event.type(), "payload", publicPayload));
+        if (scope != null && scope.managed()) {
             if (scope.agentTaskId() != null && !scope.agentTaskId().isBlank()) {
                 body.put("agentTaskId", scope.agentTaskId());
             }
@@ -95,15 +106,40 @@ public class ControlPlaneClient {
             body.put("dispatchGeneration", scope.dispatchGeneration());
             body.put("turnId", scope.turnId());
         }
+        return body;
+    }
+
+    public void sendSessionEventReport(String sessionId, Map<String, Object> report) {
         webClient
                 .post()
-                .uri("/api/internal/runtime-sessions/{sessionId}/events", event.sessionId())
+                .uri("/api/internal/runtime-sessions/{sessionId}/events", sessionId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .headers(internalHeaders(null))
-                .bodyValue(body)
+                .bodyValue(report)
                 .retrieve()
                 .toBodilessEntity()
-                .block();
+                .block(Duration.ofSeconds(15));
+    }
+
+    /** Confirms the captured task is running before its model or collaboration tools execute. */
+    public void startManagedExecution(String sessionId, ManagedExecutionScope scope) {
+        if (scope == null || scope.agentTaskId() == null || scope.agentTaskId().isBlank()) {
+            return;
+        }
+        webClient
+                .post()
+                .uri("/api/internal/runtime-sessions/{sessionId}/start", sessionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(internalHeaders(null))
+                .bodyValue(
+                        Map.of(
+                                "agentTaskId", scope.agentTaskId(),
+                                "attemptId", scope.attemptId(),
+                                "dispatchGeneration", scope.dispatchGeneration(),
+                                "turnId", scope.turnId()))
+                .retrieve()
+                .toBodilessEntity()
+                .block(Duration.ofSeconds(15));
     }
 
     /** Renews the current managed AgentTask attempt while its model turn is active. */

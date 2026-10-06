@@ -7,11 +7,11 @@ en_link: /v2/en/service/sessions
 此为预览文档，正式版本尚未发布。
 </Note>
 
-日常对话从 Chat 开始，工作从 Issue 开始。Sessions 和 Executions 提供执行诊断，入口是否可见取决于运维权限。
+应用通常从 Agent API 会话、Issue 或已发布的 Endpoint 提交工作。本页用于沿业务请求查找 Run、Task、Attempt 和 Session，理解它们的状态与控制接口。执行详情仍受空间、工作自身权限及运维能力约束。
 
 ## 关联一项工作
 
-从 Issue 的 Executions 打开 Run，先看输入、运行方式与实际目标，然后查看节点、AgentTask 和最新 Attempt。Session 记录模型或 provider 上下文。提交排障信息时保留这些 ID，避免只提供可重复的显示名称。
+从 Issue ID 查询关联 Run，先看输入、运行方式与实际目标，然后查询节点、AgentTask 和最新 Attempt。Session 记录模型或 provider 上下文。提交排障信息时保留这些 ID，避免只提供可重复的显示名称。
 
 | Run mode | 形态 |
 | --- | --- |
@@ -20,11 +20,31 @@ en_link: /v2/en/service/sessions
 | declared | 固定 Workflow revision |
 | subrun | 父节点调用的子流程 |
 
+## 查询执行的 API
+
+以下接口使用用户 Bearer token，并携带相同的 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`。列表查询还需显式提供 `tenant`、`namespace`。完整请求示例见 [Workflow API](/v2/zh/service/workflows) 与[任务 API](/v2/zh/service/issues)。
+
+| 操作 | API | 查询参数 / 返回 |
+| --- | --- | --- |
+| 查关联 Run | `GET /api/v1/orchestration-runs` | `issueId`、`definitionId`、`state`、`active`、`offset`、`limit`；返回 `{runs}` |
+| 查 Run | `GET /api/v1/orchestration-runs/{runId}` | 返回 `{run}`，含 `state`、`input`、`output`、`waitReason`、失败信息 |
+| 查执行图 | `GET /api/v1/orchestration-runs/{runId}/graph` | `run`、`nodes`、`edges`、`tasks`、`attempts`、可选 `childRuns` |
+| 查历史事件 | `GET /api/v1/orchestration-runs/{runId}/events` | `after` 为 sequence 游标，`limit` 控制数量；返回 `{events}` |
+| 查任务 | `GET /api/v1/agent-tasks/{taskId}` | 返回 `{task,inputSummaries}`，含结果和待处理输入概览 |
+| 查 Attempt | `GET /api/v1/execution-attempts` | `taskId`、`state`、`limit`；返回 `{attempts}` |
+| 查单次 Attempt | `GET /api/v1/execution-attempts/{attemptId}` | 返回 `{attempt}`，含后端、执行状态、结果和会话关联 |
+
+`RunEvent.sequence` 用于本 Run 内增量读取，`type` 表示事件类型，`nodeId` / `agentTaskId` / `attemptId` 关联受影响对象。这里的 events 是 JSON 查询，不是 SSE。发布服务的业务客户端应优先使用 Invocation 返回的 statusUrl / eventsUrl，见[统一服务 API](/v2/zh/service/service-api)。
+
 ## Run 状态与控制
 
 planned 表示尚未开始，running 表示正在推进，waiting 表示等待条件、信号或外部结果。paused 停止新节点派发，cancelling 等待取消收敛。终态为 cancelled、succeeded、partial_succeeded 或 failed。
 
 Pause 不冻结已经开始的外部进程。Cancel 也不自动回滚已经产生的文件或外部操作，更不会自动接受 Issue。查看节点和 Attempt 的最终状态确认取消是否完成。
+
+控制 Run 使用 `POST /api/v1/orchestration-runs/{runId}/pause`、`/resume`、`/cancel`，请求体 `{}`，返回 `{run}`。终态后用 `/rerun` 提交必填 `idempotencyKey` 和可选 `input`，返回新的 `{run}`，其中 `rerunOfRunId` 保留来源。
+
+任务取消使用 `POST /api/v1/agent-tasks/{taskId}/cancel` 与当前 `expectedVersion`；任务重试使用 `/retry`。不要把 Task ID 传到 Run 控制接口，也不要直接改写 Attempt 状态来代替取消。
 
 ## 三种重复执行
 
@@ -36,11 +56,17 @@ Pause 不冻结已经开始的外部进程。Cancel 也不自动回滚已经产�
 
 先看 waitReason/error，再判断是否需要人工动作、在线 Host、Worker、模型凭据或更多容量。`requires_action` 的 Session 可能在等待工具结果，不能只依据该状态判断是人工审批。
 
-工具事件、最终回复、Attempt 成功和 Issue 验收是不同证据。对最终交付使用 [Inbox](/v2/zh/service/inbox) 的审阅流程；Managed 结果语义见[任务结果](/v2/zh/service/managed-harness-task-outcomes)。
+工具事件、最终回复、Attempt 成功和 Issue 验收是不同证据。对最终交付使用[验收 API](/v2/zh/service/inbox)；Managed 结果语义见[任务结果](/v2/zh/service/managed-harness-task-outcomes)。
 
 ## 断线后继续观察
 
 刷新页面后重新打开原工作，查询当前状态和已保存事件。SSE 长连接结束不代表任务失败。代理应及时转发事件；不要因为前端连接断开就用新的幂等键重复提交。
+
+## 查询 Session 诊断
+
+`GET /api/v1/sessions` 列出授权范围内的会话；具体会话使用 `GET /api/v1/sessions/{sessionRef}`。优先使用 Attempt 返回的 `sessionRef`（控制面记录 ID），不要混用运行时的 `sessionId` 或 provider 的 `providerSessionId`。查询时同时携带正确的 tenant/namespace。
+
+诊断接口包括 `/messages`（`offset`、`limit`、`fromEnd`）、`/context`、`/events`、`/events/stream`、`/turns`。内容是否可用取决于运行时提供的观测与查询能力，注册为 Agent 不代表都支持完整上下文或恢复。该组接口用于执行诊断；业务侧会话管理优先使用下述 Agent API。
 
 ## Managed Session 的日志与恢复入口
 
@@ -50,7 +76,7 @@ Agent API 使用 session_id → turn_id → run_id 关联推理工作；run_id �
 
 ## 一次排障应记录什么
 
-用[研发闭环案例](/v2/zh/service/cases/sdlc-team)练习：从主 Issue 打开 Run，在 Task map 中找到 Hosted 成员，定位最新 Attempt，再核对其 Session、日志与文件。
+用[故障修复案例](/v2/zh/service/cases/incident-to-pr)练习：从主 Issue 查询 Run graph，在使用 Hosted 目标时找到执行任务与最新 Attempt，再核对其 Session、日志与文件。需要图形入口时参阅[控制台执行流程](/v2/zh/service/console/orchestration)。
 
 | 记录 | 用途 |
 | --- | --- |

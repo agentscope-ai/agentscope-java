@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 
 	"github.com/google/uuid"
 
@@ -45,6 +46,15 @@ type MaterializeTeamRequest struct {
 func MaterializeTeamCoordinator(ctx context.Context, st store.Store, req MaterializeTeamRequest) (*controlmodel.RunNode, *controlmodel.AgentTask, error) {
 	if st == nil || req.Run == nil || req.Team == nil || req.IssueID == uuid.Nil {
 		return nil, nil, fmt.Errorf("Run, Team, and issueId are required")
+	}
+	frozen, freezeErr := serviceapi.ContractForIssue(ctx, st, req.IssueID)
+	if freezeErr != nil {
+		return nil, nil, freezeErr
+	}
+	if frozen != nil {
+		if team, ok := frozen.Teams[req.Team.ID.String()]; ok {
+			req.Team = team
+		}
 	}
 	if req.Team.Status != controlmodel.TeamActive {
 		return nil, nil, fmt.Errorf("Team %s is not active", req.Team.ID)

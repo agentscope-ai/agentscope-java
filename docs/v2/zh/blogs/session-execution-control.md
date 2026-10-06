@@ -7,7 +7,7 @@ description: 使用 AgentSession 管理任务排队、运行中补充、HITL 和
 
 普通多轮聊天和当前请求内的流式展示，可以继续使用[快速开始](/v2/zh/docs/quickstart)中的 `call` / `streamEvents`；它们也会保存 Harness 会话记录。本文聚焦后台执行、任务排队和中断续做。
 
-使用 `HarnessAgent` 构建这类应用时，通过 `agent.session(context)` 取得 `AgentSession`，用不同操作表达用户意图。框架负责执行与持久队列；前端读取历史和事件。完整 API 见[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)，可运行应用见[聊天示例](/v2/zh/docs/harness/session-chat)。
+使用 `HarnessAgent` 构建这类应用时，通过 `agent.session(context)` 取得 `AgentSession`，用不同操作表达用户意图。框架负责执行与持久队列；前端读取历史和事件。完整 API 见[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)，可运行应用见[聊天示例](/v2/zh/blogs/best-practices/session-chat)。
 
 ## 先选择用户真正想做的操作
 
@@ -77,7 +77,7 @@ if ("interrupted".equals(stopped.status())) {
 
 界面已绑定某次 run 时，使用 `session.interrupt(runId)`，可以拒绝误中断后续执行的过期请求。中断信号通过既有检查点生效，不会回滚已产生的外部副作用；工具长期阻塞时仍可能需要等待。
 
-恢复使用已提交工作状态和尚未应用的原输入，无需手工重放全部消息。它保留 turnId、创建新的 runId，不恢复原 Java 线程或工具内部进度。若工具结果未知，先核对外部系统，再按照[恢复参考](/v2/zh/docs/harness/session-log-reference#核对结果未知的工具)继续。
+恢复使用已提交工作状态和尚未应用的原输入，无需手工重放全部消息。它保留 turnId、创建新的 runId，不恢复原 Java 线程或工具内部进度。若工具结果未知，先核对外部系统，再按照[恢复参考](/v2/zh/docs/harness/session-log#核对结果未知的工具)继续。
 
 ## HITL 答复关联原请求
 

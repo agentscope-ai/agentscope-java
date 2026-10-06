@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	"hash/fnv"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -149,38 +148,24 @@ func (s *Store) Close() error {
 }
 
 // WithSessionLock acquires a Postgres session-level advisory lock keyed by
-// sessionKey, then runs fn. The lock is held on a dedicated pool connection
+// sessionKey, then runs fn. The lock is held on a dedicated connection
 // for the duration of fn so it is visible to other aistiod replicas.
 func (s *Store) WithSessionLock(ctx context.Context, sessionKey string, fn func(context.Context) error) error {
-	// Workflow reconciliation makes repository calls and can await nested Runs.
-	// Keep its advisory lock off the query pool to avoid pool-exhaustion deadlocks.
-	if strings.HasPrefix(sessionKey, "workflow-") && fn != nil {
-		conn, err := pgx.ConnectConfig(ctx, s.pool.Config().ConnConfig.Copy())
-		if err != nil {
-			return err
-		}
-		defer conn.Close(context.Background())
-		if _, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", advisorySessionKey(sessionKey)); err != nil {
-			return err
-		}
-		return fn(ctx)
-	}
 	if fn == nil {
 		return nil
 	}
-	conn, err := s.pool.Acquire(ctx)
+	// Every callback may query repositories or take nested locks. Keeping any
+	// advisory lock in the query pool can exhaust it before callbacks can run.
+	conn, err := pgx.ConnectConfig(ctx, s.pool.Config().ConnConfig.Copy())
 	if err != nil {
 		return fmt.Errorf("postgres session lock acquire: %w", err)
 	}
-	defer conn.Release()
+	defer conn.Close(context.Background())
 
 	key := advisorySessionKey(sessionKey)
 	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, key); err != nil {
 		return fmt.Errorf("postgres session lock: %w", err)
 	}
-	defer func() {
-		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, key)
-	}()
 	return fn(ctx)
 }
 
@@ -242,3 +227,5 @@ func (s *Store) PurgeOlderThan(ctx context.Context, r store.RetentionConfig) (in
 	}
 	return total, nil
 }
+
+func (s *Store) Applications() store.ApplicationRepository { return &applicationRepo{pool: s.pool} }

@@ -11,7 +11,7 @@ Service manages a Managed Agent's Harness, Sessions and model execution. Configu
 
 Start with the [practical guide](/v2/en/service/create-managed-agent) for creation or connection. This reference section collects detailed configuration, supported capabilities and execution principles.
 
-To integrate an Agent into your application, start with [Agent API: hosted sessions and tasks](/v2/en/service/session-event-log), then use [SSE events and frontend integration](/v2/en/service/sse-events) for messages, tools and reconnection. The service owns background execution; clients submit, display and interact.
+Publish through [Endpoints and the unified service API](/v2/en/service/endpoints) to share an invocation contract with External, Hosted, and Team targets. Use the [Managed native session API](/v2/en/service/session-event-log) for direct session, file, and checkpoint operations. Service owns background execution; clients submit, display, and interact.
 
 The [resumable chat example](/v2/en/service/agent-api-chat) connects creation, submission, refresh recovery, tool confirmation and cancellation in one integration flow.
 
@@ -27,7 +27,7 @@ The [resumable chat example](/v2/en/service/agent-api-chat) connects creation, s
 
 ## Prepare and create
 
-Complete [installation](/v2/en/service/quickstart), provide model credentials and prepare an [Environment](/v2/en/service/environments). Choose **AgentScope Managed** when creating the Agent, enter Instructions and select a configured model or its default. Choose the Environment in Advanced settings, save and verify a first reply in [Chat](/v2/en/service/issues#discuss-before-assigning).
+Complete [installation](/v2/en/service/quickstart), configure a model and [Environment](/v2/en/service/environments), then POST /api/v1/agents with binding.kind=managed and a definition. Submit a session or Endpoint task to verify execution. See [Creation](/v2/en/service/create-managed-agent) and [Parameter reference](/v2/en/service/managed-agent-configuration), or use [Console](/v2/en/service/console/agents) for visual operation.
 
 Example Instructions:
 

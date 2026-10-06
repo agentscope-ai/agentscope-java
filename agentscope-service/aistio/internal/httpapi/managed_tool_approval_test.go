@@ -341,7 +341,7 @@ func TestManagedToolApprovalCancelledTaskCannotReleaseTool(t *testing.T) {
 	}
 }
 
-func TestManagedConfirmationAfterAttemptReplacementIsRejectedAndNotMirrored(t *testing.T) {
+func TestManagedConfirmationAfterAttemptReplacementOnlyAppendsOriginalHistory(t *testing.T) {
 	ctx := context.Background()
 	st, session, task, attemptA, approval := createManagedApprovalFixture(t, ctx)
 	approved, err := st.Collaboration().DecideApproval(ctx, approval.ID, approval.Version,
@@ -383,15 +383,20 @@ func TestManagedConfirmationAfterAttemptReplacementIsRejectedAndNotMirrored(t *t
 	req.Header.Set("X-Builder-Internal-Token", "internal-secret")
 	response := httptest.NewRecorder()
 	NewServer(ServerOptions{Store: st, InternalToken: "internal-secret"}).router.ServeHTTP(response, req)
-	if response.Code != http.StatusGone {
+	if response.Code != http.StatusNoContent {
 		t.Fatalf("stale confirmation status=%d body=%s", response.Code, response.Body.String())
 	}
 	events, eventErr := st.Events().List(ctx, session.ID)
-	if eventErr != nil || len(events) != 0 {
-		t.Fatalf("stale confirmation was mirrored: events=%+v err=%v", events, eventErr)
+	if eventErr != nil || len(events) != 1 {
+		t.Fatalf("historical confirmation was lost: events=%+v err=%v", events, eventErr)
+	}
+	var metadata map[string]any
+	_ = json.Unmarshal(events[0].FrameworkMeta, &metadata)
+	if metadata["attemptId"] != attemptA.ID.String() {
+		t.Fatalf("wrong history fence: %s", events[0].FrameworkMeta)
 	}
 	currentTask, _ := st.Collaboration().GetAgentTask(ctx, task.ID)
-	if currentTask.CurrentAttemptID == nil || *currentTask.CurrentAttemptID != attemptB.ID {
+	if currentTask.CurrentAttemptID == nil || *currentTask.CurrentAttemptID != attemptB.ID || currentTask.Status != controlmodel.AgentTaskDispatched {
 		t.Fatalf("stale confirmation changed fresh Attempt B: task=%+v B=%+v", currentTask, attemptB)
 	}
 }

@@ -1,68 +1,88 @@
 ---
-title: "Managed configuration and models"
+title: "Managed definition and session API parameters"
+description: Create and update Agent definitions, select models and resources, and configure native session requests.
 zh_link: /v2/zh/service/managed-agent-configuration
 ---
 
-<Note>
-This is preview documentation. The official release is not yet available.
-</Note>
+Managed configuration has three layers: Agent definition, session resources, and Dataplane deployment settings. Follow [Create and test](/v2/en/service/create-managed-agent) for the workflow; this page documents fields, defaults, and updates.
 
-Managed configuration has three layers: the Agent definition, session resources and Dataplane deployment settings. Complete [creation and the first conversation](/v2/en/service/managed-agent) before tuning them.
+## Definition APIs
 
-## Agent definition fields
-
-These are API field names. The console edits them through Behavior, Workspace and Runtime/resource settings. Advanced settings on the creation page selects an environment.
-
-| Field | Purpose | Guidance |
+| Operation | API | Request and response |
 | --- | --- | --- |
-| `name` / `description` | Display name and responsibilities | Describe inputs, outputs and suitable work |
-| `system` | Instructions added to the Agent | Define boundaries and acceptance criteria; exclude secrets |
-| `model` | Registered name or `provider:model` identifier | Leave empty for the Dataplane default |
-| `maxIters` | Reasoning/tool iteration limit per Agent invocation | Console accepts 1–64 and displays 12 when unset; this is not a token budget |
-| `workspaceId` | Shared capability definition | Select a prepared Workspace |
-| `workspaceBinding` | Published revision, overrides and additional instructions | Select the revision and override scope in Workspace settings |
-| `defaultEnvironmentId` | Default execution environment for new sessions | Create and verify the Environment first |
-| `defaultMemoryStoreIds` | Default shared knowledge stores | Use Store IDs, not display names |
-| `defaultVaultIds` | Default credential collections | Bind only the Vaults this Agent needs |
-| `tools` / `mcpServers` / `skills` | Tool policy, MCP connections and skill selection | Add and verify one capability at a time |
+| Create identity, definition, and binding | `POST /api/v1/agents` | Scope, `agentKey`, `binding:{kind:"managed"}`, and `definition`; returns agent/binding/policy/definition |
+| Read definition | `GET /api/v1/agents/{id}/definition` | Returns `agentId`, `definition` |
+| Update definition | `PATCH /api/v1/agents/{id}/definition` | Top-level behavior fields and current definition `version`; name required; returns agent/definition |
+| Version list / detail | `GET /api/v1/agents/{id}/versions`, `GET /api/v1/agents/{id}/versions/{version}` | Returns versions or version, with agentId |
 
-Preserve version checks when saving. Reload after a configuration conflict. The Agent key is its stable catalog identity; renaming the display name does not migrate that identity.
+Use platform Bearer identity and an authorized Namespace. Creation nests behavior under `definition`; updates put the fields at the body root. Catalog `agent.version` and `definition.version` govern different resources.
+
+## Definition fields
+
+| Field | Type and default | Purpose |
+| --- | --- | --- |
+| `name` / `description` | string; creation may fill name from displayName, update requires name | Display and responsibility |
+| `system` | string | Stable behavior; no secrets |
+| `model` | string, empty selects deployment default | Registry name or provider:model |
+| `maxIters` | int, omitted/nonpositive values store as 20 | Reasoning/tool iteration cap, not a token budget; Console bounds are not API validation bounds |
+| `workspaceId` | string | Shared capability resource ID |
+| `workspaceBinding` | object | Published version, explicit overrides, and added instructions; [Workspace](/v2/en/service/workspaces) |
+| `workspacePath` | string | Explicit workspace path, subject to deployment and runtime |
+| `defaultEnvironmentId` | string | Default tool environment; Managed creation validates or provisions under deployment policy |
+| `defaultMemoryStoreIds` | string[] | Default knowledge Store IDs |
+| `defaultVaultIds` | string[] | Default tool credential collection IDs |
+| `tools` / `mcpServers` / `skills` | Structured configuration | Policies, connections, and skills; [Capabilities](/v2/en/service/managed-agent-capabilities) |
+| `multiagent` | Structured configuration | Internal delegation, distinct from platform Teams |
+| `version` | Positive integer for updates | Latest definition version; reread and review conflicts |
+
+Definition updates are not arbitrary partial merges. Read the current definition and retain unchanged writable fields before PATCH so other settings are not cleared. This example uses variables from the [Creation guide](/v2/en/service/create-managed-agent) and changes only system:
+
+```bash
+DEFINITION=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+UPDATED=$(printf '%s' "$DEFINITION" | jq '.definition | {
+  name, description, system, model, maxIters, tools, mcpServers, skills, multiagent,
+  workspaceId, workspacePath, workspaceBinding, defaultEnvironmentId,
+  defaultVaultIds, defaultMemoryStoreIds, version
+} | .system = "Read supplied sources. Cite evidence and list open questions."')
+curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data "$UPDATED"
+```
+
+When a Workspace is bound, instructions and tools must also follow workspaceBinding overrides/instructions rules. Changing a display name does not migrate the stable Agent key.
 
 ## Default and explicit models
 
-The standard Dataplane includes the DashScope model extension. The administrator supplies `DASHSCOPE_API_KEY` to the **Dataplane process/container**. `BUILDER_MODEL_NAME` chooses its default model; the deployment default is `qwen-max`. Restart the affected service after changing deployment environment variables.
+The standard Dataplane includes DashScope support. Configure `DASHSCOPE_API_KEY` in the Dataplane process/container and use `BUILDER_MODEL_NAME` for the default model; the standard default is qwen-max. Restart the component after deployment variable changes.
 
-An empty Agent Model uses this default Model instance. An explicit identifier such as `dashscope:qwen-max` is resolved through the model registry and the DashScope provider's credentials. Hosted provider accounts are separate from Managed model credentials.
+An empty model uses the default Model. Explicit `dashscope:qwen-max` resolves through the registry. Other providers require their extension and credentials in the distribution; changing the name does not install support. Model, platform-login, and Vault tool credentials serve separate purposes.
 
-```json
-{
-  "model": "dashscope:qwen-max",
-  "system": "Read the supplied sources. Cite evidence and list open questions.",
-  "maxIters": 12
-}
-```
+## Session resource selection
 
-This is a definition fragment, not a complete creation request. See [supported capabilities and integrations](/v2/en/service/managed-agent-capabilities) for extending models. Changing a model name does not install an extension or supply credentials.
+`POST /api/v1/agent-sessions` creates a native Managed session with these common fields:
 
-## Selecting session resources
-
-Normal Chat and Issue work uses the Agent's resource settings. Managed Session creation APIs can also specify `environmentId`, `memoryStoreIds` and `vaultIds`. Omitting a resource list uses the default binding; an explicit empty list requests no mounts of that default resource type.
+| Field | Purpose |
+| --- | --- |
+| `agent` | Agent ID |
+| `environmentId` | Tool environment; omission inherits the Agent default |
+| `memoryStoreIds` / `vaultIds` | Knowledge/credential resources; omission inherits defaults, empty arrays disable those default mounts |
 
 ```json
 {
+  "agent": "YOUR_AGENT_ID",
   "environmentId": "YOUR_ENVIRONMENT_ID",
   "memoryStoreIds": ["YOUR_MEMORY_STORE_ID"],
-  "vaultIds": ["YOUR_VAULT_ID"]
+  "vaultIds": []
 }
 ```
 
-Add this fragment to the relevant Session request along with its required Agent and other fields. Resources must be available to the current identity. Definitions and resource bindings are resolved while establishing the runtime context; verify changes with a new Chat or Issue.
+Save the response session id, then submit a turn. Resources must be accessible to the identity; an Environment key is not a user Bearer token. Input, file, action, budget, and recovery bodies are in the [Native session guide](/v2/en/service/session-event-log), with routes in [API reference](/v2/en/service/api-reference).
+
+Chat, Issue, and Endpoint entry points resolve resources through their own contracts; do not send the native session body to an Invocation endpoint. Publish a new release when changing a published service, then verify with new work.
 
 ## Change one layer at a time
 
-1. Leave Model empty and verify the deployment default with a conversation.
-2. Adjust Instructions and `maxIters` to verify responsibilities and iteration limits.
-3. Bind [Workspace](/v2/en/service/workspaces) and [Environment](/v2/en/service/environments), then verify file tools.
-4. Add [Memory](/v2/en/service/memory) and [Vault](/v2/en/service/vault), testing knowledge retrieval and tool authentication separately.
-
-For model resolution errors, check identifiers and installed extensions. For 401/403 errors, check provider authentication. A wait for a Worker requires Environment diagnosis; increasing iteration limits does not repair a connection.
+Verify text with the default model, then adjust responsibilities and iteration limits. Add Workspace, Environment, Memory, and Vault incrementally. Check provider/deployment for model resolution failures and Environment or pending actions for tool waits; raising maxIters does not repair a connection failure.

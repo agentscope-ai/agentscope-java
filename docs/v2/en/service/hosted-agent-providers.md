@@ -42,3 +42,18 @@ Check the columns for persistent sessions, approvals and Subagents before choosi
 Teams can mix providers. Verify each member's independent execution and collaboration tools before testing Leader delegation and final delivery. Native Subagents and Service Teams operate at different levels.
 
 Next: [configuration](/v2/en/service/hosted-agent-configuration) and [execution model](/v2/en/service/hosted-agent-execution).
+
+## Read capabilities reported by current Hosts
+
+The tables explain mappings; actual availability comes from Host reports. Query with a platform account Bearer token:
+
+```bash
+curl -sS "$SERVICE_URL/api/v1/agents/runtime-options?tenant=default&namespace=default" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Select an entry in `runtimes`. Each entry provides `provider`, `version`, `runtimeProfileId`, `runtimePoolId`, `hostCount`, and `capabilities`. The descriptor contains `instructions`, `workspace`, `skills`, `subagents`, `tools`, `shell`, `mcp`, `model`, `customArgs`, `approval`, and `resume`. `resume` is a boolean; other capability entries use `supported`, `mode`, and `target` to describe support and its mapping.
+
+`GET /api/v1/runtime-hosts?tenant=...&namespace=...` returns per-Host provider versions/descriptors in `items[].capabilities`. Put the selected profile/pool UUIDs in the Agent binding. Update per-Agent provider options through `/api/v1/agents/{agentId}/hosted-settings`; see [configuration](/v2/en/service/hosted-agent-configuration) for fields.
+
+Provider `resume` describes native Session recovery. Unified Agent API `capabilities.resume` describes invocation-level command support. Query Endpoint/invocation capabilities for business interactions instead of inferring them from provider features.

@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/spring-ai-alibaba/aistio/internal/metrics"
+	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
 // Connection represents a connected data plane instance with its gRPC stream.
@@ -90,6 +91,7 @@ type Server struct {
 	// by controllers. Set after construction via SetEventSink.
 	eventSink         EventSink
 	identityValidator IdentityValidator
+	httpStore         store.Store
 }
 
 // IdentityValidator authenticates the stable Catalog identity carried by an
@@ -114,8 +116,8 @@ type EventSink interface {
 	HandleConnect(tenant, namespace, agentID, bindingID, agentKey, instanceKey string, generation int64, runtime, sdkVersion string, capabilities []string)
 	HandleDisconnect(tenant, namespace, agentID, bindingID, instanceKey string, generation int64)
 	HandleSessionReport(identity ReportIdentity, report *SessionReport)
-	HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *ExecutionAttemptReport)
-	HandleConversationTurnReport(identity ReportIdentity, report *ConversationTurnReport)
+	HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *ExecutionAttemptReport) error
+	HandleConversationTurnReport(identity ReportIdentity, report *ConversationTurnReport) error
 	// HandleEventReport processes a Level-2 event stream batch (session_events).
 	// HandleEventReport returns durable per-session commit watermarks. The
 	// transport must not acknowledge an event that has not reached the Store.
@@ -154,7 +156,7 @@ type ServerConfig struct {
 // It returns an error (instead of panicking) when TLS material cannot be loaded,
 // so the caller can decide whether the failure is fatal.
 func NewServer(cfg ServerConfig) (*Server, error) {
-	var opts []grpc.ServerOption
+	opts := []grpc.ServerOption{grpc.MaxRecvMsgSize(32 << 20), grpc.MaxSendMsgSize(32 << 20)}
 
 	// mTLS / TLS configuration.
 	if cfg.TLSCert != "" && cfg.TLSKey != "" {

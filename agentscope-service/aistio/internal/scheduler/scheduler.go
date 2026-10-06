@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"sort"
 	"time"
 
@@ -160,7 +161,7 @@ func (s *Scheduler) dispatchTask(ctx context.Context, taskID uuid.UUID, override
 	if err := s.admitConcurrency(ctx, task); err != nil {
 		return nil, err
 	}
-	policy, loadErr := s.Store.Orchestration().GetRuntimePolicy(ctx, task.Tenant, task.Namespace, task.AgentRef)
+	policy, loadErr := serviceapi.RuntimePolicy(ctx, s.Store, task)
 	if loadErr != nil && !errors.Is(loadErr, store.ErrNotFound) {
 		return nil, loadErr
 	}

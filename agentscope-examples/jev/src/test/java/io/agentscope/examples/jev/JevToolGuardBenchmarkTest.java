@@ -24,6 +24,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.ActingInput;
@@ -33,6 +34,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
@@ -382,11 +384,11 @@ class JevToolGuardBenchmarkTest {
                                 new JevExecution.Options(
                                         JevExecution.Mode.ENFORCE, BUDGET, "test", (c, r) -> {}))
                         .build();
-        var agent =
+        try (var agent =
                 HarnessAgent.builder()
                         .name("refund-fixture")
                         .workspace(workspace)
-                        .stateStore(new io.agentscope.core.state.InMemoryAgentStateStore())
+                        .sessionLogStore(new InMemorySessionLogStore())
                         .model(model)
                         .toolkit(toolkit)
                         .permissionContext(
@@ -394,37 +396,36 @@ class JevToolGuardBenchmarkTest {
                                         .mode(PermissionMode.BYPASS)
                                         .build())
                         .middleware(guard)
-                        .build();
-        var events =
-                agent.streamEvents(List.of(new UserMessage("先查 A1001，没发货才退款")))
-                        .collectList()
-                        .block(Duration.ofSeconds(10));
-        assertNotNull(events);
-        assertEquals(2, judgeCount.get());
-        assertEquals(1, queryCount.get());
-        assertEquals(1, refundCount.get());
-        List<String> ids =
-                events.stream()
-                        .filter(ToolResultEndEvent.class::isInstance)
-                        .map(ToolResultEndEvent.class::cast)
-                        .map(ToolResultEndEvent::getToolCallId)
-                        .toList();
-        // The current Harness only publishes the core executor's tool events.
-        // Middleware DENIED results are present in model context, but absent from streamEvents.
-        // Track this integration limitation in the benchmark README, separately from dispatch
-        // safety.
-        assertTrue(ids.containsAll(List.of("lookup", "verified-refund")));
-        var contextResults =
-                lastContext.get().stream()
-                        .flatMap(m -> m.getContent().stream())
-                        .filter(ToolResultBlock.class::isInstance)
-                        .map(ToolResultBlock.class::cast)
-                        .toList();
-        assertEquals(
-                List.of("premature-refund", "lookup", "verified-refund"),
-                contextResults.stream().map(ToolResultBlock::getId).toList());
-        assertEquals(
-                io.agentscope.core.message.ToolResultState.DENIED,
-                contextResults.get(0).getState());
+                        .build()) {
+            var events =
+                    agent.streamEvents(List.of(new UserMessage("先查 A1001，没发货才退款")))
+                            .collectList()
+                            .block(Duration.ofSeconds(10));
+            assertNotNull(events);
+            assertEquals(2, judgeCount.get());
+            assertEquals(1, queryCount.get());
+            assertEquals(1, refundCount.get());
+            List<String> ids =
+                    events.stream()
+                            .filter(ToolResultEndEvent.class::isInstance)
+                            .map(ToolResultEndEvent.class::cast)
+                            .map(ToolResultEndEvent::getToolCallId)
+                            .toList();
+            // The current Harness only publishes the core executor's tool events.
+            // Middleware DENIED results are present in model context, but absent from streamEvents.
+            // Track this integration limitation in the benchmark README, separately from dispatch
+            // safety.
+            assertTrue(ids.containsAll(List.of("lookup", "verified-refund")));
+            var contextResults =
+                    lastContext.get().stream()
+                            .flatMap(m -> m.getContent().stream())
+                            .filter(ToolResultBlock.class::isInstance)
+                            .map(ToolResultBlock.class::cast)
+                            .toList();
+            assertEquals(
+                    List.of("premature-refund", "lookup", "verified-refund"),
+                    contextResults.stream().map(ToolResultBlock::getId).toList());
+            assertEquals(ToolResultState.DENIED, contextResults.get(0).getState());
+        }
     }
 }

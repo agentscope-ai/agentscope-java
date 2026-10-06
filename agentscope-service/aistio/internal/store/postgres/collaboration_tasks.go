@@ -449,14 +449,22 @@ func (r *collaborationRepo) ListAgentTasks(ctx context.Context, filter store.Age
 		if err != nil {
 			return nil, err
 		}
+		out = append(out, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Release the result connection before fetching inputs. Otherwise a small
+	// pool (or concurrent lists consuming every connection) deadlocks here.
+	rows.Close()
+	for _, task := range out {
 		inputs, err := listTaskInputs(ctx, r.pool, task.ID)
 		if err != nil {
 			return nil, err
 		}
 		task.Inputs = inputs
-		out = append(out, task)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (r *collaborationRepo) ClaimAgentTask(ctx context.Context, claim store.TaskClaim) (*controlmodel.AgentTask, error) {

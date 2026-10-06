@@ -5,11 +5,13 @@ description: Stateless agent engine, AgentState lifecycle, state persistence, an
 zh_link: /v2/zh/docs/building-blocks/context
 ---
 
-## How this page relates to Harness context construction
+<span id="how-this-page-relates-to-harness-context-construction" />
+
+## How this page relates to context management
 
 This page explains **where session state lives, how it is persisted and restored, and how tools
-access the current call's state**. For model message layout, business sources, budgets and
-prompt examples, see [Harness context construction](/v2/en/docs/harness/context).
+access the current call's state**. For preparing each model request, adding business information,
+tracking tasks, and compacting history, see [Context management](/v2/en/docs/harness/context).
 
 | Concept | Responsibility | Sent directly to the model? |
 | --- | --- | --- |
@@ -23,30 +25,19 @@ not automatically enable the Harness material and budget policies.
 
 ## Stateless Agent Engine
 
-`ReActAgent` (and `HarnessAgent` that wraps it) is designed as a **stateless engine**: the instance reuses configuration — system prompt, model, tools and middleware — while recoverable session data lives in `AgentState`; the instance also holds runtime facilities such as state caches and execution gates, indexed by `(userId, sessionId)`. A single agent instance can concurrently serve many users and sessions; the caller simply passes a different `RuntimeContext` on each `call()`.
+`ReActAgent` and `HarnessAgent` separate model/tool configuration from conversation state. Configure a shared Builder at startup and build and close an independent Agent per request. Stable identity and storage continue a conversation without retaining the previous request's Java object. Lifecycle guidance and the shared-instance option are centralized in [Agent](/v2/en/docs/building-blocks/agent#instance-lifecycle).
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                     HarnessAgent (singleton)                     │
-│  Immutable config: sysPrompt, model, toolkit, middlewares        │
-│                                                                  │
-│  ┌─ state cache ─────────────────────────────────────────────┐   │
-│  │  ("alice","s1") → AgentState  ← call(…, RC(alice,s1))       │
-│  │  ("bob","s2")   → AgentState  ← call(…, RC(bob,s2))        │
-│  └───────────────────────────────────────────────────────────┘   │
-│                                                                  │
-│  per-session gate: same (uid,sid) calls serialised, others ∥     │
-└──────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    B["Shared Builder: model, tools, storage"] --> A["Request A: new Agent + RuntimeContext"]
+    B --> C["Request B: new Agent + RuntimeContext"]
+    A <--> S["Persisted state addressed by session identity"]
+    C <--> S
 ```
 
-### What this means for you
+Instances still own execution gates, caches and background resources, and should be closed after execution. A new instance restores committed state. If a plain Core Agent has no log or state store configured, history held only in the old instance is not transferred.
 
-- **No agent-per-user registry.** One `HarnessAgent` instance can serve all your users — just vary `RuntimeContext.userId` and `RuntimeContext.sessionId` per request.
-- **Session concurrency.** Within one instance, different identity pairs may run in parallel; the same slot is serialized by its execution gate. This is not a distributed lock. Shared tools, middleware and business dependencies must be thread-safe.
-- **Automatic persistence.** With a state store configured, the framework loads and saves state. Ordinary chat needs no manual state management, but business objectives, requirement decisions and evidence versions still require explicit application updates.
-- **Call-scoped access.** Tools and middleware use the framework-injected RuntimeContext.getAgentState() for the current session. Do not keep a global current-state reference. This API is not authorization or isolation for externally shared objects.
-
----
+Tools and middleware access the current session through the injected `RuntimeContext.getAgentState()`, without a global current-state field. Creating an Agent does not copy all business dependencies or replace authorization. Shared dependencies must support concurrent access. The application coordinates execution of the same conversation across instances; see [Concurrent usage](#concurrent-usage).
 
 ## AgentState
 
@@ -282,46 +273,35 @@ The reasoning loop checks its execution's signal at cooperative checkpoints. A u
 
 ### Concurrent usage
 
-One instance can handle concurrent sessions; shared tools and middleware in this example must be thread-safe:
+Configure this Builder at startup, then build separate instances for Alice and Bob. The workspace must persist between requests; replicas also need access to the same native log backend.
 
 ```java
-HarnessAgent agent = HarnessAgent.builder()
-    .name("SharedAssistant")
-    .model(model)
-    .workspace(workspace)
-    .stateStore(redisStore)
-    .build();
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.harness.agent.HarnessAgent;
+import reactor.core.publisher.Mono;
 
-// Different user slots can run concurrently; shared business dependencies may contend
-Mono<Msg> aliceCall = agent.call(aliceMsg, RuntimeContext.builder()
-    .userId("alice").sessionId("s1").build());
-Mono<Msg> bobCall = agent.call(bobMsg, RuntimeContext.builder()
-    .userId("bob").sessionId("s2").build());
+HarnessAgent.Builder agentBuilder = HarnessAgent.builder()
+        .name("Assistant").agentId("assistant")
+        .model(model).workspace(workspace);
 
-Mono.zip(aliceCall, bobCall).block();  // both run in parallel
+Mono<Msg> aliceCall = Mono.using(
+        agentBuilder::build,
+        agent -> agent.call(aliceMsg, RuntimeContext.builder()
+                .userId("alice").sessionId("s1").build()),
+        HarnessAgent::close);
+Mono<Msg> bobCall = Mono.using(
+        agentBuilder::build,
+        agent -> agent.call(bobMsg, RuntimeContext.builder()
+                .userId("bob").sessionId("s2").build()),
+        HarnessAgent::close);
 
-// Same user, same session — automatically serialised
-Mono<Msg> call1 = agent.call(msg1, RuntimeContext.builder()
-    .userId("alice").sessionId("s1").build());
-Mono<Msg> call2 = agent.call(msg2, RuntimeContext.builder()
-    .userId("alice").sessionId("s1").build());
-
-// Same-slot calls execute in gate-entry order; variable declaration order does not guarantee subscription order
-Flux.merge(call1, call2).collectList().block();
+Mono.zip(aliceCall, bobCall).block();
 ```
 
-**Concurrency rules:**
-- **Different identity pairs** → may run concurrently with different session states; shared business resources still need coordination.
-- **Same instance and identity pair** → serialized in execution-gate entry order; cross-instance access needs separate coordination.
-- **`interrupt(userId, sessionId)`** → targets exactly one session, other in-flight calls unaffected.
+Different sessions can run concurrently. Order requests to the same conversation in the application, or queue them through an `AgentSession` with a background owner. Per-instance gates do not coordinate other instances. Native journal writer fencing prevents competing commits; it does not guarantee automatic waiting or FIFO order across instances.
 
-
-<Tip>
-
-The in-memory state cache grows with the number of distinct sessions a single agent instance has served. For most deployments (hundreds of sessions) this is negligible. For very large-scale scenarios (millions of sessions per process), consider an agent factory pattern with bounded instance pools — but this is rarely needed since `AgentState` objects are lightweight.
-
-</Tip>
-
+Interrupting from another request requires the currently executing instance; a new Agent does not hold the old call's interrupt signal. Close request Agents after execution to release their caches and runtime resources. Close application-owned model clients and pools at application shutdown.
 
 ---
 
@@ -374,9 +354,7 @@ Available accessors:
 
 ## Related pages
 
-- [Harness context construction](/v2/en/docs/harness/context) — final message layout, dynamic sources, task projections and budgets
-
+- [Context management](/v2/en/docs/harness/context) — organize model input, track task progress, and bound context through summarization and tool-result offloading
 - [Agent](/v2/en/docs/building-blocks/agent) — full `ReActAgent` API and builder fields
-- [Context Compaction](/v2/en/docs/harness/compaction) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
 - [Memory](/v2/en/docs/harness/memory) — long-term memory, background maintenance
 - [Permissions](/v2/en/docs/building-blocks/permission-system) — persistence of permission rules

@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"time"
 
 	"github.com/google/uuid"
@@ -174,7 +175,7 @@ func (r *Resolver) ResolveCandidate(ctx context.Context, taskID uuid.UUID, reque
 			}
 		}
 	}
-	policy, err := r.Store.Orchestration().GetRuntimePolicy(ctx, task.Tenant, task.Namespace, task.AgentRef)
+	policy, err := serviceapi.RuntimePolicy(ctx, r.Store, task)
 	if err != nil {
 		return controlmodel.RuntimeBindingCandidate{}, fmt.Errorf("no runtime policy is configured for agent %q: %w", task.AgentRef, err)
 	}
@@ -200,6 +201,10 @@ func (r *Resolver) DispatchCandidate(ctx context.Context, taskID uuid.UUID, requ
 	}
 	binding := candidate.Binding
 	task, err := r.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	ctx, err = serviceapi.TaskContext(ctx, r.Store, task)
 	if err != nil {
 		return nil, err
 	}

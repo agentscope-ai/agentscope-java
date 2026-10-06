@@ -1,0 +1,95 @@
+package invocation
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+
+	"github.com/google/uuid"
+	model "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/store"
+)
+
+type contractContextKey struct{}
+
+func WithContract(ctx context.Context, c *Contract) context.Context {
+	return context.WithValue(ctx, contractContextKey{}, c)
+}
+func ContextContract(ctx context.Context) *Contract {
+	c, _ := ctx.Value(contractContextKey{}).(*Contract)
+	return c
+}
+func ContextDefinition(ctx context.Context, id string) (json.RawMessage, bool) {
+	c := ContextContract(ctx)
+	if c == nil {
+		return nil, false
+	}
+	raw, ok := c.Definitions[id]
+	return raw, ok
+}
+func ContextVersion(ctx context.Context, id string) int {
+	raw, ok := ContextDefinition(ctx, id)
+	if !ok {
+		return 0
+	}
+	var d struct {
+		Version int `json:"version"`
+	}
+	_ = json.Unmarshal(raw, &d)
+	return d.Version
+}
+func ContractForIssue(ctx context.Context, st store.Store, id uuid.UUID) (*Contract, error) {
+	if c := ContextContract(ctx); c != nil {
+		return c, nil
+	}
+	seen := map[uuid.UUID]bool{}
+	for id != uuid.Nil && !seen[id] {
+		seen[id] = true
+		issue, err := st.Collaboration().GetIssue(ctx, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if issue.SourceType == "endpoint" {
+			invID, err := uuid.Parse(issue.SourceRef)
+			if err != nil {
+				return nil, err
+			}
+			inv, err := st.Endpoints().GetInvocation(ctx, invID)
+			if err != nil {
+				return nil, err
+			}
+			return ReadContract(inv.Contract)
+		}
+		if issue.ParentIssueID == nil {
+			break
+		}
+		id = *issue.ParentIssueID
+	}
+	return nil, nil
+}
+func TaskContext(ctx context.Context, st store.Store, task *model.AgentTask) (context.Context, error) {
+	c, err := ContractForIssue(ctx, st, task.IssueID)
+	if err != nil {
+		return ctx, err
+	}
+	if c != nil {
+		ctx = WithContract(ctx, c)
+	}
+	return ctx, nil
+}
+func RuntimePolicy(ctx context.Context, st store.Store, task *model.AgentTask) (*model.AgentRuntimePolicy, error) {
+	c, err := ContractForIssue(ctx, st, task.IssueID)
+	if err != nil {
+		return nil, err
+	}
+	if c != nil {
+		if p, ok := c.Policies[task.AgentRef]; ok {
+			return p, nil
+		}
+		return nil, store.ErrNotFound
+	}
+	return st.Orchestration().GetRuntimePolicy(ctx, task.Tenant, task.Namespace, task.AgentRef)
+}

@@ -86,7 +86,7 @@ func (s *testEventSink) HandleSessionReport(identity asdp.ReportIdentity, report
 	})
 }
 
-func (s *testEventSink) HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *asdp.ExecutionAttemptReport) {
+func (s *testEventSink) HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *asdp.ExecutionAttemptReport) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.attemptReports = append(s.attemptReports, capturedExecutionAttemptReport{
@@ -95,12 +95,14 @@ func (s *testEventSink) HandleExecutionAttemptReport(tenant, namespace, agentID,
 		AgentName: agentID,
 		Report:    report,
 	})
+	return nil
 }
 
-func (s *testEventSink) HandleConversationTurnReport(identity asdp.ReportIdentity, report *asdp.ConversationTurnReport) {
+func (s *testEventSink) HandleConversationTurnReport(identity asdp.ReportIdentity, report *asdp.ConversationTurnReport) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.conversationReports = append(s.conversationReports, report)
+	return nil
 }
 
 func (s *testEventSink) HandleEventReport(identity asdp.ReportIdentity, report *asdp.EventReport) *asdp.EventReportAck {
@@ -140,7 +142,8 @@ func startTestServer(t *testing.T, sink asdp.EventSink) (*asdp.Server, asdp.Agen
 	t.Helper()
 
 	port := freePort(t)
-	addr := fmt.Sprintf("localhost:%d", port)
+	// Bind and dial the same loopback family; localhost may resolve to both IPv4 and IPv6.
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
 	srv, err := asdp.NewServer(asdp.ServerConfig{Addr: addr})
 	if err != nil {

@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"time"
 
 	"github.com/google/uuid"
@@ -110,6 +111,10 @@ func (s *Service) dispatchHostedCandidate(ctx context.Context, taskID uuid.UUID,
 		return nil, nil, err
 	}
 	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, nil, err
+	}
+	ctx, err = serviceapi.TaskContext(ctx, s.Store, task)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -7,39 +7,80 @@ en_link: /v2/en/service/workspaces
 此为预览文档，正式版本尚未发布。
 </Note>
 
-**Resources → Workspaces** 保存可复用的 Agent 资料：`AGENTS.md`、技能、工具和子 Agent 定义。Workspace 是资源，不是账号的 Namespace，也不是一次执行的临时目录。
+Workspace 保存可复用的 Agent 资料：`AGENTS.md`、技能、工具和子 Agent 定义。应用通过 `/api/workspaces` 创建、维护并发布这些资源，再把发布版本绑定给 Agent。Workspace 是资源，不是账号的 Namespace，也不是一次执行的临时目录。
 
-## 界面导览
+## API 与访问范围
+
+请求使用平台用户 Bearer token，并通过 `X-AgentScope-Tenant`、`X-AgentScope-Namespace` 选择范围。读取、修改和发布分别受资源的 inspect、edit、publish 权限约束；创建还需要空间资源创建权限。配置变量见[API 快速开始](/v2/zh/service/first-session)。下文 `{id}` 为响应返回的 Workspace ID，URL 参数需编码。
+
+| 操作 | API | 请求或响应 |
+| --- | --- | --- |
+| 列表、创建 | `GET /api/workspaces`、`POST /api/workspaces` | GET 返回数组；创建传 `name`、可选 `description`、`tools`、`mcpServers`、`skills`，返回资源对象 |
+| 读取、更新、删除 | `GET/PATCH/DELETE /api/workspaces/{id}` | PATCH 支持创建时的配置字段；返回 `id`、`version`、配置与时间戳；删除返回 204 |
+| 文件目录 | `GET /api/workspaces/{id}/files` | 返回 `{files:[路径...]}` |
+| 读取、删除文件 | `GET/DELETE /api/workspaces/{id}/file?path=AGENTS.md` | GET 返回 `path`、`content`；DELETE 返回 204 |
+| 写入文件 | `PUT /api/workspaces/{id}/file` | `{path,content}`，返回 `path` |
+| 工具配置 | `GET/PUT /api/workspaces/{id}/tools` | `tools` 与 `mcpServers`；PUT 替换两组配置 |
+| Skill | `GET /api/workspaces/{id}/skills`；`GET/PUT/DELETE .../skills/{name}` | PUT 传 `markdown` 和可选 `resources:{相对路径:内容}` |
+| 子 Agent | `GET /api/workspaces/{id}/subagents`；`PUT/DELETE .../subagents/{name}` | PUT 传 `description`、`inlineBody`，可选 `model`、`maxIters`、`tools`、`workspaceMode`、`workspacePath`、`sourceAgentId` |
+| 发布、查询版本 | `POST /api/workspaces/{id}/publish`、`GET .../revisions` | 发布无需 body，返回 revision；版本列表为 `{items:[...]}` |
+| 查看消费者 | `GET /api/workspaces/{id}/agents` | `{items:[{id,name,version}]}` |
+
+Workspace 响应中的 `version` 是草稿版本；当前草稿 PATCH、文件和能力写入没有 `expectedVersion` 条件更新，应避免多个维护者同时覆盖同一配置。发布版本则是不可变快照，同一内容重复发布返回已有 revision。仍被 Agent 引用的 Workspace 删除时返回 409。
+
+## 创建并维护草稿
+
+```bash
+WORKSPACE_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/workspaces" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data '{"name":"报告工作区","description":"共享报告约定"}')
+WORKSPACE_ID=$(printf '%s' "$WORKSPACE_JSON" | jq -er '.id')
+
+curl --fail-with-body -sS -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/file" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data '{"path":"AGENTS.md","content":"事实必须可追溯到来源。输出分别列出来源和待确认事项。"}'
+```
+
+创建会生成初始 `AGENTS.md`，随后按项目约定更新正文，再逐项添加技能、工具和子 Agent。指令中的目录需要实际准备，写入文档不会自动创建输入资料。
+
+## 发布并绑定 Agent
+
+```bash
+REVISION_JSON=$(curl --fail-with-body -sS -X POST \
+  "$BASE_URL/api/workspaces/$WORKSPACE_ID/publish" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+printf '%s' "$REVISION_JSON" | jq '{version, draftVersion, digest}'
+```
+
+revision 的 `version` 是发布版本，`draftVersion` 是来源草稿版本，`digest` 标识发布内容。快照包含指令、工具和定义文件，不包含 `sessions`、`memory`、`logs`、`artifacts`、`inputs`、`outputs`、`.git` 等执行数据。
+
+在 [Agent 定义 API](/v2/zh/service/managed-agent-configuration)中设置 `workspaceId` 和以下 `workspaceBinding`。更新已有定义时，先 GET 当前定义，保留其他字段，并携带当前定义的 `version`；下面是绑定字段片段：
+
+```json
+{
+  "workspaceId": "WORKSPACE_ID",
+  "workspaceBinding": {
+    "version": 1,
+    "overrides": [],
+    "instructions": "本 Agent 负责周报，输出需包含待确认事项。"
+  }
+}
+```
+
+将 `version: 1` 替换为刚发布的版本。`overrides` 可包含 `tools`、`mcpServers`、`skills`，表示该项采用 Agent 自身定义；空数组表示继承。`instructions` 追加 Agent 专用要求。绑定版本为 0 表示显式发布并选择当前草稿，并不是持续跟随草稿；新建关联而省略绑定时也会解析为确定版本。
+
+修改 Workspace 草稿和更新 Agent 绑定是两个步骤。已有 Session 使用解析后的定义快照，发布新 Workspace 版本不会自动改写它。多个 Agent 复用时分别更新绑定，再创建新会话验证指令、Skill 和工具是否生效。
+
+## 控制台查看
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
   <img src="/imgs/service/workspaces.png" alt="共享 Workspace 列表" />
 </Frame>
 
-从列表打开 Workspace，检查共享说明、技能和工具；使用 **New workspace** 新建资源。将 Workspace 关联到 Agent 后，还需要按该 Agent 的工作方式验证资源是否生效。
-
-## 创建并关联
-
-点击 **New workspace**，填写容易识别的名称，例如“报告工作区”。在详情中维护操作说明和能力文件，然后到 Agent 的 Workspace 页面建立关联。多个 Agent 可以复用同一个 Workspace。
-
-先用简短 `AGENTS.md` 说明资料位置、输出约定和任务边界，再逐项添加能力。示例：
-
-```markdown
-# 报告约定
-
-先阅读 inputs 中的任务资料。
-事实必须能追溯到来源；推测单独标记。
-最终报告写入 outputs，并在回复中给出文件位置。
-```
-
-示例中的目录需要由你实际准备，写进指令不会自动创建文件。用一个新任务检查 Agent 看到的文件和路径。
-
-## Managed Agent 的版本绑定
-
-1. 在 **DESIGN → Agents** 打开 Managed Agent，在设置中选择 Workspace。此关联对应 `workspaceId`；改变关联会发布并绑定所选 Workspace 草稿。
-2. 需要选择已有发布版本或调整继承时，进入 **Definition → Workspace**。`workspaceBinding` 保存版本选择、覆盖项和附加指令。
-3. 保存后创建一个新 Chat，要求 Agent 遵守一条可检查的约定，例如输出必须包含“来源”和“待确认事项”，再验证所选 Skill 或工具。
-
-修改 Workspace 草稿与更新 Agent 所绑定的发布版本是两个步骤。运行上下文使用解析后的定义快照，不能假定修改草稿会立即改变已有 Session。多个 Agent 复用 Workspace 时，分别确认其绑定版本。
+在 **Resources → Workspaces** 查看相同资源。控制台入口和 Agent 关联操作见 [Console](/v2/zh/service/console/agents)。
 
 ## 哪些内容应该放在这里
 

@@ -30,6 +30,7 @@ import (
 
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/taskplane"
 )
@@ -137,7 +138,7 @@ func (s *Service) start(ctx context.Context, definitionID uuid.UUID, req StartRe
 	}
 	var revision *controlmodel.OrchestrationRevision
 	if req.RevisionID != nil {
-		revision, err = s.Store.Orchestration().GetRevision(ctx, *req.RevisionID)
+		revision, err = serviceapi.Revision(ctx, s.Store, uuid.Nil, *req.RevisionID)
 	} else {
 		var revisions []*controlmodel.OrchestrationRevision
 		revisions, err = s.Store.Orchestration().ListRevisions(ctx, definitionID)
@@ -191,7 +192,7 @@ func (s *Service) start(ctx context.Context, definitionID uuid.UUID, req StartRe
 	if run.DefinitionRevisionID == nil {
 		return nil, store.ErrConflict
 	}
-	originalRevision, err := s.Store.Orchestration().GetRevision(ctx, *run.DefinitionRevisionID)
+	originalRevision, err := serviceapi.Revision(ctx, s.Store, run.RootIssueID, *run.DefinitionRevisionID)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +220,7 @@ func (s *Service) Rerun(ctx context.Context, runID uuid.UUID, idempotencyKey str
 	if source.DefinitionRevisionID == nil {
 		return nil, fmt.Errorf("direct/adaptive Runs are rerun through AgentTask retry")
 	}
-	revision, err := s.Store.Orchestration().GetRevision(ctx, *source.DefinitionRevisionID)
+	revision, err := serviceapi.Revision(ctx, s.Store, source.RootIssueID, *source.DefinitionRevisionID)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +266,7 @@ func (s *Service) Graph(ctx context.Context, runID uuid.UUID) (*Graph, error) {
 	}
 
 	if run.DefinitionRevisionID != nil {
-		graph.Revision, _ = s.Store.Orchestration().GetRevision(ctx, *run.DefinitionRevisionID)
+		graph.Revision, _ = serviceapi.Revision(ctx, s.Store, run.RootIssueID, *run.DefinitionRevisionID)
 		if graph.Revision != nil {
 			graph.Definition, _ = s.Store.Orchestration().GetDefinition(ctx, graph.Revision.DefinitionID)
 		}

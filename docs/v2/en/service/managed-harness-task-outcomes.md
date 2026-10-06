@@ -9,6 +9,19 @@ This is preview documentation. The official release is not yet available.
 
 A Managed durable task needs an explicit deliverable outcome, not merely the end of a model turn. Use this reference to decide what follows a wait, blockage or failure.
 
+## Read outcomes and send feedback
+
+Outcomes below describe runtime reporting, not arbitrary client-patchable states. Read results through the entry point that created the work:
+
+| Entry point | Read and feedback APIs |
+| --- | --- |
+| Published service | `GET /invoke/v1/invocations/{id}` for invocation.status/result; feedback through actions/inputs commands |
+| Issue | `GET /api/v1/issues/{id}/summary`; task details at `/api/v1/agent-tasks/{taskId}`, execution at `/api/v1/execution-attempts/{attemptId}` |
+| Human acceptance | `POST /api/v1/issues/{id}/accept` with expectedVersion; `/reject` with expectedVersion and reason |
+| Native Managed session | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}`; actions/cancel/resume according to state |
+
+Read the current Issue version and inspect deliverables before deciding. Invocation completed, execution succeeded, native turn completed, and Issue accepted describe different resources. Runtime complete/fail reports use restricted task or execution identity; see [Feedback APIs](/v2/en/service/inbox).
+
 ## Outcomes
 
 | Outcome | Meaning | Next action |
@@ -34,7 +47,7 @@ Authorized Agents may record acceptance evidence but cannot rewrite human requir
 
 ## Example: evaluate a presales deliverable
 
-In the [Managed presales case](/v2/en/service/cases/presales-team), the Leader needs member output and source evidence before completing coordination. These examples explain outcomes; natural-language claims do not directly change task states.
+In the [CRM proposal case](/v2/en/service/cases/in-product-delivery), the Agent needs actual files and source evidence to deliver. If expanded into a Team, it also needs member results. These examples explain outcomes; natural-language claims do not directly change task states.
 
 | Evidence | Action |
 | --- | --- |
@@ -44,4 +57,4 @@ In the [Managed presales case](/v2/en/service/cases/presales-team), the Leader n
 | Files, sources, and open questions are complete | Consolidate, finish coordination, and follow Issue acceptance policy |
 | The proposal promises unsupported capabilities | Require revision despite successful execution |
 
-Refer to the original Issue, Task, and missing item when providing input: “Deliver requirements.csv with capability and source version for each requirement.” Recovery relies on durable records rather than a promise in an earlier turn.
+Refer to the original Issue, Task, and missing item when providing input: “Deliver open-questions.md with unconfirmed conditions and their sources.” Recovery relies on durable records rather than a promise in an earlier turn.

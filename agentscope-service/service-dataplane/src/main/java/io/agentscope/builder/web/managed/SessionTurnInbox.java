@@ -310,7 +310,20 @@ public final class SessionTurnInbox {
     }
 
     public Turn resume(String user, String session, String id) {
+        return resume(user, session, id, null);
+    }
+
+    public Turn resume(String user, String session, String id, String key) {
         sessions.get(user, session);
+        if (key != null && (key.isBlank() || key.length() > 256))
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Idempotency-Key must contain 1..256 characters");
+        String eventId =
+                key == null
+                        ? null
+                        : JournalSessionLog.hash(
+                                (user + "\n" + session + "\nresume\n" + key)
+                                        .getBytes(StandardCharsets.UTF_8));
         return tx.execute(
                 status -> {
                     var row =
@@ -322,6 +335,16 @@ public final class SessionTurnInbox {
                                                             HttpStatus.NOT_FOUND));
                     if (!row.sessionId.equals(session) || !row.userId.equals(user))
                         throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+                    if (eventId != null) {
+                        var receipt = events.findByEventId(eventId);
+                        if (receipt.isPresent()) {
+                            if (!id.equals(receipt.get().payload().get("turn_id")))
+                                throw new ResponseStatusException(
+                                        HttpStatus.CONFLICT,
+                                        "Idempotency-Key reused for another resumed turn");
+                            return view(row);
+                        }
+                    }
                     if (!row.status.equals("interrupted")
                             && !row.status.equals("failed")
                             && !(row.status.equals("requires_action")
@@ -337,7 +360,7 @@ public final class SessionTurnInbox {
                             session,
                             "turn.queued",
                             Map.of("turn_id", id, "status", "queued", "reason", "explicit_resume"),
-                            null);
+                            eventId);
                     row.errorCode = null;
                     row.workerId = null;
                     row.leaseUntil = 0;

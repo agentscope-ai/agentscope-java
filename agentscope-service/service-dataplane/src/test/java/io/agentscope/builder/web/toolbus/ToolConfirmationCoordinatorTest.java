@@ -37,6 +37,7 @@ import io.agentscope.builder.web.managed.ManagedTurnContext;
 import io.agentscope.builder.web.managed.SessionEventDto;
 import io.agentscope.builder.web.managed.SessionEventTypes;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
+import io.agentscope.builder.web.managed.service.SessionEventScope;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -186,11 +187,12 @@ class ToolConfirmationCoordinatorTest {
                         "event-a", "session-a", 1, "session.requires_action", Map.of(), 1L, 1);
         when(eventLog.append(eq("session-a"), eq(SessionEventTypes.SESSION_REQUIRES_ACTION), any()))
                 .thenReturn(event);
-        when(eventLog.appendLocal(
+        when(eventLog.appendScoped(
                         eq("session-a"),
                         eq(SessionEventTypes.SESSION_REQUIRES_ACTION),
                         any(),
-                        eq(null)))
+                        eq(null),
+                        any(SessionEventScope.class)))
                 .thenReturn(event);
         when(eventLog.appendIdempotent(anyString(), anyString(), any(), anyString()))
                 .thenReturn(
@@ -202,7 +204,8 @@ class ToolConfirmationCoordinatorTest {
                                 Map.of(),
                                 2L,
                                 2));
-        when(eventLog.appendIdempotentLocal(anyString(), anyString(), any(), anyString()))
+        when(eventLog.appendIdempotentScoped(
+                        anyString(), anyString(), any(), anyString(), any(SessionEventScope.class)))
                 .thenReturn(
                         new SessionEventDto(
                                 "event-decision",
@@ -232,11 +235,12 @@ class ToolConfirmationCoordinatorTest {
 
         ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
         verify(eventLog)
-                .appendLocal(
+                .appendScoped(
                         eq("session-a"),
                         eq(SessionEventTypes.SESSION_REQUIRES_ACTION),
                         payload.capture(),
-                        eq(null));
+                        eq(null),
+                        any(SessionEventScope.class));
         assertThat(payload.getValue())
                 .containsEntry("kind", "tool_confirmation")
                 .containsEntry("schemaVersion", 1)
@@ -353,11 +357,12 @@ class ToolConfirmationCoordinatorTest {
 
         ArgumentCaptor<Map<String, Object>> resolvedPayload = ArgumentCaptor.forClass(Map.class);
         verify(eventLog)
-                .appendIdempotentLocal(
+                .appendIdempotentScoped(
                         eq("session-a"),
                         eq(SessionEventTypes.USER_TOOL_CONFIRMATION),
                         resolvedPayload.capture(),
-                        eq("evt_hitl_decision_" + created.approvalId()));
+                        eq("evt_hitl_decision_" + created.approvalId()),
+                        any(SessionEventScope.class));
         assertThat(resolvedPayload.getValue()).containsEntry("status", "cancelled");
     }
 
@@ -504,21 +509,22 @@ class ToolConfirmationCoordinatorTest {
     }
 
     @Test
-    void staleControlPlaneMirrorNeverReleasesToolContinuation() {
+    void failedDurableDecisionStagingNeverReleasesToolContinuation() {
         when(controlPlaneClient.managedExecutionScope("session-a"))
                 .thenReturn(
                         new ManagedExecutionScope("tenant-a", "task-a", "attempt-a", 3, "turn-a"));
         doAnswer(
                         invocation -> {
-                            SessionEventDto event = invocation.getArgument(0);
-                            if (SessionEventTypes.USER_TOOL_CONFIRMATION.equals(event.type())) {
-                                throw new ResponseStatusException(
-                                        HttpStatus.CONFLICT, "attempt fence is stale");
-                            }
-                            return null;
+                            throw new ResponseStatusException(
+                                    HttpStatus.CONFLICT, "decision fence is stale");
                         })
-                .when(controlPlaneClient)
-                .appendSessionEvent(any(SessionEventDto.class), any(ManagedExecutionScope.class));
+                .when(eventLog)
+                .appendIdempotentScoped(
+                        anyString(),
+                        eq(SessionEventTypes.USER_TOOL_CONFIRMATION),
+                        any(),
+                        anyString(),
+                        any(SessionEventScope.class));
         CompletableFuture<Boolean> waiting =
                 requestManaged("tool-a", "web_search", Map.of("query", "weather"), "instance-a");
         CoordinationStore.HitlTicket created = ticket.get();
