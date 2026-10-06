@@ -30,12 +30,16 @@ import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor.CompactionPlan;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor.CompactionResult;
 import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -231,7 +235,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                         result.error());
                             }
 
-                            List<Msg> compacted = result.compacted();
+                            CompactionResult compactionResult = result.result();
+                            List<Msg> compacted = compactionResult.messages();
                             boolean applied =
                                     applyToContext(
                                             RuntimeContext.resolveAgentState(rc, agent), compacted);
@@ -247,7 +252,9 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                             mode,
                                             plan,
                                             compacted,
-                                            applied ? "success" : "degraded");
+                                            !compactionResult.degraded() && applied
+                                                    ? "success"
+                                                    : "degraded");
                             Flux<AgentEvent> downstream =
                                     mode == CompactionMode.NORMAL
                                             ? reasonWithOverflowRecovery(
@@ -340,13 +347,12 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private static boolean isContextOverflowError(Throwable error) {
-        Set<Throwable> seen =
-                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         Throwable current = error;
         while (current != null && seen.add(current)) {
             String message = current.getMessage();
             if (message != null) {
-                String lower = message.toLowerCase(java.util.Locale.ROOT);
+                String lower = message.toLowerCase(Locale.ROOT);
                 if (lower.contains("context_length_exceeded")
                         || lower.contains("context length")
                         || lower.contains("maximum context")
@@ -481,14 +487,14 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
 
     private record ReasoningMessages(Msg systemMessage, List<Msg> conversation) {}
 
-    private record CompactionAttempt(List<Msg> compacted, Throwable error) {
+    private record CompactionAttempt(CompactionResult result, Throwable error) {
 
-        private static CompactionAttempt success(List<Msg> compacted) {
-            return new CompactionAttempt(compacted, null);
+        private static CompactionAttempt success(CompactionResult result) {
+            return new CompactionAttempt(result, null);
         }
 
         private static CompactionAttempt failure(Throwable error) {
-            return new CompactionAttempt(List.of(), error);
+            return new CompactionAttempt(null, error);
         }
     }
 }

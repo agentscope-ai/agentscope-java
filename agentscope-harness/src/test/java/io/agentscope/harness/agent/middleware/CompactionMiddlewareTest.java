@@ -111,6 +111,62 @@ class CompactionMiddlewareTest {
         assertEquals(1, nextCalls.get());
     }
 
+    /** A summary-model fallback is visible as a degraded finished event. */
+    @Test
+    void streamEventsMarksSummaryFailureAsDegraded() {
+        SummaryFailureThenSuccessModel model = new SummaryFailureThenSuccessModel();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("compaction-test-agent")
+                        .sysPrompt("test")
+                        .model(model)
+                        .middleware(new CompactionMiddleware(null, model, eventConfig()))
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        userMessage("A".repeat(200)),
+                                        userMessage("B".repeat(200)),
+                                        userMessage("C".repeat(200))),
+                                context("user", "summary-failure-session"))
+                        .collectList()
+                        .block();
+
+        CustomEvent finished =
+                customEvent(events, CompactionMiddleware.CONTEXT_COMPACTION_FINISHED);
+        assertEquals("degraded", finished.getValue().get("status"));
+        assertEquals(2, model.callCount.get());
+    }
+
+    /** An empty summary placeholder is visible as a degraded finished event. */
+    @Test
+    void streamEventsMarksEmptySummaryAsDegraded() {
+        EmptySummaryThenSuccessModel model = new EmptySummaryThenSuccessModel();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("compaction-test-agent")
+                        .sysPrompt("test")
+                        .model(model)
+                        .middleware(new CompactionMiddleware(null, model, eventConfig()))
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        userMessage("A".repeat(200)),
+                                        userMessage("B".repeat(200)),
+                                        userMessage("C".repeat(200))),
+                                context("user", "empty-summary-session"))
+                        .collectList()
+                        .block();
+
+        CustomEvent finished =
+                customEvent(events, CompactionMiddleware.CONTEXT_COMPACTION_FINISHED);
+        assertEquals("degraded", finished.getValue().get("status"));
+        assertEquals(2, model.callCount.get());
+    }
+
     /** Normal compaction events are visible through ReActAgent.streamEvents with exact metrics. */
     @Test
     void streamEventsPublishesNormalCompactionMetricsBeforeReasoning() {
@@ -608,6 +664,50 @@ class CompactionMiddlewareTest {
             return Flux.just(
                     ChatResponse.builder()
                             .content(List.of(TextBlock.builder().text("summary").build()))
+                            .build());
+        }
+    }
+
+    /** Falls back on the summary call, then returns a normal reasoning response. */
+    private static final class SummaryFailureThenSuccessModel extends ChatModelBase {
+        private final AtomicInteger callCount = new AtomicInteger();
+
+        @Override
+        public String getModelName() {
+            return "summary-failure-then-success";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            if (callCount.incrementAndGet() == 1) {
+                return Flux.error(new IllegalStateException("summary provider unavailable"));
+            }
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("reply").build()))
+                            .build());
+        }
+    }
+
+    /** Produces no summary content, then returns a normal reasoning response. */
+    private static final class EmptySummaryThenSuccessModel extends ChatModelBase {
+        private final AtomicInteger callCount = new AtomicInteger();
+
+        @Override
+        public String getModelName() {
+            return "empty-summary-then-success";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            if (callCount.incrementAndGet() == 1) {
+                return Flux.empty();
+            }
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("reply").build()))
                             .build());
         }
     }

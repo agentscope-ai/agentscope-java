@@ -34,6 +34,8 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor.CompactionPlan;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor.CompactionResult;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -193,6 +195,82 @@ class ConversationCompactorTest {
                 .verify();
     }
 
+    /** Verifies that a complete compaction reports no degradation. */
+    @Test
+    void compact_reportsCompleteResultWhenAllStagesSucceed() {
+        RecordingModel model = new RecordingModel();
+        MemoryFlushManager flushManager = mock(MemoryFlushManager.class);
+
+        CompactionResult result =
+                compact(model, flushManager, config(false, false), compactableMessages());
+
+        assertFalse(result.degraded());
+        assertEquals(3, result.messages().size());
+    }
+
+    /** Verifies that an ordinary memory-flush fallback is exposed as degradation. */
+    @Test
+    void compact_reportsDegradedWhenMemoryFlushFails() {
+        RecordingModel model = new RecordingModel();
+        MemoryFlushManager flushManager = mock(MemoryFlushManager.class);
+        when(flushManager.flushMemories(any(RuntimeContext.class), anyList()))
+                .thenReturn(Mono.error(new IllegalStateException("flush failed")));
+
+        CompactionResult result =
+                compact(model, flushManager, config(true, false), compactableMessages());
+
+        assertTrue(result.degraded());
+        assertEquals(3, result.messages().size());
+    }
+
+    /** Verifies that an ordinary message-offload fallback is exposed as degradation. */
+    @Test
+    void compact_reportsDegradedWhenMessageOffloadFails() {
+        RecordingModel model = new RecordingModel();
+        MemoryFlushManager flushManager = mock(MemoryFlushManager.class);
+        doThrow(new IllegalStateException("offload failed"))
+                .when(flushManager)
+                .offloadMessages(any(RuntimeContext.class), anyList(), anyString(), anyString());
+
+        CompactionResult result =
+                compact(model, flushManager, config(false, true), compactableMessages());
+
+        assertTrue(result.degraded());
+        assertEquals(3, result.messages().size());
+    }
+
+    /** Verifies that a summary-model fallback is exposed as degradation. */
+    @Test
+    void compact_reportsDegradedWhenSummarizationFails() {
+        MemoryFlushManager flushManager = mock(MemoryFlushManager.class);
+
+        CompactionResult result =
+                compact(
+                        new FailingModel(new IllegalStateException("summary failed")),
+                        flushManager,
+                        config(false, false),
+                        compactableMessages());
+
+        assertTrue(result.degraded());
+        assertTrue(text(result.messages().get(0)).contains("Summarization failed"));
+    }
+
+    /** Verifies that an empty summary replaced by the placeholder is exposed as degradation. */
+    @Test
+    void compact_reportsDegradedWhenSummarizationIsEmpty() {
+        MemoryFlushManager flushManager = mock(MemoryFlushManager.class);
+
+        CompactionResult result =
+                compact(
+                        new EmptyModel(),
+                        flushManager,
+                        config(false, false),
+                        compactableMessages());
+
+        assertTrue(result.degraded());
+        assertTrue(text(result.messages().get(0)).contains("Summary unavailable"));
+    }
+
     /** Creates a regular user message. */
     private static Msg message(String text) {
         return Msg.builder()
@@ -213,6 +291,19 @@ class ConversationCompactorTest {
     /** Creates an input that always triggers compaction and retains a two-message tail. */
     private static List<Msg> compactableMessages() {
         return List.of(message("M1"), message("M2"), message("TAIL_1"), message("TAIL_2"));
+    }
+
+    /** Plans and executes one required compaction. */
+    private static CompactionResult compact(
+            Model model,
+            MemoryFlushManager flushManager,
+            CompactionConfig config,
+            List<Msg> messages) {
+        ConversationCompactor compactor = new ConversationCompactor(model, flushManager);
+        CompactionPlan plan = compactor.planIfNeeded(messages, config).orElseThrow();
+        return compactor
+                .compact(mock(RuntimeContext.class), plan, config, "agent-id", "session-id")
+                .block();
     }
 
     /** Creates focused compaction configuration for fallback-boundary tests. */
@@ -308,6 +399,41 @@ class ConversationCompactorTest {
         /** Returns the summarization prompt for the specified invocation. */
         private String prompt(int index) {
             return text(inputs.get(index).get(0));
+        }
+    }
+
+    /** Returns a failing summary stream. */
+    private static final class FailingModel implements Model {
+        private final Throwable error;
+
+        private FailingModel(Throwable error) {
+            this.error = error;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.error(error);
+        }
+
+        @Override
+        public String getModelName() {
+            return "failing-model";
+        }
+    }
+
+    /** Returns an empty summary stream. */
+    private static final class EmptyModel implements Model {
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.empty();
+        }
+
+        @Override
+        public String getModelName() {
+            return "empty-model";
         }
     }
 }

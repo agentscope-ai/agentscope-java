@@ -100,7 +100,9 @@ public class ConversationCompactor {
         if (plan.isEmpty()) {
             return Mono.just(Optional.empty());
         }
-        return compact(rc, plan.get(), config, agentId, sessionId).map(Optional::of);
+        return compact(rc, plan.get(), config, agentId, sessionId)
+                .map(CompactionResult::messages)
+                .map(Optional::of);
     }
 
     /**
@@ -173,9 +175,9 @@ public class ConversationCompactor {
      * @param config compaction configuration
      * @param agentId agent identifier used for the memory offload path
      * @param sessionId session identifier used for the memory offload path
-     * @return replacement messages consisting of {@code [summaryUserMsg] + preservedTail}
+     * @return replacement messages and whether a best-effort stage used its fallback
      */
-    public Mono<List<Msg>> compact(
+    public Mono<CompactionResult> compact(
             RuntimeContext rc,
             CompactionPlan plan,
             CompactionConfig config,
@@ -188,11 +190,12 @@ public class ConversationCompactor {
         List<Msg> tail = plan.tail();
 
         // Step 2: Flush long-term memories only from newly compacted raw messages (best-effort).
-        Mono<Void> flushStep =
+        Mono<Boolean> flushStep =
                 config.isFlushBeforeCompact()
                         ? flushManager
                                 .flushMemories(rc, flushInput)
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))
+                                .thenReturn(false)
                                 .onErrorResume(
                                         e -> {
                                             if (ExceptionUtils.containsInterruptedException(e)) {
@@ -201,29 +204,30 @@ public class ConversationCompactor {
                                             log.warn(
                                                     "Memory flush before compaction failed: {}",
                                                     e.getMessage());
-                                            return Mono.empty();
+                                            return Mono.just(true);
                                         })
-                        : Mono.empty();
+                        : Mono.just(false);
 
         // Step 3: Offload raw messages to JSONL and capture the file path.
         // If offload fails, we continue with null — the summary message falls back to the
         // simple format without a file reference.
-        Mono<String> offloadStep;
+        Mono<StageResult<String>> offloadStep;
         if (config.isOffloadBeforeCompact()) {
             offloadStep =
                     Mono.fromCallable(
                                     () -> {
                                         flushManager.offloadMessages(
                                                 rc, messages, agentId, sessionId);
-                                        return flushManager.resolveOffloadPath(
-                                                rc, agentId, sessionId);
+                                        return StageResult.success(
+                                                flushManager.resolveOffloadPath(
+                                                        rc, agentId, sessionId));
                                     })
                             .doOnSuccess(
-                                    path ->
+                                    result ->
                                             log.debug(
                                                     "Message offload before compaction done,"
                                                             + " path={}",
-                                                    path))
+                                                    result.value()))
                             .onErrorResume(
                                     e -> {
                                         if (ExceptionUtils.containsInterruptedException(e)) {
@@ -232,26 +236,28 @@ public class ConversationCompactor {
                                         log.warn(
                                                 "Message offload before compaction failed: {}",
                                                 e.getMessage());
-                                        return Mono.just("");
+                                        return Mono.just(StageResult.degraded(""));
                                     });
         } else {
-            offloadStep = Mono.just("");
+            offloadStep = Mono.just(StageResult.success(""));
         }
 
         // Step 4: LLM summarization of prior summaries plus the newly compacted prefix.
         return flushStep
-                .then(offloadStep)
+                .flatMap(flushDegraded -> offloadStep.map(result -> result.with(flushDegraded)))
                 .flatMap(
-                        offloadPath ->
+                        offloadResult ->
                                 summarizePrefix(summaryInput, config)
                                         .map(
-                                                summary -> {
+                                                summaryResult -> {
                                                     String filePath =
-                                                            offloadPath.isBlank()
+                                                            offloadResult.value().isBlank()
                                                                     ? null
-                                                                    : offloadPath;
+                                                                    : offloadResult.value();
                                                     Msg summaryMsg =
-                                                            buildSummaryMessage(summary, filePath);
+                                                            buildSummaryMessage(
+                                                                    summaryResult.value(),
+                                                                    filePath);
                                                     List<Msg> compacted = new ArrayList<>();
                                                     compacted.add(summaryMsg);
                                                     compacted.addAll(tail);
@@ -262,8 +268,19 @@ public class ConversationCompactor {
                                                             messages.size(),
                                                             tail.size(),
                                                             compacted.size());
-                                                    return compacted;
+                                                    return new CompactionResult(
+                                                            compacted,
+                                                            offloadResult.degraded()
+                                                                    || summaryResult.degraded());
                                                 }));
+    }
+
+    /** Result of an executed compaction, including whether any best-effort stage degraded. */
+    public record CompactionResult(List<Msg> messages, boolean degraded) {
+
+        public CompactionResult {
+            messages = List.copyOf(messages);
+        }
     }
 
     /** Immutable inputs and before-state metrics for one real compaction operation. */
@@ -414,9 +431,9 @@ public class ConversationCompactor {
     // Summarization
     // -------------------------------------------------------------------------
 
-    private Mono<String> summarizePrefix(List<Msg> prefix, CompactionConfig config) {
+    private Mono<StageResult<String>> summarizePrefix(List<Msg> prefix, CompactionConfig config) {
         if (prefix.isEmpty()) {
-            return Mono.just("No previous conversation history.");
+            return Mono.just(StageResult.success("No previous conversation history."));
         }
 
         String formatted = formatMessagesForSummary(prefix);
@@ -445,15 +462,33 @@ public class ConversationCompactor {
                 .map(StringBuilder::toString)
                 .map(String::strip)
                 .filter(s -> !s.isBlank())
-                .defaultIfEmpty("(Summary unavailable)")
+                .map(StageResult::success)
+                .switchIfEmpty(Mono.just(StageResult.degraded("(Summary unavailable)")))
                 .onErrorResume(
                         e -> {
                             if (ExceptionUtils.containsInterruptedException(e)) {
                                 return Mono.error(e);
                             }
                             log.warn("Summarization LLM call failed: {}", e.getMessage());
-                            return Mono.just("(Summarization failed: " + e.getMessage() + ")");
+                            return Mono.just(
+                                    StageResult.degraded(
+                                            "(Summarization failed: " + e.getMessage() + ")"));
                         });
+    }
+
+    private record StageResult<T>(T value, boolean degraded) {
+
+        private static <T> StageResult<T> success(T value) {
+            return new StageResult<>(value, false);
+        }
+
+        private static <T> StageResult<T> degraded(T value) {
+            return new StageResult<>(value, true);
+        }
+
+        private StageResult<T> with(boolean additionalDegradation) {
+            return additionalDegradation && !degraded ? new StageResult<>(value, true) : this;
+        }
     }
 
     /**
