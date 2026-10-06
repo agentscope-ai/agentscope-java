@@ -1,7 +1,7 @@
 ---
 title: Recoverable chat example
 description: Run agentscope-chat to explore history, SSE replay, user input and checkpoint continuation.
-zh_link: /v2/zh/docs/harness/session-chat
+zh_link: /v2/zh/blogs/best-practices/session-chat
 ---
 
 Full source is in [agentscope-chat](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-chat).
@@ -63,7 +63,7 @@ Submit an answer with 提交并继续 (submit and continue). turnId stays unchan
 
 Send /slow, click 中断执行 (pause execution), and wait for 已中断 (paused). Restart if desired, then click 继续原任务 (continue from checkpoint). The application restores committed state, preserves turnId and creates a new runId. Execution continues from working state; the UI retains earlier committed message fragments and tool records.
 
-After a forced process exit, allow approximately two minutes for the old writer lease to expire. Unknown tool outcomes require explicit reconciliation rather than assumed success; see the [session-log reference](/v2/en/docs/harness/session-log-reference#reconciling-uncertain-tool-outcomes) for that workflow.
+After a forced process exit, allow approximately two minutes for the old writer lease to expire. Unknown tool outcomes require explicit reconciliation rather than assumed success; see the [session-log reference](/v2/en/docs/harness/session-log#reconciling-uncertain-tool-outcomes) for that workflow.
 
 ### 5. Queue work, steer and inject context
 
@@ -93,16 +93,16 @@ Chat naturally with the real model; /slow and /ask are offline demo commands. As
 
 | Operation | Example endpoint |
 | --- | --- |
-| List conversations | GET /api/sessions |
-| Snapshot, messages, pending requests and state | GET /api/sessions/{session} |
-| Submit a turn | POST /api/sessions/{session}/turns with `{request_id,message}` |
-| Guide the active task | POST /api/sessions/{session}/steer with `{message}` |
-| Inject reference material | POST /api/sessions/{session}/inject with `{message}` |
-| Observe/replay SSE | GET /api/sessions/{session}/stream?after={cursor}, supporting Last-Event-ID |
-| Read native records | GET /api/sessions/{session}/events?after={cursor}&limit=100 |
-| Submit external output and continue | POST /api/sessions/{session}/answers with `{request_id,output}` |
-| Cooperative interruption | POST /api/sessions/{session}/interrupt with `{run_id}` |
-| Checkpoint continuation | POST /api/sessions/{session}/turns/{turn}/resume |
+| List conversations | `GET /api/sessions` |
+| Snapshot, messages, pending requests and state | `GET /api/sessions/{session}` |
+| Submit a turn | `POST /api/sessions/{session}/turns` with `{request_id,message}` |
+| Guide the active task | `POST /api/sessions/{session}/steer` with `{message}` |
+| Inject reference material | `POST /api/sessions/{session}/inject` with `{message}` |
+| Observe/replay SSE | `GET /api/sessions/{session}/stream?after={cursor}`, supporting Last-Event-ID |
+| Read native records | `GET /api/sessions/{session}/events?after={cursor}&limit=100` |
+| Submit external output and continue | `POST /api/sessions/{session}/answers` with `{request_id,output}` |
+| Cooperative interruption | `POST /api/sessions/{session}/interrupt` with `{run_id}` |
+| Checkpoint continuation | `POST /api/sessions/{session}/turns/{turn}/resume` |
 
 The example uses agent.session(context): submit accepts and schedules tasks, steer guides the next step of the active task, inject saves context without starting work, and respond/resume resolve the original turn. The framework owns background execution; SSE only reads committed history. Retry submission with the same request_id and input; the framework assigns turnId.
 

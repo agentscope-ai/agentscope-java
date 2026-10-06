@@ -1,7 +1,7 @@
 ---
 title: 可恢复聊天示例
 description: 运行 agentscope-chat，体验聊天历史、SSE 续传、用户补充与 checkpoint 恢复。
-en_link: /v2/en/docs/harness/session-chat
+en_link: /v2/en/blogs/best-practices/session-chat
 ---
 
 完整源代码位于仓库 [agentscope-chat](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-chat)。
@@ -63,7 +63,7 @@ SSE 只观察已提交事件并触发视图更新。普通断线由 EventSource 
 
 发送 `/slow`，点击“中断执行”，等待状态变成“已中断”。可以在此时重启服务，再点击“继续原任务”。恢复使用已提交状态和原 turnId，创建新的 runId；执行会从工作状态继续；历史界面仍保留此前已提交的消息片段和工具记录。
 
-强制终止进程时，旧 writer 租约可能需要等待约两分钟才到期。如果检查发现工具结果未知，示例会要求核对结果，不会自动假定成功；实际应用的核对用法见[会话日志参考](/v2/zh/docs/harness/session-log-reference#核对结果未知的工具)。
+强制终止进程时，旧 writer 租约可能需要等待约两分钟才到期。如果检查发现工具结果未知，示例会要求核对结果，不会自动假定成功；实际应用的核对用法见[会话日志参考](/v2/zh/docs/harness/session-log#核对结果未知的工具)。
 
 ### 5. 新任务、运行中引导与材料注入
 
@@ -93,16 +93,16 @@ java -jar agentscope-examples/agents/agentscope-chat/target/agentscope-chat.jar
 
 | 操作 | 示例接口 |
 | --- | --- |
-| 列出会话 | GET /api/sessions |
-| 快照、消息、待答请求与状态 | GET /api/sessions/{session} |
-| 提交新 turn | POST /api/sessions/{session}/turns，body 为 `{request_id,message}` |
-| 引导当前任务 | POST /api/sessions/{session}/steer，body 为 `{message}` |
-| 只补充材料 | POST /api/sessions/{session}/inject，body 为 `{message}` |
-| SSE 观察与续传 | GET /api/sessions/{session}/stream?after={cursor}，支持 Last-Event-ID |
-| 分页查看原生记录 | GET /api/sessions/{session}/events?after={cursor}&limit=100 |
-| 提交外部结果并续跑 | POST /api/sessions/{session}/answers，body 为 `{request_id,output}` |
-| 合作式暂停 | POST /api/sessions/{session}/interrupt，body 为 `{run_id}` |
-| 从 checkpoint 续跑 | POST /api/sessions/{session}/turns/{turn}/resume |
+| 列出会话 | `GET /api/sessions` |
+| 快照、消息、待答请求与状态 | `GET /api/sessions/{session}` |
+| 提交新 turn | `POST /api/sessions/{session}/turns`，body 为 `{request_id,message}` |
+| 引导当前任务 | `POST /api/sessions/{session}/steer`，body 为 `{message}` |
+| 只补充材料 | `POST /api/sessions/{session}/inject`，body 为 `{message}` |
+| SSE 观察与续传 | `GET /api/sessions/{session}/stream?after={cursor}`，支持 Last-Event-ID |
+| 分页查看原生记录 | `GET /api/sessions/{session}/events?after={cursor}&limit=100` |
+| 提交外部结果并续跑 | `POST /api/sessions/{session}/answers`，body 为 `{request_id,output}` |
+| 合作式暂停 | `POST /api/sessions/{session}/interrupt`，body 为 `{run_id}` |
+| 从 checkpoint 续跑 | `POST /api/sessions/{session}/turns/{turn}/resume` |
 
 示例使用 `agent.session(context)`：`submit` 接收并安排新任务，`steer` 在当前任务下一步骤补充要求，`inject` 保存材料而不启动任务，`respond` 和 `resume` 自动关联原 turn。框架持有后台执行，SSE 只观察已提交历史。提交重试沿用相同 request_id 和输入，turnId 由框架分配。
 
