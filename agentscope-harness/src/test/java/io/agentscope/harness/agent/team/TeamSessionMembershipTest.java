@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
@@ -54,8 +55,53 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class TeamSessionMembershipTest {
+    // Frozen schema=1 shape written before Membership's public Source component was removed.
+    private static final String HISTORICAL_JSON =
+            """
+            {
+              "meta": {
+                "objective": "historical objective", "phase": "Working", "leadRef": "leader-agent",
+                "sessionMembership": {
+                  "schema": 1, "domain": "app", "owner": "alice", "teamId": "historical-team-id",
+                  "displayName": "historical display", "registrationToken": "historical-registration",
+                  "initial": [{
+                    "memberName": "lead", "definitionOwner": "definition-owner", "agentRef": "leader-agent",
+                    "role": "LEADER", "session": {
+                      "stateStoreDomain": "state", "owner": "alice", "sessionId": "leader-session"
+                    }
+                  }]
+                }
+              },
+              "owner": {
+                "schema": 1, "receipts": {"historical-team-id": "historical-registration"},
+                "memberships": [{
+                  "teamOwner": "alice", "teamId": "historical-team-id",
+                  "address": {"namespace": "ns-a", "teamName": "a"},
+                  "member": {
+                    "memberName": "lead", "definitionOwner": "definition-owner", "agentRef": "leader-agent",
+                    "role": "LEADER", "session": {
+                      "stateStoreDomain": "state", "owner": "alice", "sessionId": "leader-session"
+                    }
+                  },
+                  "source": "BYO", "token": "historical-leader-token"
+                }, {
+                  "teamOwner": "alice", "teamId": "historical-team-id",
+                  "address": {"namespace": "ns-a", "teamName": "a"},
+                  "member": {
+                    "memberName": "worker", "definitionOwner": "definition-owner", "agentRef": "worker-agent",
+                    "role": "WORKER", "session": {
+                      "stateStoreDomain": "state", "owner": "alice", "sessionId": "worker-session"
+                    }
+                  },
+                  "source": "BYO", "token": "historical-worker-token"
+                }]
+              }
+            }
+            """;
     @TempDir Path temp;
     private InMemoryStore store;
     private InMemoryAgentStateStore states;
@@ -72,6 +118,113 @@ class TeamSessionMembershipTest {
         service = client.sessionMembership("app", Map.of("state", states));
         create(a);
         create(b);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void historicalByoAndSourceOmittedRecordsKeepTokensAndRewriteCompatibleData(
+            boolean sourcePresent) throws Exception {
+        Map<String, Map<String, Object>> historical =
+                historicalData(
+                        sourcePresent
+                                ? HISTORICAL_JSON
+                                : HISTORICAL_JSON.replace("\"source\": \"BYO\",", ""));
+        List<String> relationNs = List.of("team-session-membership", "YXBw");
+        String ownerKey = "owner-YWxpY2U";
+        store.put(List.of("teams", "ns-a", "a"), "meta", historical.get("meta"));
+        store.put(relationNs, ownerKey, historical.get("owner"));
+        member(states, "alice", "lead", "leader-session", "leader-agent");
+        MemberSession worker = member(states, "alice", "worker", "worker-session", "worker-agent");
+        Path workspace = temp.resolve("historical-workspace.txt");
+        Files.writeString(workspace, "existing workspace");
+        client = new LocalTeamClient(store);
+        service = client.sessionMembership("app", Map.of("state", states));
+        Membership expected =
+                new Membership("alice", "historical-team-id", a, worker, "historical-worker-token");
+        StoreItem original = store.get(relationNs, ownerKey);
+        String originalJson = new ObjectMapper().writeValueAsString(original.value());
+
+        TeamView view = service.getTeam("alice", a).block();
+        assertEquals(Status.ACTIVE, view.status());
+        assertEquals("historical-team-id", view.teamId());
+        assertEquals("historical display", view.displayName());
+        assertEquals("historical objective", view.info().objective());
+        assertEquals(expected, service.findMembership(worker.session()).block());
+        assertEquals(2, service.listMemberships("alice", a).block().size());
+        assertEquals("worker-session", legacy("worker").sessionId());
+        assertEquals(original.version(), store.get(relationNs, ownerKey).version());
+        assertEquals(
+                originalJson,
+                new ObjectMapper().writeValueAsString(store.get(relationNs, ownerKey).value()));
+
+        assertTrue(service.unbindMember("alice", a, worker.session(), expected.token()).block());
+        assertEquals("", legacy("worker").sessionId());
+        assertEquals(1, service.listMemberships("alice", a).block().size());
+        Membership replacement = service.bindMember("alice", a, worker).block();
+        assertNotEquals(expected.token(), replacement.token());
+        assertThrows(
+                TeamConflictException.class,
+                () -> service.unbindMember("alice", a, worker.session(), expected.token()).block());
+        assertEquals(replacement, service.findMembership(worker.session()).block());
+        for (Object persisted :
+                (List<?>) store.get(relationNs, ownerKey).value().get("memberships")) {
+            assertEquals("BYO", ((Map<?, ?>) persisted).get("source"));
+        }
+        assertEquals(
+                new SavedState("original"),
+                states.get("alice", "worker-session", "legacy", SavedState.class).orElseThrow());
+        assertEquals("existing workspace", Files.readString(workspace));
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "NULL_SOURCE",
+                "CREATED_SOURCE",
+                "FUTURE_SOURCE",
+                "UNKNOWN_MEMBER_FIELD",
+                "UNKNOWN_OWNER_FIELD",
+                "UNKNOWN_SCHEMA"
+            })
+    void unknownHistoricalFormatsCannotBeQueriedOrUnboundAndAreNotRewritten(String format)
+            throws Exception {
+        String json =
+                switch (format) {
+                    case "NULL_SOURCE" ->
+                            HISTORICAL_JSON.replace("\"source\": \"BYO\"", "\"source\": null");
+                    case "CREATED_SOURCE" -> HISTORICAL_JSON.replace("\"BYO\"", "\"CREATED\"");
+                    case "FUTURE_SOURCE" -> HISTORICAL_JSON.replace("\"BYO\"", "\"FUTURE\"");
+                    case "UNKNOWN_MEMBER_FIELD" ->
+                            HISTORICAL_JSON.replace(
+                                    "\"source\": \"BYO\"",
+                                    "\"source\": \"BYO\", \"futurePolicy\": true");
+                    default -> HISTORICAL_JSON;
+                };
+        Map<String, Map<String, Object>> historical = historicalData(json);
+        if (format.equals("UNKNOWN_OWNER_FIELD")) {
+            historical.get("owner").put("futurePolicy", true);
+        } else if (format.equals("UNKNOWN_SCHEMA")) {
+            historical.get("owner").put("schema", 99);
+        }
+        List<String> relationNs = List.of("team-session-membership", "YXBw");
+        String ownerKey = "owner-YWxpY2U";
+        store.put(List.of("teams", "ns-a", "a"), "meta", historical.get("meta"));
+        store.put(relationNs, ownerKey, historical.get("owner"));
+        StoreItem original = store.get(relationNs, ownerKey);
+        String originalJson = new ObjectMapper().writeValueAsString(original.value());
+        SessionKey session = new SessionKey("state", "alice", "worker-session");
+        assertThrows(IllegalStateException.class, () -> service.getTeam("alice", a).block());
+        assertThrows(IllegalStateException.class, () -> service.findMembership(session).block());
+        assertThrows(
+                IllegalStateException.class, () -> service.listMemberships("alice", a).block());
+        assertThrows(IllegalStateException.class, () -> client.listMembers("ns-a", "a").block());
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.unbindMember("alice", a, session, "historical-worker-token").block());
+        assertEquals(original.version(), store.get(relationNs, ownerKey).version());
+        assertEquals(
+                originalJson,
+                new ObjectMapper().writeValueAsString(store.get(relationNs, ownerKey).value()));
     }
 
     @Test
@@ -429,6 +582,18 @@ class TeamSessionMembershipTest {
                         .writeValueAsString(
                                 faulty.search(List.of("team-session-membership"), 100, 0)));
         assertNull(service.findMembership(worker.session()).block());
+        Membership bound = service.findMembership(lead.session()).block();
+        faulty.failedCas.set(0);
+        assertThrows(
+                TeamConflictException.class,
+                () -> service.unbindMember("alice", a, lead.session(), bound.token()).block());
+        assertEquals(10, faulty.failedCas.get());
+        assertEquals(bound, service.findMembership(lead.session()).block());
+        assertEquals(
+                before,
+                new ObjectMapper()
+                        .writeValueAsString(
+                                faulty.search(List.of("team-session-membership"), 100, 0)));
         assertThrows(
                 UnsupportedOperationException.class,
                 () -> service.listMemberships("alice", a).block().clear());
@@ -708,6 +873,10 @@ class TeamSessionMembershipTest {
         create(a);
         create(b);
         return faulty;
+    }
+
+    private static Map<String, Map<String, Object>> historicalData(String json) throws Exception {
+        return new ObjectMapper().readValue(json, new TypeReference<>() {});
     }
 
     private void create(TeamAddress address) {

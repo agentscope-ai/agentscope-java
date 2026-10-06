@@ -39,6 +39,7 @@ public final class LocalTeamClient implements TeamClient {
 
     private final BaseStore store;
     private final AtomicLong messageSeq = new AtomicLong();
+    private volatile boolean sessionMembershipEnabled;
 
     public LocalTeamClient(BaseStore store) {
         this.store = Objects.requireNonNull(store, "store");
@@ -46,6 +47,10 @@ public final class LocalTeamClient implements TeamClient {
 
     /**
      * Explicitly enables persistent associations for existing Sessions on a versioned store.
+     *
+     * <p>A successful call also enables strict completion CAS on this client, including Teams
+     * awaiting adoption. Enable every writer before adopting Teams; legacy writers cannot safely
+     * share adopted records.
      *
      * @param relationDomain stable shared App relationship domain, independent of Team namespace
      * @param stateStores stable state store domain IDs mapped to the actual Session stores;
@@ -55,7 +60,10 @@ public final class LocalTeamClient implements TeamClient {
      */
     public TeamSessionMembership sessionMembership(
             String relationDomain, Map<String, AgentStateStore> stateStores) {
-        return new TeamSessionMembership(store, relationDomain, stateStores);
+        TeamSessionMembership membership =
+                new TeamSessionMembership(store, relationDomain, stateStores);
+        sessionMembershipEnabled = true;
+        return membership;
     }
 
     @Override
@@ -558,7 +566,16 @@ public final class LocalTeamClient implements TeamClient {
     public Mono<Void> completeTeam(String namespace, String teamName) {
         return Mono.<Void>fromRunnable(
                         () -> {
-                            if (store instanceof VersionedBaseStore) {
+                            StoreItem item = store.get(teamNs(namespace, teamName), "meta");
+                            boolean adopted =
+                                    item != null
+                                            && item.value() != null
+                                            && item.value().containsKey("sessionMembership");
+                            if (sessionMembershipEnabled || adopted) {
+                                if (!(store instanceof VersionedBaseStore)) {
+                                    throw new IllegalStateException(
+                                            "Adopted Teams require VersionedBaseStore");
+                                }
                                 // A stale unconditional fallback could erase concurrent adoption.
                                 for (int attempt = 0; attempt < 10; attempt++) {
                                     StoreItem current =
@@ -586,7 +603,6 @@ public final class LocalTeamClient implements TeamClient {
                                 throw new TeamConflictException(
                                         "completeTeam CAS retry limit exceeded");
                             }
-                            StoreItem item = store.get(teamNs(namespace, teamName), "meta");
                             Map<String, Object> meta =
                                     item == null || item.value() == null
                                             ? new LinkedHashMap<>()

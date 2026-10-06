@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.state.JdbcAgentStateStore;
@@ -61,6 +63,89 @@ class TeamSessionMembershipH2Test {
     @TempDir Path temp;
     private final TeamAddress a = new TeamAddress("ns-a", "a");
     private final TeamAddress b = new TeamAddress("ns-b", "b");
+
+    @Test
+    void historicalByoJsonSurvivesFileReopenAndOriginalTokenUnbindPreservesSession()
+            throws Exception {
+        // Literal schema=1 JSON from the shape used before the public Source field was removed.
+        String historicalJson =
+                """
+                {
+                  "meta": {
+                    "objective": "historical objective", "phase": "Working", "leadRef": "leader-agent",
+                    "sessionMembership": {
+                      "schema": 1, "domain": "app", "owner": "alice", "teamId": "historical-team-id",
+                      "displayName": "historical display", "registrationToken": "historical-registration",
+                      "initial": [{
+                        "memberName": "lead", "definitionOwner": "definition-owner", "agentRef": "leader-agent",
+                        "role": "LEADER", "session": {
+                          "stateStoreDomain": "sessions", "owner": "alice", "sessionId": "leader-session"
+                        }
+                      }]
+                    }
+                  },
+                  "owner": {
+                    "schema": 1, "receipts": {"historical-team-id": "historical-registration"},
+                    "memberships": [{
+                      "teamOwner": "alice", "teamId": "historical-team-id",
+                      "address": {"namespace": "ns-a", "teamName": "a"},
+                      "member": {
+                        "memberName": "lead", "definitionOwner": "definition-owner", "agentRef": "leader-agent",
+                        "role": "LEADER", "session": {
+                          "stateStoreDomain": "sessions", "owner": "alice", "sessionId": "leader-session"
+                        }
+                      },
+                      "source": "BYO", "token": "historical-leader-token"
+                    }]
+                  }
+                }
+                """;
+        Map<String, Map<String, Object>> historical =
+                new ObjectMapper().readValue(historicalJson, new TypeReference<>() {});
+        Fixture fixture = open();
+        try {
+            create(fixture.client(), a);
+            fixture.states().save("alice", "leader-session", "legacy", new SavedState("original"));
+            fixture.store().put(List.of("teams", "ns-a", "a"), "meta", historical.get("meta"));
+            fixture.store()
+                    .put(
+                            List.of("team-session-membership", "YXBw"),
+                            "owner-YWxpY2U",
+                            historical.get("owner"));
+            shutdown(fixture.ds());
+
+            fixture = open();
+            SessionKey session = new SessionKey("sessions", "alice", "leader-session");
+            Membership historicalBinding = fixture.membership().findMembership(session).block();
+            assertEquals("historical-leader-token", historicalBinding.token());
+            assertEquals("historical-team-id", historicalBinding.teamId());
+            assertEquals(Status.ACTIVE, fixture.membership().getTeam("alice", a).block().status());
+            assertEquals(1, fixture.membership().listMemberships("alice", a).block().size());
+            assertEquals(
+                    "leader-session",
+                    fixture.client().listMembers("ns-a", "a").block().get(0).sessionId());
+            assertTrue(
+                    fixture.membership()
+                            .unbindMember("alice", a, session, "historical-leader-token")
+                            .block());
+            shutdown(fixture.ds());
+
+            fixture = open();
+            assertNull(fixture.membership().findMembership(session).block());
+            assertTrue(fixture.membership().listMemberships("alice", a).block().isEmpty());
+            assertEquals("", fixture.client().listMembers("ns-a", "a").block().get(0).sessionId());
+            assertEquals(
+                    "historical-team-id",
+                    fixture.membership().getTeam("alice", a).block().teamId());
+            assertEquals(
+                    new SavedState("original"),
+                    fixture.states()
+                            .get("alice", "leader-session", "legacy", SavedState.class)
+                            .orElseThrow());
+        } finally {
+            shutdown(fixture.ds());
+        }
+    }
 
     @ParameterizedTest
     @MethodSource("ownerBoundaries")

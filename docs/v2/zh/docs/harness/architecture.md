@@ -113,7 +113,11 @@ boolean stateKept = stateStore.exists("alice", "worker-session");
 
 完全相同的绑定保留 token。解除需要预期 token；实际解除返回 `true`，已无关联返回 `false`。错误 Team 或过期 token 报错；真正解除后重绑会生成新 token。CAS 竞争最多重试十次，之后抛 `TeamConflictException`；存储错误直接传播，不降级为无条件写。提交后响应失败时，可查询或用相同请求重试确认结果；取消订阅不回滚已经提交的关系。
 
-已接入 Team 的旧 `listMembers` 读取同一关系并投影 `sessionId`，未关联的声明成员投影为空。旧 record 结构、声明的 `isLead`、`phase` 和 `deployMode` 不变。旧数据已有非空 Session 字段时，初始接入必须显式提供对应完整身份。`completeTeam` 仍只将原 phase 改为 `Completed`，保留关系及接入标记。版本存储改为重试完成 CAS，避免覆盖并发更新；持续竞争时可能报冲突。未启用的非版本存储保留旧完成 fallback。
+已接入 Team 的旧 `listMembers` 读取同一关系并投影 `sessionId`，未关联的声明成员投影为空。旧 record 结构、声明的 `isLead`、`phase` 和 `deployMode` 不变。旧数据已有非空 Session 字段时，初始接入必须显式提供对应完整身份。`completeTeam` 仍只将原 phase 改为 `Completed`，保留关系及接入标记。成功调用 `sessionMembership(...)` 后，当前 client 启用严格完成 CAS，包括尚未接入的 Team；新实例观察到接入标记时也使用严格 CAS。持续竞争时报冲突，避免覆盖其他写入方。未启用 client 对未接入 Team 保留旧完成 fallback，包括版本存储。
+
+接入 Team 前，先停止该 Team 的旧版本及未启用写入方，等待其在途写操作结束，再升级所有参与写入的实例，并在每个 client 上调用 `sessionMembership(...)` 启用保护。启用 client 不会停止已经进入旧路径的写操作。旧二进制不理解归属投影，其无条件完成 fallback 可能清掉并发接入标记。已接入 Team 不支持新旧版本混写。回滚需使用理解现有存储格式的版本，或停止全部写入方后恢复接入前的备份。
+
+关系 schema 1 可以读取早期包含 `source: "BYO"` 的记录，以及曾省略该字段的草案记录。缺省来源只表示手工提供的既有资源，不授予删除权。新关系写入在内部存储格式中保留 BYO，与公开 `Membership` record 分开。未知来源、字段或格式版本明确拒绝，不重置或覆盖原记录。
 
 Team 元数据、phase 和声明定义继续使用原记录；每个关系域、每个 owner 的单条记录只保存关联和接入回执，读写成本与竞争随该 owner 的关联数增加。已接入记录的所有写入者须遵守版本能力；不支持直接原始修改或删除。损坏或未知关系格式会报错，不重置为空。Session 存在校验与关系提交是独立操作，外部删除 Session 可能留下关联，应用须显式解除。
 

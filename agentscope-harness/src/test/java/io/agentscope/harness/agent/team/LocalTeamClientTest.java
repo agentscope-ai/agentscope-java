@@ -19,13 +19,27 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.State;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
+import io.agentscope.harness.agent.team.TeamSessionMembership.MemberSession;
+import io.agentscope.harness.agent.team.TeamSessionMembership.Membership;
+import io.agentscope.harness.agent.team.TeamSessionMembership.Role;
+import io.agentscope.harness.agent.team.TeamSessionMembership.SessionKey;
+import io.agentscope.harness.agent.team.TeamSessionMembership.TeamAddress;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LocalTeamClientTest {
+
+    private static final List<String> COMPLETION_META = List.of("teams", "ns", "membership");
 
     @Test
     void assignThenOwnerClaim_selfClaimRejectedForOthers() {
@@ -225,4 +239,167 @@ class LocalTeamClientTest {
         assertEquals(1, conflicts.get());
         assertTrue(client.listClaimableTasks("ns", "race").block().isEmpty());
     }
+
+    @Test
+    void completionWithoutMembershipOptInRetainsVersionedStoreFallback() {
+        CompletionFaultStore store = new CompletionFaultStore();
+        LocalTeamClient client = new LocalTeamClient(store);
+        createCompletionTeam(client);
+        store.rejectCompletion = true;
+
+        client.completeTeam("ns", "membership").block();
+
+        assertEquals("Completed", store.get(COMPLETION_META, "meta").value().get("phase"));
+        assertEquals(1, store.casAttempts);
+        assertEquals(1, store.unconditionalWrites);
+    }
+
+    @Test
+    void rejectedMembershipConfigurationDoesNotChangeLegacyCompletion() {
+        CompletionFaultStore store = new CompletionFaultStore();
+        LocalTeamClient client = new LocalTeamClient(store);
+        createCompletionTeam(client);
+        assertThrows(IllegalArgumentException.class, () -> client.sessionMembership("", Map.of()));
+        store.rejectCompletion = true;
+
+        client.completeTeam("ns", "membership").block();
+
+        assertEquals("Completed", store.get(COMPLETION_META, "meta").value().get("phase"));
+        assertEquals(1, store.casAttempts);
+        assertEquals(1, store.unconditionalWrites);
+    }
+
+    @Test
+    void successfulMembershipOptInProtectsUnadoptedMetadataOnContention() {
+        CompletionFaultStore store = new CompletionFaultStore();
+        LocalTeamClient client = new LocalTeamClient(store);
+        createCompletionTeam(client);
+        client.sessionMembership("app", Map.of());
+        StoreItem before = store.get(COMPLETION_META, "meta");
+        store.rejectCompletion = true;
+
+        assertThrows(
+                TeamConflictException.class, () -> client.completeTeam("ns", "membership").block());
+
+        assertEquals(before, store.get(COMPLETION_META, "meta"));
+        assertEquals(10, store.casAttempts);
+        assertEquals(0, store.unconditionalWrites);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void enabledOrReopenedClientPreservesAdoptedMetadataAndTokenOnContention(boolean reopen) {
+        CompletionFaultStore store = new CompletionFaultStore();
+        LocalTeamClient original = new LocalTeamClient(store);
+        InMemoryAgentStateStore states = new InMemoryAgentStateStore();
+        TeamSessionMembership membership = adoptCompletionTeam(original, states);
+        SessionKey session = new SessionKey("state", "alice", "leader-session");
+        Membership beforeMembership = membership.findMembership(session).block();
+        StoreItem beforeMeta = store.get(COMPLETION_META, "meta");
+        LocalTeamClient completing = reopen ? new LocalTeamClient(store) : original;
+        store.rejectCompletion = true;
+
+        assertThrows(
+                TeamConflictException.class,
+                () -> completing.completeTeam("ns", "membership").block());
+
+        assertEquals(beforeMeta, store.get(COMPLETION_META, "meta"));
+        assertEquals(beforeMembership, membership.findMembership(session).block());
+        assertEquals(10, store.casAttempts);
+        assertEquals(0, store.unconditionalWrites);
+    }
+
+    @Test
+    void adoptedMetadataCannotFallBackThroughNonversionedProvider() {
+        InMemoryStore store = new InMemoryStore();
+        adoptCompletionTeam(new LocalTeamClient(store), new InMemoryAgentStateStore());
+        StoreItem before = store.get(COMPLETION_META, "meta");
+        AtomicInteger writes = new AtomicInteger();
+        BaseStore legacy =
+                new BaseStore() {
+                    @Override
+                    public StoreItem get(List<String> namespace, String key) {
+                        return store.get(namespace, key);
+                    }
+
+                    @Override
+                    public void put(List<String> namespace, String key, Map<String, Object> value) {
+                        writes.incrementAndGet();
+                        store.put(namespace, key, value);
+                    }
+
+                    @Override
+                    public List<StoreItem> search(List<String> namespace, int limit, int offset) {
+                        return store.search(namespace, limit, offset);
+                    }
+
+                    @Override
+                    public void delete(List<String> namespace, String key) {
+                        store.delete(namespace, key);
+                    }
+                };
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> new LocalTeamClient(legacy).completeTeam("ns", "membership").block());
+
+        assertEquals(before, store.get(COMPLETION_META, "meta"));
+        assertEquals(0, writes.get());
+    }
+
+    private static void createCompletionTeam(LocalTeamClient client) {
+        client.createTeam(
+                        new TeamCreateSpec("membership", "ns", "objective", "lead", "", List.of()))
+                .block();
+    }
+
+    private static TeamSessionMembership adoptCompletionTeam(
+            LocalTeamClient client, InMemoryAgentStateStore states) {
+        createCompletionTeam(client);
+        states.save("alice", "leader-session", "agent", new SavedState("original"));
+        TeamSessionMembership membership = client.sessionMembership("app", Map.of("state", states));
+        membership
+                .adoptTeam(
+                        "alice",
+                        new TeamAddress("ns", "membership"),
+                        "membership",
+                        List.of(
+                                new MemberSession(
+                                        "lead",
+                                        "alice",
+                                        "lead",
+                                        Role.LEADER,
+                                        new SessionKey("state", "alice", "leader-session"))))
+                .block();
+        return membership;
+    }
+
+    private static class CompletionFaultStore extends InMemoryStore {
+        boolean rejectCompletion;
+        int casAttempts;
+        int unconditionalWrites;
+
+        @Override
+        public boolean putIfVersion(
+                List<String> namespace,
+                String key,
+                Map<String, Object> value,
+                long expectedVersion) {
+            if (rejectCompletion && namespace.equals(COMPLETION_META) && key.equals("meta")) {
+                casAttempts++;
+                return false;
+            }
+            return super.putIfVersion(namespace, key, value, expectedVersion);
+        }
+
+        @Override
+        public void put(List<String> namespace, String key, Map<String, Object> value) {
+            if (rejectCompletion && namespace.equals(COMPLETION_META) && key.equals("meta")) {
+                unconditionalWrites++;
+            }
+            super.put(namespace, key, value);
+        }
+    }
+
+    public record SavedState(String value) implements State {}
 }

@@ -537,7 +537,7 @@ public final class TeamSessionMembership {
         if (item == null) {
             return new OwnerItem(0, new OwnerState(1, Map.of(), List.of()));
         }
-        OwnerState state = decode(item.value(), OwnerState.class);
+        OwnerState state = decodeOwner(item.value());
         if (state.schema() != 1) {
             throw corrupt();
         }
@@ -574,7 +574,11 @@ public final class TeamSessionMembership {
         return store.putIfVersion(
                 relationNs(domain),
                 ownerKey(owner),
-                encode(new OwnerState(1, receipts, memberships)),
+                encode(
+                        new StoredOwnerState(
+                                1,
+                                receipts,
+                                memberships.stream().map(StoredMembership::from).toList())),
                 current.version());
     }
 
@@ -707,6 +711,73 @@ public final class TeamSessionMembership {
     }
 
     private record OwnerItem(long version, OwnerState state) {}
+
+    // Schema 1 keeps BYO on disk independently of the public Membership shape.
+    private record StoredOwnerState(
+            int schema, Map<String, String> receipts, List<StoredMembership> memberships) {
+        StoredOwnerState {
+            receipts = Map.copyOf(receipts);
+            memberships = List.copyOf(memberships);
+        }
+    }
+
+    private record StoredMembership(
+            String teamOwner,
+            String teamId,
+            TeamAddress address,
+            MemberSession member,
+            String source,
+            String token) {
+        StoredMembership {
+            if (!"BYO".equals(source)) {
+                throw corrupt();
+            }
+        }
+
+        static StoredMembership from(Membership membership) {
+            return new StoredMembership(
+                    membership.teamOwner(),
+                    membership.teamId(),
+                    membership.address(),
+                    membership.member(),
+                    "BYO",
+                    membership.token());
+        }
+
+        Membership membership() {
+            return new Membership(teamOwner, teamId, address, member, token);
+        }
+    }
+
+    private static OwnerState decodeOwner(Map<String, Object> value) {
+        try {
+            Map<String, Object> normalized = new LinkedHashMap<>(value);
+            if (value.get("memberships") instanceof List<?> rows) {
+                List<Object> memberships = new ArrayList<>(rows.size());
+                for (Object row : rows) {
+                    if (row instanceof Map<?, ?>) {
+                        Map<String, Object> membership =
+                                JSON.convertValue(row, new TypeReference<>() {});
+                        // Only omission is legacy BYO; explicit null and unknown sources fail.
+                        if (!membership.containsKey("source")) {
+                            membership.put("source", "BYO");
+                        }
+                        memberships.add(membership);
+                    } else {
+                        memberships.add(row);
+                    }
+                }
+                normalized.put("memberships", memberships);
+            }
+            StoredOwnerState stored = decode(normalized, StoredOwnerState.class);
+            return new OwnerState(
+                    stored.schema(),
+                    stored.receipts(),
+                    stored.memberships().stream().map(StoredMembership::membership).toList());
+        } catch (RuntimeException error) {
+            throw new IllegalStateException("Invalid Session membership data", error);
+        }
+    }
 
     private static Map<String, Object> encode(Object value) {
         return JSON.convertValue(value, new TypeReference<>() {});
