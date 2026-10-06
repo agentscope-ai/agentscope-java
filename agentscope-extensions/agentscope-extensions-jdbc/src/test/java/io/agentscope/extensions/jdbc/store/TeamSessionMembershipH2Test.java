@@ -48,14 +48,145 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class TeamSessionMembershipH2Test {
     @TempDir Path temp;
     private final TeamAddress a = new TeamAddress("ns-a", "a");
     private final TeamAddress b = new TeamAddress("ns-b", "b");
+
+    @ParameterizedTest
+    @MethodSource("ownerBoundaries")
+    void longOwnersCanAdoptReopenQueryAndUnbindWithoutLosingSessionState(String owner)
+            throws Exception {
+        Fixture initial = open();
+        try {
+            create(initial.client(), a);
+            MemberSession lead = member(initial, owner, "lead", "leader-session", "leader-agent");
+            MemberSession worker =
+                    member(initial, owner, "worker", "worker-session", "worker-agent");
+            assertTrue(initial.states().exists(owner, lead.session().sessionId()));
+            assertEquals(
+                    Status.ACTIVE,
+                    initial.membership()
+                            .adoptTeam(owner, a, "display", List.of(lead))
+                            .block()
+                            .status());
+            Membership binding = initial.membership().bindMember(owner, a, worker).block();
+            shutdown(initial.ds());
+
+            Fixture reopened = open();
+            assertEquals(binding, reopened.membership().findMembership(worker.session()).block());
+            assertEquals(2, reopened.membership().listMemberships(owner, a).block().size());
+            assertEquals(
+                    "worker-session",
+                    reopened.client().listMembers("ns-a", "a").block().stream()
+                            .filter(m -> m.memberName().equals("worker"))
+                            .findFirst()
+                            .orElseThrow()
+                            .sessionId());
+            assertTrue(
+                    reopened.membership()
+                            .unbindMember(owner, a, worker.session(), binding.token())
+                            .block());
+            assertNull(reopened.membership().findMembership(worker.session()).block());
+            assertEquals(
+                    new SavedState("original"),
+                    reopened.states()
+                            .get(owner, "worker-session", "legacy", SavedState.class)
+                            .orElseThrow());
+        } finally {
+            shutdown(initial.ds());
+        }
+    }
+
+    private static Stream<String> ownerBoundaries() {
+        return Stream.of(
+                "a".repeat(186),
+                "a".repeat(187),
+                "a".repeat(188),
+                "中".repeat(62),
+                "中".repeat(63),
+                "中".repeat(64));
+    }
+
+    @Test
+    void unstorableOwnerRecordFailsBeforeAdoptionAndLeavesLegacyQueriesAvailable()
+            throws Exception {
+        Fixture fixture = open();
+        try {
+            create(fixture.client(), a);
+            String owner = "a".repeat(187);
+            MemberSession lead = member(fixture, owner, "lead", "one", "leader-agent");
+            String table = AbstractJdbcDialect.from(fixture.ds()).build().storeTableName();
+            try (Connection connection = fixture.ds().getConnection();
+                    Statement statement = connection.createStatement()) {
+                statement.execute("ALTER TABLE " + table + " ALTER COLUMN item_key VARCHAR(32)");
+            }
+            for (int retry = 0; retry < 2; retry++) {
+                assertThrows(
+                        RuntimeException.class,
+                        () ->
+                                fixture.membership()
+                                        .adoptTeam(owner, a, "display", List.of(lead))
+                                        .block());
+                assertFalse(
+                        fixture.store()
+                                .get(List.of("teams", "ns-a", "a"), "meta")
+                                .value()
+                                .containsKey("sessionMembership"));
+                assertEquals(
+                        "", fixture.client().listMembers("ns-a", "a").block().get(0).sessionId());
+                assertTrue(fixture.states().exists(owner, "one"));
+            }
+            try (Connection connection = fixture.ds().getConnection();
+                    Statement statement = connection.createStatement()) {
+                statement.execute("ALTER TABLE " + table + " ALTER COLUMN item_key VARCHAR(255)");
+            }
+            assertEquals(
+                    Status.ACTIVE,
+                    fixture.membership()
+                            .adoptTeam(owner, a, "display", List.of(lead))
+                            .block()
+                            .status());
+        } finally {
+            shutdown(fixture.ds());
+        }
+    }
+
+    @Test
+    void longRelationshipDomainFitsJdbcNamespaceAndSurvivesReopen() throws Exception {
+        Fixture initial = open();
+        String domain = "域".repeat(600);
+        try {
+            create(initial.client(), a);
+            MemberSession lead = member(initial, "lead", "one", "leader-agent");
+            TeamSessionMembership membership =
+                    initial.client()
+                            .sessionMembership(domain, Map.of("sessions", initial.states()));
+            Membership binding =
+                    membership
+                            .adoptTeam("alice", a, "a", List.of(lead))
+                            .block()
+                            .memberships()
+                            .get(0);
+            shutdown(initial.ds());
+            Fixture reopened = open();
+            membership =
+                    reopened.client()
+                            .sessionMembership(domain, Map.of("sessions", reopened.states()));
+            assertEquals(binding, membership.findMembership(lead.session()).block());
+            assertEquals(
+                    "one", reopened.client().listMembers("ns-a", "a").block().get(0).sessionId());
+        } finally {
+            shutdown(initial.ds());
+        }
+    }
 
     @Test
     void fileDatabaseReopenPreservesMembershipTokensMetadataAndExistingSessionState()
@@ -176,7 +307,8 @@ class TeamSessionMembershipH2Test {
                     @Override
                     public boolean putIfVersion(
                             List<String> ns, String key, Map<String, Object> value, long version) {
-                        if (ns.get(0).equals("team-session-membership")) {
+                        if (ns.get(0).equals("team-session-membership")
+                                && !((Map<?, ?>) value.get("receipts")).isEmpty()) {
                             throw new IllegalStateException("Injected relation write failure");
                         }
                         return super.putIfVersion(ns, key, value, version);
@@ -255,13 +387,18 @@ class TeamSessionMembershipH2Test {
 
     private static MemberSession member(
             Fixture fixture, String name, String sessionId, String agentRef) {
-        fixture.states().save("alice", sessionId, "legacy", new SavedState("original"));
+        return member(fixture, "alice", name, sessionId, agentRef);
+    }
+
+    private static MemberSession member(
+            Fixture fixture, String owner, String name, String sessionId, String agentRef) {
+        fixture.states().save(owner, sessionId, "legacy", new SavedState("original"));
         return new MemberSession(
                 name,
                 "definition-owner",
                 agentRef,
                 name.equals("lead") ? Role.LEADER : Role.WORKER,
-                new SessionKey("sessions", "alice", sessionId));
+                new SessionKey("sessions", owner, sessionId));
     }
 
     private static TeamSessionMembership racing(

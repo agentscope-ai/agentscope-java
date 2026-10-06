@@ -23,11 +23,14 @@ import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.filesystem.remote.store.VersionedBaseStore;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +57,10 @@ public final class TeamSessionMembership {
 
     private static final String MARKER = "sessionMembership";
     private static final int MAX_ATTEMPTS = 10;
+    // Keep the full owner key within VARCHAR(255), including the "owner-" prefix.
+    private static final int MAX_ENCODED_OWNER_LENGTH = 249;
+    // Leave room for the namespace prefix and separator in MySQL's VARCHAR(512).
+    private static final int MAX_ENCODED_DOMAIN_LENGTH = 480;
     private static final ObjectMapper JSON =
             new ObjectMapper()
                     .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
@@ -241,6 +248,7 @@ public final class TeamSessionMembership {
                             break;
                         }
                         validateInitial(owner, address, initial);
+                        prepareOwner(owner);
                         Marker next =
                                 new Marker(
                                         1,
@@ -516,6 +524,22 @@ public final class TeamSessionMembership {
         return readOwner(store, domain, owner);
     }
 
+    private void prepareOwner(String owner) {
+        // Check actual storage before enabling projection from the Team's adoption marker.
+        for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+            OwnerItem current = readOwner(owner);
+            if (current.version() > 0
+                    || writeOwner(
+                            owner,
+                            current,
+                            current.state().receipts(),
+                            current.state().memberships())) {
+                return;
+            }
+        }
+        throw contention();
+    }
+
     private static OwnerItem readOwner(BaseStore store, String domain, String owner) {
         StoreItem item = store.get(relationNs(domain), ownerKey(owner));
         if (item == null) {
@@ -719,17 +743,27 @@ public final class TeamSessionMembership {
     }
 
     private static List<String> relationNs(String domain) {
-        return List.of("team-session-membership", encoded(domain));
+        return List.of("team-session-membership", encoded(domain, MAX_ENCODED_DOMAIN_LENGTH));
     }
 
     private static String ownerKey(String owner) {
-        return owner == null ? "anonymous" : "owner-" + encoded(owner);
+        return owner == null ? "anonymous" : "owner-" + encoded(owner, MAX_ENCODED_OWNER_LENGTH);
     }
 
-    private static String encoded(String value) {
-        return Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    private static String encoded(String value, int limit) {
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        if (encoded.length() <= limit) {
+            return encoded;
+        }
+        // ':' cannot appear in the original URL-safe Base64 addresses; short keys stay compatible.
+        try {
+            return "sha256:"
+                    + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException error) {
+            throw new IllegalStateException(
+                    "SHA-256 is required for membership storage addresses", error);
+        }
     }
 
     private static String string(Object value) {

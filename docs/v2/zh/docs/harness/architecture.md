@@ -107,7 +107,9 @@ boolean stateKept = stateStore.exists("alice", "worker-session");
 
 `getTeam(owner, address)` 返回稳定逻辑 ID、展示名、原有 `TeamInfo`、接入状态和当前关系。`findMembership(session)` 在未关联时以 empty 完成；`listMemberships` 返回含 Leader 的不可变当前列表。这些是已关联的 Session，与声明成员目录不同，也不证明成员正在运行。
 
-接入先在原 Team meta 写标记，再在单个 owner 关系记录中原子提交初始关系和回执。写入中间失败会留下 `PENDING`：`getTeam` 返回该状态和空的已提交成员列表，`listMemberships` 及旧 `listMembers` 明确报错。用相同完整 `adoptTeam` 请求重试，包含展示名和初始成员；冲突的初始请求不能覆盖标记。已经提交的接入请求重放只返回当前关系，不恢复后来已解除的成员。
+写接入标记前，接入操作先通过 CAS 确保空 owner 记录可以存储。此阶段存储失败时 Team 尚未接入，旧查询仍可用；空记录可以保留供重试。关系地址保留已有短编码，过长 owner 或关系域改用定长 SHA-256 编码，满足 JDBC 键及 namespace 的长度限制。
+
+随后在原 Team meta 写标记，再在单个 owner 关系记录中原子提交初始关系和回执。这两次写入中间失败会留下 `PENDING`：`getTeam` 返回该状态和空的已提交成员列表，`listMemberships` 及旧 `listMembers` 明确报错。用相同完整 `adoptTeam` 请求重试，包含展示名和初始成员；冲突的初始请求不能覆盖标记。已经提交的接入请求重放只返回当前关系，不恢复后来已解除的成员。
 
 完全相同的绑定保留 token。解除需要预期 token；实际解除返回 `true`，已无关联返回 `false`。错误 Team 或过期 token 报错；真正解除后重绑会生成新 token。CAS 竞争最多重试十次，之后抛 `TeamConflictException`；存储错误直接传播，不降级为无条件写。提交后响应失败时，可查询或用相同请求重试确认结果；取消订阅不回滚已经提交的关系。
 

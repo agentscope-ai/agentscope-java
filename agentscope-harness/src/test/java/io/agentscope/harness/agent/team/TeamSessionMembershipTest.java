@@ -258,6 +258,55 @@ class TeamSessionMembershipTest {
     }
 
     @Test
+    void longOwnerAndDomainAddressesKeepDistinctSessionScopes() {
+        String owner = "a".repeat(187), otherOwner = owner + "b";
+        MemberSession first = member(states, owner, "lead", "same", "leader-agent");
+        MemberSession second = member(states, otherOwner, "lead", "same", "leader-agent");
+        Membership one =
+                service.adoptTeam(owner, a, "a", List.of(first)).block().memberships().get(0);
+        Membership two =
+                service.adoptTeam(otherOwner, b, "b", List.of(second)).block().memberships().get(0);
+        assertNotEquals(one.teamId(), two.teamId());
+        assertEquals(one, service.findMembership(first.session()).block());
+        assertEquals(two, service.findMembership(second.session()).block());
+
+        String domain = "域".repeat(600);
+        TeamSessionMembership left = client.sessionMembership(domain, Map.of("state", states));
+        TeamSessionMembership right =
+                client.sessionMembership(domain + "b", Map.of("state", states));
+        TeamAddress c = new TeamAddress("ns-c", "c"), d = new TeamAddress("ns-d", "d");
+        create(c);
+        create(d);
+        Membership x = left.adoptTeam(owner, c, "c", List.of(first)).block().memberships().get(0);
+        Membership y = right.adoptTeam(owner, d, "d", List.of(first)).block().memberships().get(0);
+        assertNotEquals(x.teamId(), y.teamId());
+        assertEquals(x, left.findMembership(first.session()).block());
+        assertEquals(y, right.findMembership(first.session()).block());
+        assertTrue(left.unbindMember(owner, c, first.session(), x.token()).block());
+        assertEquals(y, right.findMembership(first.session()).block());
+    }
+
+    @Test
+    void ownerInitializationContentionDoesNotAdoptTeamOrBlockLegacyQueries() {
+        FaultStore faulty = useFaultStore();
+        MemberSession lead = member(states, "alice", "lead", "one", "leader-agent");
+        faulty.conflict = true;
+        assertThrows(
+                TeamConflictException.class,
+                () -> service.adoptTeam("alice", a, "a", List.of(lead)).block());
+        assertEquals(10, faulty.failedCas.get());
+        assertFalse(
+                faulty.get(List.of("teams", "ns-a", "a"), "meta")
+                        .value()
+                        .containsKey("sessionMembership"));
+        assertEquals("", legacy("lead").sessionId());
+        assertNull(service.findMembership(lead.session()).block());
+        faulty.conflict = false;
+        assertEquals(
+                Status.ACTIVE, service.adoptTeam("alice", a, "a", List.of(lead)).block().status());
+    }
+
+    @Test
     void pendingAdoptionAfterFailureIsObservableAndRecoverableByNewClient() {
         FaultStore faulty = useFaultStore();
         MemberSession lead = member(states, "alice", "lead", "one", "leader-agent");
@@ -676,7 +725,8 @@ class TeamSessionMembershipTest {
         public boolean putIfVersion(
                 List<String> ns, String key, Map<String, Object> value, long version) {
             boolean relation = ns.get(0).equals("team-session-membership");
-            if ((!relation && beforeMeta) || (relation && beforeRelation)) {
+            boolean association = relation && !((Map<?, ?>) value.get("receipts")).isEmpty();
+            if ((!relation && beforeMeta) || (association && beforeRelation)) {
                 throw new IllegalStateException("Injected write failure");
             }
             if (relation && conflict) {
@@ -684,7 +734,7 @@ class TeamSessionMembershipTest {
                 return false;
             }
             boolean committed = super.putIfVersion(ns, key, value, version);
-            if (relation && committed && afterRelation) {
+            if (association && committed && afterRelation) {
                 throw new IllegalStateException("Injected response failure after commit");
             }
             return committed;
