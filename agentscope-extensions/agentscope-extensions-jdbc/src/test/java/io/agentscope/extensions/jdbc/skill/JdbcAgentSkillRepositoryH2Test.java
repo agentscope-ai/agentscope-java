@@ -365,6 +365,11 @@ class JdbcAgentSkillRepositoryH2Test {
             assertTrue(
                     JdbcAgentSkillRepository.isUniqueViolation(
                             new SQLException("d", "23000", 1062)));
+            for (int vendorCode : new int[] {1022, 1, 2601, 2627}) {
+                assertTrue(
+                        JdbcAgentSkillRepository.isUniqueViolation(
+                                new SQLException("d", "23000", vendorCode)));
+            }
             assertFalse(
                     JdbcAgentSkillRepository.isUniqueViolation(
                             new SQLException("d", "23000", 1048)));

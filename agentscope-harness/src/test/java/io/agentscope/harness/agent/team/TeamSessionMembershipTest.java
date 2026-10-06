@@ -508,6 +508,11 @@ class TeamSessionMembershipTest {
     void pendingAdoptionAfterFailureIsObservableAndRecoverableByNewClient() {
         FaultStore faulty = useFaultStore();
         MemberSession lead = member(states, "alice", "lead", "one", "leader-agent");
+        StoreItem oldLead = store.get(List.of("teams", "ns-a", "a", "members"), "lead");
+        Map<String, Object> oldValue = new LinkedHashMap<>(oldLead.value());
+        oldValue.put("sessionId", "one");
+        store.put(List.of("teams", "ns-a", "a", "members"), "lead", oldValue);
+        List<TeamMemberInfo> declared = client.listMembers("ns-a", "a").block();
         faulty.beforeRelation = true;
         assertThrows(
                 IllegalStateException.class,
@@ -515,7 +520,9 @@ class TeamSessionMembershipTest {
         assertEquals(Status.PENDING, service.getTeam("alice", a).block().status());
         assertTrue(service.getTeam("alice", a).block().memberships().isEmpty());
         assertNull(service.findMembership(lead.session()).block());
-        assertThrows(IllegalStateException.class, () -> client.listMembers("ns-a", "a").block());
+        assertEquals(declared, client.listMembers("ns-a", "a").block());
+        assertEquals("one", legacy("lead").sessionId());
+        assertEquals(1, client.broadcastMessage("ns-a", "a", "lead", "pending").block().size());
         assertThrows(
                 IllegalStateException.class, () -> service.listMemberships("alice", a).block());
         faulty.beforeRelation = false;
@@ -774,21 +781,101 @@ class TeamSessionMembershipTest {
     }
 
     @Test
-    void conflictingPendingAdoptionCanFinishAfterPreviousTeamReleasesSession() {
+    void occupiedSessionRejectsAdoptionBeforeChangingTeamAndAllowsCorrectedRequest() {
         MemberSession lead = member(states, "alice", "lead", "one", "leader-agent");
         Membership old =
                 service.adoptTeam("alice", a, "a", List.of(lead)).block().memberships().get(0);
+        List<String> metaNs = List.of("teams", "ns-b", "b");
+        StoreItem before = store.get(metaNs, "meta");
+        StoreItem relations =
+                store.get(List.of("team-session-membership", "YXBw"), "owner-YWxpY2U");
+        List<TeamMemberInfo> declared = client.listMembers("ns-b", "b").block();
         assertThrows(
                 TeamConflictException.class,
                 () -> service.adoptTeam("alice", b, "b", List.of(lead)).block());
-        assertEquals(Status.PENDING, service.getTeam("alice", b).block().status());
-        service.unbindMember("alice", a, lead.session(), old.token()).block();
-        Membership replacement =
-                service.adoptTeam("alice", b, "b", List.of(lead)).block().memberships().get(0);
-        assertNotEquals(old.token(), replacement.token());
+        assertEquals(before, store.get(metaNs, "meta"));
+        assertEquals(
+                relations, store.get(List.of("team-session-membership", "YXBw"), "owner-YWxpY2U"));
+        assertEquals(declared, client.listMembers("ns-b", "b").block());
+        assertEquals(
+                1, client.broadcastMessage("ns-b", "b", "lead", "still available").block().size());
+        MemberSession alternative = member(states, "alice", "lead", "two", "leader-agent");
+        assertEquals(
+                Status.ACTIVE,
+                service.adoptTeam("alice", b, "b", List.of(alternative)).block().status());
+        assertEquals(old, service.findMembership(lead.session()).block());
+        assertTrue(states.exists("alice", "one"));
+        assertTrue(states.exists("alice", "two"));
+    }
+
+    @Test
+    void occupiedInitialWorkerRejectsEntireAdoptionBeforeWritingMarker() {
+        MemberSession leadA = member(states, "alice", "lead", "leader-a", "leader-agent");
+        MemberSession worker = member(states, "alice", "worker", "worker", "worker-agent");
+        service.adoptTeam("alice", a, "a", List.of(leadA, worker)).block();
+        MemberSession leadB = member(states, "alice", "lead", "leader-b", "leader-agent");
+        StoreItem before = store.get(List.of("teams", "ns-b", "b"), "meta");
         assertThrows(
                 TeamConflictException.class,
-                () -> service.unbindMember("alice", a, lead.session(), old.token()).block());
+                () -> service.adoptTeam("alice", b, "b", List.of(leadB, worker)).block());
+        assertEquals(before, store.get(List.of("teams", "ns-b", "b"), "meta"));
+        assertNull(service.findMembership(leadB.session()).block());
+        assertEquals(2, service.listMemberships("alice", a).block().size());
+    }
+
+    @Test
+    void sessionClaimedAfterPreflightRemainsUniqueAndPendingTeamKeepsLegacyDirectory() {
+        AtomicBoolean claim = new AtomicBoolean();
+        InMemoryStore racing =
+                new InMemoryStore() {
+                    @Override
+                    public boolean putIfVersion(
+                            List<String> ns, String key, Map<String, Object> value, long version) {
+                        if (ns.equals(List.of("teams", "ns-b", "b"))
+                                && value.containsKey("sessionMembership")
+                                && claim.compareAndSet(false, true)) {
+                            new LocalTeamClient(this)
+                                    .sessionMembership("app", Map.of("state", states))
+                                    .adoptTeam(
+                                            "alice",
+                                            a,
+                                            "a",
+                                            List.of(
+                                                    member(
+                                                            states,
+                                                            "alice",
+                                                            "lead",
+                                                            "one",
+                                                            "leader-agent")))
+                                    .block();
+                        }
+                        return super.putIfVersion(ns, key, value, version);
+                    }
+                };
+        store = racing;
+        client = new LocalTeamClient(store);
+        create(a);
+        create(b);
+        service = client.sessionMembership("app", Map.of("state", states));
+        MemberSession lead = member(states, "alice", "lead", "one", "leader-agent");
+        List<TeamMemberInfo> declared = client.listMembers("ns-b", "b").block();
+        assertThrows(
+                TeamConflictException.class,
+                () -> service.adoptTeam("alice", b, "b", List.of(lead)).block());
+        Membership winner = service.findMembership(lead.session()).block();
+        assertEquals(a, winner.address());
+        assertEquals(Status.PENDING, service.getTeam("alice", b).block().status());
+        assertEquals(declared, client.listMembers("ns-b", "b").block());
+        assertEquals(1, client.broadcastMessage("ns-b", "b", "lead", "pending").block().size());
+        assertThrows(
+                IllegalStateException.class, () -> service.listMemberships("alice", b).block());
+        assertTrue(service.unbindMember("alice", a, lead.session(), winner.token()).block());
+        Membership replacement =
+                service.adoptTeam("alice", b, "b", List.of(lead)).block().memberships().get(0);
+        assertNotEquals(winner.token(), replacement.token());
+        assertThrows(
+                TeamConflictException.class,
+                () -> service.unbindMember("alice", a, lead.session(), winner.token()).block());
         assertEquals(replacement, service.findMembership(lead.session()).block());
     }
 

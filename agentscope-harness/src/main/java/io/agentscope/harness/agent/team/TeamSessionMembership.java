@@ -199,8 +199,9 @@ public final class TeamSessionMembership {
     /**
      * Adopts an existing Team using a complete initial request with exactly one declared Leader.
      *
-     * <p>The meta marker is written first; a single owner-item CAS commits all initial associations
-     * and the receipt. Failure between these writes leaves an observable PENDING adoption. Retry the
+     * <p>Known Session conflicts are rejected before the meta marker is written. A single
+     * owner-item CAS then commits all initial associations and the receipt. Failure between these
+     * writes leaves an observable PENDING adoption. Retry the
      * same request to finish it. A committed request replay returns current associations, without
      * restoring subsequently unbound members. Different adoption requests cannot replace the marker.
      *
@@ -242,7 +243,7 @@ public final class TeamSessionMembership {
                             break;
                         }
                         validateInitial(owner, address, initial);
-                        prepareOwner(owner);
+                        prepareOwner(owner, initial);
                         Marker next =
                                 new Marker(
                                         1,
@@ -516,10 +517,16 @@ public final class TeamSessionMembership {
         return readOwner(store, domain, owner);
     }
 
-    private void prepareOwner(String owner) {
-        // Check actual storage before enabling projection from the Team's adoption marker.
+    private void prepareOwner(String owner, List<MemberSession> initial) {
+        // Reject known conflicts and check storage before installing the Team's adoption marker.
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             OwnerItem current = readOwner(owner);
+            for (Membership existing : current.state().memberships()) {
+                if (initial.stream()
+                        .anyMatch(m -> m.session().equals(existing.member().session()))) {
+                    throw new TeamConflictException("Session is already associated");
+                }
+            }
             if (current.version() > 0
                     || writeOwner(
                             owner,
@@ -633,7 +640,10 @@ public final class TeamSessionMembership {
         }
         TeamAddress address = new TeamAddress(namespace, teamName);
         OwnerState state = readOwner(store, marker.domain(), marker.owner()).state();
-        active(committed(state, marker) ? Status.ACTIVE : Status.PENDING);
+        if (!committed(state, marker)) {
+            // Until commit, legacy readers retain the original directory, not new associations.
+            return declaredMembers(store, address);
+        }
         Map<String, String> sessions = new HashMap<>();
         members(state, marker, address)
                 .forEach(

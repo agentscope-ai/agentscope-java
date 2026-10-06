@@ -29,6 +29,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.extensions.jdbc.H2TestSupport;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -126,6 +127,9 @@ class JdbcStoreConstraintTest {
         JdbcStore store = JdbcStore.builder(ds).dialect(new H2Dialect()).build();
         if (duplicate) {
             assertFalse(store.putIfVersion(ns, "key", Map.of("value", "original"), 0));
+            var result = new RemoteFilesystem(store, ns).write(null, "file.txt", "content");
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("already exists"));
         } else {
             IllegalStateException failure =
                     assertThrows(
@@ -138,6 +142,16 @@ class JdbcStoreConstraintTest {
     private static Stream<Arguments> sqlErrors() {
         return Stream.of(
                 Arguments.of(new SQLException("duplicate", "23505", 0), true),
+                Arguments.of(new SQLException("MySQL old duplicate", "23000", 1022), true),
+                Arguments.of(new SQLException("Oracle duplicate", "23000", 1), true),
+                Arguments.of(new SQLException("SQL Server duplicate index", "23000", 2601), true),
+                Arguments.of(
+                        new SQLException("SQL Server duplicate constraint", "23000", 2627), true),
+                Arguments.of(new SQLException("Informix duplicate", null, -239), true),
+                Arguments.of(new SQLException("Informix duplicate constraint", null, -268), true),
+                Arguments.of(new SQLException("Oracle check", "23000", 2290), false),
+                Arguments.of(new SQLException("SQL Server foreign key", "23000", 547), false),
+                Arguments.of(new SQLException("MySQL foreign key delete", "23000", 1451), false),
                 Arguments.of(
                         new SQLIntegrityConstraintViolationException("duplicate", "23000", 1062),
                         true),

@@ -474,9 +474,13 @@ class TeamSessionMembershipH2Test {
         Fixture reopened = open();
         assertEquals(Status.PENDING, reopened.membership().getTeam("alice", a).block().status());
         assertNull(reopened.membership().findMembership(lead.session()).block());
+        assertEquals("", reopened.client().listMembers("ns-a", "a").block().get(0).sessionId());
+        assertEquals(
+                1,
+                reopened.client().broadcastMessage("ns-a", "a", "lead", "pending").block().size());
         assertThrows(
                 IllegalStateException.class,
-                () -> reopened.client().listMembers("ns-a", "a").block());
+                () -> reopened.membership().listMemberships("alice", a).block());
         assertEquals(
                 Status.ACTIVE,
                 reopened.membership().adoptTeam("alice", a, "a", List.of(lead)).block().status());

@@ -17,6 +17,7 @@ package io.agentscope.extensions.jdbc.store;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.extensions.jdbc.JdbcConstraintErrors;
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
 import io.agentscope.extensions.jdbc.dialect.table.StoreDialect;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
@@ -125,7 +126,7 @@ public class JdbcStore implements VersionedBaseStore {
                 ps.executeUpdate();
                 return true;
             } catch (SQLException e) {
-                if (isDuplicateKey(e)) {
+                if (JdbcConstraintErrors.isDuplicateKey(e)) {
                     return false;
                 }
                 throw new IllegalStateException("JdbcStore putIfVersion (insert) failed", e);
@@ -243,28 +244,6 @@ public class JdbcStore implements VersionedBaseStore {
         if (key == null || key.isEmpty()) {
             throw new IllegalArgumentException("key must not be null or empty");
         }
-    }
-
-    private static boolean isDuplicateKey(SQLException e) {
-        if ("23505".equals(e.getSQLState())) {
-            return true;
-        }
-        if ("23000".equals(e.getSQLState()) && e.getErrorCode() == 1062) {
-            return true;
-        }
-        if (e.getErrorCode() == 19 && e.getClass().getName().startsWith("org.sqlite.")) {
-            // SQLite collapses all constraints into error 19. Keep its optional driver unlinked.
-            try {
-                Object result = e.getClass().getMethod("getResultCode").invoke(e);
-                if (result instanceof Enum<?> code) {
-                    return "SQLITE_CONSTRAINT_PRIMARYKEY".equals(code.name())
-                            || "SQLITE_CONSTRAINT_UNIQUE".equals(code.name());
-                }
-            } catch (ReflectiveOperationException ignored) {
-                // An unknown constraint is a storage failure, not evidence of a duplicate key.
-            }
-        }
-        return false;
     }
 
     // -------------------------------------------------------------------------
