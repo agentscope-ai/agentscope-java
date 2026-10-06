@@ -35,7 +35,6 @@ import io.agentscope.harness.agent.team.TeamSessionMembership.MemberSession;
 import io.agentscope.harness.agent.team.TeamSessionMembership.Membership;
 import io.agentscope.harness.agent.team.TeamSessionMembership.Role;
 import io.agentscope.harness.agent.team.TeamSessionMembership.SessionKey;
-import io.agentscope.harness.agent.team.TeamSessionMembership.Source;
 import io.agentscope.harness.agent.team.TeamSessionMembership.Status;
 import io.agentscope.harness.agent.team.TeamSessionMembership.TeamAddress;
 import io.agentscope.harness.agent.team.TeamSessionMembership.TeamView;
@@ -85,7 +84,6 @@ class TeamSessionMembershipTest {
         Files.writeString(workspace, "existing files");
         TeamView view = service.adoptTeam("alice", a, "research", List.of(leader)).block();
         Membership bound = service.bindMember("alice", a, worker).block();
-        assertEquals(Source.BYO, bound.source());
         assertEquals(bound, service.findMembership(worker.session()).block());
         assertEquals(2, service.listMemberships("alice", a).block().size());
         assertEquals("worker", legacy("worker").sessionId());

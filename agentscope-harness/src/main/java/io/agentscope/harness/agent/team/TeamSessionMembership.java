@@ -89,11 +89,6 @@ public final class TeamSessionMembership {
         WORKER
     }
 
-    /** This capability only associates resources supplied by the application. */
-    public enum Source {
-        BYO
-    }
-
     /** Adoption is active only after the relationship item contains its commit receipt. */
     public enum Status {
         PENDING,
@@ -158,7 +153,6 @@ public final class TeamSessionMembership {
      * @param teamId stable logical Team ID
      * @param address legacy Team address
      * @param member complete member and Session identity
-     * @param source resource origin, currently BYO
      * @param token persistent expected token for safe removal
      */
     public record Membership(
@@ -166,7 +160,6 @@ public final class TeamSessionMembership {
             String teamId,
             TeamAddress address,
             MemberSession member,
-            Source source,
             String token) {
         /** Validates an association. */
         public Membership {
@@ -174,7 +167,6 @@ public final class TeamSessionMembership {
             text(teamId, "team ID");
             Objects.requireNonNull(address, "address");
             Objects.requireNonNull(member, "member");
-            Objects.requireNonNull(source, "source");
             text(token, "binding token");
             sameOwner(teamOwner, member.session());
         }
@@ -285,7 +277,6 @@ public final class TeamSessionMembership {
                                             marker.teamId(),
                                             address,
                                             member,
-                                            Source.BYO,
                                             UUID.randomUUID().toString()));
                         }
                         Map<String, String> receipts = new HashMap<>(current.state().receipts());
@@ -316,7 +307,6 @@ public final class TeamSessionMembership {
                                     marker.teamId(),
                                     address,
                                     member,
-                                    Source.BYO,
                                     UUID.randomUUID().toString());
                     for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
                         OwnerItem current = readOwner(owner);
