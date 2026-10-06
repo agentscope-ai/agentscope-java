@@ -16,7 +16,9 @@
 package io.agentscope.core.tool.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.tool.AgentTool;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -29,6 +31,9 @@ import org.junit.jupiter.api.Test;
  * A registered MCP tool must keep the server's human-readable display title reachable through the
  * public {@link AgentTool} surface, so a caller rendering a permission confirmation can label the
  * operation for an end user instead of showing {@code repair__create_ticket}.
+ *
+ * <p>The title is also hostile input: it is a string the MCP server chose, displayed to a human who
+ * is about to approve an action, so these tests pin the stripping and the length cap too.
  */
 class McpToolTitleTest {
 
@@ -43,35 +48,32 @@ class McpToolTitleTest {
         parameters.put("properties", new HashMap<>());
     }
 
+    private static McpSchema.Tool toolWith(String title, String annotationTitle) {
+        return new McpSchema.Tool(
+                "create_ticket",
+                title,
+                "Creates a repair ticket",
+                null,
+                null,
+                annotationTitle == null
+                        ? null
+                        : new McpSchema.ToolAnnotations(
+                                annotationTitle, null, null, null, null, null),
+                null);
+    }
+
     @Test
     void resolveDisplayTitle_prefersToolTitle() {
-        McpSchema.Tool tool =
-                new McpSchema.Tool(
-                        "create_ticket",
-                        "提交报修工单",
-                        "Creates a repair ticket",
-                        null,
-                        null,
-                        new McpSchema.ToolAnnotations(
-                                "Annotation Title", null, null, null, null, null),
-                        null);
+        McpSchema.Tool tool = toolWith("Repair Ticket", "Annotation Title");
 
-        assertEquals("提交报修工单", McpTool.resolveDisplayTitle(tool));
+        assertEquals("Repair Ticket", McpTool.resolveDisplayTitle(tool));
     }
 
     @Test
     void resolveDisplayTitle_fallsBackToAnnotationTitle() {
-        McpSchema.Tool tool =
-                new McpSchema.Tool(
-                        "create_ticket",
-                        null,
-                        "Creates a repair ticket",
-                        null,
-                        null,
-                        new McpSchema.ToolAnnotations("提交报修工单", null, null, null, null, null),
-                        null);
+        McpSchema.Tool tool = toolWith(null, "Repair Ticket");
 
-        assertEquals("提交报修工单", McpTool.resolveDisplayTitle(tool));
+        assertEquals("Repair Ticket", McpTool.resolveDisplayTitle(tool));
     }
 
     @Test
@@ -93,6 +95,88 @@ class McpToolTitleTest {
         assertNull(McpTool.resolveDisplayTitle(tool));
     }
 
+    // ==================== Display sanitising of server-controlled input ====================
+
+    @Test
+    void resolveDisplayTitle_dropsZeroWidthAndBidiControlsWithoutAddingSpace() {
+        // U+202E/U+202D reorder the rest of the line, U+200C and U+00AD are invisible: none of them
+        // may survive into a confirmation prompt, and none of them is a word separator either.
+        assertEquals(
+                "DeleteThisNow",
+                McpTool.resolveDisplayTitle(toolWith("Delete\u202EThis\u200CNow", null)),
+                "bidi and zero-width controls must vanish, not be escaped");
+        assertEquals(
+                "RepairTicket", McpTool.resolveDisplayTitle(toolWith("Repair\u00ADTicket", null)));
+    }
+
+    @Test
+    void resolveDisplayTitle_collapsesNewlinesAndControlsIntoOneSpace() {
+        assertEquals(
+                "Line one Line two",
+                McpTool.resolveDisplayTitle(toolWith("  Line one\n\tLine   two  ", null)),
+                "the label stays on a single line");
+        assertEquals(
+                "A B",
+                McpTool.resolveDisplayTitle(toolWith("A\u0000\u0007B", null)),
+                "C0 controls separate but never pass through");
+    }
+
+    @Test
+    void resolveDisplayTitle_treatsUnprintableTitleAsAbsentAndFallsBack() {
+        McpSchema.Tool tool = toolWith("\n\u200F ", "Repair Ticket");
+
+        assertEquals(
+                "Repair Ticket",
+                McpTool.resolveDisplayTitle(tool),
+                "a title with nothing printable left is no title");
+    }
+
+    @Test
+    void resolveDisplayTitle_capsLengthAndMarksTruncation() {
+        String longTitle = "x".repeat(200);
+        String resolved = McpTool.resolveDisplayTitle(toolWith(longTitle, null));
+
+        assertEquals(120, resolved.length(), "the cap is inclusive of the ellipsis");
+        assertEquals("x".repeat(117) + "...", resolved);
+    }
+
+    @Test
+    void resolveDisplayTitle_truncationNeverSplitsASurrogatePair() {
+        String title = "y".repeat(116) + "\uD83D\uDE00tail";
+        String resolved = McpTool.resolveDisplayTitle(toolWith(title, null));
+
+        assertEquals("y".repeat(116) + "...", resolved);
+        for (int i = 0; i < resolved.length(); i++) {
+            assertFalse(
+                    Character.isSurrogate(resolved.charAt(i)),
+                    "a lone surrogate would corrupt every consumer that re-encodes the label");
+        }
+    }
+
+    @Test
+    void registeredTool_sanitisesATitleHandedStraightToTheConstructor() {
+        // Registration is not the only producer: extensions build McpTool directly, so the guard
+        // has
+        // to sit where the value is stored rather than only in resolveDisplayTitle.
+        McpTool tool =
+                new McpTool(
+                        "mcp__create_ticket",
+                        "create_ticket",
+                        "Creates a repair ticket",
+                        parameters,
+                        null,
+                        clientWrapper,
+                        null,
+                        "test-client",
+                        false,
+                        "Delete\u202EAll\u0000Data\nnow");
+
+        assertEquals("DeleteAll Data now", tool.getTitle());
+        assertTrue(
+                tool.getTitle().length() <= 120,
+                "the stored title is already display-safe for a prompt");
+    }
+
     @Test
     void registeredTool_exposesTitleThroughAgentToolSurface() {
         McpTool tool =
@@ -106,11 +190,11 @@ class McpToolTitleTest {
                         null,
                         "test-client",
                         false,
-                        "提交报修工单");
+                        "Repair Ticket");
 
         // Toolkit hands callers an AgentTool, so the title has to be reachable at that width.
         AgentTool asAgentTool = tool;
-        assertEquals("提交报修工单", asAgentTool.getTitle());
+        assertEquals("Repair Ticket", asAgentTool.getTitle());
         assertEquals(
                 "mcp__create_ticket",
                 asAgentTool.getName(),

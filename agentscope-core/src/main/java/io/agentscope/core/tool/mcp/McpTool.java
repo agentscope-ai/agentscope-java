@@ -52,6 +52,18 @@ public class McpTool extends ToolBase {
 
     private static final Logger logger = LoggerFactory.getLogger(McpTool.class);
 
+    /**
+     * Upper bound for a server-supplied display title, matching the one-line label width already used
+     * for tool names in {@code AgentTraceMiddleware}. The three characters of {@link #ELLIPSIS} are
+     * reserved out of it, so a sanitised title never exceeds this many characters.
+     */
+    private static final int MAX_DISPLAY_TITLE_LENGTH = 120;
+
+    private static final String ELLIPSIS = "...";
+
+    private static final int CONTENT_LENGTH_BEFORE_ELLIPSIS =
+            MAX_DISPLAY_TITLE_LENGTH - ELLIPSIS.length();
+
     private final Map<String, Object> outputSchema;
     private final String remoteToolName;
     private final McpClientWrapper clientWrapper;
@@ -123,7 +135,9 @@ public class McpTool extends ToolBase {
      * additionally carrying the MCP server's human-readable display title, surfaced through
      * {@link #getTitle()}.
      *
-     * @param title display name for end users, or {@code null} when the server provides none
+     * @param title display name for end users, or {@code null} when the server provides none; the
+     *     value is sanitised for display, so a server cannot inject line breaks or bidi overrides
+     *     into a permission prompt
      */
     public McpTool(
             String name,
@@ -140,7 +154,7 @@ public class McpTool extends ToolBase {
                 ToolBase.builder()
                         .name(Objects.requireNonNull(name, "name cannot be null"))
                         .description(description != null ? description : "")
-                        .title(title)
+                        .title(sanitizeDisplayTitle(title))
                         .inputSchema(parameters != null ? parameters : new HashMap<>())
                         .readOnly(readOnly)
                         .concurrencySafe(false)
@@ -396,19 +410,77 @@ public class McpTool extends ToolBase {
      * {@code description}. Registration uses this so a caller rendering a permission confirmation
      * can label the operation for an end user instead of showing the programmatic name.
      *
+     * <p>Both candidates pass through {@link #sanitizeDisplayTitle(String)}: the winner is whatever
+     * the MCP server typed, and it is shown to a human who is about to approve an action.
+     *
      * @param tool the MCP tool definition, may be {@code null}
-     * @return the first non-blank title found, or {@code null} when the server provides none
+     * @return the first non-blank sanitised title, or {@code null} when the server provides none
      */
     public static String resolveDisplayTitle(McpSchema.Tool tool) {
         if (tool == null) {
             return null;
         }
-        String title = tool.title();
-        if (title != null && !title.isBlank()) {
+        String title = sanitizeDisplayTitle(tool.title());
+        if (title != null) {
             return title;
         }
-        String annotationTitle = tool.annotations() != null ? tool.annotations().title() : null;
-        return annotationTitle != null && !annotationTitle.isBlank() ? annotationTitle : null;
+        return sanitizeDisplayTitle(tool.annotations() != null ? tool.annotations().title() : null);
+    }
+
+    /**
+     * Normalise a server-supplied label before it reaches a human.
+     *
+     * <p>Two classes of character are removed rather than escaped, because a prompt cannot escape
+     * its way out of them: zero-width and directional-format characters ({@code Cf}, e.g. U+202E
+     * RIGHT-TO-LEFT OVERRIDE) reorder the rest of the line the reader sees, and C0/C1 controls and
+     * whitespace let the label inject extra lines into a confirmation dialog. Whitespace runs
+     * collapse to one space so the label stays on a single line, and the result is capped at {@link
+     * #MAX_DISPLAY_TITLE_LENGTH} without cutting a surrogate pair in half.
+     *
+     * @param title the raw server value, may be {@code null}
+     * @return the displayable form, or {@code null} when nothing printable survives (so callers fall
+     *     back to {@link #getName()} instead of showing an empty label)
+     */
+    private static String sanitizeDisplayTitle(String title) {
+        if (title == null) {
+            return null;
+        }
+        StringBuilder cleaned =
+                new StringBuilder(Math.min(title.length(), CONTENT_LENGTH_BEFORE_ELLIPSIS));
+        boolean pendingSpace = false;
+        boolean truncated = false;
+        for (int i = 0; i < title.length(); i++) {
+            char c = title.charAt(i);
+            if (Character.getType(c) == Character.FORMAT) {
+                continue;
+            }
+            if (Character.isWhitespace(c)
+                    || Character.isSpaceChar(c)
+                    || Character.isISOControl(c)) {
+                pendingSpace = cleaned.length() > 0;
+                continue;
+            }
+            if (cleaned.length() >= CONTENT_LENGTH_BEFORE_ELLIPSIS) {
+                truncated = true;
+                break;
+            }
+            if (pendingSpace) {
+                cleaned.append(' ');
+                pendingSpace = false;
+            }
+            cleaned.append(c);
+        }
+        if (cleaned.length() == 0) {
+            return null;
+        }
+        if (!truncated) {
+            return cleaned.toString();
+        }
+        int end = cleaned.length();
+        if (Character.isHighSurrogate(cleaned.charAt(end - 1))) {
+            cleaned.deleteCharAt(end - 1);
+        }
+        return cleaned + ELLIPSIS;
     }
 
     /**

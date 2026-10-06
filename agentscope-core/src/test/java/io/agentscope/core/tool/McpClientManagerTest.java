@@ -659,4 +659,97 @@ class McpClientManagerTest {
         assertTrue(registered[1] instanceof McpTool);
         assertFalse(((McpTool) registered[1]).isReadOnly());
     }
+
+    // ==================== Tests for the display title delivered at registration
+    // ====================
+
+    /**
+     * These cases build a real {@link McpSchema.Tool} on purpose. Every other registration test mocks
+     * it and stubs only {@code name()}/{@code description()}/{@code inputSchema()}, so {@code
+     * title()} sits at Mockito's default {@code null} and the one line that resolves and hands over
+     * the title never runs with a value to deliver.
+     */
+    private McpClientWrapper newTitleMockWrapper(McpSchema.Tool tool) {
+        McpClientWrapper clientWrapper = mock(McpClientWrapper.class);
+        when(clientWrapper.getName()).thenReturn("title-client");
+        when(clientWrapper.initialize()).thenReturn(Mono.empty());
+        when(clientWrapper.listTools()).thenReturn(Mono.just(List.of(tool)));
+        return clientWrapper;
+    }
+
+    @Test
+    void testRegisterMcpClient_toolTitleReachesRegisteredTool() {
+        McpSchema.Tool tool =
+                new McpSchema.Tool(
+                        "title-tool",
+                        "Repair Ticket",
+                        "Creates a repair ticket",
+                        null,
+                        null,
+                        null,
+                        null);
+        AgentTool[] registeredTool = new AgentTool[1];
+
+        newCapturingManager(registeredTool).registerMcpClient(newTitleMockWrapper(tool)).block();
+
+        assertNotNull(registeredTool[0]);
+        assertEquals("Repair Ticket", registeredTool[0].getTitle());
+        assertEquals(
+                "title-tool", registeredTool[0].getName(), "the model-facing name stays untouched");
+    }
+
+    @Test
+    void testRegisterMcpClient_annotationTitleIsTheFallback() {
+        McpSchema.Tool tool =
+                new McpSchema.Tool(
+                        "title-tool",
+                        null,
+                        "Creates a repair ticket",
+                        null,
+                        null,
+                        new McpSchema.ToolAnnotations(
+                                "Repair Ticket", null, null, null, null, null),
+                        null);
+        AgentTool[] registeredTool = new AgentTool[1];
+
+        newCapturingManager(registeredTool).registerMcpClient(newTitleMockWrapper(tool)).block();
+
+        assertEquals("Repair Ticket", registeredTool[0].getTitle());
+    }
+
+    @Test
+    void testRegisterMcpClient_hostileTitleIsSanitisedBeforeRegistration() {
+        McpSchema.Tool tool =
+                new McpSchema.Tool(
+                        "title-tool",
+                        "Delete\u202EAll\u0000Data\nnow",
+                        "Creates a repair ticket",
+                        null,
+                        null,
+                        null,
+                        null);
+        AgentTool[] registeredTool = new AgentTool[1];
+
+        newCapturingManager(registeredTool).registerMcpClient(newTitleMockWrapper(tool)).block();
+
+        assertEquals(
+                "DeleteAll Data now",
+                registeredTool[0].getTitle(),
+                "the label shown in a permission prompt carries no reordering or control"
+                        + " characters");
+    }
+
+    @Test
+    void testRegisterMcpClient_serverSendingNoTitleKeepsNullTitle() {
+        McpSchema.Tool tool =
+                new McpSchema.Tool(
+                        "title-tool", null, "Creates a repair ticket", null, null, null, null);
+        AgentTool[] registeredTool = new AgentTool[1];
+
+        newCapturingManager(registeredTool).registerMcpClient(newTitleMockWrapper(tool)).block();
+
+        assertNull(
+                registeredTool[0].getTitle(),
+                "a server that sends no title leaves the pre-existing fallback to the name");
+    }
 }
