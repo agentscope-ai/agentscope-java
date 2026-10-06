@@ -42,6 +42,37 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
     .build();
 ```
 
+## 服务端内置工具
+
+OpenAI 官方文档: https://developers.openai.com/api/docs/guides/tools#available-tools
+
+Responses API 的 provider-executed built-in tools 可通过 `serverTools` 启用：
+
+```java
+import com.openai.models.responses.Tool;
+import com.openai.models.responses.WebSearchTool;
+import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
+
+OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
+    .apiKey(System.getenv("OPENAI_API_KEY"))
+    .modelName("gpt-5")
+    .serverTools(List.of(OpenAIServerTool.of(
+        Tool.ofWebSearch(WebSearchTool.builder()
+            .type(WebSearchTool.Type.WEB_SEARCH)
+            .build()))))
+    .build();
+```
+
+支持 `web_search`、`code_interpreter`、`image_generation` 和 `tool_search`。
+
+模型返回的内置工具调用和结果会保留为 server-tool 标记的 `ToolUseBlock` / `ToolResultBlock`，并将原始 Responses item 存至 metadata 在后续轮次回放。
+
+`tool_search` 仅支持 "Hosted" 模式，暂不支持 "Client-executed" 模式。 可为单个本地函数工具标注 `@Tool(deferLoading = true)`，其参数 schema 会延迟到模型通过 hosted tool search 加载时才进入上下文。未标注的工具保持立即可用；配置了 `deferLoading` 但未启用 `tool_search` server tool 时会快速失败。
+
+消息 annotations（包括 `container_file_citation`）会保留在 `openai.response.citations` 响应 metadata 中。Code Interpreter 的图片输出会表示为带 `URLSource` 的 `DataBlock`，容器 ID 会保留在工具结果 metadata 中。
+
+`image_generation` 的结果会映射为带 `Base64Source` 的 `DataBlock`。启用 `partial_images` 后，每个 `response.image_generation_call.partial_image` 事件会以 `RUNNING` 状态的 server-tool result 输出预览 `DataBlock`，terminal response 会用最终图片替换它。
+
 ## Spring Boot
 
 本模块暂无专用 Spring Boot starter。
