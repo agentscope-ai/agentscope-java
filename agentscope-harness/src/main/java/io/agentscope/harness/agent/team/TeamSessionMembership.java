@@ -61,10 +61,12 @@ public final class TeamSessionMembership {
     private static final int MAX_ENCODED_OWNER_LENGTH = 249;
     // Leave room for the namespace prefix and separator in MySQL's VARCHAR(512).
     private static final int MAX_ENCODED_DOMAIN_LENGTH = 480;
+    // Missing creator properties are tolerated: a JdbcStore ObjectMapper configured with
+    // NON_NULL legitimately omits null owner fields. Required fields and schema are still
+    // enforced by the record compact constructors and explicit schema checks.
     private static final ObjectMapper JSON =
             new ObjectMapper()
                     .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-                    .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
                     .enable(DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS);
     private final VersionedBaseStore store;
     private final String domain;

@@ -206,6 +206,53 @@ class TeamSessionMembershipTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void storesOmittingNullIdentityFieldsRemainReadableAndRequiredFieldsStayEnforced() {
+        // Mirrors a JdbcStore ObjectMapper configured with JsonInclude.Include.NON_NULL.
+        store =
+                new InMemoryStore() {
+                    @Override
+                    public boolean putIfVersion(
+                            List<String> ns, String key, Map<String, Object> value, long version) {
+                        return super.putIfVersion(ns, key, strip(value), version);
+                    }
+
+                    @Override
+                    public void put(List<String> ns, String key, Map<String, Object> value) {
+                        super.put(ns, key, strip(value));
+                    }
+                };
+        client = new LocalTeamClient(store);
+        create(a);
+        service = client.sessionMembership("app", Map.of("state", states));
+        MemberSession anonymous =
+                new MemberSession(
+                        "lead",
+                        null,
+                        "leader-agent",
+                        Role.LEADER,
+                        new SessionKey("state", null, "anon"));
+        states.save(null, "anon", "legacy", new SavedState("original"));
+        TeamView view = service.adoptTeam(null, a, "anonymous", List.of(anonymous)).block();
+        assertEquals(Status.ACTIVE, view.status());
+        assertNull(view.teamOwner());
+        assertNull(view.memberships().get(0).member().definitionOwner());
+        assertEquals("anon", legacy("lead").sessionId());
+        Membership bound = service.findMembership(anonymous.session()).block();
+        assertEquals(anonymous, bound.member());
+        assertTrue(service.unbindMember(null, a, anonymous.session(), bound.token()).block());
+
+        List<String> ns = List.of("teams", "ns-a", "a");
+        Map<String, Object> meta = new LinkedHashMap<>(store.get(ns, "meta").value());
+        Map<String, Object> marker =
+                new LinkedHashMap<>((Map<String, Object>) meta.get("sessionMembership"));
+        marker.remove("teamId");
+        meta.put("sessionMembership", marker);
+        store.put(ns, "meta", meta);
+        assertThrows(IllegalStateException.class, () -> service.getTeam(null, a).block());
+    }
+
+    @Test
     void requiresRealPersistedSessionsAndMatchingDeclaredDefinitions() {
         MemberSession missing =
                 new MemberSession(
@@ -715,6 +762,29 @@ class TeamSessionMembershipTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(error);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> strip(Map<String, Object> value) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : value.entrySet()) {
+            Object v = entry.getValue();
+            if (v instanceof Map<?, ?> map) {
+                out.put(entry.getKey(), strip((Map<String, Object>) map));
+            } else if (v instanceof List<?> list) {
+                List<Object> items = new ArrayList<>();
+                for (Object item : list) {
+                    items.add(
+                            item instanceof Map<?, ?> map
+                                    ? strip((Map<String, Object>) map)
+                                    : item);
+                }
+                out.put(entry.getKey(), items);
+            } else if (v != null) {
+                out.put(entry.getKey(), v);
+            }
+        }
+        return out;
     }
 
     private static class FaultStore extends InMemoryStore {
