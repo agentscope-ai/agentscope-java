@@ -168,6 +168,7 @@ class ToolCallsAccumulatorTest {
         ToolUseBlock snapshot = accumulator.getAccumulatedToolCall("call_streaming");
         assertEquals(ToolCallState.PENDING, snapshot.getState());
         assertTrue(snapshot.getInput().isEmpty());
+        assertEquals("{}", snapshot.getContent());
         assertTrue(
                 snapshot.getMetadata() == null
                         || !snapshot.getMetadata()

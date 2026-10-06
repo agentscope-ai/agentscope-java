@@ -314,6 +314,12 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      * <p>If the ID is null or empty, or if no builder is found for the given ID,
      * this method falls back to using the lastToolCallKey.
      *
+     * <p>This is a non-final snapshot. Invalid or incomplete argument JSON is sanitized to empty
+     * input and the {@code {}} content fallback, but it is not marked as a parse failure. Only
+     * {@code build(true)} (used by {@link #buildAllToolCalls()}) is the fail-closed view with
+     * authoritative parse-failure metadata; hooks must not treat the absence of that marker in
+     * this snapshot as evidence that the final parse succeeded.
+     *
      * @param id The tool call ID to look up
      * @return The accumulated ToolUseBlock, or null if not found
      */
