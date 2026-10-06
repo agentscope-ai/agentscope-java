@@ -79,6 +79,13 @@ public class LocalFilesystem implements AbstractFilesystem {
 
     private static final int DEFAULT_MAX_FILE_SIZE_MB = 10;
 
+    /**
+     * Workspace-root directory that {@code MarketplaceStager} materialises non-workspace skills
+     * into. The stager writes it with plain {@code java.nio} at the workspace root, never under a
+     * namespace prefix.
+     */
+    private static final String SKILLS_CACHE_DIR = ".skills-cache";
+
     private final Path cwd;
     private final LocalFsMode mode;
     private final PathPolicy pathPolicy;
@@ -698,6 +705,11 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (isAbsolutePathString(key)) {
             return key;
         }
+        // The skill cache lives at the workspace root and is isolated by the stager's own scope
+        // segment, so its relative spelling (which ls/glob/grep hand back) must not be scoped.
+        if (isSkillsCachePath(key)) {
+            return key;
+        }
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
             return key;
@@ -724,6 +736,29 @@ public class LocalFilesystem implements AbstractFilesystem {
         }
         // Windows UNC: "\\server\share"
         return key.startsWith("\\\\");
+    }
+
+    /**
+     * Returns {@code true} when {@code key} is a relative path into the workspace-root
+     * {@code .skills-cache} tree. Paths with a {@code ..} segment are excluded so they keep
+     * the regular namespace handling.
+     */
+    private static boolean isSkillsCachePath(String key) {
+        String[] segments = key.replace('\\', '/').split("/");
+        int first = 0;
+        while (first < segments.length
+                && (segments[first].isEmpty() || ".".equals(segments[first]))) {
+            first++;
+        }
+        if (first == segments.length || !SKILLS_CACHE_DIR.equals(segments[first])) {
+            return false;
+        }
+        for (String segment : segments) {
+            if ("..".equals(segment)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     protected String toVirtualPath(Path path) {

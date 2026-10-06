@@ -194,6 +194,82 @@ class LocalFilesystemModeTest {
         assertEquals("hello", r.fileData().content());
     }
 
+    // ==================== Workspace-root skill cache + namespace ====================
+
+    private static Path stageCachedScript(Path workspace) throws IOException {
+        Path script = workspace.resolve(".skills-cache/user-1/database/demo/scripts/run.sh");
+        Files.createDirectories(script.getParent());
+        Files.writeString(script, "echo demo", StandardCharsets.UTF_8);
+        return script;
+    }
+
+    @Test
+    void rooted_relativeSkillsCachePathNotNamespaced(@TempDir Path workspace) throws IOException {
+        stageCachedScript(workspace);
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        LsResult ls = fs.ls(rc, ".skills-cache/user-1/database/demo/scripts");
+        assertTrue(ls.isSuccess(), () -> "skill cache must not be namespaced, got: " + ls.error());
+        assertEquals(1, ls.entries().size());
+
+        ReadResult r = fs.read(rc, "./.skills-cache/user-1/database/demo/scripts/run.sh", 0, 0);
+        assertTrue(r.isSuccess(), () -> "skill cache must not be namespaced, got: " + r.error());
+        assertEquals("echo demo", r.fileData().content());
+    }
+
+    @Test
+    void rooted_skillsCacheLsEntryPathsRoundTrip(@TempDir Path workspace) throws IOException {
+        Path script = stageCachedScript(workspace);
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        // ls on the absolute files-root hands back workspace-relative entry paths; feeding one
+        // back must reach the same directory instead of <workspace>/user-1/.skills-cache/...
+        LsResult root = fs.ls(rc, script.getParent().getParent().toString());
+        assertTrue(root.isSuccess(), () -> "ls should succeed, got: " + root.error());
+        String scriptsEntry = root.entries().get(0).path();
+        assertEquals(".skills-cache/user-1/database/demo/scripts/", scriptsEntry);
+
+        LsResult scripts = fs.ls(rc, scriptsEntry);
+        assertTrue(scripts.isSuccess(), () -> "entry path should round-trip: " + scripts.error());
+        String scriptEntry = scripts.entries().get(0).path();
+        ReadResult r = fs.read(rc, scriptEntry, 0, 0);
+        assertTrue(r.isSuccess(), () -> "entry path should round-trip: " + r.error());
+        assertEquals("echo demo", r.fileData().content());
+    }
+
+    @Test
+    void unrestricted_skillsCacheTraversalKeepsNamespace(@TempDir Path workspace)
+            throws IOException {
+        Path other = workspace.resolve("user-2/private.txt");
+        Files.createDirectories(other.getParent());
+        Files.writeString(other, "user-2 only", StandardCharsets.UTF_8);
+        LocalFilesystem fs =
+                new LocalFilesystem(
+                        workspace, LocalFsMode.UNRESTRICTED, PathPolicy.empty(), 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult r = fs.read(rc, ".skills-cache/../user-2/private.txt", 0, 0);
+        assertFalse(r.isSuccess(), "a '..' segment must not escape through the cache exemption");
+    }
+
+    @Test
+    void rooted_skillsCacheLookalikeStillNamespaced(@TempDir Path workspace) throws IOException {
+        Path nsFile = workspace.resolve("user-1/.skills-cache-old/note.txt");
+        Files.createDirectories(nsFile.getParent());
+        Files.writeString(nsFile, "namespaced", StandardCharsets.UTF_8);
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult r = fs.read(rc, ".skills-cache-old/note.txt", 0, 0);
+        assertTrue(r.isSuccess(), () -> "lookalike should stay namespaced, got: " + r.error());
+        assertEquals("namespaced", r.fileData().content());
+    }
+
     // ==================== ROOTED mode with leading "/" paths ====================
 
     @Test
