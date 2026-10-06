@@ -26,7 +26,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -125,8 +124,6 @@ public class JdbcStore implements VersionedBaseStore {
                 bindParams(ps, boundSql.params());
                 ps.executeUpdate();
                 return true;
-            } catch (SQLIntegrityConstraintViolationException dup) {
-                return false;
             } catch (SQLException e) {
                 if (isDuplicateKey(e)) {
                     return false;
@@ -249,14 +246,25 @@ public class JdbcStore implements VersionedBaseStore {
     }
 
     private static boolean isDuplicateKey(SQLException e) {
-        if (e instanceof SQLIntegrityConstraintViolationException) {
+        if ("23505".equals(e.getSQLState())) {
             return true;
         }
-        String state = e.getSQLState();
-        if (state != null && state.startsWith("23")) {
+        if ("23000".equals(e.getSQLState()) && e.getErrorCode() == 1062) {
             return true;
         }
-        return e.getErrorCode() == 19 && e.getClass().getName().startsWith("org.sqlite.");
+        if (e.getErrorCode() == 19 && e.getClass().getName().startsWith("org.sqlite.")) {
+            // SQLite collapses all constraints into error 19. Keep its optional driver unlinked.
+            try {
+                Object result = e.getClass().getMethod("getResultCode").invoke(e);
+                if (result instanceof Enum<?> code) {
+                    return "SQLITE_CONSTRAINT_PRIMARYKEY".equals(code.name())
+                            || "SQLITE_CONSTRAINT_UNIQUE".equals(code.name());
+                }
+            } catch (ReflectiveOperationException ignored) {
+                // An unknown constraint is a storage failure, not evidence of a duplicate key.
+            }
+        }
+        return false;
     }
 
     // -------------------------------------------------------------------------

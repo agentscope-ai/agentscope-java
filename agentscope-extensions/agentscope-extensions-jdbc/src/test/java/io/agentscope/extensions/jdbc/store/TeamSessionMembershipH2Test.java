@@ -17,6 +17,7 @@ package io.agentscope.extensions.jdbc.store;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -40,6 +41,7 @@ import io.agentscope.harness.agent.team.TeamSessionMembership.Status;
 import io.agentscope.harness.agent.team.TeamSessionMembership.TeamAddress;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
@@ -154,6 +156,69 @@ class TeamSessionMembershipH2Test {
                             .adoptTeam(owner, a, "display", List.of(lead))
                             .block()
                             .status());
+        } finally {
+            shutdown(fixture.ds());
+        }
+    }
+
+    @Test
+    void checkConstraintFailureIsNotRetriedAsContentionAndLeavesTeamUnadopted() throws Exception {
+        Fixture fixture = open();
+        try {
+            create(fixture.client(), a);
+            MemberSession lead = member(fixture, "lead", "one", "leader-agent");
+            String table = AbstractJdbcDialect.from(fixture.ds()).build().storeTableName();
+            try (Connection connection = fixture.ds().getConnection();
+                    Statement statement = connection.createStatement()) {
+                statement.execute(
+                        "ALTER TABLE "
+                                + table
+                                + " ADD CONSTRAINT reject_relation CHECK (item_key NOT LIKE"
+                                + " 'owner-%')");
+            }
+            AtomicInteger writes = new AtomicInteger();
+            DelegatingStore counting =
+                    new DelegatingStore(fixture.store()) {
+                        @Override
+                        public boolean putIfVersion(
+                                List<String> ns,
+                                String key,
+                                Map<String, Object> value,
+                                long version) {
+                            if (ns.get(0).equals("team-session-membership")) {
+                                writes.incrementAndGet();
+                            }
+                            return super.putIfVersion(ns, key, value, version);
+                        }
+                    };
+            TeamSessionMembership membership =
+                    new LocalTeamClient(counting)
+                            .sessionMembership("app", Map.of("sessions", fixture.states()));
+            IllegalStateException failure =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () ->
+                                    membership
+                                            .adoptTeam("alice", a, "display", List.of(lead))
+                                            .block());
+            assertInstanceOf(SQLException.class, failure.getCause());
+            assertEquals(1, writes.get());
+            assertFalse(
+                    fixture.store()
+                            .get(List.of("teams", "ns-a", "a"), "meta")
+                            .value()
+                            .containsKey("sessionMembership"));
+            assertEquals("", fixture.client().listMembers("ns-a", "a").block().get(0).sessionId());
+            assertEquals(
+                    new SavedState("original"),
+                    fixture.states().get("alice", "one", "legacy", SavedState.class).orElseThrow());
+            try (Connection connection = fixture.ds().getConnection();
+                    Statement statement = connection.createStatement()) {
+                statement.execute("ALTER TABLE " + table + " DROP CONSTRAINT reject_relation");
+            }
+            assertEquals(
+                    Status.ACTIVE,
+                    membership.adoptTeam("alice", a, "display", List.of(lead)).block().status());
         } finally {
             shutdown(fixture.ds());
         }
