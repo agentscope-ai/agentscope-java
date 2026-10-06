@@ -52,6 +52,7 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -482,6 +483,85 @@ class TeamSessionMembershipTest {
         assertEquals(y, right.findMembership(first.session()).block());
         assertTrue(left.unbindMember(owner, c, first.session(), x.token()).block());
         assertEquals(y, right.findMembership(first.session()).block());
+    }
+
+    @Test
+    void uncontendedOperationsReuseOneOwnerSnapshot() {
+        CountingStore counting = useCountingStore();
+        MemberSession lead = member(states, "alice", "lead", "one", "leader-agent");
+        Membership leader =
+                service.adoptTeam("alice", a, "a", List.of(lead)).block().memberships().get(0);
+        MemberSession worker = member(states, "alice", "worker", "worker", "worker-agent");
+
+        counting.ownerReads.set(0);
+        Membership binding = service.bindMember("alice", a, worker).block();
+        assertEquals(1, counting.ownerReads.get());
+        counting.ownerReads.set(0);
+        assertEquals(binding, service.bindMember("alice", a, worker).block());
+        assertEquals(1, counting.ownerReads.get());
+        counting.ownerReads.set(0);
+        assertEquals(
+                2, service.adoptTeam("alice", a, "a", List.of(lead)).block().memberships().size());
+        assertEquals(1, counting.ownerReads.get());
+        counting.ownerReads.set(0);
+        assertTrue(service.unbindMember("alice", a, worker.session(), binding.token()).block());
+        assertEquals(1, counting.ownerReads.get());
+        counting.ownerReads.set(0);
+        assertFalse(service.unbindMember("alice", a, worker.session(), binding.token()).block());
+        assertEquals(1, counting.ownerReads.get());
+        counting.ownerReads.set(0);
+        assertTrue(service.unbindMember("alice", a, lead.session(), leader.token()).block());
+        assertEquals(1, counting.ownerReads.get());
+        counting.ownerReads.set(0);
+        assertTrue(
+                service.adoptTeam("alice", a, "a", List.of(lead)).block().memberships().isEmpty());
+        assertEquals(1, counting.ownerReads.get());
+    }
+
+    @Test
+    void bindRereadsAfterConflictAndDoesNotOverwriteAnotherTeam() {
+        CountingStore counting = useCountingStore();
+        MemberSession leadA = member(states, "alice", "lead", "leader-a", "leader-agent");
+        MemberSession leadB = member(states, "alice", "lead", "leader-b", "leader-agent");
+        MemberSession worker = member(states, "alice", "worker", "worker", "worker-agent");
+        service.adoptTeam("alice", a, "a", List.of(leadA)).block();
+        TeamSessionMembership other =
+                new LocalTeamClient(counting).sessionMembership("app", Map.of("state", states));
+        other.adoptTeam("alice", b, "b", List.of(leadB)).block();
+        counting.beforeOwnerCas.set(() -> other.bindMember("alice", b, worker).block());
+
+        assertThrows(
+                TeamConflictException.class, () -> service.bindMember("alice", a, worker).block());
+
+        assertEquals(b, service.findMembership(worker.session()).block().address());
+        assertEquals(1, service.listMemberships("alice", a).block().size());
+        assertEquals(2, other.listMemberships("alice", b).block().size());
+    }
+
+    @Test
+    void unbindRereadsAfterConflictAndPreservesReplacementBinding() {
+        CountingStore counting = useCountingStore();
+        MemberSession lead = member(states, "alice", "lead", "one", "leader-agent");
+        MemberSession worker = member(states, "alice", "worker", "worker", "worker-agent");
+        service.adoptTeam("alice", a, "a", List.of(lead)).block();
+        Membership original = service.bindMember("alice", a, worker).block();
+        TeamSessionMembership other =
+                new LocalTeamClient(counting).sessionMembership("app", Map.of("state", states));
+        AtomicReference<Membership> replacement = new AtomicReference<>();
+        counting.beforeOwnerCas.set(
+                () -> {
+                    assertTrue(
+                            other.unbindMember("alice", a, worker.session(), original.token())
+                                    .block());
+                    replacement.set(other.bindMember("alice", a, worker).block());
+                });
+
+        assertThrows(
+                TeamConflictException.class,
+                () -> service.unbindMember("alice", a, worker.session(), original.token()).block());
+
+        assertNotEquals(original.token(), replacement.get().token());
+        assertEquals(replacement.get(), service.findMembership(worker.session()).block());
     }
 
     @Test
@@ -952,6 +1032,16 @@ class TeamSessionMembershipTest {
         assertEquals(version, store.get(ns, key).version());
     }
 
+    private CountingStore useCountingStore() {
+        CountingStore counting = new CountingStore();
+        store = counting;
+        client = new LocalTeamClient(store);
+        service = client.sessionMembership("app", Map.of("state", states));
+        create(a);
+        create(b);
+        return counting;
+    }
+
     private FaultStore useFaultStore() {
         FaultStore faulty = new FaultStore();
         store = faulty;
@@ -1039,6 +1129,31 @@ class TeamSessionMembershipTest {
             }
         }
         return out;
+    }
+
+    private static class CountingStore extends InMemoryStore {
+        final AtomicInteger ownerReads = new AtomicInteger();
+        final AtomicReference<Runnable> beforeOwnerCas = new AtomicReference<>();
+
+        @Override
+        public StoreItem get(List<String> ns, String key) {
+            if (ns.get(0).equals("team-session-membership")) {
+                ownerReads.incrementAndGet();
+            }
+            return super.get(ns, key);
+        }
+
+        @Override
+        public boolean putIfVersion(
+                List<String> ns, String key, Map<String, Object> value, long version) {
+            if (ns.get(0).equals("team-session-membership")) {
+                Runnable interleave = beforeOwnerCas.getAndSet(null);
+                if (interleave != null) {
+                    interleave.run();
+                }
+            }
+            return super.putIfVersion(ns, key, value, version);
+        }
     }
 
     private static class FaultStore extends InMemoryStore {

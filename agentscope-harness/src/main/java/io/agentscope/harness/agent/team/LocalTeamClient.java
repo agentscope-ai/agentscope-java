@@ -579,7 +579,10 @@ public final class LocalTeamClient implements TeamClient {
                                 // A stale unconditional fallback could erase concurrent adoption.
                                 for (int attempt = 0; attempt < 10; attempt++) {
                                     StoreItem current =
-                                            store.get(teamNs(namespace, teamName), "meta");
+                                            attempt == 0
+                                                    ? item
+                                                    : store.get(
+                                                            teamNs(namespace, teamName), "meta");
                                     if (current != null && current.version() <= 0) {
                                         throw new IllegalStateException(
                                                 "Store must return positive item versions");

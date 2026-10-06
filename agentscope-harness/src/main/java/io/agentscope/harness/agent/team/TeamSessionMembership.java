@@ -237,8 +237,9 @@ public final class TeamSessionMembership {
                                         "Team has a different adoption request");
                             }
                             marker = existing;
-                            if (committed(readOwner(owner).state(), marker)) {
-                                return view(address, meta, marker);
+                            OwnerState state = readOwner(owner).state();
+                            if (committed(state, marker)) {
+                                return view(address, meta, marker, state);
                             }
                             break;
                         }
@@ -300,7 +301,8 @@ public final class TeamSessionMembership {
     public Mono<Membership> bindMember(String owner, TeamAddress address, MemberSession member) {
         return io(
                 () -> {
-                    Marker marker = requireActive(owner, address);
+                    ActiveTeam active = requireActive(owner, address);
+                    Marker marker = active.marker();
                     validateMember(owner, address, member);
                     Membership proposed =
                             new Membership(
@@ -310,7 +312,7 @@ public final class TeamSessionMembership {
                                     member,
                                     UUID.randomUUID().toString());
                     for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-                        OwnerItem current = readOwner(owner);
+                        OwnerItem current = attempt == 0 ? active.ownerItem() : readOwner(owner);
                         if (!committed(current.state(), marker)) {
                             throw corrupt();
                         }
@@ -380,9 +382,10 @@ public final class TeamSessionMembership {
                 () -> {
                     sameOwner(owner, session);
                     text(expectedToken, "expected binding token");
-                    Marker marker = requireActive(owner, address);
+                    ActiveTeam active = requireActive(owner, address);
+                    Marker marker = active.marker();
                     for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-                        OwnerItem current = readOwner(owner);
+                        OwnerItem current = attempt == 0 ? active.ownerItem() : readOwner(owner);
                         List<Membership> next = new ArrayList<>(current.state().memberships());
                         Membership bound =
                                 next.stream()
@@ -413,11 +416,10 @@ public final class TeamSessionMembership {
             throw new IllegalArgumentException("Team has not been adopted");
         }
         requireScope(marker, owner);
-        return view(address, meta, marker);
+        return view(address, meta, marker, readOwner(owner).state());
     }
 
-    private TeamView view(TeamAddress address, StoreItem meta, Marker marker) {
-        OwnerState state = readOwner(marker.owner()).state();
+    private TeamView view(TeamAddress address, StoreItem meta, Marker marker, OwnerState state) {
         boolean committed = committed(state, marker);
         TeamInfo info =
                 new TeamInfo(
@@ -436,14 +438,15 @@ public final class TeamSessionMembership {
                 committed ? members(state, marker, address) : List.of());
     }
 
-    private Marker requireActive(String owner, TeamAddress address) {
+    private ActiveTeam requireActive(String owner, TeamAddress address) {
         Marker marker = marker(requireMeta(address));
         if (marker == null) {
             throw new IllegalArgumentException("Team has not been adopted");
         }
         requireScope(marker, owner);
-        active(committed(readOwner(owner).state(), marker) ? Status.ACTIVE : Status.PENDING);
-        return marker;
+        OwnerItem current = readOwner(owner);
+        active(committed(current.state(), marker) ? Status.ACTIVE : Status.PENDING);
+        return new ActiveTeam(marker, current);
     }
 
     private void requireScope(Marker marker, String owner) {
@@ -721,6 +724,8 @@ public final class TeamSessionMembership {
     }
 
     private record OwnerItem(long version, OwnerState state) {}
+
+    private record ActiveTeam(Marker marker, OwnerItem ownerItem) {}
 
     // Schema 1 keeps BYO on disk independently of the public Membership shape.
     private record StoredOwnerState(

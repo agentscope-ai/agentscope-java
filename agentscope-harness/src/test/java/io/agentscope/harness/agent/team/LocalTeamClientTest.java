@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -240,6 +241,76 @@ class LocalTeamClientTest {
         assertTrue(client.listClaimableTasks("ns", "race").block().isEmpty());
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void strictCompletionUsesOneMetaSnapshotWithoutContention(boolean reopen) {
+        CompletionFaultStore store = new CompletionFaultStore();
+        LocalTeamClient original = new LocalTeamClient(store);
+        TeamSessionMembership membership =
+                adoptCompletionTeam(original, new InMemoryAgentStateStore());
+        SessionKey session = new SessionKey("state", "alice", "leader-session");
+        Membership before = membership.findMembership(session).block();
+        LocalTeamClient completing = reopen ? new LocalTeamClient(store) : original;
+        store.metaReads.set(0);
+
+        completing.completeTeam("ns", "membership").block();
+
+        assertEquals(1, store.metaReads.get());
+        assertEquals("Completed", store.get(COMPLETION_META, "meta").value().get("phase"));
+        assertEquals(before, membership.findMembership(session).block());
+        store.metaReads.set(0);
+        completing.completeTeam("ns", "membership").block();
+        assertEquals(1, store.metaReads.get());
+        assertEquals(1, store.casAttempts);
+    }
+
+    @Test
+    void strictCompletionRereadsAfterConcurrentAdoptionAndPreservesMarker() {
+        CompletionFaultStore store = new CompletionFaultStore();
+        LocalTeamClient completing = new LocalTeamClient(store);
+        createCompletionTeam(completing);
+        InMemoryAgentStateStore states = new InMemoryAgentStateStore();
+        states.save("alice", "leader-session", "agent", new SavedState("original"));
+        TeamSessionMembership membership =
+                completing.sessionMembership("app", Map.of("state", states));
+        MemberSession leader =
+                new MemberSession(
+                        "lead",
+                        "alice",
+                        "lead",
+                        Role.LEADER,
+                        new SessionKey("state", "alice", "leader-session"));
+        AtomicInteger readsBeforeConflict = new AtomicInteger();
+        AtomicReference<Membership> adopted = new AtomicReference<>();
+        store.beforeCompletionCas.set(
+                () -> {
+                    readsBeforeConflict.set(store.metaReads.get());
+                    adopted.set(
+                            new LocalTeamClient(store)
+                                    .sessionMembership("app", Map.of("state", states))
+                                    .adoptTeam(
+                                            "alice",
+                                            new TeamAddress("ns", "membership"),
+                                            "membership",
+                                            List.of(leader))
+                                    .block()
+                                    .memberships()
+                                    .get(0));
+                });
+        store.metaReads.set(0);
+
+        completing.completeTeam("ns", "membership").block();
+
+        assertEquals(1, readsBeforeConflict.get());
+        assertEquals(2, store.casAttempts);
+        assertEquals("Completed", store.get(COMPLETION_META, "meta").value().get("phase"));
+        assertEquals(adopted.get(), membership.findMembership(leader.session()).block());
+        assertEquals(
+                adopted.get().teamId(),
+                membership.getTeam("alice", new TeamAddress("ns", "membership")).block().teamId());
+        assertEquals(0, store.unconditionalWrites);
+    }
+
     @Test
     void completionWithoutMembershipOptInRetainsVersionedStoreFallback() {
         CompletionFaultStore store = new CompletionFaultStore();
@@ -378,6 +449,16 @@ class LocalTeamClientTest {
         boolean rejectCompletion;
         int casAttempts;
         int unconditionalWrites;
+        final AtomicInteger metaReads = new AtomicInteger();
+        final AtomicReference<Runnable> beforeCompletionCas = new AtomicReference<>();
+
+        @Override
+        public StoreItem get(List<String> namespace, String key) {
+            if (namespace.equals(COMPLETION_META) && key.equals("meta")) {
+                metaReads.incrementAndGet();
+            }
+            return super.get(namespace, key);
+        }
 
         @Override
         public boolean putIfVersion(
@@ -385,9 +466,17 @@ class LocalTeamClientTest {
                 String key,
                 Map<String, Object> value,
                 long expectedVersion) {
-            if (rejectCompletion && namespace.equals(COMPLETION_META) && key.equals("meta")) {
+            if (namespace.equals(COMPLETION_META)
+                    && key.equals("meta")
+                    && "Completed".equals(value.get("phase"))) {
                 casAttempts++;
-                return false;
+                Runnable interleave = beforeCompletionCas.getAndSet(null);
+                if (interleave != null) {
+                    interleave.run();
+                }
+                if (rejectCompletion) {
+                    return false;
+                }
             }
             return super.putIfVersion(namespace, key, value, expectedVersion);
         }
