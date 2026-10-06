@@ -19,6 +19,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ReasoningInput;
@@ -28,10 +29,14 @@ import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor.CompactionPlan;
+import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -63,15 +68,31 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(CompactionMiddleware.class);
 
+    /** Custom event emitted immediately before a planned context compaction starts. */
+    public static final String CONTEXT_COMPACTION_STARTED = "context_compaction_started";
+
+    /** Custom event emitted when a planned context compaction reaches a terminal outcome. */
+    public static final String CONTEXT_COMPACTION_FINISHED = "context_compaction_finished";
+
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private final CompactionConfig config;
+    private final String flushPrompt;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
+        this(workspaceManager, model, config, null);
+    }
+
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            String flushPrompt) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.config = config;
+        this.flushPrompt = flushPrompt;
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -93,68 +114,252 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
 
         return Flux.defer(
                 () -> {
-                    List<Msg> messages = input.messages();
-                    Msg systemMsg = null;
-                    List<Msg> conversation;
-                    if (messages != null
-                            && !messages.isEmpty()
-                            && messages.get(0).getRole() == MsgRole.SYSTEM) {
-                        systemMsg = messages.get(0);
-                        conversation = new ArrayList<>(messages.subList(1, messages.size()));
-                    } else {
-                        conversation = messages != null ? new ArrayList<>(messages) : List.of();
-                    }
-
+                    ReasoningMessages reasoningMessages = splitMessages(input);
                     String agentId = agent.getName();
-                    String sessionId =
-                            rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
+                    String sessionId = rc.getSessionId() != null ? rc.getSessionId() : "default";
 
                     CompactionConfig effectiveConfig = resolveEffectiveConfig();
-
                     MemoryFlushManager flushManager =
-                            new MemoryFlushManager(workspaceManager, model);
+                            new MemoryFlushManager(workspaceManager, model, flushPrompt);
                     ConversationCompactor compactor =
                             new ConversationCompactor(model, flushManager);
-                    final Msg sys = systemMsg;
+                    Optional<CompactionPlan> plan =
+                            compactor.planIfNeeded(
+                                    reasoningMessages.conversation(), effectiveConfig);
+                    if (plan.isEmpty()) {
+                        return reasonWithOverflowRecovery(
+                                reActAgent,
+                                rc,
+                                input,
+                                next,
+                                compactor,
+                                effectiveConfig,
+                                agentId,
+                                sessionId);
+                    }
 
-                    // Only compaction may degrade; downstream reasoning errors must propagate.
-                    return compactor
-                            .compactIfNeeded(rc, conversation, effectiveConfig, agentId, sessionId)
-                            .onErrorResume(
-                                    error -> {
-                                        if (ExceptionUtils.containsInterruptedException(error)) {
-                                            return Mono.error(error);
-                                        }
-                                        log.warn(
-                                                "Compaction failed, continuing without compaction:"
-                                                        + " {}",
-                                                error.getMessage());
-                                        return Mono.just(Optional.empty());
-                                    })
-                            .flatMapMany(
-                                    optResult -> {
-                                        if (optResult.isEmpty()) {
-                                            return next.apply(input);
-                                        }
-                                        List<Msg> compacted = optResult.get();
-                                        applyToContext(
-                                                RuntimeContext.resolveAgentState(rc, reActAgent),
-                                                compacted);
-                                        log.debug(
-                                                "Compacted to {} messages before reasoning",
-                                                compacted.size());
-                                        List<Msg> newMessages = new ArrayList<>();
-                                        if (sys != null) {
-                                            newMessages.add(sys);
-                                        }
-                                        newMessages.addAll(compacted);
-                                        return next.apply(
-                                                new ReasoningInput(
-                                                        newMessages,
-                                                        input.tools(),
-                                                        input.options()));
-                                    });
+                    return compactAndContinue(
+                            CompactionMode.NORMAL,
+                            reActAgent,
+                            rc,
+                            input,
+                            reasoningMessages,
+                            next,
+                            compactor,
+                            effectiveConfig,
+                            plan.get(),
+                            agentId,
+                            sessionId);
                 });
+    }
+
+    private Flux<AgentEvent> reasonWithOverflowRecovery(
+            ReActAgent agent,
+            RuntimeContext rc,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next,
+            ConversationCompactor compactor,
+            CompactionConfig effectiveConfig,
+            String agentId,
+            String sessionId) {
+        return Flux.defer(() -> next.apply(input))
+                .onErrorResume(
+                        error -> {
+                            if (!isContextOverflowError(error)) {
+                                return Flux.error(error);
+                            }
+                            ReasoningMessages messages = splitMessages(input);
+                            CompactionConfig emergencyConfig = emergencyConfig(effectiveConfig);
+                            Optional<CompactionPlan> emergencyPlan =
+                                    compactor.planIfNeeded(
+                                            messages.conversation(), emergencyConfig);
+                            if (emergencyPlan.isEmpty()) {
+                                return Flux.error(error);
+                            }
+                            log.warn(
+                                    "Context overflow detected, starting emergency compaction"
+                                            + " before retrying reasoning");
+                            return compactAndContinue(
+                                    CompactionMode.EMERGENCY,
+                                    agent,
+                                    rc,
+                                    input,
+                                    messages,
+                                    next,
+                                    compactor,
+                                    emergencyConfig,
+                                    emergencyPlan.get(),
+                                    agentId,
+                                    sessionId);
+                        });
+    }
+
+    private Flux<AgentEvent> compactAndContinue(
+            CompactionMode mode,
+            ReActAgent agent,
+            RuntimeContext rc,
+            ReasoningInput originalInput,
+            ReasoningMessages originalMessages,
+            Function<ReasoningInput, Flux<AgentEvent>> next,
+            ConversationCompactor compactor,
+            CompactionConfig effectiveConfig,
+            CompactionPlan plan,
+            String agentId,
+            String sessionId) {
+        CustomEvent started = compactionStartedEvent(mode, plan);
+        Mono<CompactionAttempt> attempt =
+                Mono.defer(() -> compactor.compact(rc, plan, effectiveConfig, agentId, sessionId))
+                        .map(CompactionAttempt::success)
+                        .onErrorResume(error -> Mono.just(CompactionAttempt.failure(error)));
+
+        Flux<AgentEvent> compactAndContinue =
+                attempt.flatMapMany(
+                        result -> {
+                            if (result.error() != null) {
+                                return handleCompactionFailure(
+                                        mode,
+                                        agent,
+                                        rc,
+                                        originalInput,
+                                        originalMessages,
+                                        next,
+                                        compactor,
+                                        effectiveConfig,
+                                        plan,
+                                        agentId,
+                                        sessionId,
+                                        result.error());
+                            }
+
+                            List<Msg> compacted = result.compacted();
+                            boolean applied =
+                                    applyToContext(
+                                            RuntimeContext.resolveAgentState(rc, agent), compacted);
+                            log.debug(
+                                    "Compacted to {} messages before reasoning", compacted.size());
+                            ReasoningInput compactedInput =
+                                    rebuildInput(
+                                            originalInput,
+                                            originalMessages.systemMessage(),
+                                            compacted);
+                            CustomEvent finished =
+                                    compactionFinishedEvent(
+                                            mode,
+                                            plan,
+                                            compacted,
+                                            applied ? "success" : "degraded");
+                            Flux<AgentEvent> downstream =
+                                    mode == CompactionMode.NORMAL
+                                            ? reasonWithOverflowRecovery(
+                                                    agent,
+                                                    rc,
+                                                    compactedInput,
+                                                    next,
+                                                    compactor,
+                                                    effectiveConfig,
+                                                    agentId,
+                                                    sessionId)
+                                            : Flux.defer(() -> next.apply(compactedInput));
+                            return Flux.concat(Flux.just(finished), downstream);
+                        });
+        return Flux.concat(Flux.just(started), compactAndContinue);
+    }
+
+    private Flux<AgentEvent> handleCompactionFailure(
+            CompactionMode mode,
+            ReActAgent agent,
+            RuntimeContext rc,
+            ReasoningInput originalInput,
+            ReasoningMessages originalMessages,
+            Function<ReasoningInput, Flux<AgentEvent>> next,
+            ConversationCompactor compactor,
+            CompactionConfig effectiveConfig,
+            CompactionPlan plan,
+            String agentId,
+            String sessionId,
+            Throwable error) {
+        boolean interrupted = ExceptionUtils.containsInterruptedException(error);
+        CustomEvent finished =
+                compactionFinishedEvent(
+                        mode,
+                        plan,
+                        originalMessages.conversation(),
+                        interrupted ? "interrupted" : "failed");
+        if (interrupted || mode == CompactionMode.EMERGENCY) {
+            return Flux.concat(Flux.just(finished), Flux.error(error));
+        }
+
+        log.warn("Compaction failed, continuing without compaction: {}", error.getMessage());
+        return Flux.concat(
+                Flux.just(finished),
+                reasonWithOverflowRecovery(
+                        agent,
+                        rc,
+                        originalInput,
+                        next,
+                        compactor,
+                        effectiveConfig,
+                        agentId,
+                        sessionId));
+    }
+
+    private static ReasoningMessages splitMessages(ReasoningInput input) {
+        List<Msg> messages = input.messages();
+        if (messages != null
+                && !messages.isEmpty()
+                && messages.get(0).getRole() == MsgRole.SYSTEM) {
+            return new ReasoningMessages(
+                    messages.get(0), new ArrayList<>(messages.subList(1, messages.size())));
+        }
+        return new ReasoningMessages(
+                null, messages != null ? new ArrayList<>(messages) : List.of());
+    }
+
+    private static ReasoningInput rebuildInput(
+            ReasoningInput originalInput, Msg systemMessage, List<Msg> conversation) {
+        List<Msg> messages = new ArrayList<>();
+        if (systemMessage != null) {
+            messages.add(systemMessage);
+        }
+        messages.addAll(conversation);
+        return new ReasoningInput(messages, originalInput.tools(), originalInput.options());
+    }
+
+    private static CompactionConfig emergencyConfig(CompactionConfig source) {
+        return CompactionConfig.builder()
+                .triggerMessages(1)
+                .triggerTokens(Integer.MAX_VALUE)
+                .keepMessages(1)
+                .keepTokens(0)
+                .summaryPrompt(source.getSummaryPrompt())
+                .flushBeforeCompact(source.isFlushBeforeCompact())
+                .offloadBeforeCompact(source.isOffloadBeforeCompact())
+                .truncateArgs(source.getTruncateArgsConfig())
+                .prune(source.getPruneConfig())
+                .build();
+    }
+
+    private static boolean isContextOverflowError(Throwable error) {
+        Set<Throwable> seen =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        Throwable current = error;
+        while (current != null && seen.add(current)) {
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase(java.util.Locale.ROOT);
+                if (lower.contains("context_length_exceeded")
+                        || lower.contains("context length")
+                        || lower.contains("maximum context")
+                        || lower.contains("token limit")
+                        || lower.contains("too many tokens")
+                        || lower.contains("exceeds the model's maximum")
+                        || lower.contains("reduce the length")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**
@@ -225,18 +430,65 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
         return config.withEffective(effectiveTrigger, effectiveKeep);
     }
 
-    private static void applyToContext(AgentState state, List<Msg> compacted) {
+    private static CustomEvent compactionStartedEvent(CompactionMode mode, CompactionPlan plan) {
+        return new CustomEvent(
+                CONTEXT_COMPACTION_STARTED,
+                Map.of(
+                        "mode", mode.value,
+                        "beforeMsgCount", plan.beforeMsgCount(),
+                        "beforeTokenCount", plan.beforeTokenCount()));
+    }
+
+    private static CustomEvent compactionFinishedEvent(
+            CompactionMode mode, CompactionPlan plan, List<Msg> afterMessages, String status) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("mode", mode.value);
+        value.put("status", status);
+        value.put("beforeMsgCount", plan.beforeMsgCount());
+        value.put("beforeTokenCount", plan.beforeTokenCount());
+        value.put("afterMsgCount", afterMessages.size());
+        value.put("afterTokenCount", TokenCounterUtil.calculateToken(afterMessages));
+        return new CustomEvent(CONTEXT_COMPACTION_FINISHED, value);
+    }
+
+    private static boolean applyToContext(AgentState state, List<Msg> compacted) {
         if (state == null) {
             log.warn("Cannot apply compacted messages: AgentState is null");
-            return;
+            return false;
         }
         try {
             List<Msg> ctx = state.contextMutable();
             ctx.clear();
             ctx.addAll(compacted);
             log.debug("Applied compacted messages to state ({} messages)", compacted.size());
+            return true;
         } catch (Exception e) {
             log.warn("Failed to apply compacted messages to state: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private enum CompactionMode {
+        NORMAL("normal"),
+        EMERGENCY("emergency");
+
+        private final String value;
+
+        CompactionMode(String value) {
+            this.value = value;
+        }
+    }
+
+    private record ReasoningMessages(Msg systemMessage, List<Msg> conversation) {}
+
+    private record CompactionAttempt(List<Msg> compacted, Throwable error) {
+
+        private static CompactionAttempt success(List<Msg> compacted) {
+            return new CompactionAttempt(compacted, null);
+        }
+
+        private static CompactionAttempt failure(Throwable error) {
+            return new CompactionAttempt(List.of(), error);
         }
     }
 }

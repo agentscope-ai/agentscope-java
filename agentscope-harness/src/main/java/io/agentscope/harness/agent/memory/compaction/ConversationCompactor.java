@@ -96,9 +96,33 @@ public class ConversationCompactor {
             String agentId,
             String sessionId) {
 
-        if (conversationMessages == null || conversationMessages.isEmpty()) {
+        Optional<CompactionPlan> plan = planIfNeeded(conversationMessages, config);
+        if (plan.isEmpty()) {
             return Mono.just(Optional.empty());
         }
+        return compact(rc, plan.get(), config, agentId, sessionId).map(Optional::of);
+    }
+
+    /**
+     * Evaluates whether compaction is needed and prepares the immutable inputs for execution.
+     *
+     * <p>This separates the synchronous trigger/cutoff decision from the asynchronous flush,
+     * offload, and summarization work. Callers can therefore publish a start event only after a
+     * real compaction operation has been planned.
+     *
+     * @param conversationMessages non-SYSTEM messages (USER / ASSISTANT / TOOL)
+     * @param config compaction configuration
+     * @return an executable plan, or empty when no compaction should run
+     */
+    public Optional<CompactionPlan> planIfNeeded(
+            List<Msg> conversationMessages, CompactionConfig config) {
+
+        if (conversationMessages == null || conversationMessages.isEmpty()) {
+            return Optional.empty();
+        }
+
+        int beforeMsgCount = conversationMessages.size();
+        int beforeTokenCount = TokenCounterUtil.calculateToken(conversationMessages);
 
         // Step 1a: Lightweight arg truncation (non-LLM).
         // Step 1b: Aggregate tool-result pruning (non-LLM).
@@ -109,13 +133,13 @@ public class ConversationCompactor {
 
         int totalTokens = TokenCounterUtil.calculateToken(messages);
         if (!shouldCompact(messages, totalTokens, config)) {
-            return Mono.just(Optional.empty());
+            return Optional.empty();
         }
 
         int cutoff = determineCutoffIndex(messages, totalTokens, config);
         if (cutoff <= 0) {
             log.debug("Compaction triggered but safe cutoff is 0 — skipping");
-            return Mono.just(Optional.empty());
+            return Optional.empty();
         }
 
         // Keep prior summaries in the summarization input so each compaction builds on the
@@ -130,6 +154,38 @@ public class ConversationCompactor {
                 totalTokens,
                 cutoff,
                 tail.size());
+
+        return Optional.of(
+                new CompactionPlan(
+                        messages,
+                        summaryInput,
+                        flushInput,
+                        tail,
+                        beforeMsgCount,
+                        beforeTokenCount));
+    }
+
+    /**
+     * Executes a previously prepared compaction plan.
+     *
+     * @param rc runtime context for memory operations
+     * @param plan prepared compaction inputs and before-state metrics
+     * @param config compaction configuration
+     * @param agentId agent identifier used for the memory offload path
+     * @param sessionId session identifier used for the memory offload path
+     * @return replacement messages consisting of {@code [summaryUserMsg] + preservedTail}
+     */
+    public Mono<List<Msg>> compact(
+            RuntimeContext rc,
+            CompactionPlan plan,
+            CompactionConfig config,
+            String agentId,
+            String sessionId) {
+
+        List<Msg> messages = plan.messages();
+        List<Msg> summaryInput = plan.summaryInput();
+        List<Msg> flushInput = plan.flushInput();
+        List<Msg> tail = plan.tail();
 
         // Step 2: Flush long-term memories only from newly compacted raw messages (best-effort).
         Mono<Void> flushStep =
@@ -206,8 +262,25 @@ public class ConversationCompactor {
                                                             messages.size(),
                                                             tail.size(),
                                                             compacted.size());
-                                                    return Optional.of(compacted);
+                                                    return compacted;
                                                 }));
+    }
+
+    /** Immutable inputs and before-state metrics for one real compaction operation. */
+    public record CompactionPlan(
+            List<Msg> messages,
+            List<Msg> summaryInput,
+            List<Msg> flushInput,
+            List<Msg> tail,
+            int beforeMsgCount,
+            int beforeTokenCount) {
+
+        public CompactionPlan {
+            messages = List.copyOf(messages);
+            summaryInput = List.copyOf(summaryInput);
+            flushInput = List.copyOf(flushInput);
+            tail = List.copyOf(tail);
+        }
     }
 
     // -------------------------------------------------------------------------

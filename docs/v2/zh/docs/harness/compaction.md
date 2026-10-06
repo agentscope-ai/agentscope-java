@@ -21,7 +21,7 @@ LLM 的 token 预算是有限的。一段对话越跑越长,要么主动压缩�
 |------|----------|----------|--------|
 | **对话摘要压缩** | 上下文太"深"——消息条数 / token 累计太多 | 每次模型推理前 | `CompactionMiddleware` |
 | **大工具结果卸载** | 上下文太"宽"——单条工具结果体量过大 | 工具执行后 | `ToolResultEvictionMiddleware` |
-| **上下文溢出兜底** | 真的撞到模型 `context_length_exceeded` | `call()` 抛错时 | `HarnessAgent.recoverFromOverflow` |
+| **上下文溢出兜底** | 真的撞到模型 `context_length_exceeded` | 推理失败时 | `CompactionMiddleware` |
 | **预压缩参数截断** | 工具调用参数(write_file 的内容)体量大但后期没人看 | 摘要之前的轻量预处理 | `CompactionConfig.TruncateArgsConfig` |
 
 四套策略**正交,可以任意组合**,默认全部不开。
@@ -57,9 +57,18 @@ HarnessAgent.builder()
 
 ### 3. 上下文溢出兜底
 
-如果模型直接返回 `context_length_exceeded` / `maximum context` / `token limit` 等错误,`HarnessAgent.recoverFromOverflow()` 会强制走一次 `triggerMessages=1` 的极端压缩,然后**自动重试一次**。前提是构造 agent 时配了 `.compaction(...)`,否则错误原样抛回上层。
+如果模型直接返回 `context_length_exceeded` / `maximum context` / `token limit` 等错误,`CompactionMiddleware` 会强制走一次 `triggerMessages=1` 的极端压缩,然后**自动重试一次**。恢复逻辑位于中间件内部,因此 `call(...)` 与 `ReActAgent.streamEvents(...)` 使用同一条处理链路。前提是构造 agent 时配了 `.compaction(...)`,否则错误原样抛回上层。
 
 这条兜底链路无需额外配置:只要 `compaction` 开了,溢出恢复就自动开。
+
+### 监听压缩事件
+
+主动压缩和 emergency 压缩都会通过 `ReActAgent.streamEvents(...)` 发布两个 `CustomEvent`:
+
+- `context_compaction_started` —— 包含 `mode`(`normal` 或 `emergency`)、`beforeMsgCount`、`beforeTokenCount`。
+- `context_compaction_finished` —— 包含相同的压缩前指标,以及 `afterMsgCount`、`afterTokenCount` 和终态 `status`(`success`、`degraded`、`failed` 或 `interrupted`)。
+
+消息数与 token 数统计的是压缩器实际处理的非 SYSTEM 对话消息。开始事件发生时摘要结果尚未生成,因此只包含压缩前指标;结束事件包含完整的压缩前后对比。
 
 ### 4. 预压缩参数截断 (可选)
 

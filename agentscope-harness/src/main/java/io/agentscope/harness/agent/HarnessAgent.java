@@ -65,7 +65,6 @@ import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.AsyncToolMiddleware;
@@ -707,7 +706,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs) {
-        return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs));
+        return wrappedCall(RuntimeContext.empty(), () -> delegate.call(msgs));
     }
 
     /**
@@ -716,8 +715,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
-        return wrappedCall(
-                msgs, RuntimeContext.empty(), () -> delegate.call(msgs, structuredModel));
+        return wrappedCall(RuntimeContext.empty(), () -> delegate.call(msgs, structuredModel));
     }
 
     /**
@@ -726,7 +724,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
-        return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs, schema));
+        return wrappedCall(RuntimeContext.empty(), () -> delegate.call(msgs, schema));
     }
 
     public Mono<Msg> call(Msg msg, RuntimeContext ctx) {
@@ -747,19 +745,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, () -> delegate.call(msgs, effective));
+        return wrappedCall(effective, () -> delegate.call(msgs, effective));
     }
 
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, () -> delegate.call(msgs, structuredModel, effective));
+        return wrappedCall(effective, () -> delegate.call(msgs, structuredModel, effective));
     }
 
     public Mono<Msg> call(List<Msg> msgs, JsonNode schema, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, () -> delegate.call(msgs, schema, effective));
+        return wrappedCall(effective, () -> delegate.call(msgs, schema, effective));
     }
 
     /**
@@ -952,32 +950,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     // ==================== Call/stream wrappers ====================
 
-    private Mono<Msg> wrappedCall(
-            List<Msg> msgs, RuntimeContext effective, Supplier<Mono<Msg>> inner) {
-        Mono<Msg> base =
-                Mono.using(
-                        () -> {
-                            if (sandboxLifecycleMw != null) {
-                                sandboxLifecycleMw.acquireForCall(effective);
-                            }
-                            return effective;
-                        },
-                        eff -> inner.get(),
-                        eff -> {
-                            if (sandboxLifecycleMw != null) {
-                                sandboxLifecycleMw.releaseForCall(eff);
-                            }
-                        });
-        if (compactionHook != null) {
-            return base.onErrorResume(
-                    e -> {
-                        if (isContextOverflowError(e)) {
-                            return recoverFromOverflow(msgs, effective);
-                        }
-                        return Mono.error(e);
-                    });
-        }
-        return base;
+    private Mono<Msg> wrappedCall(RuntimeContext effective, Supplier<Mono<Msg>> inner) {
+        return Mono.using(
+                () -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.acquireForCall(effective);
+                    }
+                    return effective;
+                },
+                eff -> inner.get(),
+                eff -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.releaseForCall(eff);
+                    }
+                });
     }
 
     /**
@@ -1054,78 +1040,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
             b.put(WorkspacePathNormalizer.class, pathNormalizer);
         }
         return b.build();
-    }
-
-    private Mono<Msg> recoverFromOverflow(List<Msg> msgs, RuntimeContext effective) {
-        if (compactionHook != null) {
-            log.warn(
-                    "Context overflow detected, triggering emergency compaction via"
-                            + " CompactionMiddleware");
-            return forceCompactAndRetry(msgs, effective);
-        }
-        return Mono.error(
-                new RuntimeException(
-                        "Context overflow: no compaction configured, unable to recover"));
-    }
-
-    private Mono<Msg> forceCompactAndRetry(List<Msg> msgs, RuntimeContext effective) {
-        AgentState state = RuntimeContext.resolveAgentState(effective, delegate);
-        List<Msg> allMsgs = state.contextMutable();
-        if (allMsgs.isEmpty()) {
-            return Mono.error(
-                    new RuntimeException("Context overflow: context is empty, cannot compact"));
-        }
-        String agentId = getName();
-        String sessionId =
-                effective != null && effective.getSessionId() != null
-                        ? effective.getSessionId()
-                        : "default";
-
-        CompactionConfig forceConfig = CompactionConfig.builder().triggerMessages(1).build();
-        String effectiveFlushPrompt =
-                memoryConfig.flushPrompt() != null
-                        ? memoryConfig.flushPrompt()
-                        : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
-        MemoryFlushManager fm =
-                new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
-        ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
-
-        return compactor
-                .compactIfNeeded(
-                        effective != null ? effective : RuntimeContext.empty(),
-                        allMsgs,
-                        forceConfig,
-                        agentId,
-                        sessionId)
-                .flatMap(
-                        opt -> {
-                            if (opt.isPresent()) {
-                                state.contextMutable().clear();
-                                state.contextMutable().addAll(opt.get());
-                                return delegate.call(
-                                        msgs,
-                                        effective != null ? effective : RuntimeContext.empty());
-                            }
-                            return Mono.error(
-                                    new RuntimeException(
-                                            "Context overflow: emergency compaction yielded no"
-                                                    + " result"));
-                        });
-    }
-
-    private static boolean isContextOverflowError(Throwable e) {
-        String message = e.getMessage();
-        if (message == null) {
-            return false;
-        }
-        String lower = message.toLowerCase();
-        return lower.contains("context_length_exceeded")
-                || lower.contains("context length")
-                || lower.contains("maximum context")
-                || lower.contains("token limit")
-                || lower.contains("too many tokens")
-                || lower.contains("exceeds the model's maximum")
-                || lower.contains("reduce the length");
     }
 
     public static Builder builder() {
@@ -2616,7 +2530,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
                 if (compactionModel != null) {
                     compactionHook =
-                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
+                            new CompactionMiddleware(
+                                    wsManager,
+                                    compactionModel,
+                                    compactionConfig,
+                                    memoryConfig.flushPrompt());
                     inner.middleware(compactionHook);
                 }
             }

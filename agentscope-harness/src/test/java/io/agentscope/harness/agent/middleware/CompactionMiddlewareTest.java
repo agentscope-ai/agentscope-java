@@ -24,6 +24,8 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.CustomEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -34,7 +36,9 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -69,6 +73,7 @@ class CompactionMiddlewareTest {
                                     nextCalls.incrementAndGet();
                                     return Flux.empty();
                                 }))
+                .expectNextCount(2)
                 .verifyComplete();
 
         assertEquals(1, nextCalls.get());
@@ -100,9 +105,132 @@ class CompactionMiddlewareTest {
                                                     .contains("Summarization failed"));
                                     return Flux.empty();
                                 }))
+                .expectNextCount(2)
                 .verifyComplete();
 
         assertEquals(1, nextCalls.get());
+    }
+
+    /** Normal compaction events are visible through ReActAgent.streamEvents with exact metrics. */
+    @Test
+    void streamEventsPublishesNormalCompactionMetricsBeforeReasoning() {
+        SuccessfulSummaryModel model = new SuccessfulSummaryModel();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("compaction-test-agent")
+                        .sysPrompt("test")
+                        .model(model)
+                        .middleware(new CompactionMiddleware(null, model, eventConfig()))
+                        .build();
+        List<Msg> input =
+                List.of(
+                        userMessage("A".repeat(200)),
+                        userMessage("B".repeat(200)),
+                        userMessage("C".repeat(200)));
+
+        List<AgentEvent> events =
+                agent.streamEvents(input, context("user", "normal-session")).collectList().block();
+
+        CustomEvent started = customEvent(events, CompactionMiddleware.CONTEXT_COMPACTION_STARTED);
+        CustomEvent finished =
+                customEvent(events, CompactionMiddleware.CONTEXT_COMPACTION_FINISHED);
+        assertEquals("normal", started.getValue().get("mode"));
+        assertEquals(3, started.getValue().get("beforeMsgCount"));
+        assertEquals(
+                TokenCounterUtil.calculateToken(input), started.getValue().get("beforeTokenCount"));
+        assertEquals("normal", finished.getValue().get("mode"));
+        assertEquals("success", finished.getValue().get("status"));
+        assertEquals(3, finished.getValue().get("beforeMsgCount"));
+        assertEquals(
+                TokenCounterUtil.calculateToken(input),
+                finished.getValue().get("beforeTokenCount"));
+        assertEquals(2, finished.getValue().get("afterMsgCount"));
+        assertTrue(
+                (Integer) finished.getValue().get("afterTokenCount")
+                        < (Integer) finished.getValue().get("beforeTokenCount"));
+        assertTrue(
+                events.indexOf(started) < events.indexOf(finished)
+                        && events.indexOf(finished)
+                                < firstIndexOf(events, ModelCallStartEvent.class));
+    }
+
+    /** A context-overflow retry emits emergency compaction events through the same stream. */
+    @Test
+    void streamEventsPublishesEmergencyCompactionMetricsBeforeRetry() {
+        OverflowThenRecoveryModel model = new OverflowThenRecoveryModel();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("compaction-test-agent")
+                        .sysPrompt("test")
+                        .model(model)
+                        .middleware(new CompactionMiddleware(null, model, noCompactionConfig()))
+                        .build();
+        List<Msg> input =
+                List.of(
+                        userMessage("A".repeat(200)),
+                        userMessage("B".repeat(200)),
+                        userMessage("C".repeat(200)));
+
+        List<AgentEvent> events =
+                agent.streamEvents(input, context("user", "emergency-session"))
+                        .collectList()
+                        .block();
+
+        CustomEvent started = customEvent(events, CompactionMiddleware.CONTEXT_COMPACTION_STARTED);
+        CustomEvent finished =
+                customEvent(events, CompactionMiddleware.CONTEXT_COMPACTION_FINISHED);
+        assertEquals("emergency", started.getValue().get("mode"));
+        assertEquals(3, started.getValue().get("beforeMsgCount"));
+        assertEquals("emergency", finished.getValue().get("mode"));
+        assertEquals("success", finished.getValue().get("status"));
+        assertEquals(3, finished.getValue().get("beforeMsgCount"));
+        assertEquals(
+                TokenCounterUtil.calculateToken(input),
+                finished.getValue().get("beforeTokenCount"));
+        assertEquals(2, finished.getValue().get("afterMsgCount"));
+        assertTrue(
+                (Integer) finished.getValue().get("afterTokenCount")
+                        < (Integer) finished.getValue().get("beforeTokenCount"));
+
+        List<Integer> modelStarts = indexesOf(events, ModelCallStartEvent.class);
+        assertEquals(2, modelStarts.size());
+        assertTrue(modelStarts.get(0) < events.indexOf(started));
+        assertTrue(events.indexOf(started) < events.indexOf(finished));
+        assertTrue(events.indexOf(finished) < modelStarts.get(1));
+        assertEquals(3, model.callCount.get());
+    }
+
+    /** Emergency recovery compacts and retries only once when the retry also overflows. */
+    @Test
+    void streamEventsDoesNotRepeatEmergencyCompactionAfterRetryOverflow() {
+        RepeatedOverflowModel model = new RepeatedOverflowModel();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("compaction-test-agent")
+                        .sysPrompt("test")
+                        .model(model)
+                        .middleware(new CompactionMiddleware(null, model, noCompactionConfig()))
+                        .build();
+        List<AgentEvent> events = new ArrayList<>();
+
+        StepVerifier.create(
+                        agent.streamEvents(
+                                        List.of(
+                                                userMessage("A".repeat(200)),
+                                                userMessage("B".repeat(200)),
+                                                userMessage("C".repeat(200))),
+                                        context("user", "repeated-overflow-session"))
+                                .doOnNext(events::add))
+                .thenConsumeWhile(event -> true)
+                .expectErrorMatches(
+                        error ->
+                                error instanceof IllegalStateException
+                                        && error.getMessage().contains("context_length_exceeded"))
+                .verify();
+
+        assertEquals(3, model.callCount.get());
+        customEvent(events, CompactionMiddleware.CONTEXT_COMPACTION_STARTED);
+        customEvent(events, CompactionMiddleware.CONTEXT_COMPACTION_FINISHED);
     }
 
     /** An interrupt during real compaction summarization must propagate without entering reasoning. */
@@ -125,6 +253,7 @@ class CompactionMiddlewareTest {
                                     nextCalls.incrementAndGet();
                                     return Flux.empty();
                                 }))
+                .expectNextCount(2)
                 .expectError(InterruptedException.class)
                 .verify();
 
@@ -151,6 +280,7 @@ class CompactionMiddlewareTest {
                                     nextCalls.incrementAndGet();
                                     return Flux.empty();
                                 }))
+                .expectNextCount(2)
                 .expectError(InterruptedException.class)
                 .verify();
 
@@ -179,6 +309,7 @@ class CompactionMiddlewareTest {
                                     nextCalls.incrementAndGet();
                                     return Flux.empty();
                                 }))
+                .expectNextCount(2)
                 .expectErrorMatches(
                         error ->
                                 error instanceof IllegalStateException
@@ -205,6 +336,7 @@ class CompactionMiddlewareTest {
                                     nextCalls.incrementAndGet();
                                     return Flux.empty();
                                 }))
+                .expectNextCount(2)
                 .verifyComplete();
 
         assertEquals(1, nextCalls.get());
@@ -228,6 +360,7 @@ class CompactionMiddlewareTest {
                                             new InterruptedException(
                                                     "interrupted while reasoning"));
                                 }))
+                .expectNextCount(2)
                 .expectError(InterruptedException.class)
                 .verify();
 
@@ -358,12 +491,27 @@ class CompactionMiddlewareTest {
                 .build();
     }
 
+    /** Creates deterministic message-count compaction for event payload assertions. */
+    private CompactionConfig eventConfig() {
+        return CompactionConfig.builder()
+                .triggerMessages(3)
+                .triggerTokens(Integer.MAX_VALUE)
+                .keepMessages(1)
+                .keepTokens(0)
+                .flushBeforeCompact(false)
+                .offloadBeforeCompact(false)
+                .prune(null)
+                .build();
+    }
+
     /** Creates stable configuration that bypasses compaction for model-stream interrupt tests. */
     private CompactionConfig noCompactionConfig() {
         return CompactionConfig.builder()
                 .triggerMessages(0)
                 .triggerTokens(Integer.MAX_VALUE)
                 .keepTokens(0)
+                .flushBeforeCompact(false)
+                .offloadBeforeCompact(false)
                 .build();
     }
 
@@ -393,6 +541,37 @@ class CompactionMiddlewareTest {
     /** Creates a minimal user message shared by single-session and concurrent-session tests. */
     private Msg userMessage(String text) {
         return Msg.builder().role(MsgRole.USER).textContent(text).build();
+    }
+
+    /** Returns the unique custom event with the requested name. */
+    private CustomEvent customEvent(List<AgentEvent> events, String name) {
+        List<CustomEvent> matches =
+                events.stream()
+                        .filter(CustomEvent.class::isInstance)
+                        .map(CustomEvent.class::cast)
+                        .filter(event -> name.equals(event.getName()))
+                        .toList();
+        assertEquals(1, matches.size());
+        return matches.get(0);
+    }
+
+    /** Returns the first index of an event type, requiring it to be present. */
+    private int firstIndexOf(List<AgentEvent> events, Class<? extends AgentEvent> eventType) {
+        List<Integer> indexes = indexesOf(events, eventType);
+        assertFalse(indexes.isEmpty());
+        return indexes.get(0);
+    }
+
+    /** Returns every index whose event is an instance of the requested type. */
+    private List<Integer> indexesOf(
+            List<AgentEvent> events, Class<? extends AgentEvent> eventType) {
+        List<Integer> indexes = new ArrayList<>();
+        for (int i = 0; i < events.size(); i++) {
+            if (eventType.isInstance(events.get(i))) {
+                indexes.add(i);
+            }
+        }
+        return indexes;
     }
 
     /** Throws while creating the summary publisher, exercising the outer compaction fallback. */
@@ -430,6 +609,56 @@ class CompactionMiddlewareTest {
                     ChatResponse.builder()
                             .content(List.of(TextBlock.builder().text("summary").build()))
                             .build());
+        }
+    }
+
+    /** Fails the first reasoning call with overflow, then summarizes and completes the retry. */
+    private static final class OverflowThenRecoveryModel extends ChatModelBase {
+        private final AtomicInteger callCount = new AtomicInteger();
+
+        @Override
+        public String getModelName() {
+            return "overflow-then-recovery";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            int call = callCount.incrementAndGet();
+            if (call == 1) {
+                return Flux.error(new IllegalStateException("context_length_exceeded"));
+            }
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(
+                                    List.of(
+                                            TextBlock.builder()
+                                                    .text(call == 2 ? "summary" : "recovered")
+                                                    .build()))
+                            .build());
+        }
+    }
+
+    /** Overflows both reasoning attempts while allowing the intervening summary call to finish. */
+    private static final class RepeatedOverflowModel extends ChatModelBase {
+        private final AtomicInteger callCount = new AtomicInteger();
+
+        @Override
+        public String getModelName() {
+            return "repeated-overflow";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            int call = callCount.incrementAndGet();
+            if (call == 2) {
+                return Flux.just(
+                        ChatResponse.builder()
+                                .content(List.of(TextBlock.builder().text("summary").build()))
+                                .build());
+            }
+            return Flux.error(new IllegalStateException("context_length_exceeded"));
         }
     }
 

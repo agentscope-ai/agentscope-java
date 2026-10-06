@@ -22,7 +22,7 @@ The model's token budget is finite. A long-running conversation either compacts 
 |------|----------|----------|--------|
 | **Conversation summarization** | Context too *deep* — message count / token total piles up | Before each model reasoning call | `CompactionMiddleware` |
 | **Large tool-result eviction** | Context too *wide* — a single tool result is huge | After tool execution | `ToolResultEvictionMiddleware` |
-| **Overflow safety net** | Model actually returned `context_length_exceeded` | When `call()` throws | `HarnessAgent.recoverFromOverflow` |
+| **Overflow safety net** | Model actually returned `context_length_exceeded` | When reasoning fails | `CompactionMiddleware` |
 | **Pre-summary argument truncation** | Tool-call args (e.g. `write_file` body) are big but nobody reads them later | Lightweight pre-pass before summarization | `CompactionConfig.TruncateArgsConfig` |
 
 The four are **orthogonal — combine them freely**. All four are off by default.
@@ -58,9 +58,18 @@ Details in [Memory — Large tool-result offloading](/v2/en/docs/harness/memory#
 
 ### 3. Overflow safety net
 
-If the model returns `context_length_exceeded` / `maximum context` / `token limit` errors, `HarnessAgent.recoverFromOverflow()` runs a forced `triggerMessages=1` extreme compaction and **automatically retries once**. Requires `.compaction(...)` to be configured at build time — otherwise the error propagates.
+If the model returns `context_length_exceeded` / `maximum context` / `token limit` errors, `CompactionMiddleware` runs a forced `triggerMessages=1` extreme compaction and **automatically retries once**. Recovery lives in the middleware itself, so both `call(...)` and `ReActAgent.streamEvents(...)` follow the same path. Requires `.compaction(...)` to be configured at build time — otherwise the error propagates.
 
 No extra configuration: turn on compaction, and overflow recovery comes along.
+
+### Observing compaction events
+
+`ReActAgent.streamEvents(...)` publishes two `CustomEvent`s for both proactive and emergency compaction:
+
+- `context_compaction_started` — `mode` (`normal` or `emergency`), `beforeMsgCount`, and `beforeTokenCount`.
+- `context_compaction_finished` — the same before metrics plus `afterMsgCount`, `afterTokenCount`, and terminal `status` (`success`, `degraded`, `failed`, or `interrupted`).
+
+Message and token counts cover the non-system conversation messages handled by the compactor. The start event cannot contain post-compaction metrics because the summary has not been produced yet; the finish event contains the complete before/after comparison.
 
 ### 4. Pre-summary argument truncation (optional)
 
