@@ -33,6 +33,7 @@ import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -222,7 +223,7 @@ public class SessionEventMapper {
             if (fragment == null || fragment.isEmpty()) {
                 return MappingResult.empty();
             }
-            previewIds.appendToolResultText(
+            previewIds.appendToolResultData(
                     dataDelta.getToolCallId(), dataDelta.getToolCallName(), fragment);
             return MappingResult.empty();
         }
@@ -239,7 +240,9 @@ public class SessionEventMapper {
             if (toolResult.getState() != null) {
                 payload.put("state", toolResult.getState().name());
             }
-            String output = buf.outputText();
+            String output =
+                    buf.applyFinalResultText(
+                            toolResult.getFinalResultText(), MAX_TOOL_PAYLOAD_CHARS);
             payload.put("output", output);
             payload.put("text", output);
             payload.put("content", List.of(Map.of("type", "text", "text", output)));
@@ -361,6 +364,25 @@ public class SessionEventMapper {
             buf.appendOutput(delta, MAX_TOOL_PAYLOAD_CHARS);
         }
 
+        /**
+         * Accumulate a non-text result block. The fragment still feeds the buffered output exactly the
+         * way a text delta does — that is what gets persisted when the producer reports no return
+         * value — and is additionally remembered so {@link
+         * ToolBuffers.ToolResultBuffer#applyFinalResultText} can swap the progress text for the return
+         * value without dropping the block.
+         */
+        public void appendToolResultData(String toolCallId, String toolName, String fragment) {
+            ToolBuffers.ToolResultBuffer buf =
+                    toolResults.computeIfAbsent(
+                            key(toolCallId),
+                            ignored -> new ToolBuffers.ToolResultBuffer(newEventId(), toolName));
+            if (toolName != null) {
+                buf.setToolName(toolName);
+            }
+            buf.addDataFragment(fragment);
+            buf.appendOutput(fragment, MAX_TOOL_PAYLOAD_CHARS);
+        }
+
         public ToolBuffers.ToolResultBuffer finishToolResult(String toolCallId, String toolName) {
             ToolBuffers.ToolResultBuffer buf =
                     toolResults.computeIfAbsent(
@@ -467,6 +489,7 @@ public class SessionEventMapper {
         static final class ToolResultBuffer {
             private final String eventId;
             private final StringBuilder output = new StringBuilder();
+            private final List<String> dataFragments = new ArrayList<>();
             private String toolName;
             private boolean truncated;
             private int originalOutputSize;
@@ -494,6 +517,37 @@ public class SessionEventMapper {
 
             void setToolName(String toolName) {
                 this.toolName = toolName;
+            }
+
+            void addDataFragment(String fragment) {
+                dataFragments.add(fragment);
+            }
+
+            /**
+             * Replace the accumulated stream text with the tool's authoritative return value.
+             *
+             * <p>Progress chunks and the return value both arrive as text deltas on this path, so a
+             * buffer that reached here through a streaming tool holds progress text — which is exactly
+             * what the AG-UI adapter stopped persisting. {@code finalResultText} joins text blocks
+             * only, so the non-text blocks are re-appended after it and the shared {@code maxChars}
+             * cap still decides truncation for whatever ends up persisted.
+             *
+             * @param finalResultText the return value, or {@code null} when the producer reports
+             *     nothing, which leaves the buffered text untouched as before
+             * @return the text to persist
+             */
+            String applyFinalResultText(String finalResultText, int maxChars) {
+                if (finalResultText == null) {
+                    return output.toString();
+                }
+                output.setLength(0);
+                truncated = false;
+                originalOutputSize = 0;
+                appendOutput(finalResultText, maxChars);
+                for (String fragment : dataFragments) {
+                    appendOutput(fragment, maxChars);
+                }
+                return output.toString();
             }
 
             void appendOutput(String delta, int maxChars) {

@@ -69,11 +69,13 @@ import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
@@ -873,6 +875,81 @@ class AguiAgentAdapterV2Test {
                             .findFirst()
                             .orElseThrow();
             assertEquals("hel\nstructuredlo", result.content());
+        }
+
+        @Test
+        void testAuthoritativeResultKeepsTheNonTextPartsFromTheStream() {
+            // getFinalResultText() joins text blocks only. An image the tool returned travels as a
+            // data delta, so treating the return value as the whole result would drop it and leave
+            // a
+            // client that renders result parts with less than the model saw.
+            ImageBlock image =
+                    ImageBlock.builder()
+                            .source(URLSource.builder().url("https://example.com/cat.png").build())
+                            .build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolResultStartEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolResultDataDeltaEvent("reply-tool", "tool-1", "lookup", image),
+                            new ToolResultEndEvent(
+                                    "reply-tool", "tool-1", "lookup", null, "3 rows found"));
+
+            String content = firstToolCallResult(events).content();
+            assertTrue(content.startsWith("3 rows found"), content);
+            assertTrue(
+                    content.contains("https://example.com/cat.png"),
+                    "the image part survives the switch to the return value: " + content);
+        }
+
+        @Test
+        void testImageOnlyResultDoesNotFallBackToProgressText() {
+            // A tool that streams progress and returns only an image has no text in its return
+            // value,
+            // so the field is "" — reported, but empty. Reading that as "nothing reported" would
+            // put
+            // the progress chunks back into TOOL_CALL_RESULT, which is the leak this PR exists for.
+            ImageBlock image =
+                    ImageBlock.builder()
+                            .source(
+                                    URLSource.builder()
+                                            .url("https://example.com/chart.png")
+                                            .build())
+                            .build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-image", "tool-1", "render"),
+                            new ToolCallEndEvent("reply-image", "tool-1", "render"),
+                            new ToolResultStartEvent("reply-image", "tool-1", "render"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-image", "tool-1", "render", "drawing axes"),
+                            new ToolResultDataDeltaEvent("reply-image", "tool-1", "render", image),
+                            new ToolResultEndEvent("reply-image", "tool-1", "render", null, ""));
+
+            String content = firstToolCallResult(events).content();
+            assertFalse(
+                    content.contains("drawing axes"), "progress text must not leak: " + content);
+            assertTrue(
+                    content.contains("https://example.com/chart.png"),
+                    "the image is the result: " + content);
+        }
+
+        @Test
+        void testBlankReturnValueReplacesProgressTextWithNothing() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-blank", "tool-1", "cleanup"),
+                            new ToolCallEndEvent("reply-blank", "tool-1", "cleanup"),
+                            new ToolResultStartEvent("reply-blank", "tool-1", "cleanup"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-blank", "tool-1", "cleanup", "removing 3 files"),
+                            new ToolResultEndEvent("reply-blank", "tool-1", "cleanup", null, ""));
+
+            assertEquals(
+                    "",
+                    firstToolCallResult(events).content(),
+                    "an empty return value is reported as empty, not as the progress buffer");
         }
 
         @Test

@@ -29,12 +29,14 @@ import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -415,5 +417,104 @@ class ReActAgentNewLoopE2ETest {
         assertEquals(1L, events.stream().filter(ToolResultEndEvent.class::isInstance).count());
         assertTrue(events.get(0) instanceof AgentStartEvent);
         assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
+    }
+
+    @Test
+    void toolResultEndEventReportsTheReturnValueWhenTheToolAlsoStreamedProgress() {
+        List<AgentEvent> events = runWithProgressTool(ToolResultBlock.text("fingerprint enrolled"));
+
+        // Without this the test would still pass if the tool never emitted anything, and the field
+        // under test would be trivially correct — the progress chunk is the leak being closed.
+        assertTrue(
+                events.stream()
+                        .filter(ToolResultTextDeltaEvent.class::isInstance)
+                        .map(e -> ((ToolResultTextDeltaEvent) e).getDelta())
+                        .anyMatch("scanning 3 dirs"::equals),
+                "the progress chunk has to reach the stream");
+        assertEquals(
+                "fingerprint enrolled",
+                lastToolResultEnd(events).getFinalResultText(),
+                "the model received the return value, so that is what the end event reports");
+    }
+
+    @Test
+    void imageOnlyReturnValueIsReportedAsEmptyRatherThanAbsent() {
+        // "" and null mean different things downstream: null tells a consumer to fall back to the
+        // deltas it buffered, which would feed progress text back as the tool result on replay.
+        List<AgentEvent> events =
+                runWithProgressTool(
+                        ToolResultBlock.of(
+                                ImageBlock.builder()
+                                        .source(new URLSource("https://example.com/chart.png"))
+                                        .build()));
+
+        assertEquals("", lastToolResultEnd(events).getFinalResultText());
+    }
+
+    private List<AgentEvent> runWithProgressTool(ToolResultBlock returnValue) {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "enroll", "alpha")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new ProgressTool("enroll", returnValue));
+
+        List<AgentEvent> events =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .build()
+                        .streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("run enroll")
+                                                .build()))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+        return events;
+    }
+
+    private static ToolResultEndEvent lastToolResultEnd(List<AgentEvent> events) {
+        return events.stream()
+                .filter(ToolResultEndEvent.class::isInstance)
+                .map(ToolResultEndEvent.class::cast)
+                .reduce((first, second) -> second)
+                .orElseThrow();
+    }
+
+    /** Streams one progress chunk, then returns {@code returnValue}: the {@code ToolEmitter} deal. */
+    private static final class ProgressTool extends ToolBase {
+        private final ToolResultBlock returnValue;
+
+        ProgressTool(String name, ToolResultBlock returnValue) {
+            super(
+                    name,
+                    "streams progress then returns",
+                    AlwaysAllowTool.schema(),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+            this.returnValue = returnValue;
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("ok"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            param.getEmitter().emit(ToolResultBlock.text("scanning 3 dirs"));
+            return Mono.just(returnValue);
+        }
     }
 }

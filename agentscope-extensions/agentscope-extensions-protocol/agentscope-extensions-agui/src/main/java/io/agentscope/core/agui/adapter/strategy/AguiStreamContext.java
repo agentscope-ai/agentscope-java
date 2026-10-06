@@ -57,6 +57,13 @@ public class AguiStreamContext {
     private String currentTextMessageId;
     private String currentReasoningMessageId;
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
+
+    /**
+     * Non-text result blocks carried by the delta stream, kept beside {@link #toolResultContent} so
+     * an authoritative return value can replace the progress text without erasing them.
+     */
+    private final Map<String, List<String>> toolResultDataBlocks = new LinkedHashMap<>();
+
     private final Map<String, AguiEvent.Interrupt> pendingInterrupts = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
     private final TokenUsageAccumulator tokenUsageAccumulator = new TokenUsageAccumulator();
@@ -278,7 +285,11 @@ public class AguiStreamContext {
         if (!buffer.isEmpty()) {
             buffer.append("\n");
         }
-        buffer.append(serialize(data));
+        String fragment = serialize(data);
+        buffer.append(fragment);
+        toolResultDataBlocks
+                .computeIfAbsent(toolCallId, ignored -> new ArrayList<>())
+                .add(fragment);
     }
 
     public void endToolResult(String replyId, String toolCallId) {
@@ -307,13 +318,37 @@ public class AguiStreamContext {
             emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
         }
         StringBuilder buffered = toolResultContent.remove(toolCallId);
+        List<String> dataBlocks = toolResultDataBlocks.remove(toolCallId);
         String content =
                 finalResultText != null
-                        ? finalResultText
+                        ? appendDataBlocks(finalResultText, dataBlocks)
                         : buffered != null && !buffered.isEmpty() ? buffered.toString() : null;
         emit(
                 new AguiEvent.ToolCallResult(
                         threadId, runId, toolCallId, content, "tool", replyId + ":" + toolCallId));
+    }
+
+    /**
+     * Keep the non-text blocks the stream carried while the authoritative return value replaces the
+     * buffered text.
+     *
+     * <p>{@code ToolResultEndEvent#getFinalResultText()} joins text blocks only, so a multimodal
+     * result — an image, a structured part — travels as {@code ToolResultDataDeltaEvent}s. Swapping
+     * the whole buffer for the return value would silently drop those parts and leave a client
+     * rendering result parts with an empty message.
+     */
+    private static String appendDataBlocks(String text, List<String> dataBlocks) {
+        if (dataBlocks == null || dataBlocks.isEmpty()) {
+            return text;
+        }
+        StringBuilder out = new StringBuilder(text);
+        for (String block : dataBlocks) {
+            if (!out.isEmpty()) {
+                out.append("\n");
+            }
+            out.append(block);
+        }
+        return out.toString();
     }
 
     public void markToolCallSuspended(String toolCallId) {
@@ -321,6 +356,7 @@ public class AguiStreamContext {
             return;
         }
         toolResultContent.remove(toolCallId);
+        toolResultDataBlocks.remove(toolCallId);
     }
 
     public void addInterrupt(AguiEvent.Interrupt interrupt) {

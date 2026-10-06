@@ -28,14 +28,15 @@ public class ToolResultEndEvent extends AgentEvent {
     private final ToolResultState state;
 
     /**
-     * The tool method's return value as text, or {@code null} when the producer did not report one.
+     * The tool method's return value as text, or {@code null} when the producer reports nothing.
      *
-     * <p>A tool that streams progress through {@link io.agentscope.core.tool.ToolEmitter} pushes
-     * those chunks onto the event stream as deltas, but per that emitter's contract progress is not
-     * what the model receives — only the return value is. A consumer rebuilding the tool message
-     * from the delta stream alone would persist progress text as the result, so the authoritative
-     * value travels here. It deliberately does not ride on {@link AgentEvent#getMetadata()}, which
-     * carries the tool result's own metadata through unchanged.
+     * <p>{@code ""} is a reported value, not an absent one: it means the tool returned content with
+     * no text in it (an image, or a blank result), and a consumer must not fall back to its delta
+     * buffer for that case.
+     *
+     * <p>This deliberately does not ride on {@link AgentEvent#getMetadata()}, which passes the tool
+     * result's own metadata through unchanged — {@code ReActAgentNewLoopE2ETest} asserts that map
+     * exactly, so a framework key in it would be a contract change for unrelated consumers.
      */
     private final String finalResultText;
 
@@ -115,8 +116,10 @@ public class ToolResultEndEvent extends AgentEvent {
     }
 
     /**
-     * The tool method's return value as text, or {@code null} when the producer did not report one
-     * (for example when the result carries no text blocks).
+     * The tool method's return value as text.
+     *
+     * @return the return value (possibly empty), or {@code null} when the producer reports nothing,
+     *     which leaves consumers falling back to the delta stream
      */
     public String getFinalResultText() {
         return finalResultText;

@@ -26,11 +26,13 @@ import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultState;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -208,5 +210,67 @@ class SessionEventMapperTest {
         assertThat(persisted.payload().get("output")).isEqualTo("file1\nfile2\n");
         assertThat(persisted.payload().get("text")).isEqualTo("file1\nfile2\n");
         assertThat(persisted.eventId()).startsWith("evt_");
+    }
+
+    @Test
+    void toolResultPersistsTheReturnValueRatherThanTheProgressText() {
+        // The AG-UI adapter already prefers ToolResultEndEvent.getFinalResultText(); this consumer
+        // persisted the accumulated deltas, so the two disagreed about what the tool returned.
+        mapper.map(
+                new ToolResultTextDeltaEvent("r", "tool-1", "bash", "scanning 3 dirs\n"),
+                previewIds);
+        mapper.map(
+                new ToolResultTextDeltaEvent("r", "tool-1", "bash", "still scanning\n"),
+                previewIds);
+
+        SessionEventMapper.MappingResult end =
+                mapper.map(
+                        new ToolResultEndEvent(
+                                "r", "tool-1", "bash", ToolResultState.SUCCESS, "42 files"),
+                        previewIds);
+
+        Map<String, Object> payload = end.persisted().orElseThrow().payload();
+        assertThat(payload.get("output")).isEqualTo("42 files");
+        assertThat(payload.get("text")).isEqualTo("42 files");
+        assertThat(String.valueOf(payload.get("content"))).doesNotContain("scanning");
+    }
+
+    @Test
+    void toolResultKeepsNonTextFragmentsWhenTheReturnValueArrives() {
+        mapper.map(
+                new ToolResultDataDeltaEvent(
+                        "r",
+                        "tool-1",
+                        "chart",
+                        TextBlock.builder().text("chart-part-json").build()),
+                previewIds);
+        mapper.map(
+                new ToolResultTextDeltaEvent("r", "tool-1", "chart", "drawing axes\n"), previewIds);
+
+        SessionEventMapper.MappingResult end =
+                mapper.map(
+                        new ToolResultEndEvent(
+                                "r", "tool-1", "chart", ToolResultState.SUCCESS, "rendered"),
+                        previewIds);
+
+        String output = String.valueOf(end.persisted().orElseThrow().payload().get("output"));
+        assertThat(output).startsWith("rendered").contains("chart-part-json");
+        assertThat(output).doesNotContain("drawing axes");
+    }
+
+    @Test
+    void toolResultWithoutReturnValueStillPersistsTheBufferedDeltas() {
+        mapper.map(new ToolResultTextDeltaEvent("r", "tool-1", "bash", "file1\n"), previewIds);
+        mapper.map(
+                new ToolResultDataDeltaEvent(
+                        "r", "tool-1", "bash", TextBlock.builder().text("part").build()),
+                previewIds);
+
+        SessionEventMapper.MappingResult end =
+                mapper.map(
+                        new ToolResultEndEvent("r", "tool-1", "bash", ToolResultState.SUCCESS),
+                        previewIds);
+
+        assertThat(end.persisted().orElseThrow().payload().get("output")).isEqualTo("file1\npart");
     }
 }

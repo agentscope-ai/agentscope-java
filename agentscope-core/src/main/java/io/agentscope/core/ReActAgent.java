@@ -3510,19 +3510,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * event stream as deltas but are deliberately not what the model receives, so a consumer
          * rebuilding the tool message from deltas needs the return value from this event instead.
          *
-         * @return joined text, or {@code null} when the result has no non-empty text blocks
+         * <p>An empty join is reported as {@code ""}, not {@code null}: a tool that returns an image
+         * or a blank string did produce a return value, and a consumer that fell back to the delta
+         * buffer for it would persist progress text as the result — the exact leak this field exists
+         * to close. Only a result we know nothing about is left unreported.
+         *
+         * @return joined text (possibly empty), or {@code null} when there are no content blocks to
+         *     report from
          */
         private String finalToolResultText(ToolResultBlock result) {
-            if (result == null || result.getOutput() == null) {
+            if (result == null || result.getOutput() == null || result.getOutput().isEmpty()) {
                 return null;
             }
-            String text =
-                    result.getOutput().stream()
-                            .filter(TextBlock.class::isInstance)
-                            .map(block -> ((TextBlock) block).getText())
-                            .filter(value -> value != null && !value.isEmpty())
-                            .collect(Collectors.joining());
-            return text.isEmpty() ? null : text;
+            return result.getOutput().stream()
+                    .filter(TextBlock.class::isInstance)
+                    .map(block -> ((TextBlock) block).getText())
+                    .filter(value -> value != null && !value.isEmpty())
+                    .collect(Collectors.joining());
         }
 
         private ToolResultState determineToolResultState(ToolResultBlock result) {
