@@ -213,6 +213,27 @@ class SkillManageToolTest {
         assertTrue(text(r).startsWith("Error:"));
     }
 
+    @Test
+    void createAcceptsUtf8BomBeforeFrontmatter() {
+        ToolResultBlock r =
+                toolDraftDefault
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "create",
+                                                "name", "bom-skill",
+                                                "content",
+                                                        "\uFEFF"
+                                                                + validSkillMd(
+                                                                        "bom-skill",
+                                                                        "Created with BOM."))))
+                        .block();
+        assertFalse(text(r).startsWith("Error:"), text(r));
+
+        var loaded = draftsRepo.getSkill("bom-skill");
+        assertEquals("Created with BOM.", loaded.getDescription());
+    }
+
     // ---- edit ----
 
     @Test
@@ -239,6 +260,33 @@ class SkillManageToolTest {
         var loaded = draftsRepo.getSkill("evolve");
         assertEquals("Updated.", loaded.getDescription());
         assertTrue(loaded.getSkillContent().contains("Evolved"));
+    }
+
+    @Test
+    void editAcceptsUtf8BomBeforeFrontmatter() {
+        toolDraftDefault
+                .callAsync(
+                        paramOf(
+                                args(
+                                        "action", "create",
+                                        "name", "bom-edit",
+                                        "content", validSkillMd("bom-edit", "Initial."))))
+                .block();
+        String newMd =
+                "\uFEFF---\nname: bom-edit\ndescription: Updated with BOM.\n---\n# Bom edit\n";
+        ToolResultBlock r =
+                toolDraftDefault
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "edit",
+                                                "name", "bom-edit",
+                                                "content", newMd)))
+                        .block();
+        assertFalse(text(r).startsWith("Error:"), text(r));
+
+        var loaded = draftsRepo.getSkill("bom-edit");
+        assertEquals("Updated with BOM.", loaded.getDescription());
     }
 
     // ---- patch ----

@@ -16,13 +16,16 @@
 package io.agentscope.extensions.jdbc.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.JdbcDistributedStore;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
+import io.agentscope.extensions.jdbc.skill.JdbcAgentSkillRepository;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
@@ -139,6 +142,31 @@ class PostgresIntegrationTest {
 
         assertTrue(exception.getMessage().contains("version"), exception.getMessage());
         assertTrue(exception.getMessage().contains("agentscope_sessions"), exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("07: skill repository round-trip on the skill table group")
+    void skillRepositoryRoundTrip() {
+        DataSource ds = createDataSource();
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).enableSkillTables(true).build();
+        var repo = new JdbcAgentSkillRepository(ds, dialect);
+
+        var skill =
+                new AgentSkill(
+                        Map.of(
+                                "name", "pg-skill",
+                                "description", "integration skill",
+                                "homepage", "https://example.com"),
+                        "content",
+                        Map.of("readme.md", "hello"),
+                        "integration");
+        assertTrue(repo.save(List.of(skill), false));
+
+        AgentSkill loaded = repo.getSkill("pg-skill");
+        assertEquals("https://example.com", loaded.getMetadataValue("homepage"));
+        assertEquals("hello", loaded.getResource("readme.md"));
+        assertTrue(repo.delete("pg-skill"));
+        assertFalse(repo.skillExists("pg-skill"));
     }
 
     /**

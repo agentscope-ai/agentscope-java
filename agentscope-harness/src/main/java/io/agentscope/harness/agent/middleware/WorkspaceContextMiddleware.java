@@ -30,7 +30,9 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -165,6 +167,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         this.maxContextTokens = maxContextTokens;
         this.disableMemoryTools = disableMemoryTools;
         this.disableMemoryHooks = disableMemoryHooks;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
     public void setAdditionalContextFiles(List<String> files) {

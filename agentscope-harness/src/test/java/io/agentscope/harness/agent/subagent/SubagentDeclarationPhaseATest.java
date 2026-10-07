@@ -99,6 +99,16 @@ class SubagentDeclarationPhaseATest {
     }
 
     @Test
+    void loader_parsesUtf8BomBeforeFrontmatter() {
+        String md = "\uFEFF---\ndescription: A test agent with BOM\n---\nBody content.\n";
+        SubagentDeclaration decl = AgentSpecLoader.parse(md, "bom-agent", null);
+        assertNotNull(decl);
+        assertEquals("bom-agent", decl.getName());
+        assertEquals("A test agent with BOM", decl.getDescription());
+        assertEquals("Body content.", decl.getInlineAgentsBody());
+    }
+
+    @Test
     void loader_acceptsCamelCaseTopP() {
         String md =
                 """

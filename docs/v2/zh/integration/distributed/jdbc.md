@@ -16,7 +16,7 @@ en_link: /v2/en/integration/distributed/jdbc
 
 后续将持续扩展对更多关系型数据库的支持，包括 Oracle 以及达梦、高斯、OceanBase 等国产数据库。
 
-> 历史模块 `agentscope-extensions-mysql` 与 `agentscope-extensions-postgresql` 已废弃，由本模块统一取代，迁移方式见下文。
+> 历史模块 `agentscope-extensions-mysql`、`agentscope-extensions-postgresql`、`agentscope-extensions-skill-mysql-repository`、`agentscope-extensions-skill-postgresql-repository` 已废弃，由本模块统一取代，迁移方式见下文。
 
 ## 添加依赖
 
@@ -55,7 +55,18 @@ AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource)
 DistributedStore store = JdbcDistributedStore.create(dataSource, dialect);
 ```
 
-建表与结构校验统一在 `AbstractJdbcDialect.from(ds).build()` 装配时完成：`autoCreateTable`（默认 true）控制是否执行 DDL，无论开关与否都会校验三张业务表，缺表或缺列即带参考 DDL 快速失败（Spring 环境在启动时暴露）。默认创建的表：`agentscope_store`、`agentscope_sessions`、`agentscope_snapshots`、`agentscope_distributed_locks`。表名与前缀仅允许 `[A-Za-z_][A-Za-z0-9_]*`。
+建表与结构校验统一在 `AbstractJdbcDialect.from(ds).build()` 装配时完成：`autoCreateTable`（默认 true）控制是否执行 DDL，无论开关与否都会校验已启用表组的业务表，缺表或缺列即带参考 DDL 快速失败（Spring 环境在启动时暴露）。表名与前缀仅允许 `[A-Za-z_][A-Za-z0-9_]*`。
+
+**表组开关**：`enableBaseTables`（默认开）与 `enableSkillTables`（默认关）决定 `build()` 建表与校验覆盖哪些表组，与 `autoCreateTable` 正交、彼此也独立——基础表用 MySQL、skill 走 git 通道是合法组合。
+
+```java
+AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource)
+    .enableBaseTables(true)      // 默认开 —— store、sessions、snapshots
+    .enableSkillTables(true)     // 默认关 —— 显式开启才建 skill 表
+    .build();                    // 会创建 agentscope_skills / agentscope_skill_resources
+```
+
+默认创建的表：`agentscope_store`、`agentscope_sessions`、`agentscope_snapshots`；锁表 `agentscope_distributed_locks` 在首次加锁时创建。开启 skill 表组后额外创建：`agentscope_skills`、`agentscope_skill_resources`。
 
 ## 提供的组件
 
@@ -116,6 +127,28 @@ SandboxExecutionGuard guard = JdbcSandboxExecutionGuard.builder(dialect)
 
 > 注意：MySQL named locks 是 server 级别的（非 database 级别）。在共享 MySQL 实例时，使用唯一的 `keyPrefix` 避免冲突。
 
+### 5. JdbcAgentSkillRepository
+
+skill 存储走同一套方言：实现 core 的 `AgentSkillRepository`，本模块支持的每个数据库都能直接作为 skill 通道。
+
+```java
+import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.extensions.jdbc.skill.JdbcAgentSkillRepository;
+
+AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource)
+    .enableSkillTables(true)
+    .build();
+
+AgentSkillRepository repo = new JdbcAgentSkillRepository(dataSource, dialect);
+```
+
+建两张表：`agentscope_skills` 和 `agentscope_skill_resources`（复合主键 `(id, resource_path)`，外键 `ON DELETE CASCADE`）。与其他组件一样，repository 不碰 schema——表组在 build 时开启；方言没开表组就直接构造，会立刻报错。
+
+两点行为说明：
+
+- `metadata_json` 是必需列。早于该列的旧表会在启动校验时报错并附参考 DDL，按提示 `ALTER TABLE` 补列后重启即可，框架不会代改已有表。
+- `delete` 会先显式删掉技能的资源行再删技能行，因此在 SQLite（默认不启用级联外键）上行为也一致；资源路径必须是相对路径且不含 `..`，越出技能目录的路径在保存时即被拒绝，读取回表中的行时也做同样校验。
+
 ## 从历史模块迁移
 
 历史模块不建议继续使用，请按自身节奏尽早迁移：
@@ -125,6 +158,14 @@ SandboxExecutionGuard guard = JdbcSandboxExecutionGuard.builder(dialect)
 | `MysqlDistributedStore.create(ds)` / `PostgresDistributedStore.create(ds)` | `JdbcDistributedStore.create(ds)`                                     |
 | `new MysqlAgentStateStore(ds)`                                             | `new JdbcAgentStateStore(ds, AbstractJdbcDialect.from(ds).build())`   |
 | `JdbcStore.builder(ds).dialect(mysqlDialect)`                              | `JdbcStore.builder(ds).dialect(AbstractJdbcDialect.from(ds).build())` |
+| `MysqlSkillRepository` / `PostgresSkillRepository`（skill-mysql / skill-postgresql 模块） | `new JdbcAgentSkillRepository(ds, AbstractJdbcDialect.from(ds).enableSkillTables(true).build())` |
+
+skill 仓库迁移要点：
+
+- 现行旧模块建的表已包含 `metadata_json`，原样可用；更早的旧表先补上这一列，启动报错里附有参考 DDL。
+- "原样可用"有一个例外：旧模块从不拒绝绝对路径或含 `..` 的资源路径，而新实现对读取的行做同样校验——`getSkill` 会拒绝这类行，`getAllSkills` / `getAllSkillNames` 会跳过并告警。名字本身非法的行也无法通过 API 删除，只能 `clearAllSkills` 或直接 SQL 处理。迁移前请先审计 `resource_path` 和技能名；这些值本就无法被下游安全消费。
+- 旧模块会隐式创建 `agentscope` 库（MySQL）/ schema（PostgreSQL）；新实现的表放在连接所指向的库里——把 `DataSource` 指向存量表即可。
+- `databaseName` / `schemaName` 无对应物——表跟随 DataSource 所指向的库，与基础表一致。表名可用 `skillTableName` / `skillResourcesTableName` 覆盖。相应地，`getSource()` 由 `mysql_<库名>_<表名>` / `postgresql_<schema>_<表名>` 变为 `jdbc_<skillTableName>`：以其为键的消费方（如 skill 暂存缓存命名空间）迁移后会使用新的子目录，旧目录由孤儿 GC 回收。
 
 ## 选型建议
 
