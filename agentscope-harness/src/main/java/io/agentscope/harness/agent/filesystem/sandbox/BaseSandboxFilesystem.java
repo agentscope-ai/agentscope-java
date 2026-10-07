@@ -442,8 +442,17 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String escapedPath = FilesystemUtils.shellQuote(path);
         String cmd = "rm -rf " + escapedPath;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
-        if (result.exitCode() != 0) {
-            return WriteResult.fail("Error deleting '" + path + "': " + result.output());
+        // Same fail-closed contract as move(): a null exit code is an unknown status, and a
+        // filesystem mutation must not report success it cannot confirm.
+        Integer exitCode = result.exitCode();
+        if (exitCode == null || exitCode != 0) {
+            String detail =
+                    exitCode == null
+                            ? "no exit status reported"
+                            : (result.output() != null && !result.output().isBlank()
+                                    ? clampDetail(result.output())
+                                    : "exit code " + exitCode);
+            return WriteResult.fail("Error deleting '" + path + "': " + detail);
         }
         return WriteResult.ok(path);
     }
@@ -465,18 +474,18 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + " "
                         + escapedTo;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
-        if (result.exitCode() != null && result.exitCode() != 0) {
+        // A null exit code means the status is unknown (ExecuteResponse permits it); a
+        // filesystem mutation must fail closed rather than report a success it cannot confirm.
+        Integer exitCode = result.exitCode();
+        if (exitCode == null || exitCode != 0) {
             String detail =
-                    result.output() != null && !result.output().isBlank()
-                            ? clampDetail(result.output())
-                            : "exit code " + result.exitCode();
+                    exitCode == null
+                            ? "no exit status reported"
+                            : (result.output() != null && !result.output().isBlank()
+                                    ? clampDetail(result.output())
+                                    : "exit code " + exitCode);
             return WriteResult.fail(
-                    "Error moving '"
-                            + fromPath
-                            + "' to '"
-                            + toPath
-                            + "': "
-                            + detail);
+                    "Error moving '" + fromPath + "' to '" + toPath + "': " + detail);
         }
         return WriteResult.ok(toPath);
     }
@@ -551,16 +560,23 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
      * as context-overflow territory for tool results, so error details get a tight local bound.
      */
     private static String clampDetail(String output) {
-        // Null-safe by design: move() passes result.output() unguarded, and the execution
-        // layer can produce a null output (e.g. ExecTimeoutException via a null
-        // Throwable.getMessage()).
+        // Defensive null check: the execution layer can produce a null output (e.g.
+        // ExecTimeoutException via a null Throwable.getMessage()), though the current
+        // call sites guard it before reaching here.
         if (output == null) {
             return "no output";
         }
         String stripped = output.strip();
-        return stripped.length() <= MAX_DETAIL_CHARS
-                ? stripped
-                : "[output truncated] ..."
-                        + stripped.substring(stripped.length() - MAX_DETAIL_CHARS);
+        if (stripped.length() <= MAX_DETAIL_CHARS) {
+            return stripped;
+        }
+        int from = stripped.length() - MAX_DETAIL_CHARS;
+        // Slicing on UTF-16 code units can split a surrogate pair (emoji, CJK Extension B),
+        // which would leave a lone surrogate in the JSON sent to the model — back off by one
+        // char when the cut lands on a low surrogate.
+        if (Character.isLowSurrogate(stripped.charAt(from))) {
+            from++;
+        }
+        return "[output truncated] ..." + stripped.substring(from);
     }
 }

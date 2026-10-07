@@ -268,7 +268,7 @@ class BaseSandboxFilesystemTest {
             assertTrue(result.error().contains("status=504"), "error should carry the cause");
         }
 
-// ==================== Bug reproduction: edit python program collapsed into one line
+        // ==================== Bug reproduction: edit python program collapsed into one line
         // (#2571) ====================
 
         @Test
@@ -410,6 +410,32 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
+        void move_failureMessageHandlesNullExitCode() {
+            // execute() can report an unknown exit status (ExecuteResponse permits a null exit
+            // code); a move must fail closed rather than claim a success it cannot confirm.
+            ExecuteResponse unknown = new ExecuteResponse("boom", null, false);
+            WriteResult result = new FixedResponseFilesystem(unknown).move(RT, "a.txt", "b.txt");
+
+            assertFalse(result.isSuccess(), "move must fail when the exit status is unknown");
+            assertTrue(
+                    result.error().contains("no exit status reported"),
+                    "unknown exit status should say so: " + result.error());
+        }
+
+        @Test
+        void delete_failureMessageHandlesNullExitCode() {
+            // delete() shares move()'s fail-closed contract: an unknown exit status must not
+            // read as a success for a filesystem mutation.
+            ExecuteResponse unknown = new ExecuteResponse("boom", null, false);
+            WriteResult result = new FixedResponseFilesystem(unknown).delete(RT, "a.txt");
+
+            assertFalse(result.isSuccess(), "delete must fail when the exit status is unknown");
+            assertTrue(
+                    result.error().contains("no exit status reported"),
+                    "unknown exit status should say so: " + result.error());
+        }
+
+        @Test
         void write_failureMessageFallsBackToExitCodeWhenOutputBlank() {
             ExecuteResponse noOutput = new ExecuteResponse("", 3, false);
             WriteResult result =
@@ -419,7 +445,6 @@ class BaseSandboxFilesystemTest {
             assertTrue(
                     result.error().contains("3"),
                     "failure message should fall back to the exit code: " + result.error());
-        }
         }
     }
 
