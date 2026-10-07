@@ -8,6 +8,27 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## 2.0.4 (Unreleased)
+
+> Not yet released — these changes will ship with 2.0.4.
+
+### Added
+
+**Core / Transport**
+
+- Unified HTTP request/response observability at the transport layer: new `HttpTransportListener` SPI (`onRequest` / `onResponse` / `onFailure` / `onStreamComplete` / `onStreamCancel`), a `LoggingHttpTransport` decorator, and `HttpLogSanitizer` (sensitive headers, URL query parameters, URL userinfo and body credential fields are always redacted). `HttpTransportFactory.createLogging(config)` builds a logging transport from a config so its switches and listeners take effect ([#3364](https://github.com/agentscope-ai/agentscope-java/pull/3364), [#3363](https://github.com/agentscope-ai/agentscope-java/issues/3363))
+- `HttpTransportConfig` gains `logRequests` (default `true`), `logFailures` (default `true`, independent of `logRequests`), `logBodies` (default `false` — body contents are opt-in) and `logBodyMaxLength` (default 2048) ([#3364](https://github.com/agentscope-ai/agentscope-java/pull/3364))
+
+### Changed
+
+**Core / Transport**
+
+- **Behavior change:** `HttpTransportFactory.getDefault()` now returns a `LoggingHttpTransport` wrapping `JdkHttpTransport` (the declared return type is unchanged). Code doing `instanceof JdkHttpTransport` / `instanceof OkHttpTransport` on the factory default stops matching ([#3364](https://github.com/agentscope-ai/agentscope-java/pull/3364))
+- **Behavior change:** transport failures are now logged at WARN by default, not gated on the logger level, so connection problems are visible with a default logging configuration. Silence failure logging with `logFailures(false)`; DEBUG traffic lines are controlled independently via `logRequests(false)` ([#3364](https://github.com/agentscope-ai/agentscope-java/pull/3364))
+- 12 ad-hoc unredacted DEBUG log statements were removed from `OpenAIClient` (6), `DashScopeHttpClient` (3) and `OllamaHttpClient` (3). Equivalent sanitized output now comes from the logger `io.agentscope.core.model.transport.LoggingHttpTransport`. Note that ad-hoc logs are replaced by transport-level logs only when the transport is decorated (the `getDefault()` / `createLogging(...)` paths); a self-built plain transport has no built-in request logging ([#3364](https://github.com/agentscope-ai/agentscope-java/pull/3364))
+
+---
+
 ## 2.0.1
 
 > Released: 2026-08-05

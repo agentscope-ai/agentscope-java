@@ -90,6 +90,18 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
 
+        <!-- Logback as the SLF4J backend for tests only. Without any backend on the test
+             classpath slf4j falls back to its NOP logger, isDebugEnabled() is always false,
+             and the DEBUG-gated logging branches in LoggingHttpTransport are unreachable by
+             tests. With this backend tests can also attach a ListAppender and assert log
+             output. Test scope only: this backend is never shipped with the artifact. -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.5.18</version>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Model Context Protocol (MCP) SDK -->
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>

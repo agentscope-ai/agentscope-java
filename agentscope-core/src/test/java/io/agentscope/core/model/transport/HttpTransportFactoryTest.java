@@ -15,14 +15,18 @@
  */
 package io.agentscope.core.model.transport;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.MethodOrderer;
@@ -49,9 +53,14 @@ class HttpTransportFactoryTest {
         HttpTransport transport = HttpTransportFactory.getDefault();
 
         assertNotNull(transport);
+        // The lazily created default is wrapped in LoggingHttpTransport for uniform logging
         assertTrue(
-                transport instanceof JdkHttpTransport,
-                "Expected JdkHttpTransport but got " + transport.getClass().getName());
+                transport instanceof LoggingHttpTransport,
+                "Expected LoggingHttpTransport but got " + transport.getClass().getName());
+        assertTrue(
+                ((LoggingHttpTransport) transport).getDelegate() instanceof JdkHttpTransport,
+                "Expected JdkHttpTransport delegate but got "
+                        + ((LoggingHttpTransport) transport).getDelegate().getClass().getName());
     }
 
     @Test
@@ -261,5 +270,103 @@ class HttpTransportFactoryTest {
         assertSame(custom, retrieved);
 
         HttpTransportFactory.shutdown();
+    }
+
+    @Test
+    @Order(15)
+    void testSetDefaultNullClearsDefault() {
+        HttpTransportFactory.shutdown();
+        HttpTransport first = HttpTransportFactory.getDefault();
+        assertNotNull(first);
+
+        // Setting null clears the default; the next getDefault lazily recreates one.
+        HttpTransportFactory.setDefault(null);
+
+        HttpTransport second = HttpTransportFactory.getDefault();
+        assertNotNull(second);
+        assertTrue(second instanceof LoggingHttpTransport);
+
+        HttpTransportFactory.shutdown();
+    }
+
+    @Test
+    @Order(16)
+    void testSetDefaultExistingTransportNotDuplicated() {
+        HttpTransportFactory.shutdown();
+        HttpTransport custom = mock(HttpTransport.class);
+
+        HttpTransportFactory.setDefault(custom);
+        int countAfterFirst = HttpTransportFactory.getManagedTransportCount();
+        HttpTransportFactory.setDefault(custom);
+
+        assertEquals(countAfterFirst, HttpTransportFactory.getManagedTransportCount());
+        assertSame(custom, HttpTransportFactory.getDefault());
+
+        HttpTransportFactory.shutdown();
+    }
+
+    @Test
+    @Order(17)
+    void testShutdownSurvivesTransportCloseFailure() {
+        HttpTransportFactory.shutdown();
+        HttpTransport good = mock(HttpTransport.class);
+        HttpTransport bad = mock(HttpTransport.class);
+        doThrow(new RuntimeException("close failed")).when(bad).close();
+
+        HttpTransportFactory.register(good);
+        HttpTransportFactory.register(bad);
+
+        // A failing transport close() must not abort the shutdown of the remaining ones.
+        assertDoesNotThrow(HttpTransportFactory::shutdown);
+
+        verify(good).close();
+        verify(bad).close();
+        assertEquals(0, HttpTransportFactory.getManagedTransportCount());
+    }
+
+    @Test
+    @Order(18)
+    void testCreateLoggingWrapsJdkTransportWithConfig() {
+        HttpTransportFactory.shutdown();
+        // A config carrying BOTH transport-level options (timeout, proxy, HTTP version) and
+        // logging-level options: createLogging must apply the transport half to the delegate
+        // that opens the socket, not just the logging half to the wrapper.
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+        HttpTransportConfig config =
+                HttpTransportConfig.builder()
+                        .connectTimeout(Duration.ofSeconds(2))
+                        .proxy(proxy)
+                        .httpVersion(HttpVersion.HTTP_2)
+                        .logBodies(true)
+                        .build();
+
+        HttpTransport transport = HttpTransportFactory.createLogging(config);
+
+        assertTrue(
+                transport instanceof LoggingHttpTransport,
+                "Expected LoggingHttpTransport but got " + transport.getClass().getName());
+        HttpTransport delegate = ((LoggingHttpTransport) transport).getDelegate();
+        assertTrue(
+                delegate instanceof JdkHttpTransport,
+                "Expected JdkHttpTransport delegate but got " + delegate.getClass().getName());
+        assertTrue(HttpTransportFactory.isManaged(transport));
+
+        // Config is consumed by the wrapper: the logging decorator exposes its logBodies switch.
+        assertTrue(((LoggingHttpTransport) transport).isLogBodiesEnabled());
+
+        // Config is ALSO consumed by the delegate: the JDK transport that opens the socket was
+        // built from the same config (regression guard for the defaults() bug).
+        HttpTransportConfig delegateConfig = ((JdkHttpTransport) delegate).getConfig();
+        assertEquals(Duration.ofSeconds(2), delegateConfig.getConnectTimeout());
+        assertEquals(proxy, delegateConfig.getProxyConfig());
+        assertEquals(HttpVersion.HTTP_2, delegateConfig.getHttpVersion());
+
+        HttpTransportFactory.shutdown();
+    }
+
+    @Test
+    @Order(19)
+    void testCreateLoggingRejectsNullConfig() {
+        assertThrows(NullPointerException.class, () -> HttpTransportFactory.createLogging(null));
     }
 }
