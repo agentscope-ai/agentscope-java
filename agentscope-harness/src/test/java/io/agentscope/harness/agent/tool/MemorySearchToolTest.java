@@ -71,6 +71,45 @@ class MemorySearchToolTest {
     }
 
     @Test
+    void capsResultsAtDefaultLimit_detectsExtraMatchOnFinalLine() throws Exception {
+        // 31 matching lines where the 31st is the very last line of the file. The old cap
+        // check peeked only at the *next* line (here the empty trailing element) and silently
+        // dropped the 31st match with no "+" marker.
+        StringBuilder ledger = new StringBuilder();
+        for (int i = 1; i <= 31; i++) {
+            ledger.append("fact no ").append(i).append(" about keyword\n");
+        }
+        writeMemoryFile("memory/2026-09-01.md", ledger.toString());
+
+        String result = tool.memorySearch(RT, "keyword", null, null);
+
+        assertTrue(
+                result.startsWith("Found 30+ matches"),
+                () -> "a 31st match on the final line must be flagged: " + result);
+        assertFalse(result.contains("fact no 31"), "lines beyond the cap must not be returned");
+    }
+
+    @Test
+    void capsResultsAtDefaultLimit_detectsExtraMatchInLaterFile() throws Exception {
+        // The cap is reached in the first file; a match in a second file must still be seen
+        // so the "+" marker stays accurate (this replaces the old next-file probe, which
+        // only ever looked one file ahead).
+        StringBuilder first = new StringBuilder();
+        for (int i = 1; i <= 30; i++) {
+            first.append("fact no ").append(i).append(" about keyword\n");
+        }
+        writeMemoryFile("memory/2026-09-01.md", first.toString());
+        writeMemoryFile("memory/2026-09-02.md", "fact no 31 about keyword\n");
+
+        String result = tool.memorySearch(RT, "keyword", null, null);
+
+        assertTrue(
+                result.startsWith("Found 30+ matches"),
+                () -> "a match in a later file must be flagged: " + result);
+        assertFalse(result.contains("fact no 31"), "lines beyond the cap must not be returned");
+    }
+
+    @Test
     void maxResultsParameterOverridesDefault() throws Exception {
         StringBuilder ledger = new StringBuilder();
         for (int i = 1; i <= 20; i++) {
@@ -80,7 +119,7 @@ class MemorySearchToolTest {
 
         String result = tool.memorySearch(RT, "keyword", null, 5);
 
-        assertTrue(result.startsWith("Found 5 matches"), () -> result);
+        assertTrue(result.startsWith("Found 5+ matches"), () -> result);
         assertFalse(result.contains("fact no 6"), "lines beyond maxResults must not be returned");
     }
 
@@ -93,8 +132,10 @@ class MemorySearchToolTest {
         writeMemoryFile("memory/2026-09-01.md", ledger.toString());
 
         assertEquals("Found 3 matches", tool.memorySearch(RT, "keyword", null, 0).substring(0, 15));
-        assertEquals("Found 3 matches", tool.memorySearch(RT, "keyword", null, -1).substring(0, 15));
-        assertEquals("Found 3 matches", tool.memorySearch(RT, "keyword", null, null).substring(0, 15));
+        assertEquals(
+                "Found 3 matches", tool.memorySearch(RT, "keyword", null, -1).substring(0, 15));
+        assertEquals(
+                "Found 3 matches", tool.memorySearch(RT, "keyword", null, null).substring(0, 15));
     }
 
     @Test
@@ -168,9 +209,8 @@ class MemorySearchToolTest {
             char c = result.charAt(i);
             if (Character.isHighSurrogate(c)) {
                 assertTrue(
-                        i + 1 < result.length()
-                                && Character.isLowSurrogate(result.charAt(i + 1)),
-                        () -> "lone high surrogate at offset " + i + " in: " + result);
+                        i + 1 < result.length() && Character.isLowSurrogate(result.charAt(i + 1)),
+                        "lone high surrogate at offset " + i + " in: " + result);
             }
         }
     }
@@ -200,7 +240,7 @@ class MemorySearchToolTest {
         String result = tool.memorySearch(RT, "keyword", null, null);
 
         assertEquals(
-                "Found 1 match:\n\nSource: memory/2026-09-01.md#1: short fact about keyword",
+                "Found 1 matches:\n\nSource: memory/2026-09-01.md#1: short fact about keyword",
                 result);
     }
 

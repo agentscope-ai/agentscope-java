@@ -145,38 +145,22 @@ public class MemorySearchTool {
             }
             String[] lines = content.split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
+                // Test the line before consulting the cap, so the line that trips the cap is
+                // still examined: a match sitting exactly at the cap boundary is flagged as
+                // "more" rather than silently dropped. This also scans every later file for a
+                // real extra match, so hasMoreMatches is never a false positive and never
+                // misses one (#3266 review).
+                if (!matcher.test(lines[i])) {
+                    continue;
+                }
                 if (matchCount >= maxResults) {
-                    // Scan one more line to see if there is actually more beyond the cap —
-                    // so hasMoreMatches is never a false positive.
-                    hasMoreMatches =
-                            i + 1 < lines.length && matcher.test(lines[i + 1]);
-                    if (!hasMoreMatches) {
-                        // Also check the next file if at the end of the current one.
-                        int nextFileIdx = memoryPaths.indexOf(relativePath) + 1;
-                        if (nextFileIdx < memoryPaths.size()) {
-                            String nextContent =
-                                    workspaceManager.readManagedWorkspaceFileUtf8(
-                                            rc, memoryPaths.get(nextFileIdx));
-                            if (nextContent != null && !nextContent.isEmpty()) {
-                                String[] nextLines = nextContent.split("\n", -1);
-                                for (String nextLine : nextLines) {
-                                    if (matcher.test(nextLine)) {
-                                        hasMoreMatches = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    hasMoreMatches = true;
                     break outer;
                 }
-                if (matcher.test(lines[i])) {
-                    results.add(
-                            String.format(
-                                    "Source: %s#%d: %s",
-                                    relativePath, i + 1, truncateLine(lines[i])));
-                    matchCount++;
-                }
+                results.add(
+                        String.format(
+                                "Source: %s#%d: %s", relativePath, i + 1, truncateLine(lines[i])));
+                matchCount++;
             }
         }
 
@@ -187,7 +171,7 @@ public class MemorySearchTool {
                 "Found "
                         + matchCount
                         + (hasMoreMatches ? "+" : "")
-                        + (matchCount == 1 ? " match" : " matches")
+                        + " matches"
                         + ":\n\n"
                         + results;
         if (hasMoreMatches) {
