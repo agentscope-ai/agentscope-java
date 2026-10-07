@@ -25,6 +25,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import io.agentscope.harness.agent.transcript.TranscriptRef;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -162,13 +163,28 @@ public class SessionTranscriptWriter {
     /**
      * Resolves the workspace-relative path of the session context JSONL (for compaction
      * summary references).
+     *
+     * <p>When the archive sits under the workspace this returns a relative path ({@code
+     * agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.jsonl}). {@code SessionTree} mirrors that
+     * relative path into the live filesystem, so the agent can open it even when the workspace is
+     * sandbox-backed. Only the absolute {@code file.toString()} fallback — the archive is not
+     * under the workspace — is hidden, and only when the backend that serves the session path is
+     * sandbox-backed. A prefix route that serves {@code agents/} from a non-sandbox store keeps
+     * the pointer.
      */
     public String resolveContextPath(RuntimeContext rc, String agentId, String sessionId) {
         try {
             Path file = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
             Path ws = workspaceManager.getWorkspace();
             if (ws != null && file.startsWith(ws)) {
+                // Mirrored into the sandbox at this relative path; the agent can open it.
                 return ws.relativize(file).toString().replace('\\', '/');
+            }
+            // Absolute host path. A sandboxed agent cannot resolve it.
+            if (FilesystemUtils.isSandboxBacked(
+                    workspaceManager.getFilesystem(),
+                    sessionContextRelativePath(agentId, sessionId))) {
+                return "";
             }
             return file.toString();
         } catch (Exception e) {
@@ -179,6 +195,18 @@ public class SessionTranscriptWriter {
                     e.getMessage());
             return "";
         }
+    }
+
+    /** Workspace-relative session archive path, without a namespace prefix. */
+    private static String sessionContextRelativePath(String agentId, String sessionId) {
+        return WorkspaceConstants.AGENTS_DIR
+                + "/"
+                + agentId
+                + "/"
+                + WorkspaceConstants.SESSIONS_DIR
+                + "/"
+                + sessionId
+                + WorkspaceConstants.SESSION_CONTEXT_EXT;
     }
 
     /**

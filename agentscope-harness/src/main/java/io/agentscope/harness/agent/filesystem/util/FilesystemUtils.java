@@ -15,6 +15,10 @@
  */
 package io.agentscope.harness.agent.filesystem.util;
 
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.sandbox.BaseSandboxFilesystem;
 import java.util.Set;
 
 /**
@@ -23,6 +27,51 @@ import java.util.Set;
 public final class FilesystemUtils {
 
     private FilesystemUtils() {}
+
+    /**
+     * Returns whether the filesystem ultimately stores new files in a live sandbox.
+     *
+     * <p>For an overlay the upper layer decides where new files land, so {@code
+     * Overlay(sandboxUpper, localLower)} is sandbox-backed and {@code Overlay(localUpper,
+     * sandboxLower)} is not. A {@link RoutedSandboxFilesystem} is classified by its primary
+     * backend; pass the workspace-relative path to {@link #isSandboxBacked(AbstractFilesystem,
+     * String)} when a prefix route may serve that path from a different backend.
+     *
+     * <p>Unwraps at most eight wrappers. A deeper chain is treated as sandbox-backed so a cycle or
+     * unexpectedly deep composition cannot expose a host path.
+     */
+    public static boolean isSandboxBacked(AbstractFilesystem filesystem) {
+        return isSandboxBacked(filesystem, null);
+    }
+
+    /**
+     * Route-aware form of {@link #isSandboxBacked(AbstractFilesystem)}.
+     *
+     * <p>For a {@link RoutedSandboxFilesystem}, {@link RoutedSandboxFilesystem#backendFor(String)}
+     * is resolved first and overlays are unwrapped afterwards. For an overlay the upper layer
+     * decides where new files land, so {@code Overlay(sandboxUpper, localLower)} is sandbox-backed
+     * and {@code Overlay(localUpper, sandboxLower)} is not.
+     *
+     * @param relPath workspace-relative path used to select a prefix route; {@code null} classifies
+     *     a routed filesystem by its primary backend
+     */
+    public static boolean isSandboxBacked(AbstractFilesystem filesystem, String relPath) {
+        for (int depth = 0; depth < 8; depth++) {
+            if (filesystem == null) {
+                return false;
+            }
+            if (filesystem instanceof RoutedSandboxFilesystem routed) {
+                filesystem = relPath != null ? routed.backendFor(relPath) : routed.primary();
+                continue;
+            }
+            if (filesystem instanceof OverlayFilesystem overlay) {
+                filesystem = overlay.getUpper();
+                continue;
+            }
+            return filesystem instanceof BaseSandboxFilesystem;
+        }
+        return true;
+    }
 
     private static final Set<String> BINARY_EXTENSIONS =
             Set.of(
