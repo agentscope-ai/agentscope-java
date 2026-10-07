@@ -29,11 +29,17 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.TimeZone;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import reactor.core.publisher.Flux;
 
 class MemoryFlushManagerTest {
@@ -76,6 +82,61 @@ class MemoryFlushManagerTest {
         assertTrue(model.inputs.isEmpty());
     }
 
+    @Test
+    void flushMemories_writesZoneAwareHeaderAndMatchingFileName() throws Exception {
+        Instant instant = Instant.parse("2026-09-10T20:00:00Z");
+        Clock clock = Clock.fixed(instant, ZoneId.of("Asia/Shanghai"));
+        RecordingModel model = new RecordingModel("- user prefers dark mode");
+        RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
+
+        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+            MemoryFlushManager flushManager =
+                    new MemoryFlushManager(workspaceManager, model, null, clock);
+
+            flushManager.flushMemories(rc, List.of(message(MsgRole.USER, "hi"))).block();
+        }
+
+        Path daily = workspace.resolve("memory/2026-09-11.md");
+        assertTrue(Files.exists(daily), "daily file should follow the clock's local date");
+        String content = Files.readString(daily);
+        assertTrue(
+                content.contains("## Memory Flush — 2026-09-11T04:00:00+08:00"),
+                "header should carry the clock's offset: " + content);
+        assertFalse(content.contains("2026-09-10T20:00:00Z"), content);
+    }
+
+    // Regression for #3088: the production 2-arg constructor must honor the JVM default zone
+    // instead of silently falling back to UTC. The format contract itself is covered by
+    // MemoryTimestampsTest.
+    @Test
+    @ResourceLock("user.timezone")
+    void flushMemories_defaultConstructorHonorsSystemZone() throws Exception {
+        RecordingModel model = new RecordingModel("- user prefers dark mode");
+        RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
+        Path daily;
+        TimeZone original = TimeZone.getDefault();
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
+
+            try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+                MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, model);
+
+                flushManager.flushMemories(rc, List.of(message(MsgRole.USER, "hi"))).block();
+            }
+
+            try (var files = Files.list(workspace.resolve("memory"))) {
+                daily = files.findFirst().orElseThrow();
+            }
+        } finally {
+            TimeZone.setDefault(original);
+        }
+
+        String content = Files.readString(daily);
+        assertTrue(
+                content.contains("+08:00"),
+                "default constructor must render the JVM default zone offset: " + content);
+    }
+
     private static Msg message(MsgRole role, String text) {
         return Msg.builder().role(role).content(TextBlock.builder().text(text).build()).build();
     }
@@ -95,6 +156,15 @@ class MemoryFlushManagerTest {
     private static final class RecordingModel implements Model {
 
         private final List<List<Msg>> inputs = new ArrayList<>();
+        private final String response;
+
+        RecordingModel() {
+            this("NO_REPLY");
+        }
+
+        RecordingModel(String response) {
+            this.response = response;
+        }
 
         @Override
         public Flux<ChatResponse> stream(
@@ -103,7 +173,7 @@ class MemoryFlushManagerTest {
             return Flux.just(
                     ChatResponse.builder()
                             .id("flush-response")
-                            .content(List.of(TextBlock.builder().text("NO_REPLY").build()))
+                            .content(List.of(TextBlock.builder().text(response).build()))
                             .build());
         }
 

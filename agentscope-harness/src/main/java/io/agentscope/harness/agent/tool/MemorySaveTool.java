@@ -18,11 +18,11 @@ package io.agentscope.harness.agent.tool;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.harness.agent.memory.MemoryTimestamps;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
+import java.time.Clock;
+import java.time.ZonedDateTime;
 
 /**
  * Dedicated tool for persisting user memories to both {@code MEMORY.md} and
@@ -40,9 +40,19 @@ import java.time.format.DateTimeFormatter;
 public class MemorySaveTool {
 
     private final WorkspaceManager workspaceManager;
+    private final Clock clock;
 
     public MemorySaveTool(WorkspaceManager workspaceManager) {
+        this(workspaceManager, Clock.systemDefaultZone());
+    }
+
+    /**
+     * @param clock time source for the daily ledger file name and section header. Defaults to
+     *     {@link Clock#systemDefaultZone()} so {@code -Duser.timezone} / {@code TZ} are honored.
+     */
+    public MemorySaveTool(WorkspaceManager workspaceManager, Clock clock) {
         this.workspaceManager = workspaceManager;
+        this.clock = clock != null ? clock : Clock.systemDefaultZone();
     }
 
     @Tool(
@@ -72,11 +82,12 @@ public class MemorySaveTool {
 
         workspaceManager.appendUtf8WorkspaceRelative(rc, WorkspaceConstants.MEMORY_MD, section);
 
-        String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
-        String dailyPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
+        ZonedDateTime now = MemoryTimestamps.now(clock);
+        String dailyPath = MemoryTimestamps.dailyLedgerPath(now);
         String dailyEntry =
                 String.format(
-                        "\n## Memory Save — %s\n%s\n", Instant.now().toString(), content.strip());
+                        "\n## Memory Save — %s\n%s\n",
+                        MemoryTimestamps.format(now), content.strip());
         workspaceManager.appendUtf8WorkspaceRelative(rc, dailyPath, dailyEntry);
 
         long count = content.strip().lines().filter(l -> l.stripLeading().startsWith("-")).count();
