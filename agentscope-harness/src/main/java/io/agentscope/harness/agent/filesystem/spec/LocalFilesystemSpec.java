@@ -126,12 +126,15 @@ public class LocalFilesystemSpec {
     /**
      * Sets the maximum number of output bytes captured from any single shell command.
      *
-     * @param bytes byte cap (must be positive)
+     * <p>Set this to {@code 0} to discard stdout and stderr while still draining both streams.
+     * Executions then return {@code <output capture disabled>} instead of captured output.
+     *
+     * @param bytes byte cap (must be nonnegative)
      * @return this spec
      */
     public LocalFilesystemSpec maxOutputBytes(int bytes) {
-        if (bytes <= 0) {
-            throw new IllegalArgumentException("maxOutputBytes must be positive, got " + bytes);
+        if (bytes < 0) {
+            throw new IllegalArgumentException("maxOutputBytes must be nonnegative, got " + bytes);
         }
         this.maxOutputBytes = bytes;
         return this;
