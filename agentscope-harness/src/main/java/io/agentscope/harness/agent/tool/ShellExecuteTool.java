@@ -61,6 +61,20 @@ public class ShellExecuteTool {
                             description = "Timeout in seconds (default: 30)",
                             required = false)
                     Integer timeout) {
+        return executeAndFormat(sandbox, runtimeContext, command, workingDirectory, timeout);
+    }
+
+    /**
+     * Shared execution body for the shell tool family (the plain and escalation-aware variants
+     * must not drift — the working-directory validation is a security check). Package-private
+     * static so both tool classes run byte-for-byte identical logic.
+     */
+    static String executeAndFormat(
+            AbstractSandboxFilesystem sandbox,
+            RuntimeContext runtimeContext,
+            String command,
+            String workingDirectory,
+            Integer timeout) {
         String effectiveCommand = command;
         if (workingDirectory != null && !workingDirectory.isBlank()) {
             String wd = workingDirectory.strip();
