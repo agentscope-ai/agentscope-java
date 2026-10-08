@@ -1,5 +1,5 @@
 {
-  "name": "@agentscope/dsh-controlplane",
+  "name": "@agentscope-service/dsh-controlplane",
   "version": "2.1.0-BETA1",
   "description": "DeepSeek Harness Cordis plugin that registers a DSH process with AgentScope Service (service-controlplane)",
   "license": "Apache-2.0",
@@ -40,5 +40,14 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.13.4",
     "@grpc/proto-loader": "^0.8.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agentscope-ai/agentscope-java.git",
+    "directory": "agentscope-service/service-controlplane/sdk/dsh"
   }
 }

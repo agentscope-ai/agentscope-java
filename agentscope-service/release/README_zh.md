@@ -18,7 +18,7 @@
 | `as`、Runtime Host | Linux/macOS × amd64/arm64 压缩包 | GitHub Release 附件 |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` 及所需依赖 | Maven Central，单独发布 |
 | Python SDK | `agentscope-service-sdk` wheel、sdist | PyPI，单独发布 |
-| DSH 插件 | `@agentscope/dsh-controlplane` npm 包 | npm，单独发布 |
+| DSH 插件 | `@agentscope-service/dsh-controlplane` npm 包 | npm，单独发布 |
 | 用户文档 | 官网 Service 专区 | 合入 `main` 后由网站工作流部署 |
 
 前端已经包含在 control 镜像中，不单独发布 npm 包。PostgreSQL 使用上游镜像或外部数据库。`service-common` 和 Service 可执行模块默认不发布到 Maven Central。完整 Service Chart 使用 standalone HTTP 模式；旧 Control Plane Chart 与 ASDP gRPC 属于另一种部署形态，发布说明应区分它们。
@@ -59,10 +59,10 @@ SDK 可以独立发版。SDK 内容未变且已有兼容公开版本时，发布
 | --- | --- |
 | Maven Central | `io.agentscope` 命名空间发布权限、Central Portal user token、可用的 GPG 签名配置 |
 | PyPI | `agentscope-service-sdk` 的发布权限；首次发布先确认包名归属；用于 Twine 的 API token |
-| npm | `@agentscope` scope 和目标包发布权限；交互登录及账号要求的 2FA |
+| npm | `@agentscope-service` scope 和目标包发布权限；交互登录及账号要求的 2FA |
 | 官网 | 网站工作流的写权限、GitHub Pages 发布源、`java.agentscope.io` 域名配置 |
 
-本仓库现有 Service 工作流没有接入 PyPI/npm 的 Trusted Publishing，也没有 SDK 发布 Secret；本手册采用管理员单独发布 SDK 的流程。PyPI 凭据可通过 Twine 的交互提示或 keyring 提供，避免写进命令和 Git。[PyPI 打包发布说明](https://packaging.python.org/en/latest/tutorials/packaging-projects/)、[Twine 凭据配置](https://packaging.python.org/en/latest/specifications/pypirc/)
+PyPI 当前采用管理员单独发布；npm 使用第七节的独立 OIDC 工作流自动发布，无需 SDK 发布 Secret。PyPI 凭据可通过 Twine 的交互提示或 keyring 提供，避免写进命令和 Git。[PyPI 打包发布说明](https://packaging.python.org/en/latest/tutorials/packaging-projects/)、[Twine 凭据配置](https://packaging.python.org/en/latest/specifications/pypirc/)
 
 npm 的发布权限和 2FA 要求由包设置决定；此处使用交互式 `npm login` / `npm publish`，按提示完成验证。[npm 官方发布认证说明](https://docs.npmjs.com/requiring-2fa-for-package-publishing-and-settings-modification/)
 
@@ -262,11 +262,20 @@ python -m twine upload \
 
 ```bash
 npm login
-npm publish "$RELEASE_ARTIFACT_DIR"/agentscope-dsh-controlplane-*.tgz \
-  --access public --tag next
+python agentscope-service/release/release.py publish-npm --version "$SERVICE_VERSION"
 ```
 
-RC 使用 `next`；稳定版审核通过后发布时改为 `--tag latest`。发布前核对 tarball 内的实际版本，按 npm 提示完成 2FA。发布后在独立目录安装 `@agentscope/dsh-controlplane@实际版本` 并验证导入。
+发布命令会测试、构建并将 `@agentscope-service/dsh-controlplane` 公开发布到 `https://registry.npmjs.org`，预发布自动选择 `next`，稳定版选择 `latest`。加 `--dry-run` 可检查候选包而不上传；实际发布要求已提交的干净源码。
+
+`service-npm-release.yml` 会在推送 `v*` 或 `agentscope-service-v*` tag 时自动发布，也支持手动填写版本；tag/输入版本必须与 SDK 版本一致。首次本地发布成功后，在 npm 包设置中配置 Trusted Publisher：GitHub owner 为 `agentscope-ai`，repository 为 `agentscope-java`，workflow 为 `service-npm-release.yml`，environment 为 `npm`。工作流使用 npm 11 和 OIDC，无需 `NPM_TOKEN`。tag 对应源码须包含该工作流；手动入口还要求它进入默认分支。也可用 npm 11.15+ 完成首次绑定：
+
+```bash
+npm trust github @agentscope-service/dsh-controlplane \
+  --repo agentscope-ai/agentscope-java --file service-npm-release.yml \
+  --env npm --allow-publish
+```
+
+首次绑定可能需要浏览器/2FA 验证。用 `npm trust list @agentscope-service/dsh-controlplane` 确认配置。发布前核对 tarball 内的实际版本，按 npm 提示完成 2FA。发布后在独立目录安装 `@agentscope-service/dsh-controlplane@实际版本` 并验证导入。
 
 ### 7.3 Java → Maven Central
 

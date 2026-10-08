@@ -30,6 +30,8 @@ SERVICE = ROOT / 'agentscope-service'
 PLANES = ('control', 'gateway', 'dataplane', 'scheduler')
 IMAGE_NAMES = {'control': 'as-controlplane', 'gateway': 'as-gateway',
                'dataplane': 'as-dataplane', 'scheduler': 'as-scheduler'}
+NPM_PACKAGE = '@agentscope-service/dsh-controlplane'
+NPM_REGISTRY = 'https://registry.npmjs.org'
 
 
 def run(*args, cwd=ROOT, env=None, capture=False):
@@ -156,6 +158,34 @@ def require_clean():
         raise SystemExit('Publishing requires a clean, committed source tree.')
 
 
+def publish_npm(args):
+    directory = SERVICE / 'service-controlplane/sdk/dsh'
+    metadata = json.loads((directory / 'package.json').read_text())
+    if metadata['name'] != NPM_PACKAGE or metadata['version'] != args.version:
+        raise SystemExit('npm package name/version does not match the release target.')
+    if not args.dry_run:
+        require_clean()
+    run('npm', 'ci', cwd=directory)
+    run('npm', 'test', cwd=directory)
+    run('npm', 'run', 'build', cwd=directory)
+    out = args.output / 'npm'
+    out.mkdir(parents=True, exist_ok=True)
+    packed = json.loads(run('npm', 'pack', '--json', '--pack-destination', str(out),
+                            cwd=directory, capture=True))[0]
+    archive = out / packed['filename']
+    tag = 'next' if '-' in args.version else 'latest'
+    command = ['npm', 'publish', str(archive), '--registry', NPM_REGISTRY,
+               '--access', 'public', '--tag', tag]
+    if args.dry_run:
+        command.append('--dry-run')
+    run(*command)
+    record = {'name': metadata['name'], 'version': args.version, 'registry': NPM_REGISTRY,
+              'tag': tag, 'integrity': packed['integrity'],
+              'sourceCommit': run('git', 'rev-parse', 'HEAD', capture=True).strip(),
+              'status': 'dry-run' if args.dry_run else 'published'}
+    (out / 'publication.json').write_text(json.dumps(record, indent=2) + '\n')
+
+
 def images(args):
     if args.push:
         require_clean()
@@ -180,19 +210,23 @@ def images(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('hygiene', 'verify', 'package', 'images', 'publish-chart'))
+    parser.add_argument('command', choices=('hygiene', 'verify', 'package', 'images', 'publish-chart', 'publish-npm'))
     parser.add_argument('--version')
     parser.add_argument('--repository', help='Registry hostname/namespace; no URL scheme')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--platforms', default='linux/amd64,linux/arm64,darwin/amd64,darwin/arm64')
     parser.add_argument('--push', action='store_true', help='Push images (otherwise load one platform locally)')
+    parser.add_argument('--dry-run', action='store_true', help='Validate npm publication without uploading')
     args = parser.parse_args()
     if args.command == 'hygiene': return tracked_hygiene()
     if args.command == 'verify': return verify()
     validate_version(args.version)
+    args.output = (args.output or SERVICE / 'release/dist' / args.version).resolve()
+    if args.command == 'publish-npm':
+        publish_npm(args)
+        return
     if not re.fullmatch(r'[a-z0-9][a-z0-9./:_-]+', args.repository or '') or '://' in args.repository:
         parser.error('--repository must be a registry hostname/namespace')
-    args.output = (args.output or SERVICE / 'release/dist' / args.version).resolve()
     if args.command == 'package': package(args)
     if args.command == 'images': images(args)
     if args.command == 'publish-chart':

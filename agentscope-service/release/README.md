@@ -14,7 +14,7 @@ Run all commands from the monorepo root. Development continues in the existing c
 | `as`, Runtime Host | Linux/macOS amd64/arm64 archives | Service release version |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` and reactor dependencies | Root `revision` |
 | Python SDK | `agentscope-service-sdk` wheel and sdist | `service-controlplane/sdk/python/pyproject.toml` and `service-controlplane/sdk/python/agentscope_service/__init__.py` |
-| DSH plugin | `@agentscope/dsh-controlplane` npm tarball | `service-controlplane/sdk/dsh/package.json` and lockfile |
+| DSH plugin | `@agentscope-service/dsh-controlplane` npm tarball | `service-controlplane/sdk/dsh/package.json` and lockfile |
 
 The front end is private and bundled into the control image. `service-common` and executable Service modules remain excluded from Maven Central (`maven.deploy.skip=true`); they are not required by external Java SDK users. PostgreSQL is a separately operated dependency, not an AgentScope-published image. The legacy Control Plane Chart remains a separate Kubernetes-native offering. The complete Service Chart uses standalone HTTP, without ASDP gRPC.
 
@@ -97,10 +97,20 @@ After confirming package ownership, version availability and credentials:
 python -m twine check agentscope-service/release/dist/VERSION/agentscope_service_sdk-*.whl agentscope-service/release/dist/VERSION/agentscope_service_sdk-*.tar.gz
 # Upload only the Python artifacts, never the Compose/CLI tar.gz files:
 python -m twine upload agentscope-service/release/dist/VERSION/agentscope_service_sdk-*.whl agentscope-service/release/dist/VERSION/agentscope_service_sdk-*.tar.gz
-npm publish agentscope-service/release/dist/VERSION/agentscope-dsh-controlplane-*.tgz --access public
+python agentscope-service/release/release.py publish-npm --version VERSION
 ```
 
-For an npm prerelease, use an explicit prerelease dist-tag such as `--tag next`. Review the actual Python sdist filename before uploading. Maven SDK publication uses the repository's existing release profile and signing/Central credentials:
+The npm command tests, builds and publishes `@agentscope-service/dsh-controlplane` to `https://registry.npmjs.org` with public access. It selects `next` for prereleases and `latest` for stable versions. Use `--dry-run` to inspect a candidate without uploading. Actual publication requires committed, clean source.
+
+The `service-npm-release.yml` workflow runs automatically on `v*` and `agentscope-service-v*` tags, and also supports a manual version input. The tag/input must match the SDK version. Configure the package Trusted Publisher once with GitHub owner `agentscope-ai`, repository `agentscope-java`, workflow `service-npm-release.yml`, and environment `npm`. It uses OIDC with npm 11; no `NPM_TOKEN` secret is needed. The workflow must be present in the tagged source, and in the default branch for manual dispatch. After the first local package publication, configure the publisher on npmjs.com or use npm 11.15+:
+
+```bash
+npm trust github @agentscope-service/dsh-controlplane \
+  --repo agentscope-ai/agentscope-java --file service-npm-release.yml \
+  --env npm --allow-publish
+```
+
+The registry may require browser/2FA verification for this one-time setup. Confirm it using `npm trust list @agentscope-service/dsh-controlplane`. Review the actual Python sdist filename before uploading. Maven SDK publication uses the repository's existing release profile and signing/Central credentials:
 
 ```bash
 mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-controlplane -am \

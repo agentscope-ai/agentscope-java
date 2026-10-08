@@ -148,7 +148,7 @@ task-scoped `as` CLI。Agent 可以用 `as task context` 读取当前任务，�
 
 体验 BYO Agent 注册时，可使用仓库示例 `agentscope-examples/agents/agentscope-paw`；启动后即可在 Dashboard 中看到智能体注册成功。
 
-把 **DeepSeek Harness** 作为独立运行时接入时，使用 `agentscope-service/service-controlplane/sdk/dsh`（`@agentscope/dsh-controlplane`）Cordis 插件：向 service-controlplane 自注册、提供 `/agentscope/*` 契约、接收 AgentTask，并与其他 runtime 使用同一 Issue/Comment/Artifact 协议。安装与配置见该目录 [README_zh.md](service-controlplane/sdk/dsh/README_zh.md)。
+把 **DeepSeek Harness** 作为独立运行时接入时，使用 `agentscope-service/service-controlplane/sdk/dsh`（`@agentscope-service/dsh-controlplane`）Cordis 插件：向 service-controlplane 自注册、提供 `/agentscope/*` 契约、接收 AgentTask，并与其他 runtime 使用同一 Issue/Comment/Artifact 协议。安装与配置见该目录 [README_zh.md](service-controlplane/sdk/dsh/README_zh.md)。
 
 
 ### 4. 停止环境

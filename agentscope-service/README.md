@@ -115,7 +115,7 @@ Default users and development secrets are for local use only.
 
 To try BYO Agent registration, use the sample at `agentscope-examples/agents/agentscope-paw`. After it starts, the agent should appear in the Dashboard.
 
-To bring **DeepSeek Harness** into the same fleet, load the Cordis plugin at `agentscope-service/service-controlplane/sdk/dsh` (`@agentscope/dsh-controlplane`). It self-registers with service-controlplane, serves `/agentscope/*`, receives AgentTask events, and uses the same Issue/Comment/Artifact contract as other runtimes. See that directory's [README](service-controlplane/sdk/dsh/README.md).
+To bring **DeepSeek Harness** into the same fleet, load the Cordis plugin at `agentscope-service/service-controlplane/sdk/dsh` (`@agentscope-service/dsh-controlplane`). It self-registers with service-controlplane, serves `/agentscope/*`, receives AgentTask events, and uses the same Issue/Comment/Artifact contract as other runtimes. See that directory's [README](service-controlplane/sdk/dsh/README.md).
 
 
 ### 3. Stop the stack

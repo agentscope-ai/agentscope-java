@@ -4,6 +4,8 @@ English | [中文](README_zh.md)
 
 Register a running [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) process with the AgentScope Service control plane. DSH keeps its own loop and Web UI. This package is an out-of-tree Cordis plugin you add to an existing profile.
 
+The published package is `@agentscope-service/dsh-controlplane`. Install a release with `npm install @agentscope-service/dsh-controlplane@2.1.0-BETA1`; the prerelease channel is `@agentscope-service/dsh-controlplane@next`. Its Cordis bundle uses the same package name.
+
 ## Quick start
 
 A source checkout does **not** put `dsh` on your PATH. The official launcher is `pnpm dsh web` from the **`deepseek-harness` repository root** (see DSH's [Run from source](https://github.com/deepseek-ai/deepseek-harness#run-from-source)). The steps below assume that. `pnpm dsh` forwards arguments to the in-repo CLI and is equivalent to an installed `dsh`.
@@ -68,7 +70,7 @@ pnpm dsh plugin --profile web add "$PLUGIN"
 pnpm dsh web --dump-config
 ```
 
-The dump should include a `# == @agentscope/dsh-controlplane` layer or an `id: controlplane` row.
+The dump should include a `# == @agentscope-service/dsh-controlplane` layer or an `id: controlplane` row.
 
 ### 3. Restart DSH with control-plane credentials
 
@@ -113,7 +115,7 @@ Remove the plugin (from the DSH repository root):
 
 ```bash
 cd "$DSH_ROOT"
-pnpm dsh plugin --profile web remove @agentscope/dsh-controlplane
+pnpm dsh plugin --profile web remove @agentscope-service/dsh-controlplane
 ```
 
 ### If you use npx instead of a source checkout
@@ -163,7 +165,7 @@ Locally, point `CONTROL_PLANE_TRANSCRIPT_DIR` at the same directory as service-c
 
 ## One-shot `--patch` overlay (no profile change)
 
-To try without `plugin add`, use `--patch` the way DSH's own plugin tutorial does. The loader resolves bare package names from the **profile directory**, so do not put `@agentscope/dsh-controlplane` in the overlay — use the **absolute path** to this package's build output.
+To try without `plugin add`, use `--patch` the way DSH's own plugin tutorial does. The loader resolves bare package names from the **profile directory**, so do not put `@agentscope-service/dsh-controlplane` in the overlay — use the **absolute path** to this package's build output.
 
 After `npm run build`, write e.g. `$DSH_ROOT/controlplane.patch.yml`:
 

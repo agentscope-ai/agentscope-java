@@ -13,12 +13,14 @@
 # limitations under the License.
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import yaml
@@ -30,6 +32,53 @@ spec.loader.exec_module(release)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_npm_publication_uses_organization_registry_and_release_tag(self):
+        for version, dry_run, tag in [('2.1.0-BETA1', True, 'next'), ('2.1.0', False, 'latest')]:
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
+                service = Path(directory)
+                sdk = service / 'service-controlplane/sdk/dsh'
+                sdk.mkdir(parents=True)
+                (sdk / 'package.json').write_text(json.dumps({'name': release.NPM_PACKAGE, 'version': version}))
+                args = SimpleNamespace(version=version, output=service / 'dist', dry_run=dry_run)
+
+                def simulated_run(*command, **kwargs):
+                    if command[:2] == ('npm', 'pack'):
+                        return json.dumps([{'filename': 'sdk.tgz', 'integrity': 'sha512-test'}])
+                    if command == ('git', 'rev-parse', 'HEAD'):
+                        return 'source-commit\n'
+
+                with mock.patch.object(release, 'SERVICE', service), mock.patch.object(release, 'run', side_effect=simulated_run) as run, mock.patch.object(release, 'require_clean') as clean:
+                    release.publish_npm(args)
+                command = ['npm', 'publish', str(args.output / 'npm/sdk.tgz'), '--registry', 'https://registry.npmjs.org', '--access', 'public', '--tag', tag]
+                if dry_run:
+                    command.append('--dry-run')
+                    clean.assert_not_called()
+                else:
+                    clean.assert_called_once()
+                run.assert_any_call(*command)
+                self.assertEqual(json.loads((args.output / 'npm/publication.json').read_text())['tag'], tag)
+
+    def test_npm_publication_rejects_wrong_name_or_version_before_build(self):
+        for name, version in [('@other/dsh-controlplane', '2.1.0-BETA1'), (release.NPM_PACKAGE, '2.0.0')]:
+            with self.subTest(name=name, version=version), tempfile.TemporaryDirectory() as directory:
+                service = Path(directory)
+                sdk = service / 'service-controlplane/sdk/dsh'
+                sdk.mkdir(parents=True)
+                (sdk / 'package.json').write_text(json.dumps({'name': name, 'version': version}))
+                args = SimpleNamespace(version='2.1.0-BETA1', output=service / 'dist', dry_run=True)
+                with mock.patch.object(release, 'SERVICE', service), mock.patch.object(release, 'run') as run:
+                    with self.assertRaises(SystemExit):
+                        release.publish_npm(args)
+                run.assert_not_called()
+
+    def test_npm_plugin_configuration_matches_package_scope(self):
+        directory = SERVICE / 'service-controlplane/sdk/dsh'
+        metadata = json.loads((directory / 'package.json').read_text())
+        patch = yaml.safe_load((directory / 'cordis.patch.yml').read_text())
+        self.assertEqual(metadata['name'], release.NPM_PACKAGE)
+        self.assertEqual(patch[0]['insert'][0]['name'], metadata['name'])
+        self.assertEqual(metadata['publishConfig'], {'access': 'public', 'registry': release.NPM_REGISTRY})
+
     def test_frontend_verification_preserves_tracked_placeholder(self):
         self.check_frontend_placeholder(build_fails=False)
 
