@@ -414,6 +414,13 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
         }
     }
 
+    @Override
+    public Object storageKey(RuntimeContext runtimeContext, String path) {
+        // Context-free backend: the store is fixed by (ownerId, storeId) at construction, so
+        // every context can be batched together — keyed strictly per store instance.
+        return java.util.List.of(ownerId, storeId, path);
+    }
+
     private static FileInfo toFileInfo(MemoryDto memory) {
         long size = memory.content() == null ? 0 : memory.content().length();
         return FileInfo.ofFile("/" + memory.path(), size, memory.updatedAt());

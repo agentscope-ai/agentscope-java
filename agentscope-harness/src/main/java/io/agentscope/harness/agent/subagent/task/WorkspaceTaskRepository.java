@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -679,30 +680,80 @@ public class WorkspaceTaskRepository implements TaskRepository {
      * running. Called on a fixed schedule so the orphan sweeper can distinguish a genuinely
      * running task from one whose originating node has disappeared.
      *
+     * <p>Tasks whose records share one session store file are refreshed in a single batched
+     * read-modify-write (see {@link WorkspaceManager#updateTaskRecordStatuses}): a per-task
+     * refresh would re-parse and re-write the whole store once per running task every cycle.
+     * Batches are grouped by the backend's storage identity (see
+     * {@link WorkspaceManager#taskRecordStoreKey}): context-free backends merge every context
+     * of a session into one write, while context-partitioned backends (e.g. per-user remote
+     * namespaces) get one batch per derived storage location, each written under the context
+     * that produced it.
+     *
      * <p>Package-private for direct invocation in unit tests.
      */
     void heartbeat() {
+        Map<Object, StoreBatch> batches = new LinkedHashMap<>();
         localTasks.forEach(
                 (key, task) -> {
                     if (!task.isCompleted()) {
                         String sid = localTaskSessionIds.get(key);
-                        if (sid == null) {
+                        if (sid == null || sid.isBlank()) {
                             return;
                         }
-                        RuntimeContext rc = localTaskContexts.get(key);
-                        if (rc == null) {
-                            rc = RuntimeContext.empty();
-                        }
+                        // Per-task isolation, matching the pre-batching heartbeat: grouping
+                        // calls into pluggable code (namespace resolution) on the maintenance
+                        // scheduler, where an escaped exception would permanently suppress
+                        // every later heartbeat execution.
                         try {
-                            updateStatus(rc, sid, task.getTaskId(), TaskStatus.RUNNING, null, null);
+                            RuntimeContext rc =
+                                    localTaskContexts.getOrDefault(key, RuntimeContext.empty());
+                            Object storeKey =
+                                    workspaceManager.taskRecordStoreKey(rc, parentAgentId, sid);
+                            batches.computeIfAbsent(storeKey, k -> new StoreBatch(rc, sid))
+                                    .taskIds
+                                    .add(task.getTaskId());
                         } catch (Exception e) {
-                            log.debug(
-                                    "Heartbeat update failed for task {}: {}",
+                            // A task whose grouping persistently fails is never refreshed,
+                            // so it is eventually orphan-swept to FAILED — deterministic
+                            // loss for that task, at least as severe as a batch failure.
+                            log.warn(
+                                    "Heartbeat grouping failed for task {}: {}",
                                     task.getTaskId(),
                                     e.getMessage());
                         }
                     }
                 });
+        for (StoreBatch batch : batches.values()) {
+            try {
+                Map<String, TaskStatus> statuses = new LinkedHashMap<>();
+                for (String taskId : batch.taskIds) {
+                    statuses.put(taskId, TaskStatus.RUNNING);
+                }
+                workspaceManager.updateTaskRecordStatuses(
+                        batch.rc, parentAgentId, batch.sessionId, statuses);
+            } catch (Exception e) {
+                // A batch covers every running task of one session for this cycle, so a
+                // failure's blast radius is the whole session — surface it at warn like
+                // persistRecord does, not at the old per-task debug level.
+                log.warn(
+                        "Heartbeat update failed for {} tasks in session {}: {}",
+                        batch.taskIds.size(),
+                        batch.sessionId,
+                        e.getMessage());
+            }
+        }
+    }
+
+    /** Running-task refreshes that resolve to the same session store file. */
+    private static final class StoreBatch {
+        final RuntimeContext rc;
+        final String sessionId;
+        final List<String> taskIds = new ArrayList<>();
+
+        StoreBatch(RuntimeContext rc, String sessionId) {
+            this.rc = rc;
+            this.sessionId = sessionId;
+        }
     }
 
     /** Package-private entry point for unit tests that need to invoke the default sweep path. */
