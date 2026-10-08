@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,7 +26,12 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.AgentEventStreams;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.TextOutputDisposition;
+import io.agentscope.core.event.TextOutputDispositionEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
@@ -44,6 +50,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -83,6 +90,10 @@ class AgentSpawnToolCancelEndEventTest {
                     .findFirst()
                     .orElseThrow();
         }
+
+        List<AgentEvent> snapshot() {
+            return List.copyOf(events);
+        }
     }
 
     @Test
@@ -96,7 +107,10 @@ class AgentSpawnToolCancelEndEventTest {
         Mockito.when(harness.getDelegate()).thenReturn(delegate);
         // Child never finishes on its own, so the only way this Mono terminates is cancel.
         Mockito.when(harness.call(any(Msg.class), any(RuntimeContext.class)))
-                .thenReturn(Mono.<Msg>never().doOnSubscribe(ignored -> childStarted.countDown()));
+                .thenReturn(
+                        emitVisibleTextThen(
+                                Mono.<Msg>never()
+                                        .doOnSubscribe(ignored -> childStarted.countDown())));
 
         DefaultAgentManager manager =
                 new DefaultAgentManager(
@@ -135,6 +149,15 @@ class AgentSpawnToolCancelEndEventTest {
                         + " without a matching AgentEndEvent leaves consumers rendering the"
                         + " subagent as running forever (doOnTerminate does not fire on cancel)");
         assertReplyIdPair(emitter);
+        assertEquals(
+                AgentEndEvent.OUTCOME_CANCELLED,
+                emitter.first(AgentEndEvent.class)
+                        .getMetadata()
+                        .get(AgentEndEvent.METADATA_INVOCATION_OUTCOME));
+        assertFalse(
+                annotatedEvents(emitter).stream()
+                        .anyMatch(TextOutputDispositionEvent.class::isInstance),
+                "cancelled child text must not be classified as a successful terminal reply");
     }
 
     @Test
@@ -145,7 +168,10 @@ class AgentSpawnToolCancelEndEventTest {
         HarnessAgent harness = Mockito.mock(HarnessAgent.class);
         Mockito.when(harness.getDelegate()).thenReturn(delegate);
         Mockito.when(harness.call(any(Msg.class), any(RuntimeContext.class)))
-                .thenReturn(Mono.just(Msg.builder().name("child").textContent("done").build()));
+                .thenReturn(
+                        emitVisibleTextThen(
+                                Mono.just(
+                                        Msg.builder().name("child").textContent("done").build())));
 
         DefaultAgentManager manager =
                 new DefaultAgentManager(
@@ -164,6 +190,55 @@ class AgentSpawnToolCancelEndEventTest {
         assertEquals(1, emitter.count(AgentStartEvent.class), "expected one start event");
         assertEquals(1, emitter.count(AgentEndEvent.class), "expected one end event");
         assertReplyIdPair(emitter);
+        assertEquals(
+                AgentEndEvent.OUTCOME_SUCCESS,
+                emitter.first(AgentEndEvent.class)
+                        .getMetadata()
+                        .get(AgentEndEvent.METADATA_INVOCATION_OUTCOME));
+        TextOutputDispositionEvent terminal =
+                annotatedEvents(emitter).stream()
+                        .filter(TextOutputDispositionEvent.class::isInstance)
+                        .map(TextOutputDispositionEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals("child-model-reply", terminal.getReplyId());
+        assertEquals(TextOutputDisposition.TERMINAL, terminal.getDisposition());
+    }
+
+    @Test
+    @DisplayName("child error emits an abnormal end without terminal disposition")
+    void childError_doesNotEmitTerminalDisposition() {
+        ReActAgent delegate = Mockito.mock(ReActAgent.class);
+        HarnessAgent harness = Mockito.mock(HarnessAgent.class);
+        Mockito.when(harness.getDelegate()).thenReturn(delegate);
+        Mockito.when(harness.call(any(Msg.class), any(RuntimeContext.class)))
+                .thenReturn(
+                        emitVisibleTextThen(Mono.error(new IllegalStateException("child failed"))));
+
+        DefaultAgentManager manager =
+                new DefaultAgentManager(
+                        List.of(new SubagentEntry("harness_agent", "Harness child", rc -> harness)),
+                        null);
+        AgentSpawnTool tool = new AgentSpawnTool(manager, new NoopTaskRepository(), 0);
+        RuntimeContext parentCtx =
+                RuntimeContext.builder().sessionId("parent-session").userId("parent-user").build();
+        RecordingEmitter emitter = new RecordingEmitter();
+
+        String result =
+                tool.agentSpawn(parentCtx, null, "harness_agent", "work", null, 30, null)
+                        .contextWrite(ctx -> ctx.put(AgentEventEmitter.CONTEXT_KEY, emitter))
+                        .block();
+
+        assertTrue(result.contains("status: error"));
+        assertEquals(
+                AgentEndEvent.OUTCOME_ERROR,
+                emitter.first(AgentEndEvent.class)
+                        .getMetadata()
+                        .get(AgentEndEvent.METADATA_INVOCATION_OUTCOME));
+        assertFalse(
+                annotatedEvents(emitter).stream()
+                        .anyMatch(TextOutputDispositionEvent.class::isInstance),
+                "failed child text must not be classified as a successful terminal reply");
     }
 
     private static void assertReplyIdPair(RecordingEmitter emitter) {
@@ -171,6 +246,24 @@ class AgentSpawnToolCancelEndEventTest {
         AgentEndEvent end = emitter.first(AgentEndEvent.class);
         assertNotNull(start.getReplyId(), "subagent start event should have a replyId");
         assertEquals(start.getReplyId(), end.getReplyId());
+    }
+
+    private static Mono<Msg> emitVisibleTextThen(Mono<Msg> terminal) {
+        return Mono.deferContextual(
+                context -> {
+                    AgentEventEmitter emitter =
+                            AgentEventEmitter.fromForwardingContext(context).orElseThrow();
+                    emitter.emit(new ModelCallStartEvent("child-model-reply"));
+                    emitter.emit(
+                            new TextBlockDeltaEvent("child-model-reply", "child-text", "working"));
+                    return terminal;
+                });
+    }
+
+    private static List<AgentEvent> annotatedEvents(RecordingEmitter emitter) {
+        return AgentEventStreams.withTextOutputDisposition(Flux.fromIterable(emitter.snapshot()))
+                .collectList()
+                .block();
     }
 
     private static final class NoopTaskRepository implements TaskRepository {

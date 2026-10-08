@@ -476,16 +476,56 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertToolMessageWithNullToolCallId() {
-        // Tool message without toolCallId - should still convert properly
+    void testConvertToolMessageWithoutToolCallIdRemainsBackwardCompatible() {
         AguiMessage aguiMsg =
                 new AguiMessage("msg-1", "tool", new MessageContent.Text("Result"), null, null);
 
         Msg msg = converter.toMsg(aguiMsg);
 
         assertEquals(MsgRole.TOOL, msg.getRole());
-        // Without toolCallId, content is just text
         assertTrue(msg.hasContentBlocks(TextBlock.class));
+        assertEquals("Result", msg.getFirstContentBlock(TextBlock.class).getText());
+    }
+
+    @Test
+    void testConvertToolMessageWithBlankToolCallIdRemainsBackwardCompatible() {
+        AguiMessage aguiMsg =
+                new AguiMessage("msg-1", "tool", new MessageContent.Text("Result"), null, "   ");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        assertTrue(msg.hasContentBlocks(TextBlock.class));
+        assertFalse(msg.hasContentBlocks(ToolResultBlock.class));
+    }
+
+    @Test
+    void testConvertStructuredToolMessageWithoutToolCallIdRemainsContent() {
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-1",
+                        "tool",
+                        new MessageContent.Blocks(List.of(new TextInputContent("Result"))),
+                        null,
+                        null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        assertTrue(msg.hasContentBlocks(TextBlock.class));
+        assertFalse(msg.hasContentBlocks(ToolResultBlock.class));
+    }
+
+    @Test
+    void testConvertToolMessageStatusExtension() {
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-1", "tool", new MessageContent.Text("failed"), null, "tc-1", "error");
+
+        ToolResultBlock result =
+                converter.toMsg(aguiMsg).getFirstContentBlock(ToolResultBlock.class);
+
+        assertEquals(ToolResultState.ERROR, result.getState());
     }
 
     @Test
@@ -536,16 +576,54 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertBlocksContentRejectedForNonUserMessage() {
+    void testConvertAssistantBlocksContent() {
+        AguiMessage aguiMsg =
+                AguiMessage.blocksMessage(
+                        "msg-1",
+                        "assistant",
+                        List.of(
+                                new ImageInputContent(
+                                        new InputContentUrlSource("https://example.com/img.png"),
+                                        null)),
+                        null,
+                        null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.ASSISTANT, msg.getRole());
+        assertTrue(msg.hasContentBlocks(ImageBlock.class));
+        AguiMessage roundTrip = converter.toAguiMessage(msg);
+        assertEquals("assistant", roundTrip.getRole());
+        assertTrue(roundTrip.hasBlocks());
+        assertEquals(1, ((MessageContent.Blocks) roundTrip.getContent()).parts().size());
+    }
+
+    @Test
+    void testConvertToolBlocksContentPreservesToolResultId() {
         AguiMessage aguiMsg =
                 AguiMessage.blocksMessage(
                         "msg-1",
                         "tool",
-                        List.of(new TextInputContent("not a valid tool content block")),
+                        List.of(
+                                new AudioInputContent(
+                                        new InputContentUrlSource("https://example.com/audio.mp3"),
+                                        null)),
                         null,
                         "tc-1");
 
-        assertThrows(IllegalArgumentException.class, () -> converter.toMsg(aguiMsg));
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tc-1", result.getId());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertTrue(result.getOutput().stream().anyMatch(AudioBlock.class::isInstance));
+
+        AguiMessage roundTrip = converter.toAguiMessage(msg);
+        assertEquals("tool", roundTrip.getRole());
+        assertEquals("tc-1", roundTrip.getToolCallId());
+        assertTrue(roundTrip.hasBlocks());
     }
 
     @Test

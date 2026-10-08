@@ -16,12 +16,14 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
@@ -32,6 +34,7 @@ import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.TextOutputDispositionEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
@@ -174,7 +177,7 @@ class ReActAgentNewLoopReplyTest {
     }
 
     @Test
-    void textOnlyReplyEmitsExpectedEventOrder() {
+    void unwrappedTextOnlyStreamPreservesLegacySequenceWithoutDisposition() {
         ChatModelBase model =
                 new ScriptedModel(List.of(() -> Flux.just(textResponse("hello world"))));
         ReActAgent agent =
@@ -188,12 +191,18 @@ class ReActAgentNewLoopReplyTest {
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
         assertNotNull(events);
 
-        assertTrue(events.get(0) instanceof AgentStartEvent);
-        assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
-        long modelStarts = events.stream().filter(e -> e instanceof ModelCallStartEvent).count();
-        long modelEnds = events.stream().filter(e -> e instanceof ModelCallEndEvent).count();
-        assertEquals(1L, modelStarts);
-        assertEquals(1L, modelEnds);
+        assertEquals(
+                List.of(
+                        AgentEventType.AGENT_START,
+                        AgentEventType.MODEL_CALL_START,
+                        AgentEventType.TEXT_BLOCK_START,
+                        AgentEventType.TEXT_BLOCK_DELTA,
+                        AgentEventType.TEXT_BLOCK_END,
+                        AgentEventType.MODEL_CALL_END,
+                        AgentEventType.AGENT_RESULT,
+                        AgentEventType.AGENT_END),
+                events.stream().map(AgentEvent::getType).toList());
+        assertFalse(events.stream().anyMatch(TextOutputDispositionEvent.class::isInstance));
     }
 
     @Test
