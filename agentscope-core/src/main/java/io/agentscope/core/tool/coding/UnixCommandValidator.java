@@ -25,8 +25,8 @@ import org.slf4j.LoggerFactory;
  * <p><b>Validation Order:</b>
  * <ol>
  *   <li>Extract executable from command (remove quotes, extract first token, remove extensions)</li>
- *   <li>If no whitelist configured → allow (backward compatible)</li>
- *   <li>Check for multiple command separators → reject if found</li>
+ *   <li>If no whitelist configured → require approval</li>
+ *   <li>Check for shell operators and expansions → require approval if found</li>
  *   <li>Check relative path safety (commands starting with {@code ./}) → reject if escapes current directory</li>
  *   <li>Check whitelist → reject if not in whitelist</li>
  * </ol>
@@ -51,32 +51,25 @@ public class UnixCommandValidator implements CommandValidator {
         // Extract and check executable
         String executable = extractExecutable(command);
 
-        // If no whitelist is configured, allow all commands (backward compatible)
+        if (executable.isEmpty()) {
+            return ValidationResult.rejected("Cannot determine command executable", executable);
+        }
+
+        // An absent policy must go through the approval callback, not bypass it.
         if (allowedCommands == null || allowedCommands.isEmpty()) {
-            return ValidationResult.allowed(executable);
+            return ValidationResult.rejected("No command whitelist configured", executable);
         }
 
-        // Check for multiple commands
-        if (containsMultipleCommands(command)) {
-            logger.debug("Command contains multiple command separators: {}", command);
+        if (containsUnsafeShellSyntax(command, true)) {
             return ValidationResult.rejected(
-                    "Command contains multiple command separators (&, |, ;, newline)",
-                    extractExecutable(command));
+                    "Command contains shell operators, expansions, or unbalanced quoting",
+                    executable);
         }
 
-        // execute executables with relative paths only if they are within the current directory
-        if (executable.startsWith("./")) {
-            if (isPathWithinCurrentDirectory(executable)) {
-                logger.debug(
-                        "Command '{}' is safe relative path executable file execution", executable);
-                return ValidationResult.allowed(executable);
-            } else {
-                logger.debug(
-                        "Command '{}' is not safe relative path executable file execution",
-                        executable);
-                return ValidationResult.rejected(
-                        "Command '" + executable + "' escapes current directory", executable);
-            }
+        // Staying within the current directory does not grant whitelist membership.
+        if (executable.startsWith("./") && !isPathWithinCurrentDirectory(executable)) {
+            return ValidationResult.rejected(
+                    "Command '" + executable + "' escapes current directory", executable);
         }
 
         boolean inWhitelist = allowedCommands.contains(executable);
@@ -105,6 +98,12 @@ public class UnixCommandValidator implements CommandValidator {
                 char quote = trimmed.charAt(0);
                 int endQuote = trimmed.indexOf(quote, 1);
                 if (endQuote > 0) {
+                    // A quoted prefix is not necessarily the complete executable token.
+                    if (endQuote + 1 < trimmed.length()
+                            && trimmed.charAt(endQuote + 1) != ' '
+                            && trimmed.charAt(endQuote + 1) != '\t') {
+                        return "";
+                    }
                     executable = trimmed.substring(1, endQuote);
                 } else {
                     // No closing quote, treat as unquoted
@@ -168,6 +167,10 @@ public class UnixCommandValidator implements CommandValidator {
      */
     @Override
     public boolean containsMultipleCommands(String command) {
+        return containsUnsafeShellSyntax(command, false);
+    }
+
+    private boolean containsUnsafeShellSyntax(String command, boolean checkExpansions) {
         if (command == null || command.isEmpty()) {
             return false;
         }
@@ -185,7 +188,9 @@ public class UnixCommandValidator implements CommandValidator {
                 continue;
             }
 
-            if (c == '\\') {
+            // Backslashes are literal inside single quotes. Treating them as escapes can
+            // hide the closing quote and leave a following substitution undetected.
+            if (c == '\\' && !inSingleQuote) {
                 escaped = true;
                 continue;
             }
@@ -201,15 +206,24 @@ public class UnixCommandValidator implements CommandValidator {
                 continue;
             }
 
+            // Double quotes do not suppress command or parameter substitution in sh.
+            if (checkExpansions && !inSingleQuote && (c == '$' || c == '`')) {
+                return true;
+            }
+
             // Only check for separators outside quotes
             if (!inSingleQuote && !inDoubleQuote) {
                 // Check for command separators
                 if (c == '&' || c == '|' || c == ';' || c == '\n') {
                     return true;
                 }
+                if (checkExpansions
+                        && (c == '<' || c == '>' || c == '(' || c == ')' || c == '{' || c == '}')) {
+                    return true;
+                }
             }
         }
 
-        return false;
+        return checkExpansions && (inSingleQuote || inDoubleQuote || escaped);
     }
 }
