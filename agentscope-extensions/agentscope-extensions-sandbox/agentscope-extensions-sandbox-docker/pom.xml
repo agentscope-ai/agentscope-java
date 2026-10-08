@@ -13,7 +13,7 @@
   ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
--->
+  -->
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -21,21 +21,30 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions</artifactId>
+        <artifactId>agentscope-extensions-sandbox</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-extensions-sandbox</artifactId>
-    <name>AgentScope Java - Extensions - Sandbox</name>
-    <description>Sandbox backend implementations (Kubernetes, AgentRun, Daytona, E2B)</description>
-    <packaging>pom</packaging>
+    <name>AgentScope Java - Extensions - Sandbox - DockerDaemon</name>
+    <description>AgentScope Sandbox - docker-java remote Docker daemon backend (no docker CLI / dind)</description>
+    <artifactId>agentscope-extensions-sandbox-docker</artifactId>
 
-    <modules>
-        <module>agentscope-extensions-sandbox-kubernetes</module>
-        <module>agentscope-extensions-sandbox-agentrun</module>
-        <module>agentscope-extensions-sandbox-daytona</module>
-        <module>agentscope-extensions-sandbox-e2b</module>
-        <module>agentscope-extensions-sandbox-docker</module>
-    </modules>
+    <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-harness</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java-transport-zerodep</artifactId>
+        </dependency>
+    </dependencies>
 </project>
