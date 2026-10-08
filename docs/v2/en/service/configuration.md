@@ -15,14 +15,14 @@ Use `.env` for Docker. On Kubernetes, keep sensitive settings in an existing Sec
 | `BIND_ADDRESS` / `GATEWAY_PORT` | Compose listener | Defaults to `127.0.0.1` / `18080`; update public URL when changed |
 | `POSTGRES_DB` | Compose database name | Defaults to `agentscope`; can select a restored database |
 | `POSTGRES_PASSWORD` | Compose database password | Preserve after initialization; use URL-safe values |
-| `AISTIO_PRODUCT_DSN` | Product database | Uses schema `cp` |
-| `AISTIO_STORAGE_DSN` | Control-plane runtime database | Set `search_path=rt` |
+| `CONTROL_PLANE_PRODUCT_DSN` | Product database | Uses schema `cp` |
+| `CONTROL_PLANE_STORAGE_DSN` | Control-plane runtime database | Set `search_path=rt` |
 | `BUILDER_DB_URL` / `USER` / `PASSWORD` | Java JDBC connection | Full credential names: `BUILDER_DB_USER`, `BUILDER_DB_PASSWORD`; schema `dp` |
 | `BUILDER_JWT_SECRET` | User token signing | At least 32 characters; consistent across components |
 | `BUILDER_INTERNAL_TOKEN` | Internal service authentication | At least 32 characters; not a user credential |
 | `BUILDER_VAULT_MASTER_KEY` | Credential encryption | Shared across components; back up with data |
-| `AISTIO_BOOTSTRAP_ADMIN` / `PASSWORD` | Initial administrator | Full password name: `AISTIO_BOOTSTRAP_PASSWORD`; 12–72 bytes |
-| `AISTIO_SEED_USERS` | Go demo-account seeding | Release configuration sets `false` |
+| `CONTROL_PLANE_BOOTSTRAP_ADMIN` / `PASSWORD` | Initial administrator | Full password name: `CONTROL_PLANE_BOOTSTRAP_PASSWORD`; 12–72 bytes |
+| `CONTROL_PLANE_SEED_USERS` | Go demo-account seeding | Release configuration sets `false` |
 | `BUILDER_SEED_USERS` | Java demo-account seeding | Release configuration sets `false` |
 | `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | Permit Local Environments | Defaults to `false` |
 | `BUILDER_OAUTH_PUBLIC_URL` | Public origin | Must match OAuth callback configuration |
@@ -37,9 +37,9 @@ Session/Turn calls, events, commands, and Webhooks are stored by the control pla
 
 | Configuration | Default / source | Purpose |
 | --- | --- | --- |
-| `aistiod --service-event-retention` | `720h`; `0` disables pruning | Prunes old terminal Turn event increments while retaining cumulative snapshots; reload snapshot after cursor expiry (410) |
-| `AISTIO_ENDPOINT_CREDENTIAL_KEY` | Falls back to platform JWT secret | Encrypts Webhook signing secrets; this compatibility name remains. Keep it consistent across replicas and backups. Application keys are stored as hashes |
-| `aistiod --enable-asdp` | `true` | Initializes execution-channel handlers also used by HTTP workers; HTTP workers need no gRPC port access |
+| `service-controlplane --service-event-retention` | `720h`; `0` disables pruning | Prunes old terminal Turn event increments while retaining cumulative snapshots; reload snapshot after cursor expiry (410) |
+| `CONTROL_PLANE_ENDPOINT_CREDENTIAL_KEY` | Falls back to platform JWT secret | Encrypts Webhook signing secrets; this compatibility name remains. Keep it consistent across replicas and backups. Application keys are stored as hashes |
+| `service-controlplane --enable-asdp` | `true` | Initializes execution-channel handlers also used by HTTP workers; HTTP workers need no gRPC port access |
 
 Manage Application concurrency and token budgets through its API. Session timeout, per-task budget, and input/output contracts are selected at creation. Public Session Webhooks use control-plane HTTPS validation and signed delivery; native dataplane Webhook allowed-hosts settings do not govern this public path.
 
@@ -78,7 +78,7 @@ Replicas share the Data Plane database and a BaseStore supporting conditional wr
 
 ## Paths and internal addresses
 
-Release deployments share `/data/workspaces`. The control plane uses `AISTIO_WORKSPACE_ROOT`; Java uses `BUILDER_WORKSPACE_ROOT`. `AISTIO_ARTIFACT_ROOT` selects the artifact directory.
+Release deployments share `/data/workspaces`. The control plane uses `CONTROL_PLANE_WORKSPACE_ROOT`; Java uses `BUILDER_WORKSPACE_ROOT`. `CONTROL_PLANE_ARTIFACT_ROOT` selects the artifact directory.
 
 `BUILDER_CONTROL_URL`, `BUILDER_DATA_URL` and `BUILDER_SCHEDULER_URL` are internally reachable addresses. Do not replace them with the browser's localhost address.
 

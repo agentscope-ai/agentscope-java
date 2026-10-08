@@ -26,10 +26,10 @@ All commands ran from the project directory. The model-key removal above applies
 | Final full Core/Harness reactor | Normal complete suites, with no failure-ignore flag | Core **2,505 / 0 failures / 0 errors / 9 skips**; Harness **1,099 / 0 / 0 / 14 skips**. A downstream JEV fixture teardown failure stopped this run before Service; its fix and the remaining suites are reported separately. `/tmp/session-java-final-reactor-regression-20261002.log` |
 | Structured-output race | `-pl agentscope-core test -Dtest=ReActAgentStructuredOutputTest#testConcurrencyConflictStructuredOutput_repeated -Dagentscope.runStructuredOutputRaceTest=true` | **25,000 passed**, no skips, 24.3 s total. `/tmp/session-java-structured-race-regression-20261002.log` |
 | Docker file transfer | `-pl agentscope-harness -am test -Dtest=DockerSandboxFileTransferIntegrationTest -Ddocker.it=true -Dsurefire.failIfNoSpecifiedTests=false` | **9 passed**, real Alpine containers, 34.4 s total. Binary payload, projected/quoted paths, rejection and scratch-file cleanup. `/tmp/session-java-docker-files-regression-20261002.log` |
-| Distributed backend contracts | Redis/MySQL/PostgreSQL/Mongo/JDBC/OSS/COS/Aistio selected suites; JDBC `-Pintegration`; actual Docker context supplied | Ordinary suites and MongoDB containers passed. The first JDBC container launch failed on the old Testcontainers Docker API default; both passed on the explicit API-version rerun below. `/tmp/session-java-backends-regression-20261002.log` |
+| Distributed backend contracts | Redis/MySQL/PostgreSQL/Mongo/JDBC/OSS/COS/Control Plane selected suites; JDBC `-Pintegration`; actual Docker context supplied | Ordinary suites and MongoDB containers passed. The first JDBC container launch failed on the old Testcontainers Docker API default; both passed on the explicit API-version rerun below. `/tmp/session-java-backends-regression-20261002.log` |
 | JDBC real containers | `-pl agentscope-extensions/agentscope-extensions-jdbc test -Pintegration -Dtest=MysqlIntegrationTest,PostgresIntegrationTest -Dapi.version=1.44` | 10 passed: MySQL 8.0 × 5 and PostgreSQL 16 × 5. `/tmp/session-java-jdbc-containers-regression-20261002.log` |
 
-The full reactor also executes dependency-module suites, including AG-UI, aistio, DashScope adapter, sandbox E2B adapter, skill Git repository and the JEV example. External model keys are absent; these adapter suites do not establish live provider coverage.
+The full reactor also executes dependency-module suites, including AG-UI, Control Plane, DashScope adapter, sandbox E2B adapter, skill Git repository and the JEV example. External model keys are absent; these adapter suites do not establish live provider coverage.
 
 ## Confirmed defect and corrections
 
@@ -89,7 +89,7 @@ A deterministic fast Managed Job reached `task.complete` before its asynchronous
 | Standalone PostgreSQL extension | Mocks | 148 tests passed; do not confuse this with the real PostgreSQL tests above |
 | Standalone MySQL extension | Mocks | 7 tests passed; real MySQL is exercised by the JDBC extension suite |
 | OSS / COS | Mocks | 20 and 62 tests passed respectively; no cloud account used |
-| Aistio / ControlPlane Java adapter | Deterministic stub/mocks | Full **74-test** suite passed in the final run; actual PostgreSQL control-plane verification is in the companion Go report |
+| Control Plane / Control Plane Java adapter | Deterministic stub/mocks | Full **74-test** suite passed in the final run; actual PostgreSQL control-plane verification is in the companion Go report |
 
 Mongo/MySQL/PostgreSQL images were pulled for the existing test suites. JDBC Testcontainers 1.21.3 initially selected a Docker API below the server minimum; passing `-Dapi.version=1.44` resolved the environment mismatch without a production-code change. Docker-backed CAS checks are single-host tests, not a network-partition or multi-host durability campaign.
 
@@ -121,7 +121,7 @@ Completed. The final remaining-suite reactor finished with **BUILD SUCCESS**, wi
 | JDBC extension | 102 | 0 / 0 | 0 |
 | JEV example | 184 | 0 / 0 | 0 |
 
-The opt-in runs separately passed **25,000 structured-output repetitions** and **9 Docker file-transfer tests**, covering ten of the default skipped entries above. Remaining Core/Harness skips are seven empty stream-order design placeholders, one Windows-only Core case and five platform-specific Harness shell-filesystem cases. Other dependency suites also passed: AG-UI 507, Git skill repository 23, JEV extension 85 (one `jev.browser` opt-in skip), Aistio 74, E2B adapter 54, DashScope adapter 480 (two obsolete non-TOOL-role converter cases skipped because Msg validation makes those inputs unreachable), and MySQL adapter 7. Mock-only cloud adapter and actual-container distinctions are recorded in the backend matrix above; adapter passes do not imply live cloud/model coverage.
+The opt-in runs separately passed **25,000 structured-output repetitions** and **9 Docker file-transfer tests**, covering ten of the default skipped entries above. Remaining Core/Harness skips are seven empty stream-order design placeholders, one Windows-only Core case and five platform-specific Harness shell-filesystem cases. Other dependency suites also passed: AG-UI 507, Git skill repository 23, JEV extension 85 (one `jev.browser` opt-in skip), Control Plane 74, E2B adapter 54, DashScope adapter 480 (two obsolete non-TOOL-role converter cases skipped because Msg validation makes those inputs unreachable), and MySQL adapter 7. Mock-only cloud adapter and actual-container distinctions are recorded in the backend matrix above; adapter passes do not imply live cloud/model coverage.
 
 The DP executable packaged successfully and the final isolated runtime loaded the synchronous Managed start barrier and sandbox release fix before the root task's HTTP verification. The root task then verified three concurrent fast Managed Jobs plus the Managed action/respond/new-turn/cancel flow. These HTTP assertions are recorded in its report, separately from Java unit counts.
 

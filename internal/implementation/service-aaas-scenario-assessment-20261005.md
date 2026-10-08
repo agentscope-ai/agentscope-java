@@ -29,14 +29,14 @@
 
 | 能力 | 实现证据 | 对场景的意义与边界 |
 | --- | --- | --- |
-| 服务契约与发布 | [Endpoint 模型](../../agentscope-service/aistio/internal/controlplane/model/agent_endpoint.go)、[契约冻结](../../agentscope-service/aistio/internal/invocation/freeze.go)、[定义补全](../../agentscope-service/aistio/internal/httpapi/service_invocation_worker.go) | 已有 schema、Release、目标策略、Team 与递归 Workflow 引用冻结，并补入 Agent 定义；不能称为“没有版本管理” |
-| 异步接单与持久派发 | [Job 接口](../../agentscope-service/aistio/internal/httpapi/agent_endpoint_handler.go)、[后台 worker](../../agentscope-service/aistio/internal/httpapi/service_invocation_worker.go) | 先持久化 Invocation，幂等提交，确定性内部任务 ID，跨副本锁及到期扫描；无需保持前端连接来驱动执行 |
-| 统一进度与重连 | [公共 journal](../../agentscope-service/aistio/internal/invocation/journal.go)、[读取与流接口](../../agentscope-service/aistio/internal/httpapi/service_invocation_handler.go) | 有 snapshot、游标、事件分页、SSE、保留期过期后的 410 恢复路径 |
-| 会话与交互 | [Conversation](../../agentscope-service/aistio/internal/httpapi/service_invocation_conversation.go)、[命令](../../agentscope-service/aistio/internal/httpapi/service_invocation_command.go)、[capabilities](../../agentscope-service/aistio/internal/httpapi/service_invocation_capabilities.go) | 同会话单个活跃 Invocation，持久命令、输入、审批、取消等；操作依赖目标能力，终态 Invocation 不等于可任意 resume |
-| 应用身份与治理 | [Application 管理](../../agentscope-service/aistio/internal/httpapi/application_handler.go)、[调用治理](../../agentscope-service/aistio/internal/httpapi/service_invocation_governance.go) | 已有应用归属、凭证 scope、人工角色、并发与 token 用量约束；不是缺少认证或配额系统 |
-| 结构化结果与交付物 | [结果映射与校验](../../agentscope-service/aistio/internal/invocation/result.go)、[产物存储](../../agentscope-service/aistio/internal/artifact/provider.go) | 有 JSON Pointer 映射、输出 schema、二进制产物与下载；结构合格不代表语义正确 |
-| 回调与失败重投 | [Invocation Webhook](../../agentscope-service/aistio/internal/httpapi/service_invocation_webhook.go) | 持久投递、签名、重试与人工 retry；接收方必须按至少一次投递处理去重 |
-| 结果意图与人工验收 | [Managed 任务结果指南](../../docs/v2/zh/service/managed-harness-task-outcomes.md)、[Issue 验收测试](../../agentscope-service/aistio/internal/httpapi/issue_review_test.go) | 已区分任务结果、等待/阻塞/失败及 Issue 验收；不能把“添加验收”当作从零建设 |
+| 服务契约与发布 | [Endpoint 模型](../../agentscope-service/service-controlplane/internal/controlplane/model/agent_endpoint.go)、[契约冻结](../../agentscope-service/service-controlplane/internal/invocation/freeze.go)、[定义补全](../../agentscope-service/service-controlplane/internal/httpapi/service_invocation_worker.go) | 已有 schema、Release、目标策略、Team 与递归 Workflow 引用冻结，并补入 Agent 定义；不能称为“没有版本管理” |
+| 异步接单与持久派发 | [Job 接口](../../agentscope-service/service-controlplane/internal/httpapi/agent_endpoint_handler.go)、[后台 worker](../../agentscope-service/service-controlplane/internal/httpapi/service_invocation_worker.go) | 先持久化 Invocation，幂等提交，确定性内部任务 ID，跨副本锁及到期扫描；无需保持前端连接来驱动执行 |
+| 统一进度与重连 | [公共 journal](../../agentscope-service/service-controlplane/internal/invocation/journal.go)、[读取与流接口](../../agentscope-service/service-controlplane/internal/httpapi/service_invocation_handler.go) | 有 snapshot、游标、事件分页、SSE、保留期过期后的 410 恢复路径 |
+| 会话与交互 | [Conversation](../../agentscope-service/service-controlplane/internal/httpapi/service_invocation_conversation.go)、[命令](../../agentscope-service/service-controlplane/internal/httpapi/service_invocation_command.go)、[capabilities](../../agentscope-service/service-controlplane/internal/httpapi/service_invocation_capabilities.go) | 同会话单个活跃 Invocation，持久命令、输入、审批、取消等；操作依赖目标能力，终态 Invocation 不等于可任意 resume |
+| 应用身份与治理 | [Application 管理](../../agentscope-service/service-controlplane/internal/httpapi/application_handler.go)、[调用治理](../../agentscope-service/service-controlplane/internal/httpapi/service_invocation_governance.go) | 已有应用归属、凭证 scope、人工角色、并发与 token 用量约束；不是缺少认证或配额系统 |
+| 结构化结果与交付物 | [结果映射与校验](../../agentscope-service/service-controlplane/internal/invocation/result.go)、[产物存储](../../agentscope-service/service-controlplane/internal/artifact/provider.go) | 有 JSON Pointer 映射、输出 schema、二进制产物与下载；结构合格不代表语义正确 |
+| 回调与失败重投 | [Invocation Webhook](../../agentscope-service/service-controlplane/internal/httpapi/service_invocation_webhook.go) | 持久投递、签名、重试与人工 retry；接收方必须按至少一次投递处理去重 |
+| 结果意图与人工验收 | [Managed 任务结果指南](../../docs/v2/zh/service/managed-harness-task-outcomes.md)、[Issue 验收测试](../../agentscope-service/service-controlplane/internal/httpapi/issue_review_test.go) | 已区分任务结果、等待/阻塞/失败及 Issue 验收；不能把“添加验收”当作从零建设 |
 
 架构上，公共调用层对接三种执行方式，Managed 数据面继续承接 Harness 与原生会话。公共 Invocation 是应用的观察对象；原生 Session/Turn 和内部 Issue/Run/Attempt 负责各自生命周期。后续应保持这一边界，避免让调用方因执行方式不同而重新实现多套任务系统。
 
@@ -61,7 +61,7 @@
 
 ### P0：可验证的终端用户与资源委托身份
 
-**现状。** Invocation 保存 Application、Credential、Actor、Principal 与 Correlation ID。[读取鉴权](../../agentscope-service/aistio/internal/httpapi/service_invocation_handler.go)按应用归属及指定的人类角色进行检查。同一 Application 的凭证共享归属，是轮换与统一治理所需行为；模型中尚未形成独立的、经验证的业务 end-user 委托契约。
+**现状。** Invocation 保存 Application、Credential、Actor、Principal 与 Correlation ID。[读取鉴权](../../agentscope-service/service-controlplane/internal/httpapi/service_invocation_handler.go)按应用归属及指定的人类角色进行检查。同一 Application 的凭证共享归属，是轮换与统一治理所需行为；模型中尚未形成独立的、经验证的业务 end-user 委托契约。
 
 **现在如何落地。** 由业务后端保存 key、验证登录身份并执行任务/会话/资料 ACL。不能把客户端任意传入的 `userId` 当作权限证明。平台 Namespace 与应用成员角色仍然有效，但不能自动替代外部 SaaS 的用户授权模型。
 
@@ -81,7 +81,7 @@
 
 ### P1：所有触发方式复用公开服务调用
 
-**现状。** [Automation action 定义和校验](../../agentscope-service/aistio/internal/automation/actions.go)及[运行实现](../../agentscope-service/aistio/internal/automation/runtime.go)支持创建 Issue、添加评论、启动与通知 Workflow，没有直接 invoke Endpoint 的 action。当前可以由外部调度器调用 API，功能可落地，但产生两条不同的工作入口。
+**现状。** [Automation action 定义和校验](../../agentscope-service/service-controlplane/internal/automation/actions.go)及[运行实现](../../agentscope-service/service-controlplane/internal/automation/runtime.go)支持创建 Issue、添加评论、启动与通知 Workflow，没有直接 invoke Endpoint 的 action。当前可以由外部调度器调用 API，功能可落地，但产生两条不同的工作入口。
 
 **建议改造。** 增加调用已发布 Endpoint 的触发动作，复用现有 admission、契约绑定和持久派发逻辑。规则明确所用 Application、release 选择策略、输入映射、幂等键生成方式与业务关联；记录触发事件到 Invocation 的映射。不要在 Automation 中再造一套派发器或绕开配额。
 
@@ -97,7 +97,7 @@
 
 ### P1：资源版本与实际读取来源的可追溯性
 
-**现状。** Release 已冻结目标、Agent 定义和 Workspace 相关配置；[定义摘要](../../agentscope-service/aistio/internal/product/handlers_agents.go)包含 tools、skills、files、workspaceVersion 等。另一方面，[Memory 文件系统](../../agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/managed/MemoryMountService.java)提供实时挂载与写入。稳定配置不等于每次读取外部知识都得到同一内容，这是需要明确的版本策略，而不是所有资源都必须冻结。
+**现状。** Release 已冻结目标、Agent 定义和 Workspace 相关配置；[定义摘要](../../agentscope-service/service-controlplane/internal/product/handlers_agents.go)包含 tools、skills、files、workspaceVersion 等。另一方面，[Memory 文件系统](../../agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/managed/MemoryMountService.java)提供实时挂载与写入。稳定配置不等于每次读取外部知识都得到同一内容，这是需要明确的版本策略，而不是所有资源都必须冻结。
 
 **建议改造。** 区分发布时固定的能力版本与执行时读取的动态资料。对审计型服务支持固定资料版本，或记录读取时的 URI、版本/摘要、时间及权限主体；将来源与交付关联。实时订单或库存仍按实时语义读取，记录查询证据，不应为追求复现返回过期业务状态。
 
@@ -105,7 +105,7 @@
 
 ### P1/P2：作为工具消费的专业 Agent 服务
 
-**现状。** HTTP Endpoint 已可被工具调用。[路由](../../agentscope-service/aistio/internal/httpapi/server.go)中的协作 MCP 用于内部任务协调，没有发现发布 Endpoint 自动导出公共 MCP 的实现。
+**现状。** HTTP Endpoint 已可被工具调用。[路由](../../agentscope-service/service-controlplane/internal/httpapi/server.go)中的协作 MCP 用于内部任务协调，没有发现发布 Endpoint 自动导出公共 MCP 的实现。
 
 **建议。** 先提供标准适配器，将 Endpoint schema 转成工具输入，提交后返回 Invocation 句柄，提供查询/交互/取消操作。MCP 导出可在接入层实现，无需更换 Harness。若希望 Service 原生治理多层调用，再增加父子调用关联、超时/取消传播和委托预算；下游仍执行自己的鉴权。
 
@@ -115,7 +115,7 @@
 
 **现状。** 已有跨副本 admission 锁、应用并发额度、到期工作队列、journal checkpoint 和保留期。worker 当前按最多 100 条读取、局部 4 并发处理，并用 CAS 领取下一次扫描；公共 SSE 也会刷新/投影调用状态。这是需要压测的运行方式，不能仅凭代码直接判定它无法扩展。
 
-token budget 根据已上报用量触发限制与取消，不是模型调用前的精确金额预扣。[用量治理](../../agentscope-service/aistio/internal/httpapi/service_invocation_governance.go)已经做汇总去重及累计记录，后续应在其上完善，不能另加一套口径冲突的计数器。
+token budget 根据已上报用量触发限制与取消，不是模型调用前的精确金额预扣。[用量治理](../../agentscope-service/service-controlplane/internal/httpapi/service_invocation_governance.go)已经做汇总去重及累计记录，后续应在其上完善，不能另加一套口径冲突的计数器。
 
 **建议。** 先量化等待、执行、人工等待、结果可见与回调耗时，以及数据库连接、扫描成本、SSE 慢消费者和多应用公平性。必要时增加通知唤醒与批处理、按应用公平调度、隔离大批任务，并保留持久扫描兜底。对需要强成本约束的服务，设计执行前预算预留、模型/工具开销记账、迟到 usage 对账、过期预留释放及取消后的最终结算。
 
@@ -141,7 +141,7 @@ token budget 根据已上报用量触发限制与取消，不是模型调用前�
 
 ## 8. 验证证据与本次边界
 
-本次只读核查和针对性验证中，`go test ./internal/invocation ./internal/httpapi ./internal/automation ./internal/artifact` 通过。需要 `AISTIO_TEST_POSTGRES_DSN` 的测试在未配置时会跳过，因此这次包测试不被表述为重跑了数据库、实际模型或全链故障实验。
+本次只读核查和针对性验证中，`go test ./internal/invocation ./internal/httpapi ./internal/automation ./internal/artifact` 通过。需要 `CONTROL_PLANE_TEST_POSTGRES_DSN` 的测试在未配置时会跳过，因此这次包测试不被表述为重跑了数据库、实际模型或全链故障实验。
 
 [2026-10-02 集中回归](session-service-regression-20261002.md)已有真实 Gateway / CP / DP、PostgreSQL、HTTP worker、Agent/Team/Workflow Job、Managed Conversation、产物字节、CP 强制重启和事件恢复的历史记录；使用确定性模型和 runner。该记录也明确列出多日容量、真实 provider、部分 worker 故障矩阵及云端验证的未覆盖范围。本报告引用其历史结果，没有把它算作本次重新执行。
 

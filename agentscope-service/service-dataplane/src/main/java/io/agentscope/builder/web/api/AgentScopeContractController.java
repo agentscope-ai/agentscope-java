@@ -45,7 +45,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * aistio data-plane HTTP contract ({@code /agentscope/*}). Public so the control-plane poller can
+ * controlplane data-plane HTTP contract ({@code /agentscope/*}). Public so the control-plane poller can
  * probe without a console JWT. Session rows come from the control plane; transcripts from the local
  * event log.
  */
@@ -120,7 +120,7 @@ public class AgentScopeContractController {
         return Map.of("status", "ok");
     }
 
-    /** Level-2 session snapshots for the aistiod poller. */
+    /** Level-2 session snapshots for the service-controlplane poller. */
     @GetMapping("/sessions")
     public Map<String, Object> sessions() {
         List<Map<String, Object>> snapshots = new ArrayList<>();

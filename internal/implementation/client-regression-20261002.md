@@ -17,7 +17,7 @@ This records the client portion of the concentrated regression requested for the
 | --- | --- | --- | --- |
 | Python SDK | `/tmp/agentscope-service-release-venv/bin/python -m pytest -q`, SDK directory | 103 passed, 17.09 s | `/tmp/client-regression-python-final.log` |
 | Console unit tests | `npm test`, frontend directory | 36 files, 150 passed | `/tmp/client-regression-frontend-tests-final.log` |
-| Console production build | `npm run build` (TypeScript and Vite) | Passed; output is `agentscope-service/aistio/ui`, not `frontend/dist` | `/tmp/client-regression-frontend-build-final.log` |
+| Console production build | `npm run build` (TypeScript and Vite) | Passed; output is `agentscope-service/service-controlplane/ui`, not `frontend/dist` | `/tmp/client-regression-frontend-build-final.log` |
 | Console Playwright | All `e2e/**/*.e2e.ts` through isolated preview | 61 passed, including the new Invocation refresh case | `/tmp/client-regression-playwright-final.log` |
 | Documentation validation | `npm run check`, docs directory | 460 pages and 504 redirects; navigation, syntax, local links, anchors and assets passed | `/tmp/client-regression-docs-check-final.log` |
 | Documentation tests | `npm test`, docs directory | 12 passed | `/tmp/client-regression-docs-tests-final.log` |

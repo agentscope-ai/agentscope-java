@@ -102,7 +102,7 @@ Python `ServiceClient` 封装了相同的 Session API。下面的代码使用已
 
 ```python
 import os
-from aistio import ServiceClient
+from agentscope_service import ServiceClient
 
 api = ServiceClient(os.environ["BASE_URL"], os.environ["AGENTSCOPE_API_KEY"])
 session = api.create_session({"type": "agent", "id": os.environ["AGENT_ID"]},
@@ -112,4 +112,4 @@ turn = api.submit(session["id"], message="整理报告并给出来源。",
 print(api.turn(session["id"], turn["id"]))
 ```
 
-仓库中的 `agentscope-service/aistio/examples/service-api` 提供 Agent、Team 和 Workflow 的注册与调用示例。管理对象使用 `ManagementClient`，应用执行使用 `ServiceClient`。接口定义位于 `agentscope-service/docs/service-api/openapi-v1.json`。
+仓库中的 `agentscope-service/service-controlplane/examples/service-api` 提供 Agent、Team 和 Workflow 的注册与调用示例。管理对象使用 `ManagementClient`，应用执行使用 `ServiceClient`。接口定义位于 `agentscope-service/docs/service-api/openapi-v1.json`。

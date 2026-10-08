@@ -64,7 +64,7 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>Authorization is <b>session ownership</b> via {@link DataSessionService#get}: the control
  * plane resolve payload's {@code ownerId} must match the JWT user. Product agents now live in
- * aistiod's schema, so a dataplane JPA {@code AgentAccessGuard} lookup would 404 even for valid
+ * service-controlplane's schema, so a dataplane JPA {@code AgentAccessGuard} lookup would 404 even for valid
  * sessions; agent RUN/EDIT was already enforced when the session was created.
  */
 @RestController

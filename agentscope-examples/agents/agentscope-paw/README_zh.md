@@ -165,31 +165,31 @@ UI 上点 **New agent** 按钮可以基于空白脚手架、内置模板或 AI �
 | `paw.agent.name` | `paw` | 自动生成的 `default` agent 显示名 |
 | `paw.agent.sys-prompt` | `You are a helpful local assistant. …` | 自动生成的 `default` agent 系统提示 |
 | `server.port` | `8080` | HTTP 端口 |
-| `claw.aistio.*` / `claw.session-log.*` | 见上文 | BYO + Operate 原生历史联调 |
+| `claw.controlplane.*` / `claw.session-log.*` | 见上文 | BYO + Operate 原生历史联调 |
 
 如果你自己提供了 `Model` Spring Bean（例如再 `@Import` 一个 `@Configuration`），自动注入的 DashScope 模型会被跳过。
 
-## 与 aistio Operate 联调（BYO 与原生会话历史）
+## 与 Control Plane Operate 联调（BYO 与原生会话历史）
 
 Harness 默认在 Workspace Filesystem 的私有分区保存原生 Session Log。`AgentSessionHistorySource` 通过 `sessionTranscript()` 提供消息接口；Paw 历史页面也读取相同记录。旧 TranscriptMiddleware、分段 transcript 与 `.log.jsonl` 写入已经移除，已有文件不会被自动删除。
 
 ```bash
-export CLAW_AISTIO_ENABLED=true
-export AISTIO_CONTROL_HTTP=http://localhost:8081
-export CLAW_AISTIO_AGENT_NAME=default
+export CLAW_CONTROLPLANE_ENABLED=true
+export CONTROL_PLANE_HTTP=http://localhost:8081
+export CLAW_CONTROLPLANE_AGENT_NAME=default
 # 可选：为所有 Agent 配置共享原生日志根；不设置时使用各自 Workspace 后端。
 export CLAW_SESSION_LOG_ROOT=/data/paw-session-history
 ```
 
-在 Operate 中读取消息需要可用的 Agent 消息接口，不能再依赖 aistiod 的共享 transcript 目录。注册名应与实际发布的 Agent 对应。原生日志本地文件带版本前缀，请通过 API 读取，不能作为 JSONL 文本直接解析。
+在 Operate 中读取消息需要可用的 Agent 消息接口，不能再依赖 service-controlplane 的共享 transcript 目录。注册名应与实际发布的 Agent 对应。原生日志本地文件带版本前缀，请通过 API 读取，不能作为 JSONL 文本直接解析。
 
 | 配置项 | 环境变量 | 默认值 |
 | --- | --- | --- |
-| `claw.aistio.enabled` | `CLAW_AISTIO_ENABLED` | `false` |
-| `claw.aistio.control-http` | `AISTIO_CONTROL_HTTP` | `http://localhost:8081` |
-| `claw.aistio.agent-name` | `CLAW_AISTIO_AGENT_NAME` | `default` |
-| `claw.aistio.namespace` | `CLAW_AISTIO_NAMESPACE` | `default` |
-| `claw.aistio.contract-port` | `CLAW_AISTIO_CONTRACT_PORT` | `18090` |
+| `claw.controlplane.enabled` | `CLAW_CONTROLPLANE_ENABLED` | `false` |
+| `claw.controlplane.control-http` | `CONTROL_PLANE_HTTP` | `http://localhost:8081` |
+| `claw.controlplane.agent-name` | `CLAW_CONTROLPLANE_AGENT_NAME` | `default` |
+| `claw.controlplane.namespace` | `CLAW_CONTROLPLANE_NAMESPACE` | `default` |
+| `claw.controlplane.contract-port` | `CLAW_CONTROLPLANE_CONTRACT_PORT` | `18090` |
 | `claw.session-log.root` | `CLAW_SESSION_LOG_ROOT` | 空，使用 Workspace 后端 |
 
 移除旧 `claw.transcript.*` / `CLAW_TRANSCRIPT_*` 配置。分布式或自定义存储可提供 `SessionLogStore` Spring Bean；它会同时应用于内置和动态 Agent。完整存储、恢复与 SSE 说明见[会话日志指南](../../../../docs/v2/zh/docs/harness/session-log.md)。

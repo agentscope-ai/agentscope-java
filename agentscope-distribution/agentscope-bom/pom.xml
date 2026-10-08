@@ -303,10 +303,10 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope aistio BYO data-plane SDK -->
+            <!-- AgentScope controlplane BYO data-plane SDK -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-aistio</artifactId>
+                <artifactId>agentscope-extensions-controlplane</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

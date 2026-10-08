@@ -11,7 +11,7 @@ A Runtime Host runs on a computer or server with a Coding Agent provider install
 
 ## Install
 
-Download `agentscope-cli-VERSION-OS-ARCH.tar.gz` for the operating system and CPU architecture from the same Service release. Verify its checksum and extract it. The archive contains `agentscope`, the alias `aistioctl`, and `aistio-runtime-host`. Put all three executables in the same directory on PATH.
+Download `agentscope-cli-VERSION-OS-ARCH.tar.gz` for the operating system and CPU architecture from the same Service release. Verify its checksum and extract it. The archive contains `agentscope`, the alias `agentscope`, and `agentscope-runtime-host`. Put all three executables in the same directory on PATH.
 
 Choose Linux/macOS and amd64/arm64 according to the release manifest and the machine you will connect. Install, authenticate and verify the provider separately.
 
@@ -22,7 +22,7 @@ Check the platform with `uname -sm`; package names use `linux`/`darwin` and `amd
 ```bash
 mkdir -p agentscope-cli "$HOME/.local/bin"
 tar -xzf agentscope-cli-VERSION-OS-ARCH.tar.gz -C agentscope-cli
-install -m 0755 agentscope-cli/agentscope agentscope-cli/aistioctl agentscope-cli/aistio-runtime-host "$HOME/.local/bin/"
+install -m 0755 agentscope-cli/agentscope agentscope-cli/agentscope agentscope-cli/agentscope-runtime-host "$HOME/.local/bin/"
 export PATH="$HOME/.local/bin:$PATH"
 ```
 

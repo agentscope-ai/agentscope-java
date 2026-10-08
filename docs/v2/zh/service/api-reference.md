@@ -103,7 +103,7 @@ Python 的 `ManagementClient` 用于准备资源与凭据，`ServiceClient` 用�
 
 ```python
 import os
-from aistio import ServiceClient
+from agentscope_service import ServiceClient
 
 client = ServiceClient(os.environ["BASE_URL"], api_key=os.environ["AGENTSCOPE_API_KEY"])
 session = client.create_session(
@@ -115,7 +115,7 @@ print(client.turn(session["id"], turn["id"]))
 print(client.snapshot(session["id"]))
 ```
 
-完整示例位于 `aistio/examples/service-api`，可以分别对 Agent、Team 和 Workflow 创建 Session。HTTP 客户端不会替应用批准工具操作，也不会在网络失败时擅自创建新任务；应用应保存 Session ID、Turn ID 和幂等键，按[服务 API](/v2/zh/service/service-api#使用-sdk-与可运行示例)处理恢复。
+完整示例位于 `service-controlplane/examples/service-api`，可以分别对 Agent、Team 和 Workflow 创建 Session。HTTP 客户端不会替应用批准工具操作，也不会在网络失败时擅自创建新任务；应用应保存 Session ID、Turn ID 和幂等键，按[服务 API](/v2/zh/service/service-api#使用-sdk-与可运行示例)处理恢复。
 
 ## 错误与版本冲突
 

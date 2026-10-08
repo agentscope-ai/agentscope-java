@@ -35,7 +35,7 @@ Python 现在可通过出站 HTTP 接入标准 Service：使用 `control_plane_h
 ```xml
 <dependency>
   <groupId>io.agentscope</groupId>
-  <artifactId>agentscope-extensions-aistio</artifactId>
+  <artifactId>agentscope-extensions-controlplane</artifactId>
   <version>${agentscope.version}</version>
 </dependency>
 ```
@@ -43,17 +43,17 @@ Python 现在可通过出站 HTTP 接入标准 Service：使用 `control_plane_h
 下面是已有应用中的接入片段；`agent` 是你已创建的 Agent。环境变量由部署者提供，`AGENT_CONTRACT_URL` 必须能从控制面访问：
 
 ```java
-import io.agentscope.extensions.aistio.Aistio;
-import io.agentscope.extensions.aistio.AistioConfig;
-import io.agentscope.extensions.aistio.SessionBridge;
+import io.agentscope.extensions.controlplane.ControlPlane;
+import io.agentscope.extensions.controlplane.ControlPlaneConfig;
+import io.agentscope.extensions.controlplane.SessionBridge;
 
-SessionBridge bridge = Aistio.instrument(agent,
-    AistioConfig.builder("report-service")
-        .controlPlaneHttp(System.getenv("AISTIO_CONTROL_HTTP"))
-        .registrationCredential(System.getenv("AISTIO_REGISTRATION_CREDENTIAL"))
-        .tenant(System.getenv("AISTIO_TENANT"))
-        .namespace(System.getenv("AISTIO_NAMESPACE"))
-        .instanceKey(System.getenv("AISTIO_INSTANCE_KEY"))
+SessionBridge bridge = ControlPlane.instrument(agent,
+    ControlPlaneConfig.builder("report-service")
+        .controlPlaneHttp(System.getenv("CONTROL_PLANE_HTTP"))
+        .registrationCredential(System.getenv("CONTROL_PLANE_REGISTRATION_CREDENTIAL"))
+        .tenant(System.getenv("CONTROL_PLANE_TENANT"))
+        .namespace(System.getenv("CONTROL_PLANE_NAMESPACE"))
+        .instanceKey(System.getenv("CONTROL_PLANE_INSTANCE_KEY"))
         .contractHttpPort(18090)
         .publicBaseUrl(System.getenv("AGENT_CONTRACT_URL"))
         .startHttpRegister(true)
@@ -62,32 +62,32 @@ SessionBridge bridge = Aistio.instrument(agent,
 // 应用退出时调用 bridge.close()。
 ```
 
-先按[注册指南](/v2/zh/service/register-agentscope-agent)取得 `registrationCredential`，将其设置为 `AISTIO_REGISTRATION_CREDENTIAL`。当前 Java bridge 在未配置注册凭据或 bootstrap 参数时会跳过自动注册。当前预览版本的服务端注册入口不验证调用者身份，应限制在受控网络或网关内使用。返回的 registration credential 用于后续运行连接，不能替代注册入口的访问控制。HTTP contract 可读到的历史与命令取决于适配器；Java 实时上报还需在构建 Agent 时装入适配器 middleware，并启用 ASDP 运行连接。
+先按[注册指南](/v2/zh/service/register-agentscope-agent)取得 `registrationCredential`，将其设置为 `CONTROL_PLANE_REGISTRATION_CREDENTIAL`。当前 Java bridge 在未配置注册凭据或 bootstrap 参数时会跳过自动注册。当前预览版本的服务端注册入口不验证调用者身份，应限制在受控网络或网关内使用。返回的 registration credential 用于后续运行连接，不能替代注册入口的访问控制。HTTP contract 可读到的历史与命令取决于适配器；Java 实时上报还需在构建 Agent 时装入适配器 middleware，并启用 ASDP 运行连接。
 
 <span id="python连接支持-asdp-的部署" />
 
 ## Python：使用 HTTP 运行连接
 
-在应用环境安装 `aistio-sdk` 的对应发布版本：
+在应用环境安装 `agentscope-service-sdk` 的对应发布版本：
 
 ```bash
-python -m pip install "aistio-sdk==$AISTIO_SDK_VERSION"
+python -m pip install "agentscope-service-sdk==$CONTROL_PLANE_SDK_VERSION"
 ```
 
 下列片段中的 `target` 是已有框架对象，支持的适配器包括 AgentScope、OpenAI Agents、LangChain、ADK 等；实际可用方法以适配器能力为准。
 
 ```python
 import os
-import aistio
+import agentscope_service
 
-bridge = aistio.instrument(
+bridge = agentscope_service.instrument(
     target,
     agent_key="report-service",
-    instance_key=os.environ["AISTIO_INSTANCE_KEY"],
-    tenant=os.environ["AISTIO_TENANT"],
-    namespace=os.environ["AISTIO_NAMESPACE"],
+    instance_key=os.environ["CONTROL_PLANE_INSTANCE_KEY"],
+    tenant=os.environ["CONTROL_PLANE_TENANT"],
+    namespace=os.environ["CONTROL_PLANE_NAMESPACE"],
     transport="http",
-    control_plane_http=os.environ["AISTIO_CONTROL_HTTP"],
+    control_plane_http=os.environ["CONTROL_PLANE_HTTP"],
     contract_http_port=18090,
     contract_http_base_url=os.environ["AGENT_CONTRACT_URL"],
     event_journal_dir="/var/lib/report-agent/events",
@@ -140,7 +140,7 @@ Python 默认使用出站 HTTP exchange（`POST /api/v1/agent-runtime/exchange`�
 
 ## SDK 参数对照
 
-| Java `AistioConfig.Builder` | Python `instrument()` | 含义 |
+| Java `ControlPlaneConfig.Builder` | Python `instrument()` | 含义 |
 | --- | --- | --- |
 | `builder(agentKey)` | `agent_key` | 逻辑 Agent 名称，同一应用副本共享 |
 | `tenant` / `namespace` | `tenant` / `namespace` | 范围，默认均为 `default` |
@@ -169,7 +169,7 @@ Python 的 `start_grpc` 是所选运行通道的总开关：即使 `transport="h
 
 ## Java
 
-`agentscope-extensions-aistio` 提供 AgentScope Java `Agent` 的适配器，包含上下文、消息、会话命令、中止与任务查询等合约能力。不同 Agent 的底层实现仍决定具体命令能否执行。
+`agentscope-extensions-controlplane` 提供 AgentScope Java `Agent` 的适配器，包含上下文、消息、会话命令、中止与任务查询等合约能力。不同 Agent 的底层实现仍决定具体命令能否执行。
 
 可选扩展点：`SessionHistorySource` 提供历史，`AgentRuntimeSource` 提供 Workspace/Subagent 目录与运行信息，`AgentTaskStarter` 启动派发任务。`HarnessAgentTaskStarter` 可以结合 Workspace 工厂消费平台定义。只有配置任务 starter 才声明 `agent-task`，不能仅创建 bridge 就视为工作执行器。
 
@@ -209,7 +209,7 @@ Python 的 `start_grpc` 是所选运行通道的总开关：即使 `transport="h
 | `handle_command` / `abort` | 执行真实命令与取消，返回真实失败 |
 | `handle_agent_task` | 为一个派发建立隔离执行，正确处理结果、失败与取消 |
 
-继承 `FrameworkAdapter` 后通过 `aistio.instrument(..., adapter=your_adapter)` 使用，或用 `register_adapter()` 加入注册表。基础类会根据覆写方法推导能力；不要用空实现换取 capability 标志。
+继承 `FrameworkAdapter` 后通过 `agentscope_service.instrument(..., adapter=your_adapter)` 使用，或用 `register_adapter()` 加入注册表。基础类会根据覆写方法推导能力；不要用空实现换取 capability 标志。
 
 ## 从 API 检查适配能力
 

@@ -28,7 +28,7 @@ Validate delivery with one Agent first. Use a Team for dynamic delegation or a W
 
 ### Shared management and observation
 
-The Control Plane (Aistio) manages the Agent catalog, bindings, releases, application identity, task coordination, and public invocations. Managed Agents, External Applications, and Runtime Hosts cooperate through durable execution contracts. Console is the visual interface for API configuration, task inspection, and operations; business users can stay in their own product.
+The Control Plane manages the Agent catalog, bindings, releases, application identity, task coordination, and public invocations. Managed Agents, External Applications, and Runtime Hosts cooperate through durable execution contracts. Console is the visual interface for API configuration, task inspection, and operations; business users can stay in their own product.
 
 Workspaces, Environments, Memory, and Vault organize execution resources. Application identity and business end-user identity require separate handling: different credentials in one Application do not automatically isolate users' tasks. Configure CRM, GitHub, order-system, and other connections in the integration.
 
@@ -54,7 +54,7 @@ In production, the recommended AgentScope Service deployment looks like this:
 | Plane | Owns | Does not own |
 | --- | --- | --- |
 | Gateway | Public entry, authentication, and API routing | Business state and Agent execution |
-| Control Plane (`aistiod`) | Product resources, publishing and Invocations, public events, task coordination, runtime commands | Harness inference and native Managed Session event generation |
+| Control Plane (`service-controlplane`) | Product resources, publishing and Invocations, public events, task coordination, runtime commands | Harness inference and native Managed Session event generation |
 | Dataplane | Managed Harness Runtime, event log, SSE, Turn Lease, HITL, and Work Queue | Direct reads of product Catalog tables |
 | Scheduler | Channel, Cron, outbound jobs, and Self-hosted Hands Workers | The inference loop |
 
@@ -92,7 +92,7 @@ cd agentscope-service
 scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 ```
 
-This starts PostgreSQL, `aistiod`, the data plane, scheduler, and gateway. Local development sets `AISTIO_ENABLE_KUBERNETES=false`; CRD reconcilers and ASDP gRPC are not required for the hosted product flow.
+This starts PostgreSQL, `service-controlplane`, the data plane, scheduler, and gateway. Local development sets `CONTROL_PLANE_ENABLE_KUBERNETES=false`; CRD reconcilers and ASDP gRPC are not required for the hosted product flow.
 Because the project has not been released and v4 deliberately replaces the legacy execution schema, `BUILDER_REBUILD=1` also recreates the disposable `cp`, `rt`, and `dp` development schemas. Use `BUILDER_RESET_DB=0` only when an already-v4 local database must be preserved. The startup script verifies all three schemas and the terminal collaboration/orchestration migrations before reporting success; run `scripts/smoke.sh` for the API-level end-to-end check.
 
 | Item | Value |
@@ -115,7 +115,7 @@ Default users and development secrets are for local use only.
 
 To try BYO Agent registration, use the sample at `agentscope-examples/agents/agentscope-paw`. After it starts, the agent should appear in the Dashboard.
 
-To bring **DeepSeek Harness** into the same fleet, load the Cordis plugin at `agentscope-service/aistio/sdk/dsh` (`@agentscope/dsh-aistio`). It self-registers with aistiod, serves `/agentscope/*`, receives AgentTask events, and uses the same Issue/Comment/Artifact contract as other runtimes. See that directory's [README](aistio/sdk/dsh/README.md).
+To bring **DeepSeek Harness** into the same fleet, load the Cordis plugin at `agentscope-service/service-controlplane/sdk/dsh` (`@agentscope/dsh-controlplane`). It self-registers with service-controlplane, serves `/agentscope/*`, receives AgentTask events, and uses the same Issue/Comment/Artifact contract as other runtimes. See that directory's [README](service-controlplane/sdk/dsh/README.md).
 
 
 ### 3. Stop the stack
@@ -133,7 +133,7 @@ Run the Maven build from the monorepo root so all AgentScope snapshots used by t
 ```bash
 mvn install -DskipTests
 
-cd agentscope-service/aistio
+cd agentscope-service/service-controlplane
 make build
 make test
 ```
@@ -143,7 +143,7 @@ make test
 ```bash
 cd agentscope-service/frontend
 npm install
-npm run build   # emits static assets into ../aistio/ui
+npm run build   # emits static assets into ../service-controlplane/ui
 
 npm run dev     # Vite HMR; /api proxies to the gateway
 ```
@@ -162,7 +162,7 @@ docker compose -f agentscope-service/docker-compose.yml up --build
 | Service | Port | Exposure |
 | --- | ---: | --- |
 | Gateway | 18080 | Public (container port 8080 with Docker Compose) |
-| `aistiod` | 8081 | Internal |
+| `service-controlplane` | 8081 | Internal |
 | Data plane | 8082 | Internal |
 | Scheduler | 8083 | Internal |
 | PostgreSQL | 5432 | Local infrastructure |
@@ -180,10 +180,10 @@ Java services use `builder.*` properties and `BUILDER_*` environment variables. 
 | `BUILDER_DB_URL`, `BUILDER_DB_USER`, `BUILDER_DB_PASSWORD` | Java data-plane database |
 | `BUILDER_CONTROL_URL`, `BUILDER_DATA_URL`, `BUILDER_SCHEDULER_URL` | Internal service endpoints |
 | `BUILDER_E2B_API_KEY` | E2B credential for `sandbox` environments |
-| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | Allows new `local` Environment bindings. Defaults to `false` in `aistiod`; `scripts/dev-up.sh` and the development Compose stack opt in. Keep disabled in production. |
-| `AISTIO_PRODUCT_DSN` | Product database used by `aistiod` |
-| `AISTIO_ENABLE_KUBERNETES` | Enables Aistio CRD reconcilers and Kubernetes integration |
-| `BUILDER_REBUILD=1` | Rebuilds the monorepo/aistiod and, by default, recreates the disposable local `cp`/`rt`/`dp` schemas |
+| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | Allows new `local` Environment bindings. Defaults to `false` in `service-controlplane`; `scripts/dev-up.sh` and the development Compose stack opt in. Keep disabled in production. |
+| `CONTROL_PLANE_PRODUCT_DSN` | Product database used by `service-controlplane` |
+| `CONTROL_PLANE_ENABLE_KUBERNETES` | Enables Control Plane CRD reconcilers and Kubernetes integration |
+| `BUILDER_REBUILD=1` | Rebuilds the monorepo/service-controlplane and, by default, recreates the disposable local `cp`/`rt`/`dp` schemas |
 | `BUILDER_RESET_DB=0` | Preserves an already-v4 local database during a full binary rebuild |
 | `BUILDER_SMOKE_TEST=1` | Runs `scripts/smoke.sh` automatically after health and SQL-schema verification |
 

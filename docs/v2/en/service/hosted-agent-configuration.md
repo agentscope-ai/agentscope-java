@@ -31,7 +31,7 @@ This exposes the selected providers. Their CLIs must already be installed, authe
 | `--capacity` | Maximum concurrent Host executions; defaults to 1 |
 | `--workspace-root` | Task workspace root |
 | `--state-root` | Host identity and durable execution state root |
-| `--runtime-host-binary` | Path to `aistio-runtime-host` |
+| `--runtime-host-binary` | Path to `agentscope-runtime-host` |
 | `AGENTSCOPE_ENROLLMENT_TOKEN` | Short-lived initial enrollment credential |
 | `AGENTSCOPE_RUNTIME_TOKEN` | Existing Runtime Host credential |
 | `AGENTSCOPE_RUNTIME_CONFIG` | Override local configuration file path |

@@ -30,7 +30,7 @@ import io.agentscope.builder.web.managed.service.SessionEventMirror;
 import io.agentscope.builder.web.managed.service.SessionEventScope;
 import org.springframework.stereotype.Component;
 
-/** Projects data-plane session events into the aistiod runtime event store. */
+/** Projects data-plane session events into the service-controlplane runtime event store. */
 @Component
 public class ControlPlaneSessionEventMirror implements SessionEventMirror {
 

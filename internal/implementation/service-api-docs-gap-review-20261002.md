@@ -34,12 +34,12 @@ Managed、External、Hosted 对应运行绑定 `managed`、`external-application
 
 主要实现位置：
 
-- `agentscope-service/aistio/internal/httpapi/server.go:380`：全部平台路由和认证分组。
-- `agentscope-service/aistio/internal/httpapi/agent_catalog_handler.go:314`：create DTO；`:445` 创建；`:732` 生命周期更新；`:796` 绑定；`:1035` Hosted settings。
-- `agentscope-service/aistio/internal/product/managed_definition.go:41`：Managed/Hosted 共享 portable definition。
-- `agentscope-service/aistio/internal/httpapi/collaboration_handler.go:135`、`:694`：Issue 创建/分派；`internal/controller/control_outbox_dispatcher.go:148` 自动派发。
-- `agentscope-service/aistio/internal/httpapi/service_invocation_handler.go:117`：cursor、SSE、snapshot；`service_invocation_capabilities.go:17` 能力矩阵；`service_invocation_webhook.go:45` 出站回调。
-- `agentscope-service/aistio/internal/product/handlers_channels.go:36`、`channel_work_api.go:37`：Channel 管理和协作 API。
+- `agentscope-service/service-controlplane/internal/httpapi/server.go:380`：全部平台路由和认证分组。
+- `agentscope-service/service-controlplane/internal/httpapi/agent_catalog_handler.go:314`：create DTO；`:445` 创建；`:732` 生命周期更新；`:796` 绑定；`:1035` Hosted settings。
+- `agentscope-service/service-controlplane/internal/product/managed_definition.go:41`：Managed/Hosted 共享 portable definition。
+- `agentscope-service/service-controlplane/internal/httpapi/collaboration_handler.go:135`、`:694`：Issue 创建/分派；`internal/controller/control_outbox_dispatcher.go:148` 自动派发。
+- `agentscope-service/service-controlplane/internal/httpapi/service_invocation_handler.go:117`：cursor、SSE、snapshot；`service_invocation_capabilities.go:17` 能力矩阵；`service_invocation_webhook.go:45` 出站回调。
+- `agentscope-service/service-controlplane/internal/product/handlers_channels.go:36`、`channel_work_api.go:37`：Channel 管理和协作 API。
 - `agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/api/AgentSessionCheckpointsController.java:31`：Managed checkpoint/restore/fork/export。
 
 ## 实际缺口与待决策事项
@@ -85,7 +85,7 @@ Managed、External、Hosted 对应运行绑定 `managed`、`external-application
 
 ### P2：外部接入的 Java/Python 运行传输不完全一致
 
-Python `sdk/python/aistio/__init__.py:85` 默认 `transport="http"`，`bridge.py:300` 可选择 HttpPullTransport；不是“Python 只能连接 gRPC 部署”。Java `AistioConfig` 与 `SessionBridge` 当前有 HTTP 注册/查询合约和 GrpcTransport；配置 `startGrpc(false)` 不能据此宣称已经建立派发 AgentTask 的运行通道。
+Python `sdk/python/agentscope_service/__init__.py:85` 默认 `transport="http"`，`bridge.py:300` 可选择 HttpPullTransport；不是“Python 只能连接 gRPC 部署”。Java `ControlPlaneConfig` 与 `SessionBridge` 当前有 HTTP 注册/查询合约和 GrpcTransport；配置 `startGrpc(false)` 不能据此宣称已经建立派发 AgentTask 的运行通道。
 
 建议统一可跨语言使用的 HTTP runtime transport 与完整 starter 示例。适配器能力以真实实现为准，任务 capability 叫 `agent-task`；不要手工填 `execute-task` 或无实现的 true 来通过调度检查。
 
@@ -135,7 +135,7 @@ Workspace、Environment、Memory、Vault 已有独立的资源管理 API，本�
 
 ### Issue 完成策略没有进入普通创建 / 更新 DTO
 
-- `aistio/internal/httpapi/collaboration_handler.go` 的 `issueRequest`（约 116 行）接受标题、负责人、执行目标、验收标准等，但没有 `completionPolicy`；`createIssue` 也没有向 service 请求映射该字段。
+- `service-controlplane/internal/httpapi/collaboration_handler.go` 的 `issueRequest`（约 116 行）接受标题、负责人、执行目标、验收标准等，但没有 `completionPolicy`；`createIssue` 也没有向 service 请求映射该字段。
 - `updateIssue` 的 PATCH DTO 同样没有该字段。底层 `collaboration.CreateIssueRequest` 和 `controlmodel.Issue` 则已有 `CompletionPolicy`；`store/postgres/collaboration_issues.go` 在为空时设置 `review`。
 - 因此普通 Issue API 不能按请求选择 `automatic` 或 `external`。指南明确普通创建采用人工验收，而 Automation 等专项入口可设置自己的完成策略。建议决定是否对普通创建 / 更新开放枚举，并明确谁能变更、工作已运行或已待验收时是否允许变更，以及外部工作源的策略所有权。
 

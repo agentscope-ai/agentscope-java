@@ -12,7 +12,7 @@
 
 | 能力 | 当前实现 | 主要证据 |
 | --- | --- | --- |
-| Session lifecycle | Gateway 把 v1 创建、查询、更新、删除和归档路由到既有控制面；执行接口到 Data Plane | `service-gateway/src/main/resources/application.yml`；Aistio `internal/product/handlers_sessions.go` |
+| Session lifecycle | Gateway 把 v1 创建、查询、更新、删除和归档路由到既有控制面；执行接口到 Data Plane | `service-gateway/src/main/resources/application.yml`；Control Plane `internal/product/handlers_sessions.go` |
 | 持久提交与幂等 | message 字符串、按 user/session/key 幂等、事务接收命令和 accepted 事件 | `AgentSessionTurnsController.CreateTurn`；`SessionTurnInbox.accept` |
 | 后台任务与顺序调度 | 持久命令表、每 session 顺序派发、worker lease、断连独立 | `SessionTurnInbox.dispatch`；`SessionTurnRunner.runDurableTurnAsync` |
 | 执行跟踪与恢复 | 共享原生日志、checkpoint、结果未知工具核对；worker 丢失后修复结果或 interrupted | `SessionNativeLogService`；`SessionTurnInbox.recoverOutcome`；`AgentSessionTraceController` |

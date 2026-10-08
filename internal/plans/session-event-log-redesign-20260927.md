@@ -11,7 +11,7 @@
 - 本次核对的当前分支：`harness-context-redesign`。沿用当前目录和分支；不创建 worktree，不切回旧的 agentscope-2 项目。
 - 工作区已有较多未提交变更，其中包括 compaction 策略与实现。后续实施前记录相关文件基线，保留这些变更，不把无关内容混入提交。
 - 对照代码实际位于 `/Users/ken/agentscope-2/deepseek-harness`、`master`；用户最初提供的 agentscope-3 对照路径不存在。参考其日志、投影、检查点和恢复语义，不移植 Cordis 插件框架。
-- 本计划覆盖 core、harness、现有存储扩展、Aistio、Service、前端会话消费、文档与示例；不包含现在就发布或部署。
+- 本计划覆盖 core、harness、现有存储扩展、Control Plane、Service、前端会话消费、文档与示例；不包含现在就发布或部署。
 
 目标是让 Session Event Log 成为 Harness 交互历史和可恢复会话状态的权威来源。Workspace/Filesystem 继续作为默认存储底座，AgentEvent 保留实时消费接口；模型上下文、会话展示、检索和遥测从已记录的事实派生。
 
@@ -29,7 +29,7 @@
 | `TranscriptStore` | 不可变 segment、Filesystem/ObjectStore 实现 | 复用底层分段能力，演进到有提交语义的日志存储；旧接口作为迁移适配边界 |
 | `WorkspaceManager`、`AbstractFilesystem` | 路径、namespace、local/remote/sandbox 等后端 | 默认存储入口，不另建一套租户路由或对象存储客户端 |
 | `BaseStore`、`StoreItem` | version、putIfVersion | 复用 CAS；审计各实现的真正原子性和成功语义 |
-| Aistio `EventJournal` | 本地持久 outbox、ACK、重传 | 保留传输职责，消费已提交的原生日志，补上持久化导出游标 |
+| Control Plane `EventJournal` | 本地持久 outbox、ACK、重传 | 保留传输职责，消费已提交的原生日志，补上持久化导出游标 |
 | Service 会话事件、SSE、conversation projection | 服务端持久历史与续传 | 保留 transport seq，关联 native seq，统一读取已提交事件 |
 
 已确认的约束：`BaseStore.putIfVersion` 默认返回 false，并非所有实现都天然提供 CAS；`AbstractFilesystem` 目前没有统一暴露带版本的更新接口。不能把“支持远程存储”误当成“每个后端都已支持日志提交”。另外，`ObjectStoreTranscriptStore.appendSegment` 目前未逐项校验 `uploadFiles` 返回的结果，`listSegments` 存在失败返回空列表的路径；新日志链路必须区分失败和真正的空会话。
@@ -59,14 +59,14 @@ flowchart TD
     D --> G[显式注入的其他实现]
     B --> H[实时 AgentEvent 投影]
     C --> I[已提交事件读取 / 通知]
-    I --> J[Transcript / Search / UI / Aistio]
+    I --> J[Transcript / Search / UI / ControlPlane]
     B --> K[会话状态与上下文投影]
     I --> K
     K --> L[HarnessContextBuilder]
     L --> A
 ```
 
-依赖规则：core 定义日志协议、最小存储 SPI、执行记录入口及基础投影，不依赖 harness 的 Workspace。harness 实现 Workspace 后端、存储装配、context/compaction/task/plan 等领域投影。服务端与 Aistio 作为消费者和导出适配器。实时投影可以看见尚未持久化的事件，但它不能冒充可续传的持久历史。
+依赖规则：core 定义日志协议、最小存储 SPI、执行记录入口及基础投影，不依赖 harness 的 Workspace。harness 实现 Workspace 后端、存储装配、context/compaction/task/plan 等领域投影。服务端与 Control Plane 作为消费者和导出适配器。实时投影可以看见尚未持久化的事件，但它不能冒充可续传的持久历史。
 
 建议代码位置（类名在 P0 契约审查时一次性固定）：
 
@@ -75,7 +75,7 @@ flowchart TD
 - `agentscope-harness/.../filesystem/`：可选的版本读/条件写能力适配；复用 BaseStore，不把日志业务塞入 FilesystemTool。
 - `agentscope-harness/.../transcript/`：旧接口适配与新 transcript projection，逐步废弃旧权威写入链。
 
-避免与现有 `io.agentscope.extensions.aistio.model.SessionEvent` 混淆：两者属于原生协议与传输模型，通过显式 adapter 转换，不互相继承。
+避免与现有 `io.agentscope.extensions.controlplane.model.SessionEvent` 混淆：两者属于原生协议与传输模型，通过显式 adapter 转换，不互相继承。
 
 ## 5. 事件协议、内容与扩展
 
@@ -311,10 +311,10 @@ AgentState 其他字段逐项分类：可由事件重建的状态、可重建缓
 - Fork 指定已提交的边界及 lineage；第一版选择完整可读前缀复制，或有明确引用保留规则的不可变前缀共享。默认优先完整复制以减少 GC 耦合。
 - UI 可合并时间线，不能把不同 session 的 seq 当全局顺序。
 
-## 9. Service、Aistio 与外部消费
+## 9. Service、Control Plane 与外部消费
 
 1. 在 Harness 中保留原生事件，不把原生日志先转换为当前 UI message 再保存。Service 继续执行现有的 native log + conversation projection 约定。
-2. Aistio 的已提交日志 exporter 以持久游标读取；先可靠进入现有 outbox，再推进该消费者游标。进程崩溃后可以从日志补导出，避免 commit 成功但 onNext 尚未执行造成永久漏报。
+2. Control Plane 的已提交日志 exporter 以持久游标读取；先可靠进入现有 outbox，再推进该消费者游标。进程崩溃后可以从日志补导出，避免 commit 成功但 onNext 尚未执行造成永久漏报。
 3. 控制面 ACK 后按现有规则清理 outbox。原生事件使用 `(SessionKey, nativeSeq)`/eventId 去重；transport seq 和 native seq 同时保留，不能假定数值一致或覆盖现有平台入站事件的序号。
 4. 一对多投影的显示项使用稳定子标识；流式 preview 与完整消息、工具结果关联，避免重复卡片和重复 token 统计。
 5. 持久 SSE 使用平台现有的连续 transport cursor；若提供原生日志读取接口，其游标明确属于 native seq。API 响应中不混淆这两种位置。
@@ -407,9 +407,9 @@ shadow 失败不能被误当作 event-log 正常运行；进入 event-log 后提
 
 **里程碑 B**：event-log 模式成为完整可用的 Harness 会话模式；会话、上下文、内置可恢复状态均可通过日志恢复。只有到此阶段才对选定新 session 启用该模式。
 
-### P6：Service、Aistio、查询和 UI 接通
+### P6：Service、Control Plane、查询和 UI 接通
 
-**范围**：AistioObserverMiddleware/原生日志 exporter、EventJournal、Service SessionEventMapper、持久事件 API/SSE、conversation reducer、SessionSearchTool 和相关历史读取方。
+**范围**：ControlPlaneObserverMiddleware/原生日志 exporter、EventJournal、Service SessionEventMapper、持久事件 API/SSE、conversation reducer、SessionSearchTool 和相关历史读取方。
 
 **工作**：实现 P0/P1 已固定的公共 Agent API、类型化事件、SDK、Items/Turn 查询与 SSE 契约；持久导出游标与 outbox 衔接、native/transport 身份映射、保留原 payload、timeline/request 检查接口、projection 统一、历史分页与增量读取。旧 AgentEvent 消费者继续使用兼容接口；新 API 的 opaque cursor 与旧数字 seq 通过版本化 adapter 区分。
 

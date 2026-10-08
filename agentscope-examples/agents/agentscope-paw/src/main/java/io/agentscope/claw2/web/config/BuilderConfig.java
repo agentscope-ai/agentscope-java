@@ -22,7 +22,7 @@ import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.SessionLogStore;
-import io.agentscope.extensions.aistio.adapter.AgentScopeAdapter;
+import io.agentscope.extensions.controlplane.adapter.AgentScopeAdapter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
@@ -122,7 +122,7 @@ public class BuilderConfig {
     public ClawBootstrap builderBootstrap(
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
-            Optional<AgentScopeAdapter> aistioAdapter,
+            Optional<AgentScopeAdapter> controlPlaneAdapter,
             Optional<SessionLogStore> sessionLogStore)
             throws IOException {
         Path home = resolveClawHome();
@@ -152,9 +152,10 @@ public class BuilderConfig {
         sessionLogStore.ifPresent(
                 store -> builder.configureAllAgents(b -> b.sessionLogStore(store)));
 
-        // A ReActAgent's middleware list is fixed at build time, so aistio has to be wired in here
+        // A ReActAgent's middleware list is fixed at build time, so controlplane has to be wired in
+        // here
         // rather than when the bridge attaches — without it there is no session to observe.
-        aistioAdapter.ifPresent(
+        controlPlaneAdapter.ifPresent(
                 adapter -> builder.configureAllAgents(b -> b.middleware(adapter.middleware())));
 
         ClawBootstrap bootstrap = builder.build();

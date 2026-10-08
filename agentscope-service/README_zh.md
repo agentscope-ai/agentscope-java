@@ -28,7 +28,7 @@ Endpoint 定义输入输出契约和发布版本。应用可以通过查询、SS
 
 ### 统一管理与观察
 
-Control Plane（Aistio）管理 Agent 目录、绑定、发布、应用身份、任务协调与公共调用。Managed Agent、External Application 和 Runtime Host 通过持久执行契约协作。Console 提供 API 能力的可视化配置、任务查看与运维入口；业务用户可以留在自己的产品中。
+Control Plane管理 Agent 目录、绑定、发布、应用身份、任务协调与公共调用。Managed Agent、External Application 和 Runtime Host 通过持久执行契约协作。Console 提供 API 能力的可视化配置、任务查看与运维入口；业务用户可以留在自己的产品中。
 
 Workspace、Environment、Memory 和 Vault 组织执行资源。应用身份与业务终端用户身份需要分别处理；共享 Application 的不同凭证不会自动提供用户级任务隔离。CRM、GitHub、订单系统等连接由接入方配置。
 
@@ -55,7 +55,7 @@ Workspace、Environment、Memory 和 Vault 组织执行资源。应用身份与�
 | 平面 | 负责 | 不负责 |
 | --- | --- | --- |
 | Gateway | 公共入口、认证与 API 路由 | 业务状态与 Agent 执行 |
-| Control Plane（`aistiod`） | 产品资源、发布与 Invocation、公共事件、任务协调和运行时命令 | Harness 推理、原生 Managed Session 事件生成 |
+| Control Plane（`service-controlplane`） | 产品资源、发布与 Invocation、公共事件、任务协调和运行时命令 | Harness 推理、原生 Managed Session 事件生成 |
 | Dataplane | Managed Harness Runtime、事件日志、SSE、Turn Lease、HITL 与 Work Queue | 直读产品 Catalog 表 |
 | Scheduler | Channel、Cron、出站任务与 Self-hosted Hands Worker | 推理循环 |
 
@@ -93,7 +93,7 @@ cd agentscope-service
 scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 ```
 
-脚本会启动 PostgreSQL、`aistiod`、Dataplane、Scheduler 和 Gateway。本地开发设置 `AISTIO_ENABLE_KUBERNETES=false`，Hosted Product 流程无需 CRD Reconciler 或 ASDP gRPC。
+脚本会启动 PostgreSQL、`service-controlplane`、Dataplane、Scheduler 和 Gateway。本地开发设置 `CONTROL_PLANE_ENABLE_KUBERNETES=false`，Hosted Product 流程无需 CRD Reconciler 或 ASDP gRPC。
 项目尚未发布，v4 又明确替换了旧执行 schema，因此 `BUILDER_REBUILD=1` 会同时重建可丢弃的本地 `cp`、`rt`、`dp` schema。只有在需要保留已经是 v4 的本地数据时才设置 `BUILDER_RESET_DB=0`。启动脚本在报告成功前会检查三个 schema 和终态协作/编排 migration；执行 `scripts/smoke.sh` 可运行 API 级端到端验收。
 
 | 项目 | 值 |
@@ -111,7 +111,7 @@ scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 并在后台启动 Runtime Host。开发环境可直接从源码安装两个相邻的可执行文件：
 
 ```bash
-cd aistio
+cd service-controlplane
 make install-runtime-cli PREFIX="$HOME/.local"
 agentscope connect
 ```
@@ -148,7 +148,7 @@ task-scoped `agentscope` CLI。Agent 可以用 `agentscope task context` 读取�
 
 体验 BYO Agent 注册时，可使用仓库示例 `agentscope-examples/agents/agentscope-paw`；启动后即可在 Dashboard 中看到智能体注册成功。
 
-把 **DeepSeek Harness** 作为独立运行时接入时，使用 `agentscope-service/aistio/sdk/dsh`（`@agentscope/dsh-aistio`）Cordis 插件：向 aistiod 自注册、提供 `/agentscope/*` 契约、接收 AgentTask，并与其他 runtime 使用同一 Issue/Comment/Artifact 协议。安装与配置见该目录 [README_zh.md](aistio/sdk/dsh/README_zh.md)。
+把 **DeepSeek Harness** 作为独立运行时接入时，使用 `agentscope-service/service-controlplane/sdk/dsh`（`@agentscope/dsh-controlplane`）Cordis 插件：向 service-controlplane 自注册、提供 `/agentscope/*` 契约、接收 AgentTask，并与其他 runtime 使用同一 Issue/Comment/Artifact 协议。安装与配置见该目录 [README_zh.md](service-controlplane/sdk/dsh/README_zh.md)。
 
 
 ### 4. 停止环境
@@ -166,7 +166,7 @@ scripts/dev-down.sh
 ```bash
 mvn install -DskipTests
 
-cd agentscope-service/aistio
+cd agentscope-service/service-controlplane
 make build
 make test
 ```
@@ -176,7 +176,7 @@ make test
 ```bash
 cd agentscope-service/frontend
 npm install
-npm run build   # 静态资源输出到 ../aistio/ui
+npm run build   # 静态资源输出到 ../service-controlplane/ui
 
 npm run dev     # Vite HMR，/api 代理到 Gateway
 ```
@@ -195,7 +195,7 @@ docker compose -f agentscope-service/docker-compose.yml up --build
 | 服务 | 端口 | 暴露方式 |
 | --- | ---: | --- |
 | Gateway | 18080 | 对外（Docker Compose 容器内仍为 8080） |
-| `aistiod` | 8081 | 内部 |
+| `service-controlplane` | 8081 | 内部 |
 | Dataplane | 8082 | 内部 |
 | Scheduler | 8083 | 内部 |
 | PostgreSQL | 5432 | 本地基础设施 |
@@ -213,10 +213,10 @@ Java Service 使用 `builder.*` 属性与 `BUILDER_*` 环境变量。各平面�
 | `BUILDER_DB_URL`、`BUILDER_DB_USER`、`BUILDER_DB_PASSWORD` | Java Dataplane 数据库 |
 | `BUILDER_CONTROL_URL`、`BUILDER_DATA_URL`、`BUILDER_SCHEDULER_URL` | 内部服务地址 |
 | `BUILDER_E2B_API_KEY` | `sandbox` Environment 的 E2B 凭据 |
-| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | 是否允许新的 `local` Environment 绑定。`aistiod` 默认 `false`，`scripts/dev-up.sh` 和开发用 Compose 显式开启；生产环境应保持关闭。 |
-| `AISTIO_PRODUCT_DSN` | `aistiod` 使用的产品数据库 |
-| `AISTIO_ENABLE_KUBERNETES` | 是否启用 Aistio CRD Reconciler 与 Kubernetes 集成 |
-| `BUILDER_REBUILD=1` | 重建 Monorepo/aistiod，并默认重建可丢弃的本地 `cp`/`rt`/`dp` schema |
+| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | 是否允许新的 `local` Environment 绑定。`service-controlplane` 默认 `false`，`scripts/dev-up.sh` 和开发用 Compose 显式开启；生产环境应保持关闭。 |
+| `CONTROL_PLANE_PRODUCT_DSN` | `service-controlplane` 使用的产品数据库 |
+| `CONTROL_PLANE_ENABLE_KUBERNETES` | 是否启用 Control Plane CRD Reconciler 与 Kubernetes 集成 |
+| `BUILDER_REBUILD=1` | 重建 Monorepo/service-controlplane，并默认重建可丢弃的本地 `cp`/`rt`/`dp` schema |
 | `BUILDER_RESET_DB=0` | 完整重建二进制时保留已经是 v4 的本地数据库 |
 | `BUILDER_SMOKE_TEST=1` | 健康检查和 SQL schema 校验通过后自动运行 `scripts/smoke.sh` |
 

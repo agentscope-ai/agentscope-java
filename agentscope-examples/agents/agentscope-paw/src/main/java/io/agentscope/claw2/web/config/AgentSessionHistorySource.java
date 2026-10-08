@@ -17,9 +17,9 @@ package io.agentscope.claw2.web.config;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.session.SessionTranscriptExport;
-import io.agentscope.extensions.aistio.adapter.SessionHistorySource;
-import io.agentscope.extensions.aistio.model.MessagePage;
-import io.agentscope.extensions.aistio.model.SessionEvent;
+import io.agentscope.extensions.controlplane.adapter.SessionHistorySource;
+import io.agentscope.extensions.controlplane.model.MessagePage;
+import io.agentscope.extensions.controlplane.model.SessionEvent;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +28,7 @@ import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/** Reads committed native session history for the aistio messages contract. */
+/** Reads committed native session history for the controlplane messages contract. */
 public final class AgentSessionHistorySource implements SessionHistorySource {
 
     private static final Logger LOG = Logger.getLogger(AgentSessionHistorySource.class.getName());
@@ -64,7 +64,7 @@ public final class AgentSessionHistorySource implements SessionHistorySource {
             }
             return items.isEmpty() ? Optional.empty() : Optional.of(items);
         } catch (RuntimeException e) {
-            LOG.log(Level.FINE, "aistio: failed to read session log for " + sessionId, e);
+            LOG.log(Level.FINE, "controlplane: failed to read session log for " + sessionId, e);
             return Optional.empty();
         }
     }

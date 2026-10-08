@@ -39,7 +39,7 @@
 | Console | 真实提交/SSE，刷新保留 Invocation 选择；审批草稿在后台更新期间保持，刷新恢复同一待办；取消到 cancelled 后再刷新，页面无异常 | [客户端报告](client-regression-20261002.md#real-browser-service-invocation-api) |
 | DP outbox 重启 | 停止 DP 时 1,449 行尚未投递；重启后总计 2,987 行全部送达，pending=0，最大投递尝试计数为 1 | [Java 报告](session-java-regression-20261002.md) |
 
-可重复执行的公共 HTTP 测试已保存在 [service_api_regression.py](../../agentscope-service/aistio/test/e2e/service_api_regression.py)，启动条件见同目录 [README](../../agentscope-service/aistio/test/e2e/README.md)。故障实验及 Managed 测试的临时 driver、JSON、日志保留在 `/tmp/agentscope-regression-20261002`。早期失败日志保留用于说明缺陷，不与最终复验混算。
+可重复执行的公共 HTTP 测试已保存在 [service_api_regression.py](../../agentscope-service/service-controlplane/test/e2e/service_api_regression.py)，启动条件见同目录 [README](../../agentscope-service/service-controlplane/test/e2e/README.md)。故障实验及 Managed 测试的临时 driver、JSON、日志保留在 `/tmp/agentscope-regression-20261002`。早期失败日志保留用于说明缺陷，不与最终复验混算。
 
 ## 数据一致性、并发和 webhook
 

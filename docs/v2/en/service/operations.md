@@ -98,7 +98,7 @@ Gateway health does not verify model or tool execution. Inspect Dataplane for Ma
 
 ## Restarting did not reset the administrator password
 
-This is expected. `AISTIO_BOOTSTRAP_PASSWORD` applies only to an empty account table. Change existing passwords through Profile or administrator account management rather than regenerating `.env`.
+This is expected. `CONTROL_PLANE_BOOTSTRAP_PASSWORD` applies only to an empty account table. Change existing passwords through Profile or administrator account management rather than regenerating `.env`.
 
 ## Vault decryption fails
 
@@ -149,3 +149,9 @@ Keep the session ID, turn ID, latest event ID, HTTP status and sanitized error. 
 | Heartbeats but no text | Check task, tool and model state; deltas may be unavailable. If content arrives in bursts, inspect proxy buffering |
 
 See [Sessions and tasks](/v2/en/service/session-event-log) and [SSE replay](/v2/en/service/sse-events). Applications retain Sessions, Turns, and cursors without managing internal runtime identity mappings.
+
+## Updating Control Plane naming
+
+The Go component lives in `agentscope-service/service-controlplane` and its server binary is `service-controlplane`. When updating an existing installation, update build paths, startup commands, deployment manifests, and environment variables together. Control Plane configuration uses the `CONTROL_PLANE_` prefix; HTTP clients use `CONTROL_PLANE_HTTP`, while the CLI and Runtime Host use `CONTROL_PLANE_URL`. The CLI is `agentscope` and the Runtime Host executable is `agentscope-runtime-host`. Use the environment templates shipped with the same Service version to avoid combining old configuration with new binaries.
+
+The Java integration is `agentscope-extensions-controlplane`, with `io.agentscope.extensions.controlplane.ControlPlane` and `ControlPlaneConfig`. The Python distribution is `agentscope-service-sdk`, imported as `agentscope_service`; the DSH plugin is `@agentscope/dsh-controlplane`. Update dependencies and imports before redeploying connected agents. If you customize journal paths, Helm resource names, or Console preferences, migrate those local settings as part of the upgrade. Database schemas and the ASDP `agentscope.protocol.v1` wire contract keep their existing identities.

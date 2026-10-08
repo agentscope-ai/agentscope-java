@@ -35,7 +35,7 @@ Add the published extension version to your application:
 ```xml
 <dependency>
   <groupId>io.agentscope</groupId>
-  <artifactId>agentscope-extensions-aistio</artifactId>
+  <artifactId>agentscope-extensions-controlplane</artifactId>
   <version>${agentscope.version}</version>
 </dependency>
 ```
@@ -43,17 +43,17 @@ Add the published extension version to your application:
 This fragment assumes an existing `agent`. Supply deployment environment variables; the control plane must reach `AGENT_CONTRACT_URL`:
 
 ```java
-import io.agentscope.extensions.aistio.Aistio;
-import io.agentscope.extensions.aistio.AistioConfig;
-import io.agentscope.extensions.aistio.SessionBridge;
+import io.agentscope.extensions.controlplane.ControlPlane;
+import io.agentscope.extensions.controlplane.ControlPlaneConfig;
+import io.agentscope.extensions.controlplane.SessionBridge;
 
-SessionBridge bridge = Aistio.instrument(agent,
-    AistioConfig.builder("report-service")
-        .controlPlaneHttp(System.getenv("AISTIO_CONTROL_HTTP"))
-        .registrationCredential(System.getenv("AISTIO_REGISTRATION_CREDENTIAL"))
-        .tenant(System.getenv("AISTIO_TENANT"))
-        .namespace(System.getenv("AISTIO_NAMESPACE"))
-        .instanceKey(System.getenv("AISTIO_INSTANCE_KEY"))
+SessionBridge bridge = ControlPlane.instrument(agent,
+    ControlPlaneConfig.builder("report-service")
+        .controlPlaneHttp(System.getenv("CONTROL_PLANE_HTTP"))
+        .registrationCredential(System.getenv("CONTROL_PLANE_REGISTRATION_CREDENTIAL"))
+        .tenant(System.getenv("CONTROL_PLANE_TENANT"))
+        .namespace(System.getenv("CONTROL_PLANE_NAMESPACE"))
+        .instanceKey(System.getenv("CONTROL_PLANE_INSTANCE_KEY"))
         .contractHttpPort(18090)
         .publicBaseUrl(System.getenv("AGENT_CONTRACT_URL"))
         .startHttpRegister(true)
@@ -62,7 +62,7 @@ SessionBridge bridge = Aistio.instrument(agent,
 // Call bridge.close() during application shutdown.
 ```
 
-Obtain `registrationCredential` through the [registration guide](/v2/en/service/register-agentscope-agent) and supply it as `AISTIO_REGISTRATION_CREDENTIAL`. The current Java bridge skips automatic registration when both the registration credential and bootstrap setting are empty. The preview registration endpoint itself does not authenticate callers; restrict it to a controlled network or gateway. The returned registration credential authenticates subsequent runtime connections and does not protect registration itself. Contract history and commands depend on the adapter. Java event reporting also requires adapter middleware at Agent construction and an ASDP runtime connection.
+Obtain `registrationCredential` through the [registration guide](/v2/en/service/register-agentscope-agent) and supply it as `CONTROL_PLANE_REGISTRATION_CREDENTIAL`. The current Java bridge skips automatic registration when both the registration credential and bootstrap setting are empty. The preview registration endpoint itself does not authenticate callers; restrict it to a controlled network or gateway. The returned registration credential authenticates subsequent runtime connections and does not protect registration itself. Contract history and commands depend on the adapter. Java event reporting also requires adapter middleware at Agent construction and an ASDP runtime connection.
 
 <span id="python-with-asdp" />
 
@@ -71,23 +71,23 @@ Obtain `registrationCredential` through the [registration guide](/v2/en/service/
 Install the SDK version selected for your release:
 
 ```bash
-python -m pip install "aistio-sdk==$AISTIO_SDK_VERSION"
+python -m pip install "agentscope-service-sdk==$CONTROL_PLANE_SDK_VERSION"
 ```
 
 The fragment assumes an existing framework `target`. Adapters include AgentScope, OpenAI Agents, LangChain and ADK; supported methods differ.
 
 ```python
 import os
-import aistio
+import agentscope_service
 
-bridge = aistio.instrument(
+bridge = agentscope_service.instrument(
     target,
     agent_key="report-service",
-    instance_key=os.environ["AISTIO_INSTANCE_KEY"],
-    tenant=os.environ["AISTIO_TENANT"],
-    namespace=os.environ["AISTIO_NAMESPACE"],
+    instance_key=os.environ["CONTROL_PLANE_INSTANCE_KEY"],
+    tenant=os.environ["CONTROL_PLANE_TENANT"],
+    namespace=os.environ["CONTROL_PLANE_NAMESPACE"],
     transport="http",
-    control_plane_http=os.environ["AISTIO_CONTROL_HTTP"],
+    control_plane_http=os.environ["CONTROL_PLANE_HTTP"],
     contract_http_port=18090,
     contract_http_base_url=os.environ["AGENT_CONTRACT_URL"],
     event_journal_dir="/var/lib/report-agent/events",
@@ -140,7 +140,7 @@ Agent status `disabled` prevents subsequent scheduling; `archived` archives the 
 
 ## SDK settings
 
-| Java `AistioConfig.Builder` | Python `instrument()` | Meaning |
+| Java `ControlPlaneConfig.Builder` | Python `instrument()` | Meaning |
 | --- | --- | --- |
 | `builder(agentKey)` | `agent_key` | Logical Agent name shared by replicas |
 | `tenant` / `namespace` | `tenant` / `namespace` | Scope; both default to `default` |
@@ -169,7 +169,7 @@ Python's `start_grpc` controls the selected runtime channel. Setting it to false
 
 ## Java
 
-`agentscope-extensions-aistio` adapts AgentScope Java `Agent` objects. Its contract includes context, messages, session commands, abort and task queries. The underlying Agent still determines whether a specific operation can execute.
+`agentscope-extensions-controlplane` adapts AgentScope Java `Agent` objects. Its contract includes context, messages, session commands, abort and task queries. The underlying Agent still determines whether a specific operation can execute.
 
 Optional extensions include `SessionHistorySource` for history, `AgentRuntimeSource` for Workspace/Subagent inventory and runtime details, and `AgentTaskStarter` for dispatched work. `HarnessAgentTaskStarter` can consume platform definitions through a Workspace factory. The adapter advertises `agent-task` only when a task starter is configured; creating a bridge alone does not create a work executor.
 
@@ -209,7 +209,7 @@ External and Hosted integrations are different even when names overlap: Claude A
 | `handle_command` / `abort` | Execute real commands/cancellation and report actual failures |
 | `handle_agent_task` | Create isolated execution for dispatched work, including completion, failure and cancellation |
 
-Subclass `FrameworkAdapter` and pass it to `aistio.instrument(..., adapter=your_adapter)`, or register it with `register_adapter()`. The base class derives capabilities from overridden methods; empty implementations must not be used to claim support.
+Subclass `FrameworkAdapter` and pass it to `agentscope_service.instrument(..., adapter=your_adapter)`, or register it with `register_adapter()`. The base class derives capabilities from overridden methods; empty implementations must not be used to claim support.
 
 ## Inspect adapter capabilities through the API
 

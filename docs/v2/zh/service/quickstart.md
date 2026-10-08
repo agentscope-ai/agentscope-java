@@ -60,7 +60,7 @@ docker compose ps
 curl -fsS http://localhost:18080/actuator/health
 ```
 
-确认各组件健康后，在浏览器中打开 `http://localhost:18080`。首次部署可以使用用户名 `admin` 和 `.env` 中 `AISTIO_BOOTSTRAP_PASSWORD` 的值登录，然后在 Profile 中修改密码。初始管理员只会在用户库为空时创建，所以重启已有部署不会重置账号或恢复初始密码。
+确认各组件健康后，在浏览器中打开 `http://localhost:18080`。首次部署可以使用用户名 `admin` 和 `.env` 中 `CONTROL_PLANE_BOOTSTRAP_PASSWORD` 的值登录，然后在 Profile 中修改密码。初始管理员只会在用户库为空时创建，所以重启已有部署不会重置账号或恢复初始密码。
 
 ## 3. 准备 API 身份与空间
 
@@ -161,7 +161,7 @@ flowchart LR
 | Kubernetes / Helm | 由平台团队管理的安装 | PostgreSQL、共享 Workspace 存储、Artifact 存储、Secret、域名与 TLS |
 | 已有团队平台 | 应用开发者直接使用 | 服务地址、账号、授权空间、可用模型与 Environment |
 
-当前完整 Service Chart 为每个组件配置一个副本，并采用 Recreate 方式更新，所以升级时需要安排维护窗口，不能据此假定服务具备多副本高可用或无停机升级能力。Kubernetes-native Aistio/ASDP 是为相应 SDK 和运行传输提供的另一种部署模式，应根据接入要求选择；它并不是需要叠加到完整 Service Chart 上的一组必装组件。
+当前完整 Service Chart 为每个组件配置一个副本，并采用 Recreate 方式更新，所以升级时需要安排维护窗口，不能据此假定服务具备多副本高可用或无停机升级能力。Kubernetes-native ControlPlane/ASDP 是为相应 SDK 和运行传输提供的另一种部署模式，应根据接入要求选择；它并不是需要叠加到完整 Service Chart 上的一组必装组件。
 
 平台交付给业务团队时，管理员需要提供可访问的 Service 地址和账号，并说明该账号可以使用哪个 Namespace。使用者还需要知道默认模型是否可用、应选择哪个工具环境，以及业务资料放在哪里、如何获得访问权限。有了这些信息，就可以按[第一个托管 Agent](/v2/zh/service/create-managed-agent)完成模型与文件工具验证，再通过[应用接入指南](/v2/zh/service/service-api)检查业务应用的调用过程。
 

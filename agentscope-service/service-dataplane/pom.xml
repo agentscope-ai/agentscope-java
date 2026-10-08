@@ -55,10 +55,10 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
-        <!-- Aistio transport and distributed-store adapters. -->
+        <!-- ControlPlane transport and distributed-store adapters. -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-aistio</artifactId>
+            <artifactId>agentscope-extensions-controlplane</artifactId>
         </dependency>
 
         <!-- Managed Environment type=sandbox → E2B cloud -->

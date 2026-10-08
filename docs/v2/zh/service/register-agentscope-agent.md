@@ -50,9 +50,9 @@ curl -sS "$SERVICE_URL/api/v1/agent-registrations" \
 
 正式接入通常由 SDK 完成注册、心跳和运行协议交互，不需要应用每次启动都手写上面的 curl。
 
-Java 应用使用 `agentscope-extensions-aistio`，通过 `Aistio.instrument(agent, config)` 获得 `SessionBridge`。配置 Service HTTP 地址、范围、稳定的实例 key，以及可访问的应用合约地址。完整依赖和接入片段见 [External Agent 参考](/v2/zh/service/external-agent#java添加-http-注册与合约)。HTTP 注册与合约负责目录、查询和适配器支持的命令；接收平台派发的 AgentTask 还需要配置 `AgentTaskStarter`，并连接当前 Java SDK 支持的 ASDP 运行通道。退出应用时关闭 bridge。
+Java 应用使用 `agentscope-extensions-controlplane`，通过 `ControlPlane.instrument(agent, config)` 获得 `SessionBridge`。配置 Service HTTP 地址、范围、稳定的实例 key，以及可访问的应用合约地址。完整依赖和接入片段见 [External Agent 参考](/v2/zh/service/external-agent#java添加-http-注册与合约)。HTTP 注册与合约负责目录、查询和适配器支持的命令；接收平台派发的 AgentTask 还需要配置 `AgentTaskStarter`，并连接当前 Java SDK 支持的 ASDP 运行通道。退出应用时关闭 bridge。
 
-Python 的 `aistio.instrument()` 支持 HTTP 运行传输（`transport="http"`，使用 `control_plane_http`），也支持显式选择 gRPC。任务入口由框架适配器的 `handle_agent_task` 实现。选择适配器时先查看[框架与适配能力](/v2/zh/service/external-agent#external-agent-frameworks)，确认所需的命令、事件和任务能力确实可用。
+Python 的 `agentscope_service.instrument()` 支持 HTTP 运行传输（`transport="http"`，使用 `control_plane_http`），也支持显式选择 gRPC。任务入口由框架适配器的 `handle_agent_task` 实现。选择适配器时先查看[框架与适配能力](/v2/zh/service/external-agent#external-agent-frameworks)，确认所需的命令、事件和任务能力确实可用。
 
 注册请求中的 `capabilities` 是能力声明，不会替你实现执行逻辑。例如，`agent-task` 表示接收平台任务；Java 适配器配置任务 starter 后才声明它，Python 适配器则根据实际任务方法与运行传输配置判断。`session-abort` 表示能够中止当前执行，也必须有对应实现。
 

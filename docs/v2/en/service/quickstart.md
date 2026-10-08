@@ -60,7 +60,7 @@ docker compose ps
 curl -fsS http://localhost:18080/actuator/health
 ```
 
-Once the components are healthy, open `http://localhost:18080` in your browser. On a new deployment, sign in as `admin` with the value of `AISTIO_BOOTSTRAP_PASSWORD` from `.env`, then change the password in Profile. The initial administrator is created only when the user database is empty, so restarting an existing deployment does not reset its accounts or restore the initial password.
+Once the components are healthy, open `http://localhost:18080` in your browser. On a new deployment, sign in as `admin` with the value of `CONTROL_PLANE_BOOTSTRAP_PASSWORD` from `.env`, then change the password in Profile. The initial administrator is created only when the user database is empty, so restarting an existing deployment does not reset its accounts or restore the initial password.
 
 ## 3. Prepare API identity and namespace
 
@@ -161,7 +161,7 @@ For local evaluation, continue with Compose. A platform team maintaining a longe
 | Kubernetes / Helm | Installation operated by a platform team | PostgreSQL, shared Workspace storage, Artifact storage, Secrets, domain, and TLS |
 | Existing team platform | Direct use by application developers | Service address, account, authorized scope, available model and Environment |
 
-The current complete Service Chart configures one replica per component and uses Recreate updates, so upgrades require a maintenance window. Do not assume this installation provides multi-replica high availability or upgrades without downtime. Kubernetes-native Aistio/ASDP is a separate deployment mode for the corresponding SDK and runtime transport requirements; it is not an additional set of mandatory components to install over the complete Service Chart.
+The current complete Service Chart configures one replica per component and uses Recreate updates, so upgrades require a maintenance window. Do not assume this installation provides multi-replica high availability or upgrades without downtime. Kubernetes-native ControlPlane/ASDP is a separate deployment mode for the corresponding SDK and runtime transport requirements; it is not an additional set of mandatory components to install over the complete Service Chart.
 
 When handing the platform over to an application team, administrators provide an accessible Service address and account and explain which Namespace the account can use. Users also need to know whether the default model is ready, which tool environment to select, and where business materials reside and how to access them. With this information, they can verify the model and file tools through [Their first managed Agent](/v2/en/service/create-managed-agent), then check application calls through the [Session API integration guide](/v2/en/service/service-api).
 

@@ -8,13 +8,13 @@
 
 - 新建 Docker 容器 `agentscope-regression-20261002-go`，镜像 `postgres:17`，仅绑定 `127.0.0.1:54780`，没有挂载用户数据目录。
 - 新测试账户 `regression`，密码 `regression_only_20261002`，仅用于该临时容器。
-- Go 测试 DSN：`postgres://regression:regression_only_20261002@127.0.0.1:54780/aistio_go?sslmode=disable`。
-- 并行 HTTP E2E 使用 `aistio_e2e`；Java 使用 `agentscope_java`，三者数据库独立。新增测试还在各自唯一 schema 中执行并自动删除 schema。
+- Go 测试 DSN：`postgres://regression:regression_only_20261002@127.0.0.1:54780/controlplane_go?sslmode=disable`。
+- 并行 HTTP E2E 使用 `controlplane_e2e`；Java 使用 `agentscope_java`，三者数据库独立。新增测试还在各自唯一 schema 中执行并自动删除 schema。
 - 本轮容器保留至三个任务完成；最后可运行 `/usr/local/bin/docker stop agentscope-regression-20261002-go` 清理该 `--rm` 容器。不会停止或重置用户现有数据库。
 
 ## 已执行命令及结果
 
-工作目录均为 `agentscope-service/aistio`。
+工作目录均为 `agentscope-service/controlplane`。
 
 | 验证 | 结果 | 日志 |
 | --- | --- | --- |
@@ -23,7 +23,7 @@
 | 修复后设置专用 PG DSN，同命令全套 | PASS：38 个测试包，13 个无测试包；所有启用的 PG 集成用例真实执行 | `/tmp/agentscope-go-regression-postgres-fixed-20261002.log` |
 | `go test -p 2 -count=1 -v ./internal/store/postgres -run TestServiceMigrations` | PASS：2 项 | `/tmp/agentscope-go-regression-migrations-20261002.log` |
 | `go test -p 2 -count=1 -v ./internal/httpapi -run TestServicePostgres` | PASS：3 项 | `/tmp/agentscope-go-regression-replicas-20261002.log` |
-| `go build -p 4 ./cmd/aistiod ./cmd/aistioctl ./cmd/aistio-runtime-host` | PASS | `/tmp/agentscope-go-regression-build-20261002.log` |
+| `go build -p 4 ./cmd/service-controlplane ./cmd/agentscope ./cmd/agentscope-runtime-host` | PASS | `/tmp/agentscope-go-regression-build-20261002.log` |
 | `go test -race -p 2 -count=1 ./internal/asdp ./internal/controller ./internal/invocation ./internal/store/memory ./internal/store/postgres ./internal/httpapi`，专用 PG DSN | PASS：6 个包，无 race 报告 | `/tmp/agentscope-go-regression-race-20261002.log` |
 | 设置本轮下载的 `KUBEBUILDER_ASSETS` 后 `go test -p 2 -count=1 -v ./internal/controller` | PASS：28 个顶层测试、32 个含子测试结果，0 skip；真实隔离 etcd/apiserver | `/tmp/agentscope-go-regression-envtest-20261002.log` |
 | `go test -p 2 -count=1 -v ./internal/httpapi -run TestServicePostgresASDPCapability`，专用 PG DSN | PASS；包含池大小 1 的回归 | `/tmp/agentscope-go-regression-capabilities-pool-20261002.log` |

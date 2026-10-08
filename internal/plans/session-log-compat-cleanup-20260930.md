@@ -9,7 +9,7 @@
 - session_history / session_search / session_list 统一读取原生日志。发现由 SessionLogStore.list 和 AtomicSessionStorage.listPaths 扩展，本地与分布式 Filesystem 均可接入；范围受当前 namespace 限制。
 - EVENT_LOG 模式不再以旧 AgentStateStore 保存会话或 action 观察记录。保留 LEGACY 独立状态存储，以及 sandbox 基础设施独立元数据。旧 v1 数据需要显式导入，不再在启动时隐式读取。
 - 删除 SHADOW 双写模式，旧 shadow header 明确拒绝加载。原生管理操作通过租约与版本检查提交 checkpoint；clearContext 保留完整历史，get→修改→save 保留轻量兼容，推荐 updateAgentState。
-- Service 删除 SessionEventMapper 及 thinking/tool/model 累积写入；旧 Chat、Session 和消息格式在读取边界转换，保留原 ID/seq。命令接收与 Endpoint 关联元数据、平台调度/审批、外部 provider 及 Aistio ACK outbox 继续保留。
+- Service 删除 SessionEventMapper 及 thinking/tool/model 累积写入；旧 Chat、Session 和消息格式在读取边界转换，保留原 ID/seq。命令接收与 Endpoint 关联元数据、平台调度/审批、外部 provider 及 Control Plane ACK outbox 继续保留。
 - 示例的历史页面、消息接口与会话工具改读原生日志；按需生成旧 JSONL 输出，不落盘。Paw 共享配置改为 claw.session-log.root。
 
 ## 保留的兼容边界
@@ -31,7 +31,7 @@ Service 前端构建、11 项会话 adapter 测试、3 项 Go Endpoint / Managed
 1. 所有生产后端的多副本 CAS、租约到期、故障注入、重启恢复、导出 ACK 重试。
 2. SESSION / USER / 全局 namespace 下的权限隔离、跨会话发现、空用户路由、百万级事件分页与检索成本。
 3. Web 前端刷新、SSE 断线重连、preview 替换、工具多结果、待审批续跑以及历史主/子会话路由。
-4. Endpoint invocation 关联和最终输出先于完成状态、控制面 mirror 重试、外部 provider 与 Aistio outbox 重放。
+4. Endpoint invocation 关联和最终输出先于完成状态、控制面 mirror 重试、外部 provider 与 Control Plane outbox 重放。
 5. 管理员更新与执行竞争、过期快照、shutdown/timeout 标记、pending interaction 阻止上下文替换、自定义路由属性透传、清空上下文后恢复、checkpoint fork 和显式旧状态迁移。
 6. 包发布与部署升级时确保删除的旧类没有残留在历史构建产物中；清洁构建后再发布。
 

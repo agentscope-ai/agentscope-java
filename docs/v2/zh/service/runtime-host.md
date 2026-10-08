@@ -11,7 +11,7 @@ Runtime Host 运行在安装 Coding Agent 的电脑或服务器上。控制面�
 
 ## 安装
 
-从同一 Service Release 下载对应操作系统和 CPU 架构的 `agentscope-cli-VERSION-OS-ARCH.tar.gz`，核对校验和后解压。包中包含 `agentscope`、别名 `aistioctl` 和 `aistio-runtime-host`。将三个可执行文件放在同一个 PATH 目录中。
+从同一 Service Release 下载对应操作系统和 CPU 架构的 `agentscope-cli-VERSION-OS-ARCH.tar.gz`，核对校验和后解压。包中包含 `agentscope`、别名 `agentscope` 和 `agentscope-runtime-host`。将三个可执行文件放在同一个 PATH 目录中。
 
 按目标机器和发布清单选择 Linux/macOS 的 amd64 或 arm64 包。provider 本身需要另行安装、登录并确认可运行。
 
@@ -22,7 +22,7 @@ Runtime Host 运行在安装 Coding Agent 的电脑或服务器上。控制面�
 ```bash
 mkdir -p agentscope-cli "$HOME/.local/bin"
 tar -xzf agentscope-cli-VERSION-OS-ARCH.tar.gz -C agentscope-cli
-install -m 0755 agentscope-cli/agentscope agentscope-cli/aistioctl agentscope-cli/aistio-runtime-host "$HOME/.local/bin/"
+install -m 0755 agentscope-cli/agentscope agentscope-cli/agentscope agentscope-cli/agentscope-runtime-host "$HOME/.local/bin/"
 export PATH="$HOME/.local/bin:$PATH"
 ```
 

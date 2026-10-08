@@ -404,7 +404,7 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-aistio</artifactId>
+            <artifactId>agentscope-extensions-controlplane</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>

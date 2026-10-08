@@ -15,12 +15,12 @@ Implementation is in the requested working directory and branch. No worktree, co
 - Durable turn/action inbox with idempotent admission, admission sequence ordering, ownership leases, queue dispatch, targeted cancel, explicit resume, typed confirmation/external-result validation. Existing service confirmation tickets feed native interactions; their answers are delivered through durable commands.
 - Committed public projection + persistent source catalogue/retry exporter; public completion is gated behind committed native output export; lost worker callbacks can recover an already committed outcome without re-execution.
 - Agent API v1 history/snapshot/items/turns/required-actions/usage/artifacts, opaque scoped SSE cursors, no-gap durable subscription through the existing DB event log, heartbeat and optional unnumbered text previews. Private raw trace/repair is separately enabled and authorized.
-- Aistio committed-event adapter and persisted source dedup watermark. Existing APIs/Chat remain compatible; new Console Execution tab and TypeScript client use durable turns, typed answers, reconnect and root-turn completion helpers.
+- Control Plane committed-event adapter and persisted source dedup watermark. Existing APIs/Chat remain compatible; new Console Execution tab and TypeScript client use durable turns, typed answers, reconnect and root-turn completion helpers.
 - Native/public JSON schemas, public OpenAPI, storage/migration/operations documentation, docs navigation, and deferred regression list.
 
 ## Validation
 
-- Final Java reactor compile succeeded, including Core, Harness, Service Common/Data Plane/Gateway, Aistio and affected JDBC/MySQL/PostgreSQL/Redis/Mongo extensions.
+- Final Java reactor compile succeeded, including Core, Harness, Service Common/Data Plane/Gateway, Control Plane and affected JDBC/MySQL/PostgreSQL/Redis/Mongo extensions.
 - Targeted Spotless checks cover task Java files, including staged changes, without modifying the index.
 - Final focused tests: JournalSessionLogTest 5, ReActSessionLogTest 2, WorkspaceSessionLogStoreTest 3; all 10 passed.
 - `npm run build` passed (TypeScript and Vite). Generated UI bundle is built; no service was started or deployed.

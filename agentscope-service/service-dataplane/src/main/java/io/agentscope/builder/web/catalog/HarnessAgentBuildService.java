@@ -66,7 +66,7 @@ import org.springframework.web.server.ResponseStatusException;
  * Data-plane agent factory: instantiates (and caches) {@link HarnessAgent} instances for managed
  * sessions.
  *
- * <p>Managed session turns build exclusively from the control-plane ({@code aistiod}) session
+ * <p>Managed session turns build exclusively from the control-plane ({@code service-controlplane}) session
  * resolve payload — {@code agentSnapshot}, {@code workspacePath}, and {@code definitionFiles}.
  * There is no JPA catalog fallback; resolve must succeed with a non-empty snapshot.
  *
@@ -95,7 +95,7 @@ public class HarnessAgentBuildService {
         return DP_AGENT_PREFIX + session.ownerId() + "-" + session.agentId() + "-" + session.id();
     }
 
-    private static final String COLLABORATION_MCP_NAME = "aistio-collaboration";
+    private static final String COLLABORATION_MCP_NAME = "controlplane-collaboration";
 
     private io.agentscope.core.session.SessionLogStore sessionLogStore;
 
@@ -639,7 +639,7 @@ public class HarnessAgentBuildService {
                     + "- Use math.evaluate to verify arithmetic. Verify other objective results"
                     + " before completing or accepting work. A worker success flag is not proof of"
                     + " accuracy.\n"
-                    + "- Use the aistio-collaboration tools for every durable read, progress"
+                    + "- Use the controlplane-collaboration tools for every durable read, progress"
                     + " update, delegation, response, and completion.\n"
                     + "- Never claim that an Issue, child task, or coordinator node changed unless"
                     + " the corresponding tool call succeeded.\n"

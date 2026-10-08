@@ -158,7 +158,7 @@ log schema、public API schema、projector/stateVersion 分别管理。兼容客
 - `service-common/.../managed/SessionEventTypes.java` 已有 user/system、agent、session、span 和 stream-only event_start/event_delta 分类。
 - `service-common/.../managed/service/SessionEventLog.java` 已有数据库事件、seq 冲突重试、幂等追加入口、通知驱动补读；其 appendOnce 当前把 processedAt 设置为写入时间，不能直接代表新的异步命令真正 applied。
 - `service-dataplane/.../api/DataSessionApiController.java` 已接受 after/Last-Event-ID，持久事件与 preview 合流；toSse 仅为正 seq 设置 id。
-- `service-dataplane/.../managed/SessionEventMapper.java` 与 Aistio observer 是需接通新原生来源的适配点。
+- `service-dataplane/.../managed/SessionEventMapper.java` 与 Control Plane observer 是需接通新原生来源的适配点。
 - 现有 Endpoint Gateway 已有 conversation/job 与 invocation 语义；公开 Agent API 应明确复用哪些入口，不能无意把 Agent Session、Work Issue 和 Job 合并。
 - `agentscope-service/docs/controlplane/unified-conversation-contract.md` 已要求保留 native facts 并做 conversation projection。本次是完成源端与公共契约的闭环，不推翻该方向。
 
@@ -175,7 +175,7 @@ log schema、public API schema、projector/stateVersion 分别管理。兼容客
 | P2 | 在 native commit 之外定义 Service durable inbox/outbox 与 public projection checkpoint；各事实 owner 的提交承诺清晰 |
 | P3 | Hosted execution 与 HTTP/SSE subscriber 解耦；命令 ID 传递到 Harness；模型/工具检查点维持原要求 |
 | P4–P5 | projection 基线与 asOfSeq、public items、重启/恢复/子 Agent/required action 的一致性联动验收 |
-| P6 | 实现公共 endpoints/SSE、SDK、Console 与 Aistio 的全链路接入；协议设计不再拖到此阶段才开始 |
+| P6 | 实现公共 endpoints/SSE、SDK、Console 与 Control Plane 的全链路接入；协议设计不再拖到此阶段才开始 |
 | P7 | 补公共 API 兼容、游标保留期、背压、成本与规模验证，明确发布级支持矩阵 |
 
 无需立刻重写所有 Service 页面。先固定并验证对外契约，再按现有阶段迁移实现；这样能避免内部完成后才发现必须补回 item identity、command lifecycle 或稳定 public turn。

@@ -40,7 +40,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Data-plane HTTP client for control-plane (aistiod) internal APIs. Session and environment
+ * Data-plane HTTP client for control-plane (service-controlplane) internal APIs. Session and environment
  * metadata live in the CP schema; the data plane must not SELECT those tables directly.
  *
  * <p>Authenticates with {@code X-Builder-Internal-Token}; optional {@code
@@ -362,7 +362,7 @@ public class ControlPlaneClient {
     }
 
     /**
-     * Registers this data-plane instance with aistiod ({@code POST /api/v1/dataplanes/register}).
+     * Registers this data-plane instance with service-controlplane ({@code POST /api/v1/dataplanes/register}).
      *
      * @return heartbeat interval seconds from the response, or 15 when absent
      */

@@ -3,13 +3,13 @@
 This is the historical backlog collected during implementation on 2026-09-30 and 2026-10-01. The concentrated regression was executed on 2026-10-02; see [the consolidated results, fixes and remaining coverage](session-service-regression-20261002.md). The cases below are preserved for traceability and are not all still pending or all complete. Capacity, external-environment and exhaustive fault matrices remain explicitly identified in that report.
 
 - Fault injection after blob/commit writes, head CAS, lost ACK, export ACK, public DB commit, inbox admission and worker dispatch; verify committed prefix, idempotency and no tool replay.
-- Cross-process writer fencing/lease expiry, clock skew, takeover during long tool/model calls, local/NAS semantics, Redis persistence configuration, PostgreSQL/MySQL/Mongo/ControlPlane CAS contract.
+- Cross-process writer fencing/lease expiry, clock skew, takeover during long tool/model calls, local/NAS semantics, Redis persistence configuration, PostgreSQL/MySQL/Mongo/Control Plane CAS contract.
 - Crash between action result persistence and context checkpoint; explicit uncertain-tool reconciliation; denial/suspension/synthetic tools; delayed/non-cancellable side effects.
 - Full context equivalence before/after compaction/eviction, structured output, fallback, custom strategy, auxiliary summarization, verification/task/plan changes and migration baseline.
 - Session identity and namespace isolation (tenant/user/agent/session), path traversal/symlink, protected journal paths, sandbox lifetime and configured external journal.
 - Durable API admission/repeated idempotency key/concurrent retries; queue order, worker death, cancel-before-start/cancel-in-flight, stable public turn on explicit resume; interactions repeated/wrong-session/expired.
 - SSE history/live race, Last-Event-ID reconnect, cross-session/future/expired cursor, preview after completion, bounded slow-consumer queues, filters/heartbeats, dropped notifications.
-- Native/public/Aistio/Console golden trace equivalence; export retry on process restart, all public resources and required actions, parent/child sessions with parallel subagents.
+- Native/public/ControlPlane/Console golden trace equivalence; export retry on process restart, all public resources and required actions, parent/child sessions with parallel subagents.
 - Long sessions, millions of chunks, large multimodal payloads, blob dedup/retention/GC, compaction cost, replay memory use and IO amplification.
 - Legacy compatibility, existing builders/custom filesystems, custom required event codecs/version skew, multiple SDK versions, all affected Java/Go/TypeScript suites and end-to-end hosted service deployment.
 

@@ -84,7 +84,7 @@ spring:
                 - Path=/api/channels/feishu/**,/api/channels/wecom/**,/api/channels/github/**,/api/channels/gitlab/**
 
             # ------------------------------------------------------------------
-            # Control plane (aistiod) — Managed Agents APIs, the /api/v1
+            # Control plane (service-controlplane) — Managed Agents APIs, the /api/v1
             # management API, and the console SPA, all on one upstream port.
             # ------------------------------------------------------------------
             - id: control-api

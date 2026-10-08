@@ -103,7 +103,7 @@ Python `ManagementClient` prepares resources and credentials; `ServiceClient` cr
 
 ```python
 import os
-from aistio import ServiceClient
+from agentscope_service import ServiceClient
 
 client = ServiceClient(os.environ["BASE_URL"], api_key=os.environ["AGENTSCOPE_API_KEY"])
 session = client.create_session(
@@ -115,7 +115,7 @@ print(client.turn(session["id"], turn["id"]))
 print(client.snapshot(session["id"]))
 ```
 
-The complete example in `aistio/examples/service-api` creates Sessions for an Agent, Team, and Workflow. Clients do not approve tools or create a new task automatically after a network error. Persist Session IDs, Turn IDs, and idempotency keys and follow the [API guide](/v2/en/service/service-api) for recovery.
+The complete example in `service-controlplane/examples/service-api` creates Sessions for an Agent, Team, and Workflow. Clients do not approve tools or create a new task automatically after a network error. Persist Session IDs, Turn IDs, and idempotency keys and follow the [API guide](/v2/en/service/service-api) for recovery.
 
 ## Errors and version conflicts
 

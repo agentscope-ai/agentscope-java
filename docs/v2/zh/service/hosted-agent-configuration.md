@@ -31,7 +31,7 @@ agentscope runtime probe
 | `--capacity` | Host 最大并发执行数，默认 1 |
 | `--workspace-root` | 任务目录根路径 |
 | `--state-root` | Host 身份及持久执行状态目录 |
-| `--runtime-host-binary` | `aistio-runtime-host` 可执行文件路径 |
+| `--runtime-host-binary` | `agentscope-runtime-host` 可执行文件路径 |
 | `AGENTSCOPE_ENROLLMENT_TOKEN` | 初次连接用的短期 enrollment 凭据 |
 | `AGENTSCOPE_RUNTIME_TOKEN` | 已有 Runtime Host 凭据 |
 | `AGENTSCOPE_RUNTIME_CONFIG` | 覆盖本地配置文件路径 |

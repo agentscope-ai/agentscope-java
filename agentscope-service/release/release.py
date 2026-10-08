@@ -46,7 +46,7 @@ def tracked_hygiene():
             errors.append(name)
         if name.startswith('agentscope-service/'):
             generated = any(part in p.parts for part in ('node_modules', 'test-reports', 'playwright-report', 'test-results', 'target'))
-            ui = name.startswith('agentscope-service/aistio/ui/') and p.name != '.gitkeep'
+            ui = name.startswith('agentscope-service/service-controlplane/ui/') and p.name != '.gitkeep'
             package = p.suffix.lower() in ('.ppt', '.pptx', '.jar', '.war', '.class', '.zip', '.tgz', '.exe')
             generated |= name.startswith('agentscope-service/release/dist/')
             if generated or ui or package:
@@ -63,7 +63,7 @@ def tracked_hygiene():
 
 def verify_npm(directory):
     # Vite empties its output directory, including this tracked source placeholder.
-    placeholder = SERVICE / 'aistio/ui/.gitkeep'
+    placeholder = SERVICE / 'service-controlplane/ui/.gitkeep'
     original = placeholder.read_bytes() if directory == SERVICE / 'frontend' and placeholder.is_file() else None
     run('npm', 'ci', cwd=directory)
     try:
@@ -79,11 +79,11 @@ def verify():
     tracked_hygiene()
     run('mvn', '-B', '-ntp', '-pl', 'agentscope-service/service-gateway,agentscope-service/service-dataplane,agentscope-service/service-scheduler', '-am', 'clean', 'verify')
     # Integration packages share PostgreSQL migration locks; serialize packages.
-    run('go', 'test', '-p', '1', './...', cwd=SERVICE / 'aistio')
-    run('go', 'vet', './...', cwd=SERVICE / 'aistio')
-    for directory in (SERVICE / 'frontend', SERVICE / 'aistio/sdk/dsh'):
+    run('go', 'test', '-p', '1', './...', cwd=SERVICE / 'service-controlplane')
+    run('go', 'vet', './...', cwd=SERVICE / 'service-controlplane')
+    for directory in (SERVICE / 'frontend', SERVICE / 'service-controlplane/sdk/dsh'):
         verify_npm(directory)
-    run(sys.executable, '-m', 'pytest', '-q', cwd=SERVICE / 'aistio/sdk/python')
+    run(sys.executable, '-m', 'pytest', '-q', cwd=SERVICE / 'service-controlplane/sdk/python')
     run('helm', 'lint', str(SERVICE / 'helm/agentscope-service'), '--set', 'imageRepository=example.com/ci', '--set', 'existingSecret=ci')
     run(sys.executable, '-m', 'unittest', 'discover', '-s', str(SERVICE / 'release/tests'))
 
@@ -100,7 +100,7 @@ def manifest(args):
             'javaRevision': re.search(r'<revision>([^<]+)</revision>', (ROOT / 'pom.xml').read_text())[1],
             'sourceDirty': bool(run('git', 'status', '--porcelain', capture=True).strip()),
             'images': {p: f'{args.repository}/agentscope-service-{p}:{args.version}' for p in PLANES},
-            'sdkVersions': {'python': re.search(r'^version = "([^"]+)"', (SERVICE / 'aistio/sdk/python/pyproject.toml').read_text(), re.M)[1], 'dsh': json.loads((SERVICE / 'aistio/sdk/dsh/package.json').read_text())['version']},
+            'sdkVersions': {'python': re.search(r'^version = "([^"]+)"', (SERVICE / 'service-controlplane/sdk/python/pyproject.toml').read_text(), re.M)[1], 'dsh': json.loads((SERVICE / 'service-controlplane/sdk/dsh/package.json').read_text())['version']},
             'platforms': {'images': ['linux/amd64', 'linux/arm64'], 'cli': ['linux/amd64', 'linux/arm64', 'darwin/amd64', 'darwin/arm64']},
             'notes': 'Image digests are recorded separately by the images command. Registry references are publication targets, not proof of availability.'}
 
@@ -130,19 +130,18 @@ def package(args):
         stage = out / f'cli-{system}-{arch}'
         stage.mkdir()
         env = dict(os.environ, CGO_ENABLED='0', GOOS=system, GOARCH=arch)
-        for name, command in (('agentscope', 'aistioctl'), ('aistio-runtime-host', 'aistio-runtime-host')):
-            run('go', 'build', '-trimpath', '-ldflags=-s -w -X github.com/spring-ai-alibaba/aistio/internal/version.Version=' + args.version, '-o', str(stage / name), './cmd/' + command,
-                cwd=SERVICE / 'aistio', env=env)
-        shutil.copy2(stage / 'agentscope', stage / 'aistioctl')
+        for name, command in (('agentscope', 'agentscope'), ('agentscope-runtime-host', 'agentscope-runtime-host')):
+            run('go', 'build', '-trimpath', '-ldflags=-s -w -X github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/version.Version=' + args.version, '-o', str(stage / name), './cmd/' + command,
+                cwd=SERVICE / 'service-controlplane', env=env)
         shutil.copy2(ROOT / 'LICENSE', stage / 'LICENSE')
         with tarfile.open(out / f'agentscope-cli-{args.version}-{system}-{arch}.tar.gz', 'w:gz') as archive:
             for file in sorted(stage.iterdir()):
                 archive.add(file, arcname=file.name)
         shutil.rmtree(stage)
-    run(sys.executable, '-m', 'build', '--outdir', str(out), cwd=SERVICE / 'aistio/sdk/python')
-    run('npm', 'ci', cwd=SERVICE / 'aistio/sdk/dsh')
-    run('npm', 'run', 'build', cwd=SERVICE / 'aistio/sdk/dsh')
-    run('npm', 'pack', '--pack-destination', str(out), cwd=SERVICE / 'aistio/sdk/dsh')
+    run(sys.executable, '-m', 'build', '--outdir', str(out), cwd=SERVICE / 'service-controlplane/sdk/python')
+    run('npm', 'ci', cwd=SERVICE / 'service-controlplane/sdk/dsh')
+    run('npm', 'run', 'build', cwd=SERVICE / 'service-controlplane/sdk/dsh')
+    run('npm', 'pack', '--pack-destination', str(out), cwd=SERVICE / 'service-controlplane/sdk/dsh')
     data = manifest(args)
     data['platforms']['cli'] = args.platforms.split(',')
     data['artifacts'] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(out.iterdir()) if p.is_file()}
