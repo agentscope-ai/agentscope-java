@@ -11,6 +11,25 @@ Runtime Host 运行在安装 Coding Agent 的电脑或服务器上。控制面�
 
 ## 安装
 
+通过个人 Homebrew tap 一次安装 CLI 与 Runtime Host：
+
+```bash
+brew install chickenlj/tap/agentscope-cli
+as version
+agentscope-runtime-host -help
+```
+
+配方按 macOS/Linux 的 amd64/arm64 平台下载已发布的二进制并核对 SHA-256，无需安装 Go。后续用 `brew update` 和 `brew upgrade chickenlj/tap/agentscope-cli` 更新。
+
+也可以使用 Go 1.26 或更新版本，从已经发布的 tag 安装两个命令：
+
+```bash
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/cmd/as@agentscope-service-dist-v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/cmd/agentscope-runtime-host@agentscope-service-dist-v2.1.0-BETA1
+```
+
+Go 安装到 `GOBIN`，未设置时使用 `$(go env GOPATH)/bin`，请将该目录加入 PATH。两个命令应使用同一版本。当前 Go 模块没有 `/v2` 路径，因此 tag 会解析为 Go pseudo-version；可执行文件的版本仍为 `2.1.0-BETA1`。
+
 从同一 Service Release 下载对应操作系统和 CPU 架构的 `agentscope-cli-VERSION-OS-ARCH.tar.gz`，核对校验和后解压。包中包含 `as` 和 `agentscope-runtime-host`。将两个可执行文件放在同一个 PATH 目录中。
 
 按目标机器和发布清单选择 Linux/macOS 的 amd64 或 arm64 包。provider 本身需要另行安装、登录并确认可运行。

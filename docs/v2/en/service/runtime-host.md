@@ -11,6 +11,25 @@ A Runtime Host runs on a computer or server with a Coding Agent provider install
 
 ## Install
 
+Install the CLI and Runtime Host together using the personal Homebrew tap:
+
+```bash
+brew install chickenlj/tap/agentscope-cli
+as version
+agentscope-runtime-host -help
+```
+
+The formula downloads the published binaries for macOS/Linux amd64/arm64 and verifies SHA-256. It does not require Go. Update with `brew update` and `brew upgrade chickenlj/tap/agentscope-cli`.
+
+Alternatively, with Go 1.26 or newer, install both commands from the published release tag:
+
+```bash
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/cmd/as@agentscope-service-dist-v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/cmd/agentscope-runtime-host@agentscope-service-dist-v2.1.0-BETA1
+```
+
+Go installs into `GOBIN`, or `$(go env GOPATH)/bin` when `GOBIN` is unset; add that directory to PATH. Both commands should be installed at the same version. The tag resolves to a Go pseudo-version because this module does not use a `/v2` path. The executable version remains `2.1.0-BETA1`.
+
 Download `agentscope-cli-VERSION-OS-ARCH.tar.gz` for the operating system and CPU architecture from the same Service release. Verify its checksum and extract it. The archive contains `as` and `agentscope-runtime-host`. Put both executables in the same directory on PATH.
 
 Choose Linux/macOS and amd64/arm64 according to the release manifest and the machine you will connect. Install, authenticate and verify the provider separately.

@@ -148,6 +148,10 @@ Attach package archives, manifest, checksums and image metadata to the Release. 
 
 For a separate installation-package release, use `agentscope-service-dist-vVERSION` as the tag. This keeps package distribution separate from the SDK tag triggers. Build from clean, committed source with `release.py package --distributions-only`, create a prerelease draft, upload only the named public files, verify downloaded SHA-256 values, then publish the draft. Homebrew and Helm OCI are separate channels and require their own destination repositories.
 
+The public personal tap is [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap); users install both CLI executables with `brew install chickenlj/tap/agentscope-cli`. The formula source is retained under `release/homebrew/agentscope-cli.rb`. For each new CLI release, update all four URLs, their verified SHA-256 values, the formula version and its version assertion, then publish the updated formula to the tap. Existing binary archives remain immutable. A future CI job updating this personal repository from the organization repository needs a separate credential with Contents write permission on the tap; the organization's default `GITHUB_TOKEN` does not grant that access.
+
+`go install` can use the published distribution tag as a revision query for each `cmd` package; see the bilingual Runtime Host installation page. The current module requires Go 1.26 and has no major-version suffix. A standard `@v2.1.0-BETA1` module release would require a `/v2` module path and matching imports, plus the nested-module Git tag `agentscope-service/service-controlplane/v2.1.0-BETA1`.
+
 Documentation lives under `docs/v2/{zh,en}/service/`. `_toc.yml` and `_config.yml` register every page and the Service tab. Build and inspect both languages before merging into `main`, the current website workflow's deployment source. Check direct page access, links, images, search and language switching after deployment.
 
 ## Current deployment boundaries

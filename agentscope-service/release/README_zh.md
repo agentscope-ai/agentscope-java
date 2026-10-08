@@ -340,6 +340,10 @@ mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-controlplane -am \
 
 安装包单独发版时使用 `agentscope-service-dist-vVERSION` tag，与 SDK 的 tag 触发条件分开。从干净且已提交的源码执行 `release.py package --distributions-only`，创建预发布草稿，上传明确列出的公开附件，下载并核对 SHA-256 后再公开。Homebrew 和 Helm OCI 是独立渠道，需要另行确定目标仓库。
 
+个人公开 tap 为 [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap)，用户执行 `brew install chickenlj/tap/agentscope-cli` 即可同时安装两个命令。配方源码保留在 `release/homebrew/agentscope-cli.rb`。每次 CLI 发版后，更新四个平台的 URL、已验证的 SHA-256、配方版本和测试中的版本断言，再将配方发布到 tap。既有二进制附件保持不变。组织仓库的 CI 若要自动更新这个个人仓库，需要另行配置对 tap 拥有 Contents 写权限的凭据；默认 `GITHUB_TOKEN` 不包含这个跨仓库权限。
+
+`go install` 可以用已发布的安装包 tag 作为 revision query 分别安装两个 `cmd` 包，命令见中英文 Runtime Host 安装页。当前模块要求 Go 1.26，模块路径没有 major-version suffix。标准 `@v2.1.0-BETA1` 模块发布需要先调整 `/v2` 模块路径及相关 import，再发布嵌套模块 tag `agentscope-service/service-controlplane/v2.1.0-BETA1`。
+
 先在 GitHub Releases 建立草稿，选用已存在的 tag，上传附件并校验下载。若使用 CLI，先在仓库之外准备完整的 Markdown Release Notes：
 
 ```bash
