@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.workspace;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -103,9 +104,11 @@ class WorkspaceManagerPathSafetyTest {
                         template,
                         new LocalFilesystem(
                                 backend, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null))) {
-            // The shape from #2937: a session id built from namespaced parts.
+            // The shape from #2937: a session id built from namespaced parts. Colons are
+            // percent-encoded (%3A) so the name stays on disk while remaining distinct from any
+            // plain id that happens to contain '-'.
             String sessionId = "agent:abc-123:main:main-9f3c";
-            String sanitized = "agent-abc-123-main-main-9f3c";
+            String sanitized = "agent%3Aabc-123%3Amain%3Amain-9f3c";
 
             assertFileNameIsSanitized(
                     manager.resolveSessionFile(rc, "agent-1", sessionId), sanitized);
@@ -137,6 +140,33 @@ class WorkspaceManagerPathSafetyTest {
                                 backend, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null))) {
             assertFileNameIsSanitized(
                     manager.resolveSessionFile(rc, "agent-1", "main-9f3c7a2e"), "main-9f3c7a2e");
+        }
+    }
+
+    @Test
+    void distinctSessionIdsKeepDistinctFileNames(@TempDir Path root) throws Exception {
+        Path template = root.resolve("template");
+        Path backend = root.resolve("backend");
+        Files.createDirectories(template);
+        Files.createDirectories(backend);
+        RuntimeContext rc = RuntimeContext.empty();
+
+        try (WorkspaceManager manager =
+                new WorkspaceManager(
+                        template,
+                        new LocalFilesystem(
+                                backend, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null))) {
+            // Regression: collapsing every reserved char to '-' made "a:b" and "a-b" share a file
+            // name, so one session's files could overwrite another's. Percent-encoding keeps them
+            // distinct.
+            Path colon = manager.resolveSessionFile(rc, "agent-1", "a:b");
+            Path dash = manager.resolveSessionFile(rc, "agent-1", "a-b");
+            assertNotEquals(
+                    colon.getFileName().toString(),
+                    dash.getFileName().toString(),
+                    "\"a:b\" and \"a-b\" must not map to the same file name");
+            assertEquals("a%3Ab.json", colon.getFileName().toString());
+            assertEquals("a-b.json", dash.getFileName().toString());
         }
     }
 
