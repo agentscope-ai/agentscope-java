@@ -19,6 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
+	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/store/memory"
 )
@@ -61,6 +64,74 @@ func TestEventList_BeforeAndNewestFirst(t *testing.T) {
 	}
 	if len(before) != 3 || before[0].Seq != 5 || before[2].Seq != 7 {
 		t.Fatalf("before=%v", seqs(before))
+	}
+
+	after, err := st.Events().List(context.Background(), sess.ID,
+		store.WithEventAfterSeq(7), store.WithEventLimit(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 2 || after[0].Seq != 8 || after[1].Seq != 9 {
+		t.Fatalf("after=%v", seqs(after))
+	}
+}
+
+func TestEventWaitForNew_WakesOnAppend(t *testing.T) {
+	st, err := memory.Open(context.Background(), store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Sessions().Upsert(context.Background(), &store.Session{
+		SessionID: "wait-1", AgentName: "a", Namespace: "ns", Framework: "x", Phase: store.SessionPhaseActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	woke := make(chan error, 1)
+	go func() {
+		woke <- st.Events().WaitForNew(waitCtx, sess.ID, 10)
+	}()
+	if err := st.Events().Append(context.Background(), &store.SessionEvent{
+		SessionFK: sess.ID, Seq: 11, EventType: "message",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-woke:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-waitCtx.Done():
+		t.Fatal("event waiter did not wake after append")
+	}
+}
+
+func TestRunEventWaitForNew_WakesOnAppend(t *testing.T) {
+	st, err := memory.Open(context.Background(), store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := uuid.New()
+	waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	woke := make(chan error, 1)
+	go func() {
+		woke <- st.Orchestration().WaitForRunEvent(waitCtx, runID, 0)
+	}()
+	if _, err := st.Orchestration().AppendRunEvent(context.Background(), &controlmodel.RunEvent{
+		RunID: runID, Type: "run.started",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-woke:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-waitCtx.Done():
+		t.Fatal("run event waiter did not wake after append")
 	}
 }
 

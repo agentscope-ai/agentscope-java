@@ -17,6 +17,7 @@ package io.agentscope.harness.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -52,8 +53,10 @@ import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.artifact.ArtifactDeliveryResult;
 import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -72,8 +75,10 @@ import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.io.IOException;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -97,6 +102,7 @@ import reactor.core.scheduler.Schedulers;
  * Tests for {@link HarnessAgent} workspace wiring: {@code AGENTS.md} context and subagent
  * discovery ({@code subagents/*.md}).
  */
+@HarnessQuiescence
 class HarnessAgentTest {
 
     @TempDir Path workspace;
@@ -305,6 +311,186 @@ class HarnessAgentTest {
                         .toList();
         assertFalse(toolNames.contains("read_file"));
         assertFalse(toolNames.contains("list_files"));
+    }
+
+    @Test
+    void disableWebTools_omitsOptionalWebTools() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableWebTools()
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("web_search"));
+        assertFalse(toolNames.contains("web_fetch"));
+    }
+
+    @Test
+    void webHttpClient_injectsCustomClient() throws Exception {
+        Files.createDirectories(workspace);
+        HttpClient custom =
+                HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .build();
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .webHttpClient(custom)
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertTrue(toolNames.contains("web_search"));
+        assertTrue(toolNames.contains("web_fetch"));
+    }
+
+    @Test
+    void artifactDeliveryTarget_registersDeliverTool() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertTrue(toolNames.contains("deliver_artifact"));
+    }
+
+    @Test
+    void disableFilesystemTools_withArtifactDeliveryTarget_omitsDeliverTool() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableFilesystemTools()
+                        .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("deliver_artifact"));
+    }
+
+    @Test
+    void sandboxWithArtifactDeliveryTarget_promptNamesDeliverTool() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+        Model model = stubModel("assistant-done");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .filesystem(spec)
+                        .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
+                        .build();
+
+        agent.call(userText("hi"), RuntimeContext.builder().sessionId("s1").build()).block();
+
+        String combined = capturedPrompt(model);
+        assertTrue(combined.contains("Sandbox root: /workspace"), () -> combined);
+        assertTrue(combined.contains("call deliver_artifact"), () -> combined);
+    }
+
+    @Test
+    void sandboxWithArtifactDeliveryTargetAndDisabledFilesystemTools_promptOmitsDeliverTool()
+            throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+        Model model = stubModel("assistant-done");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .filesystem(spec)
+                        .disableFilesystemTools()
+                        .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
+                        .build();
+
+        agent.call(userText("hi"), RuntimeContext.builder().sessionId("s1").build()).block();
+
+        String combined = capturedPrompt(model);
+        assertTrue(
+                combined.contains("no mechanism for moving files across the boundary"),
+                () -> combined);
+        assertFalse(combined.contains("deliver_artifact"), () -> combined);
+    }
+
+    @Test
+    void artifactDeliveryTarget_isNotPropagatedToSubagents() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# workspace\n");
+        Path subagents = workspace.resolve("subagents");
+        Files.createDirectories(subagents);
+        Files.writeString(
+                subagents.resolve("helper.md"),
+                """
+                ---
+                description: Markdown child used for delivery-tool isolation regression
+                ---
+                You only reply OK.
+                """);
+
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success());
+
+        List<SubagentEntry> entries = builder.buildSubagentEntries(workspace);
+        RuntimeContext parentContext =
+                RuntimeContext.builder().userId("u").sessionId("parent").build();
+
+        for (String name : List.of("general-purpose", "helper")) {
+            HarnessAgent subagent =
+                    (HarnessAgent)
+                            entries.stream()
+                                    .filter(e -> name.equals(e.name()))
+                                    .findFirst()
+                                    .orElseThrow()
+                                    .factory()
+                                    .create(parentContext);
+            List<String> toolNames =
+                    subagent.getDelegate().getToolkit().getToolSchemas().stream()
+                            .map(ToolSchema::getName)
+                            .toList();
+            assertFalse(
+                    toolNames.contains("deliver_artifact"),
+                    name + " must not expose deliver_artifact");
+        }
     }
 
     @Test
@@ -523,6 +709,60 @@ class HarnessAgentTest {
         }
 
         assertSame(source, seen.get());
+    }
+
+    @Test
+    void executionHandleCancelsTheHarnessAndReleasesItsSandboxBinding() throws Exception {
+        Files.createDirectories(workspace);
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+        AtomicReference<RuntimeContext> active = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("run-control")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .filesystem(spec)
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String prompt) {
+                                        active.set(ctx);
+                                        return Mono.never();
+                                    }
+                                })
+                        .build()) {
+            var cancelledBeforeStart =
+                    agent.prepareRun(
+                            List.of(userText("unused")),
+                            RuntimeContext.builder().sessionId("before-start").build());
+            cancelledBeforeStart.cancel();
+            cancelledBeforeStart.stream().subscribe(event -> {}, failure::set);
+            assertEquals(0, spec.getClient().getCreateCount());
+            var run =
+                    agent.prepareRun(
+                            List.of(userText("hello")),
+                            RuntimeContext.builder().sessionId("active-run").build());
+            var subscription = run.stream().subscribe(event -> {}, failure::set);
+            try {
+                assertEquals(io.agentscope.core.agent.AgentRun.Status.RUNNING, run.status());
+                assertNotNull(
+                        active.get()
+                                .get(
+                                        io.agentscope.harness.agent.sandbox.SandboxAcquireResult
+                                                .class));
+                assertTrue(run.cancel());
+                assertNull(
+                        active.get()
+                                .get(
+                                        io.agentscope.harness.agent.sandbox.SandboxAcquireResult
+                                                .class));
+                assertTrue(failure.get() instanceof java.util.concurrent.CancellationException);
+            } finally {
+                subscription.dispose();
+            }
+        }
     }
 
     @Test
@@ -960,6 +1200,56 @@ class HarnessAgentTest {
     }
 
     @Test
+    void builder_conflictPolicy_defaultsToOverwrite() {
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("policy-default")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        assertEquals(ConflictPolicy.OVERWRITE, agent.getConflictPolicy());
+    }
+
+    @Test
+    void builder_conflictPolicy_isForwardedToDelegate() {
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("policy-fail")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .conflictPolicy(ConflictPolicy.FAIL)
+                        .build();
+
+        assertEquals(ConflictPolicy.FAIL, agent.getConflictPolicy());
+        assertEquals(ConflictPolicy.FAIL, agent.getDelegate().getConflictPolicy());
+    }
+
+    @Test
+    void fromAgent_inheritsSourceConflictPolicy() {
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("source")
+                        .model(stubModel("done"))
+                        .toolkit(new Toolkit())
+                        .conflictPolicy(ConflictPolicy.APPEND_MERGE)
+                        .build();
+
+        HarnessAgent wrapped =
+                HarnessAgent.Builder.fromAgent(source)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        assertEquals(
+                ConflictPolicy.APPEND_MERGE,
+                wrapped.getDelegate().getConflictPolicy(),
+                "a conflict policy set on the source agent must survive being wrapped");
+    }
+
+    @Test
     void remoteFilesystemSpec_sharesMemoryMdInNonsandboxMode() throws Exception {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");
@@ -1005,6 +1295,16 @@ class HarnessAgentTest {
 
     private static String joinAllText(List<Msg> msgs) {
         return msgs.stream().map(Msg::getTextContent).collect(Collectors.joining("\n"));
+    }
+
+    /** Joins every message the model received into a single string for prompt assertions. */
+    @SuppressWarnings("unchecked")
+    private static String capturedPrompt(Model model) {
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+        return captor.getAllValues().stream()
+                .map(HarnessAgentTest::joinAllText)
+                .collect(Collectors.joining("\n"));
     }
 
     // =========================================================================
@@ -1514,7 +1814,7 @@ class HarnessAgentTest {
     // =========================================================================
 
     @Test
-    void toolsAllowlist_filtersInheritedParentTools_only() throws Exception {
+    void toolsAllowlist_filtersInheritedAndChildLocalTools() throws Exception {
         Files.createDirectories(workspace);
 
         Toolkit parentToolkit = new Toolkit();
@@ -1552,12 +1852,12 @@ class HarnessAgentTest {
         assertFalse(
                 toolNames.contains("parent_denied"),
                 "non-allowlisted inherited tool should be removed");
-        assertTrue(
+        assertFalse(
                 toolNames.contains("read_file"),
-                "child-local filesystem tools should not be filtered by inherited allowlist");
-        assertTrue(
+                "child-local filesystem tools must respect the declared allowlist");
+        assertFalse(
                 toolNames.contains("memory_search"),
-                "child-local memory tools should not be filtered by inherited allowlist");
+                "child-local memory tools must respect the declared allowlist");
     }
 
     // =========================================================================
@@ -1606,6 +1906,63 @@ class HarnessAgentTest {
                         .build();
 
         assertTrue(decl.getSkills().isEmpty(), "null skills should yield empty list");
+    }
+
+    // =========================================================================
+    // interrupt — per-session delegation
+    // =========================================================================
+
+    @Test
+    void interruptWithUserIdAndSessionIdTargetsOnlyThatSession() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        String userId = "alice";
+        String sessionId = "session-abc";
+        agent.interrupt(userId, sessionId);
+        RuntimeContext ctx = RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
+        Msg reply =
+                agent
+                        .prepareCall(
+                                List.of(new io.agentscope.core.message.UserMessage("hello")), ctx)
+                        .stream()
+                        .single()
+                        .block();
+        assertNotNull(reply);
+        assertNotEquals(
+                io.agentscope.core.message.GenerateReason.INTERRUPTED, reply.getGenerateReason());
+    }
+
+    @Test
+    void interruptWithRuntimeContextDelegatesToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        RuntimeContext ctx =
+                RuntimeContext.builder().userId("bob").sessionId("session-ctx").build();
+        agent.interrupt(ctx);
+        Msg reply =
+                agent
+                        .prepareCall(
+                                List.of(new io.agentscope.core.message.UserMessage("hello")), ctx)
+                        .stream()
+                        .single()
+                        .block();
+        assertNotNull(reply);
+        assertNotEquals(
+                io.agentscope.core.message.GenerateReason.INTERRUPTED, reply.getGenerateReason());
     }
 
     // =========================================================================
@@ -1699,6 +2056,66 @@ class HarnessAgentTest {
         public boolean isMediaUnavailable() {
             return true;
         }
+    }
+
+    // =========================================================================
+    // Custom subagent factory — description (issue #1504)
+    // =========================================================================
+
+    @Test
+    void customSubagentFactory_usesProvidedDescription() throws Exception {
+        Files.createDirectories(workspace);
+        Agent stub = mock(Agent.class);
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .subagentFactory(
+                                "researcher",
+                                "Performs deep web research and summarizes findings.",
+                                name -> stub)
+                        .buildSubagentEntries(workspace);
+
+        SubagentEntry entry =
+                entries.stream()
+                        .filter(e -> "researcher".equals(e.name()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(
+                "Performs deep web research and summarizes findings.",
+                entry.description(),
+                "custom factory description should be exposed to the orchestrator");
+    }
+
+    @Test
+    void customSubagentFactory_fallsBackToNameWhenDescriptionMissing() throws Exception {
+        Files.createDirectories(workspace);
+        Agent stub = mock(Agent.class);
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .subagentFactory("no-desc", name -> stub)
+                        .subagentFactory("blank-desc", "   ", name -> stub)
+                        .buildSubagentEntries(workspace);
+
+        SubagentEntry noDesc =
+                entries.stream().filter(e -> "no-desc".equals(e.name())).findFirst().orElseThrow();
+        SubagentEntry blankDesc =
+                entries.stream()
+                        .filter(e -> "blank-desc".equals(e.name()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(
+                "no-desc",
+                noDesc.description(),
+                "null description should fall back to the subagent name");
+        assertEquals(
+                "blank-desc",
+                blankDesc.description(),
+                "blank description should fall back to the subagent name");
     }
 
     private static Model stubModel(String assistantText) {

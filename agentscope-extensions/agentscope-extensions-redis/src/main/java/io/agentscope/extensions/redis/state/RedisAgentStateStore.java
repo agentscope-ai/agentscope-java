@@ -221,7 +221,7 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     private static final long UNCONDITIONAL_EXPECTED = Long.MIN_VALUE;
 
-    private void saveVersioned(
+    private long saveVersioned(
             String userId, String sessionId, String key, State value, long expectedVersion) {
         String slotId = slotId(userId, sessionId);
         String redisKey = getStateKey(slotId, key);
@@ -240,6 +240,7 @@ public class RedisAgentStateStore implements AgentStateStore {
             if (result == -1L) {
                 throw new RuntimeException("Version conflict saving state: " + key);
             }
+            return result;
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
@@ -269,9 +270,10 @@ public class RedisAgentStateStore implements AgentStateStore {
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
         if (expectedVersion == UNVERSIONED) {
-            save(userId, sessionId, key, value);
-            VersionedState<State> after = getVersioned(userId, sessionId, key, State.class);
-            return after.version();
+            // saveVersioned returns the new version directly — no read-back needed (and reading
+            // back via State.class is impossible because `State` is a marker interface Jackson
+            // cannot instantiate).
+            return saveVersioned(userId, sessionId, key, value, UNCONDITIONAL_EXPECTED);
         }
         String slotId = slotId(userId, sessionId);
         String redisKey = getStateKey(slotId, key);

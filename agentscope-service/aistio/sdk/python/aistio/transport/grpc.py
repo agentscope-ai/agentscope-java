@@ -14,9 +14,8 @@
 
 """ASDP gRPC 传输（数据面 → 控制面上行推送；下行收 ConfigPush / SessionCommand）。
 
-后台线程驱动 ``Connect`` 双向流：发送走有界队列（best-effort，满则丢弃并
-计数），断线自动重连（指数退避，上限 30s）。旁路原则：上报失败静默忽略，
-不影响 Agent 主路径。
+后台线程驱动 ``Connect`` 双向流。Level 2 事件由 SessionBridge 持久化并在
+收到控制面 commit ACK 后出队；其他遥测仍为 best-effort。
 """
 from __future__ import annotations
 
@@ -47,17 +46,27 @@ class GrpcTransport:
         self,
         addr: str,
         *,
-        agent_name: str,
+        tenant: str = "default",
+        credential: str = "",
+        agent_id: str,
+        agent_key: str,
+        binding_id: str,
         namespace: str = "default",
-        instance_id: str = "",
+        instance_key: str,
+        generation: int,
         sdk_version: str = "",
         capabilities: Iterable[str] = (),
         session_affinity: str = "",
     ) -> None:
         self._addr = addr
-        self._agent_name = agent_name
+        self._tenant = tenant
+        self._credential = credential
+        self._agent_id = agent_id
+        self._agent_key = agent_key
+        self._binding_id = binding_id
         self._namespace = namespace
-        self._instance_id = instance_id
+        self._instance_key = instance_key
+        self._generation = generation
         self._sdk_version = sdk_version
         self._capabilities: List[str] = list(capabilities)
         self._session_affinity = session_affinity
@@ -72,6 +81,10 @@ class GrpcTransport:
         self._dropped = 0
         self._on_session_command: Optional[Callable[[str, str, bytes], None]] = None
         self._on_config_push: Optional[Callable[[int, str, bytes, str], None]] = None
+        self._on_execution_attempt: Optional[
+            Callable[[str, str, str, str, int, str, str, str, bytes, bytes, int], None]
+        ] = None
+        self._on_event_ack: Optional[Callable[[asdp_pb2.EventReportAck], None]] = None
         #: 握手成功后控制面回报的版本号。
         self.control_plane_version = ""
 
@@ -122,6 +135,19 @@ class GrpcTransport:
         """``fn(config_type, version, resources, nonce)``；异常 → ConfigAck(accepted=False)。"""
         self._on_config_push = fn
 
+    def set_execution_attempt_handler(
+        self,
+        fn: Callable[[str, str, str, str, int, str, str, str, bytes, bytes, int], None],
+    ) -> None:
+        """Handle a fenced ``ExecutionAttemptCommand`` delivery."""
+        self._on_execution_attempt = fn
+
+    def set_event_ack_handler(
+        self, fn: Callable[["asdp_pb2.EventReportAck"], None]
+    ) -> None:
+        """Receive durable event commit watermarks from the control plane."""
+        self._on_event_ack = fn
+
     # ─── 上行发送（best-effort）───
 
     def _enqueue(self, msg: asdp_pb2.Upstream) -> bool:
@@ -134,8 +160,12 @@ class GrpcTransport:
 
     def _meta(self) -> "asdp_pb2.UpstreamMeta":
         return asdp_pb2.UpstreamMeta(
-            agent_name=self._agent_name,
-            instance_id=self._instance_id,
+            tenant=self._tenant,
+            agent_id=self._agent_id,
+            agent_key=self._agent_key,
+            binding_id=self._binding_id,
+            instance_key=self._instance_key,
+            generation=self._generation,
             namespace=self._namespace,
             timestamp=now_ms(),
         )
@@ -148,10 +178,19 @@ class GrpcTransport:
             )
         )
 
-    def report_events(self, events: Iterable["asdp_pb2.SessionEventMsg"]) -> bool:
+    def report_events(
+        self, report_id: str, events: Iterable["asdp_pb2.SessionEventMsg"]
+    ) -> bool:
+        # The bridge keeps this batch in its durable journal. Do not consume
+        # queue capacity with timed-out copies while the stream is offline.
+        if not self._connected.is_set():
+            return False
         return self._enqueue(
             asdp_pb2.Upstream(
-                meta=self._meta(), event_report=asdp_pb2.EventReport(events=list(events))
+                meta=self._meta(),
+                event_report=asdp_pb2.EventReport(
+                    report_id=report_id, events=list(events)
+                ),
             )
         )
 
@@ -160,6 +199,14 @@ class GrpcTransport:
 
     def report_inventory(self, report: "asdp_pb2.InventoryReport") -> bool:
         return self._enqueue(asdp_pb2.Upstream(meta=self._meta(), inventory=report))
+
+    def report_execution_attempt(
+        self, report: "asdp_pb2.ExecutionAttemptReport"
+    ) -> bool:
+        """Report a fenced attempt transition to the control plane."""
+        return self._enqueue(
+            asdp_pb2.Upstream(meta=self._meta(), execution_attempt=report)
+        )
 
     def send_config_ack(
         self,
@@ -224,7 +271,12 @@ class GrpcTransport:
             self._channel = channel
             try:
                 stub = asdp_pb2_grpc.AgentDataPlaneServiceStub(channel)
-                responses = stub.Connect(iter(self._outgoing()))
+                metadata = (
+                    (("authorization", f"Bearer {self._credential}"),)
+                    if self._credential
+                    else None
+                )
+                responses = stub.Connect(iter(self._outgoing()), metadata=metadata)
                 for down in responses:
                     if self._stop.is_set():
                         return
@@ -267,6 +319,23 @@ class GrpcTransport:
                     except Exception as exc:  # 配置应用失败 → NACK
                         accepted, reason = False, str(exc)
                 self.send_config_ack(push.config_type, push.version, push.nonce, accepted, reason)
-            # heartbeat / team_event 下行目前无需处理。
+            elif kind == "execution_attempt" and self._on_execution_attempt is not None:
+                command = down.execution_attempt
+                self._on_execution_attempt(
+                    command.attempt_id,
+                    command.agent_task_id,
+                    command.run_id,
+                    command.node_id,
+                    command.generation,
+                    command.command,
+                    command.context_url,
+                    command.task_token,
+                    command.attempt_token,
+                    command.payload,
+                    command.timestamp,
+                )
+            elif kind == "event_ack" and self._on_event_ack is not None:
+                self._on_event_ack(down.event_ack)
+            # heartbeat 下行无需处理。
         except Exception:
             pass  # 旁路原则：任何处理异常都不扩散

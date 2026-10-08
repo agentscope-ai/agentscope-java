@@ -71,19 +71,16 @@ public interface ContractProvider {
     }
 
     /**
-     * Adopts a team session (HTTP fallback for ASDP {@code team_join}). Body is JSON with {@code
-     * sessionId} and optional {@code params} TeamContext. Capability: {@code team-coordination}.
+     * Inject a user message into the live session. Body is JSON {@code {"content":"..."}}. Busy
+     * sessions should throw {@link BusyException}.
      */
-    default void teamJoin(byte[] body) {
-        throw new UnsupportedOperationException("team-coordination is not supported");
+    default void postMessage(String sessionId, byte[] body) {
+        throw new UnsupportedOperationException("inbound messages are not supported");
     }
 
-    /**
-     * Releases a team session (HTTP fallback for ASDP {@code team_leave}). Body carries the same
-     * envelope as {@link #teamJoin(byte[])}. Capability: {@code team-coordination}.
-     */
-    default void teamLeave(byte[] body) {
-        throw new UnsupportedOperationException("team-coordination is not supported");
+    /** Optional transcript export. Capability: {@code export-transcript}. */
+    default Map<String, Object> exportTranscript(String sessionId) {
+        throw new UnsupportedOperationException("export-transcript is not supported");
     }
 
     /** Current phase string for command success responses. */
@@ -94,6 +91,20 @@ public interface ContractProvider {
     /** Signals that the requested session or resource does not exist on this instance. */
     class NotFoundException extends RuntimeException {
         public NotFoundException(String message) {
+            super(message);
+        }
+    }
+
+    /** Signals the session is busy and the caller should wait until idle. */
+    class BusyException extends RuntimeException {
+        public BusyException(String message) {
+            super(message);
+        }
+    }
+
+    /** Signals a missing or invalid internal token on a write endpoint. */
+    class UnauthorizedException extends RuntimeException {
+        public UnauthorizedException(String message) {
             super(message);
         }
     }

@@ -31,6 +31,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -60,6 +61,7 @@ import org.junit.jupiter.api.io.TempDir;
  * sees in its context: node B observing {@code turns=2} can only happen if it resolved the handle
  * from the shared registry <em>and</em> loaded node A's prior turn from the shared state store.
  */
+@HarnessQuiescence
 class SubagentRegistryRecoveryIntegrationTest {
 
     @TempDir Path workspace;

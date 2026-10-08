@@ -96,6 +96,7 @@ public final class SubagentDeclaration {
     private final boolean persistSession;
     private final boolean inheritParentPermissions;
     private final Boolean exposeToUser;
+    private final Boolean enablePendingToolRecovery;
     private final List<String> tools;
     private final List<String> skills;
 
@@ -141,6 +142,7 @@ public final class SubagentDeclaration {
         this.persistSession = b.persistSession;
         this.inheritParentPermissions = b.inheritParentPermissions;
         this.exposeToUser = b.exposeToUser;
+        this.enablePendingToolRecovery = b.enablePendingToolRecovery;
         this.tools = b.tools != null ? List.copyOf(b.tools) : List.of();
         this.skills = b.skills != null ? List.copyOf(b.skills) : List.of();
         this.url = b.url;
@@ -301,6 +303,15 @@ public final class SubagentDeclaration {
     }
 
     /**
+     * Recovery policy for orphaned tool calls in an automatically constructed local subagent.
+     * {@code null} (default) inherits the parent's setting; {@code true} or {@code false}
+     * explicitly overrides it. Remote subagents configure recovery on their own server.
+     */
+    public Boolean getEnablePendingToolRecovery() {
+        return enablePendingToolRecovery;
+    }
+
+    /**
      * Optional tool allowlist. When non-empty, only inherited parent tools whose names are listed
      * remain on the subagent's inherited toolkit. Empty means inherit all parent tools.
      */
@@ -396,6 +407,7 @@ public final class SubagentDeclaration {
         private boolean persistSession = false;
         private boolean inheritParentPermissions = true;
         private Boolean exposeToUser;
+        private Boolean enablePendingToolRecovery;
         private List<String> tools;
         private List<String> skills;
         private String url;
@@ -558,6 +570,18 @@ public final class SubagentDeclaration {
          */
         public Builder exposeToUser(Boolean exposeToUser) {
             this.exposeToUser = exposeToUser;
+            return this;
+        }
+
+        /**
+         * Overrides pending-tool recovery for this local subagent. Pass {@code null} to inherit
+         * the parent setting (the default). Permission confirmations are never auto-recovered.
+         *
+         * @param enable whether to enable recovery, or {@code null} to inherit
+         * @return this builder
+         */
+        public Builder enablePendingToolRecovery(Boolean enable) {
+            this.enablePendingToolRecovery = enable;
             return this;
         }
 

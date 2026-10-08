@@ -79,6 +79,21 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("postgres migrate: read %s: %w", name, err)
 		}
+		if strings.Contains(string(body), "-- +migrate NoTransaction") {
+			// Sending multiple statements in one Exec makes PostgreSQL run them in
+			// an implicit transaction. That still breaks statements such as CREATE
+			// INDEX CONCURRENTLY, even though this branch does not begin a tx.
+			for _, statement := range noTransactionStatements(string(body)) {
+				if _, err := conn.Exec(ctx, statement); err != nil {
+					return fmt.Errorf("postgres migrate: apply %s: %w", name, err)
+				}
+			}
+			if _, err := conn.Exec(ctx,
+				`INSERT INTO schema_migrations(version) VALUES ($1)`, version); err != nil {
+				return fmt.Errorf("postgres migrate: record %s: %w", name, err)
+			}
+			continue
+		}
 		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return fmt.Errorf("postgres migrate: begin %s: %w", name, err)
@@ -97,6 +112,21 @@ func (s *Store) Migrate(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// noTransactionStatements splits the deliberately simple DDL used by
+// NoTransaction migrations. Those migrations must not contain procedural SQL
+// or semicolons inside quoted values; keeping that restriction here avoids an
+// implicit transaction when a migration contains more than one index command.
+func noTransactionStatements(body string) []string {
+	parts := strings.Split(body, ";")
+	statements := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if statement := strings.TrimSpace(part); statement != "" {
+			statements = append(statements, statement)
+		}
+	}
+	return statements
 }
 
 func loadApplied(ctx context.Context, conn *pgxpool.Conn) (map[string]bool, error) {

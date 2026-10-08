@@ -1,6 +1,7 @@
 ---
-title: "Agent"
-description: "Learn how to define and configure agents in AgentScope Java 2.0"
+title: Agent
+description: Learn how to define and configure agents in AgentScope Java 2.0
+zh_link: /v2/zh/docs/building-blocks/agent
 ---
 
 ## Overview
@@ -30,7 +31,7 @@ The `Agent` interface composes three capability interfaces: `CallableAgent`, `St
 
 Each `call` runs through the reasoning-acting loop. The diagram below shows the main control flow:
 
-```{mermaid}
+```mermaid
 flowchart TD
     A([Input: messages / event]) --> B{Waiting on\nexternal event?}
     B -- yes --> C[Apply event\nupdate tool state]
@@ -61,8 +62,12 @@ flowchart TD
 
 Build an agent with `ReActAgent.builder()...build()`. `.model(...)` takes either a `ModelRegistry`-resolved string id (most common — picks up env vars automatically) or an explicit `Model` instance (when you need explicit control over timeouts / custom endpoints / etc.).
 
-::::{tab-set}
-:::{tab-item} String model id (recommended)
+
+<Tabs>
+
+
+<Tab title="String model id (recommended)">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
@@ -78,8 +83,12 @@ ReActAgent agent =
                 .toolkit(new Toolkit())
                 .build();
 ```
-:::
-:::{tab-item} Explicit Model builder
+
+</Tab>
+
+
+<Tab title="Explicit Model builder">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
@@ -100,8 +109,12 @@ ReActAgent agent =
                 .toolkit(new Toolkit())
                 .build();
 ```
-:::
-:::{tab-item} With Toolkit / MCP
+
+</Tab>
+
+
+<Tab title="With Toolkit / MCP">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
@@ -113,10 +126,12 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new TodoTools());          // reflectively register @Tool methods
 toolkit.registerTool(new MyCustomTools());      // custom tool class
 
-McpClientWrapper amap = McpClientBuilder.streamableHttp()
-        .name("amap")
-        .url("https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
-        .build();
+McpClientWrapper amap =
+        McpClientBuilder.create("amap")
+                .streamableHttpTransport(
+                        "https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
+                .buildAsync()
+                .block();
 toolkit.registerMcpClient(amap).block();
 
 ReActAgent agent =
@@ -127,12 +142,19 @@ ReActAgent agent =
                 .toolkit(toolkit)
                 .build();
 ```
-:::
-::::
 
-:::{tip}
-The `ModelRegistry` string form (`<provider>:<model>`) requires the matching model extension module on the classpath. It supports `dashscope` / `openai` / `deepseek` / `anthropic` / `gemini` / `ollama` and reads the matching API key (`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) from the environment. For long-running scenarios that also need a workspace, session persistence, memory compaction, subagents, and so on, use [`HarnessAgent`](../harness/architecture.md) — it is a thin wrapper around `ReActAgent` with a largely identical builder.
-:::
+</Tab>
+
+
+</Tabs>
+
+
+
+<Tip>
+
+The `ModelRegistry` string form (`<provider>:<model>`) requires the matching model extension module on the classpath. It supports `dashscope` / `openai` / `openai-official` / `deepseek` / `anthropic` / `gemini` / `ollama` and reads the matching API key (`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) from the environment. For long-running scenarios that also need a workspace, session persistence, memory compaction, subagents, and so on, use [`HarnessAgent`](/v2/en/docs/harness/architecture) — it is a thin wrapper around `ReActAgent` with a largely identical builder.
+
+</Tip>
 
 ### Builder fields
 
@@ -145,10 +167,8 @@ The `ModelRegistry` string form (`<provider>:<model>`) requires the matching mod
 | `middlewares` | `List<? extends MiddlewareBase>` | `List.of()` | Applied to agent / reasoning / acting / model call / system prompt hooks |
 | `stateStore` | `AgentStateStore` | `null` (no persistence) | When set, agent automatically loads/saves `AgentState` on every `call`, keyed by the `(userId, sessionId)` of the call's `RuntimeContext` |
 | `defaultSessionId` | `String` | agent `name` | Fallback `sessionId` used when a call's `RuntimeContext` carries none |
-| `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules, see [Permission System](./permission-system.md) |
-| `modelConfig` | `ModelConfig` | default | Model retries and fallback model |
-| `reactConfig` | `ReactConfig` | default | Max iterations and reject handling |
-| `maxIters` | `int` | `10` | Max iterations of the ReAct main loop (alternative to `reactConfig`) |
+| `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules, see [Permission System](/v2/en/docs/building-blocks/permission-system) |
+| `maxIters` | `int` | `10` | Max iterations of the ReAct main loop |
 
 ## Multi-user / multi-session concurrency
 
@@ -180,11 +200,35 @@ agent.call(List.of(new UserMessage("Hi there")),
 
 At the start of each `call()`, the agent automatically loads the `AgentState` (conversation context, permission rules, etc.) for the given `(userId, sessionId)`. When the call finishes, the state is saved back. Different sessions are completely isolated.
 
-:::{tip}
+
+<Tip>
+
 Calls targeting the same `(userId, sessionId)` are **serialized** — a second request waits for the first to complete. Calls targeting different sessions run in parallel.
-:::
+
+</Tip>
+
 
 A complete Spring Boot example: `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`.
+
+## Control one execution
+
+`ReActAgent` and `HarnessAgent` provide `prepareRun(messages, context)` for events and `prepareCall(messages, context)` for the final reply. Both return an `AgentRun<T>` with a unique `runId()`. Preparing a handle does not execute the agent; subscribe once to `stream()` to start it.
+
+```java
+AgentRun<AgentEvent> run = agent.prepareRun(List.of(new UserMessage("Hello")), context);
+String runId = run.runId(); // Register the handle in the application's run manager first.
+run.stream().subscribe(this::onEvent, this::onError);
+
+// A separate request can look up this handle by runId.
+run.cancel();
+```
+
+- `cancel()` cancels the reactive execution immediately, including before subscription and while waiting for the session gate. Subscribers receive `CancellationException`. Cancelling queued B never interrupts running A or allows C to overtake A.
+- `interrupt()` / `interrupt(message)` asks an admitted execution to stop at a cooperative checkpoint. ReActAgent returns its interrupted recovery reply; the handle then completes normally. Before admission, interruption cancels only that queued execution.
+- `status()` returns `CREATED`, `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELLED`. `QUEUED` includes setup before admission to the core lifecycle. `termination()` observes the terminal status without starting execution. Downstream subscription disposal also cancels the handle.
+- A handle permits one subscription. Create a new handle for a new execution; repeated subscriptions are rejected. Terminal handles cannot interrupt later calls.
+
+Run managers own lookup, authorization and terminal cleanup. The Agent does not retain a registry of RuntimeContext objects. Cancellation does not roll back external effects or forcibly terminate a blocking tool that ignores cancellation. Hard cancellation also does not promise the cooperative interrupted reply/state-save path.
 
 ## Interrupt
 
@@ -202,11 +246,11 @@ RuntimeContext target = RuntimeContext.builder()
 // Interrupt the in-flight call for that session
 agent.interrupt(target);
 
-// Interrupt with a message — the LLM sees this message when the session resumes
+// Attach a message to the interruption context
 agent.interrupt(target, new UserMessage("User cancelled the operation"));
 ```
 
-Interrupt is **per-session**: it only affects the call running on the specified `(userId, sessionId)` — other concurrent sessions on the same agent are unaffected.
+This convenience API selects the call currently running in `(userId, sessionId)`. It does not select a queued call: use its execution handle for that. Interrupting an idle session is a no-op. The signal itself belongs to the execution and is not persisted in AgentState.
 
 **What happens after interrupt:**
 - The current reasoning/tool execution is stopped at the next checkpoint (start of reasoning, start of acting, each streaming chunk)
@@ -262,7 +306,7 @@ agent.streamEvents(new UserMessage("Summarize the README."))
         .blockLast();
 ```
 
-Full event-type and field reference: [Message and event](./message-and-event.md).
+Full event-type and field reference: [Message and event](/v2/en/docs/building-blocks/message-and-event).
 
 ### observe
 
@@ -274,7 +318,7 @@ agent.observe(otherAgentMsg).block();
 
 ## RuntimeContext (per-call context)
 
-`RuntimeContext` (`io.agentscope.core.agent.RuntimeContext`) is a **per-call metadata bag**: pass one instance to `call` / `stream`, and the agent binds it for the duration of that call so downstream tools, middlewares, and hooks all observe the same reference. The framework unbinds it on completion.
+`RuntimeContext` (`io.agentscope.core.agent.RuntimeContext`) is a **per-call metadata bag**. Pass a separate instance to each call; tools and middlewares receive the context through their parameters. The agent does not expose a shared current-context getter or inject contexts into shared hook fields. Skill repository operations and `HarnessAgent.promoteSkill(name, reviewerId, ctx)` likewise take an explicit context; context-less repository operations use the default namespace.
 
 It is **not** persistent state — `AgentState` (conversation context, compressed summaries, permission rules, tool state) covers that. `RuntimeContext` carries data that is scoped to a single invocation: tenant / userId / request-id, DB connections, audit loggers, feature flags, and so on.
 
@@ -288,7 +332,7 @@ It is **not** persistent state — `AgentState` (conversation context, compresse
 | String attributes (free-form key-value) | `put(String key, Object value)` | `<T> T get(String key)` |
 | Typed attributes (inject business POJOs by `Class<T>`) | `put(Class<T> type, T value)` / `put(String key, Class<T> type, T value)` | `<T> T get(Class<T> type)` / `<T> T get(String key, Class<T> type)` |
 
-Typed attributes power tool injection — declare a parameter of the matching type on a `@Tool` method and the framework supplies the value. See [Tool — Receiving context](./tool.md#receiving-context). String attributes are typically used for in-process coordination (e.g. middleware-to-middleware signalling). The two layers are isolated: typed values do not appear in `getExtra()` and vice-versa.
+Typed attributes power tool injection — declare a parameter of the matching type on a `@Tool` method and the framework supplies the value. See [Tool — Receiving context](/v2/en/docs/building-blocks/tool#receiving-context). String attributes are typically used for in-process coordination (e.g. middleware-to-middleware signalling). The two layers are isolated: typed values do not appear in `getExtra()` and vice-versa.
 
 ### Construct and pass
 
@@ -309,13 +353,13 @@ RuntimeContext ctx =
 Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ```
 
-`ReActAgent` provides `RuntimeContext` overloads for `call` and `stream`; `streamEvents` does not — when you need a context with the event stream, use `stream(msgs, options, ctx)`, or configure a global `toolExecutionContext` on the builder. When no context is passed the framework substitutes `RuntimeContext.empty()` (null session fields, empty attribute maps), and the agent falls back to its builder-time `defaultSessionId`.
+`ReActAgent` provides `RuntimeContext` overloads for `call` and `streamEvents` (plus deprecated `stream` overloads kept for compatibility). For event streams, pass the context explicitly with `streamEvents(msgs, ctx)`. When no context is passed the framework substitutes `RuntimeContext.empty()` (null session fields, empty attribute maps), and the agent falls back to its builder-time `defaultSessionId`.
 
 ### Who reads it
 
-- **Tools** (`@Tool` methods and `ToolBase.callAsync`) — see [Tool — Receiving context](./tool.md#receiving-context).
-- **Middleware** (every `MiddlewareBase` hook) — received as the second parameter `ctx`. See [Middleware — Reading RuntimeContext](./middleware.md#reading-runtimecontext).
-- **All threads within the same call** — the internal maps are `ConcurrentMap`s, so hooks and tools can read/write the same instance to coordinate.
+- **Tools** (`@Tool` methods and `ToolBase.callAsync`) — see [Tool — Receiving context](/v2/en/docs/building-blocks/tool#receiving-context).
+- **Middleware** (every `MiddlewareBase` hook) — received as the second parameter `ctx`. See [Middleware — Reading RuntimeContext](/v2/en/docs/building-blocks/middleware#reading-runtimecontext).
+- **All threads within the same call** — the internal maps are `ConcurrentMap`s, so middlewares and tools can read/write the same instance to coordinate.
 
 ### Relation to persistence
 
@@ -324,9 +368,13 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 Runnable examples: `agentscope-examples/documentation/.../context/RuntimeContextExample.java`, `tool/ToolExecutionContextExample.java`.
 
-:::{note}
+
+<Note>
+
 A legacy `ToolExecutionContext` (`io.agentscope.core.tool`) is `@Deprecated`. New code should use `RuntimeContext`. The legacy type is bridged automatically via `RuntimeContext.asToolExecutionContext()`, so existing code keeps working.
-:::
+
+</Note>
+
 
 ## Human-in-the-loop
 
@@ -336,7 +384,7 @@ The agent pauses and emits a special event in two cases: a tool call requiring *
 
 When the permission system decides a tool call needs user approval, the agent emits `RequireUserConfirmEvent` and pauses.
 
-**1. Receive `RequireUserConfirmEvent`** — use `streamEvents` to detect the pause. The event carries `getReplyId()` (used to resume) and `getToolCalls()` — a list of `ToolUseBlock` each exposing `getId()` / `getName()` / `getInput()` / `getSuggestedRules()`.
+**1. Receive `RequireUserConfirmEvent`** — use `streamEvents` to detect the pause. The event carries `getReplyId()` (used to resume) and `getToolCalls()` — a list of `ToolUseBlock` each exposing `getId()` / `getName()` / `getInput()`.
 
 ```java
 import io.agentscope.core.event.RequireUserConfirmEvent;
@@ -344,16 +392,20 @@ import io.agentscope.core.event.RequireUserConfirmEvent;
 agent.streamEvents(msg)
         .doOnNext(event -> {
             if (event instanceof RequireUserConfirmEvent confirm) {
-                confirm.getToolCalls().forEach(tc -> {
-                    System.out.println("Tool: " + tc.getName() + ", input: " + tc.getInput());
-                    System.out.println("Suggested rules: " + tc.getSuggestedRules());
-                });
+                confirm.getToolCalls()
+                        .forEach(
+                                tc ->
+                                        System.out.println(
+                                                "Tool: "
+                                                        + tc.getName()
+                                                        + ", input: "
+                                                        + tc.getInput()));
             }
         })
         .blockLast();
 ```
 
-**2. Build confirm results** — construct a `ConfirmResult` per pending call. You can tweak the tool input on the way back, or accept the suggested rules so identical future calls auto-allow:
+**2. Build confirm results** — construct a `ConfirmResult` per pending call. You can tweak the tool input on the way back; to remember a choice for identical future calls, pass explicit `PermissionRule`s in the `rules` argument (suggested rules surface on the permission engine's `PermissionDecision`, not on the tool call):
 
 ```java
 import io.agentscope.core.event.ConfirmResult;
@@ -364,10 +416,8 @@ List<ConfirmResult> confirmResults = new ArrayList<>();
 for (var tc : confirmEvent.getToolCalls()) {
     confirmResults.add(
             new ConfirmResult(
-                    /* confirmed = */ true,                  // false to deny
-                    /* toolCall  = */ tc,                    // pass back (optionally modified)
-                    /* rules     = */ tc.getSuggestedRules() // accept rules → future calls auto-allow
-                    ));
+                    /* confirmed = */ true, // false to deny
+                    /* toolCall  = */ tc)); // pass back (optionally modified)
 }
 ```
 
@@ -433,13 +483,17 @@ for (var tc : externalEvent.getToolCalls()) {
 
 **3. Resume the agent** — feed the results back as the next `call`'s input message. After the results are validated, they are injected into the agent context and the agent emits `ExternalExecutionResultEvent`; its `getReplyId()` matches the earlier `RequireExternalExecutionEvent#getReplyId()`. Reasoning then continues from where it paused.
 
-:::{tip}
+
+<Tip>
+
 Use `streamEvents` when building interactive UIs — it lets you detect pauses in real time and prompt the user immediately. Use `call` for programmatic flows that handle events automatically. Complete runnable examples: `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`.
-:::
+
+</Tip>
+
 
 ## Configuring state persistence (AgentStateStore)
 
-`AgentState` holds everything required to resume the agent — conversation context, compressed summaries, permission rules, tool state, and the current reply position. [`AgentStateStore`](../../integration/session/index.md) is its storage abstraction.
+`AgentState` holds everything required to resume the agent — conversation context, compressed summaries, permission rules, tool state, and the current reply position. [`AgentStateStore`](/v2/en/integration/session/index) is its storage abstraction.
 
 **Set `stateStore(...)` on the builder and the agent persists and recovers automatically**: every `call` writes `AgentState` back; the next time you call with the same `(userId, sessionId)`, it loads. The agent instance is stateless with respect to sessions — the slot is chosen per-call from the `RuntimeContext` (falling back to `defaultSessionId`).
 
@@ -486,7 +540,7 @@ state.getContext().size();                  // current message count
 String json = state.toJson();               // serialize to JSON
 ```
 
-For full field-by-field details, cross-node continuation, and how the state store interacts with compaction / Plan Mode / subagents, see [Context & AgentState](context.md) and [Compaction](../harness/compaction.md).
+For full field-by-field details, cross-node continuation, and how the state store interacts with compaction / Plan Mode / subagents, see [Context & AgentState](/v2/en/docs/building-blocks/context) and [Compaction](/v2/en/docs/harness/compaction).
 
 ## Structured Output
 
@@ -581,8 +635,15 @@ ReActAgent.builder()
         .model("dashscope:qwen-plus")
         .maxRetries(3)                              // auto-retry on model call failure
         .fallbackModel("dashscope:qwen-max")        // switch to fallback after consecutive failures
+        .failoverListener((primary, error) ->       // observe the switch: which model failed, and why
+                metrics.recordFailover(primary.getModelName(), error))
         .build();
 ```
+
+The failover listener is invoked synchronously at the switch site with the original error — the
+only in-process signal of the switch, since the primary's error never reaches the event stream or
+the middlewares. Implementations must be non-blocking and thread-safe; exceptions they throw are
+logged and ignored without affecting the switch.
 
 ### Skills
 
@@ -603,18 +664,27 @@ ReActAgent.builder()
 
 ## Further reading
 
-::::{grid} 2
 
-:::{grid-item-card} Permission System
-:link: ./permission-system.html
+<CardGroup cols={2}>
+
+
+
+<Card title="Permission System" href="/v2/en/docs/building-blocks/permission-system">
+
 
 Control which tools the agent can call, and under what conditions.
-:::
 
-:::{grid-item-card} Middleware
-:link: ./middleware.html
+</Card>
+
+
+
+<Card title="Middleware" href="/v2/en/docs/building-blocks/middleware">
+
 
 Intercept and modify agent behavior at the agent, reasoning, acting, and model-call hooks.
-:::
 
-::::
+</Card>
+
+
+
+</CardGroup>

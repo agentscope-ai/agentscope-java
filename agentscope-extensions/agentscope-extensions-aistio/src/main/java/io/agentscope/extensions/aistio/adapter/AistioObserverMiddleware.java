@@ -31,6 +31,7 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.extensions.aistio.model.SessionEvent;
+import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -59,6 +60,13 @@ public final class AistioObserverMiddleware implements MiddlewareBase {
 
     AistioObserverMiddleware(AgentScopeAdapter adapter) {
         this.adapter = adapter;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(
+                ExtensionPoint.ON_AGENT, ExtensionPoint.ON_ACTING, ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
     @Override
@@ -110,6 +118,7 @@ public final class AistioObserverMiddleware implements MiddlewareBase {
                                 .role(SessionEvent.ROLE_ASSISTANT)
                                 .toolName(call.getName())
                                 .toolInputJson(toJson(call.getInput()))
+                                .frameworkMeta(toolMetadata(call.getId(), "running"))
                                 .build());
             }
         }
@@ -145,6 +154,12 @@ public final class AistioObserverMiddleware implements MiddlewareBase {
                             .role(SessionEvent.ROLE_TOOL)
                             .toolName(end.getToolCallName())
                             .toolOutput(output == null ? "" : output.toString())
+                            .frameworkMeta(
+                                    toolMetadata(
+                                            end.getToolCallId(),
+                                            end.getState() == null
+                                                    ? "unknown"
+                                                    : end.getState().getValue()))
                             .build());
         } else if (event instanceof AgentResultEvent result) {
             Msg msg = result.getResult();
@@ -175,6 +190,17 @@ public final class AistioObserverMiddleware implements MiddlewareBase {
         }
         try {
             return MAPPER.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
+    static byte[] toolMetadata(String toolCallId, String state) {
+        try {
+            return MAPPER.writeValueAsBytes(
+                    Map.of(
+                            "toolCallId", toolCallId == null ? "" : toolCallId,
+                            "state", state == null ? "unknown" : state));
         } catch (JsonProcessingException e) {
             return null;
         }

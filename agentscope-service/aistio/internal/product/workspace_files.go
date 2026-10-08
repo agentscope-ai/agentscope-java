@@ -100,8 +100,8 @@ func (s *Server) deleteWorkspaceFilePrefix(ctx context.Context, owner, scopeType
 	_, err := s.db.Pool.Exec(ctx,
 		`DELETE FROM workspace_files
 		 WHERE owner_id=$1 AND scope_type=$2 AND scope_id=$3
-		   AND (path=$4 OR path LIKE $5)`,
-		owner, scopeType, scopeID, prefix, prefix+"/%")
+		   AND (path=$4 OR starts_with(path,$5))`,
+		owner, scopeType, scopeID, prefix, prefix+"/")
 	if err != nil {
 		return err
 	}
@@ -117,9 +117,9 @@ func (s *Server) listWorkspaceFilePaths(ctx context.Context, owner, scopeType, s
 	rows, err := s.db.Pool.Query(ctx,
 		`SELECT path FROM workspace_files
 		 WHERE owner_id=$1 AND scope_type=$2 AND scope_id=$3
-		   AND ($4='' OR path=$4 OR path LIKE $5)
+		   AND ($4='' OR path=$4 OR starts_with(path,$5))
 		 ORDER BY path`,
-		owner, scopeType, scopeID, prefix, prefix+"/%")
+		owner, scopeType, scopeID, prefix, prefix+"/")
 	if err != nil {
 		return nil, err
 	}
@@ -140,9 +140,9 @@ func (s *Server) listWorkspaceFileContents(ctx context.Context, owner, scopeType
 	rows, err := s.db.Pool.Query(ctx,
 		`SELECT path, content FROM workspace_files
 		 WHERE owner_id=$1 AND scope_type=$2 AND scope_id=$3
-		   AND ($4='' OR path=$4 OR path LIKE $5)
+		   AND ($4='' OR path=$4 OR starts_with(path,$5))
 		 ORDER BY path`,
-		owner, scopeType, scopeID, prefix, prefix+"/%")
+		owner, scopeType, scopeID, prefix, prefix+"/")
 	if err != nil {
 		return nil, err
 	}

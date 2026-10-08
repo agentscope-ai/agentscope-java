@@ -296,16 +296,74 @@ class RAGFlowConfigTest {
                             .addDatasetId("dataset-123")
                             .useKg(true)
                             .tocEnhance(true)
-                            .rerankId(1)
+                            .rerankId("BAAI/bge-reranker-v2-m3@BAAI")
                             .keyword(true)
                             .highlight(true)
                             .build();
 
             assertTrue(config.getUseKg());
             assertTrue(config.getTocEnhance());
-            assertEquals(1, config.getRerankId());
+            assertEquals("BAAI/bge-reranker-v2-m3@BAAI", config.getRerankId());
             assertTrue(config.getKeyword());
             assertTrue(config.getHighlight());
+        }
+
+        @Test
+        void shouldAcceptRerankIdAsModelName() {
+            // RAGFlow identifies rerank models by name, including forms with '/' and '@'.
+            RAGFlowConfig named =
+                    RAGFlowConfig.builder()
+                            .apiKey("test-api-key")
+                            .baseUrl("http://localhost:9380")
+                            .addDatasetId("dataset-123")
+                            .rerankId("BAAI/bge-reranker-v2-m3@BAAI")
+                            .build();
+            assertEquals("BAAI/bge-reranker-v2-m3@BAAI", named.getRerankId());
+
+            // Hex UUID form returned by RAGFlow's model list.
+            RAGFlowConfig uuid =
+                    RAGFlowConfig.builder()
+                            .apiKey("test-api-key")
+                            .baseUrl("http://localhost:9380")
+                            .addDatasetId("dataset-123")
+                            .rerankId("b2a62730759d11ef987d0242ac120004")
+                            .build();
+            assertEquals("b2a62730759d11ef987d0242ac120004", uuid.getRerankId());
+        }
+
+        @Test
+        @SuppressWarnings("deprecation")
+        void deprecatedIntegerRerankIdIsStringified() {
+            RAGFlowConfig config =
+                    RAGFlowConfig.builder()
+                            .apiKey("test-api-key")
+                            .baseUrl("http://localhost:9380")
+                            .addDatasetId("dataset-123")
+                            .rerankId(Integer.valueOf(42))
+                            .build();
+            assertEquals("42", config.getRerankId());
+        }
+
+        @Test
+        @SuppressWarnings("deprecation")
+        void nullRerankIdStaysNullForBothOverloads() {
+            RAGFlowConfig viaString =
+                    RAGFlowConfig.builder()
+                            .apiKey("test-api-key")
+                            .baseUrl("http://localhost:9380")
+                            .addDatasetId("dataset-123")
+                            .rerankId((String) null)
+                            .build();
+            assertNull(viaString.getRerankId());
+
+            RAGFlowConfig viaInteger =
+                    RAGFlowConfig.builder()
+                            .apiKey("test-api-key")
+                            .baseUrl("http://localhost:9380")
+                            .addDatasetId("dataset-123")
+                            .rerankId((Integer) null)
+                            .build();
+            assertNull(viaInteger.getRerankId());
         }
 
         @Test
@@ -495,7 +553,7 @@ class RAGFlowConfigTest {
                         .pageSize(50)
                         .useKg(true)
                         .tocEnhance(true)
-                        .rerankId(1)
+                        .rerankId("BAAI/bge-reranker-v2-m3@BAAI")
                         .keyword(true)
                         .highlight(true)
                         .addCrossLanguage("en")
@@ -517,7 +575,7 @@ class RAGFlowConfigTest {
         assertEquals(50, config.getPageSize());
         assertTrue(config.getUseKg());
         assertTrue(config.getTocEnhance());
-        assertEquals(1, config.getRerankId());
+        assertEquals("BAAI/bge-reranker-v2-m3@BAAI", config.getRerankId());
         assertTrue(config.getKeyword());
         assertTrue(config.getHighlight());
         assertEquals(1, config.getCrossLanguages().size());

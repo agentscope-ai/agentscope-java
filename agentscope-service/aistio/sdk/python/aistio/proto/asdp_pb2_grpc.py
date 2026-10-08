@@ -5,7 +5,7 @@ import warnings
 
 from . import asdp_pb2 as asdp__pb2
 
-GRPC_GENERATED_VERSION = '1.83.0'
+GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -25,7 +25,7 @@ if _version_not_supported:
     )
 
 
-class AgentDataPlaneServiceStub:
+class AgentDataPlaneServiceStub(object):
     """AgentDataPlaneService is the ASDP gRPC service.
     Single bidirectional stream multiplexing all message types (analogous to xDS ADS).
     """
@@ -43,7 +43,7 @@ class AgentDataPlaneServiceStub:
                 _registered_method=True)
 
 
-class AgentDataPlaneServiceServicer:
+class AgentDataPlaneServiceServicer(object):
     """AgentDataPlaneService is the ASDP gRPC service.
     Single bidirectional stream multiplexing all message types (analogous to xDS ADS).
     """
@@ -70,7 +70,7 @@ def add_AgentDataPlaneServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class AgentDataPlaneService:
+class AgentDataPlaneService(object):
     """AgentDataPlaneService is the ASDP gRPC service.
     Single bidirectional stream multiplexing all message types (analogous to xDS ADS).
     """

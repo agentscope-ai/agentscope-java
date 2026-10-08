@@ -15,7 +15,7 @@
  */
 package io.agentscope.spring.boot.agui.common;
 
-import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.tool.ToolMergeMode;
 import java.time.Duration;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -33,13 +33,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     cors-allowed-origins:
  *       - "*"
  *     run-timeout: 10m
- *     default-tool-merge-mode: MERGE_FRONTEND_PRIORITY
+ *     default-tool-merge-mode: MERGE_EXTERNAL_PRIORITY
  *     default-agent-id: default
  *     agent-id-header: X-Agent-Id
  *     enable-path-routing: true
  *     enable-reasoning: false
  *     emit-token-usage: false
  *     emit-run-finished-after-error: false
+ *     interrupt-on-disconnect: true
  * </pre>
  */
 @ConfigurationProperties(prefix = "agentscope.agui")
@@ -58,7 +59,7 @@ public class AguiProperties {
     private Duration runTimeout = Duration.ofMinutes(10);
 
     /** Default tool merge mode. */
-    private ToolMergeMode defaultToolMergeMode = ToolMergeMode.MERGE_FRONTEND_PRIORITY;
+    private ToolMergeMode defaultToolMergeMode = ToolMergeMode.MERGE_EXTERNAL_PRIORITY;
 
     /** Whether to emit state events. */
     private boolean emitStateEvents = true;
@@ -124,6 +125,9 @@ public class AguiProperties {
      * open.
      */
     private long sseTimeout = 600000L;
+
+    /** Whether to interrupt the agent when the client disconnects. */
+    private boolean interruptOnDisconnect = true;
 
     public String getPathPrefix() {
         return pathPrefix;
@@ -259,5 +263,13 @@ public class AguiProperties {
 
     public void setSseTimeout(long sseTimeout) {
         this.sseTimeout = sseTimeout;
+    }
+
+    public boolean isInterruptOnDisconnect() {
+        return interruptOnDisconnect;
+    }
+
+    public void setInterruptOnDisconnect(boolean interruptOnDisconnect) {
+        this.interruptOnDisconnect = interruptOnDisconnect;
     }
 }

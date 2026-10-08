@@ -17,7 +17,9 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"hash/fnv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,22 +36,29 @@ type Store struct {
 	pool      *pgxpool.Pool
 	retention store.RetentionConfig
 
-	sessions         *sessionRepo
-	turns            *turnRepo
-	events           *eventRepo
-	contexts         *contextRepo
-	metrics          *metricsRepo
-	transcriptIndex  *transcriptIndexRepo
-	messages         *messageRepo
-	tasks            *taskRepo
-	teams            *teamRepo
-	commands         *commandRepo
-	kv               *kvRepo
-	locks            *lockRepo
-	snapshots        *snapshotRepo
-	bus              *busRepo
-	asyncTools       *asyncToolRepo
-	dpTasks          *dpTaskRepo
+	sessions          *sessionRepo
+	turns             *turnRepo
+	events            *eventRepo
+	contexts          *contextRepo
+	metrics           *metricsRepo
+	transcriptIndex   *transcriptIndexRepo
+	commands          *commandRepo
+	kv                *kvRepo
+	locks             *lockRepo
+	snapshots         *snapshotRepo
+	bus               *busRepo
+	asyncTools        *asyncToolRepo
+	dpTasks           *dpTaskRepo
+	agentCatalog      *agentCatalogRepo
+	runtimeRegistry   *runtimeRegistryRepo
+	executionAttempts *executionAttemptRepo
+	orchestration     *orchestrationRepo
+	outbox            *outboxRepo
+	collaboration     *collaborationRepo
+	workSources       *workSourceRepo
+	endpoints         *endpointRepo
+	teamProposals     *teamProposalRepo
+	chats             *chatRepo
 }
 
 // Open creates a PostgreSQL store from cfg.
@@ -84,9 +93,6 @@ func Open(ctx context.Context, cfg store.Config) (store.Store, error) {
 	s.contexts = &contextRepo{pool: pool}
 	s.metrics = &metricsRepo{pool: pool}
 	s.transcriptIndex = &transcriptIndexRepo{pool: pool}
-	s.messages = &messageRepo{pool: pool}
-	s.tasks = &taskRepo{pool: pool}
-	s.teams = &teamRepo{pool: pool}
 	s.commands = &commandRepo{pool: pool}
 	s.kv = &kvRepo{pool: pool}
 	s.locks = &lockRepo{pool: pool}
@@ -94,6 +100,16 @@ func Open(ctx context.Context, cfg store.Config) (store.Store, error) {
 	s.bus = &busRepo{pool: pool}
 	s.asyncTools = &asyncToolRepo{pool: pool}
 	s.dpTasks = &dpTaskRepo{pool: pool}
+	s.agentCatalog = &agentCatalogRepo{pool: pool}
+	s.runtimeRegistry = &runtimeRegistryRepo{pool: pool}
+	s.executionAttempts = &executionAttemptRepo{pool: pool}
+	s.orchestration = &orchestrationRepo{pool: pool}
+	s.outbox = &outboxRepo{pool: pool}
+	s.collaboration = &collaborationRepo{pool: pool}
+	s.workSources = &workSourceRepo{pool: pool}
+	s.endpoints = &endpointRepo{pool: pool}
+	s.teamProposals = &teamProposalRepo{pool: pool}
+	s.chats = &chatRepo{pool: pool}
 	return s, nil
 }
 
@@ -103,16 +119,25 @@ func (s *Store) Events() store.EventRepository                     { return s.ev
 func (s *Store) ContextSnapshots() store.ContextSnapshotRepository { return s.contexts }
 func (s *Store) Metrics() store.MetricsRepository                  { return s.metrics }
 func (s *Store) TranscriptIndex() store.TranscriptIndexRepository  { return s.transcriptIndex }
-func (s *Store) TeamMessages() store.TeamMessageRepository         { return s.messages }
-func (s *Store) TeamTasks() store.TeamTaskRepository               { return s.tasks }
-func (s *Store) Teams() store.TeamRepository                       { return s.teams }
 func (s *Store) Commands() store.SessionCommandRepository          { return s.commands }
-func (s *Store) KV() store.KVRepository                             { return s.kv }
-func (s *Store) Locks() store.LockRepository                       { return s.locks }
-func (s *Store) Snapshots() store.SnapshotRepository               { return s.snapshots }
-func (s *Store) Bus() store.BusRepository                           { return s.bus }
-func (s *Store) AsyncTools() store.AsyncToolRepository             { return s.asyncTools }
-func (s *Store) Tasks() store.TaskRepository                       { return s.dpTasks }
+func (s *Store) AgentCatalog() store.AgentCatalogRepository        { return s.agentCatalog }
+func (s *Store) RuntimeRegistry() store.RuntimeRegistryRepository  { return s.runtimeRegistry }
+func (s *Store) ExecutionAttempts() store.ExecutionAttemptRepository {
+	return s.executionAttempts
+}
+func (s *Store) Orchestration() store.OrchestrationRepository { return s.orchestration }
+func (s *Store) Outbox() store.OutboxRepository               { return s.outbox }
+func (s *Store) Collaboration() store.CollaborationRepository { return s.collaboration }
+func (s *Store) WorkSources() store.WorkSourceRepository      { return s.workSources }
+func (s *Store) Endpoints() store.EndpointRepository          { return s.endpoints }
+func (s *Store) TeamProposals() store.TeamProposalRepository  { return s.teamProposals }
+func (s *Store) Chats() store.ChatRepository                  { return s.chats }
+func (s *Store) KV() store.KVRepository                       { return s.kv }
+func (s *Store) Locks() store.LockRepository                  { return s.locks }
+func (s *Store) Snapshots() store.SnapshotRepository          { return s.snapshots }
+func (s *Store) Bus() store.BusRepository                     { return s.bus }
+func (s *Store) AsyncTools() store.AsyncToolRepository        { return s.asyncTools }
+func (s *Store) DPTasks() store.DPTaskRepository              { return s.dpTasks }
 
 func (s *Store) Ping(ctx context.Context) error {
 	return s.pool.Ping(ctx)
@@ -127,6 +152,19 @@ func (s *Store) Close() error {
 // sessionKey, then runs fn. The lock is held on a dedicated pool connection
 // for the duration of fn so it is visible to other aistiod replicas.
 func (s *Store) WithSessionLock(ctx context.Context, sessionKey string, fn func(context.Context) error) error {
+	// Workflow reconciliation makes repository calls and can await nested Runs.
+	// Keep its advisory lock off the query pool to avoid pool-exhaustion deadlocks.
+	if strings.HasPrefix(sessionKey, "workflow-") && fn != nil {
+		conn, err := pgx.ConnectConfig(ctx, s.pool.Config().ConnConfig.Copy())
+		if err != nil {
+			return err
+		}
+		defer conn.Close(context.Background())
+		if _, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", advisorySessionKey(sessionKey)); err != nil {
+			return err
+		}
+		return fn(ctx)
+	}
 	if fn == nil {
 		return nil
 	}

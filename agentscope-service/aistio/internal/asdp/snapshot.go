@@ -45,11 +45,11 @@ func NewSnapshotStore() *SnapshotStore {
 }
 
 // UpdateSnapshot stores a new config snapshot for an agent, incrementing the version.
-func (s *SnapshotStore) UpdateSnapshot(namespace, agentName string, cfgType ConfigType, resources interface{}) (*ConfigSnapshot, bool, error) {
+func (s *SnapshotStore) UpdateSnapshot(tenant, namespace, agentName string, cfgType ConfigType, resources interface{}) (*ConfigSnapshot, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	agentKey := fmt.Sprintf("%s/%s", namespace, agentName)
+	agentKey := fmt.Sprintf("%s/%s/%s", tenant, namespace, agentName)
 
 	data, err := json.Marshal(resources)
 	if err != nil {
@@ -84,20 +84,20 @@ func (s *SnapshotStore) UpdateSnapshot(namespace, agentName string, cfgType Conf
 }
 
 // GetSnapshot retrieves the current snapshot for an agent and config type.
-func (s *SnapshotStore) GetSnapshot(namespace, agentName string, cfgType ConfigType) *ConfigSnapshot {
+func (s *SnapshotStore) GetSnapshot(tenant, namespace, agentName string, cfgType ConfigType) *ConfigSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	agentKey := fmt.Sprintf("%s/%s", namespace, agentName)
+	agentKey := fmt.Sprintf("%s/%s/%s", tenant, namespace, agentName)
 	return s.getSnapshotLocked(agentKey, cfgType)
 }
 
 // GetAllSnapshots returns all current snapshots for an agent.
-func (s *SnapshotStore) GetAllSnapshots(namespace, agentName string) []*ConfigSnapshot {
+func (s *SnapshotStore) GetAllSnapshots(tenant, namespace, agentName string) []*ConfigSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	agentKey := fmt.Sprintf("%s/%s", namespace, agentName)
+	agentKey := fmt.Sprintf("%s/%s/%s", tenant, namespace, agentName)
 	agentSnapshots := s.snapshots[agentKey]
 	if agentSnapshots == nil {
 		return nil
@@ -111,11 +111,11 @@ func (s *SnapshotStore) GetAllSnapshots(namespace, agentName string) []*ConfigSn
 }
 
 // DeleteAgent removes all snapshots for an agent.
-func (s *SnapshotStore) DeleteAgent(namespace, agentName string) {
+func (s *SnapshotStore) DeleteAgent(tenant, namespace, agentName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	agentKey := fmt.Sprintf("%s/%s", namespace, agentName)
+	agentKey := fmt.Sprintf("%s/%s/%s", tenant, namespace, agentName)
 	delete(s.snapshots, agentKey)
 	delete(s.versions, agentKey)
 }

@@ -1,0 +1,19 @@
+{{- if and .Values.artifact.persistence.enabled (not .Values.artifact.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-artifacts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: aistio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  accessModes:
+    {{- toYaml .Values.artifact.persistence.accessModes | nindent 4 }}
+  {{- if .Values.artifact.persistence.storageClass }}
+  storageClassName: {{ .Values.artifact.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.artifact.persistence.size }}
+{{- end }}

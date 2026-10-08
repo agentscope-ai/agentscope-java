@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import java.util.List;
@@ -45,7 +46,7 @@ class SubagentEventConverterTest {
         AguiStreamContext context =
                 new AguiStreamContext("t1", "r1", AguiAdapterConfig.defaultConfig());
 
-        AgentStartEvent childStart = new AgentStartEvent("child-sess", null, "researcher");
+        AgentStartEvent childStart = new AgentStartEvent("child-sess", "child-reply", "researcher");
         childStart.withSource("main/researcher");
         List<AguiEvent> startEvents = registry.convert(childStart, context);
         assertEquals(1, startEvents.size());
@@ -55,6 +56,16 @@ class SubagentEventConverterTest {
         Map<String, Object> value = (Map<String, Object>) custom.value();
         assertEquals("main/researcher", value.get("source"));
         assertEquals("AGENT_START", value.get("type"));
+        assertEquals("child-reply", value.get("replyId"));
+
+        AgentEndEvent childEnd = new AgentEndEvent("child-reply");
+        childEnd.withSource("main/researcher");
+        List<AguiEvent> endEvents = registry.convert(childEnd, context);
+        AguiEvent.Custom endCustom = assertInstanceOf(AguiEvent.Custom.class, endEvents.get(0));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> endValue = (Map<String, Object>) endCustom.value();
+        assertEquals("AGENT_END", endValue.get("type"));
+        assertEquals("child-reply", endValue.get("replyId"));
 
         TextBlockDeltaEvent delta = new TextBlockDeltaEvent(null, "b1", "hi");
         delta.withSource("main/researcher");

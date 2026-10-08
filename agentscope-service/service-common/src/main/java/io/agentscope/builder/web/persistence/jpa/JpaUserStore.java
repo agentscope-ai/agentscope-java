@@ -46,14 +46,23 @@ public class JpaUserStore implements UserStore {
     private static final Logger log = LoggerFactory.getLogger(JpaUserStore.class);
 
     private final UserEntityRepository repository;
+    private final boolean seedUsers;
     private final PasswordEncoder encoder = new BCryptPasswordEncoder();
 
     public JpaUserStore(UserEntityRepository repository) {
+        this(repository, true);
+    }
+
+    public JpaUserStore(UserEntityRepository repository, boolean seedUsers) {
         this.repository = repository;
+        this.seedUsers = seedUsers;
     }
 
     @PostConstruct
     void seedDefaultAdmin() {
+        if (!seedUsers) {
+            return;
+        }
         // existsById, not count() > 0, so the admin row is created even if other seed scripts
         // (e.g. the H2-only data-h2.sql that adds bob / alice for local dev) populated the table
         // before this @PostConstruct fired. Re-running on an already-seeded admin is a no-op.

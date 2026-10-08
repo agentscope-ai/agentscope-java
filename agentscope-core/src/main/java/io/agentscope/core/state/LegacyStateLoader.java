@@ -16,6 +16,7 @@
 package io.agentscope.core.state;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.state.legacy.ToolkitState;
 import java.util.List;
 import java.util.Optional;
@@ -27,6 +28,11 @@ import java.util.Optional;
  * {@code toolkit_activeGroups}) and constructs an equivalent {@link AgentState} object. The
  * original session data is not modified or migrated in place; subsequent saves will use the new
  * format automatically.
+ *
+ * <p>Legacy keys carry no 2.0-era {@link PermissionContextState}, so callers that need a specific
+ * permission context (for example {@code BYPASS} for a pre-seeded privileged session) must pass it
+ * in explicitly — otherwise the reconstructed state silently falls back to the default
+ * permission mode.
  */
 public final class LegacyStateLoader {
 
@@ -48,7 +54,29 @@ public final class LegacyStateLoader {
      */
     public static AgentState loadFromLegacySession(
             AgentStateStore stateStore, String userId, String sessionId) {
-        return loadFromLegacySessionWithPresence(stateStore, userId, sessionId).state();
+        return loadFromLegacySessionWithPresence(stateStore, userId, sessionId, null).state();
+    }
+
+    /**
+     * Load an {@link AgentState} from a v1 session, applying the supplied permission context.
+     *
+     * <p>See {@link #loadFromLegacySession(AgentStateStore, String, String)} for the read keys.
+     * Legacy keys carry no permission context; passing {@code permCtx} is the only way to
+     * preserve a non-default permission mode (for example {@code BYPASS}) when reconstructing
+     * state from a v1 session.
+     *
+     * @param stateStore the state store to read from
+     * @param userId nullable user identifier
+     * @param sessionId the session identifier (required)
+     * @param permCtx the permission context to attach, or {@code null} to keep the default
+     * @return a new AgentState populated with the legacy data
+     */
+    public static AgentState loadFromLegacySession(
+            AgentStateStore stateStore,
+            String userId,
+            String sessionId,
+            PermissionContextState permCtx) {
+        return loadFromLegacySessionWithPresence(stateStore, userId, sessionId, permCtx).state();
     }
 
     /**
@@ -57,14 +85,44 @@ public final class LegacyStateLoader {
      * <p>The presence bit is required because an explicitly persisted {@code
      * toolkit_activeGroups=[]} has different semantics from a missing key even though both produce
      * an empty {@link ToolContextState}.
+     *
+     * <p>The overload with a {@link PermissionContextState} applies the supplied permission
+     * context to the reconstructed state; legacy keys themselves never carry one. Callers that
+     * do not need a specific permission mode may use the {@code (stateStore, userId, sessionId)}
+     * variant.
      */
     public static LegacyLoadResult loadFromLegacySessionWithPresence(
             AgentStateStore stateStore, String userId, String sessionId) {
+        return loadFromLegacySessionWithPresence(stateStore, userId, sessionId, null);
+    }
+
+    /**
+     * Loads legacy state without discarding the presence of the singleton tool-group key, and
+     * applies the supplied permission context to the reconstructed state.
+     *
+     * <p>See {@link #loadFromLegacySessionWithPresence(AgentStateStore, String, String)} for the
+     * presence semantics. When {@code permCtx} is non-null it is attached to the reconstructed
+     * {@link AgentState}; otherwise the state keeps the default permission context.
+     *
+     * @param stateStore the state store to read from
+     * @param userId nullable user identifier
+     * @param sessionId the session identifier (required)
+     * @param permCtx the permission context to attach, or {@code null} to keep the default
+     * @return the reconstructed legacy state and whether the legacy keys were present
+     */
+    public static LegacyLoadResult loadFromLegacySessionWithPresence(
+            AgentStateStore stateStore,
+            String userId,
+            String sessionId,
+            PermissionContextState permCtx) {
         List<Msg> msgs = stateStore.getList(userId, sessionId, "memory_messages", Msg.class);
         Optional<ToolkitState> toolkitState =
                 stateStore.get(userId, sessionId, "toolkit_activeGroups", ToolkitState.class);
 
         AgentState.Builder builder = AgentState.builder().context(msgs);
+        if (permCtx != null) {
+            builder.permissionContext(permCtx);
+        }
 
         toolkitState.ifPresent(
                 value -> {

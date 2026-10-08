@@ -50,7 +50,6 @@ jobs:
         include:
           - os: ubuntu-latest
             repo-cache-path: '~/.m2/repository'
-            mvnd-cache-path: '~/.mvnd'
           - os: windows-latest
             repo-cache-path: '~\.m2\repository'
             mvnd-cache-path: '~\.mvnd'
@@ -77,19 +76,12 @@ jobs:
             maven-${{ runner.os }}-
 
       - name: Cache mvnd [${{ runner.os }}]
+        if: runner.os == 'Windows'
         id: cache-mvnd
         uses: actions/cache@v4
         with:
           path: ${{ matrix.mvnd-cache-path }}
           key: mvnd-${{ env.MVND_VERSION }}-${{ runner.os }}
-
-      - name: Install mvnd [Linux]
-        if: steps.cache-mvnd.outputs.cache-hit != 'true' && runner.os == 'Linux'
-        shell: bash
-        run: |
-          curl -fsSL https://github.com/apache/maven-mvnd/releases/download/${{ env.MVND_VERSION }}/maven-mvnd-${{ env.MVND_VERSION }}-linux-amd64.tar.gz | tar xz
-          mkdir -p ~/.mvnd
-          mv maven-mvnd-${{ env.MVND_VERSION }}-linux-amd64/* ~/.mvnd/
 
       - name: Install mvnd [Windows]
         if: steps.cache-mvnd.outputs.cache-hit != 'true' && runner.os == 'Windows'
@@ -113,17 +105,10 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          export PATH="$HOME/.mvnd/bin:$PATH"
-          if ! command -v mvnd >/dev/null 2>&1; then
-            echo "mvnd not found, installing..."
-            curl -fsSL https://github.com/apache/maven-mvnd/releases/download/${{ env.MVND_VERSION }}/maven-mvnd-${{ env.MVND_VERSION }}-linux-amd64.tar.gz | tar xz
-            mkdir -p ~/.mvnd
-            mv maven-mvnd-${{ env.MVND_VERSION }}-linux-amd64/* ~/.mvnd/
-            export PATH="$HOME/.mvnd/bin:$PATH"
-          fi
           # -T1: single-threaded build so reactor order is respected and agentscope-core
           # is installed before modules (e.g. subagent) that resolve it from the reactor.
-          mvnd -B -T1 clean verify
+          # Use the runner's standard Maven; mvnd's embedded distribution breaks Surefire IPC.
+          mvn -B -T1 clean verify
 
       - name: Build and Test with Coverage [Windows]
         if: runner.os == 'Windows'

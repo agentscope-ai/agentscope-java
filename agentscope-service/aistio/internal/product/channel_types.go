@@ -65,7 +65,7 @@ var supportedChannelTypes = []ChannelTypeSpec{
 			{Key: "appId", Label: "App ID", Required: true, InputType: "text"},
 			{Key: "appSecret", Label: "App Secret", Required: true, Secret: true, InputType: "password"},
 			{Key: "encryptKey", Label: "Encrypt Key", Required: false, Secret: true, InputType: "password"},
-			{Key: "verificationToken", Label: "Verification Token", Required: false, Secret: true, InputType: "password"},
+			{Key: "verificationToken", Label: "Verification Token", Required: true, Secret: true, InputType: "password"},
 			{Key: "callbackPath", Label: "Callback Path", Required: false, InputType: "text", Advanced: true},
 			{Key: "apiBase", Label: "API Base", Required: false, InputType: "text", Advanced: true, Hint: "Default https://open.feishu.cn"},
 		},

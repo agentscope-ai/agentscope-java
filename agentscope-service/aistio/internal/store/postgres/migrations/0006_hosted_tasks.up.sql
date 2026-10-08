@@ -24,6 +24,3 @@ CREATE TABLE IF NOT EXISTS dp_tasks (
     version           BIGINT NOT NULL DEFAULT 1,
     PRIMARY KEY (tenant, parent_agent_id, parent_session_id, task_id)
 );
-CREATE INDEX IF NOT EXISTS idx_dp_tasks_orphan ON dp_tasks (last_updated_at) WHERE NOT terminal;
-CREATE INDEX IF NOT EXISTS idx_dp_tasks_session ON dp_tasks (tenant, parent_agent_id, parent_session_id, status);
-CREATE INDEX IF NOT EXISTS idx_dp_tasks_delivery ON dp_tasks (tenant, parent_agent_id, parent_session_id) WHERE delivered_at IS NULL;
