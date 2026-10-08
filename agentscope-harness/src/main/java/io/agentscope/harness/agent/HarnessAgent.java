@@ -17,6 +17,7 @@ package io.agentscope.harness.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.Version;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.AgentRun;
@@ -133,6 +134,7 @@ import io.agentscope.harness.agent.tool.ShellExecuteTool;
 import io.agentscope.harness.agent.tool.SkillManageConfig;
 import io.agentscope.harness.agent.tool.SkillManageTool;
 import io.agentscope.harness.agent.tool.WebTools;
+import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.McpServerRegistrar;
 import io.agentscope.harness.agent.tools.McpServerRegistrationListener;
 import io.agentscope.harness.agent.tools.ToolFilter;
@@ -145,6 +147,7 @@ import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
 import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -153,6 +156,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -1371,6 +1375,25 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean disableFilesystemTools = false;
         boolean disableShellTool = false;
         boolean disableWebTools = false;
+        boolean parallelWebSearch = false;
+
+        /**
+         * The {@code web_search} tool this builder's last {@link #build()} actually registered,
+         * published for the subagent factories created earlier in the same {@code build()}.
+         *
+         * <p>Only written on the Parallel path. A fan-out of subagents would otherwise open one
+         * anonymous MCP handshake per spawn against a rate-limited endpoint; children read this
+         * holder at spawn time and register the parent's already-connected tool instead. Sharing
+         * a tool instance across toolkits is the same thing {@link Toolkit#copy()} does — the
+         * child never owns the connection, so closing a child cannot disconnect the parent.
+         *
+         * <p>Empty when the parent fell back to Tavily, in which case children fall back too
+         * rather than re-attempting a connection the parent already found unavailable.
+         */
+        final AtomicReference<AgentTool> resolvedWebSearchTool = new AtomicReference<>();
+
+        /** Parent-provided {@code web_search} reused verbatim; {@code null} = register our own. */
+        AgentTool inheritedWebSearchTool;
 
         /** Optional caller-supplied client used by the built-in web tools; {@code null} = default. */
         HttpClient webHttpClient;
@@ -2247,15 +2270,51 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Skips registration of the optional Tavily-backed {@code web_search} and {@code web_fetch} tools. */
+        /**
+         * Skips registration of {@code web_search} and {@code web_fetch}, including Parallel
+         * search. Local subagents inherit this, so a child is never handed a search tool the
+         * parent opted out of.
+         */
         public Builder disableWebTools() {
             this.disableWebTools = true;
             return this;
         }
 
         /**
+         * Uses Parallel's free anonymous Search MCP for {@code web_search} instead of Tavily.
+         *
+         * <p>Connects to {@code https://search.parallel.ai/mcp} during {@link #build()}. No
+         * Parallel account or API key is required, and the endpoint is anonymous and rate
+         * limited. The discovered search schema requires {@code objective} and
+         * {@code search_queries}, rather than Tavily's {@code query} and {@code max_results}.
+         * Supplied search inputs and metadata are sent to Parallel, with a project/version
+         * User-Agent for aggregate usage measurement. The built-in {@code web_fetch} is
+         * unchanged, and {@link #disableWebTools()} still suppresses both tools and the
+         * connection.
+         *
+         * <p>The option fails open. If the handshake fails, or succeeds but the server no longer
+         * advertises {@code web_search}, this logs a warning and registers the built-in Tavily
+         * {@code web_search} instead, so {@code build()} always yields an agent that has a
+         * search tool — note the fallback needs {@code TAVILY_API_KEY} to actually run. Both
+         * round trips are bounded by explicit timeouts (10s initialization, 30s request) rather
+         * than the {@code McpClientBuilder} defaults, and {@code web_search} is pinned read-only
+         * regardless of the server's {@code annotations.readOnlyHint} so plan-mode and
+         * permission behaviour match the built-in tool.
+         *
+         * <p>Local subagents inherit the choice and reuse this agent's connection, so a fan-out
+         * does not open one anonymous connection per spawn.
+         *
+         * @return this builder
+         */
+        public Builder parallelWebSearch() {
+            this.parallelWebSearch = true;
+            return this;
+        }
+
+        /**
          * Supplies a custom {@link java.net.http.HttpClient} used by the built-in {@code web_fetch}
-         * and {@code web_search} tools (e.g. custom proxy, TLS or HTTP version settings). When
+         * and Tavily {@code web_search} tools (e.g. custom proxy, TLS or HTTP version settings).
+         * Parallel search uses the existing MCP transport's HTTP client instead. When
          * unset, the tools use a default client with JDK version negotiation (HTTP/2 preferred,
          * automatic HTTP/1.1 fallback); inject an HTTP/1.1-only client here if a target server
          * fails under HTTP/2 negotiation (see issue #3101).
@@ -2467,6 +2526,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
+         * Reuses the parent's already-registered {@code web_search} instead of resolving a
+         * provider again. Package-private because only {@link HarnessAgentBuilderSupport}
+         * subagent factories know a parent exists.
+         */
+        Builder inheritWebSearchTool(AgentTool tool) {
+            this.inheritedWebSearchTool = tool;
+            return this;
+        }
+
+        /**
          * Builds the subagent entries (general-purpose + declared + custom factories) without
          * constructing the full agent. Useful for callers that need to extract subagent factories
          * up front (for example to mount them on a session router).
@@ -2479,6 +2548,67 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
             return HarnessAgentBuilderSupport.buildSubagentEntries(
                     this, resolvedWorkspace, sandboxFs);
+        }
+
+        /** Short initialization timeout for the built-in Parallel registration. */
+        static final Duration PARALLEL_INIT_TIMEOUT = Duration.ofSeconds(10);
+
+        /** Per-request timeout for Parallel search calls. */
+        static final Duration PARALLEL_REQUEST_TIMEOUT = Duration.ofSeconds(30);
+
+        /**
+         * Registers {@code web_search} from Parallel's Search MCP, falling back to the built-in
+         * Tavily tool when the endpoint is unavailable or no longer advertises the tool.
+         *
+         * <p>Search is a capability the agent is told it has, so the failure modes of an external
+         * provider must not turn into a missing tool or an unbuildable agent. Two paths lead
+         * there and both end in the same fallback: a handshake failure (outage, 429) and a
+         * successful handshake whose tool list has no {@code web_search} (a provider-side rename
+         * leaves {@link McpServerRegistrar} closing the client and returning normally). Rather
+         * than enumerate them, this checks the toolkit for the capability afterwards.
+         */
+        private void registerParallelWebSearch(Toolkit agentToolkit) {
+            McpServerConfig parallel = new McpServerConfig();
+            parallel.setTransport("http");
+            parallel.setUrl("https://search.parallel.ai/mcp");
+            parallel.setEnableTools(List.of("web_search"));
+            // Fail open: a third-party outage must degrade this one capability, not prevent the
+            // agent from being built. agentscope-distribution re-materializes an agent per
+            // session, where a required connection turns an outage into session-start failures.
+            parallel.setRequired(false);
+            // The builder defaults (30s init / 120s request) are tuned for servers an operator
+            // declared and controls; this one is on the critical path of every build().
+            parallel.setInitializationTimeout(PARALLEL_INIT_TIMEOUT);
+            parallel.setTimeout(PARALLEL_REQUEST_TIMEOUT);
+            // Plan Mode and the permission engine gate on isReadOnly(), and the Tavily tool this
+            // replaces is read-only. Pin it rather than inherit annotations.readOnlyHint, which
+            // the live endpoint may omit.
+            parallel.setReadOnlyTools(List.of("web_search"));
+            // Identify the project for aggregate MCP usage; never add user identifiers.
+            parallel.setHeaders(Map.of("User-Agent", "agentscope-java/" + Version.VERSION));
+            parallel.setConnectionFailureHandler(
+                    failure ->
+                            log.warn(
+                                    "Parallel search MCP connection failed; falling back to the"
+                                            + " built-in Tavily web_search.",
+                                    failure));
+            McpServerRegistrar.register(
+                    agentToolkit,
+                    Map.of("parallel-search", parallel),
+                    mcpServerRegistrationListener);
+            AgentTool registered = agentToolkit.getTool(WebTools.WebSearchTool.NAME);
+            if (registered == null) {
+                log.warn(
+                        "Parallel search MCP did not provide '{}'; falling back to the built-in"
+                                + " Tavily web_search.",
+                        WebTools.WebSearchTool.NAME);
+                agentToolkit.registerTool(
+                        webHttpClient != null
+                                ? new WebTools.WebSearchTool(webHttpClient)
+                                : new WebTools.WebSearchTool());
+                registered = agentToolkit.getTool(WebTools.WebSearchTool.NAME);
+            }
+            resolvedWebSearchTool.set(registered);
         }
 
         private static void wireTaskRepositoryMessageBus(
@@ -2919,10 +3049,21 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (!disableWebTools) {
                 if (webHttpClient != null) {
                     agentToolkit.registerTool(new WebTools.WebFetchTool(webHttpClient));
-                    agentToolkit.registerTool(new WebTools.WebSearchTool(webHttpClient));
                 } else {
                     agentToolkit.registerTool(new WebTools.WebFetchTool());
-                    agentToolkit.registerTool(new WebTools.WebSearchTool());
+                }
+                if (inheritedWebSearchTool != null) {
+                    agentToolkit.registerAgentTool(inheritedWebSearchTool);
+                    // Re-publish so a nested spawn reuses the same connection rather than
+                    // opening one per level of the subagent tree.
+                    resolvedWebSearchTool.set(inheritedWebSearchTool);
+                } else if (parallelWebSearch) {
+                    registerParallelWebSearch(agentToolkit);
+                } else {
+                    agentToolkit.registerTool(
+                            webHttpClient != null
+                                    ? new WebTools.WebSearchTool(webHttpClient)
+                                    : new WebTools.WebSearchTool());
                 }
             }
 

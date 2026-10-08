@@ -137,6 +137,9 @@ public final class McpServerRegistrar {
             }
             Toolkit.ToolRegistration reg =
                     toolkit.registration().mcpClient(wrapper).enableTools(selected);
+            if (cfg.getReadOnlyTools() != null && !cfg.getReadOnlyTools().isEmpty()) {
+                reg.readOnlyTools(cfg.getReadOnlyTools());
+            }
             if (cfg.isPrefixToolNames()) reg.mcpToolNamePrefix(name + "__");
             reg.apply();
         } catch (RuntimeException | Error failure) {

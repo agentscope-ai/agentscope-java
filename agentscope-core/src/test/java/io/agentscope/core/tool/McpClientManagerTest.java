@@ -659,4 +659,68 @@ class McpClientManagerTest {
         assertTrue(registered[1] instanceof McpTool);
         assertFalse(((McpTool) registered[1]).isReadOnly());
     }
+
+    @Test
+    void testRegisterMcpClient_ReadOnlyToolsOverrideMissingOrFalseHint() {
+        // A built-in registration knows the semantics of the tool it imports, so it can pin the
+        // flag instead of letting a third-party server decide whether plan mode and the
+        // permission engine treat the call as mutating.
+        McpClientWrapper clientWrapper = mock(McpClientWrapper.class);
+        when(clientWrapper.getName()).thenReturn("pinned-client");
+        when(clientWrapper.initialize()).thenReturn(Mono.empty());
+
+        McpSchema.Tool unannotated = mock(McpSchema.Tool.class);
+        when(unannotated.name()).thenReturn("search");
+        when(unannotated.description()).thenReturn("No annotations at all");
+        when(unannotated.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(unannotated.annotations()).thenReturn(null);
+
+        McpSchema.Tool deniedHint = mock(McpSchema.Tool.class);
+        when(deniedHint.name()).thenReturn("lookup");
+        when(deniedHint.description()).thenReturn("Server says it is not read-only");
+        when(deniedHint.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(deniedHint.annotations())
+                .thenReturn(new McpSchema.ToolAnnotations(null, false, null, null, null, null));
+
+        McpSchema.Tool unpinned = mock(McpSchema.Tool.class);
+        when(unpinned.name()).thenReturn("submit");
+        when(unpinned.description()).thenReturn("Not in the override list");
+        when(unpinned.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(unpinned.annotations()).thenReturn(null);
+
+        when(clientWrapper.listTools())
+                .thenReturn(Mono.just(List.of(unannotated, deniedHint, unpinned)));
+
+        Map<String, AgentTool> registered = new HashMap<>();
+        McpClientManager pinnedManager =
+                new McpClientManager(
+                        mock(ToolRegistry.class),
+                        mock(ToolGroupManager.class),
+                        (tool, groupName, mcpClientName, presetParams) ->
+                                registered.put(tool.getName(), tool));
+        pinnedManager
+                .registerMcpClient(
+                        clientWrapper,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "",
+                        null,
+                        null,
+                        // "absent" never matches; an override only restricts, so a stale name is
+                        // ignored rather than failing the registration.
+                        List.of("search", "lookup", "absent"))
+                .block();
+
+        assertTrue(registered.get("search").isReadOnly());
+        assertTrue(registered.get("lookup").isReadOnly());
+        assertFalse(registered.get("submit").isReadOnly());
+    }
 }

@@ -994,6 +994,7 @@ public class Toolkit {
         private List<String> disableTools;
         private Boolean propagateMeta;
         private final Map<String, Boolean> toolPropagateMeta = new LinkedHashMap<>();
+        private List<String> readOnlyTools;
 
         private ToolRegistration(Toolkit toolkit) {
             this.toolkit = toolkit;
@@ -1186,6 +1187,35 @@ public class Toolkit {
         }
 
         /**
+         * Pins the listed MCP tools as read-only regardless of the server's
+         * {@code annotations.readOnlyHint}.
+         *
+         * <p>An MCP tool's read-only flag normally comes from the remote server, which decides
+         * whether Plan Mode and the permission engine treat the call as a mutating operation.
+         * For a registration the host controls — a built-in provider wired to a known endpoint
+         * rather than a user-declared server — that makes a safety-relevant flag depend on a
+         * third party that may omit the annotation. Listing a tool here keeps the flag fixed on
+         * this side. The flag is only ever pinned to read-only: a server that already reports
+         * {@code readOnlyHint: true} is unaffected, and tools absent from the list keep the
+         * server's value.
+         *
+         * <p>Names are the remote MCP tool names, before any {@link #mcpToolNamePrefix(String)}.
+         * Unlike {@link #propagateMeta(String, boolean)}, an entry that matches no registered
+         * tool is ignored rather than failing the registration: it only ever widens a
+         * restriction, so a stale name cannot silently loosen permissions.
+         *
+         * <p>Only applicable when using {@link #mcpClient(McpClientWrapper)}.
+         *
+         * @param readOnlyTools remote tool names to force read-only; {@code null} or empty
+         *     leaves every tool's flag to the server
+         * @return This builder for chaining
+         */
+        public ToolRegistration readOnlyTools(List<String> readOnlyTools) {
+            this.readOnlyTools = readOnlyTools;
+            return this;
+        }
+
+        /**
          * Set the tool group name.
          *
          * @param groupName The group name (null for ungrouped)
@@ -1272,7 +1302,8 @@ public class Toolkit {
                                 presetParameters,
                                 mcpToolNamePrefix,
                                 propagateMeta,
-                                toolPropagateMeta)
+                                toolPropagateMeta,
+                                readOnlyTools)
                         .block();
             } else if (subAgentProvider != null) {
                 SubAgentTool subAgentTool = new SubAgentTool(subAgentProvider, subAgentConfig);
