@@ -44,6 +44,13 @@ public class SessionSearchTool {
 
     private static final Logger log = LoggerFactory.getLogger(SessionSearchTool.class);
 
+    /**
+     * Hard ceiling for model-supplied result limits. The tool is excluded from
+     * {@code ToolResultEvictionConfig} on the "bounded results" rationale, so nothing
+     * downstream trims an oversized result — the clamp has to happen here (#3270).
+     */
+    private static final int MAX_RESULTS_CEILING = 100;
+
     private final WorkspaceManager workspaceManager;
 
     public SessionSearchTool(WorkspaceManager workspaceManager) {
@@ -77,7 +84,9 @@ public class SessionSearchTool {
                     String agentId,
             @ToolParam(
                             name = "maxResults",
-                            description = "Maximum number of results to return (default: 10)",
+                            description =
+                                    "Maximum number of results to return (default: 10,"
+                                            + " capped at 100)",
                             required = false)
                     Integer maxResults,
             @ToolParam(
@@ -93,7 +102,10 @@ public class SessionSearchTool {
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        int limit = maxResults != null && maxResults > 0 ? maxResults : 10;
+        int limit =
+                maxResults != null && maxResults > 0
+                        ? Math.min(maxResults, MAX_RESULTS_CEILING)
+                        : 10;
         String effectiveAgentId = agentId != null && !agentId.isBlank() ? agentId : null;
         Predicate<String> matcher;
         try {
@@ -207,7 +219,9 @@ public class SessionSearchTool {
                     String sessionId,
             @ToolParam(
                             name = "lastN",
-                            description = "Number of recent messages to return (default: 20)",
+                            description =
+                                    "Number of recent messages to return (default: 20,"
+                                            + " capped at 100)",
                             required = false)
                     Integer lastN) {
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
@@ -215,7 +229,7 @@ public class SessionSearchTool {
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        int limit = lastN != null && lastN > 0 ? lastN : 20;
+        int limit = lastN != null && lastN > 0 ? Math.min(lastN, MAX_RESULTS_CEILING) : 20;
 
         Path contextFile = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
         if (!Files.isRegularFile(contextFile)) {
