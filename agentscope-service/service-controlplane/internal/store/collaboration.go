@@ -233,7 +233,8 @@ func RuntimeToolApprovalID(backend controlmodel.DataPlaneKind, tenant, sessionID
 	if backend == controlmodel.DataPlaneManaged || backend == "" {
 		return ManagedToolApprovalID(tenant, sessionID, attemptID, dispatchGeneration, turnID, toolUseID)
 	}
-	name := fmt.Sprintf("controlplane:runtime-hitl:v1:%s:%s:%s:%s:%d:%s:%s",
+	// Frozen UUID input: preserve existing approval identities across component renames.
+	name := fmt.Sprintf("aistio:runtime-hitl:v1:%s:%s:%s:%s:%d:%s:%s",
 		backend, tenant, sessionID, attemptID, dispatchGeneration, turnID, toolUseID)
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(name))
 }
@@ -250,7 +251,8 @@ type ManagedToolApprovalRequest struct {
 // complete tuple prevents one physical tool use from aliasing another turn.
 func ManagedToolApprovalID(tenant, sessionID, attemptID string, dispatchGeneration int64,
 	turnID, toolUseID string) uuid.UUID {
-	name := fmt.Sprintf("controlplane:managed-hitl:v1:%s:%s:%s:%d:%s:%s",
+	// Frozen UUID input, shared with the Java data plane; this is not a component label.
+	name := fmt.Sprintf("aistio:managed-hitl:v1:%s:%s:%s:%d:%s:%s",
 		tenant, sessionID, attemptID, dispatchGeneration, turnID, toolUseID)
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(name))
 }

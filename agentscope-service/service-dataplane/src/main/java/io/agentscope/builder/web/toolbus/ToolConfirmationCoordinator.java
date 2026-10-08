@@ -637,8 +637,9 @@ public class ToolConfirmationCoordinator {
 
     private static String managedApprovalId(
             ManagedExecutionScope scope, String sessionId, String toolUseId) {
+        // Frozen UUID input shared with the Control Plane; preserve existing approval identities.
         String name =
-                "controlplane:managed-hitl:v1:"
+                "aistio:managed-hitl:v1:"
                         + scope.tenant()
                         + ":"
                         + sessionId
