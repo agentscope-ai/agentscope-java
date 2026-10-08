@@ -110,7 +110,7 @@ npm trust github @agentscope-service/dsh-controlplane \
   --env npm --allow-publish
 ```
 
-The registry may require browser/2FA verification for this one-time setup. Confirm it using `npm trust list @agentscope-service/dsh-controlplane`. Review the actual Python sdist filename before uploading. Maven SDK publication uses the repository's existing release profile and signing/Central credentials:
+The registry may require browser/2FA verification for this one-time setup. A new Trusted Publisher must complete its first successful CI publication within two days; otherwise recreate the expired binding before the next release. A first version already uploaded locally cannot be uploaded again to validate CI. See [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/#trusted-publisher-configuration-expiry). Confirm it using `npm trust list @agentscope-service/dsh-controlplane`. Review the actual Python sdist filename before uploading. Maven SDK publication uses the repository's existing release profile and signing/Central credentials:
 
 ```bash
 mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-controlplane -am \

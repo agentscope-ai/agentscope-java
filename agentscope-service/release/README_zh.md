@@ -275,7 +275,7 @@ npm trust github @agentscope-service/dsh-controlplane \
   --env npm --allow-publish
 ```
 
-首次绑定可能需要浏览器/2FA 验证。用 `npm trust list @agentscope-service/dsh-controlplane` 确认配置。发布前核对 tarball 内的实际版本，按 npm 提示完成 2FA。发布后在独立目录安装 `@agentscope-service/dsh-controlplane@实际版本` 并验证导入。
+首次绑定可能需要浏览器/2FA 验证。 新 Trusted Publisher 须在两天内完成首次成功的 CI 发布；否则下次发布前需要重建过期绑定。已经从本机上传的首版不能重复上传来验证 CI。见 [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/#trusted-publisher-configuration-expiry)。用 `npm trust list @agentscope-service/dsh-controlplane` 确认配置。发布前核对 tarball 内的实际版本，按 npm 提示完成 2FA。发布后在独立目录安装 `@agentscope-service/dsh-controlplane@实际版本` 并验证导入。
 
 ### 7.3 Java → Maven Central
 
