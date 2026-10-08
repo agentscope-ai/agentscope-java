@@ -83,6 +83,8 @@ agent.call(msg, RuntimeContext.builder()
 
 `AGENTS.md` / `skills/` / `subagents/` / `knowledge/` 等宿主侧的工作区文件会在每次沙箱启动时同步进沙箱（按内容哈希增量）。你改了 `skills/` 里的脚本，下次 `call()` 沙箱里就是新版。
 
+有些写入在 `call()` 返回后才完成：会话日志镜像、记忆写入与整理。对框架管理的沙箱，调用结束时的快照和容器销毁会等这些写入完成，让它们进入快照；同一隔离范围的下一次 `call()` 会等这份快照落地。默认最多等 30 秒，可用 `-Dagentscope.sandbox.release.maxDeferMillis` 调整（设为 `0` 则像以前一样立即释放）。这是 JVM 级系统属性，对进程内所有 agent 生效；多租户部署时，所有租户的释放时延都由这一个值决定。
+
 ## 分布式部署
 
 多副本部署同一个 agent，要让任意副本都能接住同一用户的对话，需要：

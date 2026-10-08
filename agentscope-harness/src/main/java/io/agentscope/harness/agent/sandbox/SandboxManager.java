@@ -19,6 +19,11 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,15 +44,24 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Priority 1 (external sandbox) and Priority 2 (external sandbox state) bypass the guard,
  * since the caller is managing that sandbox externally.
+ *
+ * <p>A release deferred for background writes ({@link SandboxBackgroundWrites}) is tracked per
+ * isolation scope via {@link #trackDeferredRelease}; the next harness-managed acquire for that
+ * scope waits for it, so it never resumes state the previous call has not persisted yet.
  */
 public class SandboxManager {
 
     private static final Logger log = LoggerFactory.getLogger(SandboxManager.class);
 
+    /** Extra wait, beyond the deferral budget, for a forced teardown to finish stopping. */
+    private static final long DEFERRED_RELEASE_GRACE_MILLIS = 5_000L;
+
     private final SandboxClient<?> client;
     private final SessionSandboxStateStore stateStore;
     private final String agentId;
     private final SandboxExecutionGuard executionGuard;
+    private final ConcurrentHashMap<SandboxIsolationKey, CompletableFuture<Void>> deferredReleases =
+            new ConcurrentHashMap<>();
 
     public SandboxManager(
             SandboxClient<?> client, SessionSandboxStateStore stateStore, String agentId) {
@@ -66,6 +80,17 @@ public class SandboxManager {
                 executionGuard != null ? executionGuard : SandboxExecutionGuard.noop();
     }
 
+    /**
+     * Acquires the sandbox for a call. This is a blocking call — resuming or creating a sandbox is
+     * remote I/O, and a harness-managed acquire also waits (at most {@link
+     * SandboxBackgroundWrites#maxDeferMillis()} plus a few seconds) for a release of the same
+     * scope that is still deferred — so reactive callers must invoke it off event-loop threads.
+     *
+     * @param sandboxContext the call's sandbox configuration
+     * @param runtimeContext the call's runtime context
+     * @return the acquired sandbox and its execution lease
+     * @throws Exception if the sandbox cannot be resumed or created
+     */
     public SandboxAcquireResult acquire(
             SandboxContext sandboxContext, RuntimeContext runtimeContext) throws Exception {
         // Priority 1: user-supplied sandbox — guard does not apply
@@ -93,6 +118,7 @@ public class SandboxManager {
 
         SandboxLease lease = SandboxLease.noop();
         if (scopeKey.isPresent()) {
+            awaitDeferredRelease(scopeKey.get());
             log.debug("[sandbox] Acquiring execution guard for scope {}", scopeKey.get());
             lease = executionGuard.tryEnter(scopeKey.get());
         }
@@ -208,6 +234,62 @@ public class SandboxManager {
             sandbox.shutdown();
         } catch (Exception e) {
             log.warn("[sandbox] Sandbox shutdown failed: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Records a release that {@link SandboxBackgroundWrites#releaseWhenIdle} deferred, so the next
+     * {@link #acquire} for the same isolation scope waits until the previous sandbox has stopped and
+     * its state is persisted.
+     *
+     * @param sandboxContext the released call's sandbox context
+     * @param runtimeContext the released call's runtime context
+     * @param released completes when the deferred teardown has run
+     */
+    public void trackDeferredRelease(
+            SandboxContext sandboxContext,
+            RuntimeContext runtimeContext,
+            CompletableFuture<Void> released) {
+        if (released == null || released.isDone()) {
+            return;
+        }
+        Optional<SandboxIsolationKey> scopeKey =
+                SandboxIsolationKey.resolve(
+                        sandboxContext != null ? sandboxContext.getIsolationScope() : null,
+                        runtimeContext,
+                        agentId);
+        if (scopeKey.isEmpty()) {
+            return;
+        }
+        SandboxIsolationKey key = scopeKey.get();
+        CompletableFuture<Void> tracked =
+                deferredReleases.compute(
+                        key,
+                        (k, previous) ->
+                                previous == null || previous.isDone()
+                                        ? released
+                                        : CompletableFuture.allOf(previous, released));
+        tracked.whenComplete((v, e) -> deferredReleases.remove(key, tracked));
+    }
+
+    private void awaitDeferredRelease(SandboxIsolationKey scopeKey) throws InterruptedException {
+        CompletableFuture<Void> pending = deferredReleases.get(scopeKey);
+        if (pending == null || pending.isDone()) {
+            return;
+        }
+        long waitMillis = SandboxBackgroundWrites.maxDeferMillis() + DEFERRED_RELEASE_GRACE_MILLIS;
+        log.debug(
+                "[sandbox] Waiting for the previous call's deferred release (scope={})", scopeKey);
+        try {
+            pending.get(waitMillis, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            log.warn(
+                    "[sandbox] Previous release for scope {} still running after {} ms; acquiring"
+                            + " anyway",
+                    scopeKey,
+                    waitMillis);
+        } catch (ExecutionException e) {
+            // The teardown logs its own failures; only its completion matters here.
         }
     }
 

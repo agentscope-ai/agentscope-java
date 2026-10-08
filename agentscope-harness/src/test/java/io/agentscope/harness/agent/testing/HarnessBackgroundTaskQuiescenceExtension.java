@@ -17,13 +17,15 @@ package io.agentscope.harness.agent.testing;
 
 import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.session.SessionTree;
+import io.agentscope.harness.agent.sandbox.SandboxBackgroundWrites;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 /**
  * Auto-registered JUnit Jupiter extension that drains fire-and-forget harness background
- * tasks (memory flush/maintenance and session/transcript mirrors) after every test method.
+ * tasks (memory flush/maintenance and session/transcript mirrors), and the sandbox releases
+ * they deferred, after every test method.
  *
  * <p>{@link io.agentscope.harness.agent.HarnessAgent#close()} drains the same trackers, but
  * many harness tests build a transient {@code HarnessAgent}, call {@code .block()}, and let it
@@ -52,7 +54,9 @@ public class HarnessBackgroundTaskQuiescenceExtension implements AfterEachCallba
         boolean mirrorsQuiet = SessionTree.awaitMirrorQuiescence(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         boolean flushQuiet =
                 MemoryBackgroundTasks.awaitQuiescence(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        if (!mirrorsQuiet || !flushQuiet) {
+        boolean releasesQuiet =
+                SandboxBackgroundWrites.awaitPendingReleases(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        if (!mirrorsQuiet || !flushQuiet || !releasesQuiet) {
             throw new AssertionError(
                     "Harness background tasks did not quiesce within "
                             + TIMEOUT_SECONDS

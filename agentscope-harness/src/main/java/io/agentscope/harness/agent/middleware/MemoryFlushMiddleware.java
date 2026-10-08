@@ -28,6 +28,7 @@ import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
+import io.agentscope.harness.agent.sandbox.SandboxBackgroundWrites;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -179,9 +180,13 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         ConversationKey conversationKey =
                 new ConversationKey(
                         agent, blankToEmpty(rc.getUserId()), blankToEmpty(rc.getSessionId()));
-        Runnable task = () -> runFlush(key, agent, rc);
-        Runnable[] starter = new Runnable[1];
-        Runnable[] displaced = new Runnable[1];
+        // The flush writes memory files after the call has released its sandbox; pin the call's
+        // sandbox now, while the call still owns it, so the release waits for the flush (#3415).
+        // Pinned last, right before the task that closes it (when it runs or is displaced).
+        SandboxBackgroundWrites.Pin pin = SandboxBackgroundWrites.pinCallSandbox(rc);
+        FlushTask task = new FlushTask(() -> runFlush(key, agent, pin), pin);
+        FlushTask[] starter = new FlushTask[1];
+        FlushTask[] displaced = new FlushTask[1];
         FLUSH_QUEUES.compute(
                 key,
                 (k, queue) -> {
@@ -199,20 +204,23 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                     return q;
                 });
         if (displaced[0] != null) {
-            // The replaced task will never execute; release the in-flight slot it acquired at
-            // dispatch. Done outside compute to avoid running under the map's bin lock.
+            // The replaced task will never execute; release the sandbox pin and the in-flight
+            // slot it acquired at dispatch. Done outside compute to avoid running under the map's
+            // bin lock.
+            displaced[0].pin().close();
             MemoryBackgroundTasks.end();
         }
         if (starter[0] != null) {
-            starter[0].run();
+            starter[0].body().run();
         }
     }
 
-    private void runFlush(String key, Agent agent, RuntimeContext rc) {
-        Mono.defer(() -> doFlush(agent, rc))
+    private void runFlush(String key, Agent agent, SandboxBackgroundWrites.Pin pin) {
+        Mono.defer(() -> doFlush(agent, pin.context()))
                 .subscribeOn(Schedulers.boundedElastic())
                 .doFinally(
                         signal -> {
+                            pin.close();
                             MemoryBackgroundTasks.end();
                             drainFlushQueue(key);
                         })
@@ -220,14 +228,14 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void drainFlushQueue(String key) {
-        Runnable[] next = new Runnable[1];
+        FlushTask[] next = new FlushTask[1];
         FLUSH_QUEUES.compute(
                 key,
                 (k, queue) -> {
                     if (queue == null) {
                         return null;
                     }
-                    Iterator<Runnable> it = queue.pending.values().iterator();
+                    Iterator<FlushTask> it = queue.pending.values().iterator();
                     if (it.hasNext()) {
                         next[0] = it.next();
                         it.remove();
@@ -238,9 +246,12 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                     return queue; // the dequeued task continues as the running flush
                 });
         if (next[0] != null) {
-            next[0].run();
+            next[0].body().run();
         }
     }
+
+    /** A dispatched flush and the sandbox pin it releases once it has run or been displaced. */
+    private record FlushTask(Runnable body, SandboxBackgroundWrites.Pin pin) {}
 
     /**
      * Per-isolation-key pending flush tasks, keeping at most one flush in flight per memory
@@ -249,7 +260,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
      * as soon as a key goes idle.
      */
     private static final class FlushQueue {
-        final LinkedHashMap<ConversationKey, Runnable> pending = new LinkedHashMap<>();
+        final LinkedHashMap<ConversationKey, FlushTask> pending = new LinkedHashMap<>();
         boolean running;
     }
 

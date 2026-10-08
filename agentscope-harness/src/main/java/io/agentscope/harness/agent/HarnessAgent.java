@@ -462,6 +462,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // race with resource cleanup (e.g., temp workspace deletion in tests).
             io.agentscope.harness.agent.memory.MemoryBackgroundTasks.awaitQuiescence(
                     5, java.util.concurrent.TimeUnit.SECONDS);
+            // Those writes may have deferred their sandbox's release; let it run so self-managed
+            // sandboxes are stopped and their state persisted before the agent goes away. A
+            // deferred release can take up to the deferral budget, so wait that long plus a grace
+            // (returns at once when nothing is pending; logs what is left on timeout).
+            io.agentscope.harness.agent.sandbox.SandboxBackgroundWrites.awaitPendingReleases(
+                    io.agentscope.harness.agent.sandbox.SandboxBackgroundWrites.maxDeferMillis()
+                            + 5_000L,
+                    java.util.concurrent.TimeUnit.MILLISECONDS);
             shutdownTaskRepository();
         } finally {
             try {

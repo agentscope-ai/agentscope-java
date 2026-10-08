@@ -27,6 +27,7 @@ import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
+import io.agentscope.harness.agent.sandbox.SandboxBackgroundWrites;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
@@ -153,14 +154,21 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         // The maintenance body — including the gate claim, which is remote I/O under a
         // store-backed gate — runs on the background scheduler. Only the in-flight counter is
         // updated synchronously, so a quiescence check can never observe an empty in-flight
-        // set before the task is counted.
+        // set before the task is counted. The call's sandbox is pinned here too, while the call
+        // still owns it, so its release waits for the maintenance writes (issue #3415).
         return next.apply(input)
                 .doOnComplete(
                         () -> {
                             MemoryBackgroundTasks.begin();
-                            Mono.defer(() -> doMaintenance(rc))
+                            SandboxBackgroundWrites.Pin pin =
+                                    SandboxBackgroundWrites.pinCallSandbox(rc);
+                            Mono.defer(() -> doMaintenance(pin.context()))
                                     .subscribeOn(Schedulers.boundedElastic())
-                                    .doFinally(signal -> MemoryBackgroundTasks.end())
+                                    .doFinally(
+                                            signal -> {
+                                                pin.close();
+                                                MemoryBackgroundTasks.end();
+                                            })
                                     .subscribe(
                                             null,
                                             e ->
