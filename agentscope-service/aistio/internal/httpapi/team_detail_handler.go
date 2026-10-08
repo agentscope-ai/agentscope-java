@@ -54,10 +54,6 @@ type teamDetailOverview struct {
 		Total       int `json:"total"`
 		ActiveTasks int `json:"activeTasks"`
 	} `json:"runs"`
-	Endpoints struct {
-		Total     int `json:"total"`
-		Published int `json:"published"`
-	} `json:"endpoints"`
 }
 
 func (s *Server) getCollaborationTeamOverview(c *gin.Context) {
@@ -118,15 +114,5 @@ func (s *Server) getCollaborationTeamOverview(c *gin.Context) {
 		}
 	}
 	overview.Runs.Total = len(runs)
-	endpoints, _ := s.store.Endpoints().List(c, team.Tenant, team.Namespace)
-	for _, endpoint := range endpoints {
-		if endpoint.TargetType != controlmodel.EndpointTargetTeam || endpoint.TargetRef != team.ID {
-			continue
-		}
-		overview.Endpoints.Total++
-		if endpoint.Status == controlmodel.EndpointPublished {
-			overview.Endpoints.Published++
-		}
-	}
 	c.JSON(http.StatusOK, gin.H{"team": team, "overview": overview})
 }

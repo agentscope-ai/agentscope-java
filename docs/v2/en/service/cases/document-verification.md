@@ -1,77 +1,47 @@
 ---
-title: "Document verification: add a quality-check step"
-description: "Compare sources, extracted fields, and rules through a Job that returns evidence-backed findings."
+title: "Integrate document verification into a business process"
+description: "Connect business input, execution and verified delivery through the Session API."
 zh_link: /v2/zh/service/cases/document-verification
 ---
 
-Keep the existing OCR and extraction pipeline. An Agent service checks consistency between source material, extracted values, and rules, then routes findings to a reviewer. The entire pipeline does not need to become agentic.
+A document pipeline needs to compare extracted fields from invoice DOC-101 with its source. The Agent identifies discrepancies and evidence; the application decides whether processing continues or requires human review.
 
-## 1. Prepare a known inconsistency
+This tutorial uses fictional material. Expected outputs are acceptance criteria, not evidence of a completed production run.
 
-Download the [request fixture](/examples/service/document-verification/input.json.txt) as `input.json`. Fictional invoice DOC-101 / doc-v1 contains one inline text page:
+## Prepare input and the execution target
 
-| Object | Value |
-| --- | --- |
-| Source page 1 | Quantity 4, unit price 32.00 USD, total 128.00 USD |
-| Extracted values | Quantity 4, unit price 32, total **182** |
-| sop-v1 | Total equals quantity times unit price; values match source; unreadable pages are not verified |
+Download the [request fixture](/examples/service/document-verification/input.json.txt) as `input.json`. The sample includes source pages, extracted fields and rules. Compare quantity 4, unit price USD 32 and total USD 128 together. Report discrepancies with field names, page references and supporting evidence; unreadable content should remain pending review.
 
-Expected behavior is a total-field finding, expected value 128, referencing page 1. No PDF upload is required for this fixture. Production PDF access, large files, and page location require controlled file tools or the appropriate native file mechanism. A URL inside Job input does not automatically download a file.
+Configure a read-only verification Agent with clear source and rule versions. The example sends a small source snapshot as text. For original documents, upload a Session File and reference it in a content block. OCR, document authorization and domain rules remain part of the business pipeline.
 
-## 2. Publish the verifier
+## Create a Session and submit the task
 
-Start with one Agent instructed to cover all supplied pages, distinguish contradictions from unverifiable content, and retain original values and evidence. Use deterministic tools for arithmetic; the Agent explains findings in context.
-
-[Publish](/v2/en/service/endpoints) the job Endpoint `document-check`, accepting request, document_id, source_version, pages, extracted, and rules. Structured delivery requires the execution adapter to return a business object that can be mapped. JSON text inside a reply does not guarantee an equivalent public result object. Inspect the real raw result before configuring resultMapping/outputSchema.
-
-This is an **expected business result shape**, not an execution record or built-in platform schema:
-
-```json
-{
-  "document_id": "DOC-101",
-  "verified_pages": [1],
-  "findings": [
-    {"field": "total", "observed": 182, "expected": 128,
-     "source_page": 1, "rule_version": "sop-v1"}
-  ],
-  "review_required": true
-}
-```
-
-## 3. Call it from the pipeline
-
-Prepare Bash, curl, jq, BASE_URL, and a backend ENDPOINT_KEY with invoke/read after publishing the Endpoint.
+Prepare the Agent ID and application credential using the [integration guide](/v2/en/service/service-api). The Bash example uses curl and jq to turn the small source fixture into a Managed Agent message. A repository URL, file path or order ID in the input does not itself provide system access.
 
 ```bash
-RECEIPT=$(curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/endpoints/document-check/jobs" \
-  -H "X-API-Key: $ENDPOINT_KEY" \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: doc-101-doc-v1-sop-v1' \
-  --data-binary @input.json)
-INVOCATION_ID=$(printf '%s' "$RECEIPT" | jq -er '.invocationId')
-curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/invocations/$INVOCATION_ID" \
-  -H "X-API-Key: $ENDPOINT_KEY"
+SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: document-verification-session-001' \
+  --data "$(jq -n --arg id "$AGENT_ID" '{target:{type:"agent",id:$id}}')")
+SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: document-verification-task-001' \
+  --data "$(jq '{message:(.message // (.input | tojson))}' input.json)")
+TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
+curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
 ```
 
-Record document version, extraction batch, rule version, and Invocation in the upstream check record. Other documents can continue processing while this document remains awaiting review.
+`202 Accepted` confirms admission rather than completion. Save both IDs and retry network failures with the same keys and bodies. Use a new key for new work. Restore the Session snapshot and continue its event stream from `as_of` to display progress.
 
-## 4. Decide using evidence
+## Connect execution back to the application
 
-Wait for a terminal Invocation, read `invocation.result`, and download a report Artifact if produced. Validate structure before showing findings alongside source locations. A successful check with nonempty findings is a normal detection result, not an infrastructure failure.
+Associate the document version, extraction batch and rule version with the Session and Turn. Keep the document pending while verification runs. Validate the result structure before displaying findings alongside source references. A detected business inconsistency is a valid finding, distinct from an execution failure such as an unreadable file.
 
-After a reviewer corrects the total to 128, the business system creates a new extraction version and submits another Job. Keep both results; do not overwrite the original invoice.
+## Verify the actual delivery
 
-## 5. Test counterexamples
+Test correct, contradictory, missing-page and unreadable examples. Check both findings and their evidence. Validate the actual result structure rather than treating JSON-looking prose as success, and advance the business process after the required review.
 
-| Change | Expected behavior |
-| --- | --- |
-| Original fixture | Report 182 versus 128 and reference page 1 |
-| Correct total to 128 | Remove that finding rather than copy previous output |
-| Remove source text or deny file access | State unverified scope; do not report all pages verified |
-| Change rules | New invocation records the version; conflicting idempotent replay is rejected |
-| Output schema mismatch | Public invocation fails; pipeline must not consume it as valid structured output |
-| Reviewer disagreement | Retain evidence and review state without inventing approval |
-
-This fixture covers one contradiction. Production acceptance needs labeled samples, missed/false finding rates, unverifiable coverage, expert review time, and real file authorization and large-document tests.
+See [files and artifacts](/v2/en/service/files), [Session API interaction](/v2/en/service/service-api), and [events and notifications](/v2/en/service/sse-events) for the supporting interfaces.

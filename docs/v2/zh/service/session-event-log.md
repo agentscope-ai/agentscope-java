@@ -1,257 +1,96 @@
 ---
-title: "Managed 原生 API：会话与任务"
-description: 通过 HTTP 创建 Managed Agent 会话、提交后台任务、读取结果，并处理人工交互、取消和恢复。
+title: "会话、任务与预算"
+description: "在提交任务后补充要求、回答待办、取消或恢复执行，并管理会话用量与预算。"
 en_link: /v2/en/service/session-event-log
 ---
 
-Managed 原生会话 API 是平台 Agent API 的一部分，提供托管运行时的会话控制：服务负责运行 Agent、保存会话和调度任务，应用负责提交输入、展示结果和处理用户交互。Agent 在后台运行，关闭页面或断开 SSE 不会取消任务。
+Session 保存应用与执行目标之间的一段工作记录，Turn 表示其中一次提交的任务。Agent、Team 和 Workflow 都通过同一套 Session API 接收工作；Managed Agent 在这个入口上进一步提供连续对话、运行中补充输入、上下文恢复和子 Agent 等能力。关闭页面或断开事件连接不会取消后台任务。
 
-入口是 Gateway 的 `/api/v1/agent-sessions`。先完成 [Managed Agent 创建](/v2/zh/service/create-managed-agent)，再按下面的步骤接入。如果在自己的 Java 进程内运行 Agent，阅读 [AgentSession 指南](/v2/zh/docs/harness/session-log)。
+首次接入请先完成[通过 Session API 接入应用](/v2/zh/service/service-api)，取得 `SESSION_URL`、`TURN_ID` 和应用凭据 `AGENTSCOPE_API_KEY`。提交任务后，用户可能需要调整要求、回答 Agent 的询问，或者停止并恢复执行，本页说明这些操作如何作用于已有的 Session 和 Turn。请求也可以使用有权访问该 Session 的平台用户 Bearer token；应用凭据必须同时具有相应 scope 和目标资源授权。
 
+## 理解 Session 与 Turn 的关系
 
-向业务应用提供 Agent、Team 或 Workflow 服务时，通常从[统一服务 API](/v2/zh/service/service-api)开始。本页介绍直接管理 Managed 会话时的原生能力。
+创建 Session 时，Service 会保存目标和当时的配置。随后提交的新 Turn 沿用这份配置，因此修改 Agent 定义不会悄悄改变已有会话。需要使用新配置时应创建新的 Session。Workflow 会话绑定的是已发布的 revision；可以显式选择版本，也可以在创建时使用最新的已发布版本。
 
-## 按使用场景选择能力
+同一个 Session 中的 Turn 按接收顺序执行。如果前一个任务正在等待审批，后续提交会进入队列，直到前面的任务结束。Managed Agent 会在任务之间保留对话上下文；Team 和 Workflow 的每个 Turn 启动一项独立工作，Session 将它们的进度与结果组织在一起。这种统一调用方式不意味着所有执行目标都有相同的记忆和交互能力，应用应先读取 `/capabilities` 再显示相应操作。
 
-| 业务场景 | 使用的 API | 观察的结果 |
-| --- | --- | --- |
-| 多轮聊天、后台助手 | 创建 session；POST turns | 消息、工具与目标 turn 状态 |
-| 刷新页面、恢复生成中的内容 | GET snapshot；GET events/stream?after=as_of | 历史消息、工具卡和后续增量 |
-| 执行中纠正方向或补充资料 | POST turns/{turn}/steer 或 inputs/inject | input.accepted → applied / rejected |
-| 工具审批、外部执行结果 | POST turns/{turn}/actions | required_action 的接收、解决或投递失败 |
-| 停止当前任务、继续中断任务 | POST turns/{turn}/cancel 或 resume | 明确的 turn 状态；resume 沿用 turn |
-| 文件输入和交付 | files、artifacts | 文件引用、产物发布与下载 |
-| 追踪委派和控制消耗 | subagents、usage、budget | 子会话、模型用量与预算事件 |
-| 从旧上下文另行试验、导出审计 | checkpoints、fork、export | 恢复事实、新会话或公共 JSONL |
-| 用户离线后通知业务后端 | webhooks | 签名通知，再读取事件详情 |
+如果提交请求返回 `202 Accepted`，且状态为 `queued`，表示任务已经接收，但尚未完成。网络重试必须带上同一个 `Idempotency-Key` 和相同的请求内容，这样服务才会返回原来的 Turn。只有用户发起新任务时才使用新的 key。刷新页面时读取已有 Session 的快照和事件，不要重新发送输入。
 
-第一次接入可以直接运行[聊天示例](/v2/zh/service/agent-api-chat)。本页按操作解释请求与边界；[SSE 文档](/v2/zh/service/sse-events)集中说明事件字段和前端更新规则。
+## 读取结果与恢复页面
 
-## 先跑通一个任务
+应用可以通过 `GET /turns/{turnId}` 查询任务状态，也可以读取 Session 的 `/snapshot` 恢复界面，再从快照返回的 `as_of` 连接 `/events/stream`。如果只显示某个任务，则成对使用这个 Turn 的 `/snapshot` 和 `/events/stream`，不能混用 Session 与 Turn 的游标。
 
-1. 创建一次 session，保存它的 ID。
-2. POST turns 提交任务，保存返回的 turn ID。
-3. GET snapshot 恢复界面，再从 as_of 订阅 SSE。
-4. 收到 required action 时提交答复；以目标 turn 的明确结果判断是否完成。
+Managed Session 的快照保留消息、工具调用、输入、待办和子 Agent 等运行时资源。Team、Workflow 与通用 Turn 快照使用按 ID 索引的集合，并包含执行步骤。客户端需要根据快照类型读取这些字段；统一的是会话和任务的身份、控制路径以及事件续传方式。事件字段和累计更新规则见 [SSE 与事件续传](/v2/zh/service/sse-events)。
 
-## 执行身份与逻辑 turn 状态
+## 补充要求与背景材料
 
-`sessionId` 是持续会话；`turnId` 是一次逻辑任务；`run_id` 是实际执行的一次尝试。新 POST turns 创建新 turn。resume 和人工答复继续原 turn，必要时新建 run；页面刷新和 SSE 重连都不创建它们。steer 修改当前任务的后续要求；inject 只添加供后续步骤使用的上下文。
-
-例如 S1 中提交 T1，开始 R1，等待审批后 R1 挂起；用户答复后 T1 继续为 R2。刷新页面只读取 S1 的快照和增量。完成后再提新问题，才创建 T2。
-
-## 创建 session 并提交第一轮
-
-前提：已有可用的 Managed Agent 和 Environment，以及该 session 所有者的用户 Bearer token。`TOKEN` 是平台用户令牌，不能用 Endpoint 的 `X-API-Key` 替代。登录方式见 [API 认证](/v2/zh/service/api-reference)。以下 shell 示例使用 `curl` 和 `jq`；`BASE_URL` 为不带末尾斜杠的 Gateway origin。
-
-```bash
-export BASE_URL='http://localhost:18080'
-export TOKEN='YOUR_USER_TOKEN'
-export AGENT_ID='YOUR_MANAGED_AGENT_ID'
-export ENVIRONMENT_ID='YOUR_ENVIRONMENT_ID'
-
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d "$(jq -n --arg agent "$AGENT_ID" --arg env "$ENVIRONMENT_ID" \
-        '{agent:$agent, environmentId:$env}')")
-SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
-SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
-```
-
-session 创建请求使用 `agent`、`environmentId` 等 camelCase 字段；Agent 已配置默认 Environment 时可省略 environmentId。创建 session 不会自动提交消息。保留返回的 session ID，不要在每次页面刷新时新建 session。
-
-```bash
-# 每个逻辑提交使用一个稳定 key；网络重试必须沿用相同 key 和 message。
-TURN_KEY='research-request-20260930-001'
-TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "Idempotency-Key: $TURN_KEY" \
-  -d '{"message":"请整理这份材料，并列出需要核实的问题。"}')
-TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
-```
-
-成功返回 `202 Accepted`，例如：
-
-```json
-{"id":"<turn-id>","sessionId":"<session-id>","status":"queued","createdAt":1790726400000,"errorCode":null}
-```
-
-202 表示命令已持久接收，尚不表示输入已进入模型。相同 user/session/key 与输入返回同一个 turn；同 key 改变输入返回 409。key 必须非空且不超过 256 字符，message 必须非空。不要对重试生成新 key。
-
-同一 session 的 turn 按接收顺序执行；较早 turn 等待操作或中断时，后续输入可排队，但不会直接插入正在执行的模型请求。不同会话可以独立执行。
-
-## 读取回复与执行进度
-
-```bash
-SNAPSHOT=$(curl --fail-with-body -sS "$SESSION_URL/snapshot" -H "Authorization: Bearer $TOKEN")
-CURSOR=$(printf '%s' "$SNAPSHOT" | jq -er '.as_of')
-curl --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "Authorization: Bearer $TOKEN" --data-urlencode "after=$CURSOR"
-```
-
-快照包含 `items`、`tools`、`turns`、`runs`、`required_actions`、`action_commands`、`inputs`、`artifacts`、`subagents` 和 `usage`。这些资源对应同一事件前缀 `as_of`；`session` 是当前控制面元数据。消息内容在 `items[].data.item.content`，工具卡包含参数、进度、结果和状态。正在生成的内容也有已提交前缀，刷新后从该前缀继续更新。
-
-按 `item_id` 更新消息、按 `(turn_id, tool_call_id)` 更新工具。`item.completed` 替换该 item 的累计内容，不再追加一次。SSE 断开不取消任务。以目标 `turn_id` 的 `turn.completed` 判断成功；单个 run、消息、工具或子 Agent 完成都不是根任务完成。
-
-需要逐条审计时使用 `GET /events?after=…&limit=100`；需要较长列表时用 `GET /resources/items?limit=100`，之后传它返回的 `next_cursor`。资源分页在 15 分钟内保持原来的快照和 `as_of`，过期返回 410，重新开始分页。**资源分页 cursor 不能用于 SSE**，SSE 使用 `as_of` 或事件 cursor。完整事件类型和可复用前端代码见 [SSE 文档](/v2/zh/service/sse-events)。
-
-## 运行中补充要求和结构化输入
-
-| 目的 | 操作 | 何时生效 |
-| --- | --- | --- |
-| 提交新的独立任务 | POST `/turns` | 按顺序开始新的 turn |
-| 纠正正在执行的任务 | POST `/turns/{turn}/steer` | 当前 turn 的下一个执行步骤；任务已关闭接收时返回 409 |
-| 补充背景，不启动推理 | POST `/inputs/inject` | 下一次执行步骤读取；空闲时保存等待后续执行 |
-
-三个操作均需要稳定 `Idempotency-Key`，均接受下面两种输入形式之一。steer/inject 返回 `input_id`；`input.accepted` 表示已保存，`input.applied` 表示已进入运行时上下文。steer 不会改写已经发送给模型的请求。
+用户想继续提出一个新的问题时，应提交新的 Turn。如果用户要修改当前任务的后续要求，则可以对支持此能力的 Managed Turn 调用 `steer`。修改会在后续执行步骤生效，不能改变已经发送给模型的请求。只希望补充背景而不立即启动推理时，可以调用 Session 的 `/inputs/inject`。
 
 ```bash
 curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID/steer" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: correction-001' -d '{"message":"优先核实预算，暂时不要发送邮件。"}'
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: correction-001' \
+  -d '{"message":"先核实预算，暂时不要发送邮件。"}'
 ```
 
-```json
-{"input":[{"role":"user","content":[{"type":"text","text":"分析附件"},{"type":"file","file_id":"file_..."}]}]}
-```
+Managed 输入可以使用非空 `message`，也可以使用包含用户消息的 `input` 数组，二者只能选一个。结构化输入用于传递文本和文件等内容，上传与引用方式见[文件与产物](/v2/zh/service/files)。`input.accepted` 表示输入已保存，`input.applied` 才表示运行时已使用它。应用不要把“接收成功”显示成“Agent 已处理”。
 
-`message` 与 `input` 二选一。input 接受 1..100 条 user 消息，内容可为 text、image、audio、video、data 或已上传的 file 引用。媒体 source 使用 Core ContentBlock 格式，例如 `{"type":"url","url":"https://example.com/image.png"}` 或 `{"type":"base64","media_type":"image/png","data":"..."}`。实际可处理的媒体类型和大小取决于所选模型。确认和工具结果应通过 actions 提交，不能伪装成 system/assistant/tool 输入。
+## 回答 required action
 
-## 确认、取消与恢复
-
-### 回答 required action
-
-保存 `required_action.created` 或快照待办中的 request_id、turn_id、kind 和 tool_call。confirmation 答复如下；external_execution 使用 `output` 字符串及可选 `is_error`。
+Agent 需要用户确认或等待外部执行结果时，会生成 required action。应用应保存快照或事件中的 `request_id`，向用户说明所请求的操作，再将真实决定提交到对应 Turn。下面是一条工具确认答复，`request_id` 必须使用实际收到的值：
 
 ```bash
 curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID/actions" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: approval-001' \
-  -d '{"answers":[{"request_id":"YOUR_REQUEST_ID","allow":true,"reason":"用户已确认"}]}'
+  -d '{"request_id":"RETURNED_REQUEST_ID","payload":{"allow":true,"reason":"用户已确认"}}'
 ```
 
-每次接受 1..100 个真实待办答复。`required_action.accepted` 是持久接收，`resolved` 是运行时处理完成。`rejected` 是答复投递失败，不等于用户拒绝授权：仍待处理的请求会带着 kind/tool_call 回到待办视图；已解决的请求不会重新出现。`GET /turns/{turn}/actions` 查询答复命令的 accepted/resolved/rejected 状态。相同提交重试沿用同一个 key；修正被拒绝的答复使用新 key，并先核对当前待办。
+接口返回命令回执和状态地址。应用继续查询回执，直到命令执行完毕，同时等待任务状态变化；提交答复成功不代表整个任务已经完成。相同答复重试时沿用原来的 key，修改答复时先重新读取待办。`interact` scope 只允许调用交互接口，不会把应用密钥变成指定的人工审批人；涉及身份约束的业务审批仍需使用被授权的用户身份。
 
-### 取消执行
+## 取消与恢复任务
+
+取消和恢复都作用于已有 Turn，并要求稳定的幂等键。收到取消回执后，应用仍要等待任务进入明确终态。取消无法保证撤销已经发送给外部系统的操作，因此再次执行之前，应核实这些操作的结果。
 
 ```bash
-curl --fail-with-body -sS -X POST "$SESSION_URL/turns/$TURN_ID/cancel" -H "Authorization: Bearer $TOKEN"
+curl --fail-with-body -sS -X POST "$SESSION_URL/turns/$TURN_ID/cancel" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Idempotency-Key: cancel-001'
 ```
 
-取消请求与实际停止分开。等待明确 turn 结果；已经发出的外部操作不能保证撤销。取消一个空闲、中断或等待输入的任务会关闭其未决交互和未应用的 steering。结果未知的工具仍须先核对。
+当 `/turns/{turnId}/capabilities` 的 `available_commands` 包含 `resume` 时，可以向同一路径下的 `/resume` 提交恢复命令。恢复保留原 Turn ID，并从已保存的状态继续。若任务仍在等待用户答复，应先处理待办；若工具调用结果未知，应先核实结果。不要把恢复当成重新提交任务的通用替代品。
 
-### 执行中断后恢复
+<span id="budgets"></span>
+<span id="选择限制层次"></span>
+<span id="原生会话与子-agent-用量"></span>
+<span id="发布服务的配额"></span>
+<span id="验证预算生效"></span>
 
-```bash
-curl --fail-with-body -sS -X POST "$SESSION_URL/turns/$TURN_ID/resume" \
-  -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: resume-001'
-```
+## 用量、子 Agent 与预算
 
-resume 保留 turn ID，恢复已提交状态并开始新的执行。它适用于 failed/interrupted，或没有未答交互的 requires_action；有待办先答复，有未知工具结果先核对。它不恢复线程或撤销外部副作用。建议携带稳定的 `Idempotency-Key`：响应丢失时复用该 key，只返回当前状态，不重复恢复。再次主动恢复使用新 key；正在运行或排队的任务不能发起新的 resume。
+Managed Session 的 `/subagents` 可以列出它派生的子会话。应用只需沿返回的关联读取子会话快照和事件；子会话有自己的事件游标，不能与父会话混用。`GET /usage?include_children=true` 可以汇总已报告的子树用量，但这不是所有子任务同一时刻的原子快照。
 
-### 管理员检查 checkpoint 与工具结果
-
-配置 `builder.agent-api.trace-enabled=true` 后，trace 仍要求 session 所有者校验及 `ROLE_ADMIN` 或 `ROLE_SESSION_TRACE`：
-
-| 接口（相对 session URL） | 用途 |
-| --- | --- |
-| `GET /trace?after=0&limit=100` | 原生事件分页；after 是数字 native seq，limit 为 1..500，返回 data/as_of_seq/next_seq |
-| `GET /trace/recovery` | asOfSeq、stateJson、uncertainToolCalls、activeRuns；只读检查 |
-| `POST /trace/reconcile` | `{reason, outcomes}`，outcomes 为 toolCallId → ToolResultBlock；核对并记录未知工具结果 |
-| `GET /trace/subagents/{child}?after=0&limit=100` | 读取父日志直接关联的 child session；不能访问任意 child |
-
-以下管理示例假设已核实唯一未决调用 call-42 的结果，且当前 token 满足 trace 权限。先读取检查结果，再提交真实结果；不要直接复用示例 ID：
-
-```bash
-curl --fail-with-body -sS "$SESSION_URL/trace/recovery" \
-  -H "Authorization: Bearer $TOKEN"
-curl --fail-with-body -sS "$SESSION_URL/trace/reconcile" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"reason":"Verified order ORD-42 by business idempotency key","outcomes":{"call-42":{"type":"tool_result","id":"call-42","name":"create_order","state":"SUCCESS","output":[{"type":"text","text":"Order ORD-42 exists"}]}}}'
-```
-
-核对必须恰好覆盖全部未知 toolCallId，结果 ID 匹配且不是 suspended。确认外部结果后提交修复，再显式 resume。普通 checkpoint 操作见下文；它不能跳过未知工具结果的核对。
-
-## 文件与产物
-
-先上传不可变文件，再用 file_id 作为输入或发布为产物。上传、重试必须使用相同 key 和内容。
-
-```bash
-FILE_JSON=$(curl --fail-with-body -sS "$SESSION_URL/files" \
-  -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: report-file-001' \
-  -H 'X-File-Name: report.pdf' -H 'Content-Type: application/pdf' --data-binary @report.pdf)
-FILE_ID=$(printf '%s' "$FILE_JSON" | jq -er '.file_id')
-curl --fail-with-body -sS "$SESSION_URL/artifacts" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: publish-report-001' -d "$(jq -n --arg id "$FILE_ID" '{file_id:$id}')"
-curl --fail-with-body -sS "$SESSION_URL/files/$FILE_ID/content" \
-  -H "Authorization: Bearer $TOKEN" -o downloaded-report.pdf
-```
-
-`X-File-Name` 中的非 ASCII 字符应使用 UTF-8 百分号编码。默认单文件上传上限为 16 MiB，模型输入、累计上下文及日志提交另有容量限制。下载仍要求 session 所有者身份，不是公开链接。也可发布外部 HTTPS 引用 `{name,uri,media_type?,sha256?}`。`DELETE /artifacts/{id}` 只撤销发布，不删除文件或历史。
-
-## 子 Agent 和用量预算
-
-`GET /subagents` 返回关联子会话，从事件中的 `childSessionId` 进入 `GET /subagents/{child}/snapshot`、`/events` 或 `/events/stream`。这些读取沿用父会话所有者校验，并验证真实父子关联。每个子会话有独立 item、turn、run 和 cursor；不要混用父子 cursor。异步子任务的最终状态以子日志为准。
-
-`GET /usage` 统计当前 session 的已报告用量；加 `?include_children=true` 汇总关联子树，并返回各会话的 `session_watermarks`，它不是整棵树同时刻的原子快照。usage 按模型调用去重。配置计价后返回 `estimated_cost`、`currency`、`cost_complete` 和 `unpriced_calls`；未配置的价格不会假装为零费用。
+如果需要限制 Managed 运行时的消耗，可以通过 `/budget` 设置模型调用次数或累计用量限制。下面的配置允许最多 30 次模型调用，并在继续执行前检查累计 token 是否已达到 100000：
 
 ```bash
 curl --fail-with-body -sS -X PUT "$SESSION_URL/budget" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
   -d '{"max_model_calls":30,"max_total_tokens":100000}'
 ```
 
-预算覆盖本会话及通过它派生的子 Agent 调用。`max_model_calls` 使用原子预留限制调用次数；`max_total_tokens`、`max_cost` 在下一次模型调用前依据已报告用量检查，不能硬截断正在进行或并行调用的 token/费用。费用限制须同时提供 currency 并配置计价。缺失用量/价格时相应限制拒绝继续；收到 `budget.exceeded` 后可调整预算并显式恢复失败任务。`GET /budget` 查看限制和核算状态；PUT `{}` 清除限制。该估算不是供应商账单。
+Token 与费用预算依据已报告用量检查，无法硬截断已经开始的并行调用。费用限制还需要配置模型计价。Application 的并发和 token 预算则用于管理整个应用的调用额度，与单个 Managed Session 的运行时预算分别生效；相关字段见[服务 API](/v2/zh/service/service-api)。
 
-## 从 checkpoint 继续试验或恢复上下文
+## 从 checkpoint 继续试验
 
-`GET /checkpoints` 返回不透明 checkpoint_id、时间和原因，不返回原始 prompt/state。选择实际返回的 ID：
+Managed Session 的 `/checkpoints` 返回可恢复的上下文记录。选择实际返回的 `checkpoint_id` 后，可以调用 `/checkpoints/restore` 恢复上下文，再提交新的 Turn。恢复会追加审计记录，不会删除旧历史，也不会撤销已经发生的外部操作。
 
-```bash
-curl --fail-with-body -sS "$SESSION_URL/checkpoints" -H "Authorization: Bearer $TOKEN"
-curl --fail-with-body -sS "$SESSION_URL/checkpoints/restore" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: restore-001' \
-  -d '{"checkpoint_id":"YOUR_CHECKPOINT_ID","reason":"从核实过的上下文重新开始"}'
-```
+需要保留原会话并另行试验时，先创建同一 Agent 的空 Session，再对原 Session 调用 `/fork`，提交 `{target_session_id, checkpoint_id, reason}` 和幂等键。相关会话需要处于可以恢复的空闲状态，不应存在排队任务、未答交互或未知工具结果。Fork 复制 Agent 状态，不复制目标环境、凭据、工作文件或预算。
 
-原地恢复保留审计历史，在日志中追加恢复事实，之后提交新 turn；它不把旧任务重新排队。需要保留原会话并另行试验时，先创建同一个 Agent 的空目标 session，再 POST `/fork`，请求为 `{target_session_id,checkpoint_id,reason}`，并带幂等键。目标的环境、凭据和工作文件需自行配置；fork 复制 Agent 状态，不克隆环境、子会话、托管文件或预算。
+Session 的 `/archive` 暂停新的提交，`/restore` 解除归档；它们与 checkpoint 恢复不同。删除 Session 会使它不再能通过应用接口访问，并不等同于立即擦除底层审计记录。备份和保留策略见[运维指南](/v2/zh/service/operations)。
 
-恢复/fork 要求相关 session 没有运行中、排队、未关闭任务、未答交互、未知工具结果或待消费输入。先完成、取消或核对它们。回到旧 checkpoint 不会撤销已经发生的工具副作用。`POST /restore` 仅解除 session 归档，与 `/checkpoints/restore` 不同。
+## 后台通知与客户端复用
 
-需要导出业务审计记录时，GET `/export` 下载当前公共事件前缀的 JSONL；不包含私有 prompt、原始模型推理、凭据或完整 checkpoint。
+用户离开页面后，业务后端可以使用 Session 或 Turn 的 Webhook 接收结果通知，具体签名和重试方式见 [Webhook](/v2/zh/service/sse-events#webhooks)。需要导出 Managed 运行记录时，可以使用 `/export` 获取公共事件的 JSONL。
 
-## 页面离线时通过 Webhook 获取通知
+控制台使用 `frontend/src/api/agentSessions.ts` 展示 Managed 的完整执行资源，通用应用调用使用 `serviceSessions.ts`。这两种界面都访问同一套 Session API。自行开发前端时，请保持快照与事件配对，并将服务返回的 ID 当作不透明值保存。
 
-业务后端可以注册 session webhook；不需要保持 SSE 长连接。目的地址必须是部署方允许的 HTTPS 主机（443 端口）。
-
-```bash
-curl --fail-with-body -sS "$SESSION_URL/webhooks" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: task-notifications-001' \
-  -d '{"url":"https://notify.example.com/agent-events","event_types":["turn.completed","turn.failed","turn.requires_action"]}'
-```
-
-注册从当前事件水位开始，不回推旧历史。保存返回的 signing_secret；GET 列表不返回密钥。通知 body 包含 id、type、session_id、cursor、created_at 和 event_url，后端再带身份读取该事件。验证 `X-AgentScope-Signature`：用 signing_secret 的 UTF-8 字节作为 HMAC-SHA256 key，对 `X-AgentScope-Timestamp + "." + 原始请求体` 签名，结果为 `v1=<hex>`。使用恒定时间比较，并校验时间窗口及事件 ID 去重。
-
-投递至少一次，收到通知后返回 2xx。失败指数退避，连续 8 次后暂停；GET `/webhooks/{id}/deliveries` 查看尝试，POST `/webhooks/{id}/retry` 继续，DELETE `/webhooks/{id}` 停用。正在投递时修改返回 409，稍后重试。网络异常可能造成重复通知，不应重复执行业务副作用。
-
-## 存储分层与记录位置
-
-| 内容 | 默认位置 | 用途 |
-| --- | --- | --- |
-| 工作文件 | Environment 的工作目录或所配置的 Filesystem 后端 | Agent 读写业务文件 |
-| 原生日志与 checkpoint | 共享 BaseStore 的 runtime/sessions namespace | 执行恢复和工具结果核对 |
-| 公共事件、turn/action 命令 | Data Plane 数据库 | HTTP 状态、历史、SSE 和持久调度 |
-| 文件、预算、Webhook、资源投影 | 共享 BaseStore 的 runtime/agent-api namespace | 跨副本资源与恢复；投影可从事件重建 |
-
-Filesystem 和 BaseStore 都可以使用分布式后端；多副本应指向同一个支持条件写入的持久存储。业务客户端无需依赖内部路径。部署方通过 `builder.agent-api.files.max-bytes`、`webhooks.allowed-hosts` 配置上传大小和通知地址；通过 `pricing.models` JSON 配置每百万输入/输出 token 单价及 `pricing.currency`，或实现 `SessionUsagePricer` Bean 接入自己的计价逻辑。
-
-## 接入已有应用
-
-Console 的 Session **Execution** 页签展示文字、多个工具调用、文件输入、steer/inject 和刷新恢复。可复用 `frontend/src/api/agentSessions.ts` 的请求/SSE 客户端与 `agentSessionView.ts` 的状态更新器。消息生成途中刷新、工具执行途中离开后返回，均按 snapshot + 增量更新同一组资源。
-
-旧 `/api/sessions`、Chat 与 Endpoint 的协议仍用于各自入口，不应混用 cursor 或事件 DTO。机器可读契约在 `agentscope-service/docs/agent-api/openapi-v1.json` 和 `public-event-v1.schema.json`；路由索引见 [API 参考](/v2/zh/service/api-reference)。
-
-部署方的文件大小、Webhook 主机和模型计价选项见[配置参考](/v2/zh/service/configuration#agent-api-配置)。
+如果要把这些操作接入自己的聊天页面，可以继续阅读[接入示例：可恢复的聊天应用](/v2/zh/service/agent-api-chat)。示例把任务提交、进度展示和用户操作连在一起，并说明用户离开或刷新页面后如何继续同一段工作。

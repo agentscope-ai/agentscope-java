@@ -1,70 +1,47 @@
 ---
-title: "Interactive assistant: query and confirm inside a product"
-description: "Keep context in a Conversation and track each turn, interaction, and result through its Invocation."
+title: "Offer a conversational business assistant inside a product"
+description: "Connect business input, execution and verified delivery through the Session API."
 zh_link: /v2/zh/service/cases/business-assistant
 ---
 
-An assistant on an order page explains a delay and uses follow-up input to decide whether to create a support ticket. The product retains its chat UI, login, and order permissions; Service handles the conversation and tool execution. Use one session-capable Agent.
+A user asks why order O-1001 is delayed and whether next-day delivery can be guaranteed. The assistant should read the facts, explain known status and create a support ticket only after confirmation, using the same business identity as the product.
 
-## 1. Prepare users and business data
+This tutorial uses fictional material. Expected outputs are acceptance criteria, not evidence of a completed production run.
 
-Download the [first-turn request](/examples/service/business-assistant/input.json.txt) as `input.json` and the [fictional orders](/examples/service/business-assistant/orders.json.txt) for tool testing. The fixture is not a running order API.
+## Prepare input and the execution target
 
-| User | Readable order | Fixed fact |
-| --- | --- | --- |
-| alice | O-1001 | Awaiting stock; tomorrow cannot be guaranteed |
-| bob | O-2001 | Shipped; this does not guarantee an arrival date |
+Download the [request fixture](/examples/service/business-assistant/input.json.txt) as `input.json`. The request contains the user’s question; the accompanying [order data](/examples/service/business-assistant/orders.json.txt) provides fictional facts. Prepare a read-only order lookup tool and a controlled ticket creation tool. Check business-user authorization inside the tool and keep unverified delivery commitments explicit.
 
-Implement a query tool that checks ownership using authenticated user identity. A ticket tool creates a ticket only after authorized confirmation and returns a real ID. Claiming to be alice in a message grants no permission. Without a ticket tool, demonstrate queries and suggestions only.
+Select a Managed Agent and configure confirmation for write operations. Store the Session by user and order, then submit follow-up Turns to the same Session so the assistant retains the conversation. Reconsider Session boundaries when the order or business identity changes.
 
-## 2. Publish the conversation service
+## Create a Session and submit the task
 
-[Publish](/v2/en/service/endpoints) a session-capable single Agent as the conversation Endpoint `order-assistant`. Instructions require real query evidence, no unsupported arrival promises, and confirmation before ticket creation.
-
-Keep the Application key in the backend with invoke/read and any required interaction/cancellation scopes. Designated-human tool approvals still require the correct human identity; interact scope alone does not grant approval authority. Prepare Bash, curl, jq, BASE_URL, and ENDPOINT_KEY.
-
-## 3. Create the first turn and keep ownership
+Prepare the Agent ID and application credential using the [integration guide](/v2/en/service/service-api). The Bash example uses curl and jq to turn the small source fixture into a Managed Agent message. A repository URL, file path or order ID in the input does not itself provide system access.
 
 ```bash
-RECEIPT=$(curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/endpoints/order-assistant/conversations" \
-  -H "X-API-Key: $ENDPOINT_KEY" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: alice-order-1001-turn-1' \
-  --data-binary @input.json)
-CONVERSATION_ID=$(printf '%s' "$RECEIPT" | jq -er '.conversationId')
-INVOCATION_ID=$(printf '%s' "$RECEIPT" | jq -er '.invocationId')
+SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: business-assistant-session-001' \
+  --data "$(jq -n --arg id "$AGENT_ID" '{target:{type:"agent",id:$id}}')")
+SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: business-assistant-task-001' \
+  --data "$(jq '{message:(.message // (.input | tojson))}' input.json)")
+TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
+curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
 ```
 
-Store authenticated user → Conversation → turn Invocations in the application. Check authorization on every access; the association alone is not enforcement. Multiple keys in one Application share invocation ownership.
+`202 Accepted` confirms admission rather than completion. Save both IDs and retry network failures with the same keys and bodies. Use a new key for new work. Restore the Session snapshot and continue its event stream from `as_of` to display progress.
 
-Restore messages and actions from the snapshot, then subscribe to events. Proxy browser requests through the backend rather than shipping a long-lived key to the browser.
+## Connect execution back to the application
 
-## 4. Distinguish a new turn from a pending action
+When the Agent requires confirmation, render the actual pending operation from required_actions. Return its request ID and decision through that Turn’s actions resource, using the designated user’s identity when necessary. Restore the Session on refresh instead of resubmitting the ticket creation request.
 
-If the first turn finishes with an ordinary reply, submit the user's confirmation as a new turn:
+## Verify the actual delivery
 
-```bash
-curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/conversations/$CONVERSATION_ID/turns" \
-  -H "X-API-Key: $ENDPOINT_KEY" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: alice-order-1001-turn-2' \
-  --data '{"message":"Create a support ticket for this order and record that arrival tomorrow is not guaranteed."}'
-```
+Verify that the answer matches order data, no ticket is written before confirmation and an actual ticket ID exists afterward. Duplicate clicks, retries and page refreshes must not create extra Turns. The business tool also needs its own idempotency identifier to prevent duplicate external writes.
 
-If the current Invocation is waiting for a required action, answer that action using its returned request_id, expected_version, and type. Do not substitute a new turn. Native confirmations, external tool outputs, and Workflow actions use different payloads; see [Unified service API](/v2/en/service/service-api).
-
-Only one Invocation can be active per Conversation. Disable duplicate sends or queue them in the application; expose in-progress input only when capabilities allow it. Human handoff requires the application to create a transfer record and decide how to pause or end Agent work.
-
-## 5. Acceptance and interruption
-
-| Test | Required behavior |
-| --- | --- |
-| alice queries O-1001 | Explain stock delay without guaranteeing tomorrow |
-| alice requests O-2001 | Tools and application deny access, not just model instructions |
-| Follow-up | Same Conversation, new Invocation, retained context |
-| Refresh during a pending action | Restore the same question without duplicate operations |
-| Ticket creation | Authorized execution and a verifiable real ticket ID |
-| Network replay | Same key reuses the turn; ticket system separately enforces business idempotency |
-| Cancellation | Show requested cancellation until confirmed; reconcile existing writes |
-
-Use the fixed data for tool authorization tests. Full acceptance requires the real Agent, tools, and UI.
+See [files and artifacts](/v2/en/service/files), [Session API interaction](/v2/en/service/service-api), and [events and notifications](/v2/en/service/sse-events) for the supporting interfaces.

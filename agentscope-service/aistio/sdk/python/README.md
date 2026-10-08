@@ -16,7 +16,7 @@ Standard Service deployments support outbound HTTP execution: `instrument(..., c
 
 `transport="grpc"` selects ASDP for deployments with a reachable gRPC listener; pass `control_plane="host:port"`. The legacy parameter name `start_grpc=False` disables either selected push transport and its advertised execution/reporting capabilities. It is only useful for standalone observation. Do not use an HTTP port as a gRPC address.
 
-`ServiceClient` provides snapshot, paginated events, SSE, capabilities, commands, actions, usage, artifacts and webhooks. `ManagementClient` provides Applications, Agents, Teams, Workflow definitions, runtime policies, Endpoints, releases and credentials. Management uses a platform token; invocation uses an application API key or an authorized platform token. API keys require an Application and explicit scopes.
+`ServiceClient` provides snapshot, paginated events, SSE, capabilities, commands, actions, usage, artifacts and webhooks. `ManagementClient` provides Applications, Agents, Teams, Workflow definitions, runtime policies and application credentials. Management uses a platform token; invocation uses an application API key or an authorized platform token. API keys require an Application, explicit target grants, and scopes. Use `create_session(target)` followed by `submit(session_id, ..., idempotency_key=...)` for Agents, Teams, and Workflows.
 
 See `../../examples/service-api/README.md` for a complete API-only bootstrap and reconnect/approval flow. `AsyncInvokeAdapter` and `AgentScopeRunnerAdapter` execute fresh framework instances with explicit input mapping. Automatic framework detection selects observation adapters, not execution runners.
 

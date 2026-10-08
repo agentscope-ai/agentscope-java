@@ -51,7 +51,7 @@ func (s *Server) scopeMiddleware() gin.HandlerFunc {
 		query.Set("namespace", s.defaultNamespace)
 		c.Request.URL.RawQuery = query.Encode()
 
-		if c.Request.Body != nil && c.Request.ContentLength != 0 &&
+		if !publicSessionFileRequest(c) && c.Request.Body != nil && c.Request.ContentLength != 0 &&
 			strings.Contains(c.GetHeader("Content-Type"), "application/json") {
 			body, err := io.ReadAll(io.LimitReader(c.Request.Body, 16<<20))
 			if err == nil {

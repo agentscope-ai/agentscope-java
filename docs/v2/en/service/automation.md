@@ -1,5 +1,5 @@
 ---
-title: "Configure schedules and event triggers through APIs"
+title: "Schedules and event triggers"
 zh_link: /v2/zh/service/automation
 ---
 
@@ -9,7 +9,7 @@ This is preview documentation. The official release is not yet available.
 
 An Automation separates what to execute from when to trigger it. One daily-digest Runbook can run on a weekday schedule or after an external event. Delivery and Run records let applications inspect event receipt, execution, and results.
 
-Execution targets currently support Agents and Teams. Triggers support manual invocation, Cron, and Webhook. Use [Workflow](/v2/en/service/workflows) for fixed process topology; Automation cannot currently target a Workflow revision directly, and Channel triggers are not implemented.
+When configuring a rule, select an Agent or Team as its execution target, then choose whether a manual request, Cron schedule, or Webhook event starts the work. For a fixed sequence of steps, define a [Workflow](/v2/en/service/workflows) and invoke its published revision through the [Session API](/v2/en/service/service-api). Automation cannot currently trigger a Workflow directly. Work from messaging platforms requires a separate [Channel connection](/v2/en/service/channels); a Channel cannot be configured as an Automation trigger.
 
 ## Create a digest rule
 
@@ -87,7 +87,7 @@ curl --fail-with-body "$SERVICE_URL/hooks/v1/automations/$AUTOMATION_ID/$TRIGGER
 
 Retransmit the same event with the same key and content; use a new key for new work. An empty `events` filter accepts all event types. The payload's `event` field can also specify the type. Input is appended as `Trigger data`, so define field meanings, material access, and missing-data handling in the Runbook.
 
-This inbound Webhook triggers Service. To receive callbacks from Service, use [Invocation webhooks](/v2/en/service/service-api) or [Managed session webhooks](/v2/en/service/session-event-log). Their URLs, credentials, and signatures differ. A sender that cannot supply the required headers needs a backend adapter.
+This inbound Webhook lets external systems trigger Service work. Register a [Session or Turn Webhook](/v2/en/service/sse-events#webhooks) when your backend needs result notifications. The directions, URLs, and authentication differ. Adapt through your backend if the external sender cannot provide required headers.
 
 ## Inspect results, overlap, and retries
 
@@ -97,10 +97,10 @@ api "$SERVICE_URL/api/v1/automations/$AUTOMATION_ID/runs?limit=25"
 api "$SERVICE_URL/api/v1/automations/$AUTOMATION_ID/runs/$AUTOMATION_RUN_ID"
 ```
 
-Deliveries describe receipt, filtering, or rejection. Runs record execution `status`, `waitReason`, input, output, and errors; detail responses link Issues, tasks, and Artifacts. Work with `review` completion can still await [human acceptance](/v2/en/service/inbox) after computation finishes.
+Deliveries describe receipt, filtering, or rejection. Runs record execution `status`, `waitReason`, input, output, and errors; detail responses link Issues, tasks, and Artifacts. Work with `review` completion can still await [human acceptance](/v2/en/service/issues#inbox) after computation finishes.
 
 `concurrencyPolicy:"skip"` skips overlapping triggers; `queue` processes them in order. `queueTimeoutSeconds` bounds waiting and `runTimeoutSeconds` bounds execution; each accepts 60–604800 seconds. Disabling a rule stops future triggers. Cancel existing work through `POST /api/v1/automations/{id}/runs/{runId}/cancel`.
 
 Use `/runs/{runId}/rerun` for another execution or `/deliveries/{deliveryId}/replay` to replay a delivery. Both use a new `Idempotency-Key` and retain lineage. Inspect the failure first because re-execution can repeat external side effects. Rotate secrets with `/rotate-secret`, providing `expectedVersion`, and update the sender.
 
-See [Console: automation and channels](/v2/en/service/console/automation) for configuration and execution-history UI flows.
+See [Console: automation and channels](/v2/en/service/console/index#console-automation) for configuration and execution-history UI flows.

@@ -7,7 +7,7 @@ zh_link: /v2/zh/service/sessions
 This is preview documentation. The official release is not yet available.
 </Note>
 
-Applications submit work through Agent API sessions, Issues, or published Endpoints. This reference follows the request through Runs, Tasks, Attempts, and Sessions. Namespace, work-level, and operational permissions apply to diagnostic APIs.
+Applications submit work through Agent API sessions, Issues, or Session API. This reference follows the request through Runs, Tasks, Attempts, and Sessions. Namespace, work-level, and operational permissions apply to diagnostic APIs.
 
 ## Trace work
 
@@ -34,7 +34,7 @@ Use a user Bearer token and consistent `X-AgentScope-Tenant` / `X-AgentScope-Nam
 | Find attempts | `GET /api/v1/execution-attempts` | `taskId`, `state`, `limit`; returns `{attempts}` |
 | Read attempt | `GET /api/v1/execution-attempts/{attemptId}` | `{attempt}` with backend, execution state, result, and Session links |
 
-`RunEvent.sequence` supports incremental reads within its Run. `type` identifies the event; `nodeId`, `agentTaskId`, and `attemptId` identify affected records. This events endpoint returns JSON rather than SSE. Published-service callers should prefer their Invocation's returned statusUrl / eventsUrl; see [unified service APIs](/v2/en/service/service-api).
+`RunEvent.sequence` supports incremental reads within its Run. `type` identifies the event; `nodeId`, `agentTaskId`, and `attemptId` identify affected records. This events endpoint returns JSON rather than SSE. Published-service callers should prefer their Turn's returned statusUrl / eventsUrl; see [unified service APIs](/v2/en/service/service-api).
 
 ## States and controls
 
@@ -56,7 +56,7 @@ Explicit fresh fallback allows policy-driven reconstruction on another candidate
 
 Read waitReason/error to identify needed human input, Host, Worker, credentials or capacity. A Session in `requires_action` can be waiting for tool results rather than human approval.
 
-Tool events, final replies, Attempt success and Issue acceptance are separate evidence. Review deliverables through the [review APIs](/v2/en/service/inbox); see [Managed outcomes](/v2/en/service/managed-harness-task-outcomes) for their semantics.
+Tool events, final replies, Attempt success and Issue acceptance are separate evidence. Review deliverables through the [review APIs](/v2/en/service/issues#inbox); see [Managed outcomes](/v2/en/service/issues#managed-harness-task-outcomes) for their semantics.
 
 ## Reconnect
 
@@ -89,4 +89,26 @@ Practice with the [incident repair case](/v2/en/service/cases/incident-to-pr): q
 
 If a second Attempt succeeds, retain the first failure and associate delivery with the successful execution's files. For an SSE disconnect, resume observation of the original invocation with its cursor using the [SSE guide](/v2/en/service/sse-events); do not create another business task.
 
-For execution-graph UI navigation, see [Console: Teams and orchestration](/v2/en/service/console/orchestration).
+For execution-graph UI navigation, see [Console: Teams and orchestration](/v2/en/service/console/index#console-orchestration).
+
+<span id="managed-agent-execution"></span>
+<span id="building-runtime-context"></span>
+<span id="model-and-tool-loop"></span>
+<span id="persistence-and-recovery"></span>
+<span id="observe-a-published-service-through-unified-apis"></span>
+<span id="integrate-a-managed-agent-through-agent-api"></span>
+<span id="execution-and-acceptance"></span>
+
+## Managed execution and persistence
+
+The control plane resolves the definition version, environment, knowledge and credential references. Dataplane materializes definition files in a session directory, builds Harness and connects persistent state. Definition snapshots, execution files and shared resources have different lifecycles: saving an Agent does not reconfigure every running instance.
+
+Workspace holds capability definitions, Environment chooses where files and commands execute, Memory Store holds shared knowledge, and Vault resolves tool credentials. Their Managed usage is described in this category's resource pages.
+
+Harness uses an explicit Model or the deployment default, reasons from instructions, requests tools and consumes results. `maxIters` limits iterations and tool policy controls operations. Execution can wait for user approval; resubmitting the same work while it waits can create additional execution.
+
+Local tools execute in Dataplane, sandbox uses E2B, remote uses shared file storage, and self_hosted delegates tool work to a Worker. The model still runs in Dataplane for self_hosted environments; the Worker receives tool operations and returns results.
+
+Session state, events and coordination records use the deployment's persistent stores. Coordination leases constrain execution across replicas. Recovery still depends on the database, working files, chosen environment and external tools. Restarting a service does not reverse an external side effect from a completed tool call.
+
+Shared Memory is live platform knowledge accessed on demand, not a full copy inserted into every prompt. Maintain it as shared knowledge; an Agent definition version does not freeze all external knowledge.

@@ -1,4 +1,4 @@
-"""Create and publish Agent, mixed Team and Workflow APIs; keep demo workers alive."""
+"""Create Agent, mixed Team and Workflow Session targets; keep demo workers alive."""
 import argparse
 import json
 import os
@@ -72,24 +72,20 @@ def main():
             edges.append({"from": "review", "to": "approval"})
         definition = api.create_definition({**scope, "name": name, "draftSpec": {"nodes": nodes, "edges": edges}})["definition"]
         revision = api.publish_definition(definition["id"])["revision"]
-        output = {"base_url": base, "application_id": application["id"], "endpoints": {}}
-        for target, ref in (("agent", leader["agentId"]), ("team", team["id"]),
-                            ("workflow", revision["id"])):
-            slug = name + "-" + target
-            endpoint = api.create_endpoint({**scope, "name": slug, "slug": slug,
-                "targetType": "orchestration_revision" if target == "workflow" else target,
-                "targetRef": ref, "invocationMode": "job", "authPolicy": {"type": "api_key"},
-                "inputSchema": {"type": "object", "required": ["request"], "properties": {"request": {"type": "string"}}}})["endpoint"]
-            api.publish_endpoint(endpoint["id"], version=endpoint["version"])
-            credential = api.create_credential(endpoint["id"], application["id"], name="demo",
-                                               scopes=["invoke", "read", "cancel", "interact"])
-            output["endpoints"][target] = {"slug": slug, "key": credential["secret"], "id": endpoint["id"]}
+        targets = {"agent": {"type": "agent", "id": leader["agentId"]},
+                   "team": {"type": "team", "id": team["id"]},
+                   "workflow": {"type": "workflow", "id": definition["id"], "revisionId": revision["id"]}}
+        credential = api.create_credential(application["id"], name="demo",
+            scopes=["invoke", "read", "cancel", "interact"],
+            targets=[{"type": value["type"], "id": value["id"]} for value in targets.values()])
+        output = {"base_url": base, "application_id": application["id"], "targets": targets,
+                  "key": credential["apiKey"], "tenant": tenant, "namespace": namespace}
         path = Path(args.output)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         os.chmod(path, 0o600)
         with os.fdopen(fd, "w") as file:
             json.dump(output, file, indent=2)
-        print("Published. Config:", path.resolve(), flush=True)
+        print("Ready. Config:", path.resolve(), flush=True)
         print("Keep this process running. In another terminal: python client.py --config", args.output, "--target workflow", flush=True)
         while all(process.poll() is None for process in processes):
             time.sleep(1)

@@ -1,83 +1,47 @@
 ---
-title: "In-product delivery: generate a CRM proposal"
-description: "Submit a Job from an opportunity, restore progress, download files, and review delivery."
+title: "Generate a customer proposal inside a CRM"
+description: "Connect business input, execution and verified delivery through the Session API."
 zh_link: /v2/zh/service/cases/in-product-delivery
 ---
 
-A salesperson selects “generate proposal” on an opportunity. The application sends requirements and product sources; an Agent prepares a proposal and open questions in the background. Users can leave and return to the same task, then review before sending. Marketing briefs, research reports, and presentations follow this pattern.
+A user working on opportunity OPP-104 wants a proposal draft they can review after leaving the page. The application associates the opportunity version with a Session, making generation part of the existing CRM workflow.
 
-Start with one specialist Agent. The CRM owns login, opportunity permissions, versions, and sending. Service owns durable execution, interactions, and artifacts. Add a Team only when specialist delegation is useful.
+This tutorial uses fictional material. Expected outputs are acceptance criteria, not evidence of a completed production run.
 
-## 1. Prepare fixed input
+## Prepare input and the execution target
 
-Download the [request fixture](/examples/service/in-product-delivery/input.json.txt) as `input.json`. It is a complete Job request for fictional opportunity OPP-104. Three short sources are inline; no separate upload or Memory configuration is required.
+Download the [request fixture](/examples/service/in-product-delivery/input.json.txt) as `input.json`. The sample describes 80 stores and unresolved SSO, data region and concurrency requirements. Ask the Agent for proposal.md and open-questions.md with source versions, leaving customer commitments to the business reviewer.
 
-| Source | Fixed fact | Required treatment |
-| --- | --- | --- |
-| customer / customer-v1 | 80 stores, web support and read-only order lookup; SSO, region, peak load unknown | Separate requirements from open questions |
-| catalog / product-v1 | Web knowledge answers; order lookup needs integration; no voice or offline app | Do not invent capabilities or accuracy guarantees |
-| delivery / delivery-v1 | Suggested four-week PoC starts after access and sample readiness | Do not promise production launch |
+Configure a Managed Agent that can read authorized opportunity material and write to its workspace. The application checks the current user’s opportunity permissions before supplying data or controlled tools. If the work later requires several specialties, select a Team in a new Session while keeping the same calling model.
 
-## 2. Prepare and publish execution
+## Create a Session and submit the task
 
-Configure an Agent that reads inputs, writes files, and publishes Artifacts. Verify a real file can be downloaded through Service. Instructions require `proposal.md` and `open-questions.md`, source IDs and versions, and explicit unknowns. Actual tools must create and publish the files.
-
-[Publish](/v2/en/service/endpoints) a job-mode Endpoint named `proposal`. Its input schema must accept request, opportunity_id, revision, and sources. The result can contain a summary and source list; Artifacts carry the files. Before configuring output schema or resultMapping, inspect the execution target's real output structure.
-
-Prepare Bash, curl, jq, `BASE_URL`, and a backend-held `ENDPOINT_KEY` with invoke/read scopes. Add interaction or cancellation scopes only as needed.
-
-## 3. Submit from the opportunity
+Prepare the Agent ID and application credential using the [integration guide](/v2/en/service/service-api). The Bash example uses curl and jq to turn the small source fixture into a Managed Agent message. A repository URL, file path or order ID in the input does not itself provide system access.
 
 ```bash
-RECEIPT=$(curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/endpoints/proposal/jobs" \
-  -H "X-API-Key: $ENDPOINT_KEY" \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: opportunity-104-revision-1' \
-  --data-binary @input.json)
-INVOCATION_ID=$(printf '%s' "$RECEIPT" | jq -er '.invocationId')
-curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/invocations/$INVOCATION_ID" \
-  -H "X-API-Key: $ENDPOINT_KEY"
+SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: in-product-delivery-session-001' \
+  --data "$(jq -n --arg id "$AGENT_ID" '{target:{type:"agent",id:$id}}')")
+SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: in-product-delivery-task-001' \
+  --data "$(jq '{message:(.message // (.input | tojson))}' input.json)")
+TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
+curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
 ```
 
-Store “OPP-104 / revision 1 → Invocation ID” in the application database. HTTP 202 means accepted; the query can still show active work. Network retries reuse the key and body. A new requirements revision uses a new key and retains previous results.
+`202 Accepted` confirms admission rather than completion. Save both IDs and retry network failures with the same keys and bodies. Use a new key for new work. Restore the Session snapshot and continue its event stream from `as_of` to display progress.
 
-## 4. Restore the view and handle feedback
+## Connect execution back to the application
 
-```bash
-SNAPSHOT=$(curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/invocations/$INVOCATION_ID/snapshot" \
-  -H "X-API-Key: $ENDPOINT_KEY")
-CURSOR=$(printf '%s' "$SNAPSHOT" | jq -er '.as_of')
-curl --fail-with-body -N -G \
-  "$BASE_URL/invoke/v1/invocations/$INVOCATION_ID/events/stream" \
-  -H "X-API-Key: $ENDPOINT_KEY" --data-urlencode "after=$CURSOR"
-```
+Restore the original Session when reopening the opportunity. Submit a new Turn for a changed requirement version and retain previous results so an older completion cannot overwrite a newer proposal. A successful write creates a workspace file; making it downloadable still requires uploading its bytes or registering an Artifact.
 
-Render the snapshot before applying events. Reopening an opportunity observes the existing Invocation. Read required actions when input is needed and let authorized people respond. Check capabilities before sending additional input; see [Unified service API](/v2/en/service/service-api).
+## Verify the actual delivery
 
-This task can list unknown SSO and region requirements rather than wait indefinitely. Revising a completed proposal creates a new Job, with the CRM retaining the revision relationship.
+Check that both files are retrievable, commitments have supporting sources and unknowns remain explicit. Save the formal deliverable after business review; Turn completion is an execution outcome, not approval of the proposal.
 
-## 5. Review and write back
-
-Read `invocation.status/result` and `GET /invoke/v1/invocations/{id}/artifacts`; download actual files using returned addresses. After confirming the overall terminal state, check:
-
-- Both files contain real content and cite customer-v1, product-v1, and delivery-v1.
-- Voice and offline apps are not claimed as available; order integration dependencies are explicit.
-- SSO, region, and peak load remain open; the PoC estimate has prerequisites.
-- The opportunity revision is still current; old output cannot overwrite new requirements.
-
-Only then move the CRM to “reviewed” or “ready to send.” Sending customer email is a separate CRM action.
-
-## 6. Failures and regression
-
-| Condition | Application response |
-| --- | --- |
-| Source access fails or files are missing | Show failure or missing delivery |
-| partial_succeeded | Inspect failed steps and missing files before accepting partial output |
-| Refresh or disconnect | Restore snapshot/cursor; replace the snapshot if the cursor expired |
-| Unsupported request | State limits and questions rather than make commitments |
-| Catalog changes to product-v2 | Submit new work and check source versions; preserve old output |
-
-Production can replace inline sources with authorized tools or Memory. Record versions actually read. Fixtures and criteria describe expected behavior; validate real models, file tools, and CRM writeback in your environment.
+See [files and artifacts](/v2/en/service/files), [Session API interaction](/v2/en/service/service-api), and [events and notifications](/v2/en/service/sse-events) for the supporting interfaces.

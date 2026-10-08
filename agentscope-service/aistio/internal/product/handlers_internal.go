@@ -395,7 +395,19 @@ func (s *Server) FindOrCreateSession(ctx context.Context, ownerID, agentID, envi
 	if pinned := serviceapi.ContextVersion(ctx, agentID); pinned > 0 {
 		version, refType = pinned, "version"
 	}
-	return s.insertSession(ctx, ownerID, agentID, ownerID, version, refType, envID, externalKey, memIDs, vaultIDs, nil, nil)
+	var options createSessionReq
+	if contract := serviceapi.ContextContract(ctx); contract != nil && len(contract.SessionOptions) > 0 {
+		if err = json.Unmarshal(contract.SessionOptions, &options); err != nil {
+			return sessionRow{}, err
+		}
+		if options.MemoryStoreIDs != nil {
+			memIDs = *options.MemoryStoreIDs
+		}
+		if options.VaultIDs != nil {
+			vaultIDs = *options.VaultIDs
+		}
+	}
+	return s.insertSession(ctx, ownerID, agentID, ownerID, version, refType, envID, externalKey, memIDs, vaultIDs, options.AgentOverrides, options.Resources)
 }
 
 // FindOrCreateSessionID returns the session selected by the runtime binding resolver.

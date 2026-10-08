@@ -56,7 +56,7 @@ func TestServicePostgresReplicaAdmissionAccountingAndWakeup(t *testing.T) {
 		t.Fatal(err)
 	}
 	eps := []*model.Endpoint{servicePostgresEndpoint(t, replicas[0], "first"), servicePostgresEndpoint(t, replicas[1], "second")}
-	servers := []*Server{NewServer(ServerOptions{Store: replicas[0]}), NewServer(ServerOptions{Store: replicas[1]})}
+	servers := []*Server{newLegacyEndpointTestServer(ServerOptions{Store: replicas[0]}), newLegacyEndpointTestServer(ServerOptions{Store: replicas[1]})}
 	type admission struct {
 		inv   *model.EndpointInvocation
 		fresh bool
@@ -278,7 +278,7 @@ func TestServicePostgresCommandSurvivesReplicaRestartBeforeDispatch(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewServer(ServerOptions{Store: replicas[0], AuthToken: "key"})
+	s := newLegacyEndpointTestServer(ServerOptions{Store: replicas[0], AuthToken: "key"})
 	request := httptest.NewRequest("POST", "/invoke/v1/invocations/"+inv.ID.String()+"/cancel", strings.NewReader(`{}`))
 	request.Header.Set("Authorization", "Bearer key")
 	request.Header.Set("Idempotency-Key", "cancel")
@@ -289,7 +289,7 @@ func TestServicePostgresCommandSurvivesReplicaRestartBeforeDispatch(t *testing.T
 		t.Fatalf("cancel admission: %d %s", w.Code, w.Body)
 	}
 	_ = replicas[0].Close()
-	restarted := NewServer(ServerOptions{Store: replicas[1], AuthToken: "key"})
+	restarted := newLegacyEndpointTestServer(ServerOptions{Store: replicas[1], AuthToken: "key"})
 	if err = restarted.SweepServiceInvocations(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestServicePostgresASDPCapabilityPolicySelectsRegisteredInstance(t *testing
 	replicas := servicePostgresReplicas(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	s := NewServer(ServerOptions{Store: replicas[0]})
+	s := newLegacyEndpointTestServer(ServerOptions{Store: replicas[0]})
 	req := httptest.NewRequest("POST", "/api/v1/agent-registrations", strings.NewReader(`{"tenant":"t","namespace":"n","agentKey":"cap-worker","instanceKey":"one","capacity":2,"capabilities":["execute-task"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

@@ -1,5 +1,5 @@
 ---
-title: "通过 API 编排 Workflow"
+title: "编排 Workflow"
 en_link: /v2/en/service/workflows
 ---
 
@@ -7,13 +7,15 @@ en_link: /v2/en/service/workflows
 此为预览文档，正式版本尚未发布。
 </Note>
 
-当业务明确规定“生成报告 → 人工审批 → 交付”，用 Workflow 保存步骤和依赖，再通过 API 发布与执行。需要由 Leader 根据目标动态拆分工作时，使用 [Team](/v2/zh/service/create-team)。两者都可以作为 Job Endpoint 的目标，提供统一的应用调用入口。
+当业务明确规定“生成报告 → 人工审批 → 交付”时，可以用 Workflow 保存步骤和依赖。先发布一个 revision，再创建以该 Workflow 为目标的 Session，即可通过 Turn 提交任务。需要由 Leader 动态拆分工作时，使用 [Team](/v2/zh/service/create-team)；两者采用相同的应用调用路径。
 
 Workflow 有可编辑的定义和发布后不可变的 revision。每次 Run 固定一个 revision，因此修改草稿不会改变已经开始的执行。
 
+可以直接使用已经验证的 Managed Agent 作为流程节点；需要分工时再让节点调用 Team。先[运行一个托管 Agent](/v2/zh/service/create-managed-agent)，再固定流程与审批人。选型见[多 Agent 协作](/v2/zh/service/orchestration)。
+
 ## 创建并校验流程
 
-以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与范围)准备 `SERVICE_URL`（Service 地址）、`TOKEN`（用户 Bearer token）、`TENANT`、`NAMESPACE`，并定义请求函数：
+以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与空间)准备 `SERVICE_URL`（Service 地址）、`TOKEN`（用户 Bearer token）、`TENANT`、`NAMESPACE`，并定义请求函数：
 
 ```bash
 api() {
@@ -24,7 +26,6 @@ api() {
     -H 'Content-Type: application/json' "$@"
 }
 ```
-
 
 将 `AGENT_ID` 设为已经可执行任务的 Agent ID，`APPROVER_ID` 设为审批人的账号标识。下面的流程先生成报告，再等待人工审批：
 
@@ -52,28 +53,28 @@ published=$(api "$SERVICE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/publ
   --data "$(jq -n --argjson version "$(jq '.definition.version' <<<"$defined")" \
   '{expectedVersion:$version}')")
 REVISION_ID=$(jq -r '.revision.id' <<<"$published")
-started=$(api "$SERVICE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/runs" \
-  --data "$(jq -n --arg revision "$REVISION_ID" \
-  '{revisionId:$revision,idempotencyKey:"weekly-report-001",
-    input:{request:"汇总 Workspace 中本周材料并生成带来源的报告"},
-    issue:{title:"本周项目报告",description:"交付复核后的报告",access:{mode:"private"}}}')")
-RUN_ID=$(jq -r '.run.id' <<<"$started")
-ISSUE_ID=$(jq -r '.run.rootIssueId' <<<"$started")
+session=$(api "$SERVICE_URL/api/v1/agent-sessions" --data "$(jq -n \
+  --arg workflow "$WORKFLOW_ID" --arg revision "$REVISION_ID" \
+  '{target:{type:"workflow",id:$workflow,revisionId:$revision}}')")
+SESSION_ID=$(jq -er '.id' <<<"$session")
+turn=$(api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns" \
+  -H 'Idempotency-Key: weekly-report-001' \
+  --data '{"input":{"request":"Produce this week’s report with sources"}}')
+TURN_ID=$(jq -er '.id' <<<"$turn")
 ```
 
-`issue` 用于随执行创建工作；若要关联已有工作，改传 `issueId`，两者必须二选一。`idempotencyKey` 标识这次业务提交，重传同一请求时保持一致。应用应保存 Run ID 和 Issue ID，分别跟进执行与验收。
+保存 Session ID 和 Turn ID，后续查询、审批和取消都围绕这两个资源进行。Service 会自动建立流程执行与工作记录。重试同一任务时沿用相同幂等键；新任务使用新的 key。
 
 ## 跟进节点、输出与审批
 
 ```bash
-api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID"
-api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID/graph"
-api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID/events?after=0&limit=200"
+api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns/$TURN_ID"
+api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/snapshot"
 ```
 
-详情返回 `run.state`、输出和失败原因；graph 返回节点、任务、Attempt 及子运行。events 是 JSON 历史查询，按 `sequence` 递增读取，下一次将最后处理的 sequence 作为 `after`。它不是 SSE 连接。对外发布为 Endpoint 后，应用可以改用该 Invocation 的 [SSE](/v2/zh/service/sse-events)跟进调用。
+Turn 详情返回当前任务状态、结果和失败原因；Session 快照用于恢复应用界面。需要实时展示时，按照 [SSE 文档](/v2/zh/service/sse-events)从快照游标订阅增量事件。只有诊断流程内部节点时，才需要从控制台查看关联 Run 的执行图。
 
-示例中的 review 节点会生成审批，指定用户通过 [Approval API](/v2/zh/service/inbox#处理执行中的审批)作出决定。节点审批放行流程，Issue 的最终验收判断业务交付是否完成，两者分别记录。若后续步骤会发布文件或修改外部系统，执行 Agent 仍须具备对应工具与权限。
+review 节点会出现在 Turn 的 required_actions 中。指定审批人使用自己的平台 token，向该 Turn 的 `/actions` 提交实际的 `request_id`、`expected_version` 和 `decision`。审批通过后流程继续，应用密钥不能替代指定人员的身份。
 
 ## 逐步增加流程能力
 
@@ -90,16 +91,20 @@ api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID/events?after=0&limit=200"
 例如增加等待 `report.ready` 的 signal 节点后，外部业务通过下面的 API 推进流程：
 
 ```bash
-api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID/signals/report.ready" \
-  --data '{"idempotencyKey":"report-upload-001","payload":{"artifactId":"YOUR_ARTIFACT_ID"}}'
+api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns/$TURN_ID/inputs" \
+  -H 'Idempotency-Key: report-upload-001' \
+  --data '{"request_id":"RETURNED_SIGNAL_REQUEST_ID","expected_version":1,"payload":{"artifactId":"YOUR_ARTIFACT_ID"}}'
 ```
 
-signal 是流程的外部输入，不会自动替代审批。更复杂的流程先运行小样本，查看真实节点输出，再编写下游映射；不要假定不同运行时的结果结构完全相同。
+请求中的 ID 和版本必须取自当前 required_actions，不能直接使用示例占位值。signal 是流程的外部输入，不会自动替代审批。更复杂的流程先运行小样本，查看真实节点输出，再编写下游映射；不要假定不同运行时的结果结构完全相同。
 
-## 暂停、取消与重新执行
+## 取消任务与运维控制
+
+应用通过 Turn 的 `/cancel` 取消当前任务，通过 capabilities 判断是否可以 `/resume`；再次从头执行时提交一个新的 Turn。以下 Run 接口供控制台运维和流程诊断使用，Run ID 从关联执行记录获取，不是 Turn ID。
+
 
 `POST /api/v1/orchestration-runs/{runId}/pause` 阻止新节点调度，已运行步骤仍可能返回；`/resume` 恢复调度；`/cancel` 请求取消节点、任务和子运行，不会删除或验收 Issue。请求体可使用 `{}`。
 
 终态后向 `/rerun` 提交 `{"idempotencyKey":"weekly-report-retry-001"}` 创建新的 Run，保留与原运行的关联；可加 `input` 替换输入。节点支持 `timeoutSeconds`、`retry` 和 `failurePolicy`，其中失败策略可选 `fail_fast`、`continue`、`partial_success`。重试不保证撤销已经发生的外部副作用。
 
-发布给业务应用时，在 [Endpoint API](/v2/zh/service/endpoints) 中使用 `targetType:"orchestration_revision"` 和具体 revision ID。发布新 Workflow revision 后，还需要更新 Endpoint release 才会切换调用目标。控制台设计器与运行图的操作见[控制台：团队与编排](/v2/zh/service/console/orchestration)。
+应用创建 Session 时，使用 `target:{"type":"workflow","id":"WORKFLOW_ID","revisionId":"REVISION_ID"}`。省略 `revisionId` 时，Service 在创建会话时选择最新的已发布版本；已有会话不会自动切换到新版本。控制台设计器与运行图见[控制台](/v2/zh/service/console/index#console-orchestration)。

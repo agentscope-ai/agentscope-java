@@ -1,77 +1,47 @@
 ---
-title: "文档核验：给处理流水线增加质量检查"
-description: "对照原文、抽取结果和规则提交 Job，输出有证据的问题清单。"
+title: "将文档核验接入业务流程"
+description: "通过 Session API 将业务输入、执行过程与实际交付连接起来。"
 en_link: /v2/en/service/cases/document-verification
 ---
 
-文档系统已有 OCR 和字段抽取，Agent 服务承担后续核验：检查原文、字段和规则是否一致，将问题交给复核人员。上游继续执行确定性处理，不需要把整个流水线改成 Agent。
+文档处理流水线需要核对发票 DOC-101 的抽取字段与原文是否一致。Agent 负责定位问题和证据，应用负责决定文档是否继续流转，以及哪些结果需要人工复核。
 
-## 1. 固定一份有问题的输入
+本案例使用虚构资料说明接入方式，预期结果是验收要求，并非一次已完成的业务实跑。
 
-下载[请求样例](/examples/service/document-verification/input.json.txt)为 `input.json`。虚构发票 DOC-101 / doc-v1 只有一页文本，直接内联到请求中：
+## 准备资料和执行目标
 
-| 对象 | 值 |
-| --- | --- |
-| 原文第 1 页 | 数量 4，单价 32.00 USD，总额 128.00 USD |
-| 抽取结果 | 数量 4，单价 32，总额 **182** |
-| 规则 sop-v1 | 总额等于数量乘单价；字段符合原文；不可读页面不算已核验 |
+下载[请求样例](/examples/service/document-verification/input.json.txt)并保存为 `input.json`。样例保留了原文页码、抽取结果和规则。原文中的 4 件商品、32 美元单价与 128 美元总价应共同用于核验；发生矛盾时，结果应指出具体字段、来源页和判断依据。扫描质量不足的页面也应列为待复核，不能当作核验通过。
 
-这里期望发现 total 字段错误，应为 128，并指向第 1 页。样例不需要 PDF 上传；生产中读取 PDF、大文件和页码定位，需配置受控文件工具或相应原生文件能力，公共 Job 没有因为 input 中存在 URL 就自动下载文件。
+先配置只读核验 Agent，并明确它能够读取的资料与规则版本。下面的文本示例将小型资料快照作为消息发送；处理原始文件时，可以先上传 Session File，再用内容块引用它。OCR、文档权限和领域规则的准备仍属于接入方的业务流水线。
 
-## 2. 发布核验能力
+## 创建 Session 并提交任务
 
-从一个 Agent 开始，指令要求覆盖全部输入页面，区分事实矛盾与无法验证，保留原始值及证据。金额运算交给确定性工具，Agent 负责结合资料解释问题。
-
-按[发布指南](/v2/zh/service/endpoints)创建 job Endpoint `document-check`，输入 schema 接受 request、document_id、source_version、pages、extracted、rules。要求结构化结果时，执行适配器必须返回可映射的业务对象；仅在回复中输出 JSON 文本并不保证公共 result 是同一个对象。验证真实原始结果后配置 resultMapping / outputSchema。
-
-本例的业务结果约定如下，这是**预期结果形状**，不是运行记录或平台内置字段：
-
-```json
-{
-  "document_id": "DOC-101",
-  "verified_pages": [1],
-  "findings": [
-    {"field": "total", "observed": 182, "expected": 128,
-     "source_page": 1, "rule_version": "sop-v1"}
-  ],
-  "review_required": true
-}
-```
-
-## 3. 在流水线中调用
-
-准备 Bash、curl、jq，以及 BASE_URL、具备 invoke/read 的后端 ENDPOINT_KEY；先发布上述 Endpoint。
+先按[应用接入指南](/v2/zh/service/service-api)准备 Agent ID 和应用凭据。下面的命令使用 Bash、curl 和 jq，并将样例资料整理为 Managed Agent 的文本消息。Service 不会因为资料中写有仓库地址、文件路径或订单编号，就自动获得相应系统的访问权限。
 
 ```bash
-RECEIPT=$(curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/endpoints/document-check/jobs" \
-  -H "X-API-Key: $ENDPOINT_KEY" \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: doc-101-doc-v1-sop-v1' \
-  --data-binary @input.json)
-INVOCATION_ID=$(printf '%s' "$RECEIPT" | jq -er '.invocationId')
-curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/invocations/$INVOCATION_ID" \
-  -H "X-API-Key: $ENDPOINT_KEY"
+SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: document-verification-session-001' \
+  --data "$(jq -n --arg id "$AGENT_ID" '{target:{type:"agent",id:$id}}')")
+SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: document-verification-task-001' \
+  --data "$(jq '{message:(.message // (.input | tojson))}' input.json)")
+TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
+curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
 ```
 
-将文档版本、抽取批次、规则版本和 Invocation ID 保存在上游检查记录中。等待结果时，原文处理流程可以继续处理其他文档；需要核验通过才能流转的当前文档保持待复核。
+返回 `202 Accepted` 表示任务已接收，尚不能据此判断完成。保存 Session 和 Turn ID，网络重试沿用相同 key 与请求内容；新任务才更换 key。需要查看进展时，读取 Session 的 snapshot，再从其 `as_of` 继续订阅事件。
 
-## 4. 根据证据决定流转
+## 接回业务应用
 
-查询直到 Invocation 进入终态，取 `invocation.result`，必要时下载核验报告 Artifact。应用先检查输出结构，再将 findings 与原文页定位一起展示。核验成功但 findings 非空是一次正常的“发现问题”，不应把它记成基础设施故障。
+应用保存文档版本、抽取批次、规则版本和 Session/Turn 的关联，并将当前文档保持在待核验状态。收到结果后，先检查输出结构，再把发现的问题和原文定位放在同一界面。发现业务矛盾是一次有效核验结果，与工具无法读取文件等执行故障应分别处理。
 
-复核人员确认修改为 128 后，由业务系统生成新的抽取版本，重新提交 Job。原结果和新结果都保留；Agent 不直接覆盖原始发票。
+## 验收实际交付
 
-## 5. 用反例验收
+用已知正确、明确矛盾、缺页和无法读取的样例分别验收，检查是否给出预期问题及证据。需要结构化结果时，应验证实际 result，而不是仅根据回复中出现 JSON 字样判断成功。人工复核通过后，再由应用推进后续流程。
 
-| 输入变化 | 预期行为 |
-| --- | --- |
-| 原始样例 | 指出 total=182 与原文、计算值 128 矛盾，定位第 1 页 |
-| 将抽取 total 改为 128 | 不再产生该矛盾；不能机械复制上一次 findings |
-| 删除页面正文或使文件不可读 | 明确未核验范围，不能返回“全部通过” |
-| 改变规则版本 | 新调用记录新规则；同幂等键不同正文应被拒绝 |
-| output schema 不符 | 公开调用失败，流水线不能按结构化成功结果消费 |
-| 人工有争议 | 保留证据和复核状态，不伪造最终业务批准 |
-
-固定样例只验证一种矛盾。生产验收还需有标注样本集，分别统计漏检、误报、无法验证比例及专家复核时间，并验证真实文件授权和大文档读取。
+文件输入和下载见[文件与产物](/v2/zh/service/files)，交互与取消见[Session API](/v2/zh/service/service-api)，回调与重连见[事件与通知](/v2/zh/service/sse-events)。

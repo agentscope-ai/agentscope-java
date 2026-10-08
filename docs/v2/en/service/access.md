@@ -127,4 +127,4 @@ Check identity and namespace, then resource decisions and dependency errors, fol
 
 Members can request access through `POST /api/v1/namespaces/{name}/requests` with `version`, `resource` (`kind:id`), `action`, and `reason`. A manager decides through `/requests/{requestId}/review` with `{version,approve}`; query `/requests` for records.
 
-Verify the [CRM proposal case](/v2/en/service/cases/in-product-delivery) with two ordinary accounts: one configures resources, the other invokes them and reads its own work. Endpoint keys exercise published scopes and contracts, not user Namespace permission checks. See [Console overview](/v2/en/service/console/index) for UI entry points.
+Verify the [CRM proposal case](/v2/en/service/cases/in-product-delivery) with two ordinary accounts: one configures resources, the other invokes them and reads its own work. application keys exercise published scopes and contracts, not user Namespace permission checks. See [Console overview](/v2/en/service/console/index) for UI entry points.

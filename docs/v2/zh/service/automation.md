@@ -1,5 +1,5 @@
 ---
-title: "通过 API 配置计划与事件触发"
+title: "计划与事件触发"
 en_link: /v2/en/service/automation
 ---
 
@@ -9,11 +9,11 @@ en_link: /v2/en/service/automation
 
 Automation 将“执行什么”和“何时触发”分开保存。同一份日报 Runbook 可以由工作日定时触发，也可以在收到外部事件时执行。每次触发留下 Delivery 或 Run 记录，业务应用可查询是否接收、是否执行以及交付结果。
 
-当前执行目标支持 Agent 和 Team，触发方式支持手动、Cron 和 Webhook。固定流程使用 [Workflow](/v2/zh/service/workflows)；Automation 当前不能直接把 Workflow revision 设为执行目标，也未实现 Channel trigger。
+配置规则时，可以选择 Agent 或 Team 作为执行目标，再决定由手动请求、Cron 计划还是 Webhook 事件发起工作。如果工作需要固定步骤，应按 [Workflow](/v2/zh/service/workflows) 定义流程，并通过 [Session API](/v2/zh/service/service-api) 调用已发布的 revision。当前 Automation 还不能直接触发 Workflow，来自消息平台的工作则需要单独[接入消息渠道](/v2/zh/service/channels)，不能将 Channel 配置为 Automation 的触发器。
 
 ## 创建日报规则
 
-以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与范围)准备 `SERVICE_URL`（Service 地址）、`TOKEN`（用户 Bearer token）、`TENANT`、`NAMESPACE`，并定义请求函数：
+以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与空间)准备 `SERVICE_URL`（Service 地址）、`TOKEN`（用户 Bearer token）、`TENANT`、`NAMESPACE`，并定义请求函数：
 
 ```bash
 api() {
@@ -87,7 +87,7 @@ curl --fail-with-body "$SERVICE_URL/hooks/v1/automations/$AUTOMATION_ID/$TRIGGER
 
 重传同一事件使用相同 key 和内容，新事件使用新 key。`events` 为空时接收全部事件；也可以通过 payload 的 `event` 字段提供事件类型。输入会作为 `Trigger data` 加入工作说明，应在 Runbook 中约定字段含义、资料读取方式与缺失信息处理。
 
-这是外部系统触发 Service 的入站 Webhook。需要 Service 把执行结果通知你的后端时，使用 [Invocation Webhook](/v2/zh/service/service-api) 或 [Managed session Webhook](/v2/zh/service/session-event-log)，不要混用地址、认证或签名协议。外部平台无法发送所需 header 时，可由业务后端做适配。
+这里的入站 Webhook 用于让外部系统触发 Service 工作。需要 Service 把结果通知你的后端时，应注册 [Session 或 Turn Webhook](/v2/zh/service/sse-events#webhooks)。两种通知方向不同，地址和认证方式也不同；外部平台无法提供必需 header 时，可由业务后端适配。
 
 ## 查询结果、控制积压与重试
 
@@ -97,10 +97,10 @@ api "$SERVICE_URL/api/v1/automations/$AUTOMATION_ID/runs?limit=25"
 api "$SERVICE_URL/api/v1/automations/$AUTOMATION_ID/runs/$AUTOMATION_RUN_ID"
 ```
 
-Delivery 说明事件收到、过滤或拒绝的情况；Run 记录实际执行的 `status`、`waitReason`、输入输出和错误，详情还关联 Issue、任务及 Artifact。`review` 工作完成计算后仍可能等待人工验收，按[验收 API](/v2/zh/service/inbox)继续。
+Delivery 说明事件收到、过滤或拒绝的情况；Run 记录实际执行的 `status`、`waitReason`、输入输出和错误，详情还关联 Issue、任务及 Artifact。`review` 工作完成计算后仍可能等待人工验收，按[验收 API](/v2/zh/service/issues#inbox)继续。
 
 `concurrencyPolicy:"skip"` 在已有运行占用时跳过新触发，`queue` 依次排队。`queueTimeoutSeconds` 限制排队等待，`runTimeoutSeconds` 限制执行，两者允许 60～604800 秒。关闭规则只停止后续触发；停止已有运行使用 `POST /api/v1/automations/{id}/runs/{runId}/cancel`。
 
 失败后可调用 `/runs/{runId}/rerun`；重放某次事件使用 `/deliveries/{deliveryId}/replay`，两者均提交新的 `Idempotency-Key`，并保留来源关联。先查看失败原因再重试，因为重新执行可能重复外部副作用。轮换密钥调用 `/rotate-secret`，传入 `expectedVersion` 并更新发送方。
 
-控制台的配置和执行记录入口见[控制台：自动化与渠道](/v2/zh/service/console/automation)。
+控制台的配置和执行记录入口见[控制台：自动化与渠道](/v2/zh/service/console/index#console-automation)。

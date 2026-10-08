@@ -1,5 +1,5 @@
 ---
-title: "通过 API 接入消息渠道"
+title: "接入消息渠道"
 en_link: /v2/en/service/channels
 ---
 
@@ -7,13 +7,13 @@ en_link: /v2/en/service/channels
 此为预览文档，正式版本尚未发布。
 </Note>
 
-Channel 将外部消息平台连接到 AgentScope Service，负责接收消息、匹配目标并回传结果。创建渠道、配置路由、启停连接和查询回传状态都可以通过 API 完成。自有业务应用若只需要 HTTP 调用入口，使用 [Endpoint](/v2/zh/service/endpoints)；Channel 适合让用户从已有聊天平台发起工作。
+Channel 将外部消息平台连接到 AgentScope Service，负责接收消息、匹配目标并回传结果。创建渠道、配置路由、启停连接和查询回传状态都可以通过 API 完成。自有业务应用若只需要 HTTP 调用入口，使用 [Session API](/v2/zh/service/service-api)；Channel 适合让用户从已有聊天平台发起工作。
 
 当前适配器包含钉钉、飞书、企业微信、GitHub 和 GitLab，具体配置通过类型接口查询。其中把外部消息关联为持久 Issue、路由给 Agent / Team 并回传工作进展的完整流程，目前仅支持飞书。其他适配器不能据此推定具有相同的任务协作能力。
 
 ## 查询平台要求并创建连接
 
-以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与范围)准备 `SERVICE_URL`（Service 地址）、`TOKEN`（用户 Bearer token）、`TENANT`、`NAMESPACE`，并定义请求函数：
+以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与空间)准备 `SERVICE_URL`（Service 地址）、`TOKEN`（用户 Bearer token）、`TENANT`、`NAMESPACE`，并定义请求函数：
 
 ```bash
 api() {
@@ -88,4 +88,4 @@ activity 包含当前用户可访问的消息接收、工作关联与发送记�
 
 更改连接凭据使用 `PUT /api/channels/{channelId}`，读取详情时密钥会被遮盖。启停使用 `/enable`、`/disable`，删除使用 `DELETE /api/channels/{channelId}`。更换凭据或回调设置后，重新验证接收与发送两条路径。
 
-控制台配置表单、工作路由和身份绑定入口见[控制台：自动化与渠道](/v2/zh/service/console/automation)。
+控制台配置表单、工作路由和身份绑定入口见[控制台：自动化与渠道](/v2/zh/service/console/index#console-automation)。

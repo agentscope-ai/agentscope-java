@@ -1,5 +1,5 @@
 ---
-title: "Hosted：连接并创建 Agent"
+title: "连接 Hosted Agent"
 en_link: /v2/en/service/connect-hosted-agent
 description: 连接 Runtime Host，通过 API 选择运行环境、创建 Hosted Agent 并分派任务
 ---
@@ -8,9 +8,11 @@ description: 连接 Runtime Host，通过 API 选择运行环境、创建 Hosted
 此为预览文档，正式版本尚未发布。
 </Note>
 
-Hosted Agent 适合把电脑或服务器上已有的 Coding Agent 作为平台执行能力。Runtime Host 负责启动 provider 进程、准备工作目录和回报结果；Service 通过统一的 Agent、Issue、Team 和 Endpoint API 管理并调用它。
+Hosted Agent 将电脑或服务器上的 Coding Agent 接入平台。Runtime Host 负责启动 provider、准备工作目录和回报执行结果。应用通过 Session API 调用这个 Agent，也可以把它作为 Team 或 Workflow 的执行成员。
 
 主机接入只需准备一次。之后创建多个 Hosted Agent、设置职责和分派工作，都可以通过 API 完成，不需要每个 Agent 单独安装一个 Host。
+
+Hosted 可以独立调用，也可以加入 Managed Lead 协调的团队。Runtime Host 运行 Coding Agent provider；它不是 Managed Agent 的 self_hosted 工具 Worker，也不等于部署整个 Service。先准备[平台](/v2/zh/service/quickstart)，职责边界见[自托管架构](/v2/zh/service/quickstart#self-hosting)，组合方式见[多 Agent 协作](/v2/zh/service/orchestration)。
 
 ## 先让执行主机上线
 
@@ -44,7 +46,7 @@ curl -sS "$SERVICE_URL/api/v1/runtime-hosts?tenant=default&namespace=default" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-支持的 provider 及 Workspace、工具和恢复能力差异，见 [Provider 参考](/v2/zh/service/hosted-agent-providers)。
+支持的 provider 及 Workspace、工具和恢复能力差异，见 [Provider 参考](/v2/zh/service/hosted-agent-configuration#hosted-agent-providers)。
 
 ## 创建 Hosted Agent
 
@@ -87,7 +89,7 @@ curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/bindings" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-需要调整指令时使用 `PATCH /api/v1/agents/{agentId}/definition`；provider 执行选项位于 `GET/PATCH /api/v1/agents/{agentId}/hosted-settings`。更新前读取当前配置及版本，字段说明见 [Hosted Agent 参考](/v2/zh/service/hosted-agent)。
+需要调整指令时使用 `PATCH /api/v1/agents/{agentId}/definition`；provider 执行选项位于 `GET/PATCH /api/v1/agents/{agentId}/hosted-settings`。更新前读取当前配置及版本，字段说明见 [Hosted Agent 参考](/v2/zh/service/connect-hosted-agent#hosted-agent)。
 
 ## 分派工作并读取结果
 
@@ -95,6 +97,20 @@ curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/bindings" \
 
 从 Issue、任务和 ExecutionAttempt 查询执行状态，读取结果评论与 Artifact。任务工作目录由 Host 准备，本机已经打开的 Git 仓库不会自动成为任务输入；需要读取项目时，要显式关联 provider 支持的 Workspace，或提供资料。
 
-单任务验证通过后，可以通过 [Team API](/v2/zh/service/create-team) 组织多个 Agent，或把单 Agent、Team、Workflow 发布为 [Endpoint](/v2/zh/service/endpoints)。业务应用通过统一 [Agent API](/v2/zh/service/service-api) 调用并订阅 SSE。Hosted 对话当前支持取消，但不承诺 Managed 的全部补充输入、审批恢复和 checkpoint 操作；以 Endpoint 与 invocation 的 capabilities 响应判断。
+单任务验证通过后，可以将 Agent 加入 [Team](/v2/zh/service/create-team)，也可以直接创建以它为目标的 Session。Hosted 对话支持的交互由 provider 与平台适配决定，不能假定它具有 Managed 的全部输入、审批或 checkpoint 能力。调用前读取 Session 和 Turn 的 capabilities，接入方式见[服务 API](/v2/zh/service/service-api)。
 
-控制台入口与操作流程见 [Console：Agent 管理](/v2/zh/service/console/agents)。将 Coding Agent 发布为业务能力的示例见 [故障修复服务](/v2/zh/service/cases/incident-to-pr)。
+控制台入口与操作流程见 [Console：Agent 管理](/v2/zh/service/console/index#console-agents)。将 Coding Agent 发布为业务能力的示例见 [故障修复服务](/v2/zh/service/cases/incident-to-pr)。
+
+<span id="hosted-agent"></span>
+<span id="本章节"></span>
+<span id="准备主机"></span>
+<span id="交付一个小任务"></span>
+<span id="扩展能力"></span>
+<span id="中断与恢复"></span>
+<span id="作为服务对外调用"></span>
+
+## 工作目录与交付边界
+
+任务目录由 Runtime Host 管理，不会默认使用你正在编辑的 Git checkout。仓库、分支和输入资料需要明确准备；共享结果应上传为 Artifact。Host 在线不代表 provider 已登录、工具获准或任务能够执行。
+
+Workspace 的指令、Skills 与工具按 provider 能力映射；工具依赖和第三方登录仍在目标主机准备。原生 provider 会话恢复与统一 Turn 的恢复命令不同，显示交互操作前读取调用的 capabilities。

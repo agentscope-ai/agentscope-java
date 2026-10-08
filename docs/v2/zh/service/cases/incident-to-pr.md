@@ -1,73 +1,47 @@
 ---
-title: "故障修复服务：从告警到可审查 PR"
-description: "将诊断和仓库上下文交给后台 Job，用 PR、提交与测试证据验收。"
+title: "从故障告警生成可审查的修复"
+description: "通过 Session API 将业务输入、执行过程与实际交付连接起来。"
 en_link: /v2/en/service/cases/incident-to-pr
 ---
 
-研发平台已经知道“订单列表忽略筛选和分页”，用户点击“生成修复”。平台把诊断、仓库与目标提交交给 Agent 服务，取回 PR 和测试证据，由现有代码审查流程决定是否合并。任务从一个修复 Job 开始，不要求先搭建完整研发团队。
+告警 INC-204 指出订单查询没有正确处理状态筛选和分页。研发平台归并重复告警后，创建一次修复工作，让 Agent 在指定仓库与提交上调查问题、修改代码并提供测试证据。
 
-## 1. 准备可验证的故障
+本案例使用虚构资料说明接入方式，预期结果是验收要求，并非一次已完成的业务实跑。
 
-在练习仓库中放置以下文件，去掉下载文件名末尾的 `.txt`：
+## 准备资料和执行目标
 
-| 文件 | 放置位置 |
-| --- | --- |
-| [OrderQuery.java](/examples/service/incident-to-pr/OrderQuery.java.txt) | 仓库根目录 |
-| [OrderQueryTest.java](/examples/service/incident-to-pr/OrderQueryTest.java.txt) | 仓库根目录 |
-| [CI workflow](/examples/service/incident-to-pr/ci.yml.txt) | .github/workflows/ci.yml |
-| [Job 请求](/examples/service/incident-to-pr/input.json.txt) | 本地 input.json，不含凭证 |
+下载[请求样例](/examples/service/incident-to-pr/input.json.txt)并保存为 `input.json`。下载请求样例后，将 repository 和 base_commit 替换为练习仓库及真实提交。练习还提供 [OrderQuery.java](/examples/service/incident-to-pr/OrderQuery.java.txt)、[测试文件](/examples/service/incident-to-pr/OrderQueryTest.java.txt)和 [CI 配置](/examples/service/incident-to-pr/ci.yml.txt)。这些文件定义了先筛选再分页、保留顺序与边界参数的验收条件。
 
-```bash
-mkdir -p out
-javac --release 17 -d out OrderQuery.java OrderQueryTest.java
-java -cp out OrderQueryTest
-```
+可以使用配置了代码工具的 Managed Agent，也可以使用已经接入 Runtime Host 的 Hosted Coding Agent。执行环境需要预先准备仓库访问、依赖和测试命令。如果希望把诊断、修复和审查分开，再用 Team 或 Workflow 组织执行；创建 Session 时选择相应目标即可。
 
-起点故意缺少筛选与分页，五项检查中三项失败。保留测试并提交起点代码，将 input.json 的 repository 和 base_commit 替换为实际练习仓库与提交。样例只提供查询函数，不包含线上订单服务。
+## 创建 Session 并提交任务
 
-## 2. 定义修复服务
-
-准备具备仓库读取、代码修改、Java 17 测试和创建 PR 权限的执行目标。可以用 Managed 环境或 Hosted Coding Agent；先验证 provider、工作目录和工具身份。应用传入仓库地址不会自动授予访问权限。
-
-服务指令明确：只修复筛选与分页；先筛选再分页；保持顺序、不修改输入；page 从 1 开始、size 为 1..100；超大页码返回空列表。保留原测试，补充空白 status、无匹配、size 边界和最大整数页码测试。交付 PR、head SHA、测试命令/退出码及日志；不执行合并或部署。
-
-[发布 job Endpoint](/v2/zh/service/endpoints) `incident-repair`，input schema 接受请求样例中的字段。Bash、curl、jq、BASE_URL 与具备 invoke/read 的 ENDPOINT_KEY 按发布指南准备。
-
-## 3. 提交一个修复轮次
+先按[应用接入指南](/v2/zh/service/service-api)准备 Agent ID 和应用凭据。下面的命令使用 Bash、curl 和 jq，并将样例资料整理为 Managed Agent 的文本消息。Service 不会因为资料中写有仓库地址、文件路径或订单编号，就自动获得相应系统的访问权限。
 
 ```bash
-RECEIPT=$(curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/endpoints/incident-repair/jobs" \
-  -H "X-API-Key: $ENDPOINT_KEY" \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: incident-204-repair-1' \
-  --data-binary @input.json)
-INVOCATION_ID=$(printf '%s' "$RECEIPT" | jq -er '.invocationId')
-curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/invocations/$INVOCATION_ID" \
-  -H "X-API-Key: $ENDPOINT_KEY"
+SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: incident-to-pr-session-001' \
+  --data "$(jq -n --arg id "$AGENT_ID" '{target:{type:"agent",id:$id}}')")
+SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: incident-to-pr-task-001' \
+  --data "$(jq '{message:(.message // (.input | tojson))}' input.json)")
+TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
+curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
 ```
 
-研发平台保存 incident_id、仓库、base_commit、修复轮次与 Invocation 的关联。告警接收器先归并重复告警，再决定是否创建新轮次；网络重发使用原 key。本文不替你配置 GitHub Webhook 或创建真实 PR。
+返回 `202 Accepted` 表示任务已接收，尚不能据此判断完成。保存 Session 和 Turn ID，网络重试沿用相同 key 与请求内容；新任务才更换 key。需要查看进展时，读取 Session 的 snapshot，再从其 `as_of` 继续订阅事件。
 
-执行过程中用[快照与事件](/v2/zh/service/service-api)展示进度。工具等待确认时，由有权限的人处理实际 action；不要把“允许创建 PR”扩展为“允许合并”。
+## 接回业务应用
 
-## 4. 接回研发平台
+研发平台保存告警编号、base commit、修复轮次和 Session/Turn 的关联。同一轮修复的网络重试沿用相同幂等键，新的修复意见才提交下一轮任务。后台可以订阅 Session 回调，在完成后重新读取结果并链接到研发平台，前端无需一直保持连接。
 
-若有公网 HTTPS 回调接收器和 webhooks:write scope，可为 Invocation 注册完成及失败事件，按[Webhook 协议](/v2/zh/service/service-api#凭据预算和后台通知)验签与去重。快速任务可能先完成，所以注册后仍主动查询状态；回调也只作为重新查询的通知。
+## 验收实际交付
 
-应用读取最终 result 和 Artifact，核对 PR 所属仓库、head SHA、测试日志及当前 CI。输出字段由服务契约约定，PR URL 不等于平台已经验证了 PR。
+验收时应检查实际代码差异、运行过的测试、测试输出和 PR 地址。保留原有测试并补充边界覆盖，再由仓库授权审查者决定是否合并。Agent 声称已修复或 Turn 返回 completed，都不能替代这些代码与测试证据。
 
-## 5. 验收与返工
-
-| 检查 | 合格证据 |
-| --- | --- |
-| 修复范围 | diff 只涉及目标行为及必要测试 |
-| 固定基线 | 修复前 5 项中 3 项失败，修复后原 5 项全部通过 |
-| 边界情况 | 新增检查实际执行，命令、退出码和日志可查 |
-| 提交一致性 | 测试对应交付的 head SHA，合并前检查最新 CI |
-| 人工审查 | 由仓库授权审查者决定，不由 Invocation completed 代替 |
-
-执行完成后发现问题，应用用新的 key 提交修订 Job，引用原 PR 和最新提交，保存前后关联。执行中取消需等待确认终态；已推送的提交或 PR 不会因取消自动撤销。
-
-本地资料检查脚本会验证故意失败的基线及参考修复。真实模型、provider、GitHub、CI 和审查流程仍需实际运行验证。
+文件输入和下载见[文件与产物](/v2/zh/service/files)，交互与取消见[Session API](/v2/zh/service/service-api)，回调与重连见[事件与通知](/v2/zh/service/sse-events)。

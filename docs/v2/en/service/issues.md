@@ -1,5 +1,5 @@
 ---
-title: "Assign and track tasks through APIs"
+title: "Work, approvals, and acceptance"
 zh_link: /v2/zh/service/issues
 ---
 
@@ -9,7 +9,9 @@ This is preview documentation. The official release is not yet available.
 
 An Issue keeps the objective, owner, discussion, executions, and deliverables for a piece of work. An application can create “analyze these logs,” assign an Agent, show progress, and ask the user to accept the report—all through APIs.
 
-This applies to registered, task-capable Agents across Managed, External, and Hosted runtimes. See [Agent creation and registration](/v2/en/service/agents). If your application only needs to invoke a published service and retrieve its result, use an [Endpoint](/v2/en/service/endpoints); Service associates the required work records with that invocation.
+This applies to registered, task-capable Agents across Managed, External, and Hosted runtimes. See [Agent creation and registration](/v2/en/service/api-reference#agents). If an application only needs to submit tasks, follow execution, and retrieve results, create a Session targeting an Agent, Team, or Workflow through the [Session API](/v2/en/service/service-api), without creating an Issue yourself first. Follow this guide when you need to manage assignees, discussion, and acceptance at the business level through the Issue API.
+
+<span id="understand-status-and-review-results"></span>
 
 ## Create your first work item
 
@@ -85,18 +87,110 @@ api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/activity?limit=50"
 
 Task results, errors, and execution references support result displays and diagnostics. Continue comment pagination with the returned `nextCursor`. Artifact listings provide IDs; use `POST /api/v1/artifacts/{artifactId}/download` for download information. Upload through `POST /api/v1/artifacts/uploads`; see the [API reference](/v2/en/service/api-reference) for fields.
 
-The platform work notification endpoint, `GET /api/v1/events?tenant=...&namespace=...`, uses **WebSocket** to signal that an application should refresh its data. It does not replay missed events. Refresh REST state after reconnecting. Requests made through a published Endpoint can instead follow their Invocation's [SSE stream](/v2/en/service/sse-events); these streams serve different purposes.
+The platform work notification endpoint, `GET /api/v1/events?tenant=...&namespace=...`, uses **WebSocket** to signal that an application should refresh its data. It does not replay missed events. Refresh REST state after reconnecting. Requests made through a Session API can instead follow their Turn's [SSE stream](/v2/en/service/sse-events); these streams serve different purposes.
 
-## Understand status and review results
+## Status, outcomes, and acceptance
 
 An Issue moves from pending work into execution and may enter `in_review` for acceptance or `blocked` when input is missing. A successful AgentTask or Run means that execution ended. Business completion follows the Issue's completion policy. The ordinary Issue creation API currently uses `review`, requiring acceptance before `done`.
 
-Read the latest Issue and deliverables before posting its version to `accept`. Use `reject` with a reason when changes are needed; see [Notifications, approvals, and reviews](/v2/en/service/inbox). Rejection records feedback and returns the Issue to `in_progress`, but does not start another execution. Follow up through comment routing to ask the owner to continue.
+<span id="managed-harness-task-outcomes"></span>
+<span id="read-outcomes-and-send-feedback"></span>
+<span id="outcomes"></span>
+<span id="child-work-and-deliverables"></span>
+<span id="recovery-and-acceptance"></span>
+<span id="example-evaluate-a-presales-deliverable"></span>
 
-Retry a failed task through `POST /api/v1/agent-tasks/{taskId}/retry`, or cancel through `/cancel`. Inspect its current state first. Cancelling execution, accepting work, and archiving an Issue are separate actions. Re-execution retains previous records and can repeat external side effects.
+The following Outcomes are runtime reports, not Issue states that clients may PATCH freely. Turn completed, native turn completed, Run succeeded, and Issue accepted belong to different resources and are not interchangeable.
+
+| Outcome | Meaning | Next action |
+| --- | --- | --- |
+| succeeded | A deliverable exists and execution can finish | Inspect artifacts and follow Issue acceptance policy |
+| waiting | A real, tracked dependency is outstanding | Inspect its ID and state |
+| blocked | Information or conditions are missing; partial work is retained | Supply specific input and continue the work flow |
+| failed | Execution failed | Read errors and partial results before retrying |
+
+Text such as “I will continue later” is not success. Outstanding background work or abnormal termination cannot establish completion either. Runtime budgets bound automatic continuation and dependency waiting.
+
+Child tasks use separate context and return through durable task records. Creating a subagent does not grant missing tools, network access or permissions. Unknown dependencies should produce an error rather than an indefinite wait.
+
+The Lead should bring child results into the parent Issue and Artifacts, identifying partial output, failures and uncertain facts. Truncated file-search output requires narrower follow-up searches before claiming complete evidence.
+
+<span id="inbox"></span>
+<span id="find-actionable-items"></span>
+<span id="review-a-deliverable"></span>
+
+Continue with the `ISSUE_ID` created above. Load the result and confirm the Issue is currently `in_review`:
+
+```bash
+review=$(api "$SERVICE_URL/api/v1/issues/$ISSUE_ID")
+api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/artifacts"
+api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/comments?limit=50"
+printf '%s\n' "$review" | jq '.issue | {title,status,version,acceptanceCriteria}'
+```
+
+Let the user inspect the acceptance criteria, final report, and relevant child results. Once they accept, submit the version they reviewed:
+
+```bash
+api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/accept" --data "$(jq -n \
+  --argjson version "$(jq '.issue.version' <<<"$review")" \
+  '{expectedVersion:$version,reason:"The report and evidence meet the acceptance criteria"}')"
+```
+
+For requested changes, use `/reject` with `expectedVersion` and an explicit `reason`. Rejection returns work to `in_progress` without automatically executing it again. Follow the [comment and assignment flow](/v2/en/service/issues#assign-existing-work-and-add-input) to ask the owner to continue. Viewing a child or resolving a comment thread does not accept the current Issue.
+
+On a version conflict, reload the result and let the user reconsider. Do not silently substitute the latest version and repeat an old review decision.
 
 ## How Agents report progress
 
-Managed Agents and integrated runtimes report progress, results, and errors through their execution adapters. Applications read those records. Custom runtimes can use task protocol endpoints such as `/agent-tasks/{taskId}/progress`, `/respond`, `/complete`, and `/fail`. These require an **AgentTask token** issued with the execution context, rather than a user's token. See the [runtime protocol](/v2/en/service/external-agent-execution).
+Managed Agents and integrated runtimes report progress, results, and errors through their execution adapters. Applications read those records. Custom runtimes can use task protocol endpoints such as `/agent-tasks/{taskId}/progress`, `/respond`, `/complete`, and `/fail`. These require an **AgentTask token** issued with the execution context, rather than a user's token. See the [runtime protocol](/v2/en/service/external-agent#external-agent-execution).
 
-To clarify requirements in a conversation first, use the [Agent API chat flow](/v2/en/service/agent-api-chat), then write the agreed objective into an Issue. Console creation, discussion, files, and Chat-to-Issue actions are covered in [Console: tasks and feedback](/v2/en/service/console/tasks).
+To clarify requirements in a conversation first, use the [Agent API chat flow](/v2/en/service/agent-api-chat), then write the agreed objective into an Issue. Console creation, discussion, files, and Chat-to-Issue actions are covered in [Console: tasks and feedback](/v2/en/service/console/index#console-tasks).
+
+
+## Inbox notifications and approvals
+
+Inbox belongs to the authenticated user; a request parameter cannot turn it into another person's Inbox. Query it with a user identity:
+
+```bash
+api "$SERVICE_URL/api/v1/inbox" --get \
+  --data-urlencode "tenant=$TENANT" --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode 'view=action' --data-urlencode 'limit=50'
+api "$SERVICE_URL/api/v1/inbox/summary" --get \
+  --data-urlencode "tenant=$TENANT" --data-urlencode "namespace=$NAMESPACE"
+```
+
+The list returns `items`, `hasMore`, and `nextCursor`. Pass `cursor` for the next page. Use `view=action` for unresolved decisions, `unread` for unread items, `attention` for items needing attention, or `all` for all unarchived items. Add `archived=true` to read archived notifications.
+
+Read a selected item with `GET /api/v1/inbox/{inboxId}`, then follow its work or approval reference. Show the actual object, current result, and version before asking the user to decide.
+
+### Decide an execution approval
+
+An approval may originate from a Workflow's human gate or a runtime operation. Obtain `APPROVAL_ID` from the notification reference or query `GET /api/v1/approvals?tenant=...&namespace=...`. Read the requester, target, and reason first. Only the designated approver may decide:
+
+```bash
+approval=$(api "$SERVICE_URL/api/v1/approvals/$APPROVAL_ID")
+printf '%s\n' "$approval" | jq .
+```
+
+After the user chooses to approve:
+
+```bash
+api "$SERVICE_URL/api/v1/approvals/$APPROVAL_ID/decide" --data "$(jq -n \
+  --argjson version "$(jq '.approval.version' <<<"$approval")" \
+  '{expectedVersion:$version,status:"approved",decision:{reason:"Operation scope reviewed"}}')"
+```
+
+Reject with `status:"rejected"`. The decision may resume or fail waiting execution; it does not accept the final deliverable. Reload expired requests or requests that no longer match the current execution.
+
+Sessions invoked directly through Agent API may use pending session inputs for tool confirmations; see [session input and confirmation](/v2/en/service/session-event-log). Not every session confirmation is an Inbox Approval.
+
+### Reading, archiving, and refreshing
+
+Mark a notification read with `POST /api/v1/inbox/{inboxId}/read`. Archive it with `/archive` when it no longer belongs in the current list. These actions do not delete Issues, cancel execution, or replace decisions. Refresh counts through `/inbox/summary`.
+
+Poll Inbox or refresh it when platform WebSocket notifications arrive. Inbox is a view of the user's pending work, not a complete execution log. Use [SSE and state APIs](/v2/en/service/sse-events) for execution streaming and reconnection.
+
+For the platform UI workflow, see [Console: tasks and feedback](/v2/en/service/console/index#console-tasks).
+
+
+Retry failed tasks with `POST /api/v1/agent-tasks/{taskId}/retry`; cancel with `/cancel`. Read the failure and current state first. Retries retain old records and may repeat external effects.

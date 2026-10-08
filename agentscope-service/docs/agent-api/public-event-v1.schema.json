@@ -24,6 +24,12 @@
     "data": {
       "type": "object",
       "additionalProperties": true
+    },
+    "turn_id": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [

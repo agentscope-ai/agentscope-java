@@ -33,15 +33,15 @@ Use `.env` for Docker. On Kubernetes, keep sensitive settings in an existing Sec
 
 ## Unified service invocation settings
 
-Endpoint/Invocation calls, events, commands, and Webhooks are stored by the control plane. Durable storage supports process recovery. These settings are separate from Managed Dataplane settings below:
+Session/Turn calls, events, commands, and Webhooks are stored by the control plane. Durable storage supports process recovery. These settings are separate from Managed Dataplane settings below:
 
 | Configuration | Default / source | Purpose |
 | --- | --- | --- |
-| `aistiod --service-event-retention` | `720h`; `0` disables pruning | Prunes old terminal Invocation event increments while retaining cumulative snapshots; reload snapshot after cursor expiry (410) |
-| `AISTIO_ENDPOINT_CREDENTIAL_KEY` | Falls back to platform JWT secret | Encrypts Endpoint credentials; keep consistent across replicas and preserve with backups |
+| `aistiod --service-event-retention` | `720h`; `0` disables pruning | Prunes old terminal Turn event increments while retaining cumulative snapshots; reload snapshot after cursor expiry (410) |
+| `AISTIO_ENDPOINT_CREDENTIAL_KEY` | Falls back to platform JWT secret | Encrypts Webhook signing secrets; this compatibility name remains. Keep it consistent across replicas and backups. Application keys are stored as hashes |
 | `aistiod --enable-asdp` | `true` | Initializes execution-channel handlers also used by HTTP workers; HTTP workers need no gRPC port access |
 
-Application concurrency/token budgets and Endpoint rateLimit/timeouts/payload limits are resource configuration updated through APIs; see [API parameters](/v2/en/service/api-reference). Unified Invocation Webhook destination validation is separate from Managed session allowed-hosts configuration.
+Manage Application concurrency and token budgets through its API. Session timeout, per-task budget, and input/output contracts are selected at creation. Public Session Webhooks use control-plane HTTPS validation and signed delivery; native dataplane Webhook allowed-hosts settings do not govern this public path.
 
 ## Native Managed session API settings
 
@@ -74,7 +74,7 @@ builder:
 
 Use your own notification host and model ID. Example prices illustrate format only; operators maintain actual prices. Missing prices mean incomplete cost data, not zero cost. Message/tool deltas are durable by default; preview is not required.
 
-Replicas share the Data Plane database and a BaseStore supporting conditional writes. Filesystem storage can also be distributed. See [record locations](/v2/en/service/session-event-log#where-records-live). Disable proxy buffering for SSE, flush promptly and allow a sufficient read timeout. The 15-second heartbeat keeps the connection alive without promising model output.
+Replicas share the Data Plane database and a BaseStore supporting conditional writes. Filesystem storage can also be distributed. See [record locations](/v2/en/service/session-event-log). Disable proxy buffering for SSE, flush promptly and allow a sufficient read timeout. The 15-second heartbeat keeps the connection alive without promising model output.
 
 ## Paths and internal addresses
 
@@ -94,10 +94,10 @@ Distinguish deployment settings from Agent configuration before choosing a check
 | --- | --- |
 | Compose `.env` | Recreate affected containers; `docker compose restart` does not apply new environment variables to existing containers |
 | Helm values / Secret | Follow the production installation procedure and confirm affected Pods use the new configuration; environment variables do not refresh in running processes |
-| Agent Instructions / Definition | Update through definition APIs; publish the appropriate Workspace revision or Endpoint release, then verify new work |
+| Agent Instructions / Definition | Update through definition APIs; publish the appropriate Workspace revision and verify a new Session |
 | Session defaults | Start a new Session to check inheritance; inspect explicit selections in existing Sessions separately |
 | Memory document content | Ask the Agent to read it again; previous replies do not update automatically |
 
-For example, after changing default model credentials, recreate services using the Compose procedure in [local installation](/v2/en/service/quickstart), check health, and create a new Managed session through the API and submit a simple request. Once model access works, run the fixed inputs in the [CRM proposal case](/v2/en/service/cases/in-product-delivery). If you then connect Memory, verify its reads separately to isolate resource-binding problems.
+For example, after changing default model credentials, recreate services using the Compose procedure in [deployment setup](/v2/en/service/quickstart), check health, and create a new Managed session through the API and submit a simple request. Once model access works, run the fixed inputs in the [CRM proposal case](/v2/en/service/cases/in-product-delivery). If you then connect Memory, verify its reads separately to isolate resource-binding problems.
 
 Record setting names, application version, recreation time, and the new Session ID without secret values. Changing bootstrap settings does not overwrite an existing administrator password; see [accounts](/v2/en/service/access).

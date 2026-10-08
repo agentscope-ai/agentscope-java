@@ -5,7 +5,7 @@
     "schema_version",
     "id",
     "type",
-    "invocation_id",
+    "session_id",
     "created_at",
     "cursor",
     "data"
@@ -23,12 +23,8 @@
         "item.delta",
         "required_action.created",
         "step.failed",
-        "invocation.partial_succeeded"
+        "turn.partial_succeeded"
       ]
-    },
-    "invocation_id": {
-      "type": "string",
-      "format": "uuid"
     },
     "created_at": {
       "type": "integer"
@@ -38,7 +34,17 @@
     },
     "data": {
       "type": "object"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "turn_id": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
-  "description": "Committed public invocation event; unknown types must be ignored while advancing cursor."
+  "description": "Committed Session or Turn event. Ignore unknown event types while advancing the cursor."
 }

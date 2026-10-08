@@ -1,142 +1,115 @@
 ---
-title: "统一服务 API：Agent、Team 与 Workflow"
-description: 发布 Agent 服务，提交工作，通过统一事件流恢复页面、处理交互并取得结果。
+title: "通过 Session API 接入应用"
+description: "通过 Session API 把任务交给 Agent，观察执行进度，并在执行过程中参与交互。"
 en_link: /v2/en/service/service-api
 ---
 
-要把 Agent 能力接入自己的业务系统，先发布一个 Endpoint。目标可以是单个 Agent、Team，或已发布的 Workflow。客户端使用相同的 Invocation API 提交、观察和控制工作；Team 内部的 Issue、成员分工和协作消息由服务管理。
+配置好 Agent 后，业务应用就可以通过 Session API 把工作交给它。应用先创建一个 Session，确定这段工作使用的 Agent 和配置，再向这个 Session 提交任务。每次提交都会创建一个 Turn，用来跟踪这一轮执行的进度和结果。Service 会在后台执行并保存工作记录，因此应用不需要保持提交请求一直连接，也可以在用户返回页面时继续查看同一项任务。
 
-直接开发 Java Agent 时，从 `agent.call` 或 `agent.streamEvents` 开始；需要管理本地多轮会话时使用 [AgentSession](/v2/zh/docs/harness/session-log)。本页面向通过 HTTP 调用已发布服务的业务应用。需要直接操作 Managed Agent 的文件、子会话或 checkpoint 时，查看 [Managed Agent API](/v2/zh/service/session-event-log)。
+本页从调用凭据开始，说明如何创建 Session、提交任务并处理结果。首次接入可以沿用[创建 Managed Agent](/v2/zh/service/create-managed-agent)时已经验证过的 Agent。以后需要调用 Team 或 Workflow 时，仍然使用同一套 Session API，只需在创建 Session 时选择相应目标，并按它的能力处理输入和交互。
 
-## 先认识三个资源
+## 为应用准备调用凭据
 
-| 资源 | 业务含义 |
-| --- | --- |
-| Endpoint | 稳定服务地址及发布契约，包括输入输出 schema、运行目标和调用策略 |
-| Invocation | 一次逻辑调用；保存其 ID 即可查询状态、事件、待办和结果 |
-| Conversation | 支持多轮交互的 Agent 会话；每次提交生成一个独立 Invocation |
+在开发和调试阶段，可以使用登录得到的用户 Bearer token。接入业务后端时，建议创建 Application，为它签发独立的 API key，并明确授予它可以使用的 Agent、Team 或 Workflow。凭据属于 Application，因此同一应用更换 key 后仍能访问自己的 Session；其他应用即使使用同一个 Agent，也不能读取这些记录。API key 应保存在业务后端，由后端检查最终用户的业务权限。
 
-Agent、Team、Workflow 都可以提供 Job。Conversation 要求目标具有会话能力；Team 和 Workflow 使用 Job。先读取 `GET /invoke/v1/endpoints/{slug}/capabilities`，确认当前目标与支持的操作。重连事件流只是恢复观察，不会创建新 Invocation，也不等于从 checkpoint 恢复执行。
-
-## 提交工作并显示进展
-
-按 [Endpoint 发布指南](/v2/zh/service/endpoints)创建并发布入口。下面假定该入口的 input schema 接受 `request`：
+下面的命令假定已经完成[部署与登录](/v2/zh/service/quickstart)，并[创建了一个可以正常执行的 Managed Agent](/v2/zh/service/create-managed-agent)。请保留这些步骤中的 `BASE_URL`、`TOKEN`、`TENANT`、`NAMESPACE` 和 `AGENT_ID`。创建 Application 和签发凭据属于管理操作，需要使用该 Application 所有者的用户身份。
 
 ```bash
-curl --fail-with-body "$BASE_URL/invoke/v1/endpoints/report/jobs" \
-  -H "X-API-Key: $ENDPOINT_KEY" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: order-001' \
-  --data '{"title":"调查订单","input":{"request":"核对交付进展"}}'
+APPLICATION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/applications" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data "$(jq -n --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
+    '{tenant:$tenant,namespace:$namespace,name:"report-application"}')")
+APPLICATION_ID=$(printf '%s' "$APPLICATION_JSON" | jq -er '.application.id')
+KEY_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/applications/$APPLICATION_ID/credentials" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data "$(jq -n --arg agent "$AGENT_ID" \
+    '{name:"backend",scopes:["invoke","read","interact","cancel"],targets:[{type:"agent",id:$agent}]}')")
+AGENTSCOPE_API_KEY=$(printf '%s' "$KEY_JSON" | jq -er '.apiKey')
 ```
 
-保存响应中的 `invocationId`、`statusUrl`、`snapshotUrl`、`eventsUrl`。`202` 表示请求已持久接收；后台建立执行，即使提交请求的连接已关闭也会继续处理。相同 key 和相同内容返回原调用；改变内容但复用 key 会得到 `409`。
+服务只在创建凭据时返回明文 key。轮换时先签发新 key，更新应用配置并确认调用成功，再撤销旧凭据。`invoke` 允许提交工作，`read` 允许读取记录，`interact` 允许补充输入，`cancel` 允许取消；注册和管理回调还需要 `webhooks:write`。这些 scope 不会把应用变成人工审批人，指定人员的确认仍需由有权限的用户完成。
 
-`GET statusUrl` 返回 `invocation.status` 与最终 `invocation.result`。状态可能是 accepted、dispatching、running、waiting、cancel_requested；completed、partial_succeeded、failed、cancelled、timed_out 是终态。`partial_succeeded` 表示仍有可用输出但存在失败分支，应同时检查 `steps`，不能视为完整成功。以 Invocation 的终态判断整体结果，不能把某个成员的消息或工具完成当作整个 Team 完成。
+## 创建 Session，直接选择执行目标
 
-## 刷新页面、离开后回来
+下面的请求为资料助手创建 Session。Session 保存本次工作选择的配置和后续执行记录；创建成功并不代表已经提交了一项任务。建议对创建请求也提供稳定的幂等键，并保存返回的 `id`，避免网络重试时建立重复会话。
 
-1. `GET snapshotUrl`，渲染 `items`、`tools`、`required_actions`、`steps`、`artifacts` 和 `usage`。
-2. 使用快照的 `as_of` 请求 `eventsUrl?after=...`，继续应用增量。
-3. 临时断线且本地视图仍在时，从最后成功应用的 cursor 续传；页面状态丢失时重新读快照。
-
-这些快照字段是按标识索引的对象，值为累计数据。`items[item_id].item.content` 包括进行中消息已持久提交的文本；工具卡按 `execution_id + ':' + tool_call_id` 索引。多个成员、多个助手消息和离开期间完成的工具结果都会保留。
-
-```text
-id: <opaque-cursor>
-event: item.delta
-data: {"schema_version":1,"id":"event-id","invocation_id":"invocation-id","type":"item.delta","created_at":1790928000000,"cursor":"<opaque-cursor>","data":{"execution_id":"execution-id","item_id":"message-id","content":[{"type":"text","text":"正在核对"}]}}
+```bash
+SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: report-session-001' \
+  --data "$(jq -n --arg agent "$AGENT_ID" '{target:{type:"agent",id:$agent}}')")
+SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 ```
 
-cursor 不透明，只属于当前 Invocation。`Last-Event-ID` 优先于 `after`。JSON 历史分页使用 `GET /invoke/v1/invocations/{id}/events?after=...&limit=100`，返回 `data`、`next_cursor`、`has_more`。忽略未知事件类型，但仍更新 cursor。心跳是 SSE 注释，不是业务事件。
+`target.type` 可以是 `agent`、`team` 或 `workflow`。Agent 目标使用统一目录中的 ID，因此 Managed、External 和 Hosted 都使用 `agent`；它们的区别来自运行绑定。Team 使用 Team ID。Workflow 使用定义 ID，可以通过 `revisionId` 指定已发布版本；没有指定时，Service 选择当前最新的已发布版本。Workflow 的发布用于固定流程内容，与应用调用入口是两个不同的问题。
 
-| 事件 | 页面处理 |
-| --- | --- |
-| invocation.accepted / dispatching / running / waiting | 更新整体工作状态 |
-| invocation.cancel_requested / completed / partial_succeeded / failed / cancelled / timed_out | 更新停止进度或最终结果 |
-| item.started / delta / completed | 按 item_id 创建、累积和替换消息 |
-| tool.requested / dispatched / delta / completed | 按执行和工具调用 ID 更新参数、进度和结果 |
-| execution.ended | 将未完成消息标为 incomplete；未确认结束的工具标为 unknown |
-| step.updated / step.failed | 展示成员任务或执行步骤的状态 |
-| required_action.created / resolved | 创建或移除当前待办 |
-| command.accepted / completed / failed | 区分交互命令已保存、已投递和失败 |
-| artifact.published / deleted | 更新交付物；使用返回的 download_url |
-| usage.recorded / model.completed | 按执行及模型调用 ID 更新用量，避免重复累加 |
-| budget.exceeded | 用量达到配置预算，服务开始取消执行 |
+Session 创建时会固定目标配置及其依赖。Managed Agent 可以通过 `target.version` 选择定义版本。更新 Agent、Team 或 Workflow 后，新 Session 可以使用新配置，已有 Session 继续沿用自己的配置。Environment、Memory、Vault 等运行资源有各自的访问与更新规则；保存配置版本并不意味着外部业务数据永远不变。
 
-不同运行时可提供不同事件粒度。只上报完整消息的运行时不会被伪造成逐 token 输出。原始模型思考内容和内部协作 DTO 不属于此公共协议。
+如果 Agent 访问外部工具时需要使用特定凭据，应在创建 Session 时选择相应的 Vault，也可以继承 Agent 的默认 Vault。应用调用 Service 所使用的 API key 不会自动成为工具访问外部系统的凭据。配置方法和 `vaultIds` 的使用方式见[在 Session 中选择 Vault](/v2/zh/service/vault#在-session-中选择-vault)。
 
-## 回答待办、补充输入与取消
+## 提交一轮任务
 
-以下路径都相对 `/invoke/v1/invocations/{id}`，POST 命令要求 `Idempotency-Key`。命令返回 `command` 及 `status_url`；等待命令状态和后续业务事件确认实际结果。
+向 Session 的 `/turns` 提交请求就会创建一个 Turn。Managed Agent 支持文本 `message`，也支持由用户消息和内容块组成的 `input`。Team 和 Workflow 可以使用结构化业务 `input`，让平台将其交给协作或流程执行器；具体输入应与目标实际处理的内容一致。
 
-| 操作 | API 与请求 |
-| --- | --- |
-| 读取当前待办 | `GET /actions` |
-| 回答 Workflow signal | `POST /actions`，`{"request_id":"返回的 ID","expected_version":3,"payload":{"answer":"..."}}` |
-| 审批 | `POST /actions`，`{"request_id":"返回的 ID","expected_version":3,"decision":"approved","payload":{"reason":"已核实"}}` |
-| 补充业务要求 | `POST /inputs`，`{"message":"优先核对已付款部分"}` |
-| 停止工作 | `POST /cancel`，`{}`；随后等待 cancelled 或其他已确认终态 |
-| 继续暂停的 Workflow / 中断的 Managed turn | `POST /resume`，`{}`；等待交互的工作应回答对应 action |
-| 查询某条命令 | `GET /commands/{commandId}` |
+```bash
+TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: report-task-001' \
+  --data '{"message":"根据已授权的资料整理报告，并说明来源和待确认事项。"}')
+TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
+curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+```
 
-审批只能由指定审批人完成。Managed 工具确认要求所有者的平台身份，或 Application 中显式授权的 approver；API key 的 `interact` scope 本身不授予工具审批权。Managed 原生待办的 ID 以 `native:` 开头，答复放在 `payload`：确认使用 `{"allow":true,"reason":"..."}`，外部工具执行使用 `{"output":"...","is_error":false}`。
+如果请求返回 `202 Accepted`，表示任务已经接收，执行可能仍在排队或进行中。网络超时后重试时，应使用同一个 Session、同一个幂等键和完全相同的请求内容。服务会返回原来的 Turn；如果沿用 key 却修改内容，则返回 `409 Conflict`。只有确实提交下一轮任务时，才应换一个新 key。
 
-Job 的补充输入通过原有协作输入机制交付，Agent 在安全边界重新读取任务上下文；Managed Conversation 使用原生 steer。命令投递成功不表示模型已消费输入。External Conversation 是否接受执行中输入取决于其运行时，目前应在当前轮结束后提交下一轮。
+同一个 Session 中的 Turn 按顺序执行。Managed Agent 会保留会话上下文；Team 和 Workflow 的每个 Turn 会启动独立任务，历史记录集中保存在 Session 中，但不承诺把前一个任务的内部执行上下文直接传给下一次任务。需要沿用上次结果时，应用应在输入中明确提供所需资料。对于互不相关的对象或并行批次，通常应创建不同 Session。
 
-取消会覆盖 Invocation 归属的子执行，先进入 cancel_requested，等待实际尝试停止。已经结束的 Invocation 不会被 resume 重新打开；需要重新执行时提交新的业务请求。恢复 Managed checkpoint 是独立能力，使用原生 Managed API，并遵守其运行状态要求。
+## 恢复页面并观察执行
 
-## 多轮会话与版本
+应用应保存业务对象、Session ID 和 Turn ID 的关联。用户刷新页面时，先读取 Session 的 `/snapshot` 恢复已有内容，再从其中的 `as_of` 游标订阅 `/events/stream`。刷新只是在恢复显示，不应重新发送任务输入。如果页面仍保留之前的状态，则可以从最后已经成功处理的事件游标继续读取。
 
-`POST /invoke/v1/endpoints/{slug}/conversations` 的 body 为 `{"message":"..."}`。保存 conversationId，下一轮使用 `POST /invoke/v1/conversations/{conversationId}/turns` 和新的幂等键。一个 Conversation 同时只接受一个活动 Invocation。
+需要只观察某一轮任务时，可以使用 `/turns/{turnId}/snapshot` 和 `/turns/{turnId}/events/stream`。Session 游标与 Turn 游标分别属于各自的事件记录，不能交叉使用。Session 事件流会继续等待后续 Turn，因此连接关闭不表示业务完成。完成判断应读取对应 Turn 的 `status`：`completed` 表示成功，`partial_succeeded` 表示部分成功，`failed`、`cancelled` 和 `timed_out` 表示其他终态。
 
-发布 release 时保存输入输出契约、目标及显式声明的 Team/Agent 运行配置；Invocation 与 Conversation 绑定该 release。后续修改或回滚入口不会改写已有调用。输出违反发布的 JSON Schema 时，调用以 `failed` / `output_schema_violation` 结束。
+单轮快照中的 `items`、`tools`、`required_actions`、`steps`、`artifacts` 和 `usage` 按标识组织，便于应用更新界面。Managed Session 快照同时保留完整的会话消息、子 Agent 和原生交互记录。两种查看范围的具体数据格式见机器可读契约；事件续传和回调验证见[事件与通知](/v2/zh/service/sse-events)。
 
-运行时实例健康、凭据撤销和权限仍按当前状态检查。显式引用的嵌套 Workflow 随 release 递归冻结，运行中创建的子 Workflow 不能通过未声明定义绕过发布契约。动态 Agent/Team 委派遵守发布的委派策略。JSON Schema 支持嵌套约束及本地 `$defs` 引用，不加载远程 `$ref`。
+## 在执行中参与交互
+
+Agent 需要用户确认、补充资料或提供外部工具结果时，应用从快照中的 `required_actions` 读取待办，再向对应 Turn 的 `/actions` 提交答复。请求应包含待办的 `request_id`，需要版本校验的待办还应包含 `expected_version`。Managed Agent 的确认答复放在 `payload` 中，例如 `{"allow":true}`。涉及指定审批人的请求，应改用该用户的登录身份提交，应用 key 本身不能替他作出决定。
+
+每种运行绑定能提供的交互不同。先读取 Session 的 `/capabilities` 了解目标支持范围，在显示取消、补充输入或恢复按钮前，再读取 Turn 的 `/capabilities` 中的 `available_commands`。取消请求被接受后，仍需继续观察状态，直到确认执行已经停止。需要进一步了解如何补充要求、回答待办或恢复执行时，可以继续阅读[会话、任务与预算](/v2/zh/service/session-event-log)。
 
 ## 凭据、预算和后台通知
 
-先通过 `POST /api/v1/applications` 创建 Application，传入 `tenant`、`namespace`、`name`。创建 Endpoint 不再自动生成凭据；调用 `POST /api/v1/endpoints/{endpointId}/credentials`，显式传入 `applicationId`、`name` 和非空 `scopes`。支持 `invoke` 提交、`read` 查询、`cancel` 取消、`interact` 输入和交互、`webhooks:write` 回调管理，不隐式授予默认 scope。
+Application 的 `maxConcurrent` 和 `tokenBudget` 约束该应用通过不同 key、不同 Session 提交的工作。Token 用量依据运行时报告累计，预算耗尽时会拒绝后续提交，因此它是执行治理能力，不是外部模型账单的实时硬上限。创建 Session 时，还可以设置 `timeoutSeconds` 和 `budget.maxTokens`，约束该 Session 中每个 Turn 的执行。Managed 会话自己的预算则通过 `/budget` 管理，具体配置与用量查询见[用量、子 Agent 与预算](/v2/zh/service/session-event-log#budgets)。
 
-同一 Application 的多把 key 共享调用归属，轮换 key 后仍能查询原调用。轮换会创建替代凭据，迁移期间旧凭据仍然有效；先迁移调用方，再显式撤销旧凭据。只有 Application owner 能管理成员和凭据。`members: [{userId, roles: ["viewer", "operator", "approver"]}]` 允许对应平台用户查询、操作或参与审批；实际批准仍须是待办指定审批人。PATCH 必须携带 `version`，停用 Application 后禁止新调用及交互；已获授权的人类平台用户仍可查询和取消已有工作。长期 key 保存在业务后端。
+后台应用可以为 Session 注册 Webhook，在任务完成、失败或等待交互时收到通知。回调可能重复投递，应用应验证签名、按事件 ID 去重，再读取 Session 或 Turn 确认最新状态。完整协议和重试方式见[Webhook 后台通知](/v2/zh/service/sse-events#webhooks)。
 
-Application 的 `maxConcurrent` 控制跨 Endpoint、多凭据的活动调用总数；`tokenBudget` 是应用累计 Token 预算，`tokensUsed` 为只读已报告用量，0 表示不限。它们与 Endpoint 限制分层生效。
+## 检查交付结果
 
-Endpoint 的 `rateLimit` 可配置 `requests` / `windowSeconds`、`maxConcurrent`、`maxInvocationTokens`。前两项控制调用频率，并发上限控制活动调用数；Token 预算根据已上报用量取消执行，存在上报延迟，不是预付费硬限额。配置了预算的运行时应上报用量。
+Turn 的 `completed` 表示这轮执行成功结束。应用还需要检查实际交付是否符合业务要求，例如报告是否包含所需来源、文件是否能够下载，以及结构化结果是否包含后续处理所需的数据。返回的是文件时，应通过[文件与产物](/v2/zh/service/files)中的接口读取实际产物，不能仅凭 Agent 回复中的文件名判断交付已经完成。
 
-`POST /webhooks`：`{"url":"https://your-app.example/events","event_types":["invocation.completed","required_action.created"]}`。保存返回的 signing_secret。服务按事件 ID 投递、失败退避重试；接收方按事件 ID 去重。签名头 `X-AgentScope-Signature` 为 `t=<秒>,v1=<hex>`，校验 `HMAC-SHA256(secret, t + '.' + 原始请求体)`，并检查时间窗口。
+如果任务需要严格的业务输入和输出，可以在创建 Session 时提供 `inputSchema`、`outputSchema` 和 `resultMapping`。这些设置固定在当前 Session 的执行配置中。应先验证目标真实返回的数据，再设置输出映射和校验规则；Agent 在文字中写出 JSON，不等于平台已把这段文字转换为业务对象。这些规则用于检查数据格式，不能代替对内容质量的验收，也不会自动驱动 Agent 反复修改结果。
 
-`GET /webhooks` 查询状态。失败采用指数退避，连续 12 次失败后订阅进入 `failed` 并停止自动投递；`POST /webhooks/{id}/retry` 清空失败计数并重投尚未确认的事件，`DELETE /webhooks/{id}` 停用。回调只支持公网 HTTPS，不跟随重定向；请求凭据与签名密钥不会写进事件。回调通知不替代查询最终结果。
+如果业务还需要保存负责人、讨论和人工验收记录，可以使用[工作分派、审批与验收](/v2/zh/service/issues)中的 Issue 来组织交付。Issue 的验收与 Session 中一次执行的完成是两个不同的判断：前者确认业务工作是否被接受，后者记录这轮执行是否结束。
 
-## 输出映射与运行能力
+## 使用 SDK 与可运行示例
 
-Endpoint 的 `resultMapping` 把对外字段名映射到原始完整结果中的 RFC 6901 JSON Pointer，例如 `{"answer":"/report/text","sources":"/report/sources"}`。先映射，再校验发布时的 outputSchema。缺失或无效路径以 `output_mapping_failed` 失败，schema 不符以 `output_schema_violation` 失败；省略映射时保留原始结果。映射随 release 冻结。
+Python `ServiceClient` 封装了相同的 Session API。下面的代码使用已经授予目标权限的应用 key；这里的 `AGENT_ID` 是平台 Agent ID。
 
-Endpoint capabilities 表示发布候选运行时共同保证的能力（`capability_basis: all_published_candidates`）。提交后查询 `GET /invoke/v1/invocations/{id}/capabilities`，它反映实际选定 binding，且 `available_commands` 按当前状态过滤。取消、输入、恢复按钮应依据这个结果展示。公共 `checkpoint_restore` 仍为 false，checkpoint 使用原生 Managed API。
+```python
+import os
+from aistio import ServiceClient
 
-## 保留期限与过期游标
-
-`aistiod --service-event-retention` 默认 720h，0 关闭清理。仅超过保留时间的终态调用清理历史增量；完整累计 snapshot 和来源事件去重记录仍保留。过期 cursor 返回 HTTP 410，body 包含 `error: cursor_expired` 和 `snapshot_url`。重新读取并替换快照，再从新的 `as_of` 续订，不要反复重试旧 cursor。
-
-## 可运行示例与客户端
-
-仓库 `agentscope-service/aistio/examples/service-api` 提供 `bootstrap.py`、`worker.py`、`client.py`。Bootstrap 完成创建 Application、注册两类可执行 Agent、配置策略、创建 Team/Workflow、发布三类 Endpoint 和签发凭据，全程无需 Console。默认不产生模型费用，可显式加入真实 Managed 成员和指定审批人。README 包含断线恢复、取消、补充输入、审批、命令查询和结果读取的完整命令。
-
-Python 的 `aistio.ServiceClient` 提供调用操作；`aistio.ManagementClient` 提供 Application、Agent、Team、Workflow、策略、Endpoint、release 和凭据管理；TypeScript 客户端和快照 reducer 位于 `agentscope-service/frontend/src/api/serviceInvocations.ts`。浏览器通过业务后端代理访问，把长期 key 保存在后端。公共 OpenAPI 与事件 schema 位于 `agentscope-service/docs/service-api/`。
-
-```ts
-const snapshot = await api.snapshot(invocationId);
-const view = new ServiceView(snapshot);
-render(view.snapshot());
-for await (const event of api.stream(invocationId, snapshot.as_of, signal)) {
-  view.apply(event);
-  render(view.snapshot());
-}
+api = ServiceClient(os.environ["BASE_URL"], os.environ["AGENTSCOPE_API_KEY"])
+session = api.create_session({"type": "agent", "id": os.environ["AGENT_ID"]},
+                             idempotency_key="report-session-001")
+turn = api.submit(session["id"], message="整理报告并给出来源。",
+                  idempotency_key="report-task-001")
+print(api.turn(session["id"], turn["id"]))
 ```
 
-公共 Invocation 日志、快照、命令和回调游标保存在 Service 的持久 Store；使用 PostgreSQL 部署可跨进程、跨副本恢复。Agent 自己的 session log 和 checkpoint 仍由其 Workspace/Filesystem 存储，可能使用分布式后端。这两层分别服务于业务调用追踪与原生执行恢复。
-
-Python worker 默认使用 `instrument(..., control_plane_http=base, transport="http")`：通过出站 `/api/v1/agent-runtime/exchange` 交换带执行归属校验的命令和报告，命令持久保存到 worker 接收确认，无需 worker 入站端口或对外暴露的 gRPC 端口。启用 ASDP 时可选 `transport="grpc"`。`AsyncInvokeAdapter` 执行每任务新建的 `ainvoke` 实例；`AgentScopeRunnerAdapter` 执行每任务新建的异步 AgentScope Agent 并挂载原生观测 hook；都要求显式任务输入映射。只有观测能力的 adapter 不会自动执行平台任务。
-
-当前服务端仍需保持 `--enable-asdp=true`，因为 HTTP 执行复用其处理器；服务会初始化本地 gRPC listener，但 HTTP worker 不需要访问该端口。
-
-External SDK 单条事件限制 16 MiB；HTTP 按约 16 MiB 分批、单次请求上限 32 MiB，gRPC 消息上限 32 MiB。超限记录明确失败，不截断内容；大工具结果应发布为 artifact，事件中保存引用。
+仓库中的 `agentscope-service/aistio/examples/service-api` 提供 Agent、Team 和 Workflow 的注册与调用示例。管理对象使用 `ManagementClient`，应用执行使用 `ServiceClient`。接口定义位于 `agentscope-service/docs/service-api/openapi-v1.json`。

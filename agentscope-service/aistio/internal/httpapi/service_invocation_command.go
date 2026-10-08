@@ -41,6 +41,9 @@ type serviceActionInput struct {
 func serviceCommandPath(id uuid.UUID) string { return "service-api/commands/" + id.String() }
 func (s *Server) createServiceCommand(c *gin.Context) {
 	kind := c.FullPath()[strings.LastIndex(c.FullPath(), "/")+1:]
+	if override := c.GetString("service-command-kind"); override != "" {
+		kind = override
+	}
 	scope := "interact"
 	if kind == "cancel" {
 		scope = "cancel"
@@ -78,7 +81,7 @@ func (s *Server) createServiceCommand(c *gin.Context) {
 			c.JSON(409, ErrorResponse{Error: "Idempotency-Key was used for another command"})
 			return
 		}
-		c.JSON(202, gin.H{"command": old, "status_url": "/invoke/v1/invocations/" + inv.ID.String() + "/commands/" + old.ID.String()})
+		c.JSON(202, gin.H{"command": old, "status_url": publicCommandBase(inv) + "/commands/" + old.ID.String()})
 		return
 	}
 	if !errors.Is(err, store.ErrNotFound) {
@@ -106,7 +109,7 @@ func (s *Server) createServiceCommand(c *gin.Context) {
 	}
 	_ = s.store.Endpoints().ScheduleInvocation(c, inv.ID, time.Now().UTC())
 	_, _ = serviceJournal(s.store, ep, inv).Append(c, "command:"+command.ID.String()+":accepted", "command.accepted", map[string]any{"command_id": command.ID, "kind": kind, "actor": command.Actor})
-	c.JSON(202, gin.H{"command": command, "status_url": "/invoke/v1/invocations/" + inv.ID.String() + "/commands/" + command.ID.String()})
+	c.JSON(202, gin.H{"command": command, "status_url": publicCommandBase(inv) + "/commands/" + command.ID.String()})
 }
 func decodeServiceCommand(raw json.RawMessage) (serviceCommand, error) {
 	var v struct {
@@ -551,6 +554,29 @@ func (s *Server) authorizeServiceCommandActor(ctx context.Context, inv *model.En
 	if cmd.Actor.Type == model.ActorHuman {
 		return s.authorizeApplicationActor(ctx, inv, ep, cmd.Principal, scope)
 	}
+	if cmd.Actor.Type == model.ActorAutomation && strings.HasPrefix(cmd.Actor.Ref, "session-key:") {
+		app, err := s.store.Applications().Get(ctx, *inv.ApplicationID)
+		if err != nil || app.Status != "active" {
+			return false
+		}
+		row, err := s.store.KV().Get(ctx, ep.Tenant, applicationCredentialPath(app.ID), strings.TrimPrefix(cmd.Actor.Ref, "session-key:"))
+		if err != nil {
+			return false
+		}
+		var key sessionCredential
+		if json.Unmarshal(row.Value, &key) != nil || key.Status != "active" || key.ExpiresAt != nil && !key.ExpiresAt.After(time.Now()) {
+			return false
+		}
+		if scope == "approve" {
+			scope = "interact"
+		}
+		for _, granted := range key.Scopes {
+			if granted == scope {
+				return true
+			}
+		}
+		return false
+	}
 	if cmd.Actor.Type != model.ActorAutomation || !strings.HasPrefix(cmd.Actor.Ref, "api-key:") {
 		return false
 	}
@@ -580,4 +606,11 @@ func (s *Server) authorizeServiceCommandActor(ctx context.Context, inv *model.En
 		}
 	}
 	return false
+}
+
+func publicCommandBase(inv *model.EndpointInvocation) string {
+	if c, err := serviceapi.ReadContract(inv.Contract); err == nil && c.PublicSessionID != uuid.Nil {
+		return "/api/v1/agent-sessions/" + c.PublicSessionID.String() + "/turns/" + inv.ID.String()
+	}
+	return "/invoke/v1/invocations/" + inv.ID.String()
 }

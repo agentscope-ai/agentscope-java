@@ -187,7 +187,13 @@ func (s *Server) RuntimeDefinition(ctx context.Context, ownerID, agentID string)
 	if err != nil {
 		return nil, err
 	}
-	definition, err := s.definitionSnapshot(ctx, ownerID, agentID, agent.HeadVersion)
+	return s.RuntimeDefinitionVersion(ctx, ownerID, agentID, agent.HeadVersion)
+}
+
+// RuntimeDefinitionVersion applies the same enabled-file filtering to pinned
+// versions as to the current definition.
+func (s *Server) RuntimeDefinitionVersion(ctx context.Context, ownerID, agentID string, version int) (map[string]any, error) {
+	definition, err := s.definitionSnapshot(ctx, ownerID, agentID, version)
 	if err != nil {
 		return nil, err
 	}

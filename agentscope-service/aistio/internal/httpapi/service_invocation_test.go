@@ -31,7 +31,7 @@ func TestServiceInvocationCancellationIsDurableAndIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(ServerOptions{Store: st, AuthToken: "key"})
+	server := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "key"})
 	submit := func(body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", "/invoke/v1/invocations/"+inv.ID.String()+"/cancel", bytes.NewBufferString(body))
 		r.Header.Set("Authorization", "Bearer key")
@@ -49,7 +49,7 @@ func TestServiceInvocationCancellationIsDurableAndIdempotent(t *testing.T) {
 		t.Fatalf("different replay accepted: %s", other.Body)
 	}
 	// A fresh server process can drain the durable command before materializing a Run.
-	restarted := NewServer(ServerOptions{Store: st, AuthToken: "key"})
+	restarted := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "key"})
 	if err = restarted.SweepServiceInvocations(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestServiceOutputUsesPublishedSchema(t *testing.T) {
 	}
 	ep.OutputSchema = json.RawMessage(`{}`)
 	_, _ = st.Endpoints().Update(ctx, ep, ep.Version)
-	server := NewServer(ServerOptions{Store: st})
+	server := newLegacyEndpointTestServer(ServerOptions{Store: st})
 	got, err := server.refreshServiceInvocation(ctx, inv.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestServiceReplaySurvivesInputSchemaChange(t *testing.T) {
 	st, _ := store.Open(ctx, store.Config{Driver: store.DriverMemory})
 	defer st.Close()
 	ep, _ := st.Endpoints().Create(ctx, &model.Endpoint{Tenant: "t", Namespace: "n", Name: "service", Slug: "service", InputSchema: json.RawMessage(`{"type":"string"}`)})
-	server := NewServer(ServerOptions{Store: st})
+	server := newLegacyEndpointTestServer(ServerOptions{Store: st})
 	request := &model.EndpointInvocation{EndpointID: ep.ID, Mode: model.EndpointJobMode, PrincipalRef: "p", IdempotencyKey: "job", Status: model.EndpointInvocationAccepted, Input: json.RawMessage(`{"input":"hello"}`)}
 	first, fresh, err := server.reserveServiceInvocation(ctx, ep, request)
 	if err != nil || !fresh {

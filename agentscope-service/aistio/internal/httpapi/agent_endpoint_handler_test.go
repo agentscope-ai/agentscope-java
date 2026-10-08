@@ -72,7 +72,7 @@ func TestListEndpointsUsesEmptyArray(t *testing.T) {
 	}
 	defer st.Close()
 
-	server := NewServer(ServerOptions{Store: st, AuthToken: "console"})
+	server := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "console"})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/endpoints?tenant=t&namespace=n", nil)
 	req.Header.Set("Authorization", "Bearer console")
 	w := httptest.NewRecorder()
@@ -105,7 +105,7 @@ func TestCreateEndpointReportsIdentityConflicts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(ServerOptions{Store: st, AuthToken: "console"})
+	server := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "console"})
 	create := func(name, slug string) *httptest.ResponseRecorder {
 		body := fmt.Sprintf(`{"tenant":"t","namespace":"n","name":%q,"slug":%q,"targetType":"agent","targetRef":"%s","invocationMode":"job"}`,
 			name, slug, agent.ID)
@@ -160,7 +160,7 @@ func TestEndpointJobIsIdempotent(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(ServerOptions{Store: st, AuthToken: "console"})
+	server := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "console"})
 	request := func(method, path, body, token string, idem bool) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -334,7 +334,7 @@ func TestWorkflowEndpointRecordsTargetAndRequestsReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(ServerOptions{Store: st, AuthToken: "console"})
+	server := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "console"})
 	request := func(method, path, body, token, idem string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -431,7 +431,7 @@ func TestEndpointConversationFreezesExternalRuntimeAndIsIdempotent(t *testing.T)
 		t.Fatal(err)
 	}
 	commands := &endpointCommandCapture{}
-	server := NewServer(ServerOptions{Store: st, AuthToken: "console", ASDPCommands: commands})
+	server := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "console", ASDPCommands: commands})
 	request := func(method, path, body, token, idem string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -532,7 +532,7 @@ func TestEndpointConversationFreezesExternalRuntimeAndIsIdempotent(t *testing.T)
 func TestHostedEndpointConversationCompletesPublicInvocation(t *testing.T) {
 	ctx := context.Background()
 	st, agent, _, host := setupHostedConversationAgent(t)
-	server := NewServer(ServerOptions{Store: st, AuthToken: "console"})
+	server := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "console"})
 	request := func(method, path, body, token, idem string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")

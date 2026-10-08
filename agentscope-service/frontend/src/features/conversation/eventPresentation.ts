@@ -91,7 +91,7 @@ export function presentEvent(event: ConversationEvent) {
     add('Recorded outcome', raw.outcome, 'Historical check outcome; current validity depends on the subject and contract version.');
     add('Checked version', record(raw.evidence_binding).subjectVersion, 'Version captured before the action ran.');
   }
-  add('Endpoint invocation', meta.endpointInvocationId, 'The API request that initiated this work.');
+  add('Session Turn', meta.endpointInvocationId, 'The API request that initiated this work.');
   const diagnostics: EventRelation[] = [];
   if (meta.managedEventId) diagnostics.push({ label: 'Runtime event', value: String(meta.managedEventId), description: 'The original event ID allocated by the managed runtime.' });
   if (meta.managedSeq != null) diagnostics.push({ label: 'Runtime sequence', value: String(meta.managedSeq), description: 'Position in the runtime log. Session sequence also includes control-plane records and can differ.' });

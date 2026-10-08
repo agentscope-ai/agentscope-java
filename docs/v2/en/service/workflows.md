@@ -1,5 +1,5 @@
 ---
-title: "Orchestrate Workflows through APIs"
+title: "Orchestrate a Workflow"
 zh_link: /v2/zh/service/workflows
 ---
 
@@ -7,9 +7,11 @@ zh_link: /v2/zh/service/workflows
 This is preview documentation. The official release is not yet available.
 </Note>
 
-Use a Workflow when business logic prescribes steps such as “draft a report → approve it → deliver.” Define, publish, and execute the process through APIs. Use a [Team](/v2/en/service/create-team) when its Leader should choose and delegate the steps dynamically. Both can serve as Job Endpoint targets.
+Use a Workflow when the business prescribes steps such as drafting, approval, and delivery. Publish a revision, create a Session targeting that Workflow, and submit Turns. Use a [Team](/v2/en/service/create-team) when a Leader should choose steps dynamically. Both share the application invocation path.
 
 A Workflow has an editable definition and immutable published revisions. Each Run pins a revision, so editing a draft does not change an existing execution.
+
+Use a verified Managed Agent as a process node; call a Team when a step needs collaborative work. Start with [one working Managed Agent](/v2/en/service/create-managed-agent), then define the process and approver. See [orchestration choices](/v2/en/service/orchestration).
 
 ## Create and validate the process
 
@@ -24,7 +26,6 @@ api() {
     -H 'Content-Type: application/json' "$@"
 }
 ```
-
 
 Set `AGENT_ID` to a task-capable Agent and `APPROVER_ID` to the reviewer's account identifier. This process drafts a report, then waits for approval:
 
@@ -52,28 +53,28 @@ published=$(api "$SERVICE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/publ
   --data "$(jq -n --argjson version "$(jq '.definition.version' <<<"$defined")" \
   '{expectedVersion:$version}')")
 REVISION_ID=$(jq -r '.revision.id' <<<"$published")
-started=$(api "$SERVICE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/runs" \
-  --data "$(jq -n --arg revision "$REVISION_ID" \
-  '{revisionId:$revision,idempotencyKey:"weekly-report-001",
-    input:{request:"Summarize this weeks Workspace material into a report with sources"},
-    issue:{title:"Weekly project report",description:"Deliver the reviewed report",access:{mode:"private"}}}')")
-RUN_ID=$(jq -r '.run.id' <<<"$started")
-ISSUE_ID=$(jq -r '.run.rootIssueId' <<<"$started")
+session=$(api "$SERVICE_URL/api/v1/agent-sessions" --data "$(jq -n \
+  --arg workflow "$WORKFLOW_ID" --arg revision "$REVISION_ID" \
+  '{target:{type:"workflow",id:$workflow,revisionId:$revision}}')")
+SESSION_ID=$(jq -er '.id' <<<"$session")
+turn=$(api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns" \
+  -H 'Idempotency-Key: weekly-report-001' \
+  --data '{"input":{"request":"Produce this week’s report with sources"}}')
+TURN_ID=$(jq -er '.id' <<<"$turn")
 ```
 
-Use `issue` to create work alongside execution, or `issueId` to attach existing work; supply exactly one. Reuse `idempotencyKey` when retransmitting the same submission. Save both IDs to follow execution and business acceptance separately.
+Save the Session and Turn IDs for observation, actions, and cancellation. Service creates the workflow execution and work records. Retry unchanged work with the same idempotency key.
 
 ## Follow nodes, output, and approval
 
 ```bash
-api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID"
-api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID/graph"
-api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID/events?after=0&limit=200"
+api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns/$TURN_ID"
+api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/snapshot"
 ```
 
-Details include `run.state`, output, and failure information. The graph includes nodes, tasks, attempts, and child runs. Events are a JSON history query ordered by `sequence`; use the last processed sequence as the next `after`. This is not SSE. When exposing the process through an Endpoint, applications can follow the Invocation's [SSE stream](/v2/en/service/sse-events).
+Turn detail returns the task status, result, and error. The Session snapshot restores the application view; follow [SSE replay](/v2/en/service/sse-events) for live updates. Open the associated Run graph in Console when diagnosing individual workflow nodes.
 
-The review node creates an approval for the designated user to decide through the [Approval API](/v2/en/service/inbox#decide-an-execution-approval). Node approval permits the process to proceed, while final Issue review accepts the business deliverable. Subsequent publication or external modifications still require the executing Agent's tools and permissions.
+The review node appears in the Turn’s required_actions. Its designated approver uses their platform token to submit `request_id`, `expected_version`, and `decision` to the Turn’s `/actions`. Approval allows the workflow to continue; an application key cannot replace the designated human identity.
 
 ## Add process capabilities gradually
 
@@ -90,16 +91,20 @@ The review node creates an approval for the designated user to decide through th
 After adding a signal node waiting for `report.ready`, a business system can send:
 
 ```bash
-api "$SERVICE_URL/api/v1/orchestration-runs/$RUN_ID/signals/report.ready" \
-  --data '{"idempotencyKey":"report-upload-001","payload":{"artifactId":"YOUR_ARTIFACT_ID"}}'
+api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns/$TURN_ID/inputs" \
+  -H 'Idempotency-Key: report-upload-001' \
+  --data '{"request_id":"RETURNED_SIGNAL_REQUEST_ID","expected_version":1,"payload":{"artifactId":"YOUR_ARTIFACT_ID"}}'
 ```
 
-Signals provide external process input; they do not replace approval. Run small examples and inspect real output before writing downstream mappings. Different runtimes do not necessarily return identical result structures.
+Read the request ID and version from the current required_actions rather than using the placeholders. Signals provide external process input; they do not replace approval. Run small examples and inspect real output before writing downstream mappings. Different runtimes do not necessarily return identical result structures.
 
-## Pause, cancel, and rerun
+## Cancellation and operational control
+
+Applications cancel a Turn through `/cancel`, check capabilities before `/resume`, and submit a new Turn to start fresh work. The Run APIs below serve Console operations and workflow diagnosis. Obtain the Run ID from the associated execution record; it is not the Turn ID.
+
 
 `POST /api/v1/orchestration-runs/{runId}/pause` stops new node dispatch while running steps may still return. `/resume` resumes scheduling; `/cancel` requests cancellation of nodes, tasks, and child runs without deleting or accepting the Issue. Use `{}` as the request body.
 
 After a terminal state, post `{"idempotencyKey":"weekly-report-retry-001"}` to `/rerun` to create a new Run with lineage. Include `input` to replace the input. Nodes support `timeoutSeconds`, `retry`, and `failurePolicy`, including `fail_fast`, `continue`, and `partial_success`. Retries do not undo existing external side effects.
 
-Publish through the [Endpoint API](/v2/en/service/endpoints) with `targetType:"orchestration_revision"` and a specific revision ID. Publishing another Workflow revision requires an Endpoint release update before callers switch to it. See [Console: Teams and orchestration](/v2/en/service/console/orchestration) for designer and execution-graph operations.
+Create a Session with `target:{"type":"workflow","id":"WORKFLOW_ID","revisionId":"REVISION_ID"}`. Omitting `revisionId` selects the latest published revision at creation. Existing Sessions do not switch automatically. See [Console](/v2/en/service/console/index#console-orchestration) for the designer and run graph.

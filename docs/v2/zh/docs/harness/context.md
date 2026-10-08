@@ -309,9 +309,85 @@ builder.compaction(CompactionConfig.builder()
 
 ## 检查模型实际拿到了什么
 
-当模型似乎没看到某条信息时，先确认它的来源和刷新时机：工作区文件是否在本次调用之后才修改，动态来源是否返回了该内容，任务展示是否已经开启且有状态，材料是否因为预算不足被省略。
+当模型似乎没看到某条信息时，可以用 `ContextManifest` 检查这次请求准备了哪些材料、用了多少预算，以及哪些内容被省略。它是 Harness 自动生成的**上下文构建清单**，不包含提示词正文，也不需要业务代码自行创建。
 
-`ContextPolicy` 的观察回调会收到 `ContextManifest`，其中包含来源、版本、内容哈希、估算 token、实际预算、卸载或省略等处理记录，以及校验结果。它不包含正文，适合用来诊断某块材料是否进入本轮请求、为何没有进入，而不用把完整提示词写入日志。
+一次 `agent.call()` 可能经历多轮推理和工具执行；每次准备模型请求都会产生各自的 Manifest。因此，要检查的是出现问题的那一轮，而不是只看整个任务的最后一条记录。`validation = passed` 表示上下文准备通过，并不表示模型请求已成功，或模型一定采用了其中的信息。
+
+### 在应用中获取清单
+
+最直接的方式是在构建 Agent 前，为 `ContextPolicy` 配置观察回调。下面沿用前文的预算，打印每轮结果、保留的材料以及处理记录；用该 `builder.build()` 创建 Agent 后，正常调用 `call` 或消费 `streamEvents` 即会触发回调。
+
+```java
+import io.agentscope.harness.agent.context.ContextManifest;
+import io.agentscope.harness.agent.context.ContextPolicy;
+import io.agentscope.harness.agent.context.ContextTokenEstimator;
+
+builder.contextPolicy(new ContextPolicy(
+        24000, 4096, 1024,
+        ContextTokenEstimator.approximate(),
+        (ContextManifest manifest) -> {
+            System.out.printf("call=%s purpose=%s validation=%s tokens=%d/%d%n",
+                    manifest.callId(), manifest.purpose(), manifest.validation(),
+                    manifest.estimatedInputTokens(), manifest.inputLimit());
+            manifest.items().forEach(item -> System.out.printf(
+                    "  source=%s revision=%s placement=%s%n",
+                    item.sourceId(), item.revision(), item.placement()));
+            manifest.transforms().forEach(change -> System.out.println("  " + change));
+        }));
+```
+
+`contextPolicy(...)` 会替换整份配置；已有自定义预算时，请保留原来的数值和估算器，只替换回调。共享 Builder 时回调也会被复用，应保证线程安全、尽快返回；生产环境可将这些元数据交给应用的观测系统，不要在回调中执行耗时操作。
+
+### 从清单定位问题
+
+先看 `validation()` 和预算，再按 `sourceId()` 找具体材料，通常就能区分“没有加载”和“加载后被省略”。
+
+| 读取什么 | 如何理解 |
+| --- | --- |
+| `callId()`、`purpose()`、`model()` | 标识这次模型请求准备及其用途、模型。`callId` 不是 `sessionId`、`turnId` 或 `runId` |
+| `estimatedInputTokens()`、`inputLimit()` | 整个请求的估算输入量与最终可用输入上限；不是供应商账单中的实际 token 用量。`countingMethod()` 和 `exact()` 说明计数方式及是否精确 |
+| `items()` | 本轮保留的消息、工具 Schema 和材料元数据。材料可通过 `sourceId`、`revision`、`contentHash` 核对来源与版本，通过 `placement` 查看放置位置；消息和工具条目的版本、位置可能为空 |
+| `transforms()` | 准备期间做过的处理，例如 `tool_result_offload`（大结果卸载）、`history_compaction`（历史压缩处理），以及材料省略或来源失败记录 |
+| `validation()` | `passed` 为准备通过；`budget_exceeded` 为超出预算；`invalid_tool_pairs` 为工具调用与结果配对异常；`state_conflict` / `history_conflict` 为准备期间状态或历史发生冲突；`build_failed` 为其他构建失败 |
+
+例如，前文注册的 `project-guide` 来源返回了 `login` 块，它在清单中的 ID 是 `source/project-guide/login`。如果在 `items()` 中找到它，版本是 `guide-v3`，且校验通过，说明这份约定已经纳入本轮准备好的请求；若回答仍不符合约定，应进一步检查内容和指令是否清晰。
+
+如果没有找到它，就看 `transforms()`：出现 `omitted_for_budget:source/project-guide/login`，说明材料因预算不足被省略，可以缩短材料或调整预算、优先级；出现 `source_unavailable:source/project-guide/:...`，说明配置为 `OMIT` 的来源读取失败，应检查数据源或超时。两种记录都没有时，再检查来源是否返回空列表、是否到了刷新时机，以及本轮请求是否会加载该来源。
+
+构建过早失败时，清单可能没有条目，token 数和上限为 `-1`、计数方式为 `unavailable`，表示尚未获得统计结果。这时应结合调用抛出的异常排查，不能据此认定所有材料都被预算策略省略了。
+
+### 在事件流和会话日志中查看
+
+如果应用已经消费 `streamEvents`，也可以直接在现有流中处理 `context_build` 自定义事件，无需额外发起一次 Agent 调用。下面展示一次完整的订阅；业务中的文本、工具等事件仍按原来的方式处理。
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.CustomEvent;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.context.ContextManifest;
+
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId("alice").sessionId("fix-login-001").build();
+
+try (HarnessAgent agent = builder.build()) {
+    agent.streamEvents(new UserMessage("继续排查登录问题"), ctx)
+            .doOnNext(event -> {
+                if (event instanceof CustomEvent custom
+                        && "context_build".equals(custom.getName())
+                        && custom.getValue().get("context_manifest")
+                                instanceof ContextManifest manifest) {
+                    System.out.printf("session=%s call=%s validation=%s%n",
+                            ctx.getSessionId(), manifest.callId(), manifest.validation());
+                }
+            })
+            .blockLast();
+}
+```
+
+`context_build` 在上下文准备成功或失败时都会发出，先于实际模型请求。上面的类型判断适用于 SDK 进程内的实时事件；事件经过 JSON 存储或传输后，应按 JSON 对象读取 `context_manifest`。
+
+默认原生 Session Log 会把它保存为 `context/build`。通过 `SessionEvent.data()` 解码记录载荷后，清单位于其中的 `event.value.context_manifest`。需要事后排查某个会话时，通过 `session.log()` 或 `agent.sessionLog(ctx)` 读取记录，并结合日志中的会话、turn 和 run 信息定位，具体见[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)。Manifest 只保存元数据，不能用来重放完整提示词或恢复会话；来源 ID 也可能包含文件名，导出诊断记录时应按业务需要控制访问范围。
 
 如果可选材料的默认取舍顺序不适合业务，可以进一步配置 `contextSelectionPolicy`；它只决定可省略材料的顺序，不能移除 System 或 `required` 内容。通常先精简来源返回值、减少无关工具 Schema，再调整这类策略，会更容易理解和维护。
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	model "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
@@ -42,10 +43,17 @@ func (s *Server) reserveServiceInvocation(ctx context.Context, ep *model.Endpoin
 			if input.Mode == model.EndpointJobMode {
 				value = envelope["input"]
 			}
+			frozen, _ := serviceapi.ReadContract(input.Contract)
+			if frozen != nil && frozen.PublicSessionID != uuid.Nil {
+				value = envelope["input"]
+				if message, ok := envelope["message"]; ok {
+					value = message
+				}
+			}
 			if err = validateEndpointInput(ep.InputSchema, value); err != nil {
 				return fmt.Errorf("%w: %s", errServiceInput, err)
 			}
-			if input.ConversationID != nil {
+			if input.ConversationID != nil && (frozen == nil || frozen.PublicSessionID == uuid.Nil) {
 				n, err := s.store.Endpoints().CountActiveInvocations(ctx, store.EndpointInvocationFilter{ConversationID: *input.ConversationID})
 				if err != nil {
 					return err

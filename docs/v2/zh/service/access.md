@@ -11,7 +11,7 @@ Service 的权限分为账号身份、Namespace 成员角色、资源操作权�
 
 ## 初始化账号
 
-部署时配置自己的 bootstrap 管理员，首次登录后更改密码。平台管理员通过账号 API 建立日常账号；业务调用使用日常账号或发布服务的应用凭据。
+部署时配置自己的 bootstrap 管理员，首次登录后更改密码。平台管理员通过账号 API 建立日常账号；业务调用使用日常账号或应用凭据。
 
 | 操作 | API | 关键参数 / 返回 |
 | --- | --- | --- |
@@ -28,7 +28,7 @@ Service 的权限分为账号身份、Namespace 成员角色、资源操作权�
 
 Namespace 是资源与授权边界，Workspace 是 Agent 读写文件的环境，两者职责不同。账号可同时属于多个空间，请求通过空间 header 选择操作范围。
 
-以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与范围)准备 `SERVICE_URL`（Service 地址）、`TOKEN`（用户 Bearer token）、`TENANT`、`NAMESPACE`，并定义请求函数：
+以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与空间)准备 `SERVICE_URL`（Service 地址）、`TOKEN`（用户 Bearer token）、`TENANT`、`NAMESPACE`，并定义请求函数：
 
 ```bash
 api() {
@@ -127,4 +127,4 @@ Issue 创建时的 `access` 支持 `private`、`namespace` 或 `shared`；shared
 
 普通成员可通过 `POST /api/v1/namespaces/{name}/requests` 提交 `version`、`resource`（`kind:id`）、`action`、`reason` 申请授权。管理员向 `/requests/{requestId}/review` 提交 `{version,approve}` 决策，相关记录可通过 `/requests` 查询。
 
-用两个日常账号验证[CRM 方案交付案例](/v2/zh/service/cases/in-product-delivery)：一个配置资源，另一个只负责调用并查看自己的工作。Endpoint key 检查的是发布接口 scopes 与契约，不能替代对用户 Namespace 权限的验证。控制台对应入口见[控制台概览](/v2/zh/service/console/index)。
+用两个日常账号验证[CRM 方案交付案例](/v2/zh/service/cases/in-product-delivery)：一个配置资源，另一个只负责调用并查看自己的工作。应用凭据按目标资源授权和 scope 检查访问，不能替代对用户 Namespace 权限的验证。控制台对应入口见[控制台概览](/v2/zh/service/console/index)。

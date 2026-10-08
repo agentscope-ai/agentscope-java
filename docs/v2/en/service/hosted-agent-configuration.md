@@ -1,5 +1,5 @@
 ---
-title: "Hosted host and Runtime settings"
+title: "Hosted Agent configuration"
 zh_link: /v2/zh/service/hosted-agent-configuration
 ---
 
@@ -7,7 +7,9 @@ zh_link: /v2/zh/service/hosted-agent-configuration
 This is preview documentation. The official release is not yet available.
 </Note>
 
-Hosted configuration has three layers: Host connectivity/capacity, provider parameters in Runtime Profiles, and Agent instructions/model overrides. Start with [Runtime Host installation](/v2/en/service/runtime-host).
+If you have not connected a Hosted Agent yet, follow [Connect a Hosted Agent](/v2/en/service/connect-hosted-agent) to bring the execution host online and create an Agent. Use this page to adjust configuration after connection, and [Runtime Host setup and operations](/v2/en/service/runtime-host) for installation and ongoing maintenance.
+
+Before changing a setting, identify the scope it should affect. Host connection settings determine which Service the host connects to, which providers it exposes, and how many executions it allows concurrently. A Runtime Profile stores a provider's runtime parameters, while an Agent adds its own instructions and model overrides. Keeping settings at the appropriate scope lets several Agents share an execution environment while retaining their individual behavior.
 
 ## Connection settings
 
@@ -115,6 +117,50 @@ Model identifiers, reasoning levels and account availability depend on the insta
 
 ## Definition conflicts
 
-Host translates portable instructions, skills and supported MCP/tool definitions into provider configuration. Unsupported requested capabilities fail before execution. See the [provider matrix](/v2/en/service/hosted-agent-providers).
+Host translates portable instructions, skills and supported MCP/tool definitions into provider configuration. Unsupported requested capabilities fail before execution. See the [provider matrix](/v2/en/service/hosted-agent-configuration#hosted-agent-providers).
 
 Custom arguments are argv entries. Reserved arguments controlling workspace, model, output protocol, MCP and permissions cannot be freely overridden. Configure Codex native tools through Profile sandbox/approval settings; Managed built-in tool policies do not transfer to it.
+
+<span id="hosted-agent-providers"></span>
+<span id="choosing-a-provider"></span>
+
+## Runtime types
+
+| Console name | `--providers` value | Default executable | Execution |
+| --- | --- | --- | --- |
+| Codex | `codex` | `codex` | app-server threads and events |
+| Claude Code | `claude-code` | `claude` | Streaming JSON CLI |
+| Qoder | `qoder` | `qodercli` | Streaming CLI events and control requests |
+| QwenPaw | `qwenpaw` | `qwenpaw` | ACP Session |
+| OpenClaw | `openclaw` | `openclaw` | `agent exec` |
+
+Install and authenticate the provider before connecting Host. These are Service adapters; provider binaries are not bundled in the Service CLI release.
+
+## Portable definition mapping
+
+| Provider | Instructions / skills | MCP | Managed-style built-in tool policy | Platform Subagent definition mapping | Resume |
+| --- | --- | --- | --- | --- | --- |
+| Codex | Developer instructions / `.agents/skills` | Yes | No; use native sandbox/approval | Shared workspace supported | Yes |
+| Claude Code | `CLAUDE.md` / `.claude/skills` | Yes | Allow/deny lists | Not currently advertised | Yes |
+| Qoder | Prompt / definition skill directory | Yes | Allow/deny lists | Shared workspace supported | Yes |
+| QwenPaw | Prompt / `skills` | Yes | Native policy | Not currently advertised | Yes |
+| OpenClaw | Prompt / `skills` | No | Native policy | Not currently advertised | No |
+
+Support indicates an implemented adapter path; installed CLI version and account capabilities still matter. Native Subagent mapping requires Codex 0.153.4+ or Qoder 1.0.37+ and currently requires shared workspaces. Codex mapping cannot enforce Subagent `tools` or `maxIters`. Qoder tool names must map to supported native tools.
+
+Codex, Qoder and QwenPaw provide control-plane tool approval integration. Claude Code uses its CLI permission configuration; this does not promise the same Inbox approval flow. OpenClaw uses the task CLI through Shell for collaboration because its adapter does not inject MCP.
+
+## Read capabilities reported by current Hosts
+
+The tables explain mappings; actual availability comes from Host reports. Query with a platform account Bearer token:
+
+```bash
+curl -sS "$SERVICE_URL/api/v1/agents/runtime-options?tenant=default&namespace=default" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Select an entry in `runtimes`. Each entry provides `provider`, `version`, `runtimeProfileId`, `runtimePoolId`, `hostCount`, and `capabilities`. The descriptor contains `instructions`, `workspace`, `skills`, `subagents`, `tools`, `shell`, `mcp`, `model`, `customArgs`, `approval`, and `resume`. `resume` is a boolean; other capability entries use `supported`, `mode`, and `target` to describe support and its mapping.
+
+`GET /api/v1/runtime-hosts?tenant=...&namespace=...` returns per-Host provider versions/descriptors in `items[].capabilities`. Put the selected profile/pool UUIDs in the Agent binding. Update per-Agent provider options through `/api/v1/agents/{agentId}/hosted-settings`; see [configuration](/v2/en/service/hosted-agent-configuration) for fields.
+
+Provider `resume` describes native runtime recovery, which does not automatically provide a public Turn resume command. Applications should read Session and Turn capabilities and display commands only when `available_commands` includes them.

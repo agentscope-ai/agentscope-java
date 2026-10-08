@@ -31,7 +31,7 @@ en_link: /v2/en/intro
 <a className="hs-home-platform hs-home-platform--service" href="/v2/zh/service/index">
 <span className="hs-home-label">平台 · 托管服务</span>
 <h2>AgentScope Service <span aria-hidden="true">↗</span></h2>
-<p>在平台配置并发布 Agent，通过 API 接入业务。运行时由 Service 统一管理，无需为每个 Agent 应用分别开发和维护运行服务。</p>
+<p>推荐先在自己的基础设施部署 Service，再配置基于 HarnessAgent 内核的托管 Agent，通过 API 接入业务。平台统一管理运行时，无需为每个 Agent 应用分别开发和维护运行服务。</p>
 <div className="hs-home-tags"><span>Agent as a Service</span><span>任务 · 交互 · 交付</span></div>
 </a>
 </div>
@@ -54,10 +54,10 @@ en_link: /v2/en/intro
 <div className="hs-home-product">
 <span className="hs-home-label">SERVICE</span>
 <h2>AgentScope Service</h2>
-<p>适合希望通过 API 使用 Agent 能力、减少重复运行时建设的团队。配置指令、模型、工具和资源，发布托管 Agent 服务；平台承接运行、会话与任务管理，应用聚焦业务数据、用户体验和结果验收。</p>
+<p>适合希望通过 API 使用 Agent 能力、减少重复运行时建设的团队。配置指令、模型、工具和资源，直接通过 Session API 使用托管 Agent；平台承接运行、会话与任务管理，应用聚焦业务数据、用户体验和结果验收。</p>
 <div className="hs-home-features"><a className="hs-home-feature" href="/v2/zh/service/usecases"><h3>从业务场景开始<span aria-hidden="true">↗</span></h3><p>把 Agent 接入 SaaS 页面、业务流程或定时任务，围绕实际输入与交付设计服务。</p></a>
 <a className="hs-home-feature" href="/v2/zh/service/service-api"><h3>从调用到交付<span aria-hidden="true">↗</span></h3><p>提交后台任务或会话，通过快照与事件跟踪进度，处理人工交互并读取结果和文件。</p></a>
-<a className="hs-home-feature" href="/v2/zh/service/agents"><h3>选择合适的执行方式<span aria-hidden="true">↗</span></h3><p>托管 HarnessAgent、接入已有应用或复用 Coding Agent；按任务需要组合 Team 与 Workflow。</p></a></div>
+<a className="hs-home-feature" href="/v2/zh/service/orchestration"><h3>选择合适的执行方式<span aria-hidden="true">↗</span></h3><p>托管 HarnessAgent、接入已有应用或复用 Coding Agent；按任务需要组合 Team 与 Workflow。</p></a></div>
 </div>
 </div>
 </section>
@@ -65,12 +65,12 @@ en_link: /v2/en/intro
 <section className="hs-home-section hs-home-start" aria-labelledby="start-title">
 <div className="hs-home-start-copy">
 <h2 id="start-title">从你需要的入口开始</h2>
-<p>将 Agent 嵌入已有 Java 应用，或通过 HTTP 调用已发布的 Agent 服务。</p>
+<p>将 Agent 嵌入已有 Java 应用，或通过 HTTP 使用平台上的托管 Agent。</p>
 <div className="hs-home-start-links">
 <a href="/v2/zh/docs/quickstart">Java 快速开始 <span aria-hidden="true">→</span></a>
-<a href="/v2/zh/service/first-session">Service API 快速开始 <span aria-hidden="true">→</span></a>
+<a href="/v2/zh/service/service-api">通过 Session API 使用 Agent <span aria-hidden="true">→</span></a>
 </div>
-<p className="hs-home-footnote">Harness 示例共享 Builder，每次请求构建新实例。Service 示例需要先发布 Endpoint，并准备与输入契约匹配的请求。</p>
+<p className="hs-home-footnote">Harness 示例共享 Builder，每次请求构建新实例。Service 示例先创建 Session 选择 Agent，再提交一轮任务。</p>
 </div>
 <div className="hs-window">
 <div className="hs-window__bar">
@@ -104,14 +104,15 @@ try (var agent = builder.build()) {
 <div className="hs-code-panel" id="zh-service" style={{"display": "none"}}>
 
 ```bash
-curl "$BASE_URL/invoke/v1/endpoints/notes/jobs" \
-  -H "X-API-Key: $ENDPOINT_KEY" \
-  -H 'Content-Type: application/json' \
+SESSION_ID=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: notes-session-001' \
+  --data "$(jq -n --arg id "$AGENT_ID" '{target:{type:"agent",id:$id}}')" \
+  | jq -er '.id')
+curl "$BASE_URL/api/v1/agent-sessions/$SESSION_ID/turns" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: notes-request-001' \
-  -d '{
-    "title": "整理会议待办",
-    "input": {"request": "整理材料中的任务与待确认事项"}
-  }'
+  --data '{"message":"Summarize the tasks and open questions."}'
 ```
 
 </div>
@@ -169,15 +170,15 @@ curl "$BASE_URL/invoke/v1/endpoints/notes/jobs" \
 <div><details className="hs-faq-item"><summary>HarnessAgent 与 ReActAgent 是什么关系？</summary><p>ReActAgent 提供推理、工具执行、消息、权限和中间件等基础能力。HarnessAgent 基于同一套 ReAct 循环，内置工作区、记忆、技能、子 Agent 与会话管理。推荐从 HarnessAgent 开始；需要自行组合运行层时，也可以直接使用 ReActAgent。</p></details>
 <details className="hs-faq-item"><summary>Harness 和 Service 必须一起使用吗？</summary><p>可以独立选择：用 Harness SDK 开发并运行自己的 Agent 应用，或直接在 Service 中配置 Managed Agent，无需先开发一个 SDK 应用。Service 的托管 Agent 基于 AgentScope HarnessAgent 内核，由平台统一管理 Agent 运行时。已有的 Harness 应用也可以作为 External Agent 接入 Service，保留自己的运行进程，同时使用平台的发布与调用能力。</p></details>
 <details className="hs-faq-item"><summary>刷新页面后，任务会重新执行吗？</summary><p>页面恢复通过快照和事件游标补齐已有消息、工具结果和进度。它与继续执行是两件事：继续中断的任务需要相应的会话恢复操作，checkpoint 也不会撤销已经发生的外部操作。</p></details>
-<details className="hs-faq-item"><summary>需要哪些运行环境？</summary><p>Java Harness 需要 JDK 17 及以上，并配置所选模型的凭据。工具可在本地或配置的沙箱中执行。Service 的部署、身份与执行资源按其快速开始准备。</p></details></div>
+<details className="hs-faq-item"><summary>需要哪些运行环境？</summary><p>Java Harness 需要 JDK 17 及以上，并配置所选模型的凭据。工具可在本地或配置的沙箱中执行。Service 当前主要推荐自托管部署；先启动平台、配置模型和工具环境，再运行第一个托管 Agent。</p></details></div>
 </section>
 
 <section className="hs-home-cta">
 <h2>让下一个 Agent，接入真实业务</h2>
-<p>从 Harness SDK 开发开始，或直接在 Service 上配置、发布并调用托管 Agent。</p>
+<p>使用 Harness SDK 开发自己的应用，或部署 Service，配置并调用由平台管理运行时的托管 Agent。</p>
 <div className="hs-hero__actions">
 <a href="/v2/zh/docs/quickstart" className="hs-btn hs-btn--primary">开始构建 Harness <span aria-hidden="true">→</span></a>
-<a href="/v2/zh/service/first-session" className="hs-btn hs-btn--secondary">Service API 快速开始 <span aria-hidden="true">→</span></a>
+<a href="/v2/zh/service/quickstart" className="hs-btn hs-btn--secondary">部署并开始使用 Service <span aria-hidden="true">→</span></a>
 </div>
 </section>
 

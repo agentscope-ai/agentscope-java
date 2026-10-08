@@ -290,15 +290,87 @@ Use `.model(...)` on `CompactionConfig` for a separate summary model and `.summa
 
 <span id="limits-and-troubleshooting" />
 
-<Accordion title="Inspect a missing source or rejected request">
+## Inspect a request with ContextManifest
 
-The `ContextPolicy` observer receives a Manifest with source IDs, revisions, hashes, estimates, budgets, transformations, and validation results, without source bodies. Return quickly from the observer; metadata can still reveal filenames. Formatting tags and hashes are diagnostic details, not a protocol for driving business decisions.
+When the model appears to miss some information, use `ContextManifest` to check which materials were prepared, how much input budget they used, and what was omitted. Harness generates this **context build manifest** automatically. It contains metadata, not prompt bodies; your application does not need to create it.
 
-For missing material, check the source's loading policy, request purpose, and budget omissions. For missing task details, check projection options and whether the application populated state. For old workspace content, remember the per-call refresh boundary. For budget errors, inspect fixed instructions, tool schemas, required blocks, and the remaining conversation allowance.
+One `agent.call()` may involve several reasoning steps and tool executions, each with its own request preparation and Manifest. Inspect the preparation for the step in question. `validation = passed` means preparation passed, not that the provider request succeeded or that the model used every piece of information.
 
-The compiler rejects invalid tool pairs and changes to task/plan/history snapshots during preparation. Failed validation does not commit candidate compacted history, but cannot roll back files or memory already written while preparing it. These checks do not form a transaction over external business systems.
+### Read the manifest in your application
 
-</Accordion>
+Configure a `ContextPolicy` observer before building the Agent. This example retains the budget from earlier in this guide and prints each preparation's result, retained items, and transformations. Once you create an Agent with `agentBuilder.build()`, calling `call` or consuming `streamEvents` triggers the observer.
+
+```java
+import io.agentscope.harness.agent.context.ContextManifest;
+import io.agentscope.harness.agent.context.ContextPolicy;
+import io.agentscope.harness.agent.context.ContextTokenEstimator;
+
+agentBuilder.contextPolicy(new ContextPolicy(
+        24000, 4096, 1024,
+        ContextTokenEstimator.approximate(),
+        (ContextManifest manifest) -> {
+            System.out.printf("call=%s purpose=%s validation=%s tokens=%d/%d%n",
+                    manifest.callId(), manifest.purpose(), manifest.validation(),
+                    manifest.estimatedInputTokens(), manifest.inputLimit());
+            manifest.items().forEach(item -> System.out.printf(
+                    "  source=%s revision=%s placement=%s%n",
+                    item.sourceId(), item.revision(), item.placement()));
+            manifest.transforms().forEach(change -> System.out.println("  " + change));
+        }));
+```
+
+`contextPolicy(...)` replaces the whole policy. If you already customized it, retain your limits and estimator when adding the callback. Agents built from a shared Builder reuse the observer, so make it thread-safe and return quickly. In production, send this metadata to your application's observability system without doing slow work in the callback.
+
+### Diagnose missing material
+
+Start with `validation()` and the budget, then find the material by `sourceId()`.
+
+| Read | Meaning |
+| --- | --- |
+| `callId()`, `purpose()`, `model()` | Identifies this model request preparation, its purpose, and model. `callId` is separate from session, turn, and run IDs |
+| `estimatedInputTokens()`, `inputLimit()` | Estimated size of the entire input and its effective input limit, not provider usage or billing. `countingMethod()` and `exact()` describe the count |
+| `items()` | Retained messages, tool schemas, and material metadata. For materials, use `sourceId`, `revision`, and `contentHash` to identify the source and version, and `placement` to check placement. Message and tool entries may have null revisions and placements |
+| `transforms()` | Preparation actions, including `tool_result_offload`, `history_compaction`, budget omissions, and source failures |
+| `validation()` | `passed`: preparation succeeded; `budget_exceeded`: insufficient budget; `invalid_tool_pairs`: malformed tool exchanges; `state_conflict` / `history_conflict`: state or history changed during preparation; `build_failed`: another build failure |
+
+For example, the `format` block from the earlier `change-record` source has the ID `source/change-record/format`. If it appears in `items()` and validation passed, the material was included in the prepared request. Compare its revision or hash across requests to check which version was used. If the answer still ignores it, inspect the content and instructions themselves.
+
+If the item is absent, check `transforms()`. `omitted_for_budget:source/change-record/format` means it was dropped for budget reasons: shorten it or adjust the budget or priority. `source_unavailable:source/change-record/:...` means a source configured with `OMIT` failed to load; check the source or its timeout. If neither appears, check whether the source returned an empty list, whether it was due to refresh, and whether this request purpose loads it.
+
+An early build failure can leave the item list empty, both token figures at `-1`, and the counting method at `unavailable`. These indicate missing statistics. Inspect the accompanying exception instead of assuming all materials were omitted for budget reasons.
+
+### Read live events and stored logs
+
+If your application already consumes `streamEvents`, handle the `context_build` custom event in that same stream. There is no need to start another Agent call just to obtain a Manifest. This example shows a complete subscription; keep your existing handlers for text and tool events alongside it.
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.CustomEvent;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.context.ContextManifest;
+
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId("alice").sessionId("export-fix-001").build();
+
+try (HarnessAgent agent = agentBuilder.build()) {
+    agent.streamEvents(new UserMessage("Continue investigating the export issue"), ctx)
+            .doOnNext(event -> {
+                if (event instanceof CustomEvent custom
+                        && "context_build".equals(custom.getName())
+                        && custom.getValue().get("context_manifest")
+                                instanceof ContextManifest manifest) {
+                    System.out.printf("session=%s call=%s validation=%s%n",
+                            ctx.getSessionId(), manifest.callId(), manifest.validation());
+                }
+            })
+            .blockLast();
+}
+```
+
+`context_build` reports both successful and failed preparation, before a provider request. The type check above applies to live, in-process SDK events. After JSON storage or transport, read `context_manifest` as a JSON object.
+
+The default native Session Log stores this as `context/build`. Decode the record's payload with `SessionEvent.data()` and read its `event.value.context_manifest` object. Use `session.log()` or `agent.sessionLog(ctx)` to inspect a past session and correlate the record with its session, turn, and run. See [Session operations, events, and recovery](/v2/en/docs/harness/session-log) for log access. A Manifest cannot replay full prompts or restore a session. Source IDs can contain filenames, so apply your application's access controls when exporting diagnostic records.
 
 <span id="related-pages" />
 

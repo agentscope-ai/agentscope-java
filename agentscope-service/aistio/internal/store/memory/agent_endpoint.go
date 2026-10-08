@@ -331,7 +331,12 @@ func (r *endpointRepo) ReserveInvocation(_ context.Context, in *controlmodel.End
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	if r.s.endpoints[in.EndpointID] == nil {
-		return nil, false, store.ErrNotFound
+		var contract struct {
+			PublicSessionID uuid.UUID `json:"public_session_id"`
+		}
+		if json.Unmarshal(in.Contract, &contract) != nil || contract.PublicSessionID != in.EndpointID || in.EndpointID == uuid.Nil {
+			return nil, false, store.ErrNotFound
+		}
 	}
 	if in.IdempotencyKey != "" {
 		for _, v := range r.s.endpointInvocations {

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	model "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
+	"github.com/spring-ai-alibaba/aistio/internal/sessionapi"
 )
 
 const endpointScopesContextKey = "endpoint-scopes"
@@ -35,6 +36,18 @@ func endpointScope(c *gin.Context, scope string) bool {
 	return false
 }
 func (s *Server) loadServiceInvocation(c *gin.Context, scope string) (*model.EndpointInvocation, *model.Endpoint, bool) {
+	if c.GetBool("public-session-webhook") {
+		v := c.MustGet(publicSessionContextKey).(*sessionapi.Session)
+		if !s.sessionAccess(c, v, scope) {
+			return nil, nil, false
+		}
+		contract, err := serviceapi.ReadContract(v.Contract)
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return nil, nil, false
+		}
+		return sessionWebhookExecution(v), &contract.Endpoint, true
+	}
 	id, err := uuid.Parse(c.Param("invocationId"))
 	if err != nil {
 		c.JSON(400, ErrorResponse{Error: "invalid invocationId"})
@@ -44,6 +57,18 @@ func (s *Server) loadServiceInvocation(c *gin.Context, scope string) (*model.End
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return nil, nil, false
+	}
+	if value, exists := c.Get(publicSessionContextKey); exists {
+		v := value.(*sessionapi.Session)
+		if inv.EndpointID != v.ID || !s.sessionAccess(c, v, scope) {
+			return nil, nil, false
+		}
+		contract, e := serviceapi.ReadContract(inv.Contract)
+		if e != nil || contract.PublicSessionID != v.ID {
+			c.JSON(500, ErrorResponse{Error: "invalid session execution contract"})
+			return nil, nil, false
+		}
+		return inv, &contract.Endpoint, true
 	}
 	ep, err := s.store.Endpoints().Get(c, inv.EndpointID)
 	if err != nil {
@@ -148,11 +173,21 @@ func (s *Server) getServiceEvents(c *gin.Context) {
 	}
 	events, next, more, err := serviceJournal(s.store, ep, inv).Events(c, after, limit)
 	if errors.Is(err, serviceapi.ErrCursorExpired) {
-		c.JSON(410, gin.H{"error": "cursor_expired", "message": err.Error(), "snapshot_url": "/invoke/v1/invocations/" + inv.ID.String() + "/snapshot"})
+		c.JSON(410, gin.H{"error": "cursor_expired", "message": err.Error(), "snapshot_url": publicCommandBase(inv) + "/snapshot"})
 		return
 	}
 	if err != nil {
 		s.writeControlPlaneError(c, err)
+		return
+	}
+	if value, exists := c.Get(publicSessionContextKey); exists {
+		v := value.(*sessionapi.Session)
+		data := []gin.H{}
+		for _, event := range events {
+			event.Data["turn_id"] = inv.ID.String()
+			data = append(data, publicEventView(v, event))
+		}
+		c.JSON(200, gin.H{"data": data, "next_cursor": next, "has_more": more})
 		return
 	}
 	c.JSON(200, gin.H{"data": events, "next_cursor": next, "has_more": more})
@@ -178,7 +213,7 @@ func (s *Server) streamServiceEvents(c *gin.Context) {
 	}
 	events, next, more, err := j.Events(c, after, 200)
 	if errors.Is(err, serviceapi.ErrCursorExpired) {
-		c.JSON(410, gin.H{"error": "cursor_expired", "message": err.Error(), "snapshot_url": "/invoke/v1/invocations/" + inv.ID.String() + "/snapshot"})
+		c.JSON(410, gin.H{"error": "cursor_expired", "message": err.Error(), "snapshot_url": publicCommandBase(inv) + "/snapshot"})
 		return
 	}
 	if err != nil {
@@ -191,8 +226,15 @@ func (s *Server) streamServiceEvents(c *gin.Context) {
 	lastHeartbeat := time.Now()
 	for {
 		for _, e := range events {
-			raw, _ := json.Marshal(e)
-			if _, err = fmt.Fprintf(c.Writer, "id: %s\nevent: %s\ndata: %s\n\n", e.Cursor, e.Type, raw); err != nil {
+			var value any = e
+			kind := e.Type
+			if session, ok := c.Get(publicSessionContextKey); ok {
+				e.Data["turn_id"] = inv.ID.String()
+				value = publicEventView(session.(*sessionapi.Session), e)
+				kind = strings.Replace(kind, "invocation.", "turn.", 1)
+			}
+			raw, _ := json.Marshal(value)
+			if _, err = fmt.Fprintf(c.Writer, "id: %s\nevent: %s\ndata: %s\n\n", e.Cursor, kind, raw); err != nil {
 				return
 			}
 		}

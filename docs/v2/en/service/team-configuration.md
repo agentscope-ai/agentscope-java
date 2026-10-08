@@ -108,4 +108,4 @@ Selection follows node override, member override and Agent policy layers. Explic
 
 Manage the Agent-level default with `GET/PUT /api/v1/agent-runtime-policies/{agentId}`. PUT accepts `tenant`, `namespace`, and nonempty `candidates`; each `binding.bindingId` must belong to an available binding of that Agent. Service resolves the actual backend. Optional controls include `selectionMode`, `fallbackMode`, `maxConcurrency`, `queueTimeoutSeconds`, `attemptTimeoutSeconds`, and `retryPolicy`; the response is `{policy}`. GET also requires tenant/namespace.
 
-Next: [collaboration guide](/v2/en/service/team-collaboration) and [execution model](/v2/en/service/team-execution).
+Next: [collaboration guide](/v2/en/service/create-team#team-collaboration) and [execution model](/v2/en/service/create-team#team-execution).

@@ -22,7 +22,6 @@ import {
   ManagedSession,
   parseAgentTaskExternalKey,
 } from '../api/managedSessions';
-import ChatPanel from '../components/ChatPanel';
 import SessionTranscript from '../components/SessionTranscript';
 import SessionExecution from '../components/SessionExecution';
 
@@ -66,7 +65,7 @@ const S: Record<string, React.CSSProperties> = {
     lineHeight: 1.5,
   },
   bannerLink: { color: '#0f766e', fontWeight: 600 },
-  chatWrap: { flex: 1, minHeight: 0 },
+  chatWrap: { flex: 1, minHeight: 0, overflow: 'auto' },
   err: { padding: 32, color: '#dc2626' },
   loading: { padding: 32, color: '#94a3b8' },
 };
@@ -177,14 +176,10 @@ export default function SessionDetailPage() {
               </div>
             )}
             <div style={S.chatWrap}>
-              <ChatPanel
-                sessionId={session.id}
-                agentId={session.agentId}
-                readOnly={fromTask}
-              />
+              <SessionExecution sessionId={session.id} readOnly={fromTask || session.status === 'archived'} />
             </div>
           </>
-        ) : tab === 'execution' ? <SessionExecution sessionId={session.id} readOnly={fromTask} /> : (
+        ) : tab === 'execution' ? <SessionExecution sessionId={session.id} readOnly={fromTask || session.status === 'archived'} /> : (
           <SessionTranscript
             agentId={session.agentId}
             sessionId={session.id}

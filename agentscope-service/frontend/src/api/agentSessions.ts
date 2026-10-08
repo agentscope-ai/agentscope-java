@@ -18,6 +18,7 @@ export interface AgentTurn {
   status: string;
   createdAt: number;
   errorCode?: string;
+  error?: { code: string; message?: string };
 }
 export interface AgentSessionSnapshot {
   session: ManagedSession;
@@ -45,7 +46,7 @@ const path = (session: string) => `${base}/${encodeURIComponent(session)}`;
 async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(url, { ...init, headers: { ...authHeaders(), ...init.headers } });
   if (!res.ok) throw await readApiError(res, 'Agent API request failed');
-  return res.json() as Promise<T>;
+  return res.status === 204 ? undefined as T : res.json() as Promise<T>;
 }
 export const createAgentSession = (input: CreateManagedSessionRequest) =>
   request<ManagedSession>(base, { method: 'POST', body: JSON.stringify(input) });
@@ -54,20 +55,24 @@ export const getAgentSessionSnapshot = (session: string, signal?: AbortSignal) =
 export const listAgentSessionEvents = (session: string, after?: string, limit = 100) =>
   request<{ data: AgentSessionEvent[]; next_cursor: string; has_more: boolean }>(
     `${path(session)}/events?${new URLSearchParams({ ...(after ? { after } : {}), limit: String(limit) })}`);
-export const listAgentTurns = (session: string) => request<AgentTurn[]>(`${path(session)}/turns`);
+export const listAgentTurns = async (session: string) => (await request<{ items: AgentTurn[] }>(`${path(session)}/turns?limit=200`)).items;
 export type AgentInput = { message: string } | { input: Array<{ role: 'user'; content: Record<string, unknown>[] }> };
 export const submitAgentTurn = (session: string, message: string | AgentInput, idempotencyKey: string) =>
   request<AgentTurn>(`${path(session)}/turns`, {
     method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(typeof message === 'string' ? { message } : message),
   });
 export const cancelAgentTurn = (session: string, turn: string) =>
-  request<AgentTurn>(`${path(session)}/turns/${encodeURIComponent(turn)}/cancel`, { method: 'POST' });
+  request<AgentTurn>(`${path(session)}/turns/${encodeURIComponent(turn)}/cancel`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } });
 export const resumeAgentTurn = (session: string, turn: string) =>
-  request<AgentTurn>(`${path(session)}/turns/${encodeURIComponent(turn)}/resume`, { method: 'POST' });
-export const answerAgentActions = (session: string, turn: string, answers: ActionAnswer[], key: string) =>
-  request<AgentTurn>(`${path(session)}/turns/${encodeURIComponent(turn)}/actions`, {
-    method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify({ answers }),
-  });
+  request<AgentTurn>(`${path(session)}/turns/${encodeURIComponent(turn)}/resume`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } });
+export const answerAgentActions = async (session: string, turn: string, answers: ActionAnswer[], key: string) => {
+  for (const [index, answer] of answers.entries()) {
+    const { request_id, ...payload } = answer;
+    await request(`${path(session)}/turns/${encodeURIComponent(turn)}/actions`, {
+      method: 'POST', headers: { 'Idempotency-Key': `${key}-${index}` }, body: JSON.stringify({ request_id, payload }),
+    });
+  }
+};
 
 export const steerAgentTurn = (session: string, turn: string, input: AgentInput, key: string) =>
   request<{ input_id: string; turn_id: string; status: string }>(`${path(session)}/turns/${encodeURIComponent(turn)}/steer`, {
@@ -80,9 +85,12 @@ export const injectAgentContext = (session: string, input: AgentInput, key: stri
 export const listAgentActionCommands = (session: string, turn: string) =>
   request<Array<Record<string, unknown>>>(`${path(session)}/turns/${encodeURIComponent(turn)}/actions`);
 export interface AgentFile { file_id: string; name: string; media_type: string; size: number; sha256: string; download_url: string }
-export const uploadAgentFile = (session: string, file: File, key: string) => request<AgentFile>(`${path(session)}/files`, {
-  method: 'POST', headers: { 'Idempotency-Key': key, 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream' }, body: file,
-});
+export const uploadAgentFile = async (session: string, file: File, key: string): Promise<AgentFile> => {
+  const value = await request<{ id: string; name: string; content_type: string; size: number; checksum: string }>(`${path(session)}/files`, {
+    method: 'POST', headers: { 'Idempotency-Key': key, 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream' }, body: file,
+  });
+  return { file_id: value.id, name: value.name, media_type: value.content_type, size: value.size, sha256: value.checksum, download_url: `${path(session)}/files/${value.id}/content` };
+};
 export async function downloadAgentFile(session: string, fileId: string): Promise<Blob> {
   const response = await fetch(`${path(session)}/files/${encodeURIComponent(fileId)}/content`, { headers: authHeaders() });
   if (!response.ok) throw await readApiError(response, 'File download failed');

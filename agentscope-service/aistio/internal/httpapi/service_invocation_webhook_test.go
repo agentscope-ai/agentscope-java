@@ -48,7 +48,7 @@ func webhookFixture(t *testing.T, st store.Store, receiver string) (*Server, *mo
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewServer(ServerOptions{Store: st, AuthToken: "webhook-fixture"})
+	s := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "webhook-fixture"})
 	body, _ := json.Marshal(map[string]any{"url": receiver, "event_types": []string{"invocation.completed"}})
 	req := httptest.NewRequest("POST", "/invoke/v1/invocations/"+inv.ID.String()+"/webhooks", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer webhook-fixture")
@@ -276,7 +276,7 @@ func TestServiceWebhookPostgresReplicaRestartAndUncertainDelivery(t *testing.T) 
 	_ = firstStore.Close()
 	now = now.Add(time.Second)
 	thirdStore := open()
-	servers := []*Server{NewServer(ServerOptions{Store: secondStore, AuthToken: "webhook-fixture"}), NewServer(ServerOptions{Store: thirdStore, AuthToken: "webhook-fixture"})}
+	servers := []*Server{newLegacyEndpointTestServer(ServerOptions{Store: secondStore, AuthToken: "webhook-fixture"}), newLegacyEndpointTestServer(ServerOptions{Store: thirdStore, AuthToken: "webhook-fixture"})}
 	var wg sync.WaitGroup
 	for _, server := range servers {
 		wg.Add(1)

@@ -1,963 +1,4511 @@
-openapi: 3.1.0
-info:
-  title: AgentScope Managed Agents API
-  version: 0.1.0
-  description: |
-    Public control-plane surface for Managed Agents (M0–M5 commitment).
-    Internal (`/api/internal/*`) and Operate (`/api/v1/*`) routes are intentionally excluded.
-servers:
-  - url: /
-security:
-  - bearerAuth: []
-tags:
-  - name: Agents
-  - name: Environments
-  - name: Sessions
-  - name: Memory
-  - name: Vaults
-  - name: Deployments
-  - name: Files
-  - name: Channels
-paths:
-  /api/agents:
-    get:
-      tags: [Agents]
-      summary: List agents
-      parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Offset'
-      responses:
-        '200':
-          description: Agent list (array body; X-Total-Count header)
-          headers:
-            X-Total-Count:
-              schema: { type: integer }
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Agent' }
-        '400': { $ref: '#/components/responses/Error' }
-    post:
-      tags: [Agents]
-      summary: Create agent
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/AgentCreate' }
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Agent' }
-          description: Created
-  /api/agents/{id}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Agents]
-      summary: Get agent
-      responses:
-        '200':
-          description: Agent
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Agent' }
-        '404': { $ref: '#/components/responses/Error' }
-    put:
-      tags: [Agents]
-      summary: Update agent (optimistic lock via version)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/AgentUpdate' }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Agent' }
-    delete:
-      tags: [Agents]
-      summary: Delete agent
-      responses:
-        '204': { description: Deleted }
-        '404': { $ref: '#/components/responses/Error' }
-  /api/agents/{id}/archive:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Agents]
-      summary: Archive agent
-      responses:
-        '200':
-          description: Archived
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Agent' }
-  /api/agents/{id}/versions:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Agents]
-      summary: List agent versions
-      responses:
-        '200':
-          description: Versions
-          content:
-            application/json:
-              schema: { type: array, items: { type: object } }
-  /api/agents/{id}/versions/{v}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-      - name: v
-        in: path
-        required: true
-        schema: { type: integer }
-    get:
-      tags: [Agents]
-      summary: Get agent version snapshot
-      responses:
-        '200':
-          description: Version
-          content:
-            application/json:
-              schema: { type: object }
-  /api/environments:
-    get:
-      tags: [Environments]
-      summary: List environments
-      parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Offset'
-      responses:
-        '200':
-          description: Environments
-          headers:
-            X-Total-Count:
-              schema: { type: integer }
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Environment' }
-    post:
-      tags: [Environments]
-      summary: Create environment
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/EnvironmentCreate' }
-      responses:
-        '200':
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Environment' }
-  /api/environments/{id}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Environments]
-      summary: Get environment
-      responses:
-        '200':
-          description: Environment
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Environment' }
-        '404': { $ref: '#/components/responses/Error' }
-    patch:
-      tags: [Environments]
-      summary: Update environment name/config (type immutable)
-      requestBody:
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/EnvironmentUpdate' }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Environment' }
-    delete:
-      tags: [Environments]
-      summary: Delete environment
-      responses:
-        '204': { description: Deleted }
-  /api/environments/{id}/archive:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Environments]
-      summary: Archive environment
-      responses:
-        '200':
-          description: Archived
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Environment' }
-  /api/environments/{id}/rotate-key:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Environments]
-      summary: Rotate environment worker key
-      responses:
-        '200':
-          description: New key material
-          content:
-            application/json:
-              schema: { type: object }
-  /api/sessions:
-    get:
-      tags: [Sessions]
-      summary: List sessions
-      parameters:
-        - name: agentId
-          in: query
-          schema: { type: string }
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Offset'
-      responses:
-        '200':
-          description: Sessions
-          headers:
-            X-Total-Count:
-              schema: { type: integer }
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Session' }
-    post:
-      tags: [Sessions]
-      summary: Create session
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/SessionCreate' }
-      responses:
-        '200':
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Session' }
-  /api/sessions/{id}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Sessions]
-      summary: Get session
-      responses:
-        '200':
-          description: Session
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Session' }
-        '404': { $ref: '#/components/responses/Error' }
-    patch:
-      tags: [Sessions]
-      summary: Update session overrides (whitelist)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/SessionUpdate' }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Session' }
-        '400': { $ref: '#/components/responses/Error' }
-    delete:
-      tags: [Sessions]
-      summary: Delete session
-      responses:
-        '204': { description: Deleted }
-  /api/sessions/{id}/archive:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Sessions]
-      summary: Archive session
-      responses:
-        '200':
-          description: Archived
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Session' }
-  /api/sessions/{id}/events:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Sessions]
-      summary: List session events (data plane)
-      responses:
-        '200':
-          description: Events
-          content:
-            application/json:
-              schema: { type: array, items: { type: object } }
-    post:
-      tags: [Sessions]
-      summary: Append inbound events (data plane)
-      requestBody:
-        content:
-          application/json:
-            schema: { type: object }
-      responses:
-        '200':
-          description: Accepted
-          content:
-            application/json:
-              schema: { type: object }
-  /api/sessions/{id}/events/stream:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Sessions]
-      summary: SSE event stream (data plane)
-      responses:
-        '200':
-          description: text/event-stream
-  /api/memory-stores:
-    get:
-      tags: [Memory]
-      summary: List memory stores
-      parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Offset'
-      responses:
-        '200':
-          description: Stores
-          headers:
-            X-Total-Count:
-              schema: { type: integer }
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/MemoryStore' } }
-    post:
-      tags: [Memory]
-      summary: Create memory store
-      requestBody:
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/MemoryStoreCreate' }
-      responses:
-        '200':
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/MemoryStore' }
-  /api/memory-stores/{id}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Memory]
-      summary: Get memory store
-      responses:
-        '200':
-          description: Store
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/MemoryStore' }
-    delete:
-      tags: [Memory]
-      summary: Delete memory store
-      responses:
-        '204': { description: Deleted }
-  /api/memory-stores/{id}/archive:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Memory]
-      summary: Archive memory store
-      responses:
-        '200':
-          description: Archived
-          content:
-            application/json:
-              schema: { type: object }
-  /api/memory-stores/{id}/redact:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Memory]
-      summary: Redact a memory path
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [path]
-              properties:
-                path: { type: string }
-                replacement: { type: string }
-      responses:
-        '200':
-          description: Redacted memory
-          content:
-            application/json:
-              schema: { type: object }
-  /api/memory-stores/{id}/memories:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Memory]
-      summary: List memories
-      responses:
-        '200':
-          description: Memories
-          content:
-            application/json:
-              schema: { type: array, items: { type: object } }
-  /api/memory-stores/{id}/memories/{path}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-      - name: path
-        in: path
-        required: true
-        schema: { type: string }
-    get:
-      tags: [Memory]
-      summary: Read memory
-      responses:
-        '200':
-          description: Memory
-          content:
-            application/json:
-              schema: { type: object }
-    put:
-      tags: [Memory]
-      summary: Put memory
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                content: { type: string }
-      responses:
-        '200':
-          description: Saved
-          content:
-            application/json:
-              schema: { type: object }
-    delete:
-      tags: [Memory]
-      summary: Delete memory
-      responses:
-        '204': { description: Deleted }
-  /api/vaults:
-    get:
-      tags: [Vaults]
-      summary: List vaults
-      parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Offset'
-      responses:
-        '200':
-          description: Vaults
-          headers:
-            X-Total-Count:
-              schema: { type: integer }
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/Vault' } }
-    post:
-      tags: [Vaults]
-      summary: Create vault
-      requestBody:
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/VaultCreate' }
-      responses:
-        '200':
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Vault' }
-  /api/vaults/{id}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Vaults]
-      summary: Get vault
-      responses:
-        '200':
-          description: Vault
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Vault' }
-    patch:
-      tags: [Vaults]
-      summary: Update vault
-      requestBody:
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/VaultUpdate' }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Vault' }
-    delete:
-      tags: [Vaults]
-      summary: Delete vault
-      responses:
-        '204': { description: Deleted }
-  /api/vaults/{id}/archive:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Vaults]
-      summary: Archive vault
-      responses:
-        '200':
-          description: Archived
-          content:
-            application/json:
-              schema: { type: object }
-  /api/vaults/{id}/credentials:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Vaults]
-      summary: List credentials (no secrets)
-      responses:
-        '200':
-          description: Credentials
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/Credential' } }
-    post:
-      tags: [Vaults]
-      summary: Add credential
-      requestBody:
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CredentialCreate' }
-      responses:
-        '200':
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Credential' }
-  /api/vaults/{id}/credentials/{cid}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-      - name: cid
-        in: path
-        required: true
-        schema: { type: string }
-    patch:
-      tags: [Vaults]
-      summary: Update credential metadata / rotate secret
-      requestBody:
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CredentialUpdate' }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Credential' }
-    delete:
-      tags: [Vaults]
-      summary: Delete credential
-      responses:
-        '204': { description: Deleted }
-  /api/vaults/{id}/credentials/{cid}/validate:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-      - name: cid
-        in: path
-        required: true
-        schema: { type: string }
-    post:
-      tags: [Vaults]
-      summary: Validate credential (decrypt + optional reachability)
-      responses:
-        '200':
-          description: Validation result
-          content:
-            application/json:
-              schema: { type: object }
-  /api/deployments:
-    get:
-      tags: [Deployments]
-      summary: List deployments
-      parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Offset'
-      responses:
-        '200':
-          description: Deployments
-          headers:
-            X-Total-Count:
-              schema: { type: integer }
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/Deployment' } }
-    post:
-      tags: [Deployments]
-      summary: Create deployment
-      requestBody:
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/DeploymentCreate' }
-      responses:
-        '200':
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Deployment' }
-  /api/deployments/{id}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Deployments]
-      summary: Get deployment
-      responses:
-        '200':
-          description: Deployment
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Deployment' }
-    patch:
-      tags: [Deployments]
-      summary: Update deployment
-      requestBody:
-        content:
-          application/json:
-            schema: { type: object }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Deployment' }
-    delete:
-      tags: [Deployments]
-      summary: Delete deployment
-      responses:
-        '204': { description: Deleted }
-  /api/deployments/{id}/archive:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Deployments]
-      summary: Archive deployment
-      responses:
-        '200':
-          description: Archived
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Deployment' }
-  /api/deployments/{id}/run:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Deployments]
-      summary: Run deployment now
-      responses:
-        '200':
-          description: Fired
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Deployment' }
-  /api/deployments/{id}/pause:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Deployments]
-      summary: Pause deployment
-      responses:
-        '200':
-          description: Paused
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Deployment' }
-  /api/deployments/{id}/unpause:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Deployments]
-      summary: Unpause deployment
-      responses:
-        '200':
-          description: Unpaused
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Deployment' }
-  /api/deployments/webhook/{token}:
-    parameters:
-      - name: token
-        in: path
-        required: true
-        schema: { type: string }
-    post:
-      tags: [Deployments]
-      summary: Fire webhook deployment (no JWT)
-      security: []
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                text: { type: string }
-      responses:
-        '200':
-          description: Fired (narrow body; no webhookToken)
-          content:
-            application/json:
-              schema: { type: object }
-        '404': { $ref: '#/components/responses/Error' }
-  /api/files:
-    get:
-      tags: [Files]
-      summary: List files
-      responses:
-        '200':
-          description: Files metadata
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/FileMeta' } }
-    post:
-      tags: [Files]
-      summary: Upload text file (max 1 MiB)
-      requestBody:
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/FileCreate' }
-      responses:
-        '200':
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FileMeta' }
-        '400': { $ref: '#/components/responses/Error' }
-  /api/files/{id}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Files]
-      summary: Get file metadata
-      responses:
-        '200':
-          description: Metadata
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FileMeta' }
-    delete:
-      tags: [Files]
-      summary: Delete file
-      responses:
-        '204': { description: Deleted }
-  /api/files/{id}/content:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Files]
-      summary: Get file content
-      responses:
-        '200':
-          description: Content
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id: { type: string }
-                  filename: { type: string }
-                  content: { type: string }
-  /api/channels:
-    get:
-      tags: [Channels]
-      summary: List channels
-      responses:
-        '200':
-          description: Channels
-          content:
-            application/json:
-              schema: { type: array, items: { type: object } }
-    post:
-      tags: [Channels]
-      summary: Create channel
-      requestBody:
-        content:
-          application/json:
-            schema: { type: object }
-      responses:
-        '200':
-          description: Created
-          content:
-            application/json:
-              schema: { type: object }
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-  parameters:
-    Id:
-      name: id
-      in: path
-      required: true
-      schema: { type: string }
-    Limit:
-      name: limit
-      in: query
-      description: Optional page size 1..500; omit for full list
-      schema: { type: integer, minimum: 1, maximum: 500 }
-    Offset:
-      name: offset
-      in: query
-      description: Requires limit when set
-      schema: { type: integer, minimum: 0 }
-  responses:
-    Error:
-      description: Control-plane error
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-  schemas:
-    Error:
-      type: object
-      required: [error]
-      properties:
-        error: { type: string }
-    Agent:
-      type: object
-      additionalProperties: true
-    AgentCreate:
-      type: object
-      required: [name]
-      properties:
-        name: { type: string }
-        system: { type: string }
-        model: { type: string }
-        maxIters: { type: integer }
-        tools: { type: array, items: { type: object } }
-        mcpServers: { type: array, items: { type: object } }
-    AgentUpdate:
-      type: object
-      additionalProperties: true
-    Environment:
-      type: object
-      additionalProperties: true
-    EnvironmentCreate:
-      type: object
-      required: [name]
-      properties:
-        name: { type: string }
-        type: { type: string }
-        config: { type: object }
-    EnvironmentUpdate:
-      type: object
-      properties:
-        name: { type: string }
-        config: { type: object }
-    Session:
-      type: object
-      additionalProperties: true
-    SessionCreate:
-      type: object
-      required: [agent, environmentId]
-      properties:
-        agent: {}
-        environmentId: { type: string }
-        memoryStoreIds: { type: array, items: { type: string } }
-        vaultIds: { type: array, items: { type: string } }
-        resources: { type: array, items: { type: object } }
-        agentOverrides: { type: object }
-    SessionUpdate:
-      type: object
-      required: [agentOverrides]
-      properties:
-        agentOverrides:
-          type: object
-          description: Whitelist keys system/model/maxIters/name/description
-          additionalProperties: true
-    MemoryStore:
-      type: object
-      additionalProperties: true
-    MemoryStoreCreate:
-      type: object
-      required: [name]
-      properties:
-        name: { type: string }
-        description: { type: string }
-    Vault:
-      type: object
-      additionalProperties: true
-    VaultCreate:
-      type: object
-      required: [displayName]
-      properties:
-        displayName: { type: string }
-        metadata: { type: object }
-    VaultUpdate:
-      type: object
-      properties:
-        displayName: { type: string }
-        metadata: { type: object }
-    Credential:
-      type: object
-      properties:
-        id: { type: string }
-        type: { type: string }
-        label: { type: string }
-        target: { type: string }
-        createdAt: { type: integer }
-    CredentialCreate:
-      type: object
-      required: [type, label, secret]
-      properties:
-        type: { type: string }
-        label: { type: string }
-        target: { type: string }
-        secret: { type: string }
-    CredentialUpdate:
-      type: object
-      properties:
-        label: { type: string }
-        target: { type: string }
-        secret: { type: string }
-    Deployment:
-      type: object
-      additionalProperties: true
-    DeploymentCreate:
-      type: object
-      required: [name, agentId, triggerType]
-      properties:
-        name: { type: string }
-        agentId: { type: string }
-        environmentId: { type: string }
-        triggerType: { type: string, enum: [manual, cron, webhook] }
-        cronExpression: { type: string }
-    FileMeta:
-      type: object
-      properties:
-        id: { type: string }
-        filename: { type: string }
-        contentType: { type: string }
-        sizeBytes: { type: integer }
-        createdAt: { type: integer }
-    FileCreate:
-      type: object
-      required: [filename, content]
-      properties:
-        filename: { type: string }
-        content: { type: string }
-        contentType: { type: string }
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AgentScope Service Session API",
+    "version": "1.0.0",
+    "description": "One application API for Managed, External and Hosted Agents, Teams and Workflows. Platform administration and runtime transport APIs are separate."
+  },
+  "security": [
+    {
+      "applicationKey": []
+    },
+    {
+      "platformToken": []
+    }
+  ],
+  "paths": {
+    "/api/v1/agent-sessions": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions",
+        "operationId": "post_api_v1_agent_sessions",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSession"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "GET /api/v1/agent-sessions",
+        "operationId": "get_api_v1_agent_sessions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /api/v1/agent-sessions/{publicSessionId}",
+        "operationId": "patch_api_v1_agent_sessions_publicSessionId",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/agent-sessions/{publicSessionId}",
+        "operationId": "delete_api_v1_agent_sessions_publicSessionId",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/archive": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/archive",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_archive",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/restore": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/restore",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_restore",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/capabilities": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/capabilities",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_capabilities",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/turns",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_turns",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Turn"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnInput"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/snapshot": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/snapshot",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_snapshot",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ManagedSnapshot"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/events": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/events",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_events",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque cursor for this exact Session or Turn log."
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Takes precedence over after."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          },
+          "410": {
+            "description": "Cursor expired; restore snapshot and resume from as_of."
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/events/stream": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/events/stream",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_events_stream",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque cursor for this exact Session or Turn log."
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Takes precedence over after."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          },
+          "410": {
+            "description": "Cursor expired; restore snapshot and resume from as_of."
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns_turnId",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Turn"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/capabilities": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/capabilities",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns_turnId_capabilities",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/snapshot": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/snapshot",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns_turnId_snapshot",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/events": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/events",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns_turnId_events",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque cursor for this exact Session or Turn log."
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Takes precedence over after."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          },
+          "410": {
+            "description": "Cursor expired; restore snapshot and resume from as_of."
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/events/stream": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/events/stream",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns_turnId_events_stream",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque cursor for this exact Session or Turn log."
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Takes precedence over after."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          },
+          "410": {
+            "description": "Cursor expired; restore snapshot and resume from as_of."
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/actions": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/actions",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns_turnId_actions",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/actions",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_turns_turnId_actions",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/usage": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/usage",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns_turnId_usage",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/artifacts": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/artifacts",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns_turnId_artifacts",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/artifacts/{artifactId}": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/artifacts/{artifactId}",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns_turnId_artifacts_artifactId",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "artifactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/inputs": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/inputs",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_turns_turnId_inputs",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/steer": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/steer",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_turns_turnId_steer",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/cancel": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/cancel",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_turns_turnId_cancel",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/resume": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/resume",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_turns_turnId_resume",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/commands/{commandId}": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/commands/{commandId}",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns_turnId_commands_commandId",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "commandId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/webhooks": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/webhooks",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_turns_turnId_webhooks",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookInput"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/webhooks",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_turns_turnId_webhooks",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/webhooks/{webhookId}": {
+      "delete": {
+        "summary": "DELETE /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/webhooks/{webhookId}",
+        "operationId": "delete_api_v1_agent_sessions_publicSessionId_turns_turnId_webhooks_webhookId",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/webhooks/{webhookId}/retry": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/turns/{turnId}/webhooks/{webhookId}/retry",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_turns_turnId_webhooks_webhookId_retry",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/webhooks": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/webhooks",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_webhooks",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookInput"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/webhooks",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_webhooks",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/webhooks/{webhookId}": {
+      "delete": {
+        "summary": "DELETE /api/v1/agent-sessions/{publicSessionId}/webhooks/{webhookId}",
+        "operationId": "delete_api_v1_agent_sessions_publicSessionId_webhooks_webhookId",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/webhooks/{webhookId}/retry": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/webhooks/{webhookId}/retry",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_webhooks_webhookId_retry",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/files": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/files",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_files",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "X-File-Name",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "URL-encoded filename. Raw bytes, maximum 16 MiB."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "application/json": {
+              "schema": {}
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/files",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_files",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/files/{fileId}/content": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/files/{fileId}/content",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_files_fileId_content",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/budget": {
+      "put": {
+        "summary": "PUT /api/v1/agent-sessions/{publicSessionId}/budget",
+        "operationId": "put_api_v1_agent_sessions_publicSessionId_budget",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/budget",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_budget",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/fork": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/fork",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_fork",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/artifacts": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/artifacts",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_artifacts",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/artifacts",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_artifacts",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/artifacts/{resourceId}": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/artifacts/{resourceId}",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_artifacts_resourceId",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/inputs/inject": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/inputs/inject",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_inputs_inject",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/checkpoints/restore": {
+      "post": {
+        "summary": "POST /api/v1/agent-sessions/{publicSessionId}/checkpoints/restore",
+        "operationId": "post_api_v1_agent_sessions_publicSessionId_checkpoints_restore",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/export": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/export",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_export",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents_resourceId",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/snapshot": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/snapshot",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents_resourceId_snapshot",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ManagedSnapshot"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/usage": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/usage",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_usage",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/checkpoints": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/checkpoints",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_checkpoints",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/items": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/items",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_items",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/tools": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/tools",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_tools",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/inputs": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/inputs",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_inputs",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/required-actions": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/required-actions",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_required_actions",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/items": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/items",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents_resourceId_items",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/tools": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/tools",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents_resourceId_tools",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/turns": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/turns",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents_resourceId_turns",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/runs": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/runs",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents_resourceId_runs",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/required-actions": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/required-actions",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents_resourceId_required_actions",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/usage": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/usage",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents_resourceId_usage",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/subagents": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/subagents",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents_resourceId_subagents",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/events": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/events",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents_resourceId_events",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque cursor for this exact Session or Turn log."
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Takes precedence over after."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          },
+          "410": {
+            "description": "Cursor expired; restore snapshot and resume from as_of."
+          }
+        }
+      }
+    },
+    "/api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/events/stream": {
+      "get": {
+        "summary": "GET /api/v1/agent-sessions/{publicSessionId}/subagents/{resourceId}/events/stream",
+        "operationId": "get_api_v1_agent_sessions_publicSessionId_subagents_resourceId_events_stream",
+        "parameters": [
+          {
+            "name": "publicSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque cursor for this exact Session or Turn log."
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Takes precedence over after."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted or current resource",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "description": "Resource unavailable in this scope"
+          },
+          "409": {
+            "description": "Conflicting idempotency key, state, or unsupported capability"
+          },
+          "429": {
+            "description": "Application admission limit exceeded"
+          },
+          "410": {
+            "description": "Cursor expired; restore snapshot and resume from as_of."
+          }
+        }
+      }
+    },
+    "/api/v1/applications/{applicationId}/credentials": {
+      "post": {
+        "summary": "Issue an application credential with explicit target grants",
+        "security": [
+          {
+            "platformToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "applicationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Credential result; plaintext apiKey is returned only on creation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialInput"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List application credentials without secrets",
+        "security": [
+          {
+            "platformToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "applicationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Credential result; plaintext apiKey is returned only on creation"
+          }
+        }
+      }
+    },
+    "/api/v1/applications/{applicationId}/credentials/{credentialId}": {
+      "delete": {
+        "summary": "Revoke an application credential",
+        "security": [
+          {
+            "platformToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "applicationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "credentialId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Credential result; plaintext apiKey is returned only on creation"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "applicationKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      },
+      "platformToken": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "Object": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "Target": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "team",
+              "workflow"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revisionId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ]
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target": {
+            "$ref": "#/components/schemas/Target"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "deleted"
+            ]
+          },
+          "applicationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "runtimeKind": {
+            "type": "string",
+            "description": "Resolved runtime family for application presentation; use capabilities to discover operations."
+          }
+        },
+        "required": [
+          "id",
+          "target",
+          "status"
+        ]
+      },
+      "CreateSession": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/Target"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "memoryStoreIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "vaultIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agentOverrides": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "budget": {
+            "type": "object",
+            "properties": {
+              "maxTokens": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "inputSchema": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "outputSchema": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "resultMapping": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "Turn": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "requires_action",
+              "cancel_requested",
+              "completed",
+              "partial_succeeded",
+              "failed",
+              "cancelled",
+              "timed_out"
+            ]
+          },
+          "result": {},
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "statusUrl": {
+            "type": "string"
+          },
+          "snapshotUrl": {
+            "type": "string"
+          },
+          "eventsUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sessionId",
+          "status"
+        ]
+      },
+      "TurnInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "message"
+            ],
+            "properties": {
+              "message": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "not": {
+              "required": [
+                "input"
+              ]
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "input"
+            ],
+            "properties": {
+              "input": {}
+            },
+            "not": {
+              "required": [
+                "message"
+              ]
+            }
+          }
+        ],
+        "description": "Managed input is an array of user messages and typed content blocks. Task targets also accept a business JSON value."
+      },
+      "ActionInput": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "expected_version": {
+            "type": "integer"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "rejected"
+            ]
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "request_id"
+        ]
+      },
+      "WebhookInput": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "event_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "CredentialInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "invoke",
+                "read",
+                "interact",
+                "cancel",
+                "webhooks:write"
+              ]
+            },
+            "minItems": 1
+          },
+          "targets": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/Target"
+            }
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "name",
+          "scopes",
+          "targets"
+        ]
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "session_id",
+          "cursor",
+          "data"
+        ]
+      },
+      "EventPage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            }
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SessionSnapshot": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/Session"
+          },
+          "as_of": {
+            "type": "string"
+          },
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "tools": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "required_actions": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "steps": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "artifacts": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "usage": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          }
+        }
+      },
+      "TurnSnapshot": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/Session"
+          },
+          "turn": {
+            "$ref": "#/components/schemas/Turn"
+          },
+          "as_of": {
+            "type": "string"
+          },
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "tools": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "required_actions": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "steps": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "artifacts": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "usage": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Object"
+            }
+          }
+        }
+      },
+      "ManagedSnapshot": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/Session"
+          },
+          "as_of": {
+            "type": "string"
+          },
+          "usage": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "turns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "required_actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "action_commands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Object"
+            }
+          },
+          "subagents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Object"
+            }
+          }
+        }
+      }
+    }
+  }
+}

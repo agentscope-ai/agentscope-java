@@ -163,7 +163,7 @@ func TestBlockedLeaderFollowUpRequiresDurableDecisionOrHumanNotification(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := NewServer(ServerOptions{Store: st})
+	srv := newLegacyEndpointTestServer(ServerOptions{Store: st})
 	if err = srv.validateMCPTeamLeaderCompletion(ctx, followUp); err == nil ||
 		!strings.Contains(err.Error(), "worker has finished") {
 		t.Fatalf("blocked follow-up completed without a durable decision: %v", err)
@@ -270,7 +270,7 @@ func TestCollaborationMCPIsTaskScopedAndUsesDomainServices(t *testing.T) {
 		t.Fatalf("task setup: %+v %v", tasks, err)
 	}
 	provider := &artifact.LocalProvider{Root: t.TempDir()}
-	srv := NewServer(ServerOptions{Store: st, AuthToken: "human-token", TaskTokenSecret: "0123456789abcdef0123456789abcdef",
+	srv := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "human-token", TaskTokenSecret: "0123456789abcdef0123456789abcdef",
 		ArtifactProvider: provider})
 	token, err := srv.taskTokens.Mint(tasks[0].ID, time.Now().UTC())
 	if err != nil {
@@ -460,7 +460,7 @@ func TestCollaborationMCPCompletedLeaderTokenOnlyFinalizesCoordinator(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := NewServer(ServerOptions{Store: st, TaskTokenSecret: "0123456789abcdef0123456789abcdef"})
+	srv := newLegacyEndpointTestServer(ServerOptions{Store: st, TaskTokenSecret: "0123456789abcdef0123456789abcdef"})
 	token, err := srv.taskTokens.MintScoped(running.ID, attempt.ID, attempt.DispatchGeneration, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
@@ -584,7 +584,7 @@ func TestCollaborationMCPRejectsNonTaskCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	srv := NewServer(ServerOptions{Store: st, AuthToken: "human-token"})
+	srv := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "human-token"})
 	body := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp/collaboration", body)
 	req.Header.Set("Authorization", "Bearer human-token")
@@ -630,7 +630,7 @@ func TestLeaderFailurePublishesRootSummaryBeforeBlocked(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			srv := NewServer(ServerOptions{Store: st, TaskTokenSecret: "0123456789abcdef0123456789abcdef"})
+			srv := newLegacyEndpointTestServer(ServerOptions{Store: st, TaskTokenSecret: "0123456789abcdef0123456789abcdef"})
 			token, err := srv.taskTokens.MintScoped(running.ID, attempt.ID,
 				attempt.DispatchGeneration, time.Now().UTC())
 			if err != nil {
@@ -701,7 +701,7 @@ func TestMCPArtifactUploadEnforcesTeamSizeAndMediaPolicy(t *testing.T) {
 	if err != nil || len(tasks) != 1 {
 		t.Fatalf("task setup: %+v %v", tasks, err)
 	}
-	srv := NewServer(ServerOptions{Store: st, ArtifactProvider: &artifact.LocalProvider{Root: t.TempDir()}})
+	srv := newLegacyEndpointTestServer(ServerOptions{Store: st, ArtifactProvider: &artifact.LocalProvider{Root: t.TempDir()}})
 	upload := func(content, contentType string) error {
 		_, err := srv.uploadMCPArtifact(ctx, tasks[0], map[string]any{
 			"filename": "result.txt", "contentType": contentType,
@@ -782,7 +782,7 @@ func startHostedMCPConversation(t *testing.T, message string) (store.Store, *Ser
 	*controlmodel.ExecutionAttempt, string) {
 	t.Helper()
 	st, agent, _, host := setupHostedConversationAgent(t)
-	server := NewServer(ServerOptions{Store: st, AuthToken: "console",
+	server := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "console",
 		TaskTokenSecret: "0123456789abcdef0123456789abcdef", Features: features.Gates{RuntimeHost: true}})
 	createBody, _ := json.Marshal(map[string]any{"tenant": "t", "namespace": "n", "name": "MCP hosted chat",
 		"slug": "mcp-hosted-chat", "targetType": "agent", "targetRef": agent.ID.String(), "invocationMode": "conversation"})

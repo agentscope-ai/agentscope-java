@@ -1,74 +1,47 @@
 ---
-title: "Recurring research: background work per business object"
-description: "Submit independent Jobs and track concurrency, retries, callbacks, and batch reconciliation."
+title: "Run scheduled research and batch work"
+description: "Connect business input, execution and verified delivery through the Session API."
 zh_link: /v2/zh/service/cases/scheduled-research
 ---
 
-Sales operations researches accounts daily and shares evidence-backed changes with sales. A scheduler submits independent Jobs without a chat window. The business system tracks the batch; Service executes each research task.
+A daily job summarizes changes in sources for account A-101, keeping verifiable facts separate from sales hypotheses. A scheduler initiates the work without relying on an online browser session.
 
-## 1. Start with one fixed source snapshot
+This tutorial uses fictional material. Expected outputs are acceptance criteria, not evidence of a completed production run.
 
-Download the [request fixture](/examples/service/scheduled-research/input.json.txt) as `input.json`. Account A-101, date 2026-10-05, and strategy research-v1 are fixed test inputs:
+## Prepare input and the execution target
 
-- The release source says the fictional customer launched web support on October 4.
-- CRM rev-3 records interest in order lookup; budget and purchase date are unknown.
-- Delivery includes sourced changes, separately labeled sales hypotheses, and open questions. Do not contact the account automatically.
+Download the [request fixture](/examples/service/scheduled-research/input.json.txt) as `input.json`. The sample includes research_date, strategy_version and collected source snapshots. Account, date and strategy version identify a business batch. New source material or strategy changes should have an explicit task version, and model hypotheses must not be presented as observed facts.
 
-Inline sources avoid a dependency on external sites for fixture testing. Production tools need authorized access, retrieval times, and source versions. Missing evidence is not proof of no change.
+Prepare a research Agent with authorized source access. Let the scheduler create a Session for each independent account task, deriving stable Session and Turn idempotency keys from the batch identity. Separate Sessions allow parallel work, subject to application admission limits.
 
-## 2. Prepare a service and a batch ledger
+## Create a Session and submit the task
 
-[Publish](/v2/en/service/endpoints) the job Endpoint `account-research`, accepting request, account_id, research_date, strategy_version, and sources. Instructions separate observations from inference and prohibit invented budgets, buying intent, or dates.
-
-Keep these **application records**; they are not a built-in Service batch API:
-
-| Field | Purpose |
-| --- | --- |
-| batch_id, account_id, research_date, strategy_version | Identify business intent |
-| attempt, idempotency_key, request_digest | Distinguish business retries from network retries |
-| invocation_id, state, last_checked_at | Track accepted work |
-| result_version, notification_id | Deduplicate writeback and notifications |
-
-Use a database uniqueness constraint on business intent and attempt. Configure application/endpoint concurrency and token limits. Prepare Bash, curl, jq, BASE_URL, and a backend key with invoke/read.
-
-## 3. Submit one object, then expand
+Prepare the Agent ID and application credential using the [integration guide](/v2/en/service/service-api). The Bash example uses curl and jq to turn the small source fixture into a Managed Agent message. A repository URL, file path or order ID in the input does not itself provide system access.
 
 ```bash
-RECEIPT=$(curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/endpoints/account-research/jobs" \
-  -H "X-API-Key: $ENDPOINT_KEY" \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: A-101-2026-10-05-research-v1-attempt-1' \
-  --data-binary @input.json)
-INVOCATION_ID=$(printf '%s' "$RECEIPT" | jq -er '.invocationId')
-curl --fail-with-body -sS \
-  "$BASE_URL/invoke/v1/invocations/$INVOCATION_ID" \
-  -H "X-API-Key: $ENDPOINT_KEY"
+SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: scheduled-research-session-001' \
+  --data "$(jq -n --arg id "$AGENT_ID" '{target:{type:"agent",id:$id}}')")
+SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: scheduled-research-task-001' \
+  --data "$(jq '{message:(.message // (.input | tojson))}' input.json)")
+TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
+curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
 ```
 
-Submit accounts separately so results can be reconciled per object. If a network timeout leaves acceptance uncertain, retry the same key and body. Back off on 429 using Retry-After and bound scheduler concurrency.
+`202 Accepted` confirms admission rather than completion. Save both IDs and retry network failures with the same keys and bodies. Use a new key for new work. Restore the Session snapshot and continue its event stream from `as_of` to display progress.
 
-After a terminal failure, a deliberate business retry gets a new attempt and key. Reusing the key only returns the original call. Record the cause and bound retries. New dates, sources, or strategies also form new business intent.
+## Connect execution back to the application
 
-## 4. Collect results and notify
+Track submitted, active and retryable objects, then reconcile results through callbacks or polling. Fetch the final Turn state before writing back, and deduplicate callbacks. Platform Automation can organize internal work, while an external scheduler remains responsible for its own batch and business compensation rules.
 
-Query each Invocation. If using Webhooks, verify the raw-body signature and deduplicate event IDs. Query immediately after subscribing in case work already finished. A callback triggers a fresh status/result read; it is not the deliverable.
+## Verify the actual delivery
 
-Check source freshness, research date, and business version before writing back to the CRM. Deduplicate notifications separately. Users mostly need evidence-backed changes, failures, and questions, not every tool event.
+Test duplicate batch triggers, partial failures, unavailable sources and lost notifications. Every object should trace to a Session, Turn, input version and result. Research completion should not automatically contact the customer; the business application decides follow-up.
 
-Platform Automation currently starts Issue/Workflow work rather than directly invoking a public Endpoint. This external scheduler deliberately follows the Application, Release, and Invocation path; see [Unified service API](/v2/en/service/service-api).
-
-## 5. Failure and acceptance matrix
-
-| Experiment | Required result |
-| --- | --- |
-| Duplicate trigger | One application attempt and the same Invocation |
-| Timeout after submission | Same key recovers work without missing or duplicate records |
-| One account fails | Retain the failure while collecting other results |
-| Scheduler restarts | Resume queries from durable records rather than resubmit everything |
-| Duplicate Webhook | No duplicate writeback or notification |
-| Source date changes | Traceable new request; old batch results preserved |
-| Budget reached | Show admission/cancellation state rather than treating a missing report as complete |
-| Fixed fixture | Confirm web launch and order-query interest; budget and purchase date remain unknown |
-
-Token budgets use reported usage and can lag; reconcile actual costs separately. No real schedule or production batch is executed by this fixture. Measure object count, latency, cost, and restart recovery before launch.
+See [files and artifacts](/v2/en/service/files), [Session API interaction](/v2/en/service/service-api), and [events and notifications](/v2/en/service/sse-events) for the supporting interfaces.

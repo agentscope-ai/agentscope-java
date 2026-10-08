@@ -52,7 +52,7 @@ func ContractForIssue(ctx context.Context, st store.Store, id uuid.UUID) (*Contr
 		if err != nil {
 			return nil, err
 		}
-		if issue.SourceType == "endpoint" {
+		if issue.SourceType == "endpoint" || issue.SourceType == "session_turn" {
 			invID, err := uuid.Parse(issue.SourceRef)
 			if err != nil {
 				return nil, err

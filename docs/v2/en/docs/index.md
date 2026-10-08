@@ -65,6 +65,6 @@ Choose the entry point closest to your current needs, then add capabilities as t
 | Get a reply in a Java application, or use an Agent as a workflow step | Use `agent.call` in the [Quickstart](/v2/en/docs/quickstart) |
 | Show responses and tool progress within the current request | Use `agent.streamEvents`; see [messages and events](/v2/en/docs/building-blocks/message-and-event) |
 | Build a chat application with background work, queues, interactions, and recovery | Get an `AgentSession` through `agent.session(ctx)` and run the [resumable chat example](/v2/en/blogs/best-practices/session-chat) |
-| Offer an Agent or Team to other applications over HTTP | Create an Endpoint with the [service publishing guide](/v2/en/service/endpoints) |
+| Offer an Agent or Team to other applications over HTTP | Create an Endpoint with the [service publishing guide](/v2/en/service/service-api) |
 
 For upgrades from 1.x, read the [V1 Migration Guide](/v2/en/docs/change-log). See [Release Notes](/v2/en/docs/others/release-notes) for individual versions.

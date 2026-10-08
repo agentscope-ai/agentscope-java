@@ -1,18 +1,18 @@
 ---
 title: "Example: a resumable chat application"
-description: Connect multi-turn chat, tools, refresh recovery, human confirmation and task cancellation through the Managed native session API.
+description: Connect a Managed Agent to a chat page through the Session API, including progress, refresh recovery, and human interaction.
 zh_link: /v2/zh/service/agent-api-chat
 ---
 
-Connect a Managed “Notes assistant” to your application. The user submits material, the Agent uses tools and summarizes results, and returning to the same session restores committed messages, tool arguments, results and pending actions.
+This example connects a Managed notes assistant to a business chat page. After a user submits a task, the page shows the Agent's replies and tool calls. When execution requires confirmation, the page lets the user inspect the request and decide. Returning to the conversation restores saved messages, tool results, and pending actions before following further progress.
 
-This example uses the Managed native session API to manage hosted sessions, messages, tools, and pending actions directly. To consume published services across Agent types or invoke Teams and Workflows, start with the [Unified service API](/v2/en/service/service-api).
+This example uses the same interface introduced in [Integrate applications with the Session API](/v2/en/service/service-api). It selects a Managed Agent to demonstrate continuous conversation and interaction during execution. Teams, Workflows, and other Agent types use the same entry point to create Sessions and submit Turns; the target's capabilities determine which content and controls an application can provide.
 
-[Create a Managed Agent](/v2/en/service/create-managed-agent), configure its model and Environment, and verify inference with the session request on that page. Tool examples require available tools; confirmation requires `permissionPolicy.type=always_ask` on the relevant tool. Without tools, start with text and refresh recovery.
+First, [create a Managed Agent](/v2/en/service/create-managed-agent), configure its model and Environment, and verify that it can answer. To try tool calls, bind usable tools following the [Tools guide](/v2/en/service/tools). For user confirmation, also set the relevant tool's `permissionPolicy.type` to `always_ask`. Without tools, you can still start with text conversation and refresh recovery.
 
 ## 1. Create a session and submit work
 
-Use curl, jq and a [user login token](/v2/en/service/api-reference#authentication-and-scope). Local Gateway defaults to port 18080. Substitute actual resource IDs; omit environmentId if the Agent has a default Environment.
+Use curl, jq and a [user login token](/v2/en/service/api-reference#authentication-and-scope) to test the same interaction as the local console. A business backend can instead use the authorized Application key from the integration guide. Substitute actual resource IDs; omit `environmentId` from the creation request if the Agent has a default Environment. Local Gateway defaults to port 18080.
 
 ```bash
 export BASE_URL='http://localhost:18080'
@@ -22,8 +22,9 @@ export ENVIRONMENT_ID='YOUR_ENVIRONMENT_ID'
 
 SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: notes-session-001' \
   -d "$(jq -n --arg agent "$AGENT_ID" --arg env "$ENVIRONMENT_ID" \
-        '{agent:$agent, environmentId:$env}')")
+        '{target:{type:"agent",id:$agent}, environmentId:$env}')")
 export SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
 export SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 
@@ -35,7 +36,9 @@ TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
 export TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
 ```
 
-Keep SESSION_ID in the chat route and TURN_ID for this task. Create a session only for “New conversation”; refreshing does not create a session or resend input. New questions get new keys; retries of a submission keep its original key and input.
+After creation, save `SESSION_ID` so the chat page route can identify this conversation, and save `TURN_ID` to identify the submitted task. Create a new Session only when the user starts a new conversation. On refresh, read the existing records rather than creating a conversation or sending the question again.
+
+The two example idempotency keys identify Session creation and task submission separately. After a network timeout, retry the same operation with its original key and unchanged request body. Generate a new key when the user actually starts another conversation or submits the next question.
 
 ## 2. Restore content before subscribing
 
@@ -49,13 +52,15 @@ curl --fail-with-body -N -G "$SESSION_URL/events/stream" \
   --data-urlencode "after=$CURSOR"
 ```
 
-Ctrl-C closes only the subscription. Run this block again to load messages and tools saved while disconnected, then follow new events. The already-generated prefix is restored too. SSE stays open across turns; success is the target turn's `turn.completed` event.
+Ctrl-C closes the subscription while background work continues. Running this block again restores messages and tool results saved during disconnection, then follows new events from the snapshot's cursor. The refreshed page can display earlier content and continue following execution that has not finished.
+
+A Session SSE connection can stay open across multiple Turns, so closing it does not establish task completion. Use the target `turn_id` and its `turn.completed` event or queried Turn state to determine success. See [SSE and event replay](/v2/en/service/sse-events) for deduplication, reconnects, and backend notifications.
 
 ## 3. Connect your page
 
-The complete console reference is `agentscope-service/frontend/src/components/SessionExecution.tsx`, in the Session **Execution** tab. It displays messages, tool cards, actions, file inputs and steer/inject. Try it before connecting your own UI.
+The console Session **Execution** tab already connects these interactions, using `agentscope-service/frontend/src/components/SessionExecution.tsx`. Submit a task, inspect tool calls, and answer pending actions there to understand a complete interaction before adding the same capabilities to your own page.
 
-The following connection code can live under Console `src/`. It reuses `api/agentSessions.ts` and `api/agentSessionView.ts`, which are repository client implementations, not a separately installed SDK. When moving them into another application, also adapt the `api/http.ts` authentication dependency and session types to your Gateway and login flow.
+The following connection code can live under Console `src/`. It uses `api/agentSessions.ts` to read snapshots and events, then `api/agentSessionView.ts` to apply events to page state. These files are console client implementations. When moving them into another application, also adapt the `api/http.ts` authentication dependency and session types to your Gateway and login flow.
 
 ```typescript
 import {
@@ -101,7 +106,7 @@ export function mountConversation(
 }
 ```
 
-On mount or session change, call `mountConversation(sessionId, render, showError)`. Call its returned cleanup function before unmounting or switching. Render cards by message/tool identity. Session selection changes selection state while retaining list-query ordering.
+When opening a conversation, call `mountConversation(sessionId, render, showError)` to restore content and subscribe to further events. Before leaving the page or switching conversations, call the returned cleanup function to stop receiving the old Session's events. The `render` callback updates existing cards by message and tool call ID so each response or tool call continues in the same place.
 
 The client reconnects brief network interruptions from the last successfully applied cursor. A refresh loads a new snapshot. Storing only a cursor in localStorage without the corresponding view loses the prefix. Authentication and other non-recoverable request errors reach showError for the page to handle.
 
@@ -117,18 +122,18 @@ Refresh can occur while tool arguments are still being generated. The reducer us
 
 ## 4. Wire user actions to commands
 
-Paths below are relative to SESSION_URL. Keep session/turn/request identities; your application does not allocate run IDs.
+The following table connects chat page actions to the Session API. Paths are relative to `SESSION_URL`. Use Session, Turn, and request IDs returned by the service to identify existing work; Service manages the execution process.
 
 | Button / scenario | Request | Next step |
 | --- | --- | --- |
 | Send a new question | POST `/turns`, `{message}` | New turn and key, same session stream |
 | Correct the current task | POST `/turns/{turn}/steer`, `{message}` | Wait for input.applied; reload task state after 409 |
 | Add context only | POST `/inputs/inject`, `{message}` | Does not wake an idle Agent; later steps consume it |
-| Allow / deny a tool | POST `/turns/{turn}/actions` | Build an answer for the pending kind; wait for resolved / rejected |
+| Allow / deny a tool | POST `/turns/{turn}/actions` | Build an answer for the pending action; follow command status and action changes |
 | Stop | POST `/turns/{turn}/cancel` | Wait for the explicit turn outcome; cancel_requested is not stopped |
 | Continue interrupted work | POST `/turns/{turn}/resume` | Resolve pending actions/unknown tool results first; same turn, possibly a new run |
 
-Turns, steer, inject and actions require a stable Idempotency-Key per logical submission. This confirmation example runs after the user chooses “Allow”. REQUEST_ID comes from the pending card, not the tool call ID:
+Provide a stable `Idempotency-Key` when creating a Turn, changing requirements, adding context, or answering a pending action. The example below submits confirmation after the user inspects the tool request and chooses “Allow”. `REQUEST_ID` must come from the pending card's `request_id`; a tool call ID cannot replace it:
 
 ```bash
 REQUEST_ID='REQUEST_ID_FROM_PENDING_ACTION'
@@ -136,14 +141,16 @@ curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID/actions" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: notes-approval-001' \
   -d "$(jq -n --arg request "$REQUEST_ID" \
-        '{answers:[{request_id:$request,allow:true,reason:"Confirmed by user"}]}')"
+        '{request_id:$request,payload:{allow:true,reason:"Confirmed by user"}}')"
 ```
 
-`accepted` acknowledges receipt; `resolved` means runtime processing completed. `rejected` means delivery failed and restores the card if still pending. An `external_execution` action needs output/is_error; see [human interaction](/v2/en/service/session-event-log#answer-required-actions). A successful answer request does not mean the whole task is complete.
+After the answer is accepted, follow the returned command status and observe whether the action has been handled and execution continues. A successful HTTP request only means the service received this operation; it does not immediately resolve the pending action. If the command fails or the action remains pending, reload the latest records before asking the user to decide whether to retry.
+
+For an action requesting external tool execution, submit the actual `output` and `is_error` inside `payload`. An identity-bound confirmation requires the designated person's authorized user identity. See [Answer a required action](/v2/en/service/session-event-log#answer-a-required-action) for locating the action and following command receipts. These answers advance the existing task; its Turn result still determines completion.
 
 ## 5. Exercise the flow with real tools
 
-Bind at least two usable tool operations and require confirmation for one. Submit a task matching their capabilities, such as “Read two documents, check each and write a summary”. Actual tool latency and model calls determine streaming; a request to write slowly is not a tool-loop demonstration.
+To verify the full interaction, bind at least two usable tool operations and require user confirmation for one. Submit a task matching their capabilities, such as “Read two documents, check each and write a summary”. While the Agent calls tools and prepares its result, try the page operations below and check that the application restores earlier content and follows subsequent execution.
 
 | Try | Expected behavior |
 | --- | --- |
@@ -154,4 +161,6 @@ Bind at least two usable tool operations and require confirmation for one. Submi
 | Disconnect SSE and inspect work | Background execution continues; no cancel is sent |
 | Ask a follow-up after completion | New turn in the same session with history retained |
 
-Restoring a checkpoint is a different operation: it changes Agent context and is followed by a new turn. It is neither page refresh nor continuation of the original task. For forks, file delivery, budgets and backend notifications, continue with the [Agent API guide](/v2/en/service/session-event-log). See the [SSE guide](/v2/en/service/sse-events) for the event catalog and error handling.
+Page recovery above only restores the display of existing work. Restoring an earlier checkpoint changes Agent context and is followed by a new Turn. To continue the original interrupted task, check recovery conditions before using `resume`. See [Sessions, tasks, and budgets](/v2/en/service/session-event-log) for these execution operations.
+
+When the page also needs file upload or result download, add those capabilities with [Files and artifacts](/v2/en/service/files). To notify your business backend after users leave the page, configure Webhooks in [SSE and event replay](/v2/en/service/sse-events#webhooks).

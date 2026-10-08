@@ -38,9 +38,8 @@ spring:
               uri: ${builder.control-plane-url}
               order: -1
               predicates:
-                - Path=/api/v1/agent-sessions,/api/v1/agent-sessions/*,/api/v1/agent-sessions/*/archive,/api/v1/agent-sessions/*/restore
+                - Path=/api/v1/agent-sessions,/api/v1/agent-sessions/**
               filters:
-                - RewritePath=/api/v1/agent-sessions(?<remaining>.*), /api/sessions$\{remaining}
                 - RemoveRequestHeader=X-Builder-Environment-Key
                 - RemoveRequestHeader=X-Builder-Internal-Token
                 - RemoveRequestHeader=X-Builder-Internal-User
@@ -49,7 +48,7 @@ spring:
               order: 0
               predicates:
                 # user.message + event log + SSE stream + hands-stats
-                - Path=/api/sessions/*/events/**,/api/sessions/*/hands-stats,/api/v1/agent-sessions/**
+                - Path=/api/sessions/*/events/**,/api/sessions/*/hands-stats
             - id: data-environment-work
               uri: ${builder.data-plane-url}
               order: 0
@@ -83,19 +82,6 @@ spring:
               order: 6
               predicates:
                 - Path=/api/channels/feishu/**,/api/channels/wecom/**,/api/channels/github/**,/api/channels/gitlab/**
-
-            # Public Endpoint invocation API. Keep this route explicit so
-            # streaming, auth and rate policies never depend on the SPA
-            # catch-all route below.
-            - id: endpoint-invocation
-              uri: ${builder.control-plane-url}
-              order: 8
-              predicates:
-                - Path=/invoke/v1/**
-              filters:
-                - RemoveRequestHeader=X-Builder-Environment-Key
-                - RemoveRequestHeader=X-Builder-Internal-Token
-                - RemoveRequestHeader=X-Builder-Internal-User
 
             # ------------------------------------------------------------------
             # Control plane (aistiod) — Managed Agents APIs, the /api/v1

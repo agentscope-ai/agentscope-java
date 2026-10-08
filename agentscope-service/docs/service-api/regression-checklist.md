@@ -1,6 +1,6 @@
 # Service API integration regression checklist
 
-Internal engineering checklist. User documentation is in `docs/v2/{zh,en}/service/service-api.md`.
+Historical engineering checklist for the pre-unification API. See [Session API migration](session-api-migration.md) for the current interface and validation scope. User documentation is in `docs/v2/{zh,en}/service/service-api.md`.
 
 The 2026-10-02 concentrated campaign exercised the running Gateway/CP/DP, PostgreSQL, SDK, Console and failure-recovery paths. See [the consolidated results and remaining boundaries](../../../internal/implementation/session-service-regression-20261002.md). This checklist preserves the original scope; use that report to distinguish completed evidence from capacity, deployment and exhaustive fault scenarios that remain open.
 

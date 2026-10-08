@@ -172,5 +172,9 @@ func (s *Server) getServiceInvocationCapabilities(c *gin.Context) {
 			}
 		}
 	}
-	c.JSON(200, gin.H{"invocation_id": inv.ID, "status": inv.Status, "binding_selected": selected, "capabilities": caps, "available_commands": available})
+	key := "invocation_id"
+	if contract.PublicSessionID != uuid.Nil {
+		key = "turn_id"
+	}
+	c.JSON(200, gin.H{key: inv.ID, "status": inv.Status, "binding_selected": selected, "capabilities": caps, "available_commands": available})
 }

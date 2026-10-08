@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	model "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
@@ -34,7 +35,15 @@ func (s *Server) acceptNativeServiceTurn(ctx context.Context, ep *model.Endpoint
 	if s.product == nil {
 		return fmt.Errorf("managed runtime unavailable")
 	}
-	raw, err := s.product.ManagedServiceRequest(ctx, owner, inv.SessionID, "POST", "/turns", inv.ID.String(), map[string]any{"message": message})
+	var body any = map[string]any{"message": message}
+	if frozen := serviceapi.ContextContract(ctx); frozen != nil && frozen.PublicSessionID != uuid.Nil {
+		var err error
+		body, err = s.nativePublicSessionInput(ctx, inv, owner)
+		if err != nil {
+			return err
+		}
+	}
+	raw, err := s.product.ManagedServiceRequest(ctx, owner, inv.SessionID, "POST", "/turns", inv.ID.String(), body)
 	if err != nil {
 		return err
 	}

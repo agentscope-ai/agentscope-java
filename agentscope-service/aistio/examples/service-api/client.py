@@ -16,7 +16,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="service-demo.json")
     parser.add_argument("--target", choices=["agent", "team", "workflow"], default="agent")
-    parser.add_argument("--invocation")
+    parser.add_argument("--turn")
+    parser.add_argument("--session")
     parser.add_argument("--key", default=str(uuid.uuid4()))
     parser.add_argument("--cancel", action="store_true")
     parser.add_argument("--resume", action="store_true")
@@ -30,14 +31,17 @@ def main():
     parser.add_argument("--snapshot-only", action="store_true")
     args = parser.parse_args()
     config = json.loads(Path(args.config).read_text())
-    target = config["endpoints"][args.target]
-    api = ServiceClient(config["base_url"], target["key"])
+    target = config["targets"][args.target]
+    api = ServiceClient(config["base_url"], config["key"])
     actor = ServiceClient(config["base_url"], api_token=os.environ["AGENTSCOPE_PLATFORM_TOKEN"]) if args.human else api
-    invocation_id = args.invocation
-    if not invocation_id:
-        receipt = api.submit(target["slug"], {"request": "Check three sources"}, idempotency_key=args.key)
-        invocation_id = receipt["invocationId"]
-    print("Invocation:", invocation_id, "Request key:", args.key, flush=True)
+    if args.turn and not args.session:
+        parser.error("--turn requires --session")
+    session_id = args.session or api.create_session(target, idempotency_key=args.key + "-session")["id"]
+    turn_id = args.turn
+    if not turn_id:
+        receipt = api.submit(session_id, {"request": "Check three sources"}, idempotency_key=args.key)
+        turn_id = receipt["id"]
+    print("Session:", session_id, "Turn:", turn_id, "Request key:", args.key, flush=True)
     command = None
     if args.request_id:
         if args.expected_version is None:
@@ -46,41 +50,41 @@ def main():
                    "payload": json.loads(args.response)}
         if args.decision:
             payload["decision"] = args.decision
-        command = actor.command(invocation_id, "actions", payload, idempotency_key=args.key)
+        command = actor.command(session_id, turn_id, "actions", payload, idempotency_key=args.key)
     elif args.cancel or args.resume or args.input:
         kind = "cancel" if args.cancel else "resume" if args.resume else "inputs"
-        command = actor.command(invocation_id, kind, {"message": args.input} if args.input else {}, idempotency_key=args.key)
+        command = actor.command(session_id, turn_id, kind, {"message": args.input} if args.input else {}, idempotency_key=args.key)
     if command:
         print("Accepted command:", json.dumps(command), flush=True)
     if args.command_id:
-        print(json.dumps(actor.command_status(invocation_id, args.command_id), indent=2))
-    snapshot = api.snapshot(invocation_id)
+        print(json.dumps(actor.command_status(session_id, turn_id, args.command_id), indent=2))
+    snapshot = api.snapshot(session_id, turn_id)
     print("Restored snapshot:", json.dumps(snapshot, ensure_ascii=False, indent=2), flush=True)
     cursor = snapshot["as_of"]
-    status = snapshot["invocation"].get("status")
+    status = snapshot["turn"].get("status")
     if args.snapshot_only:
         return
     while status not in TERMINAL:
         try:
-            for event in api.stream(invocation_id, after=cursor):
+            for event in api.stream(session_id, turn_id=turn_id, after=cursor):
                 print(json.dumps(event, ensure_ascii=False), flush=True)
                 # Persist cursor only after your application has applied the event.
                 cursor = event["cursor"]
-                if event["type"].startswith("invocation."):
+                if event["type"].startswith("turn."):
                     status = event["data"].get("status", status)
                     if status in TERMINAL:
                         break
         except HTTPError as error:
             if error.code != 410:
                 raise
-            snapshot = api.snapshot(invocation_id)
+            snapshot = api.snapshot(session_id, turn_id)
             print("Expired cursor; restored snapshot:", json.dumps(snapshot), flush=True)
-            cursor, status = snapshot["as_of"], snapshot["invocation"].get("status")
+            cursor, status = snapshot["as_of"], snapshot["turn"].get("status")
         except (URLError, TimeoutError, ConnectionError) as error:
             print("Observation interrupted; reconnecting:", error, flush=True)
             time.sleep(1)
-    print("Result:", json.dumps(api.invocation(invocation_id), ensure_ascii=False, indent=2))
-    print("Usage:", json.dumps(api.usage(invocation_id).get("usage", {}), indent=2))
+    print("Result:", json.dumps(api.turn(session_id, turn_id), ensure_ascii=False, indent=2))
+    print("Usage:", json.dumps(api.usage(session_id, turn_id).get("usage", {}), indent=2))
 
 
 if __name__ == "__main__":

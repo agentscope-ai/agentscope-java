@@ -32,6 +32,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/sessionapi"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -116,7 +117,7 @@ func namespaceAction(c *gin.Context) string {
 			return "read"
 		}
 		return "work.write"
-	case "agent-tasks", "orchestration-runs", "execution-attempts", "sessions":
+	case "agent-tasks", "orchestration-runs", "execution-attempts", "sessions", "agent-sessions":
 		if resource == "sessions" && strings.HasSuffix(rest, "/context") {
 			return "configure"
 		}
@@ -182,7 +183,7 @@ func (s *Server) namespaceAccessMiddleware() gin.HandlerFunc {
 			return
 		}
 		body := map[string]json.RawMessage{}
-		if c.Request.Body != nil && strings.Contains(c.ContentType(), "application/json") {
+		if !publicSessionFileRequest(c) && c.Request.Body != nil && strings.Contains(c.ContentType(), "application/json") {
 			data, readErr := io.ReadAll(io.LimitReader(c.Request.Body, (16<<20)+1))
 			if readErr != nil || len(data) > 16<<20 {
 				c.AbortWithStatusJSON(400, ErrorResponse{Error: "request body is invalid or too large"})
@@ -285,7 +286,7 @@ func (s *Server) accessFailure(c *gin.Context, err error) {
 
 func (s *Server) resolveAccessObjectScope(c *gin.Context) (string, string, string, bool, error) {
 	ctx := c.Request.Context()
-	for _, key := range []string{"agentId", "sessionId", "chatId", "applicationId", "endpointId", "workSourceId", "instanceId", "hostId", "bindingId", "proposalId"} {
+	for _, key := range []string{"publicSessionId", "agentId", "sessionId", "chatId", "applicationId", "endpointId", "workSourceId", "instanceId", "hostId", "bindingId", "proposalId"} {
 		raw := c.Param(key)
 		if raw == "" {
 			continue
@@ -295,6 +296,19 @@ func (s *Server) resolveAccessObjectScope(c *gin.Context) (string, string, strin
 			return "", "", "", true, store.ErrNotFound
 		}
 		switch key {
+		case "publicSessionId":
+			tenant := c.Request.URL.Query().Get("tenant")
+			if tenant == "" {
+				tenant = c.GetHeader("X-AgentScope-Tenant")
+			}
+			if tenant == "" {
+				tenant = s.defaultTenant
+			}
+			v, e := sessionapi.Get(ctx, s.store, tenant, id)
+			if e != nil {
+				return "", "", "", true, e
+			}
+			return v.Tenant, v.Namespace, raw, true, nil
 		case "agentId":
 			v, e := s.store.AgentCatalog().GetAgent(ctx, id)
 			if e != nil {

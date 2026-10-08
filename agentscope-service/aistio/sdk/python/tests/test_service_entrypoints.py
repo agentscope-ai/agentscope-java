@@ -87,15 +87,15 @@ def test_management_and_public_clients_follow_current_routes():
     calls = []
     api = ManagementClient("http://unused", "platform")
     api._send = lambda *args: calls.append(args) or {}
-    api.create_credential("endpoint", "application", name="client", scopes=["invoke", "read"])
-    api.publish_endpoint("endpoint", version=3)
-    assert calls[0][2]["applicationId"] == "application"
-    assert calls[1] == ("POST", "/api/v1/endpoints/endpoint/publish", {"version": 3})
+    api.create_credential("application", name="client", scopes=["invoke", "read"], targets=[{"type": "agent", "id": "agent"}])
+    assert calls[0][1] == "/api/v1/applications/application/credentials"
+    assert calls[0][2]["targets"] == [{"type": "agent", "id": "agent"}]
     client = ServiceClient("http://unused", api_token="platform")
     client._request = lambda *args: calls.append(args) or {}
-    client.snapshot("invocation")
-    client.command("invocation", "actions", {"request_id": "r", "expected_version": 2}, idempotency_key="retry-key")
-    assert calls[2][1] == "invocations/invocation/snapshot"
+    client.create_session({"type": "agent", "id": "agent"}, idempotency_key="session-key")
+    client.snapshot("session", "turn")
+    client.command("session", "turn", "actions", {"request_id": "r", "expected_version": 2}, idempotency_key="retry-key")
+    assert calls[2][1] == "/session/turns/turn/snapshot"
     assert calls[3][-1] == "retry-key"
     assert client._headers() == {"Authorization": "Bearer platform"}
 
@@ -105,15 +105,18 @@ def test_openapi_covers_public_routes_and_references_resolve():
     from pathlib import Path
     service_root = Path(__file__).resolve().parents[4]
     document = json.loads((service_root / "docs/service-api/openapi-v1.json").read_text())
-    source = (service_root / "aistio/internal/httpapi/server.go").read_text()
+    source = (service_root / "aistio/internal/httpapi/service_session_handler.go").read_text()
     normalize = lambda path: re.sub(r":([A-Za-z0-9_]+)", r"{\1}", path)
-    registered = {(method.lower(), normalize(path)) for method, path in re.findall(
-        r's\.router\.(GET|POST|PATCH|PUT|DELETE)\("(/invoke/v1/[^\"]+)"', source)}
-    registered.update((method.lower(), "/invoke/v1/invocations/{invocationId}" + normalize(path))
-                      for method, path in re.findall(r'service\.(GET|POST|PATCH|PUT|DELETE)\("([^\"]*)"', source))
-    documented = {(method, path) for path, methods in document["paths"].items() if path.startswith("/invoke/v1/")
+    registered = set()
+    for group, method, path in re.findall(r'\b(g|turns|hooks)\.(GET|POST|PATCH|PUT|DELETE)\("([^"]*)"', source):
+        prefix = {"g": "", "turns": "/:publicSessionId/turns/:turnId", "hooks": "/:publicSessionId/webhooks"}[group]
+        if path.endswith("/"):
+            continue
+        registered.add((method.lower(), "/api/v1/agent-sessions" + normalize(prefix + path)))
+    documented = {(method, path) for path, methods in document["paths"].items()
                   for method in methods if method in {"get", "post", "patch", "put", "delete"}}
-    assert registered == documented
+    assert registered <= documented
+    assert not any("/invoke/" in path or "/endpoints" in path for _, path in documented)
     def validate_refs(value):
         if isinstance(value, dict):
             if "$ref" in value:
@@ -126,9 +129,9 @@ def test_openapi_covers_public_routes_and_references_resolve():
         elif isinstance(value, list):
             for child in value: validate_refs(child)
     validate_refs(document)
-    assert "partial_succeeded" in document["components"]["schemas"]["Invocation"]["properties"]["status"]["enum"]
-    assert "applicationId" in document["components"]["schemas"]["CredentialInput"]["required"]
-    assert "410" in document["paths"]["/invoke/v1/invocations/{invocationId}/events/stream"]["get"]["responses"]
+    assert "partial_succeeded" in document["components"]["schemas"]["Turn"]["properties"]["status"]["enum"]
+    assert "targets" in document["components"]["schemas"]["CredentialInput"]["required"]
+    assert "410" in document["paths"]["/api/v1/agent-sessions/{publicSessionId}/events/stream"]["get"]["responses"]
 
 
 def test_team_example_releases_leader_and_accepts_only_current_child():

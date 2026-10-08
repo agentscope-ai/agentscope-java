@@ -25,6 +25,7 @@ import (
 	model "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"github.com/spring-ai-alibaba/aistio/internal/secretcrypto"
+	"github.com/spring-ai-alibaba/aistio/internal/sessionapi"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -69,8 +70,13 @@ func (s *Server) createServiceWebhook(c *gin.Context) {
 	if len(req.Types) == 0 {
 		req.Types = []string{"invocation.completed", "invocation.partial_succeeded", "invocation.failed", "invocation.cancelled", "invocation.timed_out", "required_action.created"}
 	}
+	if frozen, e := serviceapi.ReadContract(inv.Contract); e == nil && frozen.PublicSessionID != uuid.Nil {
+		for i, t := range req.Types {
+			req.Types[i] = strings.Replace(t, "invocation.", "turn.", 1)
+		}
+	}
 	for _, t := range req.Types {
-		if !strings.HasPrefix(t, "invocation.") && !strings.HasPrefix(t, "required_action.") && !strings.HasPrefix(t, "artifact.") && t != "budget.exceeded" {
+		if !strings.HasPrefix(t, "turn.") && !strings.HasPrefix(t, "invocation.") && !strings.HasPrefix(t, "required_action.") && !strings.HasPrefix(t, "artifact.") && t != "budget.exceeded" {
 			c.JSON(400, ErrorResponse{Error: "unsupported webhook event_type: " + t})
 			return
 		}
@@ -115,7 +121,7 @@ func (s *Server) createServiceWebhook(c *gin.Context) {
 		c.JSON(409, ErrorResponse{Error: "webhook concurrently created; retry with the same key"})
 		return
 	}
-	if err = s.store.Endpoints().ScheduleInvocation(c, inv.ID, time.Now().UTC()); err != nil {
+	if err = s.schedulePublicWebhook(c, inv); err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
@@ -182,7 +188,7 @@ func (s *Server) updateServiceWebhook(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	if err = s.store.Endpoints().ScheduleInvocation(c, inv.ID, time.Now().UTC()); err != nil {
+	if err = s.schedulePublicWebhook(c, inv); err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
@@ -270,7 +276,11 @@ func (s *Server) deliverServiceWebhooksWith(ctx context.Context, inv *model.Endp
 				for _, event := range events {
 					selected := false
 					for _, kind := range w.Types {
-						if kind == event.Type {
+						eventType := event.Type
+						if frozen, e := serviceapi.ReadContract(inv.Contract); e == nil && frozen.PublicSessionID != uuid.Nil {
+							eventType = strings.Replace(eventType, "invocation.", "turn.", 1)
+						}
+						if kind == eventType {
 							selected = true
 						}
 					}
@@ -279,7 +289,15 @@ func (s *Server) deliverServiceWebhooksWith(ctx context.Context, inv *model.Endp
 						if err != nil {
 							return err
 						}
-						raw, _ := json.Marshal(event)
+						var eventBody any = event
+						if frozen, e := serviceapi.ReadContract(inv.Contract); e == nil && frozen.PublicSessionID != uuid.Nil {
+							v := &sessionapi.Session{ID: frozen.PublicSessionID}
+							if inv.ID != v.ID {
+								event.Data["turn_id"] = inv.ID.String()
+							}
+							eventBody = publicEventView(v, event)
+						}
+						raw, _ := json.Marshal(eventBody)
 						stamp := strconv.FormatInt(now().Unix(), 10)
 						mac := hmac.New(sha256.New, secret)
 						_, _ = mac.Write([]byte(stamp + "."))

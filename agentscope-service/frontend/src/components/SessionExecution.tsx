@@ -110,7 +110,7 @@ export default function SessionExecution({ sessionId, readOnly = false }: { sess
     </form>}
     <h3>Turns</h3>
     {turns.map(turn => <div key={turn.id} style={{ marginBottom: 8 }}>
-      <code>{turn.id.slice(0, 12)}</code> · {turn.status} {turn.errorCode && `· ${turn.errorCode}`} {' '}
+      <code>{turn.id.slice(0, 12)}</code> · {turn.status} {(turn.error || turn.errorCode) && `· ${turn.error?.message || turn.error?.code || turn.errorCode}`} {' '}
       {!readOnly && ['queued', 'running'].includes(turn.status) && <button disabled={busy} onClick={() => void act(() => cancelAgentTurn(sessionId, turn.id))}>Cancel</button>}
       {!readOnly && (['failed', 'interrupted'].includes(turn.status) || (turn.status === 'requires_action' && !actions.some(a => a.data.turn_id === turn.id))) && <button disabled={busy} onClick={() => void act(() => resumeAgentTurn(sessionId, turn.id))}>Resume</button>}
     </div>)}

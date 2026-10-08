@@ -16,9 +16,14 @@ import (
 // Contract is an immutable published service configuration, never a public trace.
 // Runtime credentials and physical instance selection remain execution concerns.
 type Contract struct {
-	Policies    map[string]*model.AgentRuntimePolicy `json:"policies,omitempty"`
-	Definitions map[string]json.RawMessage           `json:"definitions,omitempty"`
-	Teams       map[string]*model.CollaborationTeam  `json:"teams,omitempty"`
+	// PublicSessionID identifies a direct Session API execution. Endpoint remains
+	// a storage-compatible execution configuration, not a published resource.
+	PublicSessionID uuid.UUID                            `json:"public_session_id,omitempty"`
+	EnvironmentID   string                               `json:"environment_id,omitempty"`
+	SessionOptions  json.RawMessage                      `json:"session_options,omitempty"`
+	Policies        map[string]*model.AgentRuntimePolicy `json:"policies,omitempty"`
+	Definitions     map[string]json.RawMessage           `json:"definitions,omitempty"`
+	Teams           map[string]*model.CollaborationTeam  `json:"teams,omitempty"`
 
 	Endpoint  model.Endpoint                          `json:"endpoint"`
 	Agents    []string                                `json:"agents"`

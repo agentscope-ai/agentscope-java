@@ -14,6 +14,8 @@ import (
 	model "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	serviceapi "github.com/spring-ai-alibaba/aistio/internal/invocation"
 	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
+	"github.com/spring-ai-alibaba/aistio/internal/product"
+	"github.com/spring-ai-alibaba/aistio/internal/sessionapi"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -80,9 +82,25 @@ func (s *Server) dispatchEndpointInvocation(ctx context.Context, id uuid.UUID) e
 			Title       string          `json:"title"`
 			Description string          `json:"description"`
 			Input       json.RawMessage `json:"input"`
+			Message     string          `json:"message"`
 		}
 		if err = json.Unmarshal(inv.Input, &req); err != nil {
 			return err
+		}
+		if contract.PublicSessionID != uuid.Nil {
+			if req.Title == "" {
+				req.Title = "Session task"
+			}
+			if req.Description == "" {
+				req.Description = req.Message
+			}
+			if len(req.Input) == 0 {
+				req.Input, _ = json.Marshal(req.Message)
+			}
+		}
+		sourceType := "endpoint"
+		if contract.PublicSessionID != uuid.Nil {
+			sourceType = "session_turn"
 		}
 		issueID := uuid.NewSHA1(inv.ID, []byte("issue"))
 		actor := model.Actor{Type: model.ActorSystem, Ref: "endpoint:" + ep.ID.String()}
@@ -91,12 +109,15 @@ func (s *Server) dispatchEndpointInvocation(ctx context.Context, id uuid.UUID) e
 			issue, err = s.store.Collaboration().CreateIssue(ctx, &model.Issue{ID: issueID, Tenant: ep.Tenant, Namespace: ep.Namespace,
 				Title: req.Title, Description: collaboration.EndpointIssueDescription(req.Description, req.Input), Status: model.IssueInProgress, Priority: "normal",
 				Kind: model.IssueKindEndpointJob, Visibility: model.IssueVisibilityOperational, CompletionPolicy: model.IssueCompletionAutomatic, Creator: actor,
-				SourceType: "endpoint", SourceRef: inv.ID.String(), ExecutionTargetType: string(ep.TargetType), ExecutionTargetRef: ep.TargetRef.String()})
+				SourceType: sourceType, SourceRef: inv.ID.String(), ExecutionTargetType: string(ep.TargetType), ExecutionTargetRef: ep.TargetRef.String()})
 			if errors.Is(err, store.ErrConflict) {
 				issue, err = s.store.Collaboration().GetIssue(ctx, issueID)
 			}
 		}
 		if err != nil {
+			return err
+		}
+		if err = s.attachPublicSessionFiles(ctx, inv, issueID); err != nil {
 			return err
 		}
 		kind := model.AssigneeType("")
@@ -265,19 +286,41 @@ func (s *Server) freezeServiceContract(ctx context.Context, ep *model.Endpoint) 
 	if err != nil {
 		return nil, err
 	}
-	if s.taskPlane != nil && s.taskPlane.ResolveDefinition != nil {
-		for _, id := range contract.Agents {
-			agentID, err := uuid.Parse(id)
-			if err != nil {
-				return nil, err
+	for _, id := range contract.Agents {
+		agentID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, err
+		}
+		var definition json.RawMessage
+		if s.taskPlane != nil && s.taskPlane.ResolveDefinition != nil {
+			definition, err = s.taskPlane.ResolveDefinition(ctx, agentID)
+		} else if s.product != nil {
+			if policy := contract.Policies[id]; policy != nil {
+				for _, candidate := range policy.Candidates {
+					if candidate.Binding.Kind != model.DataPlaneManaged {
+						continue
+					}
+					binding, e := s.store.AgentCatalog().GetBinding(ctx, candidate.Binding.BindingID)
+					if e != nil {
+						return nil, e
+					}
+					var config model.ManagedBindingConfiguration
+					if e = json.Unmarshal(binding.Configuration, &config); e != nil {
+						return nil, e
+					}
+					snapshot, e := s.product.RuntimeDefinition(ctx, config.OwnerRef, config.ManagedDefinitionRef)
+					if e != nil {
+						return nil, e
+					}
+					definition, err = json.Marshal(snapshot)
+					break
+				}
 			}
-			definition, err := s.taskPlane.ResolveDefinition(ctx, agentID)
-			if err != nil {
-				return nil, err
-			}
-			if len(definition) == 0 {
-				definition = json.RawMessage("null")
-			}
+		}
+		if err != nil {
+			return nil, err
+		}
+		if len(definition) > 0 {
 			contract.Definitions[id] = definition
 		}
 	}
@@ -300,11 +343,40 @@ func (s *Server) sweepServiceInvocation(ctx context.Context, inv *model.Endpoint
 		return err
 	}
 	if !serviceapi.Terminal(inv.Status) {
-		if inv.Mode == model.EndpointConversationMode {
-			_ = s.dispatchServiceConversation(ctx, inv.ID)
-		} else {
-			_ = s.dispatchEndpointInvocation(ctx, inv.ID)
+		if frozen, e := serviceapi.ReadContract(inv.Contract); e == nil && frozen.PublicSessionID != uuid.Nil && inv.Status == model.EndpointInvocationAccepted {
+			pending, e := s.store.Endpoints().ListInvocations(ctx, store.EndpointInvocationFilter{EndpointID: inv.EndpointID, ActiveOnly: true, OldestFirst: true, Limit: 1})
+			if e != nil {
+				return e
+			}
+			if len(pending) > 0 && pending[0].ID != inv.ID {
+				return s.projectServiceInvocation(ctx, inv.ID)
+			}
 		}
+		if inv.Mode == model.EndpointConversationMode {
+			err = s.dispatchServiceConversation(ctx, inv.ID)
+		} else {
+			err = s.dispatchEndpointInvocation(ctx, inv.ID)
+		}
+		if err != nil {
+			var rejected *product.ManagedServiceError
+			if errors.As(err, &rejected) && (rejected.StatusCode == 400 || rejected.StatusCode == 413 || rejected.StatusCode == 422) {
+				inv, err = s.store.Endpoints().GetInvocation(ctx, inv.ID)
+				if err != nil {
+					return err
+				}
+				inv.Status = model.EndpointInvocationFailed
+				inv.ErrorCode = "invalid_runtime_input"
+				inv.ErrorMessage = rejected.Message
+				now := time.Now().UTC()
+				inv.CompletedAt = &now
+				if _, err = s.store.Endpoints().UpdateInvocation(ctx, inv); err != nil {
+					return err
+				}
+			} else {
+				return err
+			}
+		}
+
 		if inv, err = s.refreshServiceInvocation(ctx, inv.ID); err != nil {
 			return err
 		}
@@ -408,6 +480,20 @@ func (s *Server) nextServicePoll(ctx context.Context, id uuid.UUID) (time.Time, 
 				next = expires
 			}
 		} else {
+			frozen, err := serviceapi.ReadContract(inv.Contract)
+			if err != nil {
+				return now, err
+			}
+			if frozen.PublicSessionID != uuid.Nil {
+				session, e := sessionapi.Get(ctx, s.store, ep.Tenant, frozen.PublicSessionID)
+				if e != nil {
+					return now, e
+				}
+				// Commit the aggregate before pruning the source Turn journal.
+				if e = s.projectPublicSession(ctx, session); e != nil {
+					return now, e
+				}
+			}
 			done, err := serviceJournal(s.store, ep, inv).PruneEvents(ctx)
 			if err != nil {
 				return now, err

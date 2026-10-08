@@ -31,7 +31,7 @@ zh_link: /v2/zh/intro
 <a className="hs-home-platform hs-home-platform--service" href="/v2/en/service/index">
 <span className="hs-home-label">PLATFORM · MANAGED SERVICE</span>
 <h2>AgentScope Service <span aria-hidden="true">↗</span></h2>
-<p>Configure and publish Agents on the platform, then integrate through APIs. Service manages runtimes centrally, so each Agent application needs no separate runtime service to build and maintain.</p>
+<p>Start with the recommended self-hosted deployment, configure Managed Agents built on HarnessAgent, and integrate through APIs. Service manages runtimes centrally, so each Agent application needs no separate runtime service to build and maintain.</p>
 <div className="hs-home-tags"><span>Agent as a Service</span><span>Tasks · Interaction · Delivery</span></div>
 </a>
 </div>
@@ -57,7 +57,7 @@ zh_link: /v2/zh/intro
 <p>For teams using Agent capabilities through APIs and reducing repeated runtime work. Configure instructions, models, tools, and resources to publish a managed Agent service. The platform handles execution, sessions, and tasks; your application focuses on business data, user experience, and acceptance.</p>
 <div className="hs-home-features"><a className="hs-home-feature" href="/v2/en/service/usecases"><h3>Start with a business task<span aria-hidden="true">↗</span></h3><p>Bring Agents into SaaS pages, business processes, or scheduled work. Design the service around its inputs and deliverables.</p></a>
 <a className="hs-home-feature" href="/v2/en/service/service-api"><h3>From invocation to delivery<span aria-hidden="true">↗</span></h3><p>Submit tasks or conversations, follow snapshots and events, handle human interaction, and retrieve results and files.</p></a>
-<a className="hs-home-feature" href="/v2/en/service/agents"><h3>Choose how work executes<span aria-hidden="true">↗</span></h3><p>Run a managed HarnessAgent, connect an existing application, or reuse a Coding Agent. Add Teams and Workflows as the task requires.</p></a></div>
+<a className="hs-home-feature" href="/v2/en/service/orchestration"><h3>Choose how work executes<span aria-hidden="true">↗</span></h3><p>Run a managed HarnessAgent, connect an existing application, or reuse a Coding Agent. Add Teams and Workflows as the task requires.</p></a></div>
 </div>
 </div>
 </section>
@@ -65,12 +65,12 @@ zh_link: /v2/zh/intro
 <section className="hs-home-section hs-home-start" aria-labelledby="start-title">
 <div className="hs-home-start-copy">
 <h2 id="start-title">Start where your application needs you</h2>
-<p>Embed an Agent in Java, or call a published Agent service over HTTP.</p>
+<p>Embed an Agent in Java, or call a managed Agent service over HTTP.</p>
 <div className="hs-home-start-links">
 <a href="/v2/en/docs/quickstart">Java quickstart <span aria-hidden="true">→</span></a>
-<a href="/v2/en/service/first-session">Service API quickstart <span aria-hidden="true">→</span></a>
+<a href="/v2/en/service/service-api">Publish and invoke an Agent <span aria-hidden="true">→</span></a>
 </div>
-<p className="hs-home-footnote">The Harness example shares a Builder and creates an instance per request. The Service example requires a published Endpoint and input matching its contract.</p>
+<p className="hs-home-footnote">The Harness example shares a Builder and creates an instance per request. The Service example creates a Session selecting an Agent, then submits a Turn.</p>
 </div>
 <div className="hs-window">
 <div className="hs-window__bar">
@@ -104,14 +104,15 @@ try (var agent = builder.build()) {
 <div className="hs-code-panel" id="en-service" style={{"display": "none"}}>
 
 ```bash
-curl "$BASE_URL/invoke/v1/endpoints/notes/jobs" \
-  -H "X-API-Key: $ENDPOINT_KEY" \
-  -H 'Content-Type: application/json' \
+SESSION_ID=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: notes-session-001' \
+  --data "$(jq -n --arg id "$AGENT_ID" '{target:{type:"agent",id:$id}}')" \
+  | jq -er '.id')
+curl "$BASE_URL/api/v1/agent-sessions/$SESSION_ID/turns" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: notes-request-001' \
-  -d '{
-    "title": "Review meeting notes",
-    "input": {"request": "Extract tasks and open questions."}
-  }'
+  --data '{"message":"Summarize the tasks and open questions."}'
 ```
 
 </div>
@@ -169,15 +170,15 @@ curl "$BASE_URL/invoke/v1/endpoints/notes/jobs" \
 <div><details className="hs-faq-item"><summary>How do HarnessAgent and ReActAgent relate?</summary><p>ReActAgent provides reasoning, tools, messages, permissions, and middleware. HarnessAgent uses the same ReAct loop and adds workspaces, memory, skills, subagents, and session management. Start with HarnessAgent, or use ReActAgent directly to assemble your own runtime.</p></details>
 <details className="hs-faq-item"><summary>Must Harness and Service be used together?</summary><p>You can choose either: develop and run your own Agent application with the Harness SDK, or configure a Managed Agent directly in Service without first building an SDK application. Managed Agents in Service are built on the AgentScope HarnessAgent core, with the platform managing Agent runtimes centrally. Existing Harness applications can also connect as External Agents, keeping their own processes while using the platform's publishing and invocation capabilities.</p></details>
 <details className="hs-faq-item"><summary>Does refreshing a page restart the task?</summary><p>Snapshots and event cursors restore recorded messages, tool results, and progress. Resuming execution is a separate operation. Continuing interrupted work requires the relevant session operation, and checkpoints do not undo external side effects.</p></details>
-<details className="hs-faq-item"><summary>What runtime do I need?</summary><p>The Java Harness requires JDK 17 or later and credentials for your chosen model. Tools can run locally or in a configured sandbox. Follow the Service quickstart for its deployment, identity, and execution resources.</p></details></div>
+<details className="hs-faq-item"><summary>What runtime do I need?</summary><p>The Java Harness requires JDK 17 or later and credentials for your chosen model. Tools can run locally or in a configured sandbox. Self-hosting is currently recommended for Service. Deploy the platform, configure models and tools, then run your first Managed Agent.</p></details></div>
 </section>
 
 <section className="hs-home-cta">
 <h2>Bring your next Agent into your business</h2>
-<p>Start building with the Harness SDK, or configure, publish, and call a managed Agent directly in Service.</p>
+<p>Develop your application with the Harness SDK, or deploy Service and call Managed Agents with platform-managed runtimes.</p>
 <div className="hs-hero__actions">
 <a href="/v2/en/docs/quickstart" className="hs-btn hs-btn--primary">Build with Harness <span aria-hidden="true">→</span></a>
-<a href="/v2/en/service/first-session" className="hs-btn hs-btn--secondary">Service API quickstart <span aria-hidden="true">→</span></a>
+<a href="/v2/en/service/quickstart" className="hs-btn hs-btn--secondary">Deploy and start using Service <span aria-hidden="true">→</span></a>
 </div>
 </section>
 

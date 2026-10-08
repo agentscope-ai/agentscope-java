@@ -174,7 +174,11 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 			if json.Unmarshal(binding.Configuration, &cfg) != nil {
 				continue
 			}
-			sessionID, err = s.product.FindOrCreateSessionID(ctx, cfg.OwnerRef, cfg.ManagedDefinitionRef, "",
+			environmentID := ""
+			if frozen := serviceapi.ContextContract(ctx); frozen != nil {
+				environmentID = frozen.EnvironmentID
+			}
+			sessionID, err = s.product.FindOrCreateSessionID(ctx, cfg.OwnerRef, cfg.ManagedDefinitionRef, environmentID,
 				originType+"|"+originRef+"|"+requestedSessionID)
 			if err != nil {
 				return nil, err

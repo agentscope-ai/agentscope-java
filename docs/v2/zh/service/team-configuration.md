@@ -108,4 +108,4 @@ Leader 必须具备团队协调能力，包括委派、查看结果和节点完�
 
 Agent 级默认策略通过 `GET/PUT /api/v1/agent-runtime-policies/{agentId}` 管理。PUT 提交 `tenant`、`namespace`、非空 `candidates`，每个 candidate 的 `binding.bindingId` 必须属于该 Agent 且可用；服务会解析实际后端。可设置 `selectionMode`、`fallbackMode`、`maxConcurrency`、`queueTimeoutSeconds`、`attemptTimeoutSeconds`、`retryPolicy`，响应为 `{policy}`。GET 查询仍需携带 tenant/namespace。
 
-下一步：[协作用法](/v2/zh/service/team-collaboration) · [工作原理](/v2/zh/service/team-execution)。
+下一步：[协作用法](/v2/zh/service/create-team#team-collaboration) · [工作原理](/v2/zh/service/create-team#team-execution)。

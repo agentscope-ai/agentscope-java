@@ -1,5 +1,5 @@
 ---
-title: "Connect messaging channels through APIs"
+title: "Connect messaging channels"
 zh_link: /v2/zh/service/channels
 ---
 
@@ -7,7 +7,7 @@ zh_link: /v2/zh/service/channels
 This is preview documentation. The official release is not yet available.
 </Note>
 
-A Channel connects an external messaging platform to AgentScope Service. It receives messages, routes them to a target, and delivers results. Applications can create channels, configure routing, enable or disable connections, and inspect delivery through APIs. Use an [Endpoint](/v2/en/service/endpoints) for a direct HTTP application interface; use a Channel for work initiated in an existing messaging platform.
+A Channel connects an external messaging platform to AgentScope Service. It receives messages, routes them to a target, and delivers results. Applications can create channels, configure routing, enable or disable connections, and inspect delivery through APIs. Use the [Session API](/v2/en/service/service-api) for a direct HTTP application interface; use a Channel for work initiated in an existing messaging platform.
 
 Adapters currently include DingTalk, Feishu, WeCom, GitHub, and GitLab. Query their configuration requirements through the type API. The complete durable-work flow—linking external messages to Issues, routing work to Agents or Teams, and returning progress—currently supports Feishu only. Other adapters do not automatically have the same collaboration capabilities.
 
@@ -88,4 +88,4 @@ Retry intake through `POST /api/channels/{channelId}/messages/{messageId}/retry`
 
 Update credentials through `PUT /api/channels/{channelId}`; detail responses mask secrets. Use `/enable` and `/disable` to control connections and `DELETE /api/channels/{channelId}` to remove one. Recheck both inbound and outbound delivery after changing credentials or callback settings.
 
-See [Console: automation and channels](/v2/en/service/console/automation) for configuration forms, routing, and identity binding.
+See [Console: automation and channels](/v2/en/service/console/index#console-automation) for configuration forms, routing, and identity binding.

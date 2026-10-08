@@ -1,5 +1,5 @@
 ---
-title: "Hosted: connect and create an Agent"
+title: "Connect a Hosted Agent"
 zh_link: /v2/zh/service/connect-hosted-agent
 description: Connect a Runtime Host, select a runtime through the API, create a Hosted Agent, and assign work
 ---
@@ -8,9 +8,11 @@ description: Connect a Runtime Host, select a runtime through the API, create a 
 This is preview documentation. The release is not yet generally available.
 </Note>
 
-A Hosted Agent makes an existing Coding Agent on your computer or server available to the platform. Runtime Host starts provider processes, prepares working directories, and reports results. Service manages and invokes the Agent through the same Agent, Issue, Team, and Endpoint APIs.
+A Hosted Agent connects a Coding Agent on your computer or server. Runtime Host starts the provider, prepares its working directory, and reports results. Applications call the Agent through the Session API or use it as an executor in a Team or Workflow.
 
 Connect a host once. You can then create multiple Hosted Agents, define their responsibilities, and assign work through the API without installing a separate Host for each Agent.
+
+Hosted Agents work independently or join a team coordinated by a Managed Lead. Runtime Host runs Coding Agent providers; it differs from a Managed self_hosted tool Worker and from deploying the whole Service. Prepare the [platform](/v2/en/service/quickstart), then see [self-hosted architecture](/v2/en/service/quickstart#self-hosting) for boundaries and [orchestration](/v2/en/service/orchestration) for collaboration.
 
 ## Connect an execution host
 
@@ -44,7 +46,7 @@ curl -sS "$SERVICE_URL/api/v1/runtime-hosts?tenant=default&namespace=default" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-See the [provider reference](/v2/en/service/hosted-agent-providers) for differences in Workspace, tool, and recovery support.
+See the [provider reference](/v2/en/service/hosted-agent-configuration#hosted-agent-providers) for differences in Workspace, tool, and recovery support.
 
 ## Create the Hosted Agent
 
@@ -87,7 +89,7 @@ curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/bindings" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Use `PATCH /api/v1/agents/{agentId}/definition` to update instructions. Provider execution options are available through `GET/PATCH /api/v1/agents/{agentId}/hosted-settings`. Read the current configuration and version before updating it; see the [Hosted Agent reference](/v2/en/service/hosted-agent) for the fields.
+Use `PATCH /api/v1/agents/{agentId}/definition` to update instructions. Provider execution options are available through `GET/PATCH /api/v1/agents/{agentId}/hosted-settings`. Read the current configuration and version before updating it; see the [Hosted Agent reference](/v2/en/service/connect-hosted-agent#hosted-agent) for the fields.
 
 ## Assign work and read the result
 
@@ -95,6 +97,21 @@ Create a small read-only task through the [Issue API](/v2/en/service/issues), se
 
 Use Issue, task, and ExecutionAttempt queries to follow progress and read result comments and artifacts. The Host prepares the working directory; a repository open on that machine does not automatically become task input. Explicitly associate a supported Workspace or supply the necessary materials.
 
-After validating one task, organize Agents through the [Team API](/v2/en/service/create-team), or publish an Agent, Team, or Workflow as an [Endpoint](/v2/en/service/endpoints). Applications use the unified [Agent API](/v2/en/service/service-api) for invocation and SSE. Hosted conversations currently support cancellation, but do not offer all Managed input, approval recovery, or checkpoint operations. Check the Endpoint and invocation capabilities before using them.
+After validating one task, add the Agent to a [Team](/v2/en/service/create-team) or create a Session targeting it directly. Hosted interaction support depends on the provider and adapter; do not assume every Managed input, approval, or checkpoint feature is available. Read Session and Turn capabilities. See the [API guide](/v2/en/service/service-api).
 
-For the visual workflow, see [Console: Agent management](/v2/en/service/console/agents). For publishing a Coding Agent as a business capability, see the [incident repair service](/v2/en/service/cases/incident-to-pr).
+For the visual workflow, see [Console: Agent management](/v2/en/service/console/index#console-agents). For publishing a Coding Agent as a business capability, see the [incident repair service](/v2/en/service/cases/incident-to-pr).
+
+<span id="hosted-agent"></span>
+<span id="in-this-chapter"></span>
+<span id="prepare-the-machine"></span>
+<span id="create-the-agent"></span>
+<span id="deliver-a-small-task"></span>
+<span id="extend-capabilities"></span>
+<span id="interrupt-and-recover"></span>
+<span id="publish-it-as-a-service"></span>
+
+## Working directories and delivery
+
+Runtime Host manages task directories; it does not automatically use your open Git checkout. Prepare the repository, branch, and inputs explicitly, and upload shared results as Artifacts. An online Host does not prove that the provider is authenticated or that its tools can execute.
+
+Workspace instructions, Skills, and tools are mapped according to provider capabilities. Dependencies and third-party authentication remain on the Host. Native provider session recovery differs from Turn recovery commands; read invocation capabilities before showing controls.
