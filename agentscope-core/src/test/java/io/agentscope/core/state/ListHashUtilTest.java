@@ -194,6 +194,29 @@ class ListHashUtilTest {
         assertTrue(ListHashUtil.needsFullRewrite(list, null, 5));
     }
 
+    /**
+     * Regression for the sampling-hash bug: a list larger than the old sampling threshold must
+     * reflect a modification at a non-sampled position. Under the previous (5-point sampling)
+     * implementation a 20-element list hashed only indices {0,5,10,15,19}, so changing index 3
+     * left the hash unchanged and the edit was silently dropped on save.
+     */
+    @Test
+    void testComputeHash_largeList_modifyNonSampledIndex_changesHash() {
+        List<Msg> list = createMsgList(20);
+        String hashBefore = ListHashUtil.computeHash(list);
+
+        // Index 3 is not one of the old sample points {0,5,10,15,19} for size 20.
+        list.set(
+                3,
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("changed at non-sampled index").build())
+                        .build());
+
+        String hashAfter = ListHashUtil.computeHash(list);
+        assertNotEquals(hashBefore, hashAfter);
+    }
+
     private List<Msg> createMsgList(int size) {
         List<Msg> list = new ArrayList<>();
         for (int i = 0; i < size; i++) {
@@ -204,5 +227,105 @@ class ListHashUtilTest {
                             .build());
         }
         return list;
+    }
+
+    // ---- serialize / computeHashOfSerialized / needsFullRewriteSerialized ----
+
+    @Test
+    void testSerializeNullListReturnsNull() {
+        assertEquals(null, ListHashUtil.serialize(null));
+    }
+
+    @Test
+    void testSerializeNullElementBecomesLiteralNullString() {
+        List<Msg> list = new ArrayList<>();
+        list.add(null);
+        List<String> json = ListHashUtil.serialize(list);
+        assertEquals(1, json.size());
+        assertEquals("null", json.get(0));
+    }
+
+    @Test
+    void testComputeHashDelegatesToSerializedVariant() {
+        List<Msg> list = createMsgList(5);
+        assertEquals(
+                ListHashUtil.computeHashOfSerialized(ListHashUtil.serialize(list)),
+                ListHashUtil.computeHash(list));
+    }
+
+    @Test
+    void testComputeHashOfSerializedEmptyAndNull() {
+        assertEquals("empty:0", ListHashUtil.computeHashOfSerialized(List.of()));
+        assertEquals("empty:0", ListHashUtil.computeHashOfSerialized(null));
+    }
+
+    @Test
+    void testComputeHashOfSerializedIsSha256Hex() {
+        String hash =
+                ListHashUtil.computeHashOfSerialized(ListHashUtil.serialize(createMsgList(3)));
+        // SHA-256 hex digest: 64 lowercase hex characters (replaces the old 32-bit digest).
+        assertTrue(hash.matches("[0-9a-f]{64}"), "expected a 64-char hex digest, got: " + hash);
+    }
+
+    @Test
+    void testComputeHashOfSerializedSameInputSameHash() {
+        List<String> json = ListHashUtil.serialize(createMsgList(5));
+        assertEquals(
+                ListHashUtil.computeHashOfSerialized(json),
+                ListHashUtil.computeHashOfSerialized(new ArrayList<>(json)));
+    }
+
+    @Test
+    void testNeedsFullRewriteSerializedPrefixUnchanged() {
+        List<Msg> list = createMsgList(5);
+        String storedHash = ListHashUtil.computeHash(list);
+        list.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("appended").build())
+                        .build());
+        assertFalse(
+                ListHashUtil.needsFullRewriteSerialized(
+                        ListHashUtil.serialize(list), storedHash, 5));
+    }
+
+    @Test
+    void testNeedsFullRewriteSerializedPrefixChanged() {
+        List<Msg> list = createMsgList(5);
+        String storedHash = ListHashUtil.computeHash(list);
+        list.set(
+                1,
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("edited").build())
+                        .build());
+        assertTrue(
+                ListHashUtil.needsFullRewriteSerialized(
+                        ListHashUtil.serialize(list), storedHash, 5));
+    }
+
+    @Test
+    void testNeedsFullRewriteSerializedEdgeCases() {
+        List<String> json = ListHashUtil.serialize(createMsgList(3));
+        // shrunk -> rewrite
+        assertTrue(ListHashUtil.needsFullRewriteSerialized(json, "any_old_hash", 5));
+        // missing hash with existing data -> rewrite
+        assertTrue(ListHashUtil.needsFullRewriteSerialized(json, null, 3));
+        // null current list with existing data -> rewrite
+        assertTrue(ListHashUtil.needsFullRewriteSerialized(null, "some_hash", 5));
+        // null current list, nothing stored -> no rewrite
+        assertFalse(ListHashUtil.needsFullRewriteSerialized(null, null, 0));
+        // first save (no stored hash, nothing stored) -> no rewrite
+        assertFalse(ListHashUtil.needsFullRewriteSerialized(json, null, 0));
+    }
+
+    @Test
+    void testNeedsFullRewriteDelegatesToSerializedVariant() {
+        List<Msg> list = createMsgList(5);
+        String storedHash = ListHashUtil.computeHash(list);
+        assertEquals(
+                ListHashUtil.needsFullRewriteSerialized(
+                        ListHashUtil.serialize(list), storedHash, 5),
+                ListHashUtil.needsFullRewrite(list, storedHash, 5));
     }
 }

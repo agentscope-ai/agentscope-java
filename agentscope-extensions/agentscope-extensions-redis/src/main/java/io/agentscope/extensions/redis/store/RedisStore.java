@@ -23,6 +23,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import redis.clients.jedis.UnifiedJedis;
 
 /**
@@ -33,14 +36,23 @@ import redis.clients.jedis.UnifiedJedis;
  * <p>For each item with namespace {@code [a, b, c]} and key {@code k}, two Redis keys are used:
  *
  * <ul>
- *   <li><b>Item hash</b> {@code <prefix>item:<ns>\0<k>} — a Redis hash with fields {@code value}
+ *   <li><b>Item hash</b> {@code <prefix>item:{<ns>}\0<k>} — a Redis hash with fields {@code value}
  *       (JSON-encoded {@code Map<String,Object>}) and {@code version} (a stringified long).
- *   <li><b>Namespace index</b> {@code <prefix>idx:<ns>} — a sorted set (all scores {@code 0})
+ *   <li><b>Namespace index</b> {@code <prefix>idx:{<ns>}} — a sorted set (all scores {@code 0})
  *       holding every {@code k} written under that exact namespace, enabling lexicographic
  *       {@link #search} via {@code ZRANGEBYLEX} without scanning the keyspace.
  * </ul>
  *
  * <p>{@code <ns>} is the namespace components joined with {@code "\0"}.
+ *
+ * <p>The {@code {<ns>}} wrapper is a Redis Cluster hash tag: it forces the item hash and the
+ * namespace index into the same slot, which is required by the multi-key {@code EVAL} scripts
+ * below in cluster mode. An empty namespace is mapped to {@code {_root_}} because Redis ignores
+ * an empty tag. Namespace segments must not contain {@code { } }.
+ *
+ * <p><strong>Breaking change:</strong> the namespace is wrapped in a Redis Cluster hash tag
+ * ({@code {<ns>}}); data written with the previous, un-tagged key layout is not readable and
+ * must be migrated.
  *
  * <h2>Concurrency</h2>
  *
@@ -123,6 +135,32 @@ public class RedisStore implements BaseStore {
         this.jedis = Objects.requireNonNull(jedis, "jedis must not be null");
         this.keyPrefix = normalizePrefix(keyPrefix);
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        warnOnLegacyStoreKeys(this.jedis, this.keyPrefix);
+    }
+
+    private static final Logger log = LoggerFactory.getLogger(RedisStore.class);
+
+    /**
+     * One-time startup check: legacy (pre-hash-tag) namespaces under our prefix are not readable
+     * by this version. Surface them loudly instead of silently serving empty results.
+     * Best-effort: a Redis outage at build time must not break construction.
+     */
+    private static void warnOnLegacyStoreKeys(UnifiedJedis jedis, String keyPrefix) {
+        try {
+            Set<String> legacy =
+                    io.agentscope.extensions.redis.RedisKeyLayoutMigration.findLegacyStoreIndexKeys(
+                            jedis, keyPrefix);
+            if (!legacy.isEmpty()) {
+                log.warn(
+                        "Detected {} legacy (pre-hash-tag) namespaces under key prefix '{}';"
+                                + " they are NOT readable by this version. Migrate them with"
+                                + " RedisKeyLayoutMigration.migrateRedisStore(...).",
+                        legacy.size(),
+                        keyPrefix);
+            }
+        } catch (Exception e) {
+            log.debug("Legacy key-layout detection skipped: {}", e.toString());
+        }
     }
 
     @Override
@@ -236,12 +274,33 @@ public class RedisStore implements BaseStore {
         }
     }
 
+    /**
+     * Tag content used when the namespace is empty. Redis ignores an empty {@code {}}
+     * tag (treating the whole key as the hash input), which would split itemKey and
+     * indexKey across slots; a non-empty placeholder keeps them together.
+     */
+    private static final String EMPTY_NAMESPACE_TAG = "_root_";
+
+    /** Build the Redis Cluster hash tag for a namespace, mapping empty to a placeholder. */
+    private String hashTag(List<String> namespace) {
+        String ns = namespacePath(namespace);
+        return "{" + (ns.isEmpty() ? EMPTY_NAMESPACE_TAG : ns) + "}";
+    }
+
+    /** Reject characters that would prematurely terminate a Redis Cluster hash tag. */
+    private static void rejectBraces(String value, String name) {
+        if (value.indexOf('{') >= 0 || value.indexOf('}') >= 0) {
+            throw new IllegalArgumentException(
+                    name + " must not contain '{' or '}' (reserved for Redis Cluster hash tags)");
+        }
+    }
+
     private String itemKey(List<String> namespace, String key) {
-        return keyPrefix + "item:" + namespacePath(namespace) + NS_SEPARATOR + key;
+        return keyPrefix + "item:" + hashTag(namespace) + NS_SEPARATOR + key;
     }
 
     private String indexKey(List<String> namespace) {
-        return keyPrefix + "idx:" + namespacePath(namespace);
+        return keyPrefix + "idx:" + hashTag(namespace);
     }
 
     private static String namespacePath(List<String> namespace) {
@@ -252,12 +311,37 @@ public class RedisStore implements BaseStore {
             if (segment == null) {
                 throw new IllegalArgumentException("namespace segment must not be null");
             }
+            if (segment.indexOf(NS_SEPARATOR) >= 0) {
+                // A segment containing the separator would join to the same path as the same
+                // segments split around it (["a\0b"] vs ["a", "b"]) — same hash tag, same index
+                // set: a cross-namespace collision. The relational/Mongo backends reject their
+                // separator the same way.
+                throw new IllegalArgumentException(
+                        "namespace segment must not contain the namespace separator (0x00)");
+            }
+            rejectBraces(segment, "namespace segment");
             if (i > 0) {
                 sb.append(NS_SEPARATOR);
             }
             sb.append(segment);
         }
-        return sb.toString();
+        String path = sb.toString();
+        // {_root_} is the placeholder for the EMPTY namespace; a namespace that joins to the same
+        // path (i.e. the single segment "_root_") would compute the identical hash tag and share
+        // the root namespace's index set — a cross-namespace data leak.
+        if (EMPTY_NAMESPACE_TAG.equals(path)) {
+            throw new IllegalArgumentException(
+                    "namespace must not be the reserved empty-namespace placeholder '"
+                            + EMPTY_NAMESPACE_TAG
+                            + "'");
+        }
+        // A non-empty namespace joins to an empty path only when every segment is "" (the
+        // single-segment [""] case); hashTag would map it to the root placeholder, colliding
+        // with the real empty namespace.
+        if (!namespace.isEmpty() && path.isEmpty()) {
+            throw new IllegalArgumentException("namespace must not join to an empty path");
+        }
+        return path;
     }
 
     private static void validateKey(String key) {
