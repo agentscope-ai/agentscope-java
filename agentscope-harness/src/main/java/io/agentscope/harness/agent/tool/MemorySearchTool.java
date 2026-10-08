@@ -98,7 +98,7 @@ public class MemorySearchTool {
         List<String> memoryPaths = workspaceManager.listMemoryFilePaths(rc);
 
         for (String relativePath : memoryPaths) {
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
+            String content = workspaceManager.readMemoryFileUtf8(rc, relativePath);
             if (content == null || content.isEmpty()) {
                 continue;
             }
