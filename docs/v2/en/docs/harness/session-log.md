@@ -250,6 +250,8 @@ Events are immutable, with payloads frozen as JSON when accepted.
 
 Harness uses `WorkspaceSessionLogStore` by default, so storage follows the Workspace Filesystem. With `LocalFilesystem`, records live in `.agentscope-runtime/` under the root resolved for the current identity. With `RemoteFilesystem`, they occupy the `__agentscope_session_log_v1__` partition in the corresponding `BaseStore` namespace.
 
+On Linux and macOS, local storage commits forced temporary files through atomic replacement and syncs their parent directories. On Windows, the Java filesystem provider cannot open directories for this sync, so local Session storage uses SQLite transactions in `.agentscope-runtime/journal.sqlite3`, with a rollback journal and `synchronous=EXTRA`. Writers still perform an atomic version comparison, and storage errors propagate to the caller. Read records through the SDK; when backing up a Windows workspace, pause all writers before copying the database, or use a consistent SQLite backup. The POSIX file layout and the Windows database hold the same logical objects but are different physical formats, so moving history between them requires a log migration or a shared backend.
+
 `SessionKey(userId, agentId, sessionId)` identifies a conversation inside that backend. Preserve both the key and namespace across restarts. Within one Agent, the same identity reuses an `AgentSession` with a copy of its initial `RuntimeContext`; establish stable session-level configuration when first obtaining the session.
 
 <span id="shared-storage" />
@@ -277,7 +279,7 @@ For a custom backend, implement `SessionLogStore`, or implement `AtomicSessionSt
 
 <Accordion title="Physical layout, command journal and backups">
 
-The logical object layout below is useful for operating a backend. Identity segments use Base64URL; local objects include a version prefix. Read them through the SDK rather than treating them as application JSONL files.
+The logical object layout below is useful for operating a backend. Identity segments use Base64URL. POSIX local objects include a version prefix; Windows stores their logical paths, versions and payloads as SQLite rows. Read them through the SDK rather than treating them as application JSONL files.
 
 ```text
 agents/s_<agent>/sessions/s_<user>/s_<session>/

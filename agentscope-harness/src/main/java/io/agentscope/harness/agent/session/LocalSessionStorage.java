@@ -29,18 +29,25 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
-/** Host-filesystem journal storage: OS lock, forced temporary file, atomic rename, directory fsync.
- * Requires a filesystem implementing these POSIX semantics; ephemeral sandboxes are not durable stores.
+/**
+ * Host-filesystem journal storage. POSIX hosts use OS locks, forced files, atomic renames and
+ * directory fsync. Windows uses SQLite transactions because its Java filesystem provider cannot
+ * open directories for fsync. Both backends acknowledge writes only after synchronous commit.
  */
 public final class LocalSessionStorage implements AtomicSessionStorage {
     private static final ConcurrentHashMap<Path, ReentrantLock> LOCKS = new ConcurrentHashMap<>();
     private final Path root;
+    private final AtomicSessionStorage transactionalStorage;
 
     public LocalSessionStorage(Path root) {
         Path absolute = root.toAbsolutePath().normalize(), existing = absolute;
         while (existing != null && !Files.exists(existing)) existing = existing.getParent();
         try {
             this.root = existing.toRealPath().resolve(existing.relativize(absolute));
+            this.transactionalStorage =
+                    this.root.getFileSystem().getSeparator().equals("\\")
+                            ? new SqliteSessionStorage(this.root)
+                            : null;
         } catch (IOException error) {
             throw new SessionLogException("Cannot resolve journal root", error);
         }
@@ -60,6 +67,7 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
     @Override
     public List<String> listPaths(String prefix) {
         Path directory = path(prefix);
+        if (transactionalStorage != null) return transactionalStorage.listPaths(prefix);
         if (!Files.exists(directory)) return List.of();
         try (var paths = Files.walk(directory)) {
             return paths.filter(Files::isRegularFile)
@@ -75,6 +83,7 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
     @Override
     public Value read(String key) {
         Path file = path(key);
+        if (transactionalStorage != null) return transactionalStorage.read(key);
         try {
             if (!Files.exists(file)) return null;
             byte[] bytes = Files.readAllBytes(file);
@@ -93,6 +102,8 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
     @Override
     public boolean compareAndSet(String key, long expected, byte[] bytes) {
         Path target = path(key);
+        if (transactionalStorage != null)
+            return transactionalStorage.compareAndSet(key, expected, bytes);
         Path lockPath = target.resolveSibling(target.getFileName() + ".lock");
         ReentrantLock local = LOCKS.computeIfAbsent(lockPath, ignored -> new ReentrantLock());
         local.lock();
