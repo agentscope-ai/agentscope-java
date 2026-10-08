@@ -285,8 +285,7 @@ public class SubAgentTool implements AgentTool {
         if (live == null) {
             return;
         }
-        live.contextMutable().clear();
-        live.contextMutable().addAll(loaded.getContext());
+        live.replaceContext(loaded.getContext());
         live.setSummary(loaded.getSummary());
         live.setReplyId(loaded.getReplyId());
         live.setCurIter(loaded.getCurIter());

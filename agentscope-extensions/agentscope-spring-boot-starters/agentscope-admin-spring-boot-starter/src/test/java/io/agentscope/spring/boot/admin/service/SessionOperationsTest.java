@@ -21,9 +21,16 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.spring.boot.admin.dto.CompactRequest;
 import io.agentscope.spring.boot.admin.properties.AdminProperties;
 import io.agentscope.spring.boot.admin.registry.InMemoryAgentRegistry;
+import io.agentscope.spring.boot.admin.snapshot.SnapshotStore;
+import java.util.List;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -92,5 +99,51 @@ class SessionOperationsTest {
                         new AdminProperties(),
                         new io.agentscope.spring.boot.admin.snapshot.SnapshotStore());
         StepVerifier.create(ops.abort("ghost")).expectError(NoSuchElementException.class).verify();
+    }
+
+    @Test
+    void compactSkipsWhenContextChangesDuringSummarization() {
+        Msg first = userMessage("first");
+        Msg second = userMessage("second");
+        Msg changed = userMessage("changed");
+        AgentState state =
+                AgentState.builder()
+                        .sessionId("session-1")
+                        .summary("old summary")
+                        .context(List.of(first, second))
+                        .build();
+        ReActAgent react = mock(ReActAgent.class);
+        when(react.getAgentId()).thenReturn("agent-1");
+        when(react.getAgentState()).thenReturn(state);
+
+        SummarizationStrategy mutatingSummarizer =
+                (model, existing, fold) -> {
+                    state.replaceContext(List.of(changed));
+                    return Mono.just("new summary");
+                };
+        InMemoryAgentRegistry registry = new InMemoryAgentRegistry();
+        registry.register(react);
+        SessionOperations ops =
+                new SessionOperations(
+                        registry, mutatingSummarizer, new AdminProperties(), new SnapshotStore());
+
+        StepVerifier.create(ops.compact("agent-1", new CompactRequest(1, true)))
+                .assertNext(
+                        response -> {
+                            assertThat(response.messagesBefore()).isEqualTo(2);
+                            assertThat(response.messagesAfter()).isEqualTo(1);
+                            assertThat(response.summaryLengthBefore())
+                                    .isEqualTo("old summary".length());
+                            assertThat(response.summaryLengthAfter())
+                                    .isEqualTo("old summary".length());
+                        })
+                .verifyComplete();
+
+        assertThat(state.getSummary()).isEqualTo("old summary");
+        assertThat(state.getContext()).containsExactly(changed);
+    }
+
+    private static Msg userMessage(String text) {
+        return Msg.builder().role(MsgRole.USER).textContent(text).build();
     }
 }
