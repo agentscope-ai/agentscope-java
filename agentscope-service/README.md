@@ -192,7 +192,7 @@ Production deployments must replace all development credentials and use durable 
 
 ## Roadmap
 
-Further development focuses on application integration and delivery: end-user authorization, file input contracts, automatic triggers through the public invocation path, and continued validation of long tasks, complex orchestration, and cost governance. See the [scenario and implementation assessment (Chinese)](../internal/implementation/service-aaas-scenario-assessment-20261005.md) for proposed scope and priorities; proposals are not shipped capabilities.
+Further development focuses on application integration and delivery: end-user authorization, file input contracts, automatic triggers through the public invocation path, and continued validation of long tasks, complex orchestration, and cost governance.
 
 For enterprise cloud offerings, also see Alibaba Cloud [Agent Teams](https://help.aliyun.com/zh/agentteams/magic-console-product-overview) and [Agent Loop](https://help.aliyun.com/zh/document_detail/3033860.html).
 

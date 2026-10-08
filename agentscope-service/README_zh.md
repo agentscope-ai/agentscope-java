@@ -225,7 +225,7 @@ Java Service 使用 `builder.*` 属性与 `BUILDER_*` 环境变量。各平面�
 
 ## Roadmap
 
-后续演进围绕业务应用的接入与交付：完善终端用户授权和文件输入契约，让自动触发复用公开调用链路，并持续验证长任务、复杂编排和费用治理。具体设计与优先级见[场景与实现评估](../internal/implementation/service-aaas-scenario-assessment-20261005.md)；其中建议尚不代表已发布能力。
+后续演进围绕业务应用的接入与交付：完善终端用户授权和文件输入契约，让自动触发复用公开调用链路，并持续验证长任务、复杂编排和费用治理。
 
 企业级云产品亦可关注阿里云 [Agent Teams](https://help.aliyun.com/zh/agentteams/magic-console-product-overview)、[Agent Loop](https://help.aliyun.com/zh/document_detail/3033860.html)。
 
