@@ -265,7 +265,7 @@ python agentscope-service/release/release.py publish-chart \
 
 ```bash
 gh workflow run service-pypi-release.yml --repo agentscope-ai/agentscope-java \
-  --ref release/2.1.0-BETA1 -f version=2.1.0-BETA1
+  --ref main -f version=2.1.0-BETA1
 ```
 
 发布后在新的虚拟环境中执行 `pip install agentscope-service-sdk==2.1.0b1` 并验证导入。已发布版本不能重复上传。需要本地 Twine 替代方式时，先确认包名归属、版本未发布及 API token，再执行：

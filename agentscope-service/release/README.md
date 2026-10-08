@@ -109,7 +109,7 @@ It runs on `v*` and `agentscope-service-v*` tags containing the workflow, or thr
 
 ```bash
 gh workflow run service-pypi-release.yml --repo agentscope-ai/agentscope-java \
-  --ref release/2.1.0-BETA1 -f version=2.1.0-BETA1
+  --ref main -f version=2.1.0-BETA1
 ```
 
 After publication, verify `pip install agentscope-service-sdk==2.1.0b1` and import the SDK in a fresh virtual environment. A published version cannot be uploaded again. For a local Twine fallback, confirm package ownership, version availability and token credentials:
