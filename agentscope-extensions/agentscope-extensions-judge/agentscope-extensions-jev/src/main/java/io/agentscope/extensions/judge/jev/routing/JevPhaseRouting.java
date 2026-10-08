@@ -45,11 +45,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 /** Call-scoped routing with explicit phase boundaries. Uses the existing router builder/hooks. */
 public final class JevPhaseRouting {
@@ -567,52 +570,53 @@ public final class JevPhaseRouting {
                         return Flux.error(new CancellationException("routing scope cancelled"));
                     long start = System.nanoTime();
                     var usage = new AtomicReference<ChatUsage>();
+                    var recorded = new AtomicBoolean();
+                    // Record before propagating terminal signals so completed consumers can
+                    // safely inspect observations. Cancellation and termination may race.
+                    Consumer<SignalType> record =
+                            signal -> {
+                                if (!recorded.compareAndSet(false, true)) return;
+                                String status =
+                                        switch (signal) {
+                                            case ON_COMPLETE -> "COMPLETED";
+                                            case CANCEL -> "CANCELLED";
+                                            default -> "ERROR";
+                                        };
+                                var price = candidate == null ? null : candidate.price();
+                                try {
+                                    observer.accept(
+                                            run.context,
+                                            new CallRecord(
+                                                    report == null ? run.phase : report.route(),
+                                                    report == null ? null : report.model(),
+                                                    input.model() == null
+                                                            ? null
+                                                            : input.model().getModelName(),
+                                                    input.options() == null
+                                                            ? null
+                                                            : input.options().getReasoningEffort(),
+                                                    status,
+                                                    reason,
+                                                    Duration.ofNanos(System.nanoTime() - start)
+                                                            .toMillis(),
+                                                    usage.get(),
+                                                    price == null ? null : price.version(),
+                                                    price == null
+                                                            ? null
+                                                            : price.estimateUsd(usage.get())));
+                                } catch (RuntimeException ignored) {
+                                    /* Observer cannot break the Agent. */
+                                }
+                            };
                     return Flux.defer(() -> next.apply(input))
                             .doOnNext(
                                     event -> {
                                         if (event instanceof ModelCallEndEvent end)
                                             usage.set(end.getUsage());
                                     })
-                            .doFinally(
-                                    signal -> {
-                                        String status =
-                                                switch (signal) {
-                                                    case ON_COMPLETE -> "COMPLETED";
-                                                    case CANCEL -> "CANCELLED";
-                                                    default -> "ERROR";
-                                                };
-                                        var price = candidate == null ? null : candidate.price();
-                                        try {
-                                            observer.accept(
-                                                    run.context,
-                                                    new CallRecord(
-                                                            report == null
-                                                                    ? run.phase
-                                                                    : report.route(),
-                                                            report == null ? null : report.model(),
-                                                            input.model() == null
-                                                                    ? null
-                                                                    : input.model().getModelName(),
-                                                            input.options() == null
-                                                                    ? null
-                                                                    : input.options()
-                                                                            .getReasoningEffort(),
-                                                            status,
-                                                            reason,
-                                                            Duration.ofNanos(
-                                                                            System.nanoTime()
-                                                                                    - start)
-                                                                    .toMillis(),
-                                                            usage.get(),
-                                                            price == null ? null : price.version(),
-                                                            price == null
-                                                                    ? null
-                                                                    : price.estimateUsd(
-                                                                            usage.get())));
-                                        } catch (RuntimeException ignored) {
-                                            /* Observer cannot break the Agent. */
-                                        }
-                                    });
+                            .doOnComplete(() -> record.accept(SignalType.ON_COMPLETE))
+                            .doOnError(error -> record.accept(SignalType.ON_ERROR))
+                            .doOnCancel(() -> record.accept(SignalType.CANCEL));
                 });
     }
 

@@ -173,6 +173,40 @@ class JevPhaseRoutingTest {
     }
 
     @Test
+    void observationsPrecedeTerminalSignalsAndCancellationRecordsOnce() {
+        var ctx = context(snapshot(candidates()));
+        var records = new ArrayList<JevPhaseRouting.CallRecord>();
+        var router =
+                router(r -> Mono.just(reply(r, "plan", .95)), JevExecution.Mode.ENFORCE, records);
+        open(router, ctx);
+        var usage = new ChatUsage(100, 20, 20, 0);
+        var original = input(model("original"));
+        router.onModelCall(ctx, original, i -> Flux.just(new ModelCallEndEvent("reply", usage)))
+                .doOnComplete(
+                        () -> {
+                            assertEquals(1, records.size());
+                            assertEquals("COMPLETED", records.get(0).status());
+                            assertSame(usage, records.get(0).usage());
+                        })
+                .blockLast();
+        var failure = new IllegalStateException("dispatch failed");
+        StepVerifier.create(
+                        router.onModelCall(ctx, original, i -> Flux.error(failure))
+                                .doOnError(
+                                        error -> {
+                                            assertEquals(2, records.size());
+                                            assertEquals("ERROR", records.get(1).status());
+                                        }))
+                .expectErrorMatches(error -> error == failure)
+                .verify();
+        var subscription = router.onModelCall(ctx, original, i -> Flux.never()).subscribe();
+        subscription.dispose();
+        subscription.dispose();
+        assertEquals(3, records.size());
+        assertEquals("CANCELLED", records.get(2).status());
+    }
+
+    @Test
     void actualAgentKeepsEachPhaseStickyAndExecutesEachToolExactlyOnce() {
         var result = io.agentscope.examples.jev.JevPhaseRoutingExample.runOffline();
         assertEquals(1, result.judgeRequests());
