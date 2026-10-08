@@ -90,7 +90,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
             fallbackBindings.remove(0);
             log.warn(
                     "[sandbox-fs] Fallback binding limit ({}) reached; dropping the oldest"
-                            + " context-free binding. Check for calls that acquire without release.",
+                        + " context-free binding. Check for calls that acquire without release.",
                     MAX_FALLBACK_BINDINGS);
         }
         fallbackBindings.add(sandbox);
