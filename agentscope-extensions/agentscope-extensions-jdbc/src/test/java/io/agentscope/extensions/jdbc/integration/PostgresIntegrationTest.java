@@ -169,6 +169,39 @@ class PostgresIntegrationTest {
         assertFalse(repo.skillExists("pg-skill"));
     }
 
+    @Test
+    @DisplayName("08: namespaced skills coexist and stay isolated on PostgreSQL")
+    void namespacedSkillIsolation() {
+        DataSource ds = createDataSource();
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).enableSkillTables(true).build();
+        var repo = new JdbcAgentSkillRepository(ds, dialect);
+
+        var teamA =
+                new AgentSkill(
+                        Map.of("name", "pg-ns-skill", "description", "team-a"),
+                        "content-a",
+                        Map.of("docs/a.md", "a"),
+                        "integration");
+        var teamB =
+                new AgentSkill(
+                        Map.of("name", "pg-ns-skill", "description", "team-b"),
+                        "content-b",
+                        Map.of("docs/b.md", "b"),
+                        "integration");
+        assertTrue(repo.save("team-a", List.of(teamA), false));
+        assertTrue(
+                repo.save("team-b", List.of(teamB), false),
+                "UNIQUE(namespace, name) must admit the same name in another namespace");
+        assertEquals("content-a", repo.getSkill("team-a", "pg-ns-skill").getSkillContent());
+        assertEquals("content-b", repo.getSkill("team-b", "pg-ns-skill").getSkillContent());
+
+        // Namespace-scoped delete and clear against a real PostgreSQL.
+        assertTrue(repo.delete("team-a", "pg-ns-skill"));
+        assertEquals("b", repo.getSkill("team-b", "pg-ns-skill").getResource("docs/b.md"));
+        assertEquals(1, repo.clearAllSkills("team-b"));
+        assertTrue(repo.getAllSkillNames("team-b").isEmpty());
+    }
+
     /**
      * A DataSource on the Testcontainers PostgreSQL database.
      *

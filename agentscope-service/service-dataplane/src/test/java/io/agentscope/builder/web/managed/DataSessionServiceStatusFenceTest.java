@@ -28,7 +28,6 @@ import io.agentscope.builder.control.SessionResolveResult;
 import io.agentscope.builder.web.managed.service.ManagedJsonHelper;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class DataSessionServiceStatusFenceTest {
@@ -65,25 +64,19 @@ class DataSessionServiceStatusFenceTest {
         SessionResolveResult resolved = mock(SessionResolveResult.class);
         when(resolved.session()).thenReturn(session);
         when(controlPlane.resolveSession("session-a")).thenReturn(resolved);
-        SessionEventDto statusEvent =
-                new SessionEventDto(
-                        "event-a",
-                        "session-a",
-                        1,
-                        "session.status_idle",
-                        Map.of("status", "idle"),
-                        null,
-                        1);
-        when(eventLog.appendLocal(eq("session-a"), eq("session.status_idle"), any(), eq(null)))
-                .thenReturn(statusEvent);
         ManagedExecutionScope oldScope =
                 new ManagedExecutionScope("tenant-a", "task-a", "attempt-a", 3, "turn-a");
 
         service.updateStatus("owner-a", "session-a", "idle", null, oldScope);
 
         verify(controlPlane).patchSessionRuntime("session-a", "idle", null, "owner-a", oldScope);
-        verify(eventLog).appendLocal(eq("session-a"), eq("session.status_idle"), any(), eq(null));
-        verify(controlPlane).appendSessionEvent(statusEvent, oldScope);
+        verify(eventLog)
+                .appendScoped(
+                        eq("session-a"),
+                        eq("session.status_idle"),
+                        any(),
+                        eq(null),
+                        eq(ControlPlaneClient.eventScope(oldScope)));
         verifyNoMoreInteractions(eventLog);
     }
 }

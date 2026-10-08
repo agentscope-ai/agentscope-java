@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.test.SampleTools;
@@ -208,7 +209,10 @@ class ToolExecutorTest {
         assertEquals("call-external", response.getId(), "Response should keep tool call id");
         assertEquals("external_api", response.getName(), "Response should keep tool name");
         assertTrue(response.isSuspended(), "External tool should surface as suspended");
-        assertEquals("[Awaiting external execution]", extractFirstText(response));
+        assertEquals(ToolResultState.SUSPENDED, response.getState());
+        assertTrue(
+                response.getOutput().isEmpty(),
+                "External tool suspension must not fabricate output");
     }
 
     @Test

@@ -16,14 +16,13 @@
 package io.agentscope.harness.agent.testing;
 
 import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
-import io.agentscope.harness.agent.memory.session.SessionTree;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 /**
  * Auto-registered JUnit Jupiter extension that drains fire-and-forget harness background
- * tasks (memory flush/maintenance and session/transcript mirrors) after every test method.
+ * tasks (memory flush/maintenance) after every test method.
  *
  * <p>{@link io.agentscope.harness.agent.HarnessAgent#close()} drains the same trackers, but
  * many harness tests build a transient {@code HarnessAgent}, call {@code .block()}, and let it
@@ -37,7 +36,7 @@ import org.junit.jupiter.api.extension.ExtensionContext;
  * <p>This callback runs after the test method and after {@code @AfterEach} methods, but
  * <em>before</em> the JUnit {@code TempDir} extension closes the extension context and deletes
  * the temp directory, so the background writes have quiesced first. When nothing is in flight
- * both {@code await*} calls return immediately, making this a no-op for tests that never
+ * the await call returns immediately, making this a no-op for tests that never
  * trigger a flush. If the trackers fail to quiesce within the timeout (or the thread is
  * interrupted), the callback throws {@link AssertionError} so the failure is deterministic and
  * points at the root cause rather than surfacing later as an opaque
@@ -49,10 +48,9 @@ public class HarnessBackgroundTaskQuiescenceExtension implements AfterEachCallba
 
     @Override
     public void afterEach(ExtensionContext context) {
-        boolean mirrorsQuiet = SessionTree.awaitMirrorQuiescence(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         boolean flushQuiet =
                 MemoryBackgroundTasks.awaitQuiescence(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        if (!mirrorsQuiet || !flushQuiet) {
+        if (!flushQuiet) {
             throw new AssertionError(
                     "Harness background tasks did not quiesce within "
                             + TIMEOUT_SECONDS

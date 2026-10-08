@@ -6,14 +6,13 @@ en_link: /v2/en/docs/building-blocks/agent
 
 ## 概述
 
-`Agent`（接口位于 `io.agentscope.core.agent.Agent`，默认实现是 `ReActAgent`）是 AgentScope 的核心抽象——一个推理-行动循环引擎，将模型、工具、权限系统、人机交互、上下文管理、中间件、状态管理和事件系统整合到一个统一接口中。
+AgentScope 通过 `Agent` 接口统一智能体的调用方式，提供底层的 `ReActAgent` 和在其基础上封装的 `HarnessAgent`。**业务 Agent 开发推荐优先使用 `HarnessAgent`**，也可以直接使用 `ReActAgent`，自行组合应用所需的能力。
 
-其主要职责包括：
+**ReAct 是 AgentScope Harness 的执行基础。** `ReActAgent` 负责“模型推理 → 执行工具 → 将结果交回模型”的循环，直到返回结果或等待外部交互。权限检查、人机交互、上下文与状态管理、中间件、实时事件等基础能力都围绕这一循环工作。
 
-- 接收输入消息或事件，调用工具完成任务
-- 管理上下文（会话历史保存在 `AgentState.getContext()` 中，可通过 `AgentStateStore` 自动持久化）
-- 在关键生命周期阶段提供中间件钩子，支持自定义逻辑
-- 自动管理并发和串行工具执行
+`HarnessAgent` 内部封装 `ReActAgent`，沿用同一套推理与执行循环，并进一步内置工作区、长期记忆、上下文压缩、技能、子 Agent、沙箱以及会话日志与恢复等能力。因此，使用 Harness 后，**整体的推理、执行循环本质上没有变化**；更多运行能力由 Harness 统一装配，业务开发者可以直接配置使用。
+
+从[快速开始](/v2/zh/docs/quickstart)可以直接上手 `HarnessAgent`。本页以 `ReActAgent` 为例说明两者共有的基础配置与调用方式；Harness 的内置能力和组合方式见 [Harness 架构](/v2/zh/docs/harness/architecture)。
 
 ### 核心接口
 
@@ -25,11 +24,23 @@ en_link: /v2/en/docs/building-blocks/agent
 | `streamEvents(List<Msg>)` / `streamEvents(Msg)` | 同 `call`，但以流式方式逐一产出 `AgentEvent` 对象 |
 | `observe(Msg)` / `observe(List<Msg>)` | 将消息添加到上下文，不触发推理（返回 `Mono<Void>`） |
 
-`ReActAgent` 在此之上还提供 `call(msgs, structuredOutputClass, runtimeContext)` 等结构化输出重载，以及通过 `RuntimeContext` 传递 per-call 元数据的便捷入口。
+`ReActAgent` 和 `HarnessAgent` 在此之上还提供 `call(msgs, structuredOutputClass, runtimeContext)` 等结构化输出重载，以及通过 `RuntimeContext` 传递本次调用元数据的便捷入口。
+
+### 按业务场景选择调用方式
+
+| 你要实现什么 | 使用方式 |
+| --- | --- |
+| 获取回复、提取结构化数据、执行工作流中的一个步骤 | `agent.call(input, ctx)` |
+| 在当前请求中逐步展示文本和工具进度 | `agent.streamEvents(input, ctx)` |
+| 后台持续执行、忙时排队、运行中补充要求、中断后继续原任务 | `agent.session(ctx)` 的会话操作，仅 HarnessAgent 提供 |
+
+`call` 和 `streamEvents` 都可以用于多轮对话；每次调用可包含多次推理和工具执行。使用默认配置的 HarnessAgent 时，两者也会保存 Session Log 和 checkpoint。仅需要记住上一轮或查询历史时，可以继续直接调用。
+
+先按下文完成直接调用。有后台任务管理需求时，再阅读[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)。通过 HTTP 使用托管 Agent 时，阅读 [Service Agent API](/v2/zh/service/session-event-log)。
 
 ### 主循环
 
-智能体在每次 `call` 调用时运行推理-行动循环，下图展示了主要控制流程：
+`ReActAgent` 和 `HarnessAgent` 都通过下面的推理-行动循环执行一次 `call`。Harness 的内置能力在相应阶段参与工作：
 
 ```mermaid
 flowchart TD
@@ -58,9 +69,21 @@ flowchart TD
     P --> E
 ```
 
+## 实例生命周期
+
+**推荐共享配置 Builder，每次请求 `builder.build()` 创建新的 Agent，执行结束后关闭。** Builder 在应用启动时配置完成，请求期间只负责构建；用户、会话、请求参数通过新建的 `RuntimeContext` 传入，不修改共享 Builder。
+
+同步调用用 `try-with-resources` 包住执行和等待；响应式调用用 `Mono.using` / `Flux.using`，让实例在订阅结束、报错或取消时释放。模型客户端、连接池、存储、技能仓库等依赖可以由应用统一管理，应用退出时再关闭；共享工具与中间件应保证线程安全，不能把当前用户或上下文保存在成员字段里。
+
+新实例与新会话是两个概念。Harness 使用稳定的 `agentId`、`userId`、`sessionId` 和相同日志后端恢复已提交状态；普通 ReActAgent 若未配置会话日志或 `stateStore`，仅保留在旧实例内的上下文不会带到新实例。
+
+**也可以共享同一个 Agent 实例。** Agent 采用无状态执行引擎设计，会话状态按身份管理；共享实例由应用在退出时关闭。同一实例内，相同用户与会话的直接调用由执行门串行化，不同会话可并行。实例仍有缓存、执行门和后台资源，因此这里的“无状态”不表示没有生命周期。后续示例统一采用每请求创建的推荐方式。
+
+后台 `AgentSession`、Channel 或托管运行时的生命周期由其管理器持有，不能套用“提交请求返回就关闭”的方式。中断一次直接调用也必须定位到正在执行的实例；临时构建另一个实例不能中断旧实例中的请求。
+
 ## 配置智能体
 
-通过 `ReActAgent.builder()...build()` 创建智能体。`.model(...)` 既接受 `ModelRegistry` 解析的字符串 id（最常用、自动读取 env），也接受手动 builder 构造的 `Model` 实例（需要精细控制超时、自定义 endpoint 时用）。
+先通过 `ReActAgent.builder()` 定义共享配置，再在每次请求中调用 `agentBuilder.build()`。`.model(...)` 既接受 `ModelRegistry` 解析的字符串 id（最常用、自动读取 env），也接受手动 builder 构造的 `Model` 实例（需要精细控制超时、自定义 endpoint 时用）。
 
 
 <Tabs>
@@ -72,7 +95,7 @@ flowchart TD
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
 
-ReActAgent agent =
+ReActAgent.Builder agentBuilder =
         ReActAgent.builder()
                 .name("my_agent")
                 .sysPrompt("你是一个有帮助的助手。")
@@ -80,8 +103,7 @@ ReActAgent agent =
                 // 切换其他厂商时改成 "openai:gpt-5.5" / "anthropic:claude-sonnet-4-5"
                 // / "deepseek:deepseek-v4-flash" / "gemini:gemini-2.0-flash" / "ollama:llama3" 即可。
                 .model("dashscope:qwen-plus")
-                .toolkit(new Toolkit())
-                .build();
+                .toolkit(new Toolkit());
 ```
 
 </Tab>
@@ -95,7 +117,7 @@ import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 
-ReActAgent agent =
+ReActAgent.Builder agentBuilder =
         ReActAgent.builder()
                 .name("my_agent")
                 .sysPrompt("你是一个有帮助的助手。")
@@ -106,8 +128,7 @@ ReActAgent agent =
                                 .stream(true)
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
-                .toolkit(new Toolkit())
-                .build();
+                .toolkit(new Toolkit());
 ```
 
 </Tab>
@@ -134,13 +155,12 @@ McpClientWrapper amap =
                 .block();
 toolkit.registerMcpClient(amap).block();
 
-ReActAgent agent =
+ReActAgent.Builder agentBuilder =
         ReActAgent.builder()
                 .name("my_agent")
                 .sysPrompt("你是一个有帮助的助手。")
                 .model("dashscope:qwen-max")
-                .toolkit(toolkit)
-                .build();
+                .toolkit(toolkit);
 ```
 
 </Tab>
@@ -170,47 +190,99 @@ ReActAgent agent =
 | `permissionContext` | `PermissionContextState` | 默认 `DEFAULT` 模式 | 工具执行的细粒度规则，参见 [权限系统](/v2/zh/docs/building-blocks/permission-system) |
 | `maxIters` | `int` | `10` | ReAct 主循环最大迭代次数 |
 
-## 多用户 / 多会话并发
+## 运行智能体
 
-`ReActAgent` 在调用之间**是无状态的**——同一个 agent 实例可以同时服务多个用户和会话。每次 `call()` 通过 `RuntimeContext` 携带的 `(userId, sessionId)` 来定位该次调用应该使用哪份对话状态，互不干扰。
+下文中的 `agentBuilder` 是应用配置好的共享 Builder；未展示完整作用域的片段中，`agent` 指当前请求内创建、执行结束后关闭的实例。
+
+`call` 和 `streamEvents` 都接受相同的输入消息列表，驱动相同的推理-行动循环，区别在于结果的交付方式。
+
+`call` 返回 `Mono<Msg>`，`streamEvents` 返回 `Flux<AgentEvent>`，都在订阅后开始执行。命令行可用 `block()` / `blockLast()` 等待；WebFlux handler 可以返回这个响应式结果，由框架订阅。调用方控制这次执行的订阅，取消它会取消该次执行。
+
+同一请求选一个入口、订阅一次。`streamEvents` 用于发起一次带实时事件的执行；查询已提交历史使用日志读取 API。
+
+### call
+
+`call` 在内部消费所有事件，当智能体完成或因外部交互暂停时返回最终 `Msg`。
 
 ```java
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.state.JsonFileAgentStateStore;
-import java.nio.file.Paths;
+import java.util.List;
 
-// 应用启动时创建一个 agent 实例（单例）
-ReActAgent agent = ReActAgent.builder()
-        .name("assistant")
-        .sysPrompt("你是一个有帮助的助手。")
-        .model("dashscope:qwen-plus")
-        .stateStore(new JsonFileAgentStateStore(
-                Paths.get(System.getProperty("user.home"), ".agentscope/sessions")))
-        .build();
-
-// 在 HTTP handler 中——不同请求传入不同 RuntimeContext，各自隔离
-agent.call(List.of(new UserMessage("你好")),
-        RuntimeContext.builder().userId("alice").sessionId("session-1").build()).block();
-
-agent.call(List.of(new UserMessage("Hi there")),
-        RuntimeContext.builder().userId("bob").sessionId("session-2").build()).block();
+UserMessage msg = new UserMessage("当前目录有哪些文件？");
+RuntimeContext ctx = RuntimeContext.builder().userId("alice").sessionId("session-001").build();
+try (ReActAgent agent = agentBuilder.build()) {
+    Msg result = agent.call(List.of(msg), ctx).block();
+    System.out.println(result.getTextContent());
+}
 ```
 
-每次 `call()` 开始时，agent 根据 `RuntimeContext` 中的 `(userId, sessionId)` 自动加载对应的 `AgentState`（对话上下文、权限规则等）；call 结束后自动保存。不同 session 的状态完全隔离。
+### streamEvents
 
+`streamEvents` 逐一产出 `AgentEvent` 对象，让你实时将文本输出、工具调用进度和生命周期事件流式传输给用户。按 `event.getType()` 分发即可针对每类事件做不同处理：
 
-<Tip>
+```java
+import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 
-同一个 `(userId, sessionId)` 的调用会按到达顺序**串行化执行**——第二个请求等待第一个完成后再开始。不同 session 的调用可以完全并行。
+try (ReActAgent agent = agentBuilder.build()) {
+    agent.streamEvents(new UserMessage("总结一下 README 的内容。"), ctx)
+            .doOnNext(event -> {
+                if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
+                    // 模型返回的流式文本片段 —— 追加到界面或标准输出
+                    System.out.print(((TextBlockDeltaEvent) event).getDelta());
+                } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
+                    // 智能体即将调用工具 —— 展示调用信息
+                    System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
+                }
+                // 其他事件：思考块、工具结果、回复结束等
+            })
+            .blockLast();
+}
+```
 
-</Tip>
+完整事件类型与字段参考 [消息与事件](/v2/zh/docs/building-blocks/message-and-event)。
 
+### observe
+
+使用 `observe` 将消息注入智能体上下文而不触发 reply——适用于多智能体场景中，一个智能体需要观察另一个智能体输出的情况。
+
+```java
+agent.observe(otherAgentMsg).block();
+```
+
+## 多用户 / 多会话并发
+
+共享 Builder 的不同请求各自创建实例和 `RuntimeContext`。下面的 WebFlux handler 表达式使用前面配置好的 `agentBuilder`：
+
+```java
+import reactor.core.publisher.Mono;
+
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId(userId).sessionId(sessionId).build();
+return Mono.using(
+        agentBuilder::build,
+        agent -> agent.call(new UserMessage(userInput), ctx),
+        ReActAgent::close);
+```
+
+流式 HTTP 响应可用 `Flux.using(agentBuilder::build, agent -> agent.streamEvents(input, ctx), ReActAgent::close)`。由 Web 框架订阅，不要在 handler 中提前关闭实例。
+
+不同会话可以并行。每请求创建实例后，单个实例内的执行门不会协调其他实例；同一会话由业务队列串行调度，或交给持有后台生命周期的 `AgentSession`。原生日志的写入隔离防止并发写入，但不提供跨实例 FIFO 排队；只配置旧 `stateStore` 也不会获得分布式执行锁。
 
 Spring Boot 完整示例见 `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`。
 
-## 控制单次执行
+## 会话应用的执行控制
+
+当聊天产品需要关闭页面后继续执行、保存排队任务或统一处理恢复和待办时，使用 `AgentSession` 管理这些操作。普通问答、流式展示或自行处理 HITL 的应用可以继续使用直接调用。
+
+会话方式通过 `submit` 接收新任务，以 `steer` / `inject` 补充信息，以 `respond` / `resume` 继续原任务；框架持有后台执行。前端从快照与持久事件读取进度。完整流程见[会话使用指南](/v2/zh/docs/harness/session-log)。
+
+同一个会话选择直接调用或会话操作来驱动任务；只读历史查询可以共用。已经 `submit` 的任务应通过读取事件观察，不能再调用 `streamEvents` 来订阅它，否则会发起另一次执行。
+
+<Accordion title="高级：自行管理单次执行">
 
 `ReActAgent` 和 `HarnessAgent` 提供 `prepareRun(messages, context)`（事件流）与 `prepareCall(messages, context)`（最终回复），返回带有唯一 `runId()` 的 `AgentRun<T>`。创建句柄不会执行 Agent；订阅一次 `stream()` 才开始执行。
 
@@ -230,9 +302,11 @@ run.cancel();
 
 运行管理器负责查找、鉴权及终态清理，Agent 不登记 RuntimeContext 对象。取消不会回滚外部副作用，也不能强行终止不响应取消的阻塞工具；立即取消不保证走协作中断的恢复回复和状态保存路径。
 
+</Accordion>
+
 ## 中断执行（Interrupt）
 
-当需要从外部中断一个正在运行的 agent call 时（用户取消、超时、优雅停机），使用 `interrupt`：
+下面针对通过 `call` / `streamEvents` 启动的执行。跨请求发起中断时，应用应保存并找到目标执行对应的 Agent 实例，执行结束后移除并关闭。需要从外部协作中断时，使用 `agent.interrupt`；通过 AgentSession 提交的任务使用 `session.interrupt()`，再按[会话指南](/v2/zh/docs/harness/session-log#中断后继续原任务)继续：
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -255,65 +329,13 @@ agent.interrupt(target, new UserMessage("用户已取消操作"));
 **中断后的行为：**
 - 当前推理/工具执行在下一个检查点（reasoning 开始、acting 开始、streaming 每个 chunk）被拦截
 - agent 返回一个带 `GenerateReason.INTERRUPTED` 标记的 Msg
-- 对话上下文（AgentState）自动保存——下次对同一 session 发起 `call()` 时从中断点恢复
+- 按已配置的后端保存状态；下次调用读取已保存的上下文。继续挂起的工具请求仍需提供相应答案，不会恢复工具内部的执行进度
 
 也可以直接用 `(userId, sessionId)` 字符串：
 
 ```java
 agent.interrupt("alice", "session-001");
 agent.interrupt("alice", "session-001", interruptMsg);
-```
-
-## 运行智能体
-
-`call` 和 `streamEvents` 都接受相同的输入消息列表，驱动相同的推理-行动循环，区别在于结果的交付方式。
-
-### call
-
-`call` 在内部消费所有事件，当智能体完成或因外部交互暂停时返回最终 `Msg`。
-
-```java
-import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.UserMessage;
-import java.util.List;
-
-UserMessage msg = new UserMessage("当前目录有哪些文件？");
-Msg result = agent.call(List.of(msg), RuntimeContext.empty()).block();
-System.out.println(result.getTextContent());
-```
-
-### streamEvents
-
-`streamEvents` 逐一产出 `AgentEvent` 对象，让你实时将文本输出、工具调用进度和生命周期事件流式传输给用户。按 `event.getType()` 分发即可针对每类事件做不同处理：
-
-```java
-import io.agentscope.core.event.AgentEventType;
-import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ToolCallStartEvent;
-
-agent.streamEvents(new UserMessage("总结一下 README 的内容。"))
-        .doOnNext(event -> {
-            if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
-                // 模型返回的流式文本片段 —— 追加到界面或标准输出
-                System.out.print(((TextBlockDeltaEvent) event).getDelta());
-            } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
-                // 智能体即将调用工具 —— 展示调用信息
-                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
-            }
-            // 其他事件：思考块、工具结果、回复结束等
-        })
-        .blockLast();
-```
-
-完整事件类型与字段参考 [消息与事件](/v2/zh/docs/building-blocks/message-and-event)。
-
-### observe
-
-使用 `observe` 将消息注入智能体上下文而不触发 reply——适用于多智能体场景中，一个智能体需要观察另一个智能体输出的情况。
-
-```java
-agent.observe(otherAgentMsg).block();
 ```
 
 ## RuntimeContext (per-call 上下文)
@@ -378,6 +400,8 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 ## 人机交互
 
+下文展示直接调用时如何处理工具确认与外部结果；发起请求与交回答案时沿用同一个 `ctx`。业务自己管理交互界面和后续调用；需要持久待办和自动关联原任务时，可使用 [AgentSession.respond](/v2/zh/docs/harness/session-log#回复-agent-的问题或确认请求)。
+
 当智能体遇到以下两种情况时，会暂停执行并发出特殊事件：需要**用户确认**的工具调用（权限系统返回 ASK），或标记为**外部执行**的工具（结果必须来自智能体外部）。两种情况下，都可以通过把结果事件再次喂给 agent 的下一次 `call` 来恢复执行。
 
 ### 用户确认
@@ -389,7 +413,7 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ```java
 import io.agentscope.core.event.RequireUserConfirmEvent;
 
-agent.streamEvents(msg)
+agent.streamEvents(msg, ctx)
         .doOnNext(event -> {
             if (event instanceof RequireUserConfirmEvent confirm) {
                 confirm.getToolCalls()
@@ -423,14 +447,15 @@ for (var tc : confirmEvent.getToolCalls()) {
 ```java
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
+import java.util.Map;
 
 UserMessage resumeMsg =
         UserMessage.builder()
-                .metadata(java.util.Map.of(
+                .metadata(Map.of(
                         Msg.METADATA_CONFIRM_RESULTS, confirmResults))
                 .build();
 
-Msg result = agent.call(List.of(resumeMsg), RuntimeContext.empty()).block();
+Msg result = agent.call(List.of(resumeMsg), ctx).block();
 ```
 
 - **已确认**的工具调用立即执行，智能体继续推理。
@@ -446,7 +471,7 @@ Msg result = agent.call(List.of(resumeMsg), RuntimeContext.empty()).block();
 ```java
 import io.agentscope.core.event.RequireExternalExecutionEvent;
 
-agent.streamEvents(msg)
+agent.streamEvents(msg, ctx)
         .doOnNext(event -> {
             if (event instanceof RequireExternalExecutionEvent ext) {
                 ext.getToolCalls().forEach(tc ->
@@ -489,6 +514,8 @@ for (var tc : externalEvent.getToolCalls()) {
 
 
 ## 配置状态持久化（AgentStateStore）
+
+下面是直接构建 `ReActAgent` 时配置状态存储的方式。`HarnessAgent` 默认使用 Session Log 保存历史和 checkpoint，无需额外设置 `stateStore`；其日志后端配置见[存储参考](/v2/zh/docs/harness/session-log#存储位置与后端配置)。两者的关系见[上下文文档](/v2/zh/docs/building-blocks/context#session-log-与-agentstatestore-的关系)。
 
 `AgentState` 是 agent 的全部可恢复状态——对话上下文、压缩摘要、权限规则、工具状态和当前 reply 位置。[`AgentStateStore`](/v2/zh/integration/session/index) 是它的存储抽象。
 
@@ -537,7 +564,7 @@ state.getContext().size();                  // 当前对话消息数
 String json = state.toJson();               // 序列化为 JSON
 ```
 
-完整字段、跨节点接续见[上下文与 AgentState](/v2/zh/docs/building-blocks/context)；压缩 / Plan Mode / 子 agent 的协作细节见[上下文压缩](/v2/zh/docs/harness/compaction)。
+完整字段、跨节点接续见[上下文与 AgentState](/v2/zh/docs/building-blocks/context)；压缩 / Plan Mode / 子 agent 的协作细节见[上下文管理](/v2/zh/docs/harness/context)。
 
 ## 结构化输出
 
