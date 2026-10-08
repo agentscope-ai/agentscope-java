@@ -37,6 +37,16 @@ python agentscope-service/release/release.py verify
 
 Set `CONTROL_PLANE_TEST_POSTGRES_DSN` to a **disposable test database** for PostgreSQL integration tests; never point tests at development or production data. The verifier uses `go test -p 1` so packages sharing one PostgreSQL database do not contend during concurrent-index migrations. Some Go controller tests additionally require envtest assets (`make test-integration` in `service-controlplane`). Run the repository-wide `mvn clean verify` before release submission. The release verifier explicitly selects all three Java service modules and their dependencies: selecting only the aggregator with `-pl agentscope-service` does not test its children.
 
+```bash
+mvn -B -ntp -T1 clean verify
+cd docs
+npm ci
+npm test
+npm run validate
+npm run broken-links
+cd ..
+```
+
 ## 3. Package candidates
 
 ```bash

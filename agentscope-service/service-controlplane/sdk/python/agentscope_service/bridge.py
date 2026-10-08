@@ -34,6 +34,7 @@ import uuid
 from concurrent.futures import wait
 from typing import Any, Dict, List, Optional
 
+from . import __version__ as SDK_VERSION
 from .adapters.executable import ExecutableAdapter, TaskResult
 from .adapters.base import (
     AgentTaskAssignment,
@@ -58,9 +59,6 @@ from .transport.grpc import GrpcTransport
 from .transport.http_pull import HttpPullTransport
 from .transport.http_server import ContractHTTPServer, ContractNotFoundError
 from .transport.registration import RegisteredIdentity, register_external_agent
-
-#: SDK 版本（握手时上报）。
-SDK_VERSION = "0.1.0"
 
 # ─── 周期与批量参数（sdk-design §2.2 / §7）───
 LEVEL1_INTERVAL = 10.0  # Level 1 聚合上报周期

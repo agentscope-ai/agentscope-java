@@ -126,10 +126,13 @@ python -m pip install -r agentscope-service/release/requirements.txt \
 
 ```bash
 python agentscope-service/release/release.py verify
-mvn -B -ntp clean verify
-python -m pip install -e 'docs[dev]'
-jupyter-book build docs
-python docs/scripts/check_service_docs.py
+mvn -B -ntp -T1 clean verify
+cd docs
+npm ci
+npm test
+npm run validate
+npm run broken-links
+cd ..
 ```
 
 `verify` 覆盖 Service Java reactor、Go、前端、Python、DSH 和 Chart 检查；不是完整仓库 `mvn clean verify` 的替代。Go 共享测试库的包按 `-p 1` 串行执行。部分 Kubernetes controller 集成测试还需要 envtest 资源，按 Control Plane Makefile 的 `test-integration` 入口运行。
