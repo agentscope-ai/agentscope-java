@@ -1,6 +1,7 @@
 package io.agentscope.harness.agent.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -120,14 +121,15 @@ class AgentSessionTest {
             assertEquals(turn, answer.turnId());
             assertTrue(reasoning.await(10, TimeUnit.SECONDS));
             assertTrue(session.interrupt());
-            assertEquals("interrupted", session.await(answer).block(WAIT).status());
+            var interrupted = session.await(answer).block(WAIT);
+            assertEquals("interrupted", interrupted.status());
             assertEquals(1, executions.get());
             assertTrue(session.pending().isEmpty());
             var continuation = session.resume(turn);
-            assertEquals(
-                    "completed",
-                    session.await(continuation).block(WAIT).status(),
-                    session.executionError());
+            var completed = session.await(continuation).block(WAIT);
+            assertEquals("completed", completed.status(), session.executionError());
+            assertEquals(interrupted.turnId(), completed.turnId());
+            assertNotEquals(interrupted.runId(), completed.runId());
             assertEquals(1, executions.get());
             assertTrue(
                     session.transcript().messages().stream()

@@ -327,12 +327,39 @@ Available accessors:
 | Method | Description |
 |------|------|
 | `getSessionId()` / `getUserId()` | Built-in fields used to route the state slot and tenant |
+| `getRunId()` | Stable per-call correlation id (see [runId correlation](#runid-correlation) below), never null |
 | `getAgentState()` / `setAgentState(AgentState)` | Call-scoped `AgentState`, injected by the framework at call entry. Middleware and tools should read state from here, not from `agent.getAgentState()` |
 | `resolveAgentState(ctx, agent)` | Static helper: returns `ctx.getAgentState()` if available, falls back to `agent.getAgentState()`. Ensure the current call has injected its state; fallback does not guarantee the intended business session |
 | `get(String)` / `put(String, Object)` | String-keyed get/put |
 | `get(Class<T>)` / `put(Class<T>, T)` | Typed singleton get/put |
 | `getExtra()` | Direct access to the string-attribute map (mutable view) |
 | `RuntimeContext.empty()` | Empty context |
+
+### runId correlation
+
+Every `RuntimeContext` carries a never-null `runId`: a non-blank value supplied via `builder().runId(x)` is kept as-is; otherwise (unset or blank) `build()` generates one (32-char hex). Its purpose is to tie a **single execution** together across the execution layer and the product layer:
+
+- Middleware, tools, logs, and tracing can all correlate one invocation via `ctx.getRunId()` — under multi-session concurrency, grepping a single runId recovers the full trace of that call;
+- Handles created by `prepareRun` / `prepareCall` adopt the context's runId, so `run.runId() == ctx.getRunId()` — naturally aligned with the `AgentRunRegistry` registration key, the SSE `SESSION_RUN_STARTED` event, and the id the frontend uses to cancel a run;
+- Subagent contexts are derived via `RuntimeContext.builder(parentRc)`, which copies the runId, so subagents spawned through `agent_spawn` inherit the parent call's id — even when the subagent gets an independent sessionId, the chain id keeps the whole execution linked.
+
+```java
+// Orchestration layer threading an explicit chain id (uniqueness is the caller's job):
+RuntimeContext ctx = RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("s-001")
+    .runId("trace-2026-09-25-0001")   // spans the whole multi-agent flow
+    .build();
+
+// Correlate this execution from middleware / tools:
+log.info("[runId={}] tool executed", ctx.getRunId());
+
+// Handle and execution layer share the same id:
+AgentRun<Msg> run = agent.prepareCall(msgs, ctx);
+assert run.runId().equals(ctx.getRunId());
+```
+
+Create a fresh `RuntimeContext` for each prepared execution. To retain session attributes while starting another run, use `RuntimeContext.builder(previous).runId(null).build()`; this also applies when resuming the same Turn after an external tool result. Derived subagent contexts can retain the parent runId for correlation. With native Session Log enabled, a prepared execution cannot reuse a runId already recorded in that session, and `AgentRunRegistry` rejects concurrent duplicate runIds in the Service.
 
 
 <Tip>

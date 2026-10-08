@@ -304,7 +304,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `LocalSnapshotSpec(Path)` | 本地目录 `tar` 文件 | `agentscope-harness` | 单机调试 |
 | `OssSnapshotSpec` | 阿里云 OSS | `agentscope-extensions-oss` | **大对象首选**；天然适合对象存储 |
 | `RedisSnapshotSpec` | Redis | `agentscope-extensions-redis` | 小工作区 + 短 TTL（注意 Redis 内存代价） |
-| `JdbcSnapshotSpec` | MySQL / JDBC BLOB | `agentscope-extensions-mysql` | 已有关系型数据库、不想引入额外中间件 |
+| `JdbcSnapshotSpec` | JDBC BLOB | `agentscope-extensions-jdbc` | 已有关系型数据库、不想引入额外中间件 |
 | 自实现 `RemoteSnapshotClient` → `RemoteSnapshotSpec` | S3 / GCS / MinIO | — | 不在内置列表里 |
 
 ```java

@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /** Read-only session discovery and full conversation views from the authoritative native log. */
 public class SessionSearchTool {
@@ -47,6 +48,11 @@ public class SessionSearchTool {
         this(store == null ? new WorkspaceSessionLogStore(workspace) : store);
     }
 
+    public String sessionSearch(
+            RuntimeContext runtimeContext, String query, String agentId, Integer maxResults) {
+        return sessionSearch(runtimeContext, query, agentId, maxResults, null);
+    }
+
     @Tool(
             name = "session_search",
             readOnly = true,
@@ -55,7 +61,12 @@ public class SessionSearchTool {
                             + " keyword or phrase.")
     public String sessionSearch(
             RuntimeContext runtimeContext,
-            @ToolParam(name = "query", description = "Search query (keyword or phrase)")
+            @ToolParam(
+                            name = "query",
+                            description =
+                                    "Literal phrase, or whitespace-separated keywords when"
+                                            + " matchMode is all/any; no automatic Chinese word"
+                                            + " segmentation")
                     String query,
             @ToolParam(
                             name = "agentId",
@@ -66,11 +77,31 @@ public class SessionSearchTool {
                             name = "maxResults",
                             description = "Maximum number of results (default: 10)",
                             required = false)
-                    Integer maxResults) {
+                    Integer maxResults,
+            @ToolParam(
+                            name = "matchMode",
+                            description =
+                                    "phrase (default): exact substring; all: every keyword in the"
+                                            + " same message; any: at least one keyword in that"
+                                            + " message. Case-insensitive literal matching.",
+                            required = false)
+                    String matchMode) {
         if (query == null || query.isBlank()) return "Error: query is required";
         RuntimeContext rc = context(runtimeContext);
         int limit = positiveLimit(maxResults, 10);
-        String lowerQuery = query.toLowerCase(Locale.ROOT);
+        Predicate<String> matcher;
+        try {
+            matcher =
+                    KeywordMatcher.compile(
+                            query,
+                            matchMode,
+                            term -> {
+                                String lowerTerm = term.toLowerCase(Locale.ROOT);
+                                return text -> text.contains(lowerTerm);
+                            });
+        } catch (IllegalArgumentException error) {
+            return "Error: " + error.getMessage();
+        }
         var matches = new ArrayList<Map<String, Object>>();
         for (SessionKey key : sessions(rc, agentId)) {
             RuntimeContext sessionContext =
@@ -78,7 +109,7 @@ public class SessionSearchTool {
             var view = SessionViews.transcript(store.open(key, sessionContext));
             for (var message : view.messages()) {
                 String text = JsonUtils.getJsonCodec().toJson(message.getContent());
-                if (text.toLowerCase(Locale.ROOT).contains(lowerQuery)) {
+                if (matcher.test(text.toLowerCase(Locale.ROOT))) {
                     matches.add(
                             Map.of(
                                     "agentId",

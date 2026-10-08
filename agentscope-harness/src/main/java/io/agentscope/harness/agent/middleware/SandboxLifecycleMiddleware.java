@@ -21,6 +21,8 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,6 +67,15 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             SandboxManager sandboxManager, SandboxBackedFilesystem filesystemProxy) {
         this.sandboxManager = sandboxManager;
         this.filesystemProxy = filesystemProxy;
+    }
+
+    /**
+     * Session lifecycle is driven explicitly by HarnessAgent; participates at no point.
+     * Subclasses overriding hooks must re-declare.
+     */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.noneOf(ExtensionPoint.class);
     }
 
     /**

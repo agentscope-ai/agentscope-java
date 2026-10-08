@@ -418,6 +418,7 @@ public final class AgentSession implements AutoCloseable {
         error = null;
         RuntimeContext rc =
                 RuntimeContext.builder(context)
+                        .runId(null)
                         .put(SessionRecorder.TURN_ID_KEY, command.turnId())
                         .put(SessionExecution.CONTEXT_KEY, new SessionExecution(log, command))
                         .build();

@@ -28,6 +28,7 @@ import io.agentscope.extensions.judge.jev.NoulAnswer;
 import io.agentscope.extensions.judge.jev.NoulQuestion;
 import io.agentscope.extensions.judge.jev.SystemOneRequest;
 import io.agentscope.extensions.judge.jev.SystemOneResult;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -62,6 +63,12 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
                 || rejectionThreshold >= confidenceThreshold)
             throw new IllegalArgumentException(
                     "require maxTools > 0 and 0 <= rejection < selection <= 1");
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_REASONING);
     }
 
     public static Builder builder(JevClient client) {

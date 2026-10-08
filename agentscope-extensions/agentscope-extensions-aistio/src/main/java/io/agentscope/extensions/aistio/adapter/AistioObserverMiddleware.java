@@ -31,6 +31,7 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.extensions.aistio.model.SessionEvent;
+import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -59,6 +60,13 @@ public final class AistioObserverMiddleware implements MiddlewareBase {
 
     AistioObserverMiddleware(AgentScopeAdapter adapter) {
         this.adapter = adapter;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(
+                ExtensionPoint.ON_AGENT, ExtensionPoint.ON_ACTING, ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
     @Override

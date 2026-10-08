@@ -18,7 +18,6 @@ package io.agentscope.core.agent;
 import io.agentscope.core.interruption.InterruptControl;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
-import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -31,14 +30,19 @@ import reactor.util.context.ContextView;
 public final class RunControl {
     static final Object CONTEXT_KEY = new Object();
     private final String agentId;
-    private final String runId = UUID.randomUUID().toString();
+    private final String runId;
     private final InterruptControl interruption = new InterruptControl();
     private final Sinks.Empty<Void> cancellation = Sinks.empty();
     private final Sinks.One<AgentRun.Status> termination = Sinks.one();
     private volatile AgentRun.Status status = AgentRun.Status.CREATED;
 
     public RunControl(String agentId) {
+        this(agentId, null);
+    }
+
+    public RunControl(String agentId, String runId) {
         this.agentId = agentId;
+        this.runId = runId == null || runId.isBlank() ? RuntimeContext.generateRunId() : runId;
     }
 
     /** Same identifier used by AgentRun and the native SessionEvent executionRunId. */

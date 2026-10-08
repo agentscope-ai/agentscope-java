@@ -21,7 +21,9 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentState;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -73,6 +75,12 @@ public class TaskReminderMiddleware implements MiddlewareBase {
             caller/user decisions can confirm it. CONFIRMED means authorized, not verified or satisfied.
             Never infer task acceptance from all todos being completed.\
             """;
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT, ExtensionPoint.ON_REASONING);
+    }
 
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {

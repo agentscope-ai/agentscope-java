@@ -10,7 +10,8 @@ import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxRepository;
 import io.agentscope.core.session.JournalSessionLog;
 import io.agentscope.core.session.SessionEvent;
 import io.agentscope.core.session.SessionLogException;
-import io.agentscope.extensions.mysql.store.JdbcStore;
+import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
+import io.agentscope.extensions.jdbc.store.JdbcStore;
 import io.agentscope.harness.agent.session.StoreSessionStorage;
 import java.sql.DriverManager;
 import java.time.Duration;
@@ -53,8 +54,14 @@ class PostgresSessionDurabilityTest {
     @Test
     void independentJdbcInstancesFenceNativeWritersAndRecoverOnlyCommittedEvents() {
         var dataSource = new DriverManagerDataSource(scopedUrl(), user, password);
-        var firstStore = JdbcStore.builder(dataSource).initializeSchema(true).build();
-        var secondStore = JdbcStore.builder(dataSource).initializeSchema(true).build();
+        var firstStore =
+                JdbcStore.builder(dataSource)
+                        .dialect(AbstractJdbcDialect.from(dataSource).build())
+                        .build();
+        var secondStore =
+                JdbcStore.builder(dataSource)
+                        .dialect(AbstractJdbcDialect.from(dataSource).build())
+                        .build();
         var first =
                 new JournalSessionLog(
                         new StoreSessionStorage(firstStore, List.of("tenant-a")), "session");

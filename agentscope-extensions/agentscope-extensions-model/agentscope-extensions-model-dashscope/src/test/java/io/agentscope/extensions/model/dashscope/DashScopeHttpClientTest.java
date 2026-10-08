@@ -869,6 +869,31 @@ class DashScopeHttpClientTest {
         assertTrue(recorded.getBody().readUtf8().contains("\"custom\":\"custom-value\""));
     }
 
+    @Test
+    void testAdditionalBodyParamsOverrideReasoningEffort() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+        request.getParameters().setReasoningEffort("high");
+
+        Map<String, Object> additionalBodyParams = new HashMap<>();
+        additionalBodyParams.put("reasoning_effort", "low");
+
+        client.call(request, null, additionalBodyParams, null);
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+
+        DashScopeRequest dashScopeRequest =
+                JsonUtils.getJsonCodec().fromJson(body, DashScopeRequest.class);
+        assertNotNull(dashScopeRequest.getParameters());
+        assertEquals("low", dashScopeRequest.getParameters().getReasoningEffort());
+    }
+
     // ==================== DashScopeHttpException Tests ====================
 
     @Test

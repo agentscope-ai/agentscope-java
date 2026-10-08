@@ -31,12 +31,14 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,6 +76,12 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
             AbstractFilesystem filesystem, ToolResultEvictionConfig config) {
         this.filesystem = filesystem;
         this.config = config;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_REASONING);
     }
 
     @Override

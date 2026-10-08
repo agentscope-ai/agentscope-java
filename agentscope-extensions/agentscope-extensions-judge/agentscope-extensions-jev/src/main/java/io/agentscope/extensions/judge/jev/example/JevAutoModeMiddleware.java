@@ -41,6 +41,7 @@ import io.agentscope.extensions.judge.jev.SystemOneRequest;
 import io.agentscope.extensions.judge.jev.SystemOneResult;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -90,6 +91,12 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
         this.denyMessage = builder.denyMessage;
         this.execution = new JevExecution("tool-guard", builder.options);
         validate();
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_ACTING);
     }
 
     public static Builder builder(JevClient client) {

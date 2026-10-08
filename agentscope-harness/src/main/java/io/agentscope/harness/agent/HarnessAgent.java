@@ -47,6 +47,7 @@ import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.AgentTool;
@@ -552,6 +553,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getStateStore();
     }
 
+    public ConflictPolicy getConflictPolicy() {
+        return delegate.getConflictPolicy();
+    }
+
     /**
      * The distributed store configured on this agent, or {@code null} for local
      * deployments. Exposed so {@link io.agentscope.harness.agent.gateway.GatewayBootstrap} can build
@@ -889,14 +894,27 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return wrappedStream(effective, () -> delegate.stream(msgs, options, schema, effective));
     }
 
-    /** Prepare a cancellable execution covering the complete harness/sandbox lifecycle. */
+    /**
+     * Prepare a cancellable execution covering the complete harness/sandbox lifecycle. Adopts the
+     * context's runId ({@code run.runId() == ctx.getRunId()}); {@code ensureSessionDefaults}
+     * still runs at subscribe time and never alters it. A null context uses a fresh {@link
+     * RuntimeContext#empty()} so derived defaults inherit this runId.
+     */
     public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext ctx) {
-        return AgentRun.create(getAgentId(), () -> streamEvents(msgs, ctx));
+        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        return AgentRun.create(getAgentId(), source.getRunId(), () -> streamEvents(msgs, source));
     }
 
-    /** Prepare a cancellable reply execution covering the complete harness/sandbox lifecycle. */
+    /**
+     * Prepare a cancellable reply execution covering the complete harness/sandbox lifecycle.
+     * Adopts the context's runId ({@code run.runId() == ctx.getRunId()});
+     * {@code ensureSessionDefaults} still runs at subscribe time and never alters it. A null
+     * context uses a fresh {@link RuntimeContext#empty()} so derived defaults inherit this
+     * runId.
+     */
     public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext ctx) {
-        return AgentRun.create(getAgentId(), () -> call(msgs, ctx));
+        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        return AgentRun.create(getAgentId(), source.getRunId(), () -> call(msgs, source));
     }
 
     // ==================== streamEvents (AgentEvent — v2 aligned) ====================
@@ -1454,8 +1472,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *   <tr><td>{@code maxIters}</td><td>{@code agent.getMaxIters()}</td></tr>
          *   <tr><td>{@code generateOptions}</td><td>{@code agent.getGenerateOptions()}</td></tr>
          *   <tr><td>{@code toolkit}</td><td>defensive copy via {@code agent.getToolkit().copy()}</td></tr>
-         *   <tr><td rowspan="2">Persistence</td>
+         *   <tr><td rowspan="3">Persistence</td>
          *       <td>{@code session}</td><td>{@code agent.getStateStore()} if non-null</td></tr>
+         *   <tr><td>{@code conflictPolicy}</td><td>{@code agent.getConflictPolicy()}</td></tr>
          *   <tr><td>{@code defaultSessionId}</td><td>{@code agent.getDefaultSessionId()} if non-null</td></tr>
          *   <tr><td rowspan="3">Model resilience (from {@code agent.getModelConfig()})</td>
          *       <td>{@code maxRetries}</td><td>{@link ModelConfig#maxRetries()}</td></tr>
@@ -1555,6 +1574,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (srcSession != null) {
                 b.stateStore(srcSession);
             }
+            b.conflictPolicy(agent.getConflictPolicy());
             String srcDefaultSessionId = agent.getDefaultSessionId();
             if (srcDefaultSessionId != null) {
                 b.defaultSessionId(srcDefaultSessionId);
@@ -1766,6 +1786,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
         public Builder stateStore(AgentStateStore stateStore) {
             this.stateStoreOverride = stateStore;
             inner.stateStore(stateStore);
+            return this;
+        }
+
+        /**
+         * Policy applied when an {@code agent_state} save conflicts with another writer's update.
+         * Defaults to {@link ConflictPolicy#OVERWRITE}, i.e. last-writer-wins with no error.
+         *
+         * @param conflictPolicy the policy to apply on conflict
+         * @return this builder
+         */
+        public Builder conflictPolicy(ConflictPolicy conflictPolicy) {
+            inner.conflictPolicy(conflictPolicy);
             return this;
         }
 

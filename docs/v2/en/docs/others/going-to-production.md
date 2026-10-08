@@ -303,7 +303,7 @@ Sandboxes are ephemeral by default — the next `call()` may land on a different
 | `LocalSnapshotSpec(Path)` | local directory `tar` files | `agentscope-harness` | single-node debugging |
 | `OssSnapshotSpec` | Alibaba Cloud OSS | `agentscope-extensions-oss` | **large objects first choice**; natural fit for object storage |
 | `RedisSnapshotSpec` | Redis | `agentscope-extensions-redis` | small workspaces + short TTL (watch Redis memory cost) |
-| `JdbcSnapshotSpec` | MySQL / JDBC BLOB | `agentscope-extensions-mysql` | existing relational DB, no extra middleware |
+| `JdbcSnapshotSpec` | JDBC BLOB | `agentscope-extensions-jdbc` | existing relational DB, no extra middleware |
 | Custom `RemoteSnapshotClient` → `RemoteSnapshotSpec` | S3 / GCS / MinIO | — | anything not in the built-in list |
 
 ```java

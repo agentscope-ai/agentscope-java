@@ -262,13 +262,16 @@ public abstract class AgentBase implements Agent {
     }
 
     private Mono<Msg> runInContext(
-            List<Msg> msgs,
+            List<Msg> inputMsgs,
             Function<List<Msg>, Mono<Msg>> doCallFn,
             reactor.util.context.ContextView cv) {
         RuntimeContext rc = cv.getOrDefault(RUNTIME_CONTEXT_KEY, null);
         RunControl supplied = cv.getOrDefault(RunControl.CONTEXT_KEY, null);
         boolean managed = supplied != null && supplied.belongsTo(getAgentId());
-        RunControl control = managed ? supplied : new RunControl(getAgentId());
+        RunControl control =
+                managed
+                        ? supplied
+                        : new RunControl(getAgentId(), rc == null ? null : rc.getRunId());
         if (!managed) {
             control.queue();
         }
@@ -282,6 +285,9 @@ public abstract class AgentBase implements Agent {
                     }
                     shutdown.unregisterRequest(requestId);
                 };
+        // Per-subscription private mutable copy: input adjustments from per-call extension
+        // points (e.g. onAgentStateReady middlewares) never touch the caller's list.
+        List<Msg> msgs = new ArrayList<>(inputMsgs != null ? inputMsgs : List.of());
         // Resolve session state only after admission. Retire before releasing the queue gate so a
         // retry cannot have its new registration removed by the preceding attempt's cleanup.
         Mono<Msg> lifecycle =
@@ -324,6 +330,11 @@ public abstract class AgentBase implements Agent {
             return Mono.error(
                     new java.util.concurrent.CancellationException("Agent run cancelled"));
         }
+        // State-ready middleware may interrupt the call during resource acquisition.
+        // Register its control first; lifecycle retirement removes it on every terminal signal.
+        if (gateKey != null) {
+            runningCalls.put(gateKey, control);
+        }
         return Mono.usingWhen(
                 acquireCallExecution(msgs, rc, control),
                 scope -> executeCallBody(msgs, doCallFn, requestId, control, gateKey, scope),
@@ -354,9 +365,6 @@ public abstract class AgentBase implements Agent {
             RunControl control,
             Object gateKey,
             Object scope) {
-        if (gateKey != null) {
-            runningCalls.put(gateKey, control);
-        }
         // Bind this call's resolved per-session state to the tracked shutdown request so graceful
         // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
         // no-arg "most-recently-active" accessors.

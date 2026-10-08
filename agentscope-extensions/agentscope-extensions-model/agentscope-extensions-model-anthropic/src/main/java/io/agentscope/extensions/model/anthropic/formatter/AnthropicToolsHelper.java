@@ -31,8 +31,11 @@ import com.anthropic.models.messages.ToolChoiceTool;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,29 +72,61 @@ public class AnthropicToolsHelper {
             List<ToolSchema> tools,
             GenerateOptions options,
             String cacheTtl) {
-        if (tools == null || tools.isEmpty()) {
+        applyTools(builder, tools, List.of(), options, cacheTtl);
+    }
+
+    /**
+     * Applies client tools and Anthropic server tools as one tool set.
+     *
+     * <p>Anthropic selects tools by name, so the combined set is validated before anything is
+     * added to the request. Tool choice and parallel-tool-use options are resolved only after the
+     * complete set has been assembled.
+     *
+     * @param builder the Anthropic request builder
+     * @param tools client tool schemas
+     * @param serverTools Anthropic built-in server tools
+     * @param options effective generation options
+     * @param cacheTtl TTL for prompt-caching markers
+     */
+    public static void applyTools(
+            MessageCreateParams.Builder builder,
+            List<ToolSchema> tools,
+            List<AnthropicServerTool> serverTools,
+            GenerateOptions options,
+            String cacheTtl) {
+        List<ToolSchema> clientTools = tools != null ? tools : List.of();
+        List<AnthropicServerTool> anthropicServerTools =
+                serverTools != null ? serverTools : List.of();
+        if (clientTools.isEmpty() && anthropicServerTools.isEmpty()) {
             return;
         }
+
+        validateToolNames(clientTools, anthropicServerTools);
 
         boolean cacheControlEnabled =
                 options != null && Boolean.TRUE.equals(options.getCacheControl());
 
-        // Convert and add tools. When prompt caching is enabled, mark the last tool definition
-        // with cache_control so all tool definitions are cached (Anthropic caches everything up
-        // to and including the marked block).
-        for (int i = 0; i < tools.size(); i++) {
-            ToolSchema schema = tools.get(i);
-            Tool.Builder toolBuilder =
-                    Tool.builder()
-                            .name(schema.getName())
-                            .description(schema.getDescription())
-                            .inputSchema(convertToJsonValue(schema.getParameters()));
+        for (AnthropicServerTool serverTool : anthropicServerTools) {
+            builder.addTool(serverTool.toToolUnion());
+        }
 
-            if (cacheControlEnabled && i == tools.size() - 1) {
-                toolBuilder.cacheControl(AnthropicBaseFormatter.buildCacheControl(cacheTtl));
+        // Convert and add client tools. When prompt caching is enabled, mark the last client
+        // tool definition with cache_control so the complete tool prefix is cached.
+        if (!clientTools.isEmpty()) {
+            for (int i = 0; i < clientTools.size(); i++) {
+                ToolSchema schema = clientTools.get(i);
+                Tool.Builder toolBuilder =
+                        Tool.builder()
+                                .name(schema.getName())
+                                .description(schema.getDescription())
+                                .inputSchema(convertToJsonValue(schema.getParameters()));
+
+                if (cacheControlEnabled && i == clientTools.size() - 1) {
+                    toolBuilder.cacheControl(AnthropicBaseFormatter.buildCacheControl(cacheTtl));
+                }
+
+                builder.addTool(toolBuilder.build());
             }
-
-            builder.addTool(toolBuilder.build());
         }
 
         // Resolve effective parallelToolCalls and toolChoice
@@ -107,6 +142,30 @@ public class AnthropicToolsHelper {
             // so we create an implicit Auto with disableParallelToolUse
             applyToolChoice(builder, new ToolChoice.Auto(), parallelToolCalls);
         }
+    }
+
+    private static void validateToolNames(
+            List<ToolSchema> clientTools, List<AnthropicServerTool> serverTools) {
+        Set<String> names = new HashSet<>();
+        for (ToolSchema tool : clientTools) {
+            if (!names.add(tool.getName())) {
+                throw duplicateToolName(tool.getName());
+            }
+        }
+        for (AnthropicServerTool tool : serverTools) {
+            String name = tool.getName();
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("Anthropic server tool name must not be blank");
+            }
+            if (!names.add(name)) {
+                throw duplicateToolName(name);
+            }
+        }
+    }
+
+    private static IllegalArgumentException duplicateToolName(String name) {
+        return new IllegalArgumentException(
+                "Anthropic tool names must be unique; duplicate tool name: " + name);
     }
 
     /**

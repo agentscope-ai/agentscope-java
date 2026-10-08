@@ -89,6 +89,7 @@ class SessionExecutionIdentityTest {
         var events = run.stream().collectList().block(WAIT);
         assertFalse(events.isEmpty());
         ExecutionIdentity identity = events.get(0).getExecution();
+        assertEquals(context.getRunId(), run.runId());
         assertEquals(run.runId(), identity.runId());
         assertEquals("s", identity.sessionId());
         assertEquals("stable", identity.agentId());
@@ -102,7 +103,15 @@ class SessionExecutionIdentityTest {
         assertNotNull(context.getAgentState());
         assertNull(context.get(SessionRecorder.TURN_ID_KEY));
         assertEquals(AgentRun.Status.COMPLETED, run.status());
-        var call = agent.prepareCall(List.of(new UserMessage("second")), context);
+        assertThrows(
+                SessionLogException.class,
+                () ->
+                        agent.prepareCall(List.of(new UserMessage("duplicate")), context).stream()
+                                .blockLast(WAIT));
+        var nextContext = RuntimeContext.builder(context).runId(null).build();
+        var call = agent.prepareCall(List.of(new UserMessage("second")), nextContext);
+        assertEquals(nextContext.getRunId(), call.runId());
+        assertNotEquals(run.runId(), call.runId());
         call.stream().blockLast(WAIT);
         assertTrue(
                 agent.sessionLog(context).readAfter(0, 1000).stream()
@@ -177,7 +186,7 @@ class SessionExecutionIdentityTest {
                                                         "external",
                                                         TextBlock.builder().text("ok").build()))
                                         .build()),
-                        ctx);
+                        RuntimeContext.builder(ctx).runId(null).build());
         second.stream().blockLast(WAIT);
         assertNotEquals(first.runId(), second.runId());
         var facts = log.readAfter(0, 1000);
@@ -189,7 +198,12 @@ class SessionExecutionIdentityTest {
         assertTrue(SessionInteractions.pending(log).isEmpty());
         assertThrows(
                 RuntimeException.class,
-                () -> agent.prepareCall(List.of(), ctx).stream().blockLast(WAIT));
+                () ->
+                        agent
+                                .prepareCall(
+                                        List.of(), RuntimeContext.builder(ctx).runId(null).build())
+                                .stream()
+                                .blockLast(WAIT));
     }
 
     @Test
