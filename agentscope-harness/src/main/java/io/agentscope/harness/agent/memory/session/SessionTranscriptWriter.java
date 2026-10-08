@@ -25,6 +25,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.transcript.ObjectStoreTranscriptStore;
 import io.agentscope.harness.agent.transcript.TranscriptRef;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -83,6 +84,27 @@ public class SessionTranscriptWriter {
      * Appends new messages to the session tree idempotently (dedup by stable entry ids).
      * Updates {@code sessions.json} index on success.
      */
+    /**
+     * Chooses the {@link TranscriptRef} layout so segment keys land on the routes
+     * {@code RemoteFilesystemSpec} registers ({@code agents/{agentId}/sessions/}). The
+     * object-store implementation goes through {@code AbstractFilesystem}, so a ref built as
+     * {@code {tenant}/{agentId}/{sessionId}} (default tenant "default") falls through to the
+     * default backend instead of the sessions route — silently dropping session history to
+     * local disk on multi-replica deployments (#2918). Other {@link TranscriptStore}
+     * implementations keep the caller-supplied tenant layout.
+     */
+    private TranscriptRef transcriptRefFor(
+            TranscriptStore store, String agentId, String sessionId) {
+        if (store instanceof ObjectStoreTranscriptStore) {
+            // Route-aligned layout: matches the "agents/{agentId}/sessions/" prefix that
+            // RemoteFilesystemSpec registers, so segment keys hit the sessions route and
+            // persist to the distributed store instead of the default backend (#2918).
+            // Note: transcriptTenant only applies to non-routed store implementations.
+            return new TranscriptRef("agents", agentId, "sessions/" + sessionId);
+        }
+        return new TranscriptRef(tenant, agentId, sessionId);
+    }
+
     public void appendMessages(
             RuntimeContext rc, List<Msg> messages, String agentId, String sessionId) {
         if (messages == null || messages.isEmpty() || agentId == null || sessionId == null) {
@@ -108,7 +130,8 @@ public class SessionTranscriptWriter {
                                     contextRelPath)
                             .setRuntimeContext(rc)
                             .setTranscriptStore(
-                                    transcriptStore, new TranscriptRef(tenant, agentId, sessionId));
+                                    transcriptStore,
+                                    transcriptRefFor(transcriptStore, agentId, sessionId));
             tree.load();
             tree.syncFromRemote();
 
