@@ -8,7 +8,7 @@ zh_link: /v2/zh/docs/building-blocks/middleware
 
 Agent middleware lets you inject custom logic (logging, tracing, input rewriting, access control, …) at key points in an agent's execution flow without modifying the agent or model code.
 
-In AgentScope Java, you can hook into 5 places — covering everything from the outer reply flow down to the raw model API call:
+In AgentScope Java, you can hook into 6 places — covering everything from the outer reply flow down to the raw model API call:
 
 | Position | Type | Description |
 |----------|------|-------------|
@@ -17,16 +17,19 @@ In AgentScope Java, you can hook into 5 places — covering everything from the 
 | `onActing` | Onion | Wraps the execution of a single tool call |
 | `onModelCall` | Onion | Wraps a raw `ChatModel` API call — closest to the model |
 | `onSystemPrompt` | Transformer | Triggers when the system prompt is assembled; multiple middlewares run in sequence, each transforming the previous output |
+| `onAgentStateReady` | Notification | Fires once per call as soon as this call's `AgentState` is ready — before the input enters the pipeline (pre-call hooks, memory, reasoning) |
 
-The two types differ:
+The three types differ:
 
 - **Onion** — middleware wraps the next handler; you can insert logic before/after `next.apply(input)` and observe the intermediate event stream.
 - **Transformer** — middlewares form a pipeline; the previous output is the next input. There's no "inner layer" concept.
+- **Notification** — one-way synchronous notification without `next` delegation; middlewares run in sequence at a fixed lifecycle point.
 
-The diagram below shows how the hooks nest in the agent lifecycle. `onSystemPrompt` is nested inside `onReasoning` because it fires when the reasoning step assembles the system prompt:
+The diagram below shows how the hooks nest in the agent lifecycle. `onSystemPrompt` is nested inside `onReasoning` because it fires when the reasoning step assembles the system prompt; `onAgentStateReady` fires right after the call's `AgentState` is bound to the `RuntimeContext`, before the input enters the pipeline:
 
 ```text
 onAgent/
+├── onAgentStateReady (call-scoped AgentState ready, input not yet in pipeline)
 └── ReAct loop (per round)/
     ├── onReasoning/
     │   ├── onSystemPrompt (assemble system prompt)
@@ -44,7 +47,7 @@ onAgent/
 
 ## Equipping middleware
 
-AgentScope packs a set of hooks into a single `MiddlewareBase` implementation — one middleware class can implement any subset of the 5 hooks (the rest default to `next.apply(input)`). Pass the instances to the builder's `middlewares(...)`:
+AgentScope packs a set of hooks into a single `MiddlewareBase` implementation — one middleware class can implement any subset of the 6 hooks (onion/transformer hooks not implemented default to `next.apply(input)`; notification hooks default to a no-op). Pass the instances to the builder's `middlewares(...)`:
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -309,10 +312,45 @@ Input record types per hook (under `io.agentscope.core.middleware`):
 | `onActing` | `ActingInput` | `toolCalls: List<ToolUseBlock>` |
 | `onModelCall` | `ModelCallInput` | `messages`, `tools`, `options`, `model: Model` |
 | `onSystemPrompt` | `String` | The current prompt |
+| `onAgentStateReady` | — (direct parameters) | `state: AgentState`, `inputMessages: List<Msg>` |
 
 To replace fields flowing into the next layer, construct a new input record, then call `next.apply(...)`.
 
 Runnable examples: `agentscope-examples/documentation/.../middleware/CustomizedMiddlewareExample.java`, `middleware/ModelCallMiddlewareExample.java`, `middleware/SystemPromptMiddlewareExample.java`.
+
+### State-ready notification
+
+`onAgentStateReady` is a notification hook (no `next`): it fires synchronously once per call, right after the call-scoped `AgentState` is bound to the `RuntimeContext` and before the input enters the pipeline. `state` is the same instance as `ctx.getAgentState()` and is never `null` — a brand-new session receives a freshly-created state with an empty context. `inputMessages` is this call's input as a private mutable copy: in-place modification applies to the whole call, while the caller's original list stays untouched.
+
+```java
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.state.AgentState;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
+
+/** Prepends a profile prompt on a brand-new session. */
+public class SessionBootstrapMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY);
+    }
+
+    @Override
+    public void onAgentStateReady(
+            Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {
+        if (state.getContext().isEmpty()) {  // cold start: brand-new session
+            inputMessages.add(0, loadUserProfilePrompt(ctx.getUserId()));
+        }
+    }
+}
+```
+
+Keep implementations non-blocking: the notification runs on the call's subscription thread (possibly a Reactor event-loop thread in streaming scenarios). Firing is per lifecycle execution (subscription) — re-subscribing a cold stream triggers it again. A thrown exception fails the call unchanged and the remaining middlewares are not invoked. Middlewares that don't override this hook simply run their no-op default; the only fixed cost is one shallow copy of the input list per call, which keeps the caller's list isolated unconditionally. Participation follows `activePoints()` like every extension point: a middleware that omits `ExtensionPoint.ON_AGENT_STATE_READY` is never notified, even if it overrides the hook. Lifecycle window: the notification runs after the call has been admitted and registered for interruption, but before the tracing envelope and the error-event chain are in place — an interrupt issued during the notification is honored, while a thrown exception reaches the caller directly, without ErrorEvent hooks or tracing spans.
 
 ### Reading RuntimeContext
 
@@ -384,10 +422,18 @@ middlewares = [mw1, mw2]
 // originalPrompt → mw1.onSystemPrompt() → mw2.onSystemPrompt() → final
 ```
 
+Notification hooks (`onAgentStateReady`) run once per call in `order()` sequence — higher values first, matching the onion entry order:
+
+```
+middlewares = [mw1(order=2), mw2(order=1)]
+// onAgentStateReady: mw1 → mw2
+```
+
 Overall hook execution order across one reply:
 
 ```
 onAgent
+  ├── onAgentStateReady (state bound to RuntimeContext, before input enters pipeline)
   └── per ReAct round:
         ├── onReasoning
         │     ├── prepare model input → onSystemPrompt

@@ -405,7 +405,7 @@ public final class ClawBootstrap implements AutoCloseable {
                         ? e.getName()
                         : agentId;
         b.name(name);
-        // Stable catalog id — used for session JSONL paths and TranscriptRef agent segment.
+        // Stable catalog id anchors native session identity across process restarts.
         b.agentId(agentId);
 
         if (e != null) {

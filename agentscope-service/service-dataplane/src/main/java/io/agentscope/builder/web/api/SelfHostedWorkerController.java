@@ -19,14 +19,11 @@ import io.agentscope.builder.web.api.error.ApiException;
 import io.agentscope.builder.web.managed.DataSessionService;
 import io.agentscope.builder.web.managed.ManagedSessionDto;
 import io.agentscope.builder.web.managed.SessionEventDto;
-import io.agentscope.builder.web.managed.SessionEventTypes;
 import io.agentscope.builder.web.managed.SessionTurnRunner;
 import io.agentscope.builder.web.managed.selfhosted.PendingHandsToolService;
 import io.agentscope.builder.web.managed.selfhosted.SkillsBundleService;
-import io.agentscope.builder.web.managed.service.SessionEventLog;
 import io.agentscope.core.message.ToolResultBlock;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -52,19 +49,16 @@ public class SelfHostedWorkerController {
     private final PendingHandsToolService pendingHandsToolService;
     private final SkillsBundleService skillsBundleService;
     private final SessionTurnRunner turnRunner;
-    private final SessionEventLog eventLog;
 
     public SelfHostedWorkerController(
             DataSessionService sessionService,
             PendingHandsToolService pendingHandsToolService,
             SkillsBundleService skillsBundleService,
-            SessionTurnRunner turnRunner,
-            SessionEventLog eventLog) {
+            SessionTurnRunner turnRunner) {
         this.sessionService = sessionService;
         this.pendingHandsToolService = pendingHandsToolService;
         this.skillsBundleService = skillsBundleService;
         this.turnRunner = turnRunner;
-        this.eventLog = eventLog;
     }
 
     /** Lists pending {@code agent.tool_use} events awaiting worker results. */
@@ -100,11 +94,15 @@ public class SelfHostedWorkerController {
                     for (Map<String, Object> payload : body.results()) {
                         ToolResultBlock block = SessionTurnRunner.toolResultFromPayload(payload);
                         blocks.add(block);
-                        Map<String, Object> stored = new LinkedHashMap<>(payload);
-                        stored.putIfAbsent("tool_use_id", block.getId());
                         recorded.add(
-                                eventLog.append(
-                                        sessionId, SessionEventTypes.USER_TOOL_RESULT, stored));
+                                new SessionEventDto(
+                                        null,
+                                        sessionId,
+                                        -1L,
+                                        "session.input_accepted",
+                                        Map.of("status", "accepted", "tool_use_id", block.getId()),
+                                        null,
+                                        System.currentTimeMillis()));
                     }
                     turnRunner.resumeWithToolResults(session, blocks);
                     return recorded;

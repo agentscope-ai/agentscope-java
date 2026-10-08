@@ -8,7 +8,7 @@ docker compose pull
 docker compose up -d --wait --wait-timeout 600
 ```
 
-Open http://localhost:18080. Sign in as `admin` with `AISTIO_BOOTSTRAP_PASSWORD` from your local `.env`, then change the password in your profile. No demo users are created. The bootstrap values apply only when the users table is empty; restarting never resets accounts. `init-env.sh` preserves an existing `.env`.
+Open http://localhost:18080. Sign in as `admin` with `CONTROL_PLANE_BOOTSTRAP_PASSWORD` from your local `.env`, then change the password in your profile. No demo users are created. The bootstrap values apply only when the users table is empty; restarting never resets accounts. `init-env.sh` preserves an existing `.env`.
 
 The stack persists PostgreSQL, shared workspaces, and artifacts in three named volumes. Stop with `docker compose down`; do not add `-v` unless you intend to delete application data. Keep `.env`, especially the vault key, with your backups. `POSTGRES_DB` defaults to `agentscope`; change it when pointing this stack at a restored database on the same PostgreSQL instance. Generated database passwords are URL-safe hex; manually supplied passwords must also be URL-safe because Compose interpolates them into DSNs.
 
@@ -29,6 +29,6 @@ helm upgrade --install service ./agentscope-service-VERSION.tgz \
 kubectl -n agentscope port-forward service/service-agentscope-gateway 18080:8080
 ```
 
-The workspace claim must support shared mounts across the control, data and scheduler pods (RWX storage, or an existing shared claim). The Chart keeps claims on uninstall. It uses one replica per component and Recreate updates; plan a maintenance window. It does not claim zero-downtime database upgrades or HA. The legacy `aistio` Chart remains available for Kubernetes-native control-plane/CRD integration; the complete Service Chart runs standalone HTTP mode and does not expose ASDP gRPC.
+The workspace claim must support shared mounts across the control, data and scheduler pods (RWX storage, or an existing shared claim). The Chart keeps claims on uninstall. It uses one replica per component and Recreate updates; plan a maintenance window. It does not claim zero-downtime database upgrades or HA. The legacy `controlplane` Chart remains available for Kubernetes-native control-plane/CRD integration; the complete Service Chart runs standalone HTTP mode and does not expose ASDP gRPC.
 
 See the Service section of the project documentation for first-session tutorials, SDK attachment, configuration, backup/restore and release operations.

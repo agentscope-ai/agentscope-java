@@ -11,17 +11,17 @@ ARG VERSION=dev
 ARG TARGETOS=linux
 ARG TARGETARCH
 WORKDIR /src
-COPY agentscope-service/aistio/go.mod agentscope-service/aistio/go.sum ./
+COPY agentscope-service/service-controlplane/go.mod agentscope-service/service-controlplane/go.sum ./
 RUN go mod download
-COPY agentscope-service/aistio/ ./
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/spring-ai-alibaba/aistio/internal/version.Version=$VERSION" -o /out/aistiod ./cmd/aistiod
+COPY agentscope-service/service-controlplane/ ./
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/version.Version=$VERSION" -o /out/service-controlplane ./cmd/service-controlplane
 RUN mkdir -p /out/data/workspaces /out/data/artifacts
 
 FROM gcr.io/distroless/static:nonroot
-COPY --from=build /out/aistiod /aistiod
-COPY --from=console /src/aistio/ui /ui
+COPY --from=build /out/service-controlplane /service-controlplane
+COPY --from=console /src/service-controlplane/ui /ui
 COPY --from=build --chown=65532:65532 /out/data /data
-ENV AISTIO_STATIC_DIR=/ui AISTIO_WORKSPACE_ROOT=/data/workspaces
+ENV CONTROL_PLANE_STATIC_DIR=/ui CONTROL_PLANE_WORKSPACE_ROOT=/data/workspaces
 USER 65532:65532
 EXPOSE 8081
-ENTRYPOINT ["/aistiod"]
+ENTRYPOINT ["/service-controlplane"]
