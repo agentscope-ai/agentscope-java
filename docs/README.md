@@ -231,3 +231,21 @@ Official references:
 - https://www.mintlify.com/docs/deploy/github
 - https://www.mintlify.com/docs/organize/navigation
 - https://www.mintlify.com/docs/customize/custom-domain
+
+## Helm repository route
+
+`chickenlj/helm-charts` is the independent public repository for packaged Charts.
+Its Pages workflow serves `index.yaml`, immutable archives and versioned deployment
+examples at `https://chickenlj.github.io/helm-charts`. Run its `publish.yml` workflow
+with a Chart version to import the exact upstream GitHub Release asset; publication
+checks its SHA256 and preserves older index entries.
+
+`docs.json` redirects `/helm/index.yaml` to that index and `/helm` to its landing
+page, with temporary redirects (`permanent: false`). Archive URLs are absolute,
+so Helm follows the index redirect and downloads archives directly from Pages.
+No change to the official website's DNS or Mintlify hosting is needed. Merge the
+configuration into Mintlify's deployment branch before announcing
+`helm repo add agentscope https://java.agentscope.io/helm`; until it is deployed,
+the direct Pages URL works independently. Verify both `helm repo add` and a pinned
+`helm pull` after deployment. Do not assign `java.agentscope.io` as the standalone
+repository's Pages custom domain, which would replace the documentation site.

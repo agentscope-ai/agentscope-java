@@ -14,7 +14,7 @@
 | Gateway | `as-gateway` 镜像 | 同上 |
 | Dataplane | `as-dataplane` 镜像 | 同上 |
 | Scheduler | `as-scheduler` 镜像 | 同上 |
-| 完整部署配置 | Compose 压缩包、Helm Chart | GitHub Release 附件；Chart 同时发布到 OCI registry |
+| 完整部署配置 | Compose 压缩包、Helm Chart | GitHub Release 附件；Chart 发布到公开 HTTP Helm 仓库 |
 | `as`、Runtime Host | Linux/macOS × amd64/arm64 压缩包 | GitHub Release 附件 |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` 及所需依赖 | Maven Central，单独发布 |
 | Python SDK | `agentscope-service-sdk` wheel、sdist | PyPI，单独发布 |
@@ -376,6 +376,23 @@ gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" \
 ```
 
 ### 8.2 发布官网
+
+公开 HTTP Helm 仓库位于 [chickenlj/helm-charts](https://github.com/chickenlj/helm-charts)。
+先公开发布上游 `vVERSION` Release，并上传独立 Chart `.tgz`，然后运行独立仓库的工作流。
+该分发渠道不要求执行前面的 OCI Chart 推送：
+
+```bash
+gh workflow run publish.yml --repo chickenlj/helm-charts --ref main -f version=2.1.0-BETA1
+helm repo add agentscope https://chickenlj.github.io/helm-charts
+helm repo update agentscope
+helm pull agentscope/agentscope-service --version 2.1.0-BETA1
+```
+
+后续发版替换为实际版本。工作流从上游 Release 下载原包，核对 SHA256 与 Chart 元数据，
+保留旧版本索引，拒绝以不同内容覆盖已发布版本，并部署 GitHub Pages。
+不需要额外 registry 凭据或跨仓库写入 token。官网 `https://java.agentscope.io/helm`
+入口需要先将 `docs/docs.json` 的跳转配置部署到 Mintlify 的 `main` 分支；
+直接使用 Pages 地址不依赖官网部署。
 
 官网源码位于 `docs/v2/{zh,en}/service/`。把对应版本文档按审核流程合入 `main`，查看 **Deploy Docs to GitHub Pages** 工作流。当前配置只有 `main` push 会部署；手动触发及 PR 只做构建检查，不会上线。
 

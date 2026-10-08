@@ -10,7 +10,7 @@ Run all commands from the monorepo root. Development continues in the existing c
 | --- | --- | --- |
 | Control plane + Dashboard | `as-controlplane` image | Service release version, injected into Go build |
 | Gateway / Dataplane / Scheduler | `as-gateway`, `as-dataplane`, `as-scheduler` images | Service release tag; Java revision recorded separately |
-| Complete deployment | Compose archive + `agentscope-service` Helm Chart (OCI) | Service release version |
+| Complete deployment | Compose archive + `agentscope-service` Helm Chart (public HTTP repository) | Service release version |
 | `as`, Runtime Host | Linux/macOS amd64/arm64 archives | Service release version |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` and reactor dependencies | Root `revision` |
 | Python SDK | `agentscope-service-sdk` wheel and sdist | `service-controlplane/sdk/python/pyproject.toml` and `service-controlplane/sdk/python/agentscope_service/__init__.py` |
@@ -145,6 +145,24 @@ The current release profile does not enable `autoPublish`. After Maven succeeds,
 ## 7. Publish documentation and release notes
 
 Attach package archives, manifest, checksums and image metadata to the Release. List exact image references/digests, OCI Chart reference, SDK coordinates, tested platforms, database compatibility, upgrade procedure and known limitations. Verify anonymous downloads/pulls when public distribution is intended.
+
+The public HTTP Helm repository is [chickenlj/helm-charts](https://github.com/chickenlj/helm-charts).
+After publishing the upstream `vVERSION` Release with its standalone Chart asset,
+run the independent repository's workflow; OCI publication is optional for this channel:
+
+```bash
+gh workflow run publish.yml --repo chickenlj/helm-charts --ref main -f version=2.1.0-BETA1
+helm repo add agentscope https://chickenlj.github.io/helm-charts
+helm repo update agentscope
+helm pull agentscope/agentscope-service --version 2.1.0-BETA1
+```
+
+Use the intended version for future releases. The workflow fetches the original
+Release archive, verifies its SHA256 and Chart metadata, preserves existing index
+entries, refuses different bytes under an existing version, and deploys Pages.
+No extra registry credential or cross-repository write token is required. The
+official `https://java.agentscope.io/helm` alias requires the Mintlify redirects in
+`docs/docs.json` to be deployed from `main`; the direct Pages URL works independently.
 
 Use `vVERSION` as the public release tag (for example `v2.1.0-BETA1`). SDK workflows only publish source already merged into `main`; if a tag is created earlier, run the SDK workflow manually after merging. Build from clean, committed source with `release.py package --distributions-only`, create a prerelease draft, upload only the named public files, verify downloaded SHA-256 values, then publish the draft. Homebrew and Helm OCI are separate channels and require their own destination repositories.
 
