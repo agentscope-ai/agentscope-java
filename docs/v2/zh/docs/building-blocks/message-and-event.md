@@ -309,7 +309,7 @@ sequenceDiagram
     |------|------|------|
     | `getReplyId()` | `String` | 回复消息 ID |
     | `getToolCallId()` | `String` | 对应工具调用的 ID |
-    | `getState()` | `ToolResultState` | 最终状态：`SUCCESS`、`ERROR`、`INTERRUPTED`、`DENIED`、`RUNNING` |
+    | `getState()` | `ToolResultState` | 最终状态：`SUCCESS`、`ERROR`、`INTERRUPTED`、`DENIED`、`RUNNING`、`SUSPENDED` |
 
 </Accordion>
 
@@ -334,7 +334,7 @@ sequenceDiagram
     | `getReplyId()` | `String` | 回复消息 ID |
     | `getToolCalls()` | `List<ToolUseBlock>` | 待用户确认的工具调用列表 |
 
-    **RequireExternalExecutionEvent** — 智能体暂停等待外部执行。
+    **RequireExternalExecutionEvent** — 智能体暂停等待外部执行。挂起的工具调用不会产生 `ToolResult*` 事件：工具尚未执行，真实结果由调用方回传后通过 `ExternalExecutionResultEvent` 表达。
 
     | 方法 | 类型 | 描述 |
     |------|------|------|

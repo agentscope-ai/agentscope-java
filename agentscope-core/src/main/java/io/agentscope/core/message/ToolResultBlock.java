@@ -21,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.tool.ToolSuspendException;
 import java.beans.Transient;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,8 +36,20 @@ import java.util.Map;
  */
 public final class ToolResultBlock extends ContentBlock {
 
-    /** Metadata key indicating this result is suspended for external execution. */
-    public static final String METADATA_SUSPENDED = "agentscope_suspended";
+    /**
+     * Metadata key indicating this result is suspended for external execution.
+     *
+     * <p>Legacy wire encoding from before {@link ToolResultState#SUSPENDED} existed. {@link
+     * #isSuspended()} still recognises it for cross-version compatibility. New code should rely
+     * on {@link ToolResultState#SUSPENDED} or {@link #isSuspended()} instead of this key.
+     */
+    @Deprecated public static final String METADATA_SUSPENDED = "agentscope_suspended";
+
+    /**
+     * Metadata key carrying the suspend reason (the {@code ToolSuspendException} message) when
+     * the tool supplied one. Control-plane information; never rendered through {@code output}.
+     */
+    public static final String METADATA_SUSPEND_REASON = "agentscope_suspend_reason";
 
     /**
      * Metadata key marking this result as produced by a provider server tool (Boolean value).
@@ -171,15 +184,17 @@ public final class ToolResultBlock extends ContentBlock {
     /**
      * Checks if this result is suspended for external execution.
      *
-     * <p>A suspended result is created when a tool throws {@link ToolSuspendException},
-     * indicating that the tool execution needs to be handled externally by the user.
+     * <p>Recognises the canonical encoding ({@link ToolResultState#SUSPENDED}) and the legacy
+     * wire marker ({@link #METADATA_SUSPENDED}), so blocks serialized by older
+     * versions keep working.
      *
      * @return true if this result is suspended, false otherwise
      */
     @Transient
     @JsonInclude
     public boolean isSuspended() {
-        return Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED));
+        return state == ToolResultState.SUSPENDED
+                || Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED));
     }
 
     /**
@@ -195,23 +210,28 @@ public final class ToolResultBlock extends ContentBlock {
     /**
      * Creates a suspended tool result from a ToolSuspendException.
      *
-     * <p>This method is used by the framework to convert a {@link ToolSuspendException}
-     * into a suspended result that will be returned to the user for external execution.
+     * <p>The result carries no output: the tool has not executed, and the real result arrives
+     * from the caller on resume. The state is {@link ToolResultState#SUSPENDED} and, when the
+     * exception supplied a reason, it travels in {@link #METADATA_SUSPEND_REASON} metadata.
      *
      * @param toolUse The tool use block that triggered the exception
      * @param exception The exception thrown by the tool
      * @return A suspended ToolResultBlock
      */
     public static ToolResultBlock suspended(ToolUseBlock toolUse, ToolSuspendException exception) {
-        String content =
-                exception.getReason() != null
-                        ? exception.getReason()
-                        : "[Awaiting external execution]";
+        Map<String, Object> metadata = new HashMap<>();
+        // Kept for one transition window: older readers still detect suspension via this
+        // legacy marker, while current code reads the SUSPENDED state above.
+        metadata.put(METADATA_SUSPENDED, true);
+        if (exception.getReason() != null) {
+            metadata.put(METADATA_SUSPEND_REASON, exception.getReason());
+        }
         return new ToolResultBlock(
                 toolUse.getId(),
                 toolUse.getName(),
-                List.of(TextBlock.builder().text(content).build()),
-                Map.of(METADATA_SUSPENDED, true));
+                List.of(),
+                Map.copyOf(metadata),
+                ToolResultState.SUSPENDED);
     }
 
     /**
@@ -222,6 +242,21 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public static ToolResultBlock suspended(ToolUseBlock toolUse) {
         return suspended(toolUse, new ToolSuspendException());
+    }
+
+    /**
+     * Gets the suspend reason when this result is suspended and the tool supplied one.
+     *
+     * @return the reason, or null when absent or when this result is not suspended
+     */
+    @Transient
+    @JsonIgnore
+    public String getSuspendReason() {
+        if (!isSuspended()) {
+            return null;
+        }
+        Object reason = metadata.get(METADATA_SUSPEND_REASON);
+        return reason instanceof String s ? s : null;
     }
 
     /**
