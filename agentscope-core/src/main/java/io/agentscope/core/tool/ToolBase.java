@@ -238,6 +238,22 @@ public abstract class ToolBase implements AgentTool {
     }
 
     /**
+     * Optional alternate tool-name spellings used only when looking up permission rules.
+     *
+     * <p>The default is empty: a rule authored for tool {@code a.b} does <em>not</em> match a
+     * different tool registered as {@code a_b}. Tools that renamed themselves for OpenAI-safe
+     * {@code function.name} constraints (e.g. {@code task.submit_result} → {@code
+     * task_submit_result}) override this to declare the legacy dotted key so persisted
+     * allow/deny/ask tables keep matching. Permission lookup never invents aliases from string
+     * shape alone.
+     *
+     * @return immutable list of alternate names; never {@code null}
+     */
+    public List<String> nameAliases() {
+        return List.of();
+    }
+
+    /**
      * Default rule matcher: a {@code null} {@code ruleContent} matches every invocation; any
      * non-null pattern is rejected so subclasses can layer their own semantics on top.
      */
