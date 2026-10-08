@@ -53,7 +53,7 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
     private String prompt(WorkspaceManager wm, boolean artifactDeliveryEnabled) {
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
         mw.setArtifactDeliveryEnabled(artifactDeliveryEnabled);
-        return mw.onSystemPrompt(null, null, "BASE\n").block();
+        return WorkspacePromptTestSupport.render(mw, null, "BASE\n");
     }
 
     @Test

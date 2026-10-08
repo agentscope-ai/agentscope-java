@@ -20,8 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -159,37 +157,10 @@ class ConversationCompactorTest {
                         compactor.compactIfNeeded(
                                 mock(RuntimeContext.class),
                                 compactableMessages(),
-                                config(true, false),
+                                config(true),
                                 "agent-id",
                                 "session-id"))
                 .expectError(InterruptedException.class)
-                .verify();
-    }
-
-    /** Verifies that message-offload fallback does not swallow a wrapped interruption. */
-    @Test
-    void compactIfNeeded_propagatesInterruptedMessageOffload() {
-        RecordingModel model = new RecordingModel();
-        MemoryFlushManager flushManager = mock(MemoryFlushManager.class);
-        doThrow(
-                        new IllegalStateException(
-                                "offload wrapper",
-                                new InterruptedException("interrupted while offloading")))
-                .when(flushManager)
-                .offloadMessages(any(RuntimeContext.class), anyList(), anyString(), anyString());
-        ConversationCompactor compactor = new ConversationCompactor(model, flushManager);
-
-        StepVerifier.create(
-                        compactor.compactIfNeeded(
-                                mock(RuntimeContext.class),
-                                compactableMessages(),
-                                config(false, true),
-                                "agent-id",
-                                "session-id"))
-                .expectErrorMatches(
-                        error ->
-                                error instanceof IllegalStateException
-                                        && error.getCause() instanceof InterruptedException)
                 .verify();
     }
 
@@ -216,8 +187,7 @@ class ConversationCompactorTest {
     }
 
     /** Creates focused compaction configuration for fallback-boundary tests. */
-    private static CompactionConfig config(
-            boolean flushBeforeCompact, boolean offloadBeforeCompact) {
+    private static CompactionConfig config(boolean flushBeforeCompact) {
         return CompactionConfig.builder()
                 .triggerMessages(3)
                 .triggerTokens(0)
@@ -225,7 +195,6 @@ class ConversationCompactorTest {
                 .keepTokens(0)
                 .summaryPrompt("SUMMARY_INPUT:\n{messages}")
                 .flushBeforeCompact(flushBeforeCompact)
-                .offloadBeforeCompact(offloadBeforeCompact)
                 .truncateArgs(null)
                 .prune(null)
                 .build();
@@ -266,7 +235,7 @@ class ConversationCompactorTest {
                                 return Mono.empty();
                             });
             compactor = new ConversationCompactor(model, flushManager);
-            config = config(flushBeforeCompact, false);
+            config = config(flushBeforeCompact);
         }
 
         /** Runs compaction and requires the supplied input to trigger it. */

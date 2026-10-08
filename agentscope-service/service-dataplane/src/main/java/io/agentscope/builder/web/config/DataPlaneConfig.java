@@ -126,6 +126,15 @@ public class DataPlaneConfig {
         return JdbcStore.builder(dataSource).dialect(dialect).build();
     }
 
+    /** Journal data follows the existing distributed workspace store, outside ephemeral sandboxes. */
+    @Bean
+    @ConditionalOnMissingBean(io.agentscope.core.session.SessionLogStore.class)
+    public io.agentscope.core.session.SessionLogStore sessionLogStore(BaseStore store) {
+        return new io.agentscope.harness.agent.session.WorkspaceSessionLogStore(
+                new io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem(
+                        store, java.util.List.of("runtime", "sessions")));
+    }
+
     /** JPA-backed {@link AgentStateStore} shared by every agent built on this node. */
     @Bean
     @ConditionalOnMissingBean(AgentStateStore.class)

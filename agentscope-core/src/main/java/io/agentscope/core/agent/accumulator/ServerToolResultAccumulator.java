@@ -17,6 +17,7 @@ package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,10 +29,11 @@ import org.slf4j.LoggerFactory;
 /**
  * Accumulates server tool results returned by a provider during one reasoning round.
  *
- * <p>Server tool results are already complete when they arrive. They are keyed by
- * {@code tool_use_id} so each result can be placed immediately after its matching tool call in
- * the final assistant message. Results without a matching call are preserved in arrival order
- * and logged, rather than silently disappearing.
+ * <p>Server tool results are keyed by {@code tool_use_id} so each result can be placed
+ * immediately after its matching tool call in the final assistant message. A later result may
+ * replace a still-running partial result, which lets providers stream previews before the final
+ * result arrives. Results without a matching call are preserved in arrival order and logged,
+ * rather than silently disappearing.
  *
  * @hidden
  */
@@ -45,8 +47,9 @@ final class ServerToolResultAccumulator {
     /**
      * Adds a server tool result.
      *
-     * <p>Duplicate IDs keep the first result. A non-server result is ignored because local tool
-     * results are produced in the acting phase and are not part of reasoning output.
+     * <p>Duplicate IDs keep the first terminal result. A running result may be replaced by a
+     * later running or terminal result. A non-server result is ignored because local tool results
+     * are produced in the acting phase and are not part of reasoning output.
      *
      * @hidden
      * @param result the result block returned by the provider
@@ -61,7 +64,10 @@ final class ServerToolResultAccumulator {
             resultsWithoutId.add(result);
             return;
         }
-        resultsById.putIfAbsent(id, result);
+        ToolResultBlock existing = resultsById.get(id);
+        if (existing == null || existing.getState() == ToolResultState.RUNNING) {
+            resultsById.put(id, result);
+        }
     }
 
     /**

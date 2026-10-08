@@ -44,7 +44,7 @@ import { listTeams } from "@/api/collaboration";
 import { namespaceCan } from "@/lib/namespaceScope";
 import { useControlPlaneScope } from "@/app/ScopeContext";
 import { AgentPicker } from "@/components/AgentPicker";
-import { PublishEndpointCard } from "@/components/PublishEndpointCard";
+import { SessionUsageCard } from "@/components/SessionUsageCard";
 import { EmptyState } from "@/components/EmptyState";
 import { Page, PageHeader } from "@/components/Page";
 import { Badge } from "@/components/ui/badge";
@@ -819,13 +819,11 @@ function WorkflowDetail({ id }: { id: string }) {
                 ))}
               </select>
             </label>
-            <PublishEndpointCard
-              targetType="orchestration_revision"
-              targetRef={selectedRevision.id}
+            <SessionUsageCard
+              targetType="workflow"
+              targetRef={id!}
+              revisionId={selectedRevision.id}
               targetName={definition.name}
-              ownerPath={`/agent-center/workflows/${id}?tab=connections`}
-              allowDeployToExisting
-              relatedTargetRefs={versions.map((r) => r.id)}
             />
           </div>
         ) : (
