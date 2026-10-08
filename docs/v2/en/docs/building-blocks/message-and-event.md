@@ -309,7 +309,7 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCallId()` | `String` | The matching tool call ID |
-    | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING` |
+    | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING`, `SUSPENDED` |
 
 </Accordion>
 
@@ -334,7 +334,7 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCalls()` | `List<ToolUseBlock>` | Tool calls awaiting confirmation |
 
-    **RequireExternalExecutionEvent** — agent pauses for external execution.
+    **RequireExternalExecutionEvent** — agent pauses for external execution. A suspended call produces no `ToolResult*` events: the tool has not executed, and the real result is supplied by the caller and surfaced through `ExternalExecutionResultEvent`.
 
     | Method | Type | Description |
     |--------|------|-------------|

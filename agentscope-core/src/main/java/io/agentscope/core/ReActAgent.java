@@ -3738,6 +3738,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                             ToolResultBlock>
                                                                                     entry :
                                                                                             results) {
+                                                                                if (entry.getValue()
+                                                                                        .isSuspended()) {
+                                                                                    continue;
+                                                                                }
                                                                                 emitToolResultDelta(
                                                                                         sink,
                                                                                         replyId,
@@ -3914,7 +3918,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         private ToolResultState determineToolResultState(ToolResultBlock result) {
             if (result.isSuspended()) {
-                return ToolResultState.RUNNING;
+                return ToolResultState.SUSPENDED;
             }
             if (result.getState() != null && result.getState() != ToolResultState.RUNNING) {
                 return result.getState();
@@ -3934,8 +3938,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Build a message containing suspended tool calls for user execution.
          *
-         * <p>The message contains both the ToolUseBlocks and corresponding pending ToolResultBlocks
-         * for the suspended tools.
+         * <p>The message contains each suspended call's ToolUseBlock paired with a marker
+         * ToolResultBlock (empty output, {@link ToolResultState#SUSPENDED}).
          *
          * @param pendingPairs List of (ToolUseBlock, pending ToolResultBlock) pairs
          * @return Msg with GenerateReason.TOOL_SUSPENDED

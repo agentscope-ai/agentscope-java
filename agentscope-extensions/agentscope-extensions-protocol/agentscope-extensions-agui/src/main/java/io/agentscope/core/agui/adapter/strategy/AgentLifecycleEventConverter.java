@@ -32,7 +32,6 @@ import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
@@ -50,6 +49,8 @@ import java.util.stream.Collectors;
  * outcomes on run finish.
  */
 final class AgentLifecycleEventConverter implements AgentEventConverter {
+
+    private static final String DEFAULT_SUSPEND_MESSAGE = "Awaiting external execution";
 
     @Override
     public Set<Class<? extends AgentEvent>> eventTypes() {
@@ -142,7 +143,9 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
         return new AguiEvent.Interrupt(
                 interruptId(result, toolCallId),
                 TOOL_CALL_INTERRUPT_REASON,
-                extractText(toolResult.getOutput()),
+                toolResult.getSuspendReason() != null
+                        ? toolResult.getSuspendReason()
+                        : DEFAULT_SUSPEND_MESSAGE,
                 toolCallId,
                 null,
                 null,
@@ -154,20 +157,6 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
             return result.getId() + ":" + toolCallId;
         }
         return toolCallId;
-    }
-
-    private static String extractText(List<ContentBlock> blocks) {
-        if (blocks == null || blocks.isEmpty()) {
-            return null;
-        }
-        String text =
-                blocks.stream()
-                        .filter(TextBlock.class::isInstance)
-                        .map(TextBlock.class::cast)
-                        .map(TextBlock::getText)
-                        .filter(value -> value != null && !value.isEmpty())
-                        .collect(Collectors.joining("\n"));
-        return text.isEmpty() ? null : text;
     }
 
     private static Set<String> frontendToolNames(AguiStreamContext context) {
