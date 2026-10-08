@@ -159,6 +159,14 @@ Configure tracing through standard OpenTelemetry components instead:
 
 The middleware reads `GlobalOpenTelemetry`, so the SDK must be registered before the agent uses the middleware. See [Middleware — OtelTracingMiddleware](/v2/en/docs/building-blocks/middleware#oteltracingmiddleware) for the required dependencies and a complete OTLP example with custom authentication headers.
 
+#### A.9 `ExecutionConfig.Builder.timeout()` validation tightened
+
+`ExecutionConfig.Builder.timeout(Duration)` now rejects `Duration.ZERO` and negative durations (other than the `NO_TIMEOUT` sentinel) with an `IllegalArgumentException`. Values that were previously accepted with undefined behavior are now intercepted at builder time.
+
+Use `.noTimeout()` when you need to disable the timeout.
+
+The validation also applies through `ExecutionConfig.mergeConfigs` — a config with an illegal timeout value that reaches the merge path will also throw.
+
 ---
 
 ### Part B — Recommended (`@Deprecated(forRemoval = true)`, still callable today)

@@ -155,7 +155,9 @@ class ToolExecutor {
     // ==================== Single Tool Execution ====================
 
     /**
-     * Execute a single tool call with full infrastructure support.
+     * Execute a single tool call (core execution only: Tracer + {@link #executeCore};
+     * no scheduling, timeout, retry, shutdown guard, or id/name stamping). Use
+     * {@link #executeWithInfrastructure(ToolCallParam, ExecutionConfig)} for the full-infrastructure path.
      *
      * @param param Tool call parameters
      * @return Mono containing execution result
@@ -171,8 +173,9 @@ class ToolExecutor {
 
     /**
      * Execute a single tool call with a per-call tool request config and a per-call internal chunk
-     * callback. This is the single core entry point; the no-arg {@link #execute(ToolCallParam)}
-     * resolves the request config from its explicit runtime context and uses no internal callback.
+     * callback. This is the single core entry point; the 1-param {@link #execute(ToolCallParam)}
+     * overload resolves the request config from its explicit runtime context and uses no internal
+     * callback.
      */
     Mono<ToolResultBlock> execute(
             ToolCallParam param,
@@ -342,7 +345,10 @@ class ToolExecutor {
     // ==================== Batch Tool Execution ====================
 
     /**
-     * Execute multiple tool calls with concurrency control, timeout, and retry.
+     * Execute multiple tool calls with concurrency control plus full per-call infrastructure
+     * (scheduling, timeout, retry, shutdown guard, id/name stamping). Each single call is routed
+     * through {@link #executeWithInfrastructure(ToolUseBlock, ExecutionConfig, Agent,
+     * RuntimeContext, ToolRequestConfig, BiConsumer)}.
      *
      * @param toolCalls List of tool calls to execute
      * @param parallel Whether to execute in parallel
@@ -449,16 +455,20 @@ class ToolExecutor {
     }
 
     /**
-     * Execute a single tool call with infrastructure (scheduling, timeout, retry).
+     * Execute a single tool call with infrastructure (scheduling, timeout, retry, shutdown
+     * guard), and stamps the result with the tool call's id/name.
+     *
+     * <p>This overload is used by the batch path ({@link #executeAll(List, boolean,
+     * ExecutionConfig, Agent, RuntimeContext)}), which routes each {@link ToolUseBlock} with
+     * the infrastructure config, per-call request config, and chunk callback.
      */
-    private Mono<ToolResultBlock> executeWithInfrastructure(
+    Mono<ToolResultBlock> executeWithInfrastructure(
             ToolUseBlock toolCall,
             ExecutionConfig executionConfig,
             Agent agent,
             RuntimeContext agentRuntimeContext,
             ToolRequestConfig requestConfig,
             BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
-        // Build tool call parameter
         ToolCallParam param =
                 ToolCallParam.builder()
                         .toolUseBlock(toolCall)
@@ -466,16 +476,49 @@ class ToolExecutor {
                         .runtimeContext(agentRuntimeContext)
                         .build();
 
-        // Get core execution
         Mono<ToolResultBlock> execution = execute(param, requestConfig, internalChunkCallback);
 
-        // Apply infrastructure layers
+        return applyInfrastructure(execution, executionConfig, toolCall);
+    }
+
+    /**
+     * Execute a single tool call with full infrastructure, preserving all fields from the
+     * original {@link ToolCallParam} (including input).
+     *
+     * <p>This overload is used by {@code Toolkit.callTool} so that user-supplied fields on the
+     * param object are not silently discarded before reaching {@link #executeCore}.
+     */
+    Mono<ToolResultBlock> executeWithInfrastructure(
+            ToolCallParam param, ExecutionConfig executionConfig) {
+        ToolUseBlock toolCall = param.getToolUseBlock();
+
+        Mono<ToolResultBlock> execution = execute(param);
+
+        return applyInfrastructure(execution, executionConfig, toolCall);
+    }
+
+    /**
+     * Applies the shared infrastructure pipeline (scheduling, timeout, retry, shutdown guard)
+     * and stamps the result with the tool call's id/name. The four infrastructure layers and
+     * the error-to-result conversion live here so that both entry points (batch and single)
+     * stay in sync when a new layer is added.
+     *
+     * <p><b>Retry semantics</b>: {@link #applyRetry} only fires for the timeout
+     * {@code RuntimeException} emitted by {@link #applyTimeout}. Tool failures are converted
+     * to normal {@link ToolResultBlock#error} completions inside {@link #executeCore} before
+     * this pipeline runs, and {@link #applyShutdownGuard} runs <em>after</em> retry so
+     * shutdown signals are never seen by {@code retryWhen} either. "Retry" here means
+     * "retry on timeout", nothing else.
+     */
+    private Mono<ToolResultBlock> applyInfrastructure(
+            Mono<ToolResultBlock> execution,
+            ExecutionConfig executionConfig,
+            ToolUseBlock toolCall) {
         execution = applyScheduling(execution);
         execution = applyTimeout(execution, executionConfig, toolCall);
         execution = applyRetry(execution, executionConfig, toolCall);
         execution = applyShutdownGuard(execution);
 
-        // Add tool metadata and error handling
         return execution
                 .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()))
                 .onErrorResume(
@@ -499,7 +542,8 @@ class ToolExecutor {
 
     private Mono<ToolResultBlock> applyTimeout(
             Mono<ToolResultBlock> execution, ExecutionConfig config, ToolUseBlock toolCall) {
-        if (config == null || config.getTimeout() == null) {
+        // null = inherit from fallback, NO_TIMEOUT sentinel = explicitly disabled
+        if (config == null || config.getTimeout() == null || config.isTimeoutDisabled()) {
             return execution;
         }
 

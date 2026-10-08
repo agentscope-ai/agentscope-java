@@ -28,7 +28,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * and retrieve tools.
  *
  * <p><b>Thread Safety:</b> This class is thread-safe, using {@link ConcurrentHashMap} for internal
- * storage to support concurrent tool registration and lookup operations.
+ * storage to support concurrent tool registration and lookup operations. Tool instance and
+ * registration metadata are stored together in a single compound map entry, so put/remove of the
+ * two are a single atomic operation.
  *
  * <p><b>Key Responsibilities:</b>
  * <ul>
@@ -39,8 +41,9 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 class ToolRegistry {
 
-    private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
-    private final Map<String, RegisteredToolFunction> registeredTools = new ConcurrentHashMap<>();
+    private record Entry(AgentTool tool, RegisteredToolFunction registered) {}
+
+    private final Map<String, Entry> entries = new ConcurrentHashMap<>();
 
     /**
      * Register a tool with its metadata.
@@ -53,8 +56,7 @@ class ToolRegistry {
         if (toolName == null || toolName.isBlank()) {
             throw new IllegalArgumentException("Tool name cannot be null or blank");
         }
-        tools.put(toolName, tool);
-        registeredTools.put(toolName, registered);
+        entries.put(toolName, new Entry(tool, registered));
     }
 
     /**
@@ -67,7 +69,8 @@ class ToolRegistry {
         if (name == null || name.isBlank()) {
             return null;
         }
-        return tools.get(name);
+        Entry e = entries.get(name);
+        return e != null ? e.tool() : null;
     }
 
     /**
@@ -80,7 +83,8 @@ class ToolRegistry {
         if (name == null || name.isBlank()) {
             return null;
         }
-        return registeredTools.get(name);
+        Entry e = entries.get(name);
+        return e != null ? e.registered() : null;
     }
 
     /**
@@ -89,7 +93,7 @@ class ToolRegistry {
      * @return Set of tool names
      */
     Set<String> getToolNames() {
-        return new HashSet<>(tools.keySet());
+        return new HashSet<>(entries.keySet());
     }
 
     /**
@@ -98,7 +102,13 @@ class ToolRegistry {
      * @return Map of tool name to RegisteredToolFunction
      */
     Map<String, RegisteredToolFunction> getAllRegisteredTools() {
-        return new ConcurrentHashMap<>(registeredTools);
+        Map<String, RegisteredToolFunction> result = new ConcurrentHashMap<>();
+        for (Map.Entry<String, Entry> e : entries.entrySet()) {
+            if (e.getValue().registered() != null) {
+                result.put(e.getKey(), e.getValue().registered());
+            }
+        }
+        return result;
     }
 
     /**
@@ -110,24 +120,35 @@ class ToolRegistry {
         if (toolName == null || toolName.isBlank()) {
             throw new IllegalArgumentException("Tool name cannot be null or blank");
         }
-        tools.remove(toolName);
-        registeredTools.remove(toolName);
+        entries.remove(toolName);
     }
 
     /**
      * Atomically remove a tool only if the current instance matches the expected one.
      * Uses {@link ConcurrentHashMap#remove(Object, Object)} to avoid TOCTOU races.
      *
+     * <p><b>Identity semantics</b>: The guard check ({@code existing.tool() == expected})
+     * compares the expected tool by reference ({@code ==}), not via {@link Object#equals}.
+     * Two {@code AgentTool} instances that are {@link Object#equals equal} but not the same
+     * reference will not match — this guards against accidental removal of a tool that was
+     * re-registered under the same name by another caller. The CAS at
+     * {@link ConcurrentHashMap#remove(Object, Object)} additionally depends on the
+     * {@code Entry} record's {@link Object#equals}, which compares both the
+     * {@code AgentTool} and {@code RegisteredToolFunction} fields; callers that
+     * rebuild {@code Entry} objects (e.g. via {@code copyTo}) must ensure
+     * {@code RegisteredToolFunction} equality remains stable across rebuilds.
+     *
      * @param toolName Tool name to remove
-     * @param expected The expected AgentTool instance (identity comparison)
+     * @param expected The expected {@link AgentTool} instance, compared by reference
+     *        ({@code ==}), not by {@link Object#equals}
      * @return true if the tool was removed, false if it was already replaced or absent
      */
     boolean removeToolIfSame(String toolName, AgentTool expected) {
-        boolean removed = tools.remove(toolName, expected);
-        if (removed) {
-            registeredTools.remove(toolName);
+        Entry existing = entries.get(toolName);
+        if (existing != null && existing.tool() == expected) {
+            return entries.remove(toolName, existing);
         }
-        return removed;
+        return false;
     }
 
     /**
@@ -149,20 +170,20 @@ class ToolRegistry {
      * @param target The target registry to copy tools to
      */
     void copyTo(ToolRegistry target) {
-        for (Map.Entry<String, AgentTool> entry : tools.entrySet()) {
-            String toolName = entry.getKey();
-            AgentTool tool = entry.getValue();
-            RegisteredToolFunction registered = registeredTools.get(toolName);
-            target.registerTool(
+        for (Map.Entry<String, Entry> e : entries.entrySet()) {
+            String toolName = e.getKey();
+            Entry entry = e.getValue();
+            target.entries.put(
                     toolName,
-                    tool,
-                    registered == null
-                            ? null
-                            : new RegisteredToolFunction(
-                                    tool,
-                                    registered.getExtendedModel(),
-                                    registered.getMcpClientName(),
-                                    registered.getPresetParameters()));
+                    new Entry(
+                            entry.tool(),
+                            entry.registered() == null
+                                    ? null
+                                    : new RegisteredToolFunction(
+                                            entry.tool(),
+                                            entry.registered().getExtendedModel(),
+                                            entry.registered().getMcpClientName(),
+                                            entry.registered().getPresetParameters())));
         }
     }
 }

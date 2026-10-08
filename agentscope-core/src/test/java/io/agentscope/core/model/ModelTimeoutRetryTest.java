@@ -363,6 +363,24 @@ class ModelTimeoutRetryTest {
         assertEquals(2, attemptCount.get());
     }
 
+    @Test
+    @DisplayName(
+            "Should skip timeout when NO_TIMEOUT sentinel is configured in production"
+                    + " ModelUtils.applyTimeoutAndRetry")
+    void shouldSkipTimeoutWithNoTimeoutSentinelInProductionCode() {
+        Flux<ChatResponse> slowSource =
+                Flux.just(createMockResponse()).delayElements(Duration.ofMillis(500));
+
+        ExecutionConfig config = ExecutionConfig.builder().noTimeout().build();
+        GenerateOptions options = GenerateOptions.builder().executionConfig(config).build();
+
+        StepVerifier.create(
+                        ModelUtils.applyTimeoutAndRetry(
+                                slowSource, options, null, "test-model", "test"))
+                .expectNextCount(1)
+                .verifyComplete();
+    }
+
     // Helper methods to create test models
 
     /**
@@ -462,7 +480,7 @@ class ModelTimeoutRetryTest {
 
         // Apply timeout if configured
         Duration timeout = executionConfig.getTimeout();
-        if (timeout != null) {
+        if (timeout != null && !executionConfig.isTimeoutDisabled()) {
             responseFlux =
                     responseFlux.timeout(
                             timeout,

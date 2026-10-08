@@ -15,11 +15,14 @@
  */
 package io.agentscope.core.model;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.model.transport.HttpTransportException;
 import java.net.SocketException;
+import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -81,6 +84,74 @@ class ExecutionConfigTest {
                 new TestModelHttpException(null, new SocketException("Connection reset"));
 
         assertTrue(ExecutionConfig.RETRYABLE_ERRORS.test(wrapped));
+    }
+
+    @Test
+    @DisplayName("Should reject non-sentinel negative durations in Builder.timeout()")
+    void shouldRejectNonSentinelNegativeDurations() {
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> ExecutionConfig.builder().timeout(Duration.ofMillis(-500)));
+        assertTrue(
+                ex.getMessage().contains("positive"),
+                "Message must indicate the value must be positive");
+    }
+
+    @Test
+    @DisplayName("Should reject Duration.ZERO in Builder.timeout()")
+    void shouldRejectZeroDuration() {
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> ExecutionConfig.builder().timeout(Duration.ZERO));
+        assertTrue(
+                ex.getMessage().contains("positive"),
+                "Message must indicate the value must be positive");
+    }
+
+    @Test
+    @DisplayName(
+            "mergeConfigs(noTimeout, withTimeout) must keep the NO_TIMEOUT sentinel in primary"
+                    + " position")
+    void mergeConfigsNoTimeoutPrimaryKeepsSentinel() {
+        ExecutionConfig noTimeout = ExecutionConfig.builder().noTimeout().build();
+        ExecutionConfig withTimeout =
+                ExecutionConfig.builder().timeout(Duration.ofSeconds(30)).build();
+
+        ExecutionConfig merged = ExecutionConfig.mergeConfigs(noTimeout, withTimeout);
+
+        assertTrue(merged.isTimeoutDisabled(), "NO_TIMEOUT sentinel must survive merge");
+    }
+
+    @Test
+    @DisplayName(
+            "mergeConfigs(withTimeout, noTimeout) must keep the positive timeout in primary"
+                    + " position")
+    void mergeConfigsPositiveTimeoutPrimaryOverridesNoTimeout() {
+        ExecutionConfig withTimeout =
+                ExecutionConfig.builder().timeout(Duration.ofSeconds(30)).build();
+        ExecutionConfig noTimeout = ExecutionConfig.builder().noTimeout().build();
+
+        ExecutionConfig merged = ExecutionConfig.mergeConfigs(withTimeout, noTimeout);
+
+        assertEquals(
+                Duration.ofSeconds(30),
+                merged.getTimeout(),
+                "Positive timeout in primary position must override fallback NO_TIMEOUT");
+    }
+
+    @Test
+    @DisplayName("mergeConfigs(null timeout primary, noTimeout fallback) should inherit NO_TIMEOUT")
+    void mergeConfigsNullTimeoutInheritsNoTimeoutFromFallback() {
+        ExecutionConfig primary = ExecutionConfig.builder().build(); // timeout = null
+        ExecutionConfig fallback = ExecutionConfig.builder().noTimeout().build();
+
+        ExecutionConfig merged = ExecutionConfig.mergeConfigs(primary, fallback);
+
+        assertTrue(
+                merged.isTimeoutDisabled(),
+                "Null (unset) primary should inherit NO_TIMEOUT from fallback");
     }
 
     private static final class TestModelHttpException extends RuntimeException

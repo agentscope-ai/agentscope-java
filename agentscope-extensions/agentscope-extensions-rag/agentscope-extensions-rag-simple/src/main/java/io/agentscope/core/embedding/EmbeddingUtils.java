@@ -47,10 +47,13 @@ public final class EmbeddingUtils {
      *
      * <p><b>Timeout Behavior:</b>
      * <ul>
-     *   <li>If timeout is configured, the entire request will fail if it exceeds the
-     *       specified duration
+     *   <li>If timeout is configured (and not disabled), the entire request will fail if
+     *       it exceeds the specified duration
      *   <li>Timeout triggers an EmbeddingException with details about the timeout duration
-     *   <li>If no timeout is configured, requests can run indefinitely
+     *   <li>If no timeout is configured, or the timeout is disabled via
+     *       {@link ExecutionConfig#NO_TIMEOUT}, requests can run indefinitely
+     *   <li>Use {@link ExecutionConfig#isTimeoutDisabled()} to check before passing the
+     *       raw duration to downstream consumers that do not understand the sentinel
      * </ul>
      *
      * <p><b>Retry Behavior:</b>
@@ -83,9 +86,9 @@ public final class EmbeddingUtils {
             return embeddingMono;
         }
 
-        // Apply timeout if configured
+        // Apply timeout if configured (skip when NO_TIMEOUT sentinel is set)
         Duration timeout = config.getTimeout();
-        if (timeout != null) {
+        if (timeout != null && !config.isTimeoutDisabled()) {
             embeddingMono =
                     embeddingMono.timeout(
                             timeout,

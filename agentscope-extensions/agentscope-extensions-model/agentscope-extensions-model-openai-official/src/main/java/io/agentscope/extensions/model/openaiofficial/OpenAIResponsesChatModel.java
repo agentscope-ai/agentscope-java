@@ -36,6 +36,7 @@ import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -355,14 +356,28 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
             String resolvedBaseUrl =
                     ModelProviderSupport.firstNonBlank(
                             effectiveOptions.getBaseUrl(), System.getenv("OPENAI_BASE_URL"));
+            // When timeout is disabled, pass null so the SDK uses its own default.
+            // This differs from the tool / model-flux paths where noTimeout() is genuinely
+            // unbounded — here it degrades to the SDK's own default request timeout.
+            ExecutionConfig exec = effectiveOptions.getExecutionConfig();
+            Duration clientTimeout = null;
+            if (exec != null) {
+                if (exec.isTimeoutDisabled()) {
+                    log.warn(
+                            "noTimeout() is set for model '{}' on the openai-official provider. "
+                                    + "Unlike tool / model-flux paths this is not truly unbounded: "
+                                    + "the SDK's own default request timeout will apply.",
+                            modelName);
+                } else {
+                    clientTimeout = exec.getTimeout();
+                }
+            }
             OpenAIClient client =
                     OpenAISdkClientFactory.createClient(
                             resolvedApiKey,
                             resolvedBaseUrl,
                             additionalHeaders,
-                            effectiveOptions.getExecutionConfig() != null
-                                    ? effectiveOptions.getExecutionConfig().getTimeout()
-                                    : null,
+                            clientTimeout,
                             proxyConfig);
 
             OpenAIResponsesChatModel model =
