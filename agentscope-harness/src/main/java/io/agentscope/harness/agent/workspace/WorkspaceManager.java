@@ -61,6 +61,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -106,6 +108,23 @@ public class WorkspaceManager implements AutoCloseable {
                     .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     private static final TypeReference<Map<String, TaskRecord>> TASK_MAP_TYPE =
             new TypeReference<>() {};
+
+    /**
+     * Characters that Windows/NTFS reserves inside a single path segment. Ids such as the session
+     * id can legitimately contain a colon (for example {@code agent:<id>:main:<uuid>}), and using
+     * one verbatim in a file name turns path construction into an {@link
+     * java.nio.file.InvalidPathException} on Windows. Reserved characters are percent-encoded
+     * (each becomes {@code %XX} of its code point) rather than collapsed to a single '-', so two
+     * distinct ids that would otherwise sanitise to the same name (for example {@code a:b} and
+     * {@code a-b}) keep different file names and never overwrite each other.
+     *
+     * <p>{@code %} is included so the encoding is a true injection: an id that already contains a
+     * {@code %XX} sequence does not collide with an id whose reserved character was encoded into it.
+     *
+     * <p>Forward slash and backslash are included as well: an id is a single file-name segment
+     * here, so either would otherwise be read as a directory separator.
+     */
+    private static final Pattern UNSAFE_SEGMENT_CHARS = Pattern.compile("[<>:\"/\\\\|?*%]");
 
     /**
      * Per-path locks for workspace-relative files to prevent concurrent read-modify-write races.
@@ -345,18 +364,19 @@ public class WorkspaceManager implements AutoCloseable {
      */
     @Deprecated
     public Path resolveSessionFile(RuntimeContext rc, String agentId, String sessionId) {
-        return getSessionDir(rc, agentId).resolve(sessionId + ".json");
+        return getSessionDir(rc, agentId).resolve(safeSegment(sessionId) + ".json");
     }
 
     /** Returns the JSONL session context file path (LLM-facing, compacted). */
     public Path resolveSessionContextFile(RuntimeContext rc, String agentId, String sessionId) {
         return getSessionDir(rc, agentId)
-                .resolve(sessionId + WorkspaceConstants.SESSION_CONTEXT_EXT);
+                .resolve(safeSegment(sessionId) + WorkspaceConstants.SESSION_CONTEXT_EXT);
     }
 
     /** Returns the JSONL session log file path (full history, append-only). */
     public Path resolveSessionLogFile(RuntimeContext rc, String agentId, String sessionId) {
-        return getSessionDir(rc, agentId).resolve(sessionId + WorkspaceConstants.SESSION_LOG_EXT);
+        return getSessionDir(rc, agentId)
+                .resolve(safeSegment(sessionId) + WorkspaceConstants.SESSION_LOG_EXT);
     }
 
     /**
@@ -616,8 +636,42 @@ public class WorkspaceManager implements AutoCloseable {
         }
     }
 
+    /**
+     * Percent-encodes characters that are illegal in a Windows/NTFS file-name segment, instead of
+     * collapsing them to a single '-'.
+     *
+     * <p>Session ids are caller-supplied and carry no documented character constraint, yet they are
+     * used verbatim to build file names. Sanitising here keeps an unexpected id from surfacing as a
+     * raw {@link java.nio.file.InvalidPathException} from deep inside the workspace layer, with no
+     * hint that the caller-supplied id is the problem.
+     *
+     * <p>Encoding (rather than replacing with a fixed character) keeps the result injective: two
+     * distinct ids can never map to the same file name, so a session can never silently overwrite
+     * another's files. The encoding is reversible (each {@code %XX} decodes back to exactly one
+     * code point) and yields only characters that are legal on every supported file system.
+     */
+    private static String safeSegment(String segment) {
+        if (segment == null) {
+            return null;
+        }
+        Matcher m = UNSAFE_SEGMENT_CHARS.matcher(segment);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            m.appendReplacement(sb, String.format("%%%02X", (int) m.group().charAt(0)));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
     private String taskRecordPath(String agentId, String sessionId) {
-        return AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR + "/" + sessionId + ".json";
+        return AGENTS_DIR
+                + "/"
+                + agentId
+                + "/"
+                + TASKS_DIR
+                + "/"
+                + safeSegment(sessionId)
+                + ".json";
     }
 
     /**
