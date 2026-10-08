@@ -123,7 +123,7 @@ class ToolSuspendExceptionTest {
         assertEquals(
                 ToolResultState.RUNNING,
                 legacy.getState(),
-                "pre-2.0.4 blocks deserialize without a state and default to RUNNING");
+                "legacy blocks deserialize without a state and default to RUNNING");
         assertTrue(legacy.isSuspended(), "the legacy wire marker must stay recognised");
     }
 

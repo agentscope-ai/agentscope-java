@@ -43,8 +43,7 @@ public final class ToolResultBlock extends ContentBlock {
      * #isSuspended()} still recognises it for cross-version compatibility. New code should rely
      * on {@link ToolResultState#SUSPENDED} or {@link #isSuspended()} instead of this key.
      */
-    @Deprecated(since = "2.0.4")
-    public static final String METADATA_SUSPENDED = "agentscope_suspended";
+    @Deprecated public static final String METADATA_SUSPENDED = "agentscope_suspended";
 
     /**
      * Metadata key carrying the suspend reason (the {@code ToolSuspendException} message) when
@@ -165,7 +164,7 @@ public final class ToolResultBlock extends ContentBlock {
      * Checks if this result is suspended for external execution.
      *
      * <p>Recognises the canonical encoding ({@link ToolResultState#SUSPENDED}) and the legacy
-     * pre-2.0.4 wire marker ({@link #METADATA_SUSPENDED}), so blocks serialized by older
+     * wire marker ({@link #METADATA_SUSPENDED}), so blocks serialized by older
      * versions keep working.
      *
      * @return true if this result is suspended, false otherwise
