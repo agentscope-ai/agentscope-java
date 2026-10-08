@@ -118,6 +118,47 @@ class SkillTableDialectSqliteTest {
         }
     }
 
+    @Test
+    @DisplayName("namespaces isolate the same skill name, resources included, on SQLite")
+    void namespacesIsolateOnSqlite() throws Exception {
+        DataSource ds = createDataSource("skill_ns");
+        AbstractJdbcDialect dialect =
+                AbstractJdbcDialect.from(ds)
+                        .enableBaseTables(false)
+                        .enableSkillTables(true)
+                        .build();
+        JdbcAgentSkillRepository repo = new JdbcAgentSkillRepository(ds, dialect);
+        var teamA =
+                new io.agentscope.core.skill.AgentSkill(
+                        Map.of("name", "shared", "description", "team-a"),
+                        "content-a",
+                        Map.of("docs/a.md", "a"),
+                        "test");
+        var teamB =
+                new io.agentscope.core.skill.AgentSkill(
+                        Map.of("name", "shared", "description", "team-b"),
+                        "content-b",
+                        Map.of("docs/b.md", "b"),
+                        "test");
+
+        assertTrue(repo.save("team-a", List.of(teamA), false));
+        assertTrue(repo.save("team-b", List.of(teamB), false), "the composite key admits both");
+        assertEquals("content-a", repo.getSkill("team-a", "shared").getSkillContent());
+        assertEquals("content-b", repo.getSkill("team-b", "shared").getSkillContent());
+
+        // Resources are deleted per skill id, so the surviving namespace keeps its own rows
+        // even though SQLite enforces no cascading foreign key here.
+        assertTrue(repo.delete("team-a", "shared"));
+        assertEquals("b", repo.getSkill("team-b", "shared").getResource("docs/b.md"));
+        try (Connection conn = ds.getConnection();
+                Statement stmt = conn.createStatement();
+                ResultSet rs =
+                        stmt.executeQuery("SELECT COUNT(*) FROM agentscope_skill_resources")) {
+            rs.next();
+            assertEquals(1, rs.getInt(1), "only team-b's resource row must remain");
+        }
+    }
+
     /** A file-backed SQLite DataSource, one database file per test. */
     private DataSource createDataSource(String name) {
         SQLiteDataSource ds = new SQLiteDataSource();
