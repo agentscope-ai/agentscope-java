@@ -26,6 +26,7 @@ import com.google.genai.types.ToolResponse;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ContentBlockMetadataKeys;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -57,6 +58,7 @@ import org.slf4j.LoggerFactory;
  * <p>This converter handles the core message transformation logic, including:
  * <ul>
  *   <li>Text blocks</li>
+ *   <li>Thinking blocks</li>
  *   <li>Tool use blocks (function_call)</li>
  *   <li>Tool result blocks (function_response as independent Content)</li>
  *   <li>Multimodal content (image, audio, video)</li>
@@ -93,11 +95,16 @@ public class GeminiMessageConverter {
 
         for (Msg msg : msgs) {
             List<Part> parts = new ArrayList<>();
+            boolean modelRole = msg.getRole() == MsgRole.ASSISTANT;
             List<Part> functionResponseParts = new ArrayList<>();
 
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock tb) {
-                    parts.add(Part.builder().text(tb.getText()).build());
+                    Part.Builder partBuilder = Part.builder().text(tb.getText());
+                    if (modelRole) {
+                        GeminiThoughtSignatureUtils.applyMetadata(partBuilder, tb.getMetadata());
+                    }
+                    parts.add(partBuilder.build());
 
                 } else if (block instanceof ToolUseBlock tub) {
                     // Prioritize using content field (raw arguments string), fallback to input map
@@ -143,14 +150,8 @@ public class GeminiMessageConverter {
                         partBuilder = Part.builder().functionCall(functionCall);
                     }
 
-                    // Check for thought signature in metadata
-                    Map<String, Object> metadata = tub.getMetadata();
-                    if (metadata != null
-                            && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
-                        applyThoughtSignature(
-                                partBuilder,
-                                metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE),
-                                tub.getName());
+                    if (modelRole) {
+                        GeminiThoughtSignatureUtils.applyMetadata(partBuilder, tub.getMetadata());
                     }
 
                     parts.add(partBuilder.build());
@@ -214,9 +215,38 @@ public class GeminiMessageConverter {
                 } else if (block instanceof HintBlock hb) {
                     parts.add(Part.builder().text(hb.getHint()).build());
 
-                } else if (block instanceof ThinkingBlock) {
-                    log.debug("Skipping ThinkingBlock when formatting message for Gemini API");
-                    continue;
+                } else if (block instanceof ThinkingBlock thinkingBlock) {
+                    if (!modelRole) {
+                        log.debug(
+                                "Skipping ThinkingBlock from non-assistant message when formatting"
+                                        + " for Gemini API");
+                        continue;
+                    }
+
+                    Part.Builder partBuilder = Part.builder().text(thinkingBlock.getThinking());
+                    boolean signatureRestored =
+                            GeminiThoughtSignatureUtils.applyMetadata(
+                                    partBuilder, thinkingBlock.getMetadata());
+                    boolean hadSignature =
+                            thinkingBlock.getMetadata() != null
+                                    && thinkingBlock
+                                            .getMetadata()
+                                            .containsKey(
+                                                    ContentBlockMetadataKeys.THOUGHT_SIGNATURE);
+                    if (signatureRestored || !hadSignature) {
+                        // Signed thought Parts are replayed verbatim so Gemini can verify its
+                        // prior reasoning. Unsigned thought summaries keep the thought flag as
+                        // before signature support existed.
+                        partBuilder.thought(true);
+                    } else {
+                        // A signature existed but could not be restored. A signature-less
+                        // thought Part is a different (likely rejected) request shape, so
+                        // degrade to an ordinary text Part instead of shipping the thought flag.
+                        log.warn(
+                                "ThinkingBlock thought signature could not be restored; replaying"
+                                        + " it as an ordinary text Part");
+                    }
+                    parts.add(partBuilder.build());
 
                 } else {
                     log.warn(

@@ -30,6 +30,7 @@ import com.google.genai.types.ToolResponse;
 import com.google.genai.types.ToolType;
 import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ContentBlockMetadataKeys;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
@@ -175,8 +176,8 @@ public class GeminiResponseParser {
     }
 
     /**
-     * Parse Gemini Part objects to AgentScope ContentBlocks.
-     * Order of block types: ThinkingBlock, TextBlock, ToolUseBlock, ToolResultBlock
+     * Parse Gemini Part objects to AgentScope ContentBlocks while preserving Part order.
+     * Emitted block types: ThinkingBlock, TextBlock, ToolUseBlock, ToolResultBlock
      *
      * @param parts List of Gemini Part objects
      * @param blocks List to add parsed ContentBlocks to
@@ -185,62 +186,63 @@ public class GeminiResponseParser {
         String pendingCodeExecutionId = null;
 
         for (Part part : parts) {
+            Map<String, Object> metadata = GeminiThoughtSignatureUtils.extractMetadata(part);
+
             // Check for thinking content first (parts with thought=true flag)
             if (part.thought().isPresent() && part.thought().get() && part.text().isPresent()) {
                 String thinkingText = part.text().get();
-                if (thinkingText != null && !thinkingText.isEmpty()) {
-                    blocks.add(ThinkingBlock.builder().thinking(thinkingText).build());
+                if (!thinkingText.isEmpty() || metadata != null) {
+                    blocks.add(
+                            ThinkingBlock.builder()
+                                    .thinking(thinkingText)
+                                    .metadata(metadata)
+                                    .build());
                 }
                 continue;
             }
 
-            // Check for text content
-            if (part.text().isPresent()) {
-                String text = part.text().get();
-                if (text != null && !text.isEmpty()) {
-                    blocks.add(TextBlock.builder().text(text).build());
-                }
+            // Check for function call (tool use)
+            if (part.functionCall().isPresent()) {
+                FunctionCall functionCall = part.functionCall().get();
+                parseToolCall(functionCall, metadata, blocks);
+                continue;
             }
 
             // Gemini code execution uses dedicated parts rather than ToolCall/ToolResponse.
             if (part.executableCode().isPresent()) {
                 ExecutableCode executableCode = part.executableCode().get();
-                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
                 ToolUseBlock codeBlock =
-                        parseExecutableCode(
-                                executableCode, thoughtSignature, pendingCodeExecutionId);
+                        parseExecutableCode(executableCode, metadata, pendingCodeExecutionId);
                 blocks.add(codeBlock);
                 pendingCodeExecutionId = codeBlock.getId();
             }
 
             if (part.codeExecutionResult().isPresent()) {
                 CodeExecutionResult codeExecutionResult = part.codeExecutionResult().get();
-                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
                 blocks.add(
                         parseCodeExecutionResult(
-                                codeExecutionResult, thoughtSignature, pendingCodeExecutionId));
+                                codeExecutionResult, metadata, pendingCodeExecutionId));
                 pendingCodeExecutionId = null;
-            }
-
-            // Check for function call (tool use)
-            if (part.functionCall().isPresent()) {
-                FunctionCall functionCall = part.functionCall().get();
-                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
-                parseToolCall(functionCall, thoughtSignature, blocks);
             }
 
             // Check for tool call (server tool use)
             if (part.toolCall().isPresent()) {
                 ToolCall toolCall = part.toolCall().get();
-                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
-                parseServerToolCall(toolCall, thoughtSignature, blocks);
+                parseServerToolCall(toolCall, metadata, blocks);
             }
 
             // Check for tool response (server tool result)
             if (part.toolResponse().isPresent()) {
                 ToolResponse toolResponse = part.toolResponse().get();
-                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
-                parseServerToolResponse(toolResponse, thoughtSignature, blocks);
+                parseServerToolResponse(toolResponse, metadata, blocks);
+            }
+
+            // Check for text content
+            if (part.text().isPresent()) {
+                String text = part.text().get();
+                if (!text.isEmpty() || metadata != null) {
+                    blocks.add(TextBlock.builder().text(text).metadata(metadata).build());
+                }
             }
         }
     }
@@ -249,12 +251,12 @@ public class GeminiResponseParser {
      * Parses a Gemini executable-code part into a server-tool use block.
      *
      * @param executableCode Gemini executable-code part
-     * @param thoughtSignature Thought signature from the Part, or null
+     * @param partMetadata Provider-specific metadata from the Part (may be null)
      * @param fallbackId ID of the matching executable-code call when the part has no ID
      * @return Tool-use block representing generated code
      */
     private ToolUseBlock parseExecutableCode(
-            ExecutableCode executableCode, byte[] thoughtSignature, String fallbackId) {
+            ExecutableCode executableCode, Map<String, Object> partMetadata, String fallbackId) {
         String id =
                 executableCode
                         .id()
@@ -274,8 +276,8 @@ public class GeminiResponseParser {
         Map<String, Object> metadata = new HashMap<>();
         metadata.put(ToolUseBlock.METADATA_SERVER_TOOL, true);
         metadata.put(METADATA_CODE_EXECUTION, true);
-        if (thoughtSignature != null) {
-            metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+        if (partMetadata != null) {
+            metadata.putAll(partMetadata);
         }
 
         return ToolUseBlock.builder()
@@ -292,12 +294,14 @@ public class GeminiResponseParser {
      * Parses a Gemini code-execution result into a server-tool result block.
      *
      * @param codeExecutionResult Gemini code-execution result part
-     * @param thoughtSignature Thought signature from the Part, or null
+     * @param partMetadata Provider-specific metadata from the Part (may be null)
      * @param fallbackId ID of the matching executable-code call when the result has no ID
      * @return Tool-result block representing the execution result
      */
     private ToolResultBlock parseCodeExecutionResult(
-            CodeExecutionResult codeExecutionResult, byte[] thoughtSignature, String fallbackId) {
+            CodeExecutionResult codeExecutionResult,
+            Map<String, Object> partMetadata,
+            String fallbackId) {
         String id =
                 codeExecutionResult
                         .id()
@@ -315,8 +319,8 @@ public class GeminiResponseParser {
                 .outcome()
                 .map(outcome -> outcome.toString())
                 .ifPresent(outcome -> metadata.put(METADATA_CODE_EXECUTION_OUTCOME, outcome));
-        if (thoughtSignature != null) {
-            metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+        if (partMetadata != null) {
+            metadata.putAll(partMetadata);
         }
 
         ToolResultState resultState =
@@ -351,9 +355,28 @@ public class GeminiResponseParser {
      * @param functionCall Gemini FunctionCall object
      * @param thoughtSignature Thought signature from the Part (may be null)
      * @param blocks List to add parsed ToolUseBlock to
+     * @deprecated kept for source compatibility with out-of-tree subclasses that override the
+     *     legacy signature; override or call the metadata-based variant instead.
      */
+    @Deprecated
     protected void parseToolCall(
             FunctionCall functionCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
+        Map<String, Object> metadata =
+                thoughtSignature == null
+                        ? null
+                        : Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, thoughtSignature);
+        parseToolCall(functionCall, metadata, blocks);
+    }
+
+    /**
+     * Parse Gemini FunctionCall to ToolUseBlock.
+     *
+     * @param functionCall Gemini FunctionCall object
+     * @param metadata Provider-specific metadata from the Part (may be null)
+     * @param blocks List to add parsed ToolUseBlock to
+     */
+    protected void parseToolCall(
+            FunctionCall functionCall, Map<String, Object> metadata, List<ContentBlock> blocks) {
         try {
             String id = functionCall.id().orElse("tool_call_" + System.currentTimeMillis());
             String name = functionCall.name().orElse("");
@@ -364,12 +387,7 @@ public class GeminiResponseParser {
 
             blocks.add(
                     convertToolUseBlock(
-                            id,
-                            name,
-                            functionCall.args().orElse(null),
-                            thoughtSignature,
-                            null,
-                            false));
+                            id, name, functionCall.args().orElse(null), metadata, null, false));
         } catch (Exception e) {
             log.warn("Failed to parse function call: {}", e.getMessage(), e);
         }
@@ -381,9 +399,28 @@ public class GeminiResponseParser {
      * @param toolCall         Gemini ToolCall object
      * @param thoughtSignature Thought signature from the Part (may be null)
      * @param blocks           List to add parsed ToolUseBlock to
+     * @deprecated kept for source compatibility with out-of-tree subclasses that override the
+     *     legacy signature; override or call the metadata-based variant instead.
      */
+    @Deprecated
     protected void parseServerToolCall(
             ToolCall toolCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
+        Map<String, Object> metadata =
+                thoughtSignature == null
+                        ? null
+                        : Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, thoughtSignature);
+        parseServerToolCall(toolCall, metadata, blocks);
+    }
+
+    /**
+     * Parse Gemini ToolCall to ToolUseBlock for server-side (built-in) tools.
+     *
+     * @param toolCall         Gemini ToolCall object
+     * @param metadata         Provider-specific metadata from the Part (may be null)
+     * @param blocks           List to add parsed ToolUseBlock to
+     */
+    protected void parseServerToolCall(
+            ToolCall toolCall, Map<String, Object> metadata, List<ContentBlock> blocks) {
         try {
             String id = toolCall.id().orElse("tool_call_" + System.currentTimeMillis());
             String name = toolCall.toolType().map(ToolType::toString).orElse("");
@@ -396,7 +433,7 @@ public class GeminiResponseParser {
                             id,
                             name,
                             toolCall.args().orElse(null),
-                            thoughtSignature,
+                            metadata,
                             ToolCallState.FINISHED,
                             true));
         } catch (Exception e) {
@@ -413,12 +450,40 @@ public class GeminiResponseParser {
      * @param thoughtSignature Thought signature from the Part (may be null)
      * @param server           Whether the tool is executed by the model provider server-side
      * @return A new ToolUseBlock
+     * @deprecated kept for source compatibility with out-of-tree subclasses that override the
+     *     legacy signature; override or call the metadata-based variant instead.
      */
+    @Deprecated
     protected ToolUseBlock convertToolUseBlock(
             String id,
             String name,
             Map<String, Object> args,
             byte[] thoughtSignature,
+            ToolCallState state,
+            boolean server) {
+        Map<String, Object> metadata =
+                thoughtSignature == null
+                        ? null
+                        : Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, thoughtSignature);
+        return convertToolUseBlock(id, name, args, metadata, state, server);
+    }
+
+    /**
+     * Converts a Gemini tool invocation to a ToolUseBlock.
+     *
+     * @param id        Tool call ID
+     * @param name      Tool name (function name or tool type)
+     * @param args      Tool arguments map (may be null)
+     * @param metadata  Provider-specific metadata from the Part (may be null)
+     * @param state     Tool call state, or null for local function calls
+     * @param server    Whether the tool is executed by the model provider server-side
+     * @return A new ToolUseBlock
+     */
+    protected ToolUseBlock convertToolUseBlock(
+            String id,
+            String name,
+            Map<String, Object> args,
+            Map<String, Object> metadata,
             ToolCallState state,
             boolean server) {
         // Parse arguments
@@ -435,13 +500,13 @@ public class GeminiResponseParser {
             }
         }
 
-        // Build metadata with provider flags and optional thought signature
-        Map<String, Object> metadata = new HashMap<>();
+        // Build metadata with provider flags and Part-level metadata (thought signature)
+        Map<String, Object> blockMetadata = new HashMap<>();
         if (server) {
-            metadata.put(ToolUseBlock.METADATA_SERVER_TOOL, true);
+            blockMetadata.put(ToolUseBlock.METADATA_SERVER_TOOL, true);
         }
-        if (thoughtSignature != null) {
-            metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+        if (metadata != null) {
+            blockMetadata.putAll(metadata);
         }
 
         return ToolUseBlock.builder()
@@ -449,7 +514,7 @@ public class GeminiResponseParser {
                 .name(name)
                 .input(argsMap)
                 .content(rawContent)
-                .metadata(metadata.isEmpty() ? null : metadata)
+                .metadata(blockMetadata.isEmpty() ? null : blockMetadata)
                 .state(state)
                 .build();
     }
@@ -460,9 +525,30 @@ public class GeminiResponseParser {
      * @param toolResponse     Gemini ToolResponse object
      * @param thoughtSignature Thought signature from the Part (may be null)
      * @param blocks           List to add parsed ToolResultBlock to
+     * @deprecated kept for source compatibility with out-of-tree subclasses that override the
+     *     legacy signature; override or call the metadata-based variant instead.
      */
+    @Deprecated
     protected void parseServerToolResponse(
             ToolResponse toolResponse, byte[] thoughtSignature, List<ContentBlock> blocks) {
+        Map<String, Object> metadata =
+                thoughtSignature == null
+                        ? null
+                        : Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, thoughtSignature);
+        parseServerToolResponse(toolResponse, metadata, blocks);
+    }
+
+    /**
+     * Parse Gemini ToolResponse to ToolResultBlock for server-side (built-in) tools.
+     *
+     * @param toolResponse     Gemini ToolResponse object
+     * @param partMetadata     Provider-specific metadata from the Part (may be null)
+     * @param blocks           List to add parsed ToolResultBlock to
+     */
+    protected void parseServerToolResponse(
+            ToolResponse toolResponse,
+            Map<String, Object> partMetadata,
+            List<ContentBlock> blocks) {
         try {
             String id = toolResponse.id().orElse("tool_call_" + System.currentTimeMillis());
             String name = toolResponse.toolType().map(ToolType::toString).orElse("");
@@ -474,8 +560,8 @@ public class GeminiResponseParser {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(ToolResultBlock.METADATA_SERVER_TOOL, true);
             metadata.put(METADATA_SERVER_TOOL_RESPONSE, toolResponse.toJson());
-            if (thoughtSignature != null) {
-                metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+            if (partMetadata != null) {
+                metadata.putAll(partMetadata);
             }
 
             ToolResultBlock.Builder toolResultBuilder =
