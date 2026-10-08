@@ -155,18 +155,23 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        String normalizedPath = path.endsWith("/") ? path : path + "/";
+        // Enumeration root spellings (null, blank, "/", "." and canonical equivalents like
+        // "/.") anchor at the store root; non-root directories keep their trailing
+        // separator — the prefix logic below relies on it to tell direct children apart
+        // from sibling prefixes like /memory-backup when listing /memory (#3253 review).
+        String normalizedPath = normalizeEnumerationPath(path);
+        String prefix = "/".equals(normalizedPath) ? "/" : normalizedPath + "/";
 
         // Fast path: index has entries for this prefix
-        if (index != null && index.hasPrefix(normalizedPath)) {
-            List<String> indexPaths = index.listByPrefix(normalizedPath);
+        if (index != null && index.hasPrefix(prefix)) {
+            List<String> indexPaths = index.listByPrefix(prefix);
             List<FileInfo> infos = new ArrayList<>();
             Set<String> subdirs = new LinkedHashSet<>();
             for (String p : indexPaths) {
-                String relative = p.substring(normalizedPath.length());
+                String relative = p.substring(prefix.length());
                 if (relative.contains("/")) {
                     String subdirName = relative.substring(0, relative.indexOf('/'));
-                    subdirs.add(normalizedPath + subdirName + "/");
+                    subdirs.add(prefix + subdirName + "/");
                 } else {
                     infos.add(FileInfo.ofFile(p, 0, ""));
                 }
@@ -184,15 +189,15 @@ public class RemoteFilesystem implements AbstractFilesystem {
         Set<String> subdirs = new LinkedHashSet<>();
 
         for (StoreItem item : items) {
-            if (!item.key().startsWith(normalizedPath)) {
+            if (!item.key().startsWith(prefix)) {
                 continue;
             }
 
-            String relative = item.key().substring(normalizedPath.length());
+            String relative = item.key().substring(prefix.length());
 
             if (relative.contains("/")) {
                 String subdirName = relative.substring(0, relative.indexOf('/'));
-                subdirs.add(normalizedPath + subdirName + "/");
+                subdirs.add(prefix + subdirName + "/");
                 continue;
             }
 
@@ -332,7 +337,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
-        String normalizedPath = normalizePath(path);
+        String normalizedPath = normalizeEnumerationPath(path);
 
         PathMatcher globMatcher = null;
         if (glob != null && !glob.isBlank()) {
@@ -418,7 +423,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
-        String normalizedPath = normalizePath(path);
+        String normalizedPath = normalizeEnumerationPath(path);
         String effectivePattern = pattern.startsWith("/") ? pattern.substring(1) : pattern;
 
         PathMatcher matcher =
@@ -715,6 +720,17 @@ public class RemoteFilesystem implements AbstractFilesystem {
             result.put("modified_at", fd.modifiedAt());
         }
         return result;
+    }
+
+    /**
+     * Path normalization for the enumeration surfaces ({@code ls}/{@code grep}/{@code glob}):
+     * root spellings — {@code null}, blank, {@code "/"}, {@code "."} and canonical equivalents
+     * — anchor at the store root, per the {@link AbstractFilesystem} enumeration contract.
+     * Mutation surfaces keep {@link #normalizePath(String)}, which makes no such promise
+     * (#3253 review).
+     */
+    private static String normalizeEnumerationPath(String path) {
+        return AbstractFilesystem.denotesRootPath(path) ? "/" : normalizePath(path);
     }
 
     private static String normalizePath(String path) {

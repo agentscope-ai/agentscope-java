@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -44,7 +45,108 @@ import java.util.Map;
 public interface AbstractFilesystem {
 
     /**
+     * Returns whether {@code path} is a root spelling for the enumeration surfaces ({@link
+     * #ls}, {@link #grep}, {@link #glob}): {@code null}, blank, and any path that canonically
+     * denotes the root — {@code "/"}, {@code "."}, {@code "/."}, {@code "//"}, {@code
+     * "/tmp/.."} — after collapsing duplicate separators and resolving {@code .}/{@code ..}
+     * segments textually. Shared by {@link CompositeFilesystem} and the concrete backends so
+     * absolute root spellings cannot slip past textual checks and reach the OS root (#3253).
+     * Scope note: this closes root spellings only — relative {@code ./}/{@code ..} forms and
+     * {@code ..} segments inside non-root absolute paths are a separate escape class, tracked
+     * in #3378.
+     */
+    static boolean denotesRootPath(String path) {
+        if (path == null || path.isBlank()) {
+            return true;
+        }
+        String p = path.replace('\\', '/');
+        if (p.equals(".")) {
+            return true;
+        }
+        if (!p.startsWith("/")) {
+            return false;
+        }
+        java.util.Deque<String> segments = new java.util.ArrayDeque<>();
+        for (String segment : p.substring(1).split("/")) {
+            if (segment.isEmpty() || segment.equals(".")) {
+                continue;
+            }
+            if (segment.equals("..")) {
+                if (!segments.isEmpty()) {
+                    segments.pop();
+                }
+                continue;
+            }
+            segments.push(segment);
+        }
+        return segments.isEmpty();
+    }
+
+    /**
+     * Resolves {@code .}/{@code ..} segments and duplicate separators textually, for
+     * enumeration paths that are NOT root spellings: {@code "/alice/../bob"} is forwarded as
+     * {@code "/bob"} instead of raw, so a namespaced backend's absolute-path passthrough
+     * cannot be popped out of the namespace anchor by a crafted {@code ..} (#3378). Relative
+     * input stays relative — a leading or unresolvable {@code ..} is kept literal so the
+     * backend's traversal guard (SecurityException) still fires.
+     */
+    static String normalizeEnumerationSegments(String path) {
+        if (path == null) {
+            return null;
+        }
+        // Byte-for-byte passthrough when there is nothing to resolve: POSIX file names may
+        // legally contain a backslash, and RemoteFilesystem treats the path as a literal
+        // store key — rewriting an already-clean string would change which key is read
+        // (#3378 review).
+        if (!path.contains("\\")
+                && !path.contains("./")
+                && !path.contains("../")
+                && !path.contains("//")
+                && !path.endsWith("/")
+                && !path.endsWith("..")) {
+            return path;
+        }
+        String p = path.replace('\\', '/');
+        boolean absolute = p.startsWith("/");
+        List<String> parts = new ArrayList<>();
+        String[] rawSegments = (absolute ? p.substring(1) : p).split("/");
+        for (String segment : rawSegments) {
+            if (segment.isEmpty() || segment.equals(".")) {
+                continue;
+            }
+            if (segment.equals("..")) {
+                if (!parts.isEmpty() && !parts.get(parts.size() - 1).equals("..")) {
+                    parts.remove(parts.size() - 1);
+                } else if (!absolute) {
+                    // Relative and escaping: keep it literal so the backend's traversal
+                    // guard still fires.
+                    parts.add("..");
+                }
+                // Absolute root ".." simply drops — the root cannot go higher.
+                continue;
+            }
+            parts.add(segment);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            sb.append('/').append(part);
+        }
+        if (absolute) {
+            return sb.length() == 0 ? "/" : sb.toString();
+        }
+        return sb.length() == 0 ? "." : sb.substring(1);
+    }
+
+    /**
      * List all files in a directory with metadata.
+     *
+     * <p>Root-spelling contract: {@code null}, blank, {@code "/"} and {@code "."} all mean
+     * "this filesystem's own root" for the <em>enumeration</em> surfaces ({@link #ls}, {@link
+     * #grep}, {@link #glob}) — implementations must anchor them inside their workspace (or
+     * store namespace) and never let them reach the OS root. {@link CompositeFilesystem}
+     * forwards the contract spelling {@code "/"} to its default backend. Mutation surfaces
+     * ({@code read/write/edit/delete/exists}) make no such promise for blank/null — callers
+     * pass real paths there.
      *
      * @param runtimeContext per-call agent runtime; {@link RuntimeContext#empty()} when none
      * @param path absolute path to the directory to list (must start with '/')
