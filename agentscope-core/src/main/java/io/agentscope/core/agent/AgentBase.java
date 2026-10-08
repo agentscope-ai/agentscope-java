@@ -37,6 +37,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
@@ -100,6 +101,16 @@ public abstract class AgentBase implements Agent {
     private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(Hook::priority);
 
     /**
+     * Allowed characters for an explicit agent id. The id is interpolated into path/namespace
+     * segments by downstream code (e.g. remote filesystem specs, workspace session indexes), so it
+     * must stay a single safe segment.
+     */
+    private static final Pattern AGENT_ID_PATTERN = Pattern.compile("[A-Za-z0-9._-]+");
+
+    /** Max explicit agent id length: the id becomes a single path segment downstream. */
+    private static final int MAX_AGENT_ID_LENGTH = 255;
+
+    /**
      * Per-key call serialization tails. Each entry holds the completion signal of the most recently
      * enqueued call for that key; the next call for the same key chains after it, so calls sharing a
      * key run one-at-a-time (FIFO) while different keys run concurrently. See {@link
@@ -142,12 +153,58 @@ public abstract class AgentBase implements Agent {
      * @param hooks List of hooks for monitoring/intercepting execution
      */
     public AgentBase(String name, String description, List<Hook> hooks) {
-        this.agentId = UUID.randomUUID().toString();
+        this(name, description, hooks, null);
+    }
+
+    /**
+     * Constructor for AgentBase with hooks and an explicit agent id.
+     *
+     * @param name Agent name
+     * @param description Agent description
+     * @param hooks List of hooks for monitoring/intercepting execution
+     * @param agentId explicit agent id; see {@link #normalizeAgentId(String)}. Blank falls back
+     *     to a random UUID. Leave null unless ids are managed externally — uniqueness among live
+     *     agents is the caller's responsibility and is not enforced by the framework.
+     * @throws IllegalArgumentException if a non-blank agentId is invalid
+     */
+    public AgentBase(String name, String description, List<Hook> hooks, String agentId) {
+        String normalized = normalizeAgentId(agentId);
+        this.agentId = normalized != null ? normalized : UUID.randomUUID().toString();
         this.name = name;
         this.description = description;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
         sortHooks();
+    }
+
+    /**
+     * Trims an explicit agent id and validates it — the id is interpolated into path/namespace
+     * segments downstream, so it must be a single safe segment: {@code [A-Za-z0-9._-]+}, not all
+     * dots, at most {@value #MAX_AGENT_ID_LENGTH} characters. Blank input returns {@code null}
+     * so callers fall back to a generated UUID.
+     *
+     * @param agentId raw id, may be null
+     * @return the trimmed id, or {@code null} when blank
+     * @throws IllegalArgumentException if a non-blank id violates the format
+     */
+    public static String normalizeAgentId(String agentId) {
+        String normalized = agentId != null ? agentId.trim() : "";
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        boolean invalid =
+                normalized.length() > MAX_AGENT_ID_LENGTH
+                        || !AGENT_ID_PATTERN.matcher(normalized).matches()
+                        || normalized.chars().allMatch(c -> c == '.');
+        if (invalid) {
+            throw new IllegalArgumentException(
+                    "Invalid agentId '"
+                            + normalized
+                            + "': must match [A-Za-z0-9._-]+, not be all dots, and be at most "
+                            + MAX_AGENT_ID_LENGTH
+                            + " characters");
+        }
+        return normalized;
     }
 
     @Override
