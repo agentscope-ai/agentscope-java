@@ -27,6 +27,7 @@ import asyncio
 import logging
 import json
 import socket
+import sys
 import threading
 import time
 import uuid
@@ -611,7 +612,8 @@ class SessionBridge:
                                              generation, command, context_url, task_token,
                                              attempt_token, payload, timestamp)
 
-            cancelled = asyncio.Event()
+            # Python 3.9 binds at construction; transport callbacks run outside our loop.
+            cancelled = asyncio.Event(loop=self._loop) if sys.version_info < (3, 10) else asyncio.Event()
             self._attempt_cancellations[attempt_id] = cancelled
 
             async def execute() -> None:
