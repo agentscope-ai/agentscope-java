@@ -19,6 +19,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tarfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -32,6 +33,44 @@ spec.loader.exec_module(release)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_distribution_packages_include_installation_inputs_without_local_secrets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = Path(directory)
+            for name in ('deploy', 'helm/agentscope-service', 'release'):
+                (service / name).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(SERVICE / name, service / name,
+                                ignore=shutil.ignore_patterns('dist', '__pycache__'))
+            (service / 'deploy/.env').write_text('PRIVATE_VALUE=must-not-ship\n')
+            args = SimpleNamespace(version='2.1.0-BETA1', repository='example.com/team',
+                                   output=service / 'dist', platforms='darwin/arm64', distributions_only=True)
+            original_run = release.run
+
+            def build(*command, **kwargs):
+                if command[:2] == ('go', 'build'):
+                    output = Path(command[command.index('-o') + 1])
+                    output.write_bytes(b'fake executable')
+                    output.chmod(0o755)
+                    return
+                self.assertEqual(command[:2], ('helm', 'package'))
+                return original_run(*command, **kwargs)
+
+            with mock.patch.object(release, 'SERVICE', service), mock.patch.object(release, 'run', side_effect=build), mock.patch.object(release, 'manifest', return_value={'sourceDirty': False, 'platforms': {}}):
+                release.package(args)
+            for archive in args.output.glob('*.tar.gz'):
+                with tarfile.open(archive) as package:
+                    self.assertFalse(any(Path(name).name == '.env' for name in package.getnames()))
+            with tarfile.open(args.output / 'agentscope-service-2.1.0-BETA1-kubernetes.tar.gz') as package:
+                prefix = 'agentscope-service-kubernetes/'
+                for name in ('agentscope-service-2.1.0-BETA1.tgz', 'kubernetes.env.example', 'postgres-init.sql'):
+                    self.assertIn(prefix + name, package.getnames())
+                readme = package.extractfile(prefix + 'README.md').read().decode()
+                self.assertIn('--set imageRepository=example.com/team', readme)
+                self.assertNotIn('@SERVICE_VERSION@', readme)
+            with tarfile.open(args.output / 'agentscope-cli-2.1.0-BETA1-darwin-arm64.tar.gz') as package:
+                self.assertEqual(set(package.getnames()), {'as', 'agentscope-runtime-host', 'LICENSE', 'README.md'})
+            metadata = json.loads((args.output / 'release-manifest.json').read_text())
+            self.assertEqual(set(metadata['artifacts']), {p.name for p in args.output.glob('*.tar.gz')} | {'agentscope-service-2.1.0-BETA1.tgz'})
+
     def test_npm_publication_uses_organization_registry_and_release_tag(self):
         for version, dry_run, tag in [('2.1.0-BETA1', True, 'next'), ('2.1.0', False, 'latest')]:
             with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:

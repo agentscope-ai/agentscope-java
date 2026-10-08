@@ -13,7 +13,7 @@ en_link: /v2/en/service/kubernetes
 
 准备 Kubernetes、Helm、可达的 PostgreSQL，以及 Workspace 所需的 RWX StorageClass 或已有共享 PVC。Artifact 默认使用 RWO。工作目录会被多个组件挂载；只在单节点可用的 RWO 卷不能替代跨节点共享存储。
 
-从 Release 获取 Chart 和部署配置包，校验 SHA256SUMS。用应用数据库所有者在目标数据库执行 `postgres-init.sql`，创建 `cp`、`rt`、`dp` 三个 schema。为数据库、文件和密钥建立备份策略。
+从 Release 下载 `agentscope-service-VERSION-kubernetes.tar.gz` 和 `SHA256SUMS`，核对校验和后解压到 `agentscope-service-kubernetes` 目录。包中包含 Chart、`kubernetes.env.example`、`postgres-init.sql` 和安装说明。用应用数据库所有者在目标数据库执行 SQL，创建 `cp`、`rt`、`dp` 三个 schema。为数据库、文件和密钥建立备份策略。
 
 ## 2. 创建 Secret
 

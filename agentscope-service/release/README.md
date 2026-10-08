@@ -46,6 +46,8 @@ python agentscope-service/release/release.py package \
 
 Default output: `agentscope-service/release/dist/2.0.3-rc.1/`. Existing output directories are not overwritten. Use another `--output` for a new rehearsal. The package includes deploy files, CLI/Host archives, Helm, Python and npm artifacts, `release-manifest.json` and `SHA256SUMS`. Packaging uses an explicit allowlist and never includes deploy `.env` files. Dirty source is recorded for local candidates.
 
+Each CLI archive includes both executables and a bilingual installation README. The Kubernetes bundle `agentscope-service-VERSION-kubernetes.tar.gz` contains the Chart, Secret configuration template, database schema SQL, and installation README; the Chart is also emitted as a standalone `.tgz`. If SDKs are published separately, add `--distributions-only` to build just the CLI, Compose, Kubernetes, and Chart assets.
+
 ```bash
 cd agentscope-service/release/dist/2.0.3-rc.1
 shasum -a 256 -c SHA256SUMS
@@ -143,6 +145,8 @@ The current release profile does not enable `autoPublish`. After Maven succeeds,
 ## 7. Publish documentation and release notes
 
 Attach package archives, manifest, checksums and image metadata to the Release. List exact image references/digests, OCI Chart reference, SDK coordinates, tested platforms, database compatibility, upgrade procedure and known limitations. Verify anonymous downloads/pulls when public distribution is intended.
+
+For a separate installation-package release, use `agentscope-service-dist-vVERSION` as the tag. This keeps package distribution separate from the SDK tag triggers. Build from clean, committed source with `release.py package --distributions-only`, create a prerelease draft, upload only the named public files, verify downloaded SHA-256 values, then publish the draft. Homebrew and Helm OCI are separate channels and require their own destination repositories.
 
 Documentation lives under `docs/v2/{zh,en}/service/`. `_toc.yml` and `_config.yml` register every page and the Service tab. Build and inspect both languages before merging into `main`, the current website workflow's deployment source. Check direct page access, links, images, search and language switching after deployment.
 

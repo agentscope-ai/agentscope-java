@@ -148,6 +148,8 @@ python agentscope-service/release/release.py images \
 
 默认制品目录是 `agentscope-service/release/dist/$SERVICE_VERSION/`。`package` 拒绝覆盖已有目录；重新演练用新的 `--output`，后续 `images` / `publish-chart` 也应指向同一个目录。对外交付使用冻结源码后生成的包，不能直接上传早先 `sourceDirty: true` 的候选包。
 
+CLI 压缩包包含两个可执行文件和中英文安装说明。`agentscope-service-VERSION-kubernetes.tar.gz` 包含 Chart、Secret 配置模板、数据库 schema 初始化 SQL 及安装说明，同时保留独立的 Chart `.tgz`。SDK 已单独发布时，给 `package` 加 `--distributions-only`，只构建 CLI、Compose、Kubernetes 和 Chart 制品。
+
 校验包文件；镜像元数据是之后生成的独立证据，不包含在这份校验和中：
 
 ```bash
@@ -329,11 +331,14 @@ mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-controlplane -am \
 从同一 tag 的工作流取出以下文件：
 
 - Compose `.tar.gz`、Helm `.tgz`。
+- Kubernetes `.tar.gz`，包含 Chart、配置模板和初始化 SQL。
 - 四个平台的 `agentscope-cli-*.tar.gz`，每份包含 CLI 与 Runtime Host。
 - Python wheel/sdist 和 DSH npm tarball，说明哪些版本本次新发布、哪些沿用已有版本。
 - `release-manifest.json`、`SHA256SUMS`、四个 `image-*.json`。
 
 只上传这些公开制品；不要把工作目录、测试 `.env`、数据库备份或密钥一起打包。GitHub 自动生成的源码压缩包不能替代 Compose、CLI 和 SDK 附件。
+
+安装包单独发版时使用 `agentscope-service-dist-vVERSION` tag，与 SDK 的 tag 触发条件分开。从干净且已提交的源码执行 `release.py package --distributions-only`，创建预发布草稿，上传明确列出的公开附件，下载并核对 SHA-256 后再公开。Homebrew 和 Helm OCI 是独立渠道，需要另行确定目标仓库。
 
 先在 GitHub Releases 建立草稿，选用已存在的 tag，上传附件并校验下载。若使用 CLI，先在仓库之外准备完整的 Markdown Release Notes：
 

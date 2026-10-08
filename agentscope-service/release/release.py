@@ -127,6 +127,20 @@ def package(args):
     shutil.rmtree(deploy)
     run('helm', 'package', str(SERVICE / 'helm/agentscope-service'), '--version', args.version,
         '--app-version', args.version, '--destination', str(out))
+    deploy = out / 'agentscope-service-kubernetes'
+    deploy.mkdir()
+    for name in ('kubernetes.env.example', 'postgres-init.sql'):
+        shutil.copy2(SERVICE / 'deploy' / name, deploy / name)
+    readme = (SERVICE / 'release/KUBERNETES_README.md').read_text()
+    readme = readme.replace('@SERVICE_VERSION@', args.version).replace('@IMAGE_REPOSITORY@', args.repository)
+    (deploy / 'README.md').write_text(readme)
+    shutil.copy2(out / f'agentscope-service-{args.version}.tgz', deploy)
+    for name in ('LICENSE', 'NOTICE'):
+        if (ROOT / name).exists():
+            shutil.copy2(ROOT / name, deploy / name)
+    with tarfile.open(out / f'agentscope-service-{args.version}-kubernetes.tar.gz', 'w:gz') as archive:
+        archive.add(deploy, arcname=deploy.name)
+    shutil.rmtree(deploy)
     for target in args.platforms.split(','):
         if target not in ('linux/amd64', 'linux/arm64', 'darwin/amd64', 'darwin/arm64'):
             raise SystemExit(f'Unsupported CLI platform: {target}')
@@ -138,14 +152,16 @@ def package(args):
             run('go', 'build', '-trimpath', '-ldflags=-s -w -X github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/version.Version=' + args.version, '-o', str(stage / name), './cmd/' + command,
                 cwd=SERVICE / 'service-controlplane', env=env)
         shutil.copy2(ROOT / 'LICENSE', stage / 'LICENSE')
+        shutil.copy2(SERVICE / 'release/CLI_README.md', stage / 'README.md')
         with tarfile.open(out / f'agentscope-cli-{args.version}-{system}-{arch}.tar.gz', 'w:gz') as archive:
             for file in sorted(stage.iterdir()):
                 archive.add(file, arcname=file.name)
         shutil.rmtree(stage)
-    run(sys.executable, '-m', 'build', '--outdir', str(out), cwd=SERVICE / 'service-controlplane/sdk/python')
-    run('npm', 'ci', cwd=SERVICE / 'service-controlplane/sdk/dsh')
-    run('npm', 'run', 'build', cwd=SERVICE / 'service-controlplane/sdk/dsh')
-    run('npm', 'pack', '--pack-destination', str(out), cwd=SERVICE / 'service-controlplane/sdk/dsh')
+    if not args.distributions_only:
+        run(sys.executable, '-m', 'build', '--outdir', str(out), cwd=SERVICE / 'service-controlplane/sdk/python')
+        run('npm', 'ci', cwd=SERVICE / 'service-controlplane/sdk/dsh')
+        run('npm', 'run', 'build', cwd=SERVICE / 'service-controlplane/sdk/dsh')
+        run('npm', 'pack', '--pack-destination', str(out), cwd=SERVICE / 'service-controlplane/sdk/dsh')
     data = manifest(args)
     data['platforms']['cli'] = args.platforms.split(',')
     data['artifacts'] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(out.iterdir()) if p.is_file()}
@@ -217,6 +233,7 @@ def main():
     parser.add_argument('--platforms', default='linux/amd64,linux/arm64,darwin/amd64,darwin/arm64')
     parser.add_argument('--push', action='store_true', help='Push images (otherwise load one platform locally)')
     parser.add_argument('--dry-run', action='store_true', help='Validate npm publication without uploading')
+    parser.add_argument('--distributions-only', action='store_true', help='Package CLI, Compose and Kubernetes without SDK archives')
     args = parser.parse_args()
     if args.command == 'hygiene': return tracked_hygiene()
     if args.command == 'verify': return verify()

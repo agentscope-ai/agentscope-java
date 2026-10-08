@@ -13,7 +13,7 @@ This guide covers production deployment with Kubernetes and Helm. The published 
 
 Prepare Kubernetes, Helm and reachable PostgreSQL. Workspaces need an RWX StorageClass or an existing shared PVC because several components mount them. Artifacts default to RWO. Single-node RWO behavior does not establish shared access across nodes.
 
-Download the Chart and deployment configuration package from the Release and verify SHA256SUMS. Execute `postgres-init.sql` in the target database as its application owner to create `cp`, `rt` and `dp`. Plan backups for the database, files and keys.
+Download `agentscope-service-VERSION-kubernetes.tar.gz` and `SHA256SUMS` from the Release. Verify the checksum and extract the bundle into `agentscope-service-kubernetes`; it contains the Chart, `kubernetes.env.example`, `postgres-init.sql`, and installation instructions. Execute the SQL in the target database as its application owner to create `cp`, `rt` and `dp`. Plan backups for the database, files and keys.
 
 ## 2. Create a Secret
 
