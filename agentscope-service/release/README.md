@@ -8,8 +8,8 @@ Run all commands from the monorepo root. Development continues in the existing c
 
 | Component | Delivery | Version source |
 | --- | --- | --- |
-| Control plane + Dashboard | `agentscope-service-control` image | Service release version, injected into Go build |
-| Gateway / Dataplane / Scheduler | Three `agentscope-service-*` images | Service release tag; Java revision recorded separately |
+| Control plane + Dashboard | `as-controlplane` image | Service release version, injected into Go build |
+| Gateway / Dataplane / Scheduler | `as-gateway`, `as-dataplane`, `as-scheduler` images | Service release tag; Java revision recorded separately |
 | Complete deployment | Compose archive + `agentscope-service` Helm Chart (OCI) | Service release version |
 | `as`, Runtime Host | Linux/macOS amd64/arm64 archives | Service release version |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` and reactor dependencies | Root `revision` |

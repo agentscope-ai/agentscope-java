@@ -28,6 +28,8 @@ import tarfile
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE = ROOT / 'agentscope-service'
 PLANES = ('control', 'gateway', 'dataplane', 'scheduler')
+IMAGE_NAMES = {'control': 'as-controlplane', 'gateway': 'as-gateway',
+               'dataplane': 'as-dataplane', 'scheduler': 'as-scheduler'}
 
 
 def run(*args, cwd=ROOT, env=None, capture=False):
@@ -77,7 +79,7 @@ def verify_npm(directory):
 
 def verify():
     tracked_hygiene()
-    run('mvn', '-B', '-ntp', '-pl', 'agentscope-service/service-gateway,agentscope-service/service-dataplane,agentscope-service/service-scheduler', '-am', 'clean', 'verify')
+    run('mvn', '-B', '-ntp', '-T1', '-pl', 'agentscope-service/service-gateway,agentscope-service/service-dataplane,agentscope-service/service-scheduler', '-am', 'clean', 'verify')
     # Integration packages share PostgreSQL migration locks; serialize packages.
     run('go', 'test', '-p', '1', './...', cwd=SERVICE / 'service-controlplane')
     run('go', 'vet', './...', cwd=SERVICE / 'service-controlplane')
@@ -99,7 +101,7 @@ def manifest(args):
             'sourceCommit': run('git', 'rev-parse', 'HEAD', capture=True).strip(),
             'javaRevision': re.search(r'<revision>([^<]+)</revision>', (ROOT / 'pom.xml').read_text())[1],
             'sourceDirty': bool(run('git', 'status', '--porcelain', capture=True).strip()),
-            'images': {p: f'{args.repository}/agentscope-service-{p}:{args.version}' for p in PLANES},
+            'images': {p: f'{args.repository}/{IMAGE_NAMES[p]}:{args.version}' for p in PLANES},
             'sdkVersions': {'python': re.search(r'^version = "([^"]+)"', (SERVICE / 'service-controlplane/sdk/python/pyproject.toml').read_text(), re.M)[1], 'dsh': json.loads((SERVICE / 'service-controlplane/sdk/dsh/package.json').read_text())['version']},
             'platforms': {'images': ['linux/amd64', 'linux/arm64'], 'cli': ['linux/amd64', 'linux/arm64', 'darwin/amd64', 'darwin/arm64']},
             'notes': 'Image digests are recorded separately by the images command. Registry references are publication targets, not proof of availability.'}
@@ -163,12 +165,13 @@ def images(args):
     for plane in PLANES:
         dockerfile = 'Dockerfile.control' if plane == 'control' else 'Dockerfile.service'
         cmd = ['docker', 'buildx', 'build', '--platform', args.platforms, '-f', str(SERVICE / 'docker' / dockerfile),
-               '-t', f'{args.repository}/agentscope-service-{plane}:{args.version}',
+               '-t', f'{args.repository}/{IMAGE_NAMES[plane]}:{args.version}',
                '--label', f'org.opencontainers.image.version={args.version}',
                '--label', 'org.opencontainers.image.revision=' + run('git', 'rev-parse', 'HEAD', capture=True).strip(),
                '--metadata-file', str(args.output / f'image-{plane}.json')]
         if plane == 'control':
-            cmd += ['--build-arg', 'VERSION=' + args.version]
+            cmd += ['--build-arg', 'VERSION=' + args.version,
+                    '--build-arg', 'GIT_COMMIT=' + run('git', 'rev-parse', 'HEAD', capture=True).strip()]
         if plane != 'control':
             cmd += ['--build-arg', 'MODULE=service-' + plane]
         cmd += ['--push', '--sbom=true', '--provenance=mode=max'] if args.push else ['--load']

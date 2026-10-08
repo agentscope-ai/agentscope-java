@@ -26,6 +26,8 @@ en_link: /v2/en/service/quickstart
 
 以下命令中的 `VERSION` 和 `REGISTRY/NAMESPACE` 都是占位值，需要替换为该 Release 公布的版本与镜像仓库路径，其中仓库路径不包含 `https://`。如果所选版本尚未提供安装包，应先选择实际可用的发布版本，不能直接用这些占位值执行命令。
 
+Compose 安装包使用该命名空间下的四个 Service 镜像：`as-controlplane`（包含 Dashboard）、`as-gateway`、`as-dataplane` 和 `as-scheduler`。四个镜像的 tag 都使用所选的 Service 版本。
+
 ## 1. 初始化部署并配置模型
 
 解压下载的安装包后，进入其中的 `agentscope-service` 目录，再运行初始化脚本。脚本会根据你传入的版本和镜像仓库生成本次部署使用的配置。

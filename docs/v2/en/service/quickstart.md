@@ -26,6 +26,8 @@ Choose a version that provides a Service package on the [Release page](https://g
 
 The commands below contain placeholders for `VERSION` and `REGISTRY/NAMESPACE`. Replace them with the version and image repository published for that Release; the repository path has no `https://` prefix. If your selected version has no installation package yet, choose an available release before proceeding. The placeholder values cannot be used as written.
 
+The Compose package uses four Service images under that namespace: `as-controlplane` (including Dashboard), `as-gateway`, `as-dataplane`, and `as-scheduler`. All four use the selected Service version as their image tag.
+
 ## 1. Initialize deployment and configure a model
 
 Extract the downloaded package, enter its `agentscope-service` directory, and run the initialization script. It uses the version and image repository you provide to generate the deployment configuration.

@@ -60,10 +60,11 @@ import (
 	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store/postgres"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/taskauth"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/tracing"
+	buildversion "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/version"
 )
 
 var (
-	version   = "dev"
+	version   = buildversion.Version
 	gitCommit = "unknown"
 	buildDate = "unknown"
 )

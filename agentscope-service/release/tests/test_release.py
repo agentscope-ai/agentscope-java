@@ -86,10 +86,15 @@ class ReleaseTests(unittest.TestCase):
         deployments = [o for o in objects if o['kind'] == 'Deployment']
         self.assertEqual(len(deployments), 4)
         claims = []
+        image_tag = yaml.safe_load((SERVICE / 'helm/agentscope-service/Chart.yaml').read_text())['appVersion']
         for dep in deployments:
             pod = dep['spec']['template']['spec']
             self.assertFalse(pod['automountServiceAccountToken'])
             container = pod['containers'][0]
+            self.assertEqual(container['image'],
+                             f'example.com/test/{release.IMAGE_NAMES[container["name"]]}:{image_tag}')
+            for init in pod.get('initContainers', []):
+                self.assertEqual(init['image'], container['image'])
             env = {e['name']: e['value'] for e in container['env']}
             if container['name'] == 'control':
                 self.assertEqual(env['CONTROL_PLANE_SEED_USERS'], 'false')
@@ -114,6 +119,8 @@ class ReleaseTests(unittest.TestCase):
             if name != 'gateway':
                 self.assertNotIn('ports', service)
         self.assertEqual(compose['services']['control']['environment']['CONTROL_PLANE_SEED_USERS'], 'false')
+        for name, plane in {'control': 'control', 'data': 'dataplane', 'gateway': 'gateway', 'scheduler': 'scheduler'}.items():
+            self.assertIn('/' + release.IMAGE_NAMES[plane] + ':', compose['services'][name]['image'])
 
 
 if __name__ == '__main__':

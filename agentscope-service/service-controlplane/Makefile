@@ -1,6 +1,7 @@
 # Control Plane
 
-IMG ?= agentscope-service-control:latest
+VERSION ?= 2.1.0-BETA1
+IMG ?= sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope/as-controlplane:$(VERSION)
 PREFIX ?= /usr/local
 CONTROLLER_GEN ?= $(shell command -v controller-gen 2>/dev/null || printf '%s/bin/controller-gen' "$$(go env GOPATH)")
 HELM_CHART ?= helm/controlplane
@@ -94,10 +95,10 @@ proto-verify: proto
 	git diff --exit-code -- internal/asdp/*.pb.go
 
 docker-build:
-	docker buildx build --platform linux/amd64,linux/arm64 -f ../docker/Dockerfile.control -t $(IMG) ../..
+	docker buildx build --platform linux/amd64,linux/arm64 -f ../docker/Dockerfile.control --build-arg VERSION=$(VERSION) --build-arg GIT_COMMIT=$(shell git rev-parse HEAD) -t $(IMG) ../..
 
 docker-push:
-	docker buildx build --platform linux/amd64,linux/arm64 -f ../docker/Dockerfile.control -t $(IMG) --push ../..
+	docker buildx build --platform linux/amd64,linux/arm64 -f ../docker/Dockerfile.control --build-arg VERSION=$(VERSION) --build-arg GIT_COMMIT=$(shell git rev-parse HEAD) -t $(IMG) --push ../..
 
 install-yaml: manifests sync-helm
 	@echo "Generating install/install.yaml from Helm chart..."

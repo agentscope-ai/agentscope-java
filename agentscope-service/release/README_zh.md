@@ -10,10 +10,10 @@
 
 | 组件 | 用户获取形式 | 发布方式 |
 | --- | --- | --- |
-| Control Plane + Dashboard | `agentscope-service-control` 镜像 | Actions 或 `release.py images --push` |
-| Gateway | `agentscope-service-gateway` 镜像 | 同上 |
-| Dataplane | `agentscope-service-dataplane` 镜像 | 同上 |
-| Scheduler | `agentscope-service-scheduler` 镜像 | 同上 |
+| Control Plane + Dashboard | `as-controlplane` 镜像 | Actions 或 `release.py images --push` |
+| Gateway | `as-gateway` 镜像 | 同上 |
+| Dataplane | `as-dataplane` 镜像 | 同上 |
+| Scheduler | `as-scheduler` 镜像 | 同上 |
 | 完整部署配置 | Compose 压缩包、Helm Chart | GitHub Release 附件；Chart 同时发布到 OCI registry |
 | `as`、Runtime Host | Linux/macOS × amd64/arm64 压缩包 | GitHub Release 附件 |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` 及所需依赖 | Maven Central，单独发布 |
@@ -351,10 +351,10 @@ gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" \
 使用没有管理员 registry 登录状态的临时客户端或全新 CI job 验证公开获取，避免复用本机缓存把私有镜像误判为公开可用：
 
 ```bash
-docker pull "$IMAGE_REPOSITORY/agentscope-service-control:$SERVICE_VERSION"
-docker pull "$IMAGE_REPOSITORY/agentscope-service-gateway:$SERVICE_VERSION"
-docker pull "$IMAGE_REPOSITORY/agentscope-service-dataplane:$SERVICE_VERSION"
-docker pull "$IMAGE_REPOSITORY/agentscope-service-scheduler:$SERVICE_VERSION"
+docker pull "$IMAGE_REPOSITORY/as-controlplane:$SERVICE_VERSION"
+docker pull "$IMAGE_REPOSITORY/as-gateway:$SERVICE_VERSION"
+docker pull "$IMAGE_REPOSITORY/as-dataplane:$SERVICE_VERSION"
+docker pull "$IMAGE_REPOSITORY/as-scheduler:$SERVICE_VERSION"
 helm pull "oci://$IMAGE_REPOSITORY/charts/agentscope-service" \
   --version "$SERVICE_VERSION"
 ```

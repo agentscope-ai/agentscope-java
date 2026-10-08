@@ -1,8 +1,10 @@
 # Fast packaging path after a verified Maven reactor build.
 # Build context is agentscope-service; JAR_FILE is relative to that directory.
 FROM eclipse-temurin:21-jre
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/* \
+RUN if ! command -v curl >/dev/null 2>&1; then \
+        apt-get update && apt-get install -y --no-install-recommends curl \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi \
     && groupadd --gid 65532 agentscope \
     && useradd --uid 65532 --gid 65532 --home-dir /data --no-create-home agentscope \
     && mkdir -p /data/workspaces /data/artifacts \
