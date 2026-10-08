@@ -26,6 +26,12 @@ import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
  */
 public interface SandboxAware {
 
+    /**
+     * Binds a non-null sandbox for the active call.
+     *
+     * @param sandbox the active sandbox; must not be {@code null}
+     * @throws NullPointerException if {@code sandbox} is {@code null}
+     */
     void setSandbox(Sandbox sandbox);
 
     Sandbox getSandbox();

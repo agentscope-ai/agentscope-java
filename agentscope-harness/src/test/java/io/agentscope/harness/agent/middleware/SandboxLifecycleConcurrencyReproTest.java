@@ -34,6 +34,8 @@ import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
@@ -151,6 +153,41 @@ class SandboxLifecycleConcurrencyReproTest {
         SandboxLifecycleMiddleware mw = new SandboxLifecycleMiddleware(manager, proxy);
 
         assertThrows(RuntimeException.class, () -> mw.acquireForCall(callContext("s1")));
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(RuntimeContext.empty(), "whoami", null));
+    }
+
+    @Test
+    void abandonedAcquireCannotRemainAnUnboundedFallback() {
+        SandboxBackedFilesystem proxy = new SandboxBackedFilesystem();
+        RecordingSandbox abandoned = new RecordingSandbox("abandoned");
+        RecordingSandbox active = new RecordingSandbox("active");
+        Map<String, RecordingSandbox> sandboxes = new ConcurrentHashMap<>();
+        Map<String, RecordingLease> leases = new ConcurrentHashMap<>();
+        sandboxes.put("abandoned", abandoned);
+        leases.put("abandoned", new RecordingLease());
+        SandboxLifecycleMiddleware mw =
+                new SandboxLifecycleMiddleware(fakeManager(sandboxes, leases), proxy);
+        RuntimeContext abandonedContext = callContext("abandoned");
+        mw.acquireForCall(abandonedContext);
+        // Simulate a call that loses its acquire result and cannot release its fallback.
+        abandonedContext.put(SandboxAcquireResult.class, null);
+        mw.releaseForCall(abandonedContext);
+        List<RuntimeContext> activeCalls = new ArrayList<>();
+        for (int i = 0; i < 1024; i++) {
+            String session = "active-" + i;
+            sandboxes.put(session, active);
+            leases.put(session, new RecordingLease());
+            RuntimeContext ctx = callContext(session);
+            mw.acquireForCall(ctx);
+            activeCalls.add(ctx);
+        }
+        // Eviction affects only context-free fallback, never the per-call binding.
+        assertEquals("active", proxy.execute(activeCalls.get(0), "whoami", null).output());
+        for (RuntimeContext ctx : activeCalls) {
+            mw.releaseForCall(ctx);
+        }
         assertThrows(
                 SandboxException.SandboxConfigurationException.class,
                 () -> proxy.execute(RuntimeContext.empty(), "whoami", null));

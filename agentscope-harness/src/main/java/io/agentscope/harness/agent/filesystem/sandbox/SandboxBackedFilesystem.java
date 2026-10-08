@@ -64,6 +64,8 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
     private static final Logger log = LoggerFactory.getLogger(SandboxBackedFilesystem.class);
 
+    private static final int MAX_FALLBACK_BINDINGS = 1024;
+
     private final String fsId;
     private final List<Sandbox> fallbackBindings = new ArrayList<>();
     private volatile Sandbox sandbox;
@@ -75,12 +77,22 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     /**
      * Registers an active fallback binding.
      *
+     * <p>Only the most recent 1024 fallback bindings are retained, so abandoned acquires cannot
+     * grow this best-effort fallback without bound. Eviction never changes per-call bindings.
+     *
      * @param sandbox the active sandbox; must not be {@code null}
      * @throws NullPointerException if {@code sandbox} is {@code null}
      */
     @Override
     public synchronized void setSandbox(Sandbox sandbox) {
         Objects.requireNonNull(sandbox, "sandbox");
+        if (fallbackBindings.size() == MAX_FALLBACK_BINDINGS) {
+            fallbackBindings.remove(0);
+            log.warn(
+                    "[sandbox-fs] Fallback binding limit ({}) reached; dropping the oldest"
+                            + " context-free binding. Check for calls that acquire without release.",
+                    MAX_FALLBACK_BINDINGS);
+        }
         fallbackBindings.add(sandbox);
         this.sandbox = sandbox;
     }
@@ -103,13 +115,13 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         for (int i = fallbackBindings.size() - 1; i >= 0; i--) {
             if (fallbackBindings.get(i) == expected) {
                 fallbackBindings.remove(i);
-                break;
+                this.sandbox =
+                        fallbackBindings.isEmpty()
+                                ? null
+                                : fallbackBindings.get(fallbackBindings.size() - 1);
+                return;
             }
         }
-        this.sandbox =
-                fallbackBindings.isEmpty()
-                        ? null
-                        : fallbackBindings.get(fallbackBindings.size() - 1);
     }
 
     @Override
