@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -61,18 +62,26 @@ import reactor.core.publisher.Mono;
 class ReActAgentServerToolTest {
 
     private static ToolUseBlock serverToolUse(String id) {
+        return serverToolUse(id, "web_search");
+    }
+
+    private static ToolUseBlock serverToolUse(String id, String name) {
         return ToolUseBlock.builder()
                 .id(id)
-                .name("web_search")
+                .name(name)
                 .input(Map.of("query", "AgentScope"))
                 .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
                 .build();
     }
 
     private static ToolResultBlock serverToolResult(String id) {
+        return serverToolResult(id, "web_search");
+    }
+
+    private static ToolResultBlock serverToolResult(String id, String name) {
         return ToolResultBlock.builder()
                 .id(id)
-                .name("web_search")
+                .name(name)
                 .output(TextBlock.builder().text("AgentScope docs (https://example.com)").build())
                 .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
                 .state(ToolResultState.SUCCESS)
@@ -137,6 +146,86 @@ class ReActAgentServerToolTest {
     }
 
     @Test
+    @DisplayName("Should finish one model call when hosted tool search pairs complete inline")
+    void testHostedToolSearchPairsFinishInOneModelCall() {
+        MockModel mockModel =
+                new MockModel(
+                        messages ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_hosted_tool_search")
+                                                .content(
+                                                        List.of(
+                                                                serverToolUse(
+                                                                        "ts_call_001",
+                                                                        "tool_search"),
+                                                                serverToolResult(
+                                                                        "ts_call_001",
+                                                                        "tool_search"),
+                                                                serverToolUse(
+                                                                        "ts_call_002",
+                                                                        "tool_search"),
+                                                                serverToolResult(
+                                                                        "ts_call_002",
+                                                                        "tool_search"),
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "Loaded tools and"
+                                                                                    + " answered")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build()));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .sysPrompt("You are a test assistant.")
+                        .model(mockModel)
+                        .toolkit(new MockToolkit())
+                        .maxIters(3)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", "Search for the weather tool");
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        // Both hosted tool_search calls already carry provider-executed results, so the loop
+        // must finish without another reasoning round or any local execution.
+        assertEquals(1, mockModel.getCallCount(), "Model should be called exactly once");
+
+        List<ToolUseBlock> toolUses = response.getContentBlocks(ToolUseBlock.class);
+        assertEquals(2, toolUses.size());
+        assertTrue(toolUses.get(0).isServerTool());
+        assertTrue(toolUses.get(1).isServerTool());
+        assertEquals("tool_search", toolUses.get(0).getName());
+        assertEquals("tool_search", toolUses.get(1).getName());
+        assertEquals(
+                List.of("ts_call_001", "ts_call_002"),
+                toolUses.stream().map(ToolUseBlock::getId).toList());
+        assertEquals(
+                List.of("ts_call_001", "ts_call_002"),
+                response.getContentBlocks(ToolResultBlock.class).stream()
+                        .map(ToolResultBlock::getId)
+                        .toList());
+
+        // Each provider-executed result is placed immediately after its matching call.
+        List<ContentBlock> content = response.getContent();
+        for (int i = 0; i < content.size(); i++) {
+            if (content.get(i) instanceof ToolUseBlock use) {
+                ContentBlock next = content.get(i + 1);
+                assertInstanceOf(ToolResultBlock.class, next);
+                assertEquals(use.getId(), ((ToolResultBlock) next).getId());
+            }
+        }
+
+        boolean hasToolRoleMsg =
+                agent.getAgentState().getContext().stream()
+                        .anyMatch(m -> m.getRole() == MsgRole.TOOL);
+        assertTrue(!hasToolRoleMsg, "Hosted tool search must not run locally");
+    }
+
+    @Test
     @DisplayName("Should emit tool result events for inline server tool results")
     void testServerToolResultEmitsToolResultEvents() {
         MockModel mockModel =
@@ -197,6 +286,56 @@ class ReActAgentServerToolTest {
         ToolResultEndEvent end = (ToolResultEndEvent) toolLifecycle.get(3);
         assertEquals(ToolResultState.SUCCESS, end.getState());
         assertEquals(Boolean.TRUE, end.getMetadata().get(ToolResultBlock.METADATA_SERVER_TOOL));
+    }
+
+    @Test
+    @DisplayName("Should keep looping when a server tool result is still running")
+    void testRunningServerToolResultContinuesLoop() {
+        final int[] callCount = {0};
+        MockModel mockModel =
+                new MockModel(
+                        messages -> {
+                            if (callCount[0]++ == 0) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_running")
+                                                .content(
+                                                        List.of(
+                                                                serverToolUse("srvtoolu_running"),
+                                                                serverToolResult("srvtoolu_running")
+                                                                        .withState(
+                                                                                ToolResultState
+                                                                                        .RUNNING)))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_final")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Final answer")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 30))
+                                            .build());
+                        });
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(mockModel)
+                        .toolkit(new MockToolkit())
+                        .maxIters(3)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", "Search for AgentScope");
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response);
+        assertEquals(2, mockModel.getCallCount());
+        assertEquals(MsgRole.ASSISTANT, response.getRole());
     }
 
     @Test
