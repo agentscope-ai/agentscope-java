@@ -62,6 +62,8 @@ Java tool 是任意满足 `AgentTool` 契约的对象。AgentScope 同时提供�
 
 内置 `TodoTools` 以及 harness 的文件、网络、记忆、会话、任务、团队和子代理工具返回结构化结果。直接调用这些 Java 方法的代码需要使用 `ToolResultBlock`，而 `agentSpawn`、`agentSend`、`agentGenerate` 使用 `Mono<ToolResultBlock>`，替代原来的 `String` / `Mono<String>`。通过 `getState()` 读取执行状态，通过 `getOutput()` 中的文本块读取内容。`Toolkit` 注册方式不变。与普通 `String` 返回值不同，结构化文本传给模型时不会额外添加 JSON 字符串引号。
 
+`TodoTools.write(...)` 是注册的结构化工具方法；兼容入口 `todoWrite(...)` 仍返回 `String` 回执。
+
 子代理任务成功提交到后台或在等待超时后转入后台时，返回 `SUCCESS` 和任务句柄；同步执行异常及强制同步超时返回 `ERROR`；远端等待被取消或中断时返回 `INTERRUPTED`。已完成的子代理回复内容不会用于推断工具状态。
 
 ### 使用内置 Tool

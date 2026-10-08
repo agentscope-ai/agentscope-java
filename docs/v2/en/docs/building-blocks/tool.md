@@ -62,6 +62,8 @@ Return `ToolResultBlock.success(text)` for a successful call and `ToolResultBloc
 
 The built-in `TodoTools` and the harness filesystem, web, memory, session, task, team, and subagent tools return structured results. Direct Java callers must receive `ToolResultBlock` (or `Mono<ToolResultBlock>` for `agentSpawn`, `agentSend`, and `agentGenerate`) instead of `String` / `Mono<String>`. Inspect `getState()` and read the text blocks from `getOutput()`. Registration through `Toolkit` is unchanged. Structured text is passed to the model without the JSON string quoting applied to plain `String` returns.
 
+`TodoTools.write(...)` is the registered structured tool. The `todoWrite(...)` compatibility entry point still returns a `String` receipt.
+
 Subagent background submission and timeout promotion return `SUCCESS` with a task handle. Synchronous execution failures and forced synchronous timeouts return `ERROR`; cancelled or interrupted remote waits return `INTERRUPTED`. The contents of a completed subagent reply do not determine the tool state.
 
 ### Built-in tools
