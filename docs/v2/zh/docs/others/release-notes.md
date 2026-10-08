@@ -90,6 +90,169 @@ AgentScope Java 2.0.4 新增 OpenAI Responses API、重新设计的 AgentScope S
 
 ---
 
+## 2.0.3
+
+> 发布日期：2026-09-07
+
+**GitHub 发布说明:** [v2.0.3](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.3)
+
+本版本新增 Anthropic prompt caching、沙箱 `deliver_artifact` 工具、ReAct 流的 `FinalAnswerFilterMiddleware`、Agent 状态版本及乐观并发控制、可插拔 SSE 事件处理的 `AgentProtocolEventBus`，并重构控制台会话记录展示，同时修复核心推理、Harness、沙箱和 AG-UI 协议中的多项稳定性问题。
+
+**快速链接：** [快速开始](/v2/zh/docs/quickstart) | [V1 迁移指南](/v2/zh/docs/change-log) | [上线指南](/v2/zh/docs/others/going-to-production)
+
+### 新增
+
+**核心 / Agent**
+
+- 通过细粒度 v2 工具结果事件（`ToolResultTextDeltaEvent` / `ToolResultDataDeltaEvent` / `ToolResultEndEvent`）传播 `ToolResultBlock.metadata`，便于事件流消费方读取工具专属上下文（[#2315](https://github.com/agentscope-ai/agentscope-java/pull/2315)）。
+- 新增 `AgentProtocolEventBus`，支持 agent-protocol 层的可插拔 SSE 事件处理（[#2634](https://github.com/agentscope-ai/agentscope-java/pull/2634)）。
+- 新增状态版本和乐观并发控制基础类型：`VersionedState`、`ConflictPolicy` 和 `ConcurrentSessionModificationException`，使 `AgentStateStore` 实现能够检测并拒绝过期写入。
+
+**中间件**
+
+- 新增可选的 `FinalAnswerFilterMiddleware`：按模型调用缓冲文本事件，在产生工具调用时抑制中间推理轮次文本，仅输出面向用户的最终答案（[#2926](https://github.com/agentscope-ai/agentscope-java/pull/2926)，[#2872](https://github.com/agentscope-ai/agentscope-java/issues/2872)）。
+
+**模型提供商**
+
+- Anthropic 支持 prompt caching：在工具、system 和最后一条消息上设置 `cache_control` 断点，并在 usage 中公开 `cache_read_input_tokens` 和 `cache_creation_input_tokens`（[#2350](https://github.com/agentscope-ai/agentscope-java/pull/2350)，[#2223](https://github.com/agentscope-ai/agentscope-java/issues/2223)）。
+- Anthropic 和 Gemini 的 `ResponseParser` 将 `cachedTokens` 写入 usage（[#2568](https://github.com/agentscope-ai/agentscope-java/pull/2568)）。
+- 明确不缓存语义：OpenAI 和 DashScope 转换器将 `CACHE_CONTROL=false` 元数据映射为 `{"type":"no_cache"}`，支持单条消息禁用缓存（[#2685](https://github.com/agentscope-ai/agentscope-java/pull/2685)，[#2684](https://github.com/agentscope-ai/agentscope-java/issues/2684)）。
+- `DashScopeMultiModalTool` 新增 `dashscope_image_to_image` 图片编辑工具，支持按提示词编辑用户提供的图片（[#2995](https://github.com/agentscope-ai/agentscope-java/pull/2995)）。
+
+**Harness / 工具**
+
+- 新增沙箱 Agent 的 `deliver_artifact` 工具及 `ArtifactDeliveryTarget` SPI，用于交付生成文件；配置交付目标时 workspace 提示词会说明其用法，未配置时明确不存在跨边界交付机制（[#2667](https://github.com/agentscope-ai/agentscope-java/pull/2667)，[#2663](https://github.com/agentscope-ai/agentscope-java/issues/2663)）。
+- 新增可选的 `McpServerRegistrationListener`，通过 `SUCCESS` / `FAILED` / `SKIPPED` 终态通知 MCP server 注册结果，便于宿主服务识别并停用不健康配置（[#2877](https://github.com/agentscope-ai/agentscope-java/pull/2877)，[#2875](https://github.com/agentscope-ai/agentscope-java/issues/2875)）。
+- `SubagentFactoryEntry` 新增 `description` 字段，为编排器提供子 Agent 选择依据（[#1506](https://github.com/agentscope-ai/agentscope-java/pull/1506)，[#1504](https://github.com/agentscope-ai/agentscope-java/issues/1504)）。
+- 公开 `Toolkit` API，支持将已注册工具分配到额外的工具组（[#2836](https://github.com/agentscope-ai/agentscope-java/pull/2836)，[#2835](https://github.com/agentscope-ai/agentscope-java/issues/2835)）。
+- `ReadFileTool` 对正数行范围采用增量读取，并在指定结束行停止，避免将整个文件加载到内存（[#2402](https://github.com/agentscope-ai/agentscope-java/pull/2402)）。
+
+**AG-UI**
+
+- 新增 CopilotKit + AG-UI 全栈示例，覆盖线程、共享状态、生成式 UI、A2UI 工作台及 HITL 流程（[#2554](https://github.com/agentscope-ai/agentscope-java/pull/2554)）。
+- 支持配置 AG-UI 断连时中断 Agent（[#2719](https://github.com/agentscope-ai/agentscope-java/pull/2719)，[#2715](https://github.com/agentscope-ai/agentscope-java/issues/2715)）。
+
+**控制台**
+
+- 重构会话记录展示：每个用户问题对应一个气泡，文本和工具调用按时间排列为内容块；支持 `react-markdown`、工具输入输出语法高亮、SSE 指数退避重连和 `session.error` 展示（[#2640](https://github.com/agentscope-ai/agentscope-java/pull/2640)）。
+
+**示例**
+
+- DataAgent 示例新增用户绑定偏好的 CRUD API（[#2711](https://github.com/agentscope-ai/agentscope-java/pull/2711)）。
+- 新增 v2 应用层 RAG 示例（[#2794](https://github.com/agentscope-ai/agentscope-java/pull/2794)）。
+
+### 重构
+
+- 将 `AguiRuntimeContextRequest` / `AguiRuntimeContextResolver` / `AguiRequestBodyParser` 从示例层下沉至 `extensions-agui` 协议层（[#2822](https://github.com/agentscope-ai/agentscope-java/pull/2822)）。
+- 将 Java 服务控制面替换为 Go `aistiod` 控制面，保留 Java 网关、数据面和调度面；`agentscope-builder` 示例提升为顶层 `agentscope-service` 模块。
+- 按用户隔离 HITL 会话：`ThreadSessionManager` / `AgentResolver` 使用 `(userId, threadId)` 作为键，避免 `hasMemory` 和 Agent 复用混用租户；通过 `AguiUtil.asReActAgent` 解包 Harness，使停止和中断作用于实际会话（[#2856](https://github.com/agentscope-ai/agentscope-java/pull/2856)，[#2855](https://github.com/agentscope-ai/agentscope-java/issues/2855)）。
+- 新增统一的 `agentscope-extensions-jdbc` 模块，提供 `AbstractJdbcDialect` / `StoreDialect` / `SessionStateDialect` / `SnapshotDialect` 抽象及 MySQL、PostgreSQL、H2、SQLite 实现；现有 MySQL 和 PostgreSQL 分布式存储委托该模块（[#2759](https://github.com/agentscope-ai/agentscope-java/pull/2759)，[#2503](https://github.com/agentscope-ai/agentscope-java/issues/2503)）。
+
+### 修复
+
+**核心 / Agent**
+
+- 在 `ReasoningContext` 中将 `ChatResponse.metadata` 传播至 `Msg.metadata`（[#2931](https://github.com/agentscope-ai/agentscope-java/pull/2931)）。
+- 传播 Agent 状态加载异常，避免后端、I/O 或解码出错时静默创建新会话并替换历史上下文（[#2760](https://github.com/agentscope-ai/agentscope-java/pull/2760)）。
+- 加载旧版 v1 会话状态时保留调用方提供的权限上下文，避免迁移时静默降为 `DEFAULT` 权限模式（[#2769](https://github.com/agentscope-ai/agentscope-java/pull/2769)，[#2768](https://github.com/agentscope-ai/agentscope-java/issues/2768)）。
+- 推理模型仅在 `reasoning_content` 中输出答案、`content` 为空时重试，避免静默结束（[#2755](https://github.com/agentscope-ai/agentscope-java/pull/2755)，[#2750](https://github.com/agentscope-ai/agentscope-java/issues/2750)）。
+- 模型调用失败时持久化本轮用户输入和安全上下文，使恢复后的会话能够看到最后一个问题（[#2799](https://github.com/agentscope-ai/agentscope-java/pull/2799)）。
+- 中断时在持久化 `AgentState` 前修复悬空的 `tool_use` 块，避免推理和执行之间留下未配对的工具调用（[#2410](https://github.com/agentscope-ai/agentscope-java/pull/2410)，[#2409](https://github.com/agentscope-ai/agentscope-java/issues/2409)）。
+- 外部工具返回挂起结果时保留挂起语义，并发出 `RequireExternalExecutionEvent`，不再转为通用错误（[#1668](https://github.com/agentscope-ai/agentscope-java/pull/1668)，[#1582](https://github.com/agentscope-ai/agentscope-java/issues/1582)）。
+- 外部工具结果恢复时发出 `ExternalExecutionResultEvent`（[#2605](https://github.com/agentscope-ai/agentscope-java/pull/2605)）。
+- 恢复脱离主执行流程的工具调用的事件发送器（[#2483](https://github.com/agentscope-ai/agentscope-java/pull/2483)）。
+- 工具参数校验错误消息包含字段路径（[#2718](https://github.com/agentscope-ai/agentscope-java/pull/2718)）。
+- 简化 `ReActAgent` 对 pending tool 和错误结果的处理（[#2666](https://github.com/agentscope-ai/agentscope-java/pull/2666)）。
+- 在中间件中归一化模型调用工具，避免重复或格式错误的工具定义（[#2756](https://github.com/agentscope-ai/agentscope-java/pull/2756)）。
+- 避免 `WorkspaceContextMiddleware#onSystemPrompt` 阻塞事件循环（[#2632](https://github.com/agentscope-ai/agentscope-java/pull/2632)）。
+- `ReActAgent` 关闭重试恢复使用调用级 `AgentState`，针对当前 `(userId, sessionId)` 会话检查并清除 `shutdownInterrupted` 标记（[#2712](https://github.com/agentscope-ai/agentscope-java/pull/2712)，[#2708](https://github.com/agentscope-ai/agentscope-java/issues/2708)）。
+- 原生和回退的结构化输出路径均保留 `Msg.usage`，避免 `Msg.getUsage()` 为空（[#2966](https://github.com/agentscope-ai/agentscope-java/pull/2966)）。
+- 修复 `OkHttpTransport` SSE 背压阻塞：使用 `subscribeOn(Schedulers.boundedElastic(), false)`，避免下游 demand 被阻塞的 `readLine()` 循环滞留，使收到 `[DONE]` 前即可增量交付事件（[#2963](https://github.com/agentscope-ai/agentscope-java/pull/2963)）。
+
+**模型提供商**
+
+- Gemini 响应流应用 `ModelUtils.applyTimeoutAndRetry`，使配置的超时和重试生效（[#2356](https://github.com/agentscope-ai/agentscope-java/pull/2356)）。
+- RAGFlow 保留最终重试的响应体，便于调用方读取错误详情（[#2631](https://github.com/agentscope-ai/agentscope-java/pull/2631)）。
+- RAGFlow 的 `rerankId` 改为 `String`，与 API 一致（[#2776](https://github.com/agentscope-ai/agentscope-java/pull/2776)）。
+- DashScope 将 Qwen3.8 系列（`qwen3.8-max`、`qwen3.8-flash`、`qwen3.8-27b`）路由至多模态 API（[#2987](https://github.com/agentscope-ai/agentscope-java/pull/2987)）。
+
+**Harness / 工具 / 沙箱**
+
+- 避免 skill-cache 孤儿目录回收误删仍在使用的目录（[#2840](https://github.com/agentscope-ai/agentscope-java/pull/2840)，[#2787](https://github.com/agentscope-ai/agentscope-java/issues/2787)）。
+- 修复 Nacos 技能源路径在 Windows 下的安全性（[#2921](https://github.com/agentscope-ai/agentscope-java/pull/2921)）。
+- 记忆 flush 改为后台执行，避免阻塞对话完成；新增 `HarnessBackgroundTaskQuiescenceExtension`，在测试临时目录清理前等待后台任务完成（[#2777](https://github.com/agentscope-ai/agentscope-java/pull/2777)，[#2935](https://github.com/agentscope-ai/agentscope-java/pull/2935)）。
+- Docker keep-alive 处理 `SIGTERM`，避免停止时等待 30 秒（[#2885](https://github.com/agentscope-ai/agentscope-java/pull/2885)）。
+- 限制文件系统搜索工具的输出大小（[#2832](https://github.com/agentscope-ai/agentscope-java/pull/2832)）。
+- 按调用隔离沙箱绑定，修复并发导致的状态损坏（[#2675](https://github.com/agentscope-ai/agentscope-java/pull/2675)）。
+- 沙箱并发上传使用唯一的 hydrate 临时文件名，且相对路径采用原生文件传输（[#2762](https://github.com/agentscope-ai/agentscope-java/pull/2762)）。
+- 修复 Windows Docker 沙箱通过 tar stream 上传会话文件的问题（[#2557](https://github.com/agentscope-ai/agentscope-java/pull/2557)）。
+- E2B 保留 JSON 流中的零退出码，拒绝缺少退出码的不完整进程流，并在重建沙箱时重置投影状态（[#2609](https://github.com/agentscope-ai/agentscope-java/pull/2609)，[#2828](https://github.com/agentscope-ai/agentscope-java/pull/2828)，[#2586](https://github.com/agentscope-ai/agentscope-java/pull/2586)）。
+- Kubernetes 沙箱升级 fabric8 至 7.8.0，修复 Jackson 2.19+ 下 watch 的空指针异常；支持跟随重定向，避免文件下载受网关 307 影响（[#2766](https://github.com/agentscope-ai/agentscope-java/pull/2766)，[#2748](https://github.com/agentscope-ai/agentscope-java/pull/2748)）。
+- 恢复失败并回退为新建沙箱时，保留已持久化的 snapshot ID（[#2775](https://github.com/agentscope-ai/agentscope-java/pull/2775)）。
+- 子 Agent 生命周期事件增加 reply ID（[#2680](https://github.com/agentscope-ai/agentscope-java/pull/2680)）。
+- 子 Agent 继承记忆配置（[#2611](https://github.com/agentscope-ai/agentscope-java/pull/2611)）。
+- 孤儿任务扫描包含超时边界（[#2619](https://github.com/agentscope-ai/agentscope-java/pull/2619)）。
+- 避免将用户中断的会话降为上下文压缩失败（[#2659](https://github.com/agentscope-ai/agentscope-java/pull/2659)）。
+- 子 Agent 继承 pending tool recovery：将父 `HarnessAgent` 的 `enablePendingToolRecovery` 传播到声明的及内置通用子 Agent，避免悬空工具调用持续存在并导致后续请求失败（[#3017](https://github.com/agentscope-ai/agentscope-java/pull/3017)，[#3016](https://github.com/agentscope-ai/agentscope-java/issues/3016)）。
+- 按 thinking 内容统计 `ThinkingBlock` token，而非使用固定回退开销；同时统计嵌套在 `ToolResultBlock` 中的 thinking 内容（[#3009](https://github.com/agentscope-ai/agentscope-java/pull/3009)，[#1525](https://github.com/agentscope-ai/agentscope-java/issues/1525)）。
+- 隔离记忆 flush 和维护操作的限流 gate，避免各自配置独立间隔却相互抑制（[#2993](https://github.com/agentscope-ai/agentscope-java/pull/2993)）。
+- 沙箱 `execute()` 返回失败时，文件系统读取操作（`ls` / `read` / `grep` / `glob`）返回错误，不再掩盖为空结果或虚构路径（[#2967](https://github.com/agentscope-ai/agentscope-java/pull/2967)，[#2961](https://github.com/agentscope-ai/agentscope-java/issues/2961)）。
+- 修复 `LocalFilesystemWithShell.execute()` 管道死锁：在 `Process.waitFor()` 期间并行读取子进程 stdout/stderr，避免超过管道缓冲区的输出被误报为超时（[#2839](https://github.com/agentscope-ai/agentscope-java/pull/2839)）。
+- `WordReader` 保留段落间空行，空 `<w:p>` 输出为 `\n`，不再静默丢弃（[#2965](https://github.com/agentscope-ai/agentscope-java/pull/2965)，[#2964](https://github.com/agentscope-ai/agentscope-java/issues/2964)）。
+- 修复 DataAgent 示例历史会话读取：统一沙箱读写 Agent ID，并确保对话内容已 flush 至沙箱（[#2946](https://github.com/agentscope-ai/agentscope-java/pull/2946)，[#2735](https://github.com/agentscope-ai/agentscope-java/issues/2735)）。
+- MCP SDK 从 `0.17.0` 升级至 `0.17.2`，支持 MCP server 对初始化请求返回 `202 Accepted`、`text/plain` 和分块空响应体，避免媒体类型错误（[#2958](https://github.com/agentscope-ai/agentscope-java/pull/2958)）。
+
+**AG-UI**
+
+- 为每个工具结果分配独立消息 ID（[#2908](https://github.com/agentscope-ai/agentscope-java/pull/2908)）。
+- 从 fragment delta 发出前端工具参数（[#2874](https://github.com/agentscope-ai/agentscope-java/pull/2874)）。
+- 按用户隔离 HITL 会话（[#2856](https://github.com/agentscope-ai/agentscope-java/pull/2856)）。
+- 权限类 HITL 工具确认发出 AG-UI interrupt 事件（[#2495](https://github.com/agentscope-ai/agentscope-java/pull/2495)，[#2437](https://github.com/agentscope-ai/agentscope-java/issues/2437)）。
+- 使用 Jackson 2 codec 解析 Boot 4 / 多模态 `MessageContent` 请求体（[#2638](https://github.com/agentscope-ai/agentscope-java/pull/2638)）。
+- AG-UI 转换器抑制 `ReActAgent` 握手事件（[#2639](https://github.com/agentscope-ai/agentscope-java/pull/2639)）。
+- 默认不再在 `RUN_ERROR` 后发出 `RUN_FINISHED`（[#2646](https://github.com/agentscope-ai/agentscope-java/pull/2646)）。
+- 断连时取消 MVC 订阅（[#2786](https://github.com/agentscope-ai/agentscope-java/pull/2786)）。
+- 恢复时对已存在于消息中的工具结果去重（[#2955](https://github.com/agentscope-ai/agentscope-java/pull/2955)）。
+
+**协议**
+
+- 发布终态前清理 task submit context，修复 `AgentProtocolTaskStore` 的 `await` 竞态（[#2802](https://github.com/agentscope-ai/agentscope-java/pull/2802)）。
+
+**存储**
+
+- MySQL 移除 `MysqlAgentStateStore` 会话 ID 的路径分隔符检查（[#2022](https://github.com/agentscope-ai/agentscope-java/pull/2022)）。
+
+**控制台 / 前端**
+
+- 允许所有者编辑 Agent 配置，并增加 model 字段（[#2630](https://github.com/agentscope-ai/agentscope-java/pull/2630)）。
+- 托管会话聊天界面渲染 `session.error` 事件（[#2598](https://github.com/agentscope-ai/agentscope-java/pull/2598)，[#2596](https://github.com/agentscope-ai/agentscope-java/issues/2596)）。
+- 控制台静态资源服务增加 cache-control 响应头（[#2607](https://github.com/agentscope-ai/agentscope-java/pull/2607)）。
+
+---
+
+## 2.0.2
+
+> 发布日期：2026-09-03
+
+**GitHub 发布说明:** [v2.0.2](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.2)
+
+AgentScope Java 2.0.2 改进运行时上下文传播和远程子 Agent 事件流，并解耦 agent-protocol 任务路由、存储与执行工作区。
+
+### 新增
+
+- agent-protocol 任务通过 `AgentFactory` 路由（[#2590](https://github.com/agentscope-ai/agentscope-java/pull/2590)）。
+- 支持通过 `RuntimeContext` 强制同步执行 `agent_spawn`（[#2592](https://github.com/agentscope-ai/agentscope-java/pull/2592)）。
+- 远程子 Agent 事件携带 `parentSessionId`（[#2593](https://github.com/agentscope-ai/agentscope-java/pull/2593)）。
+- 将调用方上下文属性传入 agent-protocol 任务执行（[#2595](https://github.com/agentscope-ai/agentscope-java/pull/2595)）。
+- 允许调用方将 `RuntimeContext` 传入 Channel `Gateway`（[#2604](https://github.com/agentscope-ai/agentscope-java/pull/2604)）。
+- 转发完整的远程子 Agent 事件流（[#2613](https://github.com/agentscope-ai/agentscope-java/pull/2613)）。
+
+### 重构
+
+- 解耦 agent-protocol `TaskStore` 与执行使用的 `WorkspaceManager`（[#2615](https://github.com/agentscope-ai/agentscope-java/pull/2615)）。
+
+---
+
 ## 2.0.1
 
 > 发布日期：2026-08-05
