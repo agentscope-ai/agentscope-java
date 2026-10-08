@@ -267,11 +267,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
         // CAS create-if-absent: atomic under concurrent writers across nodes.
         boolean written = store.putIfVersion(ns, filePath, fileDataToStoreValue(fileData), 0L);
         if (!written) {
-            return WriteResult.fail(
-                    "Cannot write to "
-                            + filePath
-                            + " because it already exists. Read and then make an edit,"
-                            + " or write to a new path.");
+            return WriteResult.alreadyExists(filePath);
         }
         return WriteResult.ok(filePath);
     }

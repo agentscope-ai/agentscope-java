@@ -26,8 +26,8 @@ import reactor.core.publisher.Mono;
  *
  * <p>Three consumption modes are exposed:
  * <ul>
- *   <li><b>Drain queue</b> (Mode A) — single-consumer, ack-on-read. Each entry is returned at
- *       most once; storage drops it the moment it is read.</li>
+ *   <li><b>Drain queue</b> (Mode A) — at-most-once delivery. An entry is claimed before it can be
+ *       returned; failed cleanup may leave a claim in storage rather than redeliver the entry.</li>
  *   <li><b>Replay log</b> (Mode C) — multi-consumer, externally bounded. Each reader tracks its
  *       own cursor; entries persist until trimmed or capped by maxLen.</li>
  *   <li><b>Transient broadcast</b> (Mode D) — fire-and-forget pub/sub. Only currently-subscribed
@@ -44,21 +44,24 @@ import reactor.core.publisher.Mono;
  */
 public interface MessageBus extends AutoCloseable {
 
-    // ---- Mode A: drain queue (single consumer, ack-on-read) ----
+    // ---- Mode A: drain queue (at-most-once delivery) ----
 
     /**
      * Append a payload to the drain queue at the given key.
      *
      * @param key     queue identifier (caller-defined naming convention)
      * @param payload JSON-serializable dict to enqueue
-     * @return the transport-level entry id
+     * @return a publisher that emits the transport-level entry id, or signals an error if the
+     *     entry cannot be persisted or published
      */
     Mono<String> queuePush(String key, Map<String, Object> payload);
 
     /**
      * Drain up to {@code maxCount} entries from the queue at the given key. Returned entries are
-     * removed from the queue atomically. A subsequent call returns only entries that arrived after
-     * this one.
+     * atomically claimed before removal, so each entry is returned to at most one caller. Entries
+     * are acknowledged when read; if a caller fails after the drain returns, they are not
+     * redelivered. An unexpected claim failure signals an error when nothing has been drained yet;
+     * otherwise the already-acknowledged entries are returned and the failed entry is not deleted.
      *
      * @param key      queue identifier
      * @param maxCount maximum number of entries to return
@@ -152,6 +155,8 @@ public interface MessageBus extends AutoCloseable {
      *
      * @param sessionId the recipient session
      * @param msg       JSON-serializable payload (typically a serialized HintBlock)
+     * @return a publisher that completes after enqueueing, or signals an error if the queue write
+     *     fails
      */
     default Mono<Void> inboxPush(String sessionId, Map<String, Object> msg) {
         return queuePush("agentscope:inbox:" + sessionId, msg).then();
@@ -176,6 +181,8 @@ public interface MessageBus extends AutoCloseable {
      * @param userId    the owning user id (for multi-user isolation)
      * @param sessionId the session to wake
      * @param agentId   the agent that owns the session
+     * @return a publisher that completes after enqueueing and signaling, or signals an error if the
+     *     queue write fails
      */
     default Mono<Void> enqueueWakeup(String userId, String sessionId, String agentId) {
         return queuePush(
