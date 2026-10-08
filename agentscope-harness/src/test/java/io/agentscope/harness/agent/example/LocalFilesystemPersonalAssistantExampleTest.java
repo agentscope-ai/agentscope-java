@@ -87,6 +87,7 @@ class LocalFilesystemPersonalAssistantExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
+                        .disableMemoryHooks()
                         .build()) {
 
             // Call 1: write a note to MEMORY.md through the workspace manager

@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Verifies that reused subagents cannot retain build-mode privileges under a plan-mode parent. */
+@HarnessQuiescence
 class AgentSpawnToolPlanModeTest {
 
     @TempDir Path workspace;
