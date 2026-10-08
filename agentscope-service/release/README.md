@@ -10,7 +10,7 @@ Run all commands from the monorepo root. Development continues in the existing c
 | --- | --- | --- |
 | Control plane + Dashboard | `agentscope-service-control` image | Service release version, injected into Go build |
 | Gateway / Dataplane / Scheduler | Three `agentscope-service-*` images | Service release tag; Java revision recorded separately |
-| Complete deployment | Compose archive + `agentscope-service` Helm Chart (OCI) | Service release version |
+| Complete deployment | Compose archive + `agentscope-service` Helm Chart (public HTTP repository) | Service release version |
 | `as`, Runtime Host | Linux/macOS amd64/arm64 archives | Service release version |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` and reactor dependencies | Root `revision` |
 | Python SDK | `agentscope-service-sdk` wheel and sdist | `service-controlplane/sdk/python/pyproject.toml` and `service-controlplane/sdk/python/agentscope_service/__init__.py` |
@@ -113,9 +113,27 @@ The current release profile does not enable `autoPublish`. After Maven succeeds,
 
 ## 7. Publish documentation and release notes
 
-Attach package archives, manifest, checksums and image metadata to the Release. List exact image references/digests, OCI Chart reference, SDK coordinates, tested platforms, database compatibility, upgrade procedure and known limitations. Verify anonymous downloads/pulls when public distribution is intended.
+Attach package archives, manifest, checksums and image metadata to the Release. Keep public Release notes to one or two sentences linking to the official Service documentation. Document Compose startup, Go CLI installation, the public HTTP Helm repository, versions and operational requirements in the corresponding installation guides. Verify anonymous downloads/pulls when public distribution is intended.
 
-Documentation lives under `docs/v2/{zh,en}/service/`. `_toc.yml` and `_config.yml` register every page and the Service tab. Build and inspect both languages before merging into `main`, the current website workflow's deployment source. Check direct page access, links, images, search and language switching after deployment.
+The public HTTP Helm repository is [chickenlj/helm-charts](https://github.com/chickenlj/helm-charts).
+After publishing the upstream `vVERSION` Release with its standalone Chart asset,
+run the independent repository's workflow; OCI publication is optional for this channel:
+
+```bash
+gh workflow run publish.yml --repo chickenlj/helm-charts --ref main -f version=2.1.0-BETA1
+helm repo add agentscope https://chickenlj.github.io/helm-charts
+helm repo update agentscope
+helm pull agentscope/agentscope-service --version 2.1.0-BETA1
+```
+
+Use the intended version for future releases. The workflow fetches the original
+Release archive, verifies its SHA256 and Chart metadata, preserves existing index
+entries, refuses different bytes under an existing version, and deploys Pages.
+No extra registry credential or cross-repository write token is required. Production checks currently return 404 for the official `/helm/index.yaml` route despite the merged redirects, so installation guides use the verified direct Pages URL until the alias passes real Helm checks.
+
+Users install CLI and Runtime Host with the `go install` commands in the [Runtime Host guide](https://java.agentscope.io/v2/en/service/runtime-host). The optional public personal tap is [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap).
+
+Documentation lives under `docs/v2/{zh,en}/service/`; `docs/docs.json` configures navigation and redirects. Validate both languages with the documentation npm scripts before merging into `main`, Mintlify's deployment branch. Confirm the Mintlify deployment separately from the validation workflow, then check direct page access, links, images, search and language switching.
 
 ## Current deployment boundaries
 

@@ -5,7 +5,7 @@ description: 连接 Runtime Host，通过 API 选择运行环境、创建 Hosted
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 Hosted Agent 将电脑或服务器上的 Coding Agent 接入平台。Runtime Host 负责启动 provider、准备工作目录和回报执行结果。应用通过 Session API 调用这个 Agent，也可以把它作为 Team 或 Workflow 的执行成员。
@@ -16,7 +16,7 @@ Hosted 可以独立调用，也可以加入 Managed Lead 协调的团队。Runti
 
 ## 先让执行主机上线
 
-在目标主机安装并登录要使用的 provider，确认它本身能够完成一次请求，再按 [Runtime Host 安装指南](/v2/zh/service/runtime-host) 安装 CLI：
+在目标主机安装并登录要使用的 provider，确认它本身能够完成一次请求，再使用 Go 1.26 或更新版本，通过 `go install` 安装 `v2.1.0-BETA1` 的 CLI 与 Runtime Host，按 [Runtime Host 安装指南](/v2/zh/service/runtime-host) 配置 PATH，然后连接：
 
 ```bash
 as connect https://agentscope.example.com

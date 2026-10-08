@@ -242,10 +242,11 @@ checks its SHA256 and preserves older index entries.
 
 `docs.json` redirects `/helm/index.yaml` to that index and `/helm` to its landing
 page, with temporary redirects (`permanent: false`). Archive URLs are absolute,
-so Helm follows the index redirect and downloads archives directly from Pages.
-No change to the official website's DNS or Mintlify hosting is needed. Merge the
-configuration into Mintlify's deployment branch before announcing
-`helm repo add agentscope https://java.agentscope.io/helm`; until it is deployed,
-the direct Pages URL works independently. Verify both `helm repo add` and a pinned
-`helm pull` after deployment. Do not assign `java.agentscope.io` as the standalone
+so the intended alias only needs to redirect the index request. Production
+verification after merging found that `/helm` redirects but `/helm/index.yaml`
+returns 404, so installation guides use the verified direct Pages URL:
+`helm repo add agentscope https://chickenlj.github.io/helm-charts`. Do not announce
+the website alias until both `helm repo add` and a pinned `helm pull` pass against
+it. The local Mintlify redirect check alone does not establish production behavior.
+Do not assign `java.agentscope.io` as the standalone
 repository's Pages custom domain, which would replace the documentation site.
