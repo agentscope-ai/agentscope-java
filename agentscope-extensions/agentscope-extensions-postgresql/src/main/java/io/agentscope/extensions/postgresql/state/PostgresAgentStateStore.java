@@ -127,11 +127,23 @@ public class PostgresAgentStateStore implements AgentStateStore {
         if (createIfNotExist) {
             createSchemaIfNotExist();
             createTableIfNotExist();
+            ensureVersionColumn();
         } else {
             verifySchemaExists();
             verifyTableExists();
+            verifyVersionColumnExists();
         }
-        ensureVersionColumn();
+    }
+
+    /**
+     * The DDL {@link #ensureVersionColumn()} runs on the auto-create path. Shared with {@link
+     * #verifyVersionColumnExists()} so the failure message always quotes the exact statement the
+     * operator must apply.
+     */
+    private String versionColumnMigrationDdl() {
+        return "ALTER TABLE "
+                + getFullTableName()
+                + " ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1";
     }
 
     private void ensureVersionColumn() {
@@ -140,15 +152,46 @@ public class PostgresAgentStateStore implements AgentStateStore {
         // pre-existing row look absent to saveIfVersion(..., 0), which takes the INSERT branch
         // and reports a phantom CAS conflict. Both write paths start at version 1, so 1 is the
         // correct resting value for migrated rows.
-        String sql =
-                "ALTER TABLE "
-                        + getFullTableName()
-                        + " ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1";
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(sql)) {
+                PreparedStatement stmt = conn.prepareStatement(versionColumnMigrationDdl())) {
             stmt.execute();
         } catch (SQLException e) {
             throw new RuntimeException("Failed to ensure version column on table: " + tableName, e);
+        }
+    }
+
+    /**
+     * Read-only counterpart of {@link #ensureVersionColumn()} for the {@code
+     * createIfNotExist=false} path. DML-only accounts hold no DDL privilege, and PostgreSQL
+     * checks table ownership before honoring {@code ADD COLUMN IF NOT EXISTS}, so even a no-op
+     * ALTER fails for them (SQLSTATE 42501). Verify through INFORMATION_SCHEMA instead and fail
+     * with the exact migration DDL to run (#3213).
+     */
+    private void verifyVersionColumnExists() {
+        String sql =
+                """
+                SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = 'version'
+                """;
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, schemaName);
+            stmt.setString(2, tableName);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    throw new IllegalStateException(
+                            "Column 'version' does not exist on table: "
+                                    + getFullTableName()
+                                    + ". Apply the migration DDL via your database migration"
+                                    + " process: "
+                                    + versionColumnMigrationDdl()
+                                    + ", or use PostgresAgentStateStore(dataSource, true) or"
+                                    + " builder(dataSource).createIfNotExist(true).build() to"
+                                    + " auto-create.");
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to check version column existence: " + tableName, e);
         }
     }
 
