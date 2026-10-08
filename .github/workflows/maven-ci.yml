@@ -59,6 +59,9 @@ jobs:
       JAVA_VERSION: '17'
 
     steps:
+      - name: Enable Git long paths on Windows
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
       - uses: actions/checkout@v4
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
