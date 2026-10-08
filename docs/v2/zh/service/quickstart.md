@@ -5,7 +5,7 @@ en_link: /v2/en/service/quickstart
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。下文的版本与镜像地址以实际发布包为准。
+本页使用 `2.1.0-BETA1` 预发布版本。用于生产前请验证实际环境。
 </Note>
 
 自托管是目前主要推荐的部署方式。本教程使用 Docker Compose，在你的机器或服务器上启动完整的 Service 平台。平台就绪后，你还需要接通模型，并为自己的账号选择可用的工具执行环境，才能运行基于 HarnessAgent 内核的 Managed Agent。完成本页后，就可以继续创建第一个 Agent，通过实际任务验证执行效果。
@@ -22,20 +22,29 @@ en_link: /v2/en/service/quickstart
 
 你还需要准备支持工具调用的模型及其访问凭据，供平台执行 Agent 任务。部署所需的 CPU、内存和持久化磁盘取决于并发任务数量与工具负载，应根据实际使用规模安排资源。
 
-从 [Release 下载页](https://github.com/agentscope-ai/agentscope-java/releases)选择已经提供 Service 安装包的版本，下载对应的 `agentscope-service-VERSION-compose.tar.gz` 和 `SHA256SUMS`。下载后，在 Linux 上使用 `sha256sum`，或在 macOS 上使用 `shasum -a 256` 计算压缩包的 SHA-256，并与清单中的条目比较，确认文件一致后再解压。
+本页使用已发布的 `2.1.0-BETA1` 预发布版本，通过 Docker Compose 快速启动。无需下载源码，也无需安装 Java、Maven、Go 或单独的 CLI。下载 Compose 安装包和校验清单，只核对本次下载的安装包：
 
-以下命令中的 `VERSION` 和 `REGISTRY/NAMESPACE` 都是占位值，需要替换为该 Release 公布的版本与镜像仓库路径，其中仓库路径不包含 `https://`。如果所选版本尚未提供安装包，应先选择实际可用的发布版本，不能直接用这些占位值执行命令。
+```bash
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/agentscope-service-2.1.0-BETA1-compose.tar.gz
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/SHA256SUMS
+awk '$2 == "agentscope-service-2.1.0-BETA1-compose.tar.gz"' SHA256SUMS > compose.sha256
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c compose.sha256
+else
+  shasum -a 256 -c compose.sha256
+fi
+```
 
-Compose 安装包使用该命名空间下的四个 Service 镜像：`as-controlplane`（包含 Dashboard）、`as-gateway`、`as-dataplane` 和 `as-scheduler`。四个镜像的 tag 都使用所选的 Service 版本。
+安装包启动 PostgreSQL，以及 `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope` 下的四个 Service 镜像：`as-controlplane`（含 Dashboard）、`as-gateway`、`as-dataplane`、`as-scheduler`，版本均为 `2.1.0-BETA1`。Docker 自动选择对应的 `linux/amd64` 或 `linux/arm64` 镜像。生产环境的 Kubernetes 安装请使用 [Helm 安装指南](/v2/zh/service/kubernetes)。
 
 ## 1. 初始化部署并配置模型
 
 解压下载的安装包后，进入其中的 `agentscope-service` 目录，再运行初始化脚本。脚本会根据你传入的版本和镜像仓库生成本次部署使用的配置。
 
 ```bash
-tar -xzf agentscope-service-VERSION-compose.tar.gz
+tar -xzf agentscope-service-2.1.0-BETA1-compose.tar.gz
 cd agentscope-service
-./init-env.sh VERSION REGISTRY/NAMESPACE
+./init-env.sh 2.1.0-BETA1 sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope
 ```
 
 初始化脚本会创建 `.env` 文件，并将权限设为 `600`，使文件所有者能够读取和修改其中的配置。这个文件保存了平台启动所需的数据库密码和认证密钥，也包含 Vault 加密密钥与初始管理员密码。如果 `.env` 已经存在，脚本会保留它，因此重复运行初始化命令不会更新版本或重置密码。

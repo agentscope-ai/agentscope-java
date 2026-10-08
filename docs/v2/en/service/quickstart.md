@@ -5,7 +5,7 @@ zh_link: /v2/zh/service/quickstart
 ---
 
 <Note>
-This is preview documentation. Use versions and image locations from an available release package.
+This guide uses the `2.1.0-BETA1` prerelease. Validate it for your environment before production use.
 </Note>
 
 Self-hosting is currently the primary recommended deployment approach. This tutorial uses Docker Compose to start the complete Service platform on your machine or server. Once it is running, connect a model and select a tool execution environment available to your account so that you can run Managed Agents built on HarnessAgent. After completing this page, create your first Agent and verify execution with an actual task.
@@ -22,20 +22,29 @@ The deployment commands require Docker Engine or Docker Desktop and Compose v2. 
 
 Prepare access credentials for a model that supports tool calls so the platform can execute Agent tasks. CPU, memory, and persistent disk requirements depend on the number of concurrent tasks and the tools they use; allocate resources for your expected workload.
 
-Choose a version that provides a Service package on the [Release page](https://github.com/agentscope-ai/agentscope-java/releases), and download its `agentscope-service-VERSION-compose.tar.gz` and `SHA256SUMS`. Calculate the archive’s SHA-256 with `sha256sum` on Linux or `shasum -a 256` on macOS, then compare it with the manifest before extracting the package.
+This guide uses the published `2.1.0-BETA1` prerelease and Docker Compose. It does not require a source checkout, Java, Maven, Go or a separately installed CLI. Download the Compose bundle and checksum manifest, then verify only the bundle you downloaded:
 
-The commands below contain placeholders for `VERSION` and `REGISTRY/NAMESPACE`. Replace them with the version and image repository published for that Release; the repository path has no `https://` prefix. If your selected version has no installation package yet, choose an available release before proceeding. The placeholder values cannot be used as written.
+```bash
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/agentscope-service-2.1.0-BETA1-compose.tar.gz
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/SHA256SUMS
+awk '$2 == "agentscope-service-2.1.0-BETA1-compose.tar.gz"' SHA256SUMS > compose.sha256
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c compose.sha256
+else
+  shasum -a 256 -c compose.sha256
+fi
+```
 
-The Compose package uses four Service images under that namespace: `as-controlplane` (including Dashboard), `as-gateway`, `as-dataplane`, and `as-scheduler`. All four use the selected Service version as their image tag.
+The package starts PostgreSQL and four Service images from `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`: `as-controlplane` (including Dashboard), `as-gateway`, `as-dataplane`, and `as-scheduler`, all tagged `2.1.0-BETA1`. Docker chooses the matching `linux/amd64` or `linux/arm64` image. For a Kubernetes production installation, use the [Helm guide](/v2/en/service/kubernetes).
 
 ## 1. Initialize deployment and configure a model
 
 Extract the downloaded package, enter its `agentscope-service` directory, and run the initialization script. It uses the version and image repository you provide to generate the deployment configuration.
 
 ```bash
-tar -xzf agentscope-service-VERSION-compose.tar.gz
+tar -xzf agentscope-service-2.1.0-BETA1-compose.tar.gz
 cd agentscope-service
-./init-env.sh VERSION REGISTRY/NAMESPACE
+./init-env.sh 2.1.0-BETA1 sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope
 ```
 
 The initialization script creates `.env` with mode `600`, allowing its owner to read and modify the configuration. This file contains the database password and authentication secrets needed to start the platform, together with the Vault encryption key and initial administrator password. If `.env` already exists, the script preserves it, so repeating initialization does not update the version or reset passwords.

@@ -16,15 +16,21 @@ cp kubernetes.env.example service.env
 # Edit service.env before creating the Secret.
 kubectl create namespace agentscope
 kubectl -n agentscope create secret generic agentscope-service --from-env-file=service.env
-helm upgrade --install service ./agentscope-service-@SERVICE_VERSION@.tgz \
+helm repo add agentscope https://chickenlj.github.io/helm-charts
+helm repo update agentscope
+helm upgrade --install service agentscope/agentscope-service \
+  --version @SERVICE_VERSION@ \
   --namespace agentscope \
   --set imageRepository=@IMAGE_REPOSITORY@ \
   --set existingSecret=agentscope-service --wait --timeout 10m
 kubectl -n agentscope port-forward service/service-agentscope-gateway 18080:8080
 ```
 
-For another version, replace the Chart filename and repository with the release
-values. If the registry requires authentication, create an image-pull Secret and
+For an offline installation, replace `agentscope/agentscope-service` and
+`--version @SERVICE_VERSION@` with this bundle's `./agentscope-service-@SERVICE_VERSION@.tgz`.
+Configure storage classes or existing claims in your values before production use.
+See the [production installation guide](https://java.agentscope.io/v2/en/service/kubernetes)
+for a complete values example and verification steps. If the registry requires authentication, create an image-pull Secret and
 configure `imagePullSecrets`. Set `publicURL` and Ingress/TLS for external access.
 Open http://localhost:18080 for the port-forwarded installation and sign in with
 the bootstrap administrator credentials from `service.env`.
@@ -38,7 +44,9 @@ model credentials, HA, and zero-downtime database upgrades are not included.
 本包包含 Helm Chart、Secret 环境配置模板及数据库 schema 初始化 SQL。
 先准备外部 PostgreSQL，用应用数据库 owner 执行 `postgres-init.sql`；
 同时准备 Workspace 的 RWX 存储和 Artifact 的 RWO 存储。
-按上面的命令复制并填写私有 `service.env`，再创建 Secret 和安装 Chart。
+按上面的命令复制并填写私有 `service.env`，再创建 Secret，从公开 Helm 仓库安装指定版本。
+离线时，用本包的 Chart `.tgz` 替换仓库引用和版本参数；完整 values 示例与验证步骤见
+[生产安装指南](https://java.agentscope.io/v2/zh/service/kubernetes)。
 保留数据库密码和原 Vault 密钥，与数据库及文件备份一起保存。
 
 私有镜像仓库需要配置 `imagePullSecrets`；对外访问需要设置 `publicURL`

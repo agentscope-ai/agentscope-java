@@ -144,7 +144,7 @@ The current release profile does not enable `autoPublish`. After Maven succeeds,
 
 ## 7. Publish documentation and release notes
 
-Attach package archives, manifest, checksums and image metadata to the Release. List exact image references/digests, OCI Chart reference, SDK coordinates, tested platforms, database compatibility, upgrade procedure and known limitations. Verify anonymous downloads/pulls when public distribution is intended.
+Attach package archives, manifest, checksums and image metadata to the Release. Keep public Release notes to one or two sentences linking to the official Service documentation. Document Compose startup, Go CLI installation, the public HTTP Helm repository, versions and operational requirements in the corresponding installation guides. Verify anonymous downloads/pulls when public distribution is intended.
 
 The public HTTP Helm repository is [chickenlj/helm-charts](https://github.com/chickenlj/helm-charts).
 After publishing the upstream `vVERSION` Release with its standalone Chart asset,
@@ -160,17 +160,15 @@ helm pull agentscope/agentscope-service --version 2.1.0-BETA1
 Use the intended version for future releases. The workflow fetches the original
 Release archive, verifies its SHA256 and Chart metadata, preserves existing index
 entries, refuses different bytes under an existing version, and deploys Pages.
-No extra registry credential or cross-repository write token is required. The
-official `https://java.agentscope.io/helm` alias requires the Mintlify redirects in
-`docs/docs.json` to be deployed from `main`; the direct Pages URL works independently.
+No extra registry credential or cross-repository write token is required. Production checks currently return 404 for the official `/helm/index.yaml` route despite the merged redirects, so installation guides use the verified direct Pages URL until the alias passes real Helm checks.
 
-Use `vVERSION` as the public release tag (for example `v2.1.0-BETA1`). SDK workflows only publish source already merged into `main`; if a tag is created earlier, run the SDK workflow manually after merging. Build from clean, committed source with `release.py package --distributions-only`, create a prerelease draft, upload only the named public files, verify downloaded SHA-256 values, then publish the draft. Homebrew and Helm OCI are separate channels and require their own destination repositories.
+Use `vVERSION` as the public release tag (for example `v2.1.0-BETA1`). SDK workflows only publish source already merged into `main`; if a tag is created earlier, run the SDK workflow manually after merging. Build from clean, committed source with `release.py package --distributions-only`, create a prerelease draft, upload only the named public files, verify downloaded SHA-256 values, then publish the draft. The HTTP Helm repository and optional Homebrew tap are independent publication channels.
 
-The public personal tap is [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap); users install both CLI executables with `brew install chickenlj/tap/agentscope-cli`. The formula source is retained under `release/homebrew/agentscope-cli.rb`. For each new CLI release, update all four URLs, their verified SHA-256 values, the formula version and its version assertion, then publish the updated formula to the tap. Existing binary archives remain immutable. A future CI job updating this personal repository from the organization repository needs a separate credential with Contents write permission on the tap; the organization's default `GITHUB_TOKEN` does not grant that access.
+Users install CLI and Runtime Host with the `go install` commands in the [Runtime Host guide](https://java.agentscope.io/v2/en/service/runtime-host). The optional public personal tap is [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap). The formula source is retained under `release/homebrew/agentscope-cli.rb`. For each new CLI release, update all four URLs, their verified SHA-256 values, the formula version and its version assertion, then publish the updated formula to the tap. Existing binary archives remain immutable. A future CI job updating this personal repository from the organization repository needs a separate credential with Contents write permission on the tap; the organization's default `GITHUB_TOKEN` does not grant that access.
 
 The Go module requires Go 1.26 and uses the `/v2` module path. In addition to `v2.1.0-BETA1`, create the nested-module tag `agentscope-service/service-controlplane/v2.1.0-BETA1` at the same commit. This lets users install either CLI command with `@v2.1.0-BETA1`; see the bilingual Runtime Host installation page. Future Go releases need both tags at the same commit. Do not move published tags.
 
-Documentation lives under `docs/v2/{zh,en}/service/`. `_toc.yml` and `_config.yml` register every page and the Service tab. Build and inspect both languages before merging into `main`, the current website workflow's deployment source. Check direct page access, links, images, search and language switching after deployment.
+Documentation lives under `docs/v2/{zh,en}/service/`; `docs/docs.json` configures navigation and redirects. Validate both languages with the documentation npm scripts before merging into `main`, Mintlify's deployment branch. Confirm the Mintlify deployment separately from the validation workflow, then check direct page access, links, images, search and language switching.
 
 ## Current deployment boundaries
 

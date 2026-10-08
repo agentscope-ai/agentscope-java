@@ -339,9 +339,9 @@ mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-controlplane -am \
 
 只上传这些公开制品；不要把工作目录、测试 `.env`、数据库备份或密钥一起打包。GitHub 自动生成的源码压缩包不能替代 Compose、CLI 和 SDK 附件。
 
-对外 Release 使用 `vVERSION` tag，例如 `v2.1.0-BETA1`。SDK 工作流仅发布已合入 `main` 的源码；提前创建的 tag 在合并后手动运行 SDK 工作流。从干净且已提交的源码执行 `release.py package --distributions-only`，创建预发布草稿，上传明确列出的公开附件，下载并核对 SHA-256 后再公开。Homebrew 和 Helm OCI 是独立渠道，需要另行确定目标仓库。
+对外 Release 使用 `vVERSION` tag，例如 `v2.1.0-BETA1`。SDK 工作流仅发布已合入 `main` 的源码；提前创建的 tag 在合并后手动运行 SDK 工作流。从干净且已提交的源码执行 `release.py package --distributions-only`，创建预发布草稿，上传明确列出的公开附件，下载并核对 SHA-256 后再公开。公开 HTTP Helm 仓库和可选的 Homebrew tap 是独立发布渠道。
 
-个人公开 tap 为 [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap)，用户执行 `brew install chickenlj/tap/agentscope-cli` 即可同时安装两个命令。配方源码保留在 `release/homebrew/agentscope-cli.rb`。每次 CLI 发版后，更新四个平台的 URL、已验证的 SHA-256、配方版本和测试中的版本断言，再将配方发布到 tap。既有二进制附件保持不变。组织仓库的 CI 若要自动更新这个个人仓库，需要另行配置对 tap 拥有 Contents 写权限的凭据；默认 `GITHUB_TOKEN` 不包含这个跨仓库权限。
+用户按 [Runtime Host 安装指南](https://java.agentscope.io/v2/zh/service/runtime-host)，通过 `go install` 安装同一版本的 CLI 和 Runtime Host。可选的个人公开 tap 为 [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap)。配方源码保留在 `release/homebrew/agentscope-cli.rb`。每次 CLI 发版后，更新四个平台的 URL、已验证的 SHA-256、配方版本和测试中的版本断言，再将配方发布到 tap。既有二进制附件保持不变。组织仓库的 CI 若要自动更新这个个人仓库，需要另行配置对 tap 拥有 Contents 写权限的凭据；默认 `GITHUB_TOKEN` 不包含这个跨仓库权限。
 
 Go 模块要求 Go 1.26，使用 `/v2` 模块路径。除 `v2.1.0-BETA1` 外，还须在同一提交创建嵌套模块 tag `agentscope-service/service-controlplane/v2.1.0-BETA1`，用户即可通过 `@v2.1.0-BETA1` 安装两个命令，见中英文 Runtime Host 安装页。后续 Go 版本同样需要两个 tag 指向同一提交，不移动已发布 tag。
 
@@ -354,26 +354,9 @@ gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" \
   --notes-file /private/path/release-notes.md
 ```
 
-通过草稿页面添加上述附件。RC 勾选 **Set as a pre-release**；稳定版完成验收后再设置为正式发布及合适的 latest 状态。发布说明至少包含：
-
-```markdown
-# AgentScope Service VERSION
-
-## 新增与修复
-- 本次用户可感知的变化。
-
-## 安装入口
-- Compose 附件名称与校验方式。
-- 四个镜像的确切版本及 digest。
-- OCI Chart 地址与版本。
-- Java / Python / DSH 安装坐标及各自版本。
-- 对应官网文档链接。
-
-## 升级与兼容性
-- 已验证的架构、数据库及存储条件。
-- 数据迁移、维护窗口、备份和恢复要求。
-- 已知限制、尚未验证的集成。
-```
+通过草稿页面添加上述附件。RC 勾选 **Set as a pre-release**；稳定版完成验收后再设置为正式发布及合适的 latest 状态。公开 Release 说明保持一两句话，并链接到官方 Service 文档。Compose 快速启动、
+Go CLI 安装、公开 HTTP Helm 仓库与运行要求集中维护在相应安装文档中。
+制品清单、校验和及详细验证记录继续保留在 Release 附件中。
 
 ### 8.2 发布官网
 
@@ -390,16 +373,15 @@ helm pull agentscope/agentscope-service --version 2.1.0-BETA1
 
 后续发版替换为实际版本。工作流从上游 Release 下载原包，核对 SHA256 与 Chart 元数据，
 保留旧版本索引，拒绝以不同内容覆盖已发布版本，并部署 GitHub Pages。
-不需要额外 registry 凭据或跨仓库写入 token。官网 `https://java.agentscope.io/helm`
-入口需要先将 `docs/docs.json` 的跳转配置部署到 Mintlify 的 `main` 分支；
-直接使用 Pages 地址不依赖官网部署。
+不需要额外 registry 凭据或跨仓库写入 token。官网跳转配置虽已合并，但线上 `/helm/index.yaml` 仍返回 404；
+安装文档默认使用已验证的 Pages 地址，待官网入口通过实际 Helm 检查后再启用别名。
 
-官网源码位于 `docs/v2/{zh,en}/service/`。把对应版本文档按审核流程合入 `main`，查看 **Deploy Docs to GitHub Pages** 工作流。当前配置只有 `main` push 会部署；手动触发及 PR 只做构建检查，不会上线。
+官网源码位于 `docs/v2/{zh,en}/service/`。把对应版本文档按审核流程合入 `main`，检查 **Validate Mintlify Docs** 工作流，并确认 Mintlify 从 `main` 部署成功；文档校验通过本身不等于官网已上线。
 
 上线后使用浏览器打开：
 
-- 中文：`https://java.agentscope.io/v2/zh/service/index.html`
-- 英文：`https://java.agentscope.io/v2/en/service/index.html`
+- 中文：`https://java.agentscope.io/v2/zh/service/index`
+- 英文：`https://java.agentscope.io/v2/en/service/index`
 
 确认 Service 导航、语言切换、搜索、图片、直接页面链接均可用，并核对安装文档使用的是已经公开可获取的版本。随后完成 GitHub Release 的公开发布。
 
@@ -412,7 +394,9 @@ docker pull "$IMAGE_REPOSITORY/as-controlplane:$SERVICE_VERSION"
 docker pull "$IMAGE_REPOSITORY/as-gateway:$SERVICE_VERSION"
 docker pull "$IMAGE_REPOSITORY/as-dataplane:$SERVICE_VERSION"
 docker pull "$IMAGE_REPOSITORY/as-scheduler:$SERVICE_VERSION"
-helm pull "oci://$IMAGE_REPOSITORY/charts/agentscope-service" \
+helm repo add agentscope https://chickenlj.github.io/helm-charts
+helm repo update agentscope
+helm pull agentscope/agentscope-service \
   --version "$SERVICE_VERSION"
 ```
 
