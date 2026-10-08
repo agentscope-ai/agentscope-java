@@ -149,7 +149,7 @@ def package(args):
         stage.mkdir()
         env = dict(os.environ, CGO_ENABLED='0', GOOS=system, GOARCH=arch)
         for name, command in (('as', 'as'), ('agentscope-runtime-host', 'agentscope-runtime-host')):
-            run('go', 'build', '-trimpath', '-ldflags=-s -w -X github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/version.Version=' + args.version, '-o', str(stage / name), './cmd/' + command,
+            run('go', 'build', '-trimpath', '-ldflags=-s -w -X github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/version.Version=' + args.version, '-o', str(stage / name), './cmd/' + command,
                 cwd=SERVICE / 'service-controlplane', env=env)
         shutil.copy2(ROOT / 'LICENSE', stage / 'LICENSE')
         shutil.copy2(SERVICE / 'release/CLI_README.md', stage / 'README.md')

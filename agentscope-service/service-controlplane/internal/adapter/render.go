@@ -14,7 +14,7 @@
 
 package adapter
 
-import "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/api/v1alpha1"
+import "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/api/v1alpha1"
 
 // RenderAgentConfig produces the canonical agent runtime configuration delivered
 // to the data plane. It is the single source of truth shared by the startup

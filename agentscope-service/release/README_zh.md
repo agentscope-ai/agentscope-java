@@ -71,7 +71,7 @@ npm 的发布权限和 2FA 要求由包设置决定；此处使用交互式 `npm
 | 项目 | 本次需要确定的值 | 影响范围 |
 | --- | --- | --- |
 | Service 版本 | 例如 `2.0.3-rc.1` | 四个镜像、Chart version/appVersion、CLI、Compose 文件名 |
-| Git tag | 建议 `agentscope-service-v2.0.3-rc.1` | 唯一指向本次审核过的源码 |
+| Git tag | `v2.1.0-BETA1` | 唯一指向本次审核过的源码 |
 | Registry namespace | 例如 `ghcr.io/agentscope-ai` | 镜像和 Chart 的公开安装地址 |
 | Java 版本 | 根 `pom.xml` 的 `revision` | Java SDK、父 POM、相关 reactor 依赖 |
 | Python 版本 | 两处 Python 版本声明 | PyPI 包版本 |
@@ -93,7 +93,7 @@ Service 参数不带 `v` 前缀，当前脚本不接受 `+build` 元数据。Pyt
 
 ```bash
 export SERVICE_VERSION=2.0.3-rc.1
-export RELEASE_TAG="agentscope-service-v${SERVICE_VERSION}"
+export RELEASE_TAG="v${SERVICE_VERSION}"
 export IMAGE_REPOSITORY=ghcr.io/agentscope-ai
 export RELEASE_REPO=agentscope-ai/agentscope-java
 ```
@@ -178,7 +178,8 @@ python agentscope-service/release/smoke.py \
 ```bash
 git rev-parse HEAD
 git tag -a "$RELEASE_TAG" -m "AgentScope Service $SERVICE_VERSION"
-git push origin "$RELEASE_TAG"
+git tag -a "agentscope-service/service-controlplane/v${SERVICE_VERSION}" -m "AgentScope Service Go $SERVICE_VERSION"
+git push origin "$RELEASE_TAG" "agentscope-service/service-controlplane/v${SERVICE_VERSION}"
 ```
 
 遵循仓库保护规则完成必要的 PR 合并和分支推送。Tag 应指向最终要发布的提交。当前工作流只检查选择的是 tag，不检查 tag 名与 `version` 是否相符，这个对应关系由管理员核对。
@@ -260,7 +261,7 @@ python agentscope-service/release/release.py publish-chart \
 
 工作流显示名称为 **AgentScope Service PyPI release**。它测试 Python 3.9–3.14，核对 tag/输入版本与 SDK 的两处版本声明，构建并校验 wheel/sdist，最后通过 OIDC 上传。仅上传 job 拥有 `id-token: write`，不需要 PyPI API token 或 GitHub SDK Secret；首次成功上传会创建 PyPI 项目。见 [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)。
 
-推送包含该工作流的 `v*` 或 `agentscope-service-v*` tag 会触发发布；手动入口要求工作流先进入默认分支。本次输入 `2.1.0-BETA1` 或等价的 Python 版本 `2.1.0b1`。配置 Publisher 并将工作流合入默认分支后，指定待发布的源码分支运行：
+推送包含该工作流的 `v*` 或 `agentscope-service-v*` tag 会触发发布，但源码必须已合入 `main`；手动入口要求工作流先进入默认分支。本次输入 `2.1.0-BETA1` 或等价的 Python 版本 `2.1.0b1`。配置 Publisher 并将工作流合入默认分支后，指定待发布的源码分支运行：
 
 ```bash
 gh workflow run service-pypi-release.yml --repo agentscope-ai/agentscope-java \
@@ -290,7 +291,7 @@ python agentscope-service/release/release.py publish-npm --version "$SERVICE_VER
 
 发布命令会测试、构建并将 `@agentscope-service/dsh-controlplane` 公开发布到 `https://registry.npmjs.org`，预发布自动选择 `next`，稳定版选择 `latest`。加 `--dry-run` 可检查候选包而不上传；实际发布要求已提交的干净源码。
 
-`service-npm-release.yml` 会在推送 `v*` 或 `agentscope-service-v*` tag 时自动发布，也支持手动填写版本；tag/输入版本必须与 SDK 版本一致。首次本地发布成功后，在 npm 包设置中配置 Trusted Publisher：GitHub owner 为 `agentscope-ai`，repository 为 `agentscope-java`，workflow 为 `service-npm-release.yml`，environment 为 `npm`。工作流使用 npm 11 和 OIDC，无需 `NPM_TOKEN`。tag 对应源码须包含该工作流；手动入口还要求它进入默认分支。也可用 npm 11.15+ 完成首次绑定：
+`service-npm-release.yml` 会在推送 `v*` 或 `agentscope-service-v*` tag 时自动发布，也支持手动填写版本；tag/输入版本必须与 SDK 版本一致。首次本地发布成功后，在 npm 包设置中配置 Trusted Publisher：GitHub owner 为 `agentscope-ai`，repository 为 `agentscope-java`，workflow 为 `service-npm-release.yml`，environment 为 `npm`。工作流使用 npm 11 和 OIDC，无需 `NPM_TOKEN`。tag 对应源码须包含该工作流且已合入 `main`；手动入口还要求它进入默认分支。也可用 npm 11.15+ 完成首次绑定：
 
 ```bash
 npm trust github @agentscope-service/dsh-controlplane \
@@ -338,11 +339,11 @@ mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-controlplane -am \
 
 只上传这些公开制品；不要把工作目录、测试 `.env`、数据库备份或密钥一起打包。GitHub 自动生成的源码压缩包不能替代 Compose、CLI 和 SDK 附件。
 
-安装包单独发版时使用 `agentscope-service-dist-vVERSION` tag，与 SDK 的 tag 触发条件分开。从干净且已提交的源码执行 `release.py package --distributions-only`，创建预发布草稿，上传明确列出的公开附件，下载并核对 SHA-256 后再公开。Homebrew 和 Helm OCI 是独立渠道，需要另行确定目标仓库。
+对外 Release 使用 `vVERSION` tag，例如 `v2.1.0-BETA1`。SDK 工作流仅发布已合入 `main` 的源码；提前创建的 tag 在合并后手动运行 SDK 工作流。从干净且已提交的源码执行 `release.py package --distributions-only`，创建预发布草稿，上传明确列出的公开附件，下载并核对 SHA-256 后再公开。Homebrew 和 Helm OCI 是独立渠道，需要另行确定目标仓库。
 
 个人公开 tap 为 [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap)，用户执行 `brew install chickenlj/tap/agentscope-cli` 即可同时安装两个命令。配方源码保留在 `release/homebrew/agentscope-cli.rb`。每次 CLI 发版后，更新四个平台的 URL、已验证的 SHA-256、配方版本和测试中的版本断言，再将配方发布到 tap。既有二进制附件保持不变。组织仓库的 CI 若要自动更新这个个人仓库，需要另行配置对 tap 拥有 Contents 写权限的凭据；默认 `GITHUB_TOKEN` 不包含这个跨仓库权限。
 
-`go install` 可以用已发布的安装包 tag 作为 revision query 分别安装两个 `cmd` 包，命令见中英文 Runtime Host 安装页。当前模块要求 Go 1.26，模块路径没有 major-version suffix。标准 `@v2.1.0-BETA1` 模块发布需要先调整 `/v2` 模块路径及相关 import，再发布嵌套模块 tag `agentscope-service/service-controlplane/v2.1.0-BETA1`。
+Go 模块要求 Go 1.26，使用 `/v2` 模块路径。除 `v2.1.0-BETA1` 外，还须在同一提交创建嵌套模块 tag `agentscope-service/service-controlplane/v2.1.0-BETA1`，用户即可通过 `@v2.1.0-BETA1` 安装两个命令，见中英文 Runtime Host 安装页。后续 Go 版本同样需要两个 tag 指向同一提交，不移动已发布 tag。
 
 先在 GitHub Releases 建立草稿，选用已存在的 tag，上传附件并校验下载。若使用 CLI，先在仓库之外准备完整的 Markdown Release Notes：
 

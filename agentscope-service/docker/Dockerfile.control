@@ -15,7 +15,7 @@ WORKDIR /src
 COPY agentscope-service/service-controlplane/go.mod agentscope-service/service-controlplane/go.sum ./
 RUN go mod download
 COPY agentscope-service/service-controlplane/ ./
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/version.Version=$VERSION -X main.gitCommit=$GIT_COMMIT" -o /out/service-controlplane ./cmd/service-controlplane
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/version.Version=$VERSION -X main.gitCommit=$GIT_COMMIT" -o /out/service-controlplane ./cmd/service-controlplane
 RUN mkdir -p /out/data/workspaces /out/data/artifacts
 
 FROM gcr.io/distroless/static:nonroot

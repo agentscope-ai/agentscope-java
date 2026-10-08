@@ -21,7 +21,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/api/v1alpha1"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/api/v1alpha1"
 )
 
 // +kubebuilder:webhook:path=/validate-agentscope-io-v1alpha1-modelconfig,mutating=false,failurePolicy=fail,sideEffects=None,groups=agentscope.io,resources=modelconfigs,verbs=create;update,versions=v1alpha1,name=vmodelconfig.agentscope.io,admissionReviewVersions=v1

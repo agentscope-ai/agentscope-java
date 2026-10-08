@@ -24,11 +24,11 @@ agentscope-runtime-host -help
 也可以使用 Go 1.26 或更新版本，从已经发布的 tag 安装两个命令：
 
 ```bash
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/cmd/as@agentscope-service-dist-v2.1.0-BETA1
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/cmd/agentscope-runtime-host@agentscope-service-dist-v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
 ```
 
-Go 安装到 `GOBIN`，未设置时使用 `$(go env GOPATH)/bin`，请将该目录加入 PATH。两个命令应使用同一版本。当前 Go 模块没有 `/v2` 路径，因此 tag 会解析为 Go pseudo-version；可执行文件的版本仍为 `2.1.0-BETA1`。
+Go 安装到 `GOBIN`，未设置时使用 `$(go env GOPATH)/bin`，请将该目录加入 PATH。两个命令应使用同一版本。Go 模块使用 `/v2` 路径和标准语义化版本，`@v2.1.0-BETA1` 安装本次预发布版本。
 
 从同一 Service Release 下载对应操作系统和 CPU 架构的 `agentscope-cli-VERSION-OS-ARCH.tar.gz`，核对校验和后解压。包中包含 `as` 和 `agentscope-runtime-host`。将两个可执行文件放在同一个 PATH 目录中。
 

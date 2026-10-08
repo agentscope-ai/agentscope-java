@@ -18,7 +18,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  source:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: bash .github/scripts/check-service-release-source.sh
+
   publish:
+    needs: source
+    if: needs.source.outputs.ready == 'true'
     runs-on: ubuntu-latest
     environment: npm
     steps:

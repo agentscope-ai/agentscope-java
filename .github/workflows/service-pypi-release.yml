@@ -20,7 +20,20 @@ env:
   SDK_DIRECTORY: agentscope-service/service-controlplane/sdk/python
 
 jobs:
+  source:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: bash .github/scripts/check-service-release-source.sh
+
   test:
+    needs: source
+    if: needs.source.outputs.ready == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

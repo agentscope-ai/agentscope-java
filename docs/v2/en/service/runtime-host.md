@@ -24,11 +24,11 @@ The formula downloads the published binaries for macOS/Linux amd64/arm64 and ver
 Alternatively, with Go 1.26 or newer, install both commands from the published release tag:
 
 ```bash
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/cmd/as@agentscope-service-dist-v2.1.0-BETA1
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/cmd/agentscope-runtime-host@agentscope-service-dist-v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
 ```
 
-Go installs into `GOBIN`, or `$(go env GOPATH)/bin` when `GOBIN` is unset; add that directory to PATH. Both commands should be installed at the same version. The tag resolves to a Go pseudo-version because this module does not use a `/v2` path. The executable version remains `2.1.0-BETA1`.
+Go installs into `GOBIN`, or `$(go env GOPATH)/bin` when `GOBIN` is unset; add that directory to PATH. Both commands should be installed at the same version. The `/v2` module uses standard Go semantic versions; `@v2.1.0-BETA1` installs this prerelease.
 
 Download `agentscope-cli-VERSION-OS-ARCH.tar.gz` for the operating system and CPU architecture from the same Service release. Verify its checksum and extract it. The archive contains `as` and `agentscope-runtime-host`. Put both executables in the same directory on PATH.
 
