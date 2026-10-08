@@ -24,7 +24,7 @@ This page has been superseded by [Distributed Storage — Redis](/v2/en/integrat
 </dependency>
 ```
 
-The module does not pin a Redis client — bring whatever you already use (Jedis / Lettuce / Redisson).
+Choose Jedis, Lettuce, or Redisson to match your project. Redisson 4.x compatibility guidance lives in [Distributed Storage — Redis](/v2/en/integration/distributed/redis).
 
 ## Quickstart (Lettuce, standalone)
 
