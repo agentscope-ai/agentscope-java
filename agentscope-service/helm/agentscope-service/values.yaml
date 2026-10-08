@@ -21,7 +21,7 @@ imagePullSecrets: []
 # Pre-create a Secret using deploy/kubernetes.env.example. Never put credentials in values.
 existingSecret: ""
 # PostgreSQL is operated separately; create cp, rt, dp schemas before installing.
-# This Chart runs standalone aistiod: no Kubernetes reconcilers or ASDP gRPC.
+# This Chart runs standalone service-controlplane: no Kubernetes reconcilers or ASDP gRPC.
 allowLocalEnvironment: false
 publicURL: http://localhost:18080
 service:

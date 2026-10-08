@@ -16,6 +16,7 @@
 package io.agentscope.builder.control;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,8 +32,50 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 class ControlPlaneClientExecutionScopeTest {
+
+    @Test
+    void managedStartWaitsForTheCapturedFenceAcknowledgement() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        List<Map<String, Object>> starts = new ArrayList<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext(
+                "/api/internal/runtime-sessions/session-a/start",
+                exchange -> {
+                    starts.add(
+                            mapper.readValue(exchange.getRequestBody(), new TypeReference<>() {}));
+                    int status = starts.size() == 1 ? 204 : 410;
+                    exchange.sendResponseHeaders(status, -1);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            ControlPlaneClient client =
+                    new ControlPlaneClient(
+                            "http://localhost:" + server.getAddress().getPort(), "token", mapper);
+            var scope =
+                    new ControlPlaneClient.ManagedExecutionScope(
+                            "tenant", "task", "attempt", 2, "turn");
+            client.startManagedExecution("session-a", scope);
+            assertThat(starts)
+                    .singleElement()
+                    .satisfies(
+                            body ->
+                                    assertThat(body)
+                                            .containsEntry("agentTaskId", "task")
+                                            .containsEntry("attemptId", "attempt")
+                                            .containsEntry("dispatchGeneration", 2)
+                                            .containsEntry("turnId", "turn"));
+            assertThatThrownBy(() -> client.startManagedExecution("session-a", scope))
+                    .isInstanceOf(WebClientResponseException.Gone.class);
+            client.startManagedExecution("ordinary-conversation", null);
+            assertThat(starts).hasSize(2);
+        } finally {
+            server.stop(0);
+        }
+    }
 
     @Test
     void aTurnKeepsItsAttemptFenceAcrossLaterSessionResolves() throws Exception {
@@ -89,13 +132,23 @@ class ControlPlaneClientExecutionScopeTest {
                             ControlPlaneClient.ManagedExecutionScope::agentTaskId)
                     .containsExactly("tenant-a", "task-a");
             client.resolveSession("session-a");
-            client.appendSessionEvent(event);
+            client.sendSessionEventReport(
+                    event.sessionId(),
+                    client.sessionEventReport(
+                            event,
+                            ControlPlaneClient.eventScope(
+                                    client.managedExecutionScope(event.sessionId()))));
             client.endManagedExecution("session-a", oldScope);
             ControlPlaneClient.ManagedExecutionScope newScope =
                     client.beginManagedExecution("session-a");
             client.endManagedExecution("session-a", oldScope);
             assertThat(client.managedExecutionScope("session-a")).isEqualTo(newScope);
-            client.appendSessionEvent(event);
+            client.sendSessionEventReport(
+                    event.sessionId(),
+                    client.sessionEventReport(
+                            event,
+                            ControlPlaneClient.eventScope(
+                                    client.managedExecutionScope(event.sessionId()))));
             client.patchSessionRuntime("session-a", "idle", null, "owner-a", oldScope);
 
             assertThat(events).hasSize(2);

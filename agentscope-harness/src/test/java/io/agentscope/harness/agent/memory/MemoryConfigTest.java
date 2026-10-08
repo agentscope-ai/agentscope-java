@@ -37,7 +37,6 @@ class MemoryConfigTest {
         assertEquals(MemoryConfig.DEFAULT_CONSOLIDATION_MAX_TOKENS, cfg.consolidationMaxTokens());
         assertEquals(MemoryConfig.DEFAULT_CONSOLIDATION_MIN_GAP, cfg.consolidationMinGap());
         assertEquals(MemoryConfig.DEFAULT_DAILY_FILE_RETENTION_DAYS, cfg.dailyFileRetentionDays());
-        assertEquals(MemoryConfig.DEFAULT_SESSION_RETENTION_DAYS, cfg.sessionRetentionDays());
         assertEquals(MemoryConfig.FlushMode.ALWAYS, cfg.flushTrigger().mode());
     }
 
@@ -79,7 +78,6 @@ class MemoryConfigTest {
                         .consolidationMaxTokens(1234)
                         .consolidationMinGap(Duration.ofMinutes(15))
                         .dailyFileRetentionDays(30)
-                        .sessionRetentionDays(60)
                         .flushTrigger(MemoryConfig.FlushTrigger.throttled(Duration.ofMinutes(10)))
                         .build();
 
@@ -87,7 +85,6 @@ class MemoryConfigTest {
         assertEquals(1234, cfg.consolidationMaxTokens());
         assertEquals(Duration.ofMinutes(15), cfg.consolidationMinGap());
         assertEquals(30, cfg.dailyFileRetentionDays());
-        assertEquals(60, cfg.sessionRetentionDays());
         assertEquals(MemoryConfig.FlushMode.THROTTLED, cfg.flushTrigger().mode());
         assertEquals(Duration.ofMinutes(10), cfg.flushTrigger().minGap());
     }
@@ -125,9 +122,6 @@ class MemoryConfigTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> MemoryConfig.builder().dailyFileRetentionDays(0));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> MemoryConfig.builder().sessionRetentionDays(-5));
     }
 
     @Test

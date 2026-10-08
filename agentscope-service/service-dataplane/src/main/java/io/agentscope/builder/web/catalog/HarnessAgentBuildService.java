@@ -43,6 +43,7 @@ import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.context.ContextPolicy;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.ToolsConfig;
 import java.nio.file.Files;
@@ -65,7 +66,7 @@ import org.springframework.web.server.ResponseStatusException;
  * Data-plane agent factory: instantiates (and caches) {@link HarnessAgent} instances for managed
  * sessions.
  *
- * <p>Managed session turns build exclusively from the control-plane ({@code aistiod}) session
+ * <p>Managed session turns build exclusively from the control-plane ({@code service-controlplane}) session
  * resolve payload — {@code agentSnapshot}, {@code workspacePath}, and {@code definitionFiles}.
  * There is no JPA catalog fallback; resolve must succeed with a non-empty snapshot.
  *
@@ -90,7 +91,18 @@ public class HarnessAgentBuildService {
     /** Prefix for locally-built data-plane agent instance ids. */
     private static final String DP_AGENT_PREFIX = "dpa-";
 
-    private static final String COLLABORATION_MCP_NAME = "aistio-collaboration";
+    public static String sessionLogAgentId(ManagedSessionDto session) {
+        return DP_AGENT_PREFIX + session.ownerId() + "-" + session.agentId() + "-" + session.id();
+    }
+
+    private static final String COLLABORATION_MCP_NAME = "controlplane-collaboration";
+
+    private io.agentscope.core.session.SessionLogStore sessionLogStore;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setSessionLogStore(io.agentscope.core.session.SessionLogStore store) {
+        this.sessionLogStore = store;
+    }
 
     private final Model model;
     private final ToolEventBus toolEventBus;
@@ -139,6 +151,13 @@ public class HarnessAgentBuildService {
     public void setManagedEventLog(
             io.agentscope.builder.web.managed.service.SessionEventLog eventLog) {
         this.managedEventLog = eventLog;
+    }
+
+    private JevServiceSupport jevServiceSupport;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setJevServiceSupport(JevServiceSupport support) {
+        this.jevServiceSupport = support;
     }
 
     /** Resolves (and caches) the {@link HarnessAgent} for a managed-session turn. */
@@ -323,9 +342,16 @@ public class HarnessAgentBuildService {
         String modelName = snapshot.model();
         Integer maxIters = snapshot.maxIters();
         var skillRepos = snapshot.skillRepositories();
+        var contextPolicy = ContextPolicy.defaults();
 
         if (spec.overridesJson() != null && !spec.overridesJson().isBlank()) {
             Map<String, Object> overrides = parseOverrides(spec.overridesJson());
+            if (overrides.containsKey("contextPolicy")) {
+                if (!(overrides.get("contextPolicy") instanceof Map<?, ?> policyValues)) {
+                    throw new IllegalArgumentException("contextPolicy must be an object");
+                }
+                contextPolicy = ContextPolicy.fromMap(policyValues);
+            }
             if (overrides.get("name") instanceof String s) {
                 name = s;
             }
@@ -347,10 +373,10 @@ public class HarnessAgentBuildService {
         }
         sysPrompt = appendManagedExecutionPrompt(sysPrompt, resolved.executionContext());
 
-        String instanceId =
-                DP_AGENT_PREFIX + session.ownerId() + "-" + agentId + "-" + session.id();
+        String instanceId = sessionLogAgentId(session);
 
         HarnessAgent.Builder b = HarnessAgent.builder();
+        b.contextPolicy(contextPolicy);
         // Pin the stable namespace key to the instance id (unique across users). The display
         // name (b.name) is human-facing and may change without rewriting any composite-filesystem
         // keys.
@@ -373,6 +399,7 @@ public class HarnessAgentBuildService {
         }
         b.workspace(workspace);
         b.stateStore(agentStateStore);
+        if (sessionLogStore != null) b.sessionLogStore(sessionLogStore);
 
         List<AgentToolset> tools = snapshot.tools();
         List<McpServerSpec> mcpServers = snapshot.mcpServers();
@@ -460,6 +487,18 @@ public class HarnessAgentBuildService {
 
         b.middleware(new ToolNotificationMiddleware(toolEventBus));
         b.middleware(toolConfirmationMiddleware);
+        if (jevServiceSupport != null) {
+            jevServiceSupport.middlewares(spec.overridesJson()).forEach(b::middleware);
+            jevServiceSupport
+                    .compaction(
+                            spec.overridesJson(),
+                            new io.agentscope.extensions.judge.jev.context.FileJevContextArchive(
+                                    sharedWorkspacePaths
+                                            .resolveSessionDataPath(session.ownerId(), session.id())
+                                            .resolve("jev-context"),
+                                    20_000_000))
+                    .ifPresent(b::compaction);
+        }
 
         applyManagedSessionBuildOptions(
                 b,
@@ -600,7 +639,7 @@ public class HarnessAgentBuildService {
                     + "- Use math.evaluate to verify arithmetic. Verify other objective results"
                     + " before completing or accepting work. A worker success flag is not proof of"
                     + " accuracy.\n"
-                    + "- Use the aistio-collaboration tools for every durable read, progress"
+                    + "- Use the controlplane-collaboration tools for every durable read, progress"
                     + " update, delegation, response, and completion.\n"
                     + "- Never claim that an Issue, child task, or coordinator node changed unless"
                     + " the corresponding tool call succeeded.\n"
@@ -651,11 +690,36 @@ public class HarnessAgentBuildService {
                                                 .map(mount -> (String) mount.get("storeId"))
                                                 .toList()));
         environmentSpecFactory.applyMemoryStoreRoutes(b, buildOwnerId, filesystems);
-        if (!filesystems.isEmpty()) {
-            var memoryToolkit = new io.agentscope.core.tool.Toolkit();
-            memoryToolkit.registerTool(
-                    new io.agentscope.builder.web.managed.ManagedMemoryTools(filesystems));
-            b.toolkit(memoryToolkit);
+        var reviewTool =
+                jevServiceSupport == null
+                        ? java.util.Optional
+                                .<io.agentscope.extensions.judge.jev.review.JevCodeReviewTool>
+                                        empty()
+                        : jevServiceSupport.reviewTool(spec.overridesJson());
+        var evidenceTool =
+                jevServiceSupport == null
+                        ? java.util.Optional
+                                .<io.agentscope.extensions.judge.jev.evidence.JevEvidenceTool>
+                                        empty()
+                        : jevServiceSupport.evidenceTool(spec.overridesJson());
+        var browserTool =
+                jevServiceSupport == null
+                        ? java.util.Optional
+                                .<io.agentscope.extensions.judge.jev.browser.JevBrowserReadTool>
+                                        empty()
+                        : jevServiceSupport.browserTool(spec.overridesJson());
+        if (!filesystems.isEmpty()
+                || reviewTool.isPresent()
+                || evidenceTool.isPresent()
+                || browserTool.isPresent()) {
+            var applicationToolkit = new io.agentscope.core.tool.Toolkit();
+            if (!filesystems.isEmpty())
+                applicationToolkit.registerTool(
+                        new io.agentscope.builder.web.managed.ManagedMemoryTools(filesystems));
+            reviewTool.ifPresent(applicationToolkit::registerTool);
+            evidenceTool.ifPresent(applicationToolkit::registerTool);
+            browserTool.ifPresent(applicationToolkit::registerTool);
+            b.toolkit(applicationToolkit);
         }
         var mounts =
                 filesystems.stream()

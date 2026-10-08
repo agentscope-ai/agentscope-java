@@ -11,12 +11,12 @@ Run all commands from the monorepo root. Development continues in the existing c
 | Control plane + Dashboard | `agentscope-service-control` image | Service release version, injected into Go build |
 | Gateway / Dataplane / Scheduler | Three `agentscope-service-*` images | Service release tag; Java revision recorded separately |
 | Complete deployment | Compose archive + `agentscope-service` Helm Chart (OCI) | Service release version |
-| `agentscope`, `aistioctl`, Runtime Host | Linux/macOS amd64/arm64 archives | Service release version |
-| Java Application SDK | `io.agentscope:agentscope-extensions-aistio` and reactor dependencies | Root `revision` |
-| Python SDK | `aistio-sdk` wheel and sdist | `aistio/sdk/python/pyproject.toml` and `aistio/__init__.py` |
-| DSH plugin | `@agentscope/dsh-aistio` npm tarball | `aistio/sdk/dsh/package.json` and lockfile |
+| `as`, Runtime Host | Linux/macOS amd64/arm64 archives | Service release version |
+| Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` and reactor dependencies | Root `revision` |
+| Python SDK | `agentscope-service-sdk` wheel and sdist | `service-controlplane/sdk/python/pyproject.toml` and `service-controlplane/sdk/python/agentscope_service/__init__.py` |
+| DSH plugin | `@agentscope/dsh-controlplane` npm tarball | `service-controlplane/sdk/dsh/package.json` and lockfile |
 
-The front end is private and bundled into the control image. `service-common` and executable Service modules remain excluded from Maven Central (`maven.deploy.skip=true`); they are not required by external Java SDK users. PostgreSQL is a separately operated dependency, not an AgentScope-published image. The legacy Aistio Chart remains a separate Kubernetes-native offering. The complete Service Chart uses standalone HTTP, without ASDP gRPC.
+The front end is private and bundled into the control image. `service-common` and executable Service modules remain excluded from Maven Central (`maven.deploy.skip=true`); they are not required by external Java SDK users. PostgreSQL is a separately operated dependency, not an AgentScope-published image. The legacy Control Plane Chart remains a separate Kubernetes-native offering. The complete Service Chart uses standalone HTTP, without ASDP gRPC.
 
 ## 1. Freeze source and choose versions
 
@@ -26,16 +26,16 @@ Keep a source backup before cleanup. Generated UI files, build outputs, and raw 
 
 ## 2. Install build tools and verify
 
-Use Java 21, Maven, Go from `aistio/go.mod`, Node.js 22, Python 3.10+, Docker Buildx and Helm 3.17+ (or compatible versions).
+Use Java 21, Maven, Go from `service-controlplane/go.mod`, Node.js 22, Python 3.10+, Docker Buildx and Helm 3.17+ (or compatible versions).
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-pip install -r agentscope-service/release/requirements.txt -e 'agentscope-service/aistio/sdk/python[dev]'
+pip install -r agentscope-service/release/requirements.txt -e 'agentscope-service/service-controlplane/sdk/python[dev]'
 python agentscope-service/release/release.py verify
 ```
 
-Set `AISTIO_TEST_POSTGRES_DSN` to a **disposable test database** for PostgreSQL integration tests; never point tests at development or production data. The verifier uses `go test -p 1` so packages sharing one PostgreSQL database do not contend during concurrent-index migrations. Some Go controller tests additionally require envtest assets (`make test-integration` in `aistio`). Run the repository-wide `mvn clean verify` before release submission. The release verifier explicitly selects all three Java service modules and their dependencies: selecting only the aggregator with `-pl agentscope-service` does not test its children.
+Set `CONTROL_PLANE_TEST_POSTGRES_DSN` to a **disposable test database** for PostgreSQL integration tests; never point tests at development or production data. The verifier uses `go test -p 1` so packages sharing one PostgreSQL database do not contend during concurrent-index migrations. Some Go controller tests additionally require envtest assets (`make test-integration` in `service-controlplane`). Run the repository-wide `mvn clean verify` before release submission. The release verifier explicitly selects all three Java service modules and their dependencies: selecting only the aggregator with `-pl agentscope-service` does not test its children.
 
 ## 3. Package candidates
 
@@ -94,16 +94,16 @@ The manual `AgentScope Service release` workflow verifies and packages before bu
 After confirming package ownership, version availability and credentials:
 
 ```bash
-python -m twine check agentscope-service/release/dist/VERSION/aistio_sdk-*.whl agentscope-service/release/dist/VERSION/aistio_sdk-*.tar.gz
+python -m twine check agentscope-service/release/dist/VERSION/agentscope_service_sdk-*.whl agentscope-service/release/dist/VERSION/agentscope_service_sdk-*.tar.gz
 # Upload only the Python artifacts, never the Compose/CLI tar.gz files:
-python -m twine upload agentscope-service/release/dist/VERSION/aistio_sdk-*.whl agentscope-service/release/dist/VERSION/aistio_sdk-*.tar.gz
-npm publish agentscope-service/release/dist/VERSION/agentscope-dsh-aistio-*.tgz --access public
+python -m twine upload agentscope-service/release/dist/VERSION/agentscope_service_sdk-*.whl agentscope-service/release/dist/VERSION/agentscope_service_sdk-*.tar.gz
+npm publish agentscope-service/release/dist/VERSION/agentscope-dsh-controlplane-*.tgz --access public
 ```
 
 For an npm prerelease, use an explicit prerelease dist-tag such as `--tag next`. Review the actual Python sdist filename before uploading. Maven SDK publication uses the repository's existing release profile and signing/Central credentials:
 
 ```bash
-mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-aistio -am \
+mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-controlplane -am \
   -Drevision=JAVA_RELEASE_VERSION -Prelease deploy
 ```
 

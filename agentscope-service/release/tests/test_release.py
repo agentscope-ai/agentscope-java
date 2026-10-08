@@ -39,7 +39,7 @@ class ReleaseTests(unittest.TestCase):
     def check_frontend_placeholder(self, build_fails):
         with tempfile.TemporaryDirectory() as directory:
             service = Path(directory)
-            placeholder = service / 'aistio/ui/.gitkeep'
+            placeholder = service / 'service-controlplane/ui/.gitkeep'
             placeholder.parent.mkdir(parents=True)
             placeholder.write_bytes(b'original contents\n')
 
@@ -76,7 +76,7 @@ class ReleaseTests(unittest.TestCase):
             subprocess.run([str(script), '2.0.4', 'example.com/other'], check=True, capture_output=True)
             self.assertEqual(env.read_bytes(), initial)
             settings = dict(line.split('=', 1) for line in initial.decode().splitlines())
-            self.assertGreaterEqual(len(settings['AISTIO_BOOTSTRAP_PASSWORD']), 12)
+            self.assertGreaterEqual(len(settings['CONTROL_PLANE_BOOTSTRAP_PASSWORD']), 12)
             self.assertNotEqual(settings['BUILDER_JWT_SECRET'], settings['BUILDER_INTERNAL_TOKEN'])
 
     def test_chart_has_four_planes_shared_storage_and_no_demo_users(self):
@@ -92,8 +92,8 @@ class ReleaseTests(unittest.TestCase):
             container = pod['containers'][0]
             env = {e['name']: e['value'] for e in container['env']}
             if container['name'] == 'control':
-                self.assertEqual(env['AISTIO_SEED_USERS'], 'false')
-                self.assertEqual(env['AISTIO_ENABLE_KUBERNETES'], 'false')
+                self.assertEqual(env['CONTROL_PLANE_SEED_USERS'], 'false')
+                self.assertEqual(env['CONTROL_PLANE_ENABLE_KUBERNETES'], 'false')
             if container['name'] == 'gateway':
                 self.assertNotIn('envFrom', container)
             else:
@@ -113,7 +113,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertNotIn('build', service)
             if name != 'gateway':
                 self.assertNotIn('ports', service)
-        self.assertEqual(compose['services']['control']['environment']['AISTIO_SEED_USERS'], 'false')
+        self.assertEqual(compose['services']['control']['environment']['CONTROL_PLANE_SEED_USERS'], 'false')
 
 
 if __name__ == '__main__':

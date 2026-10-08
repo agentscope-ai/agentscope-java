@@ -25,13 +25,10 @@ import io.agentscope.claw2.web.catalog.AgentCatalogService;
 import io.agentscope.claw2.web.session.SessionReadStateStore;
 import io.agentscope.claw2.web.session.SessionTurnParser;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.session.SessionTranscriptExport;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.MsgContext;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -210,7 +207,7 @@ public class SessionController {
 
     /**
      * Authorizes a session against the URL agent. {@link SessionEntry#agentId()} holds the
-     * HarnessAgent's internal UUID (not the gateway/catalog id), so we cannot match by agent id
+     * native stable identity (older metadata used an instance UUID), so authorization does not match it
      * directly. Instead we compare the session's {@code gateKey} (which is deterministically
      * derived from {@code gatewayAgentId}) against the expected one for the URL agent.
      * Sub/group sessions that lack a {@code gateKey} are passed through (they have no inbox
@@ -244,53 +241,16 @@ public class SessionController {
         return null;
     }
 
-    /**
-     * Reads the chat content for a session. The actual transcript lives at the per-agent
-     * workspace under {@code agents/<delegate-name>/sessions/<sessionId>.log.jsonl} (written by
-     * the harness {@code MemoryFlushHook}/{@code SessionTree}). The {@link SessionAgentManager}
-     * registry stores a stale legacy path ({@code .json}) keyed by the harness UUID rooted at
-     * the main-agent workspace, so it cannot be used directly.
-     *
-     * <p>Falls back to {@link SessionAgentManager#history} when the per-agent workspace is not
-     * resolvable (e.g. the agent has been unloaded).
-     */
+    /** Builds the legacy UI history shape from the committed native session log. */
     private String readSessionLogContent(String urlAgentId, SessionEntry entry) {
-        // Look up via the gateway registry (not bootstrap.agents()): the gateway holds
-        // both built-in agents and custom agents added at runtime via
-        // AgentCatalogService.buildAndRegisterCustom, while bootstrap.agents() is a
-        // build-time-only snapshot.
         HarnessAgent ha = bootstrap.gateway().getAgent(urlAgentId);
-        if (ha != null) {
-            WorkspaceManager wm = ha.getWorkspaceManager();
-            String innerAgentId = ha.getName();
-            if (wm != null && innerAgentId != null && !innerAgentId.isBlank()) {
-                Path logFile =
-                        wm.resolveSessionLogFile(
-                                RuntimeContext.empty(), innerAgentId, entry.sessionId());
-                if (Files.isRegularFile(logFile)) {
-                    try {
-                        return Files.readString(logFile, StandardCharsets.UTF_8);
-                    } catch (Exception ignored) {
-                        // fall through to history()
-                    }
-                }
-                Path contextFile =
-                        wm.resolveSessionContextFile(
-                                RuntimeContext.empty(), innerAgentId, entry.sessionId());
-                if (Files.isRegularFile(contextFile)) {
-                    try {
-                        return Files.readString(contextFile, StandardCharsets.UTF_8);
-                    } catch (Exception ignored) {
-                        // fall through to history()
-                    }
-                }
-            }
+        if (ha != null && entry.kind() == SessionKind.MAIN) {
+            RuntimeContext rc =
+                    RuntimeContext.builder().userId(null).sessionId(entry.sessionId()).build();
+            return SessionTranscriptExport.jsonl(ha.sessionTranscript(rc));
         }
         HistoryResult raw = sessionAgentManager.history(entry.sessionKey(), 0);
-        if (raw == null || raw.error() != null) {
-            return "";
-        }
-        return raw.content() != null ? raw.content() : "";
+        return raw != null && raw.error() == null && raw.content() != null ? raw.content() : "";
     }
 
     // -----------------------------------------------------------------

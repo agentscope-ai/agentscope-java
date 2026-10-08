@@ -21,20 +21,25 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.SessionEvent;
+import io.agentscope.core.session.SessionKey;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
-import io.agentscope.harness.agent.memory.session.SessionEntry;
-import io.agentscope.harness.agent.memory.session.SessionTree;
+import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,14 +63,32 @@ class KeywordSearchModesTest {
         Files.createDirectories(workspace.resolve("memory"));
         Files.writeString(
                 workspace.resolve("memory/2026-09-08.md"), "ledger-first separate ledger-second\n");
-        Path path = manager.resolveSessionContextFile(RuntimeContext.empty(), "agent", "session");
-        Files.createDirectories(path.getParent());
-        SessionTree tree = new SessionTree(path, workspace, null);
-        tree.load();
-        tree.append(new SessionEntry.MessageEntry(null, "user", CONTENT));
-        tree.append(new SessionEntry.MessageEntry(null, "user", "only-first"));
-        tree.append(new SessionEntry.MessageEntry(null, "assistant", "only-second"));
-        tree.flush();
+        var store = new WorkspaceSessionLogStore(manager);
+        var log = store.open(new SessionKey(null, "agent", "session"), RuntimeContext.empty());
+        var writer = log.acquire("keyword-fixture", Duration.ofMinutes(2));
+        var events = new ArrayList<SessionEvent>();
+        var contents = List.of(CONTENT, "only-first", "only-second");
+        for (int index = 0; index < contents.size(); index++) {
+            MsgRole role = index == 2 ? MsgRole.ASSISTANT : MsgRole.USER;
+            Msg message =
+                    Msg.builder()
+                            .role(role)
+                            .content(TextBlock.builder().text(contents.get(index)).build())
+                            .build();
+            events.add(
+                    new SessionEvent(
+                            1,
+                            "keyword-event-" + index,
+                            index + 1,
+                            1,
+                            "message/" + role.name().toLowerCase(Locale.ROOT),
+                            "run",
+                            "turn",
+                            true,
+                            JsonUtils.getJsonCodec().toJson(Map.of("message", message))));
+        }
+        log.commit(writer, "keyword-fixture", 0, events);
+        log.release(writer);
     }
 
     private List<String> search(String query, String mode) {
@@ -81,9 +104,9 @@ class KeywordSearchModesTest {
         assertEquals(
                 sessions.sessionSearch(null, "部署 蓝鲸", null, 10),
                 sessions.sessionSearch(null, "部署 蓝鲸", null, 10, "phrase"));
-        search("部署 蓝鲸", null).forEach(result -> assertTrue(result.startsWith("No match")));
-        search("蓝鲸", null).forEach(result -> assertTrue(result.startsWith("Found")));
-        search(" 蓝鲸 ", "phrase").forEach(result -> assertTrue(result.startsWith("No match")));
+        search("部署 蓝鲸", null).forEach(result -> assertFalse(found(result), result));
+        search("蓝鲸", null).forEach(result -> assertTrue(found(result), result));
+        search(" 蓝鲸 ", "phrase").forEach(result -> assertFalse(found(result), result));
     }
 
     @ParameterizedTest
@@ -98,23 +121,20 @@ class KeywordSearchModesTest {
         "[x].+ C++,all,false"
     })
     void matchesLiteralTermsWithinOneRecord(String query, String mode, boolean found) {
-        search(query, mode)
-                .forEach(result -> assertEquals(found, result.startsWith("Found"), result));
+        search(query, mode).forEach(result -> assertEquals(found, found(result), result));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"all", "any"})
     void supportsWhitespaceAndDuplicateTerms(String mode) {
-        search(" \t蓝鲸\n部署\u3000蓝鲸\u00a0 ", mode)
-                .forEach(result -> assertTrue(result.startsWith("Found 1 matches"), result));
+        search(" \t蓝鲸\n部署\u3000蓝鲸\u00a0 ", mode).forEach(result -> assertMatchCount(1, result));
     }
 
     @Test
     void allDoesNotCombineDifferentRecords() {
         search("only-first only-second", "all")
-                .forEach(result -> assertTrue(result.startsWith("No match"), result));
-        search("only-first only-second", "any")
-                .forEach(result -> assertTrue(result.startsWith("Found 2 matches"), result));
+                .forEach(result -> assertFalse(found(result), result));
+        search("only-first only-second", "any").forEach(result -> assertMatchCount(2, result));
         assertTrue(
                 memory.memorySearch(null, "ledger-first ledger-second", "all")
                         .contains("memory/2026-09-08.md#1"));
@@ -130,18 +150,14 @@ class KeywordSearchModesTest {
     @Test
     void emptyQueriesNeverMatchEverything() {
         for (String query : new String[] {null, "", " \t\n", "\u00a0"}) {
-            search(query, "all").forEach(result -> assertFalse(result.startsWith("Found"), result));
+            search(query, "all").forEach(result -> assertFalse(found(result), result));
         }
     }
 
     @Test
     void sessionFilterAndLimitArePreserved() {
-        assertTrue(
-                sessions.sessionSearch(null, "only-first only-second", null, 1, "any")
-                        .startsWith("Found 1 matches"));
-        assertTrue(
-                sessions.sessionSearch(null, "蓝鲸", "different-agent", 10, "all")
-                        .startsWith("No matches"));
+        assertMatchCount(1, sessions.sessionSearch(null, "only-first only-second", null, 1, "any"));
+        assertEquals("[]", sessions.sessionSearch(null, "蓝鲸", "different-agent", 10, "all"));
     }
 
     @Test
@@ -159,14 +175,27 @@ class KeywordSearchModesTest {
             assertTrue(((Map<?, ?>) parameters.get("properties")).containsKey("matchMode"));
             assertFalse(((List<?>) parameters.get("required")).contains("matchMode"));
             String defaultResult = invoke(toolkit, name, Map.of("query", "蓝鲸"));
-            assertTrue(defaultResult.startsWith("Found"), name + ": " + defaultResult);
-            assertTrue(invoke(toolkit, name, Map.of("query", "部署 蓝鲸")).startsWith("No match"));
-            assertTrue(
-                    invoke(toolkit, name, Map.of("query", "部署 蓝鲸", "matchMode", "all"))
-                            .startsWith("Found"));
+            assertTrue(found(defaultResult), name + ": " + defaultResult);
+            assertFalse(found(invoke(toolkit, name, Map.of("query", "部署 蓝鲸"))));
+            assertTrue(found(invoke(toolkit, name, Map.of("query", "部署 蓝鲸", "matchMode", "all"))));
             assertTrue(
                     invoke(toolkit, name, Map.of("query", "蓝鲸", "matchMode", "invalid"))
                             .startsWith("Error:"));
+        }
+    }
+
+    private boolean found(String result) {
+        return result.startsWith("[")
+                ? !JsonUtils.getJsonCodec().fromJson(result, List.class).isEmpty()
+                : result.startsWith("Found");
+    }
+
+    private void assertMatchCount(int expected, String result) {
+        if (result.startsWith("[")) {
+            assertEquals(
+                    expected, JsonUtils.getJsonCodec().fromJson(result, List.class).size(), result);
+        } else {
+            assertTrue(result.startsWith("Found " + expected + " matches"), result);
         }
     }
 

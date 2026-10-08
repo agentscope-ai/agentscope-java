@@ -15,13 +15,13 @@
 | Dataplane | `agentscope-service-dataplane` 镜像 | 同上 |
 | Scheduler | `agentscope-service-scheduler` 镜像 | 同上 |
 | 完整部署配置 | Compose 压缩包、Helm Chart | GitHub Release 附件；Chart 同时发布到 OCI registry |
-| `agentscope`、兼容名称 `aistioctl`、Runtime Host | Linux/macOS × amd64/arm64 压缩包 | GitHub Release 附件 |
-| Java Application SDK | `io.agentscope:agentscope-extensions-aistio` 及所需依赖 | Maven Central，单独发布 |
-| Python SDK | `aistio-sdk` wheel、sdist | PyPI，单独发布 |
-| DSH 插件 | `@agentscope/dsh-aistio` npm 包 | npm，单独发布 |
+| `as`、Runtime Host | Linux/macOS × amd64/arm64 压缩包 | GitHub Release 附件 |
+| Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` 及所需依赖 | Maven Central，单独发布 |
+| Python SDK | `agentscope-service-sdk` wheel、sdist | PyPI，单独发布 |
+| DSH 插件 | `@agentscope/dsh-controlplane` npm 包 | npm，单独发布 |
 | 用户文档 | 官网 Service 专区 | 合入 `main` 后由网站工作流部署 |
 
-前端已经包含在 control 镜像中，不单独发布 npm 包。PostgreSQL 使用上游镜像或外部数据库。`service-common` 和 Service 可执行模块默认不发布到 Maven Central。完整 Service Chart 使用 standalone HTTP 模式；旧 Aistio Chart 与 ASDP gRPC 属于另一种部署形态，发布说明应区分它们。
+前端已经包含在 control 镜像中，不单独发布 npm 包。PostgreSQL 使用上游镜像或外部数据库。`service-common` 和 Service 可执行模块默认不发布到 Maven Central。完整 Service Chart 使用 standalone HTTP 模式；旧 Control Plane Chart 与 ASDP gRPC 属于另一种部署形态，发布说明应区分它们。
 
 SDK 可以独立发版。SDK 内容未变且已有兼容公开版本时，发布说明引用现有版本即可；不能为了凑齐发布清单重复上传同版本包。
 
@@ -58,7 +58,7 @@ SDK 可以独立发版。SDK 内容未变且已有兼容公开版本时，发布
 | 发布目标 | 管理员需要准备 |
 | --- | --- |
 | Maven Central | `io.agentscope` 命名空间发布权限、Central Portal user token、可用的 GPG 签名配置 |
-| PyPI | `aistio-sdk` 的发布权限；首次发布先确认包名归属；用于 Twine 的 API token |
+| PyPI | `agentscope-service-sdk` 的发布权限；首次发布先确认包名归属；用于 Twine 的 API token |
 | npm | `@agentscope` scope 和目标包发布权限；交互登录及账号要求的 2FA |
 | 官网 | 网站工作流的写权限、GitHub Pages 发布源、`java.agentscope.io` 域名配置 |
 
@@ -83,8 +83,8 @@ Service 参数不带 `v` 前缀，当前脚本不接受 `+build` 元数据。Pyt
 需要更新的源码文件：
 
 - Java：根 `pom.xml` 的 `<revision>`。初始发布准备提交中为 `2.0.3-SNAPSHOT`；发 Maven 正式制品前应确定可公开发布的非 SNAPSHOT 版本，并检查所需依赖。
-- Python：`agentscope-service/aistio/sdk/python/pyproject.toml` 的 `version` 和 `aistio/__init__.py` 的 `__version__`，两处同步。
-- DSH：在 `agentscope-service/aistio/sdk/dsh` 执行 `npm version 新版本 --no-git-tag-version`，核对 `package.json`、`package-lock.json`。
+- Python：`agentscope-service/service-controlplane/sdk/python/pyproject.toml` 的 `version` 和 `service-controlplane/sdk/python/agentscope_service/__init__.py` 的 `__version__`，两处同步。
+- DSH：在 `agentscope-service/service-controlplane/sdk/dsh` 执行 `npm version 新版本 --no-git-tag-version`，核对 `package.json`、`package-lock.json`。
 - Helm：`release.py package` 会把本次 Service 版本写入打包后的 Chart version/appVersion，无需为了打包手工修改模板中的默认版本。
 
 先完成上述调整、Release Notes 草稿和相关测试，再提交经过审核的改动。当前开发分支上的其他功能修改也必须明确是否纳入本次版本，不能用一份旧候选包代表后来改动过的源码。
@@ -111,18 +111,18 @@ git status --short
 git log -1 --oneline
 ```
 
-准备 Java 21、Maven、Go（按 `agentscope-service/aistio/go.mod`）、Node.js 22、Python 3.10+、Docker Buildx、Helm 3.17+ 或兼容版本；使用后文 GitHub CLI 命令时还需要 `gh` 并完成 `gh auth login`。
+准备 Java 21、Maven、Go（按 `agentscope-service/service-controlplane/go.mod`）、Node.js 22、Python 3.10+、Docker Buildx、Helm 3.17+ 或兼容版本；使用后文 GitHub CLI 命令时还需要 `gh` 并完成 `gh auth login`。
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r agentscope-service/release/requirements.txt \
-  -e 'agentscope-service/aistio/sdk/python[dev]'
+  -e 'agentscope-service/service-controlplane/sdk/python[dev]'
 ```
 
 ### 4.2 测试和网站构建
 
-先设置 `AISTIO_TEST_POSTGRES_DSN`，指向专门建立的临时 PostgreSQL 测试库。测试会修改数据库，不能使用开发或生产数据库。发布工作流已经提供临时 PostgreSQL。
+先设置 `CONTROL_PLANE_TEST_POSTGRES_DSN`，指向专门建立的临时 PostgreSQL 测试库。测试会修改数据库，不能使用开发或生产数据库。发布工作流已经提供临时 PostgreSQL。
 
 ```bash
 python agentscope-service/release/release.py verify
@@ -132,7 +132,7 @@ jupyter-book build docs
 python docs/scripts/check_service_docs.py
 ```
 
-`verify` 覆盖 Service Java reactor、Go、前端、Python、DSH 和 Chart 检查；不是完整仓库 `mvn clean verify` 的替代。Go 共享测试库的包按 `-p 1` 串行执行。部分 Kubernetes controller 集成测试还需要 envtest 资源，按 Aistio Makefile 的 `test-integration` 入口运行。
+`verify` 覆盖 Service Java reactor、Go、前端、Python、DSH 和 Chart 检查；不是完整仓库 `mvn clean verify` 的替代。Go 共享测试库的包按 `-p 1` 串行执行。部分 Kubernetes controller 集成测试还需要 envtest 资源，按 Control Plane Makefile 的 `test-integration` 入口运行。
 
 ### 4.3 打包和安装演练
 
@@ -249,24 +249,24 @@ python agentscope-service/release/release.py publish-chart \
 ```bash
 export RELEASE_ARTIFACT_DIR=/private/path/release-artifacts/VERSION
 python -m twine check \
-  "$RELEASE_ARTIFACT_DIR"/aistio_sdk-*.whl \
-  "$RELEASE_ARTIFACT_DIR"/aistio_sdk-*.tar.gz
+  "$RELEASE_ARTIFACT_DIR"/agentscope_service_sdk-*.whl \
+  "$RELEASE_ARTIFACT_DIR"/agentscope_service_sdk-*.tar.gz
 python -m twine upload \
-  "$RELEASE_ARTIFACT_DIR"/aistio_sdk-*.whl \
-  "$RELEASE_ARTIFACT_DIR"/aistio_sdk-*.tar.gz
+  "$RELEASE_ARTIFACT_DIR"/agentscope_service_sdk-*.whl \
+  "$RELEASE_ARTIFACT_DIR"/agentscope_service_sdk-*.tar.gz
 ```
 
-根据 Twine 提示输入 API token，或使用已配置的 keyring。不要上传整个发布目录，Compose 和 CLI 的 `.tar.gz` 不是 Python 包。发布后在新的虚拟环境中执行 `pip install aistio-sdk==实际版本` 并验证导入。
+根据 Twine 提示输入 API token，或使用已配置的 keyring。不要上传整个发布目录，Compose 和 CLI 的 `.tar.gz` 不是 Python 包。发布后在新的虚拟环境中执行 `pip install agentscope-service-sdk==实际版本` 并验证导入。
 
 ### 7.2 DSH → npm
 
 ```bash
 npm login
-npm publish "$RELEASE_ARTIFACT_DIR"/agentscope-dsh-aistio-*.tgz \
+npm publish "$RELEASE_ARTIFACT_DIR"/agentscope-dsh-controlplane-*.tgz \
   --access public --tag next
 ```
 
-RC 使用 `next`；稳定版审核通过后发布时改为 `--tag latest`。发布前核对 tarball 内的实际版本，按 npm 提示完成 2FA。发布后在独立目录安装 `@agentscope/dsh-aistio@实际版本` 并验证导入。
+RC 使用 `next`；稳定版审核通过后发布时改为 `--tag latest`。发布前核对 tarball 内的实际版本，按 npm 提示完成 2FA。发布后在独立目录安装 `@agentscope/dsh-controlplane@实际版本` 并验证导入。
 
 ### 7.3 Java → Maven Central
 
@@ -284,7 +284,7 @@ RC 使用 `next`；稳定版审核通过后发布时改为 `--tag latest`。发�
 
 ```bash
 export JAVA_RELEASE_VERSION=2.0.3-rc.1
-mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-aistio -am \
+mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-controlplane -am \
   -Drevision="$JAVA_RELEASE_VERSION" -Prelease deploy
 ```
 

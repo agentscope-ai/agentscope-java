@@ -88,9 +88,9 @@ Explicit builder methods (.stateStore(), .snapshotSpec() on FilesystemSpec, etc.
 - [MongoDB](/v2/en/integration/distributed/mongodb) — document-oriented storage, ideal for large conversation histories
 - [Alibaba Cloud OSS](/v2/en/integration/distributed/oss) — object storage, best for large-capacity snapshots
 
-## aistio Hosted Store
+## Control Plane Hosted Store
 
-When you already run an aistio control plane, it can host the coordination side of `DistributedStore` (BaseStore, sandbox lock/snapshot, MessageBus, AsyncToolRegistry, **TaskRepository**, optional **SessionTurnGate**). You still provide **one** `AgentStateStore` backend yourself (Redis / MySQL / Postgres / OSS); core exposes `getVersioned` / `saveIfVersion` optimistic concurrency, but state storage stays off the control plane.
+When you already run an AgentScope Service Control Plane, it can host the coordination side of `DistributedStore` (BaseStore, sandbox lock/snapshot, MessageBus, AsyncToolRegistry, **TaskRepository**, optional **SessionTurnGate**). You still provide **one** `AgentStateStore` backend yourself (Redis / MySQL / Postgres / OSS); core exposes `getVersioned` / `saveIfVersion` optimistic concurrency, but state storage stays off the control plane.
 
 ```java
 ControlPlaneStores cp = ControlPlaneStores.fromEnv();

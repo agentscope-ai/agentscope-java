@@ -99,11 +99,11 @@ spec:
             - {name: BUILDER_WORKSPACE_ROOT, value: /data/workspaces}
             - {name: MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS, value: never}
             {{- if eq $plane "control" }}
-            - {name: AISTIO_HTTP_BIND, value: ":8081"}
-            - {name: AISTIO_ENABLE_KUBERNETES, value: "false"}
-            - {name: AISTIO_SEED_USERS, value: "false"}
-            - {name: AISTIO_WORKSPACE_ROOT, value: /data/workspaces}
-            - {name: AISTIO_ARTIFACT_ROOT, value: /data/artifacts}
+            - {name: CONTROL_PLANE_HTTP_BIND, value: ":8081"}
+            - {name: CONTROL_PLANE_ENABLE_KUBERNETES, value: "false"}
+            - {name: CONTROL_PLANE_SEED_USERS, value: "false"}
+            - {name: CONTROL_PLANE_WORKSPACE_ROOT, value: /data/workspaces}
+            - {name: CONTROL_PLANE_ARTIFACT_ROOT, value: /data/artifacts}
             - {name: BUILDER_ALLOW_LOCAL_ENVIRONMENT, value: {{ $.Values.allowLocalEnvironment | quote }}}
             - {name: BUILDER_OAUTH_PUBLIC_URL, value: {{ $.Values.publicURL | quote }}}
             {{- else }}
