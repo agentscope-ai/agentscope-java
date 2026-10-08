@@ -28,6 +28,9 @@
     <artifactId>agentscope-copilotkit</artifactId>
     <packaging>jar</packaging>
 
+    <name>AgentScope Examples - CopilotKit</name>
+    <description>CopilotKit and AG-UI full-stack integration example</description>
+
     <dependencyManagement>
         <dependencies>
             <!-- Spring Boot BOM -->
