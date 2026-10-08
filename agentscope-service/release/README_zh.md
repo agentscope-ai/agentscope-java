@@ -58,11 +58,11 @@ SDK 可以独立发版。SDK 内容未变且已有兼容公开版本时，发布
 | 发布目标 | 管理员需要准备 |
 | --- | --- |
 | Maven Central | `io.agentscope` 命名空间发布权限、Central Portal user token、可用的 GPG 签名配置 |
-| PyPI | `agentscope-service-sdk` 的发布权限；首次发布先确认包名归属；用于 Twine 的 API token |
+| PyPI | 首次配置 `agentscope-service-sdk` 的 GitHub Pending Publisher；已有项目则配置 Trusted Publisher |
 | npm | `@agentscope-service` scope 和目标包发布权限；交互登录及账号要求的 2FA |
 | 官网 | 网站工作流的写权限、GitHub Pages 发布源、`java.agentscope.io` 域名配置 |
 
-PyPI 当前采用管理员单独发布；npm 使用第七节的独立 OIDC 工作流自动发布，无需 SDK 发布 Secret。PyPI 凭据可通过 Twine 的交互提示或 keyring 提供，避免写进命令和 Git。[PyPI 打包发布说明](https://packaging.python.org/en/latest/tutorials/packaging-projects/)、[Twine 凭据配置](https://packaging.python.org/en/latest/specifications/pypirc/)
+PyPI 和 npm 使用第七节的独立 OIDC 工作流发布，无需 SDK 发布 Secret。本地 Twine 是替代方式，凭据可通过交互提示或 keyring 提供，避免写进命令和 Git。[PyPI 打包发布说明](https://packaging.python.org/en/latest/tutorials/packaging-projects/)、[Twine 凭据配置](https://packaging.python.org/en/latest/specifications/pypirc/)
 
 npm 的发布权限和 2FA 要求由包设置决定；此处使用交互式 `npm login` / `npm publish`，按提示完成验证。[npm 官方发布认证说明](https://docs.npmjs.com/requiring-2fa-for-package-publishing-and-settings-modification/)
 
@@ -245,6 +245,27 @@ python agentscope-service/release/release.py publish-chart \
 使用第六节下载并校验过的 SDK 包。设置 `RELEASE_ARTIFACT_DIR` 为包含 wheel、sdist 和 npm tarball 的实际目录；每个 SDK 使用第三节确定的独立版本号。
 
 ### 7.1 Python → PyPI
+
+首次发布前，在 [PyPI 账号 Publishing 设置](https://pypi.org/manage/account/publishing/) 中新增 GitHub Pending Publisher：
+
+| 字段 | 填写值 |
+| --- | --- |
+| PyPI project name | `agentscope-service-sdk` |
+| Owner | `agentscope-ai` |
+| Repository | `agentscope-java` |
+| Workflow filename | `service-pypi-release.yml`，不要带 `.github/workflows/` 路径 |
+| Environment | `pypi` |
+
+工作流显示名称为 **AgentScope Service PyPI release**。它测试 Python 3.9–3.14，核对 tag/输入版本与 SDK 的两处版本声明，构建并校验 wheel/sdist，最后通过 OIDC 上传。仅上传 job 拥有 `id-token: write`，不需要 PyPI API token 或 GitHub SDK Secret；首次成功上传会创建 PyPI 项目。见 [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)。
+
+推送包含该工作流的 `v*` 或 `agentscope-service-v*` tag 会触发发布；手动入口要求工作流先进入默认分支。本次输入 `2.1.0-BETA1` 或等价的 Python 版本 `2.1.0b1`。配置 Publisher 并将工作流合入默认分支后，指定待发布的源码分支运行：
+
+```bash
+gh workflow run service-pypi-release.yml --repo agentscope-ai/agentscope-java \
+  --ref release/2.1.0-BETA1 -f version=2.1.0-BETA1
+```
+
+发布后在新的虚拟环境中执行 `pip install agentscope-service-sdk==2.1.0b1` 并验证导入。已发布版本不能重复上传。需要本地 Twine 替代方式时，先确认包名归属、版本未发布及 API token，再执行：
 
 ```bash
 export RELEASE_ARTIFACT_DIR=/private/path/release-artifacts/VERSION

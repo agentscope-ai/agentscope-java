@@ -91,7 +91,26 @@ The manual `AgentScope Service release` workflow verifies and packages before bu
 
 ## 6. Publish SDK packages
 
-After confirming package ownership, version availability and credentials:
+For Python, configure a GitHub Pending Publisher in [PyPI account Publishing settings](https://pypi.org/manage/account/publishing/) before the first upload:
+
+| Field | Value |
+| --- | --- |
+| PyPI project name | `agentscope-service-sdk` |
+| Owner | `agentscope-ai` |
+| Repository | `agentscope-java` |
+| Workflow filename | `service-pypi-release.yml` (without `.github/workflows/`) |
+| Environment | `pypi` |
+
+The `AgentScope Service PyPI release` workflow tests Python 3.9–3.14, checks that the tag/input and both SDK version declarations agree, builds and validates the wheel/sdist, and publishes through OIDC. Only the upload job has `id-token: write`; no PyPI API token or GitHub SDK secret is needed. Its first successful upload creates the PyPI project. See [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+
+It runs on `v*` and `agentscope-service-v*` tags containing the workflow, or through a manual version input once the workflow exists on the default branch. Use `2.1.0-BETA1` or the equivalent Python version `2.1.0b1` for this release. After configuring the publisher and merging the workflow into the default branch, publish the selected release source:
+
+```bash
+gh workflow run service-pypi-release.yml --repo agentscope-ai/agentscope-java \
+  --ref release/2.1.0-BETA1 -f version=2.1.0-BETA1
+```
+
+After publication, verify `pip install agentscope-service-sdk==2.1.0b1` and import the SDK in a fresh virtual environment. A published version cannot be uploaded again. For a local Twine fallback, confirm package ownership, version availability and token credentials:
 
 ```bash
 python -m twine check agentscope-service/release/dist/VERSION/agentscope_service_sdk-*.whl agentscope-service/release/dist/VERSION/agentscope_service_sdk-*.tar.gz
