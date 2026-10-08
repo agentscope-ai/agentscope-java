@@ -1,6 +1,7 @@
 ---
 title: AgentScope 2.0 是什么？
 description: Harness 工程化、企业级分布式部署、底层框架重构。
+en_link: /v2/en/docs/index
 ---
 
 AgentScope Java 2.0 从"构建一个智能体"的工具箱，迈向**面向生产环境运行智能体**的完整平台。本次升级围绕三大主题展开，每一部分都对应一个具体要解决的问题。
@@ -157,7 +158,7 @@ AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部�
 <Card title="Middleware 取代松散 Hook" href="/v2/zh/docs/building-blocks/middleware">
 
 
-`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` 五个阶段取代 v1 的扁平 hook。每个关注点各居其层，组合干净利落。
+`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` / `onAgentStateReady` 六个阶段取代 v1 的扁平 hook。每个关注点各居其层，组合干净利落。
 
 </Card>
 

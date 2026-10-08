@@ -1,5 +1,6 @@
 ---
 title: "SDK and component selection"
+zh_link: /v2/zh/service/integrations
 ---
 
 <Note>

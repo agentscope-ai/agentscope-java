@@ -1,5 +1,6 @@
 ---
 title: "External 支持的框架与自定义适配"
+en_link: /v2/en/service/external-agent-frameworks
 ---
 
 <Note>

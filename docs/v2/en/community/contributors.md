@@ -1,5 +1,6 @@
 ---
 title: Contributors
+zh_link: /v2/zh/community/contributors
 ---
 
 Thanks to everyone who contributes code, docs, and feedback to AgentScope Java. This page highlights **recently active** core contributors to the public repository (GitHub data; changes over time; bots excluded).

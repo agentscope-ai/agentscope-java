@@ -1,5 +1,6 @@
 ---
 title: "Managed Agent: create and test"
+zh_link: /v2/zh/service/create-managed-agent
 ---
 
 <Note>

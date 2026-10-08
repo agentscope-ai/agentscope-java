@@ -1,5 +1,6 @@
 ---
 title: 记忆管理
+en_link: /v1/en/docs/task/memory
 ---
 
 ## 概述

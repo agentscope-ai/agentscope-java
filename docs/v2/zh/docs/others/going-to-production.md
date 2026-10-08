@@ -2,6 +2,7 @@
 title: 上生产（Going to Production）
 description: 从单机原型到多副本分布式部署：AgentStateStore / Filesystem / Skill / Sandbox / 快照 /
   观测的组件选型与配置清单
+en_link: /v2/en/docs/others/going-to-production
 ---
 
 > 把 `HarnessAgent` 在你笔记本上跑起来很容易，搬到生产环境是另一回事——多副本要共享会话、要隔离用户、要支持不可信代码执行、要在 pod 重启后接着上次跑。本页**只讲单机 → 分布式生产的差异**：哪些组件必须换、换成什么、为什么 builder 会在你漏配时直接抛 `IllegalStateException`。
@@ -303,7 +304,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `LocalSnapshotSpec(Path)` | 本地目录 `tar` 文件 | `agentscope-harness` | 单机调试 |
 | `OssSnapshotSpec` | 阿里云 OSS | `agentscope-extensions-oss` | **大对象首选**；天然适合对象存储 |
 | `RedisSnapshotSpec` | Redis | `agentscope-extensions-redis` | 小工作区 + 短 TTL（注意 Redis 内存代价） |
-| `JdbcSnapshotSpec` | MySQL / JDBC BLOB | `agentscope-extensions-mysql` | 已有关系型数据库、不想引入额外中间件 |
+| `JdbcSnapshotSpec` | JDBC BLOB | `agentscope-extensions-jdbc` | 已有关系型数据库、不想引入额外中间件 |
 | 自实现 `RemoteSnapshotClient` → `RemoteSnapshotSpec` | S3 / GCS / MinIO | — | 不在内置列表里 |
 
 ```java

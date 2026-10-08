@@ -1,5 +1,6 @@
 ---
 title: "控制台创建 Issue 与分派任务"
+en_link: /v2/en/service/issues
 ---
 
 <Note>

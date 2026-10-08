@@ -1,5 +1,6 @@
 ---
 title: "Memory：维护共享知识"
+en_link: /v2/en/service/memory
 ---
 
 <Note>

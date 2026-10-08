@@ -20,10 +20,10 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.skill.repository.RuntimeContextSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.skill.LazyResourceCapable;
-import io.agentscope.harness.agent.skill.RuntimeContextSkillRepository;
 import io.agentscope.harness.agent.skill.SkillResources;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
 import io.agentscope.harness.agent.skill.runtime.HarnessSkillEntry;
@@ -35,10 +35,12 @@ import io.agentscope.harness.agent.skill.runtime.SkillCatalog;
 import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -211,6 +213,12 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
                                 new LinkedHashMap<>(mergeRepositories(RuntimeContext.empty())))
                         : null;
         this.runtime.prepareToolkit(toolkit);
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
     /** Visible for tests / introspection. */

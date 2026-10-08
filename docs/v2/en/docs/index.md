@@ -2,6 +2,7 @@
 title: What's AgentScope 2.0?
 description: Harness engineering, enterprise-grade distributed deployment, and a redesigned
   foundation.
+zh_link: /v2/zh/docs/index
 ---
 
 AgentScope Java 2.0 is a major step up from a "build an agent" toolkit toward a complete platform for **running agents in production**. The improvements fall into three focus areas, each solving a distinct problem.
@@ -158,7 +159,7 @@ Text, files, images, audio, video, thinking, tool results — all one `ContentBl
 <Card title="Middleware, not hooks" href="/v2/en/docs/building-blocks/middleware">
 
 
-Five stages (`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt`) replace v1's loose hooks. Each concern stays in its own layer and composes cleanly.
+Six stages (`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` / `onAgentStateReady`) replace v1's loose hooks. Each concern stays in its own layer and composes cleanly.
 
 </Card>
 

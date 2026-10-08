@@ -1,5 +1,6 @@
 ---
 title: 记忆
+en_link: /v2/en/integration/memory/index
 ---
 
 选择下方指南，了解记忆的配置与使用。

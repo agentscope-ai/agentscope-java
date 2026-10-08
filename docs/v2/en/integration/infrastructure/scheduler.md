@@ -1,5 +1,6 @@
 ---
 title: Scheduler
+zh_link: /v2/zh/integration/infrastructure/scheduler
 ---
 
 `agentscope-extensions-scheduler` runs Agents periodically — e.g. "every day at 8 AM run the daily-report Agent" or "every 5 seconds run a health-check Agent". The module abstracts a unified `AgentScheduler` interface and ships two implementations:

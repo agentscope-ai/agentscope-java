@@ -1,5 +1,6 @@
 ---
 title: Online Training
+zh_link: /v2/zh/integration/ecosystem/training
 ---
 
 `agentscope-extensions-training` plugs a Trinity-style training backend into AgentScope: it samples production traffic, collects traces, computes rewards, and periodically commits training jobs — closing the loop.

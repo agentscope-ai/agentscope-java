@@ -3,6 +3,7 @@ title: AgentScope Java v2
 description: Build distributed, enterprise-grade agents
 mode: custom
 toc: false
+zh_link: /v2/zh/intro
 ---
 
 <div className="agentscope-landing">
@@ -314,7 +315,7 @@ Middleware
 </h3>
 
 <p>
-Four onion hooks (<code>onAgent / onReasoning / onActing / onModelCall</code>) plus the <code>onSystemPrompt</code> transformer. Plug in logging, tracing, permission checks, context injection, business policy — all without forking the core.
+Four onion hooks (<code>onAgent / onReasoning / onActing / onModelCall</code>), the <code>onSystemPrompt</code> transformer, and the <code>onAgentStateReady</code> notification. Plug in logging, tracing, permission checks, context injection, business policy — all without forking the core.
 </p>
  <span className="hs-card__link">Learn about middleware →</span>
 </a>

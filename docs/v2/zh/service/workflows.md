@@ -1,5 +1,6 @@
 ---
 title: "Workflow：多 Agent 流程编排"
+en_link: /v2/en/service/workflows
 ---
 
 <Note>
