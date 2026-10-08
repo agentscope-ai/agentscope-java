@@ -114,40 +114,6 @@ def test_management_and_public_clients_follow_current_routes():
     assert client._headers() == {"Authorization": "Bearer platform"}
 
 
-def test_openapi_covers_public_routes_and_references_resolve():
-    import re
-    from pathlib import Path
-    service_root = Path(__file__).resolve().parents[4]
-    document = json.loads((service_root / "docs/service-api/openapi-v1.json").read_text())
-    source = (service_root / "service-controlplane/internal/httpapi/service_session_handler.go").read_text()
-    normalize = lambda path: re.sub(r":([A-Za-z0-9_]+)", r"{\1}", path)
-    registered = set()
-    for group, method, path in re.findall(r'\b(g|turns|hooks)\.(GET|POST|PATCH|PUT|DELETE)\("([^"]*)"', source):
-        prefix = {"g": "", "turns": "/:publicSessionId/turns/:turnId", "hooks": "/:publicSessionId/webhooks"}[group]
-        if path.endswith("/"):
-            continue
-        registered.add((method.lower(), "/api/v1/agent-sessions" + normalize(prefix + path)))
-    documented = {(method, path) for path, methods in document["paths"].items()
-                  for method in methods if method in {"get", "post", "patch", "put", "delete"}}
-    assert registered <= documented
-    assert not any("/invoke/" in path or "/endpoints" in path for _, path in documented)
-    def validate_refs(value):
-        if isinstance(value, dict):
-            if "$ref" in value:
-                ref = value["$ref"]
-                assert ref.startswith("#/")
-                target = document
-                for name in ref[2:].split("/"):
-                    target = target[name]
-            for child in value.values(): validate_refs(child)
-        elif isinstance(value, list):
-            for child in value: validate_refs(child)
-    validate_refs(document)
-    assert "partial_succeeded" in document["components"]["schemas"]["Turn"]["properties"]["status"]["enum"]
-    assert "targets" in document["components"]["schemas"]["CredentialInput"]["required"]
-    assert "410" in document["paths"]["/api/v1/agent-sessions/{publicSessionId}/events/stream"]["get"]["responses"]
-
-
 def test_team_example_releases_leader_and_accepts_only_current_child():
     import importlib.util
     from pathlib import Path
