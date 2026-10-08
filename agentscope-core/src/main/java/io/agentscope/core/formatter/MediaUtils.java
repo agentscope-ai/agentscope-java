@@ -33,6 +33,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,6 +49,7 @@ public class MediaUtils {
     // File size limits
     private static final long WARN_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
     private static final long MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
+    private static final int MAX_REDIRECTS = 5;
 
     // Supported extensions
     private static final List<String> SUPPORTED_IMAGE_EXTENSIONS =
@@ -62,7 +64,7 @@ public class MediaUtils {
 
     /**
      * Check if a URL is a local file path (not a URL with protocol scheme).
-     * Returns true for paths without http://, https://, ftp://, file:// or oss:// prefixes.
+     * Returns true for paths without http://, https://, ftp://, file: or oss:// prefixes.
      * Used to distinguish local files from remote URLs for different processing paths.
      *
      * @param url The URL or file path to check
@@ -72,11 +74,12 @@ public class MediaUtils {
         if (url == null || url.isBlank()) {
             return false;
         }
-        return !url.startsWith("http://")
-                && !url.startsWith("https://")
-                && !url.startsWith("ftp://")
-                && !url.startsWith("file://")
-                && !url.startsWith("oss://");
+        String lower = url.toLowerCase(Locale.ROOT);
+        return !lower.startsWith("http://")
+                && !lower.startsWith("https://")
+                && !lower.startsWith("ftp://")
+                && !lower.startsWith("file:")
+                && !lower.startsWith("oss://");
     }
 
     /**
@@ -89,64 +92,153 @@ public class MediaUtils {
      * @throws IOException If file cannot be read or exceeds size limit
      */
     public static String fileToBase64(String path) throws IOException {
+        return Base64.getEncoder().encodeToString(readFileBytes(path));
+    }
+
+    private static byte[] readFileBytes(String path) throws IOException {
         Path filePath = Path.of(path);
-        if (!Files.exists(filePath)) {
-            throw new IOException("File does not exist: " + path);
+        if (!Files.isRegularFile(filePath)) {
+            throw new IOException("File does not exist or is not a regular file: " + path);
         }
         if (!Files.isReadable(filePath)) {
             throw new IOException("File is not readable: " + path);
         }
         checkFileSize(path);
-        byte[] bytes = Files.readAllBytes(filePath);
-        return Base64.getEncoder().encodeToString(bytes);
+        try (InputStream input = Files.newInputStream(filePath)) {
+            // Keep the read bounded even if the file grows after the size check.
+            return readLimitedBytes(input);
+        }
     }
 
     /**
-     * Download a remote URL and convert to base64.
+     * Download a remote HTTP(S) URL and convert to base64.
      * Used for APIs that require base64 encoding instead of direct URLs (e.g., OpenAI audio).
-     * Validates downloaded size (max 50MB) and sets connection timeouts.
+     * Bounds the read to 50MB and follows at most five same-protocol redirects with connection
+     * timeouts. This method has no destination-policy callback: checking only the initial URL
+     * does not authorize redirects. Callers must enforce destination restrictions for every
+     * connection through their application's network policy, or fetch approved bytes themselves.
      *
      * @param url The remote URL to download
      * @return Base64-encoded string of downloaded content
-     * @throws IOException If download fails, exceeds size limit, or returns non-200 status
+     * @throws IOException If the scheme is unsupported, download fails, exceeds the size or
+     *     redirect limit, contains an invalid redirect, or returns non-200 status
      */
     public static String downloadUrlToBase64(String url) throws IOException {
+        return Base64.getEncoder().encodeToString(downloadUrlAsBytes(url));
+    }
+
+    private static byte[] downloadUrlAsBytes(String url) throws IOException {
+        URL remoteUrl = new URL(url);
+        if (!"http".equalsIgnoreCase(remoteUrl.getProtocol())
+                && !"https".equalsIgnoreCase(remoteUrl.getProtocol())) {
+            throw new IOException("Only HTTP(S) media downloads are supported");
+        }
         log.debug("Downloading remote URL for base64 encoding: {}", url);
 
-        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-        try {
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(10000); // 10 seconds
-            connection.setReadTimeout(30000); // 30 seconds
-            connection.connect();
+        boolean followRedirects = HttpURLConnection.getFollowRedirects();
+        for (int redirects = 0; ; redirects++) {
+            HttpURLConnection connection = (HttpURLConnection) remoteUrl.openConnection();
+            try {
+                // Handle redirects here so the hop limit is independent of JVM-wide settings.
+                connection.setInstanceFollowRedirects(false);
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(10000); // 10 seconds
+                connection.setReadTimeout(30000); // 30 seconds
+                connection.connect();
 
-            int responseCode = connection.getResponseCode();
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                throw new IOException(
-                        "Failed to download URL: HTTP " + responseCode + " for " + url);
-            }
-
-            try (InputStream is = connection.getInputStream()) {
-                byte[] bytes = is.readAllBytes();
-
-                // Check size after download
-                if (bytes.length > MAX_SIZE_BYTES) {
+                int responseCode = connection.getResponseCode();
+                boolean redirect =
+                        switch (responseCode) {
+                            case 301, 302, 303, 307, 308 -> true;
+                            default -> false;
+                        };
+                if (redirect && followRedirects) {
+                    if (redirects >= MAX_REDIRECTS) {
+                        throw new IOException(
+                                "Too many media redirects (max: " + MAX_REDIRECTS + ")");
+                    }
+                    String location = connection.getHeaderField("Location");
+                    if (location == null || location.isBlank()) {
+                        throw new IOException("Media redirect is missing a Location header");
+                    }
+                    URL target = new URL(remoteUrl, location);
+                    // Preserve HttpURLConnection's same-protocol rule, including no TLS downgrade.
+                    if (!remoteUrl.getProtocol().equalsIgnoreCase(target.getProtocol())) {
+                        throw new IOException("Media redirects must keep the same HTTP(S) scheme");
+                    }
+                    remoteUrl = target;
+                    continue;
+                }
+                if (responseCode != HttpURLConnection.HTTP_OK) {
                     throw new IOException(
-                            "Downloaded content too large: "
-                                    + bytes.length
-                                    + " bytes (max: "
-                                    + MAX_SIZE_BYTES
-                                    + ")");
-                }
-                if (bytes.length > WARN_SIZE_BYTES) {
-                    log.warn("Large download detected: {} bytes from {}", bytes.length, url);
+                            "Failed to download URL: HTTP " + responseCode + " for " + remoteUrl);
                 }
 
-                return Base64.getEncoder().encodeToString(bytes);
+                if (connection.getContentLengthLong() > MAX_SIZE_BYTES) {
+                    throw new IOException(
+                            "Downloaded content too large (max: " + MAX_SIZE_BYTES + ")");
+                }
+                try (InputStream is = connection.getInputStream()) {
+                    // Content-Length may be absent or inaccurate; enforce the limit while reading.
+                    byte[] bytes = readLimitedBytes(is);
+                    if (bytes.length > WARN_SIZE_BYTES) {
+                        log.warn(
+                                "Large download detected: {} bytes from {}",
+                                bytes.length,
+                                remoteUrl);
+                    }
+                    return bytes;
+                }
+            } finally {
+                connection.disconnect();
             }
-        } finally {
-            connection.disconnect();
         }
+    }
+
+    /**
+     * Reads a local path, file URI, or HTTP(S) URL with a 50MB limit.
+     *
+     * <p>This method reads bytes without validating their media format. Callers are responsible
+     * for authorizing local paths and remote destinations before passing untrusted input.
+     * HTTP(S) reads follow the redirect and network-policy contract of {@link #downloadUrlToBase64}.
+     *
+     * @param url local path, file URI, or remote HTTP(S) URL
+     * @return resource bytes
+     * @throws IOException if the resource cannot be read, the URI is invalid, the download scheme
+     *     is unsupported, or the size limit is exceeded
+     */
+    public static byte[] readUrlAsBytes(String url) throws IOException {
+        if (url == null || url.isBlank()) {
+            throw new IOException("Media location must not be blank");
+        }
+        if (url.regionMatches(true, 0, "file:", 0, 5)) {
+            try {
+                return readFileBytes(Path.of(URI.create(url)).toString());
+            } catch (IllegalArgumentException e) {
+                throw new IOException("Invalid file URI", e);
+            }
+        }
+        return isLocalFile(url) ? readFileBytes(url) : downloadUrlAsBytes(url);
+    }
+
+    static byte[] readLimitedBytes(InputStream input) throws IOException {
+        // Keep the initial allocation small and grow the output as content arrives.
+        byte[] buffer = new byte[64 * 1024];
+        ByteArrayOutputStream output = new ByteArrayOutputStream(buffer.length);
+        int read;
+        // Read at most one overflow byte to distinguish exact-limit content from oversized input.
+        while ((read =
+                        input.read(
+                                buffer,
+                                0,
+                                (int) Math.min(buffer.length, MAX_SIZE_BYTES - output.size() + 1)))
+                != -1) {
+            if (output.size() + read > MAX_SIZE_BYTES) {
+                throw new IOException("Media content too large (max: " + MAX_SIZE_BYTES + ")");
+            }
+            output.write(buffer, 0, read);
+        }
+        return output.toByteArray();
     }
 
     /**
@@ -226,19 +318,14 @@ public class MediaUtils {
     }
 
     /**
-     * Convert a file or web URL to a data URL with base64 encoding.
-     * @param url a local file path or web url
+     * Convert a local path, file URI, or HTTP(S) URL to a data URL with base64 encoding.
+     * Applies the same 50MB read limit as {@link #readUrlAsBytes(String)}.
+     * @param url a local file path, file URI, or HTTP(S) URL
      * @return a data URL with base64 encoding, the format is data:{mediaType};base64,{base64Data}
+     * @throws IOException if the resource cannot be read or exceeds the size limit
      */
     public static String urlToBase64DataUrl(String url) throws IOException {
-        String base64;
-        if (isFileExists(url)) {
-            // Treat as local file
-            base64 = fileToBase64(url);
-        } else {
-            // Treat as web URL
-            base64 = downloadUrlToBase64(url);
-        }
+        String base64 = Base64.getEncoder().encodeToString(readUrlAsBytes(url));
 
         String mediaType = determineMediaType(url);
         return String.format("data:%s;base64,%s", mediaType, base64);
@@ -317,6 +404,7 @@ public class MediaUtils {
 
     /**
      * Validate that an image file has a supported extension.
+     * This is a format-routing check only; it does not inspect content or authorize file access.
      */
     public static void validateImageExtension(String url) {
         String ext = getExtension(url).toLowerCase();

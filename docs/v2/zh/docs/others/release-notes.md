@@ -8,6 +8,26 @@ en_link: /v2/en/docs/others/release-notes
 
 ---
 
+## 未发布
+
+### 媒体来源迁移说明
+
+- `MediaUtils.downloadUrlToBase64` 仅接受 HTTP(S)，不支持的协议现在会抛出 `IOException`。
+  本地路径可使用 `fileToBase64`；本地路径、`file:` URI 或 HTTP(S) 可使用
+  `urlToBase64DataUrl`（返回 data URL）或 `readUrlAsBytes`（返回原始字节）。这些读取方法
+  不支持 `jar:` 等其他协议；如有需要，请在应用代码中读取经过授权的内容。
+- 共享字节/base64 读取方法及 Gemini URL 来源会在读取过程中执行 50MB 上限，包括没有
+  `Content-Length` 的响应。HTTP(S) 下载最多跟随五次同协议重定向，超长重定向链及无效
+  重定向会抛出 `IOException`。应用必须对每个目标执行网络访问限制，仅检查初始 URL 并不足够。
+- Gemini 根据支持的 MIME 类型校验显式媒体提示，并将 `image/jpg` 规范化为 `image/jpeg`。
+  MIME 提示不会启用不支持的格式，也不能替代访问授权。
+
+模型提供方行为及应用职责请参阅
+[媒体来源处理](/v2/zh/docs/building-blocks/message-and-event#媒体来源处理)
+（[#3319](https://github.com/agentscope-ai/agentscope-java/pull/3319)）。
+
+---
+
 ## 2.0.1
 
 > 发布日期：2026-08-05

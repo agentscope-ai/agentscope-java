@@ -60,6 +60,31 @@ Role constraints are enforced at construction: `USER` only allows text/data/imag
 </Note>
 
 
+### Media source handling
+
+`URLSource` can reference a local path, a `file:` URI, or a remote HTTP(S) URL.
+Set `mimeType` for extension-less locations such as signed download endpoints; DashScope image
+conversion and Gemini media conversion honor this hint. Query strings and fragments are excluded
+from extension inference.
+
+Converters may forward a remote URL or load its bytes into the request, depending on the provider.
+Gemini URL sources and the `MediaUtils` byte/base64 readers enforce a 50MB read limit, including
+responses without a `Content-Length` header. This limit does not apply to media fetched directly
+by a provider from a forwarded URL.
+
+`URLSource` does not restrict file access to a workspace or enforce a destination allowlist.
+Local content may be sent to the model provider. Applications that accept untrusted references
+must authorize local paths and network destinations, including redirect targets, before conversion.
+MIME hints and extension checks are routing metadata; they do not verify the actual file format.
+
+The shared HTTP(S) reader follows at most five same-protocol redirects. This cap is not a
+destination allowlist, and the reader has no per-hop authorization callback. Checking only the
+initial URL is insufficient: enforce restrictions on every connection through an outbound network
+policy, or fetch approved content in application code and pass it as a `Base64Source`.
+
+For migration details on the download methods and supported schemes, see the
+[media source migration notes](/v2/en/docs/others/release-notes#media-source-migration).
+
 ### Creating a message
 
 The role-pinned subclasses (`io.agentscope.core.message.UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage`) provide convenient constructors. When `content` is a plain string, it is wrapped in a `TextBlock` automatically.
