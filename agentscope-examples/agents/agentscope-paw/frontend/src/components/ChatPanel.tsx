@@ -79,6 +79,10 @@ const S: Record<string, React.CSSProperties> = {
 
 let counter = 0;
 const nextId = () => `m${Date.now().toString(36)}-${counter++}`;
+const mintConversationId = () =>
+  (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 const STORAGE_PREFIX = 'claw_chat_session:';
 const storageKey = (agentId: string) => `${STORAGE_PREFIX}${agentId}`;
@@ -128,48 +132,46 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     }
   }, [agentId]);
 
-  // On agent change: pick a session (URL > localStorage > backend default) and rehydrate.
+  // URL session wins (clicking a Sessions row). Always hydrate turns when a key is present —
+  // do not wait on currentSession.exists; that check recomputes a routing key and can be false
+  // even when the inbox row already showed a preview.
+  const urlSession = searchParams.get('session');
   useEffect(() => {
+    if (urlSession && urlSession === sessionKey) {
+      return;
+    }
     let cancelled = false;
     setMessages([]);
     setInput('');
     setRestoring(true);
 
-    const urlKey = searchParams.get('session');
     const stored = (() => { try { return localStorage.getItem(storageKey(agentId)); } catch { return null; } })();
-    const initialKey = urlKey || stored || null;
 
     async function run() {
-      let key: string | null = initialKey;
-      let exists = false;
-      try {
-        if (!key) {
-          const cur = await currentSession(agentId);
-          key = cur.sessionKey;
-          exists = cur.exists;
-        } else {
-          // We have a candidate; just check whether the backend has turns.
-          const cur = await currentSession(agentId);
-          exists = cur.exists && cur.sessionKey === key;
+      let key: string | null = urlSession;
+      if (!key) {
+        try {
+          const cur = await currentSession(agentId, stored ?? undefined);
+          key = cur.sessionKey || stored || null;
+        } catch {
+          key = stored || null;
         }
-      } catch {
-        // ignore — a missing session is fine, we just start empty
       }
       if (cancelled) return;
       setSessionKey(key);
-      if (key && exists) {
+      persistSession(key);
+      if (key) {
         try {
           const list = await fetchTurns(agentId, key);
           if (cancelled) return;
           setMessages(turnsToMessages(list));
         } catch {
-          // tolerate failure: empty thread
+          // missing/empty session is fine — start empty
         }
       }
       if (cancelled) return;
       setRestoring(false);
-      // Reflect the resolved key in the URL (replace so we don't pollute history).
-      if (key && key !== urlKey) {
+      if (key && key !== urlSession) {
         const next = new URLSearchParams(searchParams);
         next.set('session', key);
         setSearchParams(next, { replace: true });
@@ -178,7 +180,7 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     run();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId]);
+  }, [agentId, urlSession]);
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
@@ -195,8 +197,17 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     const replyMsg: Message = { id: nextId(), role: 'assistant', text: '', tools: [], pending: true };
     setMessages(prev => [...prev, userMsg, replyMsg]);
 
+    const conversationId = sessionKey ?? mintConversationId();
+    if (!sessionKey) {
+      setSessionKey(conversationId);
+      persistSession(conversationId);
+      const next = new URLSearchParams(searchParams);
+      next.set('session', conversationId);
+      setSearchParams(next, { replace: true });
+    }
+
     try {
-      for await (const evt of stream(agentId, { message: text, sessionKey: sessionKey ?? undefined })) {
+      for await (const evt of stream(agentId, { message: text, sessionKey: conversationId })) {
         if (evt.type === 'token') {
           const chunk = evt.data ?? '';
           setMessages(prev => prev.map(m => m.id === replyMsg.id ? { ...m, text: m.text + chunk } : m));
@@ -261,25 +272,16 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
 
   function handleNewChat() {
     if (busy) return;
-    if (messages.length > 0 && !confirm('Start a new chat? The current thread will be cleared (a /reset will be sent to the agent).')) {
+    if (messages.length > 0 && !confirm('Start a new chat? The current conversation stays in Sessions.')) {
       return;
     }
-    setMessages([{
-      id: nextId(),
-      role: 'system',
-      text: 'New chat started. Previous turns have been cleared.',
-      tools: [],
-    }]);
-    // Send /reset in the background so the harness clears its in-memory turn history too.
-    (async () => {
-      try {
-        for await (const _ of stream(agentId, { message: '/reset', sessionKey: sessionKey ?? undefined })) {
-          // drain
-        }
-      } catch {
-        // best-effort
-      }
-    })();
+    const fresh = mintConversationId();
+    setMessages([]);
+    setSessionKey(fresh);
+    persistSession(fresh);
+    const next = new URLSearchParams(searchParams);
+    next.set('session', fresh);
+    setSearchParams(next, { replace: true });
   }
 
   return (
@@ -307,7 +309,7 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
           style={S.iconBtn}
           onClick={handleNewChat}
           disabled={busy}
-          title="Clear this thread and start fresh"
+          title="Start a new conversation; the previous one stays in Sessions"
         >
           ✨ New chat
         </button>
@@ -318,7 +320,7 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
         )}
         {!restoring && messages.length === 0 && (
           <div style={S.empty}>
-            Start a new conversation. Try <code style={{ background: '#e2e8f0', padding: '1px 6px', borderRadius: 4 }}>/reset</code> to clear the session.
+            Start a new conversation. Use <strong>New chat</strong> to keep the previous one in Sessions.
           </div>
         )}
         {messages.map(m => (
