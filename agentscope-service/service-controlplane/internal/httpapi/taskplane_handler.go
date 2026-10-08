@@ -114,7 +114,7 @@ func (s *Server) createRuntimeHostEnrollmentToken(c *gin.Context) {
 }
 
 // exchangeRuntimeHostEnrollment is the narrow public bootstrap boundary used
-// by `agentscope connect`. The enrollment token supplies the scope; callers
+// by `as connect`. The enrollment token supplies the scope; callers
 // can supply only the local host identity.
 func (s *Server) exchangeRuntimeHostEnrollment(c *gin.Context) {
 	claims, err := s.runtimeTokens.VerifyEnrollment(requestBearerToken(c), time.Now().UTC())
@@ -187,7 +187,7 @@ func automaticRuntimeProfileName(provider string) string {
 }
 
 // automaticRuntimeProfileConfiguration is the safe, usable baseline applied
-// when `agentscope connect` discovers a provider for the first time. These
+// when `as connect` discovers a provider for the first time. These
 // values describe AgentScope's headless execution contract, not the user's
 // ambient CLI preferences. Per-Agent settings may layer stricter or more
 // specific values over this profile.

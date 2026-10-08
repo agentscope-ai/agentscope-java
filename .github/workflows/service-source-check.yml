@@ -58,6 +58,7 @@ jobs:
           go test -p 1 ./...
           go vet ./...
           make build
+          ./bin/as version | grep '^as version '
       - name: Verify Python SDK
         working-directory: agentscope-service/service-controlplane/sdk/python
         run: |

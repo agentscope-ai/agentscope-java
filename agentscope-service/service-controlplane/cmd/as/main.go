@@ -40,7 +40,7 @@ func defaultAPIEndpoint() string {
 }
 
 func main() {
-	commandName := "agentscope"
+	commandName := "as"
 	rootCmd := &cobra.Command{
 		Use:   commandName,
 		Short: "CLI for AgentScope",

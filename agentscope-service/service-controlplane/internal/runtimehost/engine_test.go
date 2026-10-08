@@ -330,11 +330,11 @@ func TestAppendRuntimeContextRejectsUnsupportedTeamLeader(t *testing.T) {
 func TestAppendRuntimeContextAllowsShellCollaborationFallback(t *testing.T) {
 	task := &controlmodel.AgentTask{LeaderTask: true}
 	prompt, err := appendRuntimeContext("do work", task,
-		provider.Descriptor{Shell: provider.Capability{Supported: true}}, "", "/opt/agentscope", "token")
+		provider.Descriptor{Shell: provider.Capability{Supported: true}}, "", "/opt/as", "token")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"agentscope task context", "agentscope task run graph", "fallback"} {
+	for _, required := range []string{"as task context", "as task run graph", "fallback"} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("runtime prompt is missing %q: %s", required, prompt)
 		}

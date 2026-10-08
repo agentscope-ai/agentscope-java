@@ -107,7 +107,7 @@ func localRuntimeStatusCmd() *cobra.Command {
 			config, err := loadLocalRuntimeConfig(path)
 			if err != nil {
 				fmt.Fprintln(cmd.OutOrStdout(), "Status: not connected")
-				fmt.Fprintln(cmd.OutOrStdout(), "Run `agentscope connect` to configure this machine.")
+				fmt.Fprintln(cmd.OutOrStdout(), "Run `as connect` to configure this machine.")
 				return nil
 			}
 			pid, running := localRuntimeProcessState(config)
@@ -290,7 +290,7 @@ func resolveRuntimeHostBinary(config *localRuntimeConfig) (string, error) {
 	if path := firstRunnableBinary(candidates); path != "" {
 		return path, nil
 	}
-	return "", fmt.Errorf("agentscope-runtime-host was not found; install it next to the agentscope CLI or pass `agentscope connect --runtime-host-binary PATH`")
+	return "", fmt.Errorf("agentscope-runtime-host was not found; install it next to the as CLI or pass `as connect --runtime-host-binary PATH`")
 }
 
 func runtimeHostEnvironment(config *localRuntimeConfig) []string {

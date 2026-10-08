@@ -124,13 +124,13 @@ Service 在后台派发 Leader 和成员任务，并将它们的进度整理到�
 Runtime Host 在任务执行中注入范围凭据和上下文。支持 Shell 的 provider 可以使用：
 
 ```bash
-agentscope task context
-agentscope issue current
-agentscope task progress --content-file ./progress.md
-agentscope task respond --content-file ./reply.md
-agentscope artifact upload ./report.md
-agentscope team current
-agentscope task run graph
+as task context
+as issue current
+as task progress --content-file ./progress.md
+as task respond --content-file ./reply.md
+as artifact upload ./report.md
+as team current
+as task run graph
 ```
 
 这些命令在 Host 启动的任务环境中运行，不是在管理员普通终端里通过复制内部令牌模拟运行。MCP provider 可使用对应 collaboration 工具。Coordinator 使用节点完成/失败能力明确交付结果；普通回复不能替代流程收敛。

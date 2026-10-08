@@ -23,7 +23,7 @@
 | 修复后设置专用 PG DSN，同命令全套 | PASS：38 个测试包，13 个无测试包；所有启用的 PG 集成用例真实执行 | `/tmp/agentscope-go-regression-postgres-fixed-20261002.log` |
 | `go test -p 2 -count=1 -v ./internal/store/postgres -run TestServiceMigrations` | PASS：2 项 | `/tmp/agentscope-go-regression-migrations-20261002.log` |
 | `go test -p 2 -count=1 -v ./internal/httpapi -run TestServicePostgres` | PASS：3 项 | `/tmp/agentscope-go-regression-replicas-20261002.log` |
-| `go build -p 4 ./cmd/service-controlplane ./cmd/agentscope ./cmd/agentscope-runtime-host` | PASS | `/tmp/agentscope-go-regression-build-20261002.log` |
+| `go build -p 4 ./cmd/service-controlplane ./cmd/as ./cmd/agentscope-runtime-host` | PASS | `/tmp/agentscope-go-regression-build-20261002.log` |
 | `go test -race -p 2 -count=1 ./internal/asdp ./internal/controller ./internal/invocation ./internal/store/memory ./internal/store/postgres ./internal/httpapi`，专用 PG DSN | PASS：6 个包，无 race 报告 | `/tmp/agentscope-go-regression-race-20261002.log` |
 | 设置本轮下载的 `KUBEBUILDER_ASSETS` 后 `go test -p 2 -count=1 -v ./internal/controller` | PASS：28 个顶层测试、32 个含子测试结果，0 skip；真实隔离 etcd/apiserver | `/tmp/agentscope-go-regression-envtest-20261002.log` |
 | `go test -p 2 -count=1 -v ./internal/httpapi -run TestServicePostgresASDPCapability`，专用 PG DSN | PASS；包含池大小 1 的回归 | `/tmp/agentscope-go-regression-capabilities-pool-20261002.log` |

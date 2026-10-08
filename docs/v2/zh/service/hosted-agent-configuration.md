@@ -14,11 +14,11 @@ en_link: /v2/en/service/hosted-agent-configuration
 ## 连接参数
 
 ```bash
-agentscope connect https://agentscope.example.com \
+as connect https://agentscope.example.com \
   --providers codex,qoder \
   --pool coding-default \
   --capacity 1
-agentscope runtime probe
+as runtime probe
 ```
 
 示例只发现并暴露所选 provider；对应 CLI 必须已安装、登录并可执行。

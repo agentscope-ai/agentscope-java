@@ -108,7 +108,7 @@ func main() {
 	}
 	agentScopeBinary = resolveAgentScopeBinary(agentScopeBinary)
 	if agentScopeBinary == "" {
-		slog.Warn("agentscope CLI was not found; shell-only providers cannot use task collaboration fallback")
+		slog.Warn("as CLI was not found; shell-only providers cannot use task collaboration fallback")
 	}
 	engine := &runtimehost.Engine{
 		Config: runtimehost.Config{
@@ -146,20 +146,29 @@ func resolveAgentScopeBinary(configured string) string {
 		return ""
 	}
 	if self, err := os.Executable(); err == nil {
-		for _, name := range []string{"agentscope"} {
+		for _, name := range []string{"as"} {
 			candidate := filepath.Join(filepath.Dir(self), name)
-			if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 && isAgentScopeCLI(candidate) {
 				return candidate
 			}
 		}
 	}
-	for _, name := range []string{"agentscope"} {
-		if path, err := exec.LookPath(name); err == nil {
+	for _, name := range []string{"as"} {
+		if path, err := exec.LookPath(name); err == nil && isAgentScopeCLI(path) {
 			absolute, _ := filepath.Abs(path)
 			return absolute
 		}
 	}
 	return ""
+}
+
+// The system assembler is also named as. Automatic discovery must distinguish it
+// from the AgentScope CLI before exposing it to agent processes.
+func isAgentScopeCLI(binary string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, binary, "version").Output()
+	return err == nil && strings.HasPrefix(strings.TrimSpace(string(output)), "as version ")
 }
 
 func writeReadyFile(path string, host *controlmodel.RuntimeHost) error {

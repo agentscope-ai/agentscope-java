@@ -46,7 +46,7 @@ func runtimeEnrollmentTokenCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "enrollment-token", Short: "Create scoped Runtime Host enrollment tokens"}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "create",
-		Short: "Create a short-lived enrollment token for `agentscope connect`",
+		Short: "Create a short-lived enrollment token for `as connect`",
 		RunE: func(*cobra.Command, []string) error {
 			body, err := json.Marshal(map[string]string{"tenant": tenant, "namespace": namespace})
 			if err != nil {
@@ -100,12 +100,12 @@ func runtimeDiagnoseCmd() *cobra.Command {
 			if err := runtimeGetJSON("/api/v1/orchestration-runs/"+runID+"/events?limit=500", &events); err != nil {
 				return err
 			}
-			recommendation := "Inspect the provider events and daemon logs with `agentscope runtime logs -f`."
+			recommendation := "Inspect the provider events and daemon logs with `as runtime logs -f`."
 			switch attemptResponse.Attempt.FailureCode {
 			case "provider_permission_denied":
 				recommendation = "The provider refused a required tool. Check the Agent hosted Settings allowlist and the resolved RuntimeProfile."
 			case "provider_unavailable":
-				recommendation = "Run `agentscope runtime probe` and reconnect so the provider is detected and registered."
+				recommendation = "Run `as runtime probe` and reconnect so the provider is detected and registered."
 			case "workspace_prepare_failed", "definition_materialize_failed":
 				recommendation = "Check the workspace root permissions and daemon logs for this Attempt ID."
 			}

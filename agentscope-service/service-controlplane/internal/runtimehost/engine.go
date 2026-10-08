@@ -449,10 +449,10 @@ func appendRuntimeContext(prompt string, task *controlmodel.AgentTask, descripto
 			"Prefer the agentscope-collaboration MCP tools to read the current Issue, post progress, share artifacts, and coordinate durable follow-up work."
 	}
 	if cliAvailable {
-		prompt += "\nThe task-scoped `agentscope` CLI is also available through your shell. " +
-			"Use `agentscope task context`, `agentscope issue current`, `agentscope task progress --content-file <path>`, " +
-			"`agentscope task respond --content-file <path>`, and `agentscope task run graph` as a fallback or for file-based results. " +
-			"Run `agentscope task --help` for the complete task-scoped command surface."
+		prompt += "\nThe task-scoped `as` CLI is also available through your shell. " +
+			"Use `as task context`, `as issue current`, `as task progress --content-file <path>`, " +
+			"`as task respond --content-file <path>`, and `as task run graph` as a fallback or for file-based results. " +
+			"Run `as task --help` for the complete task-scoped command surface."
 	}
 	if task != nil && task.TeamID != nil {
 		prompt += "\nYou are participating in Team " + task.TeamID.String()

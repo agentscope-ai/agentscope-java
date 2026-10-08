@@ -19,9 +19,9 @@ Hosted 可以独立调用，也可以加入 Managed Lead 协调的团队。Runti
 在目标主机安装并登录要使用的 provider，确认它本身能够完成一次请求，再按 [Runtime Host 安装指南](/v2/zh/service/runtime-host) 安装 CLI：
 
 ```bash
-agentscope connect https://agentscope.example.com
-agentscope runtime status
-agentscope runtime probe
+as connect https://agentscope.example.com
+as runtime status
+as runtime probe
 ```
 
 CLI 帮你完成身份交换、保存本机配置和启动守护进程。需要自动化接入服务器时，可由有权限的平台账户调用 `POST /api/v1/runtime-host-enrollment-tokens`，传入 `tenant`、`namespace` 获取短期 `enrollmentToken`，交给目标主机的 `AGENTSCOPE_ENROLLMENT_TOKEN` 后再执行 connect。主机身份交换和运行协议也有 API，普通业务应用无需自行实现这些守护进程逻辑。

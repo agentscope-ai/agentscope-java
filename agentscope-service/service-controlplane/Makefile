@@ -34,15 +34,15 @@ all: build
 build:
 	go build -o bin/service-controlplane ./cmd/service-controlplane
 	go build -o bin/agentscope-runtime-host ./cmd/agentscope-runtime-host
-	go build -o bin/agentscope ./cmd/agentscope
+	go build -o bin/as ./cmd/as
 
 build-runtime-cli:
 	go build -o bin/agentscope-runtime-host ./cmd/agentscope-runtime-host
-	go build -o bin/agentscope ./cmd/agentscope
+	go build -o bin/as ./cmd/as
 
 install-runtime-cli: build-runtime-cli
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	install -m 0755 bin/agentscope $(DESTDIR)$(PREFIX)/bin/agentscope
+	install -m 0755 bin/as $(DESTDIR)$(PREFIX)/bin/as
 	install -m 0755 bin/agentscope-runtime-host $(DESTDIR)$(PREFIX)/bin/agentscope-runtime-host
 
 run: build

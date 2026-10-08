@@ -19,9 +19,9 @@ Hosted Agents work independently or join a team coordinated by a Managed Lead. R
 Install and authenticate the provider on the target machine, and verify that it can complete a request. Install the CLI using the [Runtime Host guide](/v2/en/service/runtime-host), then run:
 
 ```bash
-agentscope connect https://agentscope.example.com
-agentscope runtime status
-agentscope runtime probe
+as connect https://agentscope.example.com
+as runtime status
+as runtime probe
 ```
 
 The CLI handles identity exchange, local configuration, and the daemon. For unattended servers, an authorized platform account can call `POST /api/v1/runtime-host-enrollment-tokens` with `tenant` and `namespace` to obtain a short-lived `enrollmentToken`. Supply it as `AGENTSCOPE_ENROLLMENT_TOKEN` on the target host before connecting. Host enrollment and execution also have APIs; business applications do not need to reimplement the daemon.

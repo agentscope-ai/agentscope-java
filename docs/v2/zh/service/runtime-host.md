@@ -11,7 +11,7 @@ Runtime Host 运行在安装 Coding Agent 的电脑或服务器上。控制面�
 
 ## 安装
 
-从同一 Service Release 下载对应操作系统和 CPU 架构的 `agentscope-cli-VERSION-OS-ARCH.tar.gz`，核对校验和后解压。包中包含 `agentscope`、别名 `agentscope` 和 `agentscope-runtime-host`。将三个可执行文件放在同一个 PATH 目录中。
+从同一 Service Release 下载对应操作系统和 CPU 架构的 `agentscope-cli-VERSION-OS-ARCH.tar.gz`，核对校验和后解压。包中包含 `as` 和 `agentscope-runtime-host`。将两个可执行文件放在同一个 PATH 目录中。
 
 按目标机器和发布清单选择 Linux/macOS 的 amd64 或 arm64 包。provider 本身需要另行安装、登录并确认可运行。
 
@@ -22,7 +22,7 @@ Runtime Host 运行在安装 Coding Agent 的电脑或服务器上。控制面�
 ```bash
 mkdir -p agentscope-cli "$HOME/.local/bin"
 tar -xzf agentscope-cli-VERSION-OS-ARCH.tar.gz -C agentscope-cli
-install -m 0755 agentscope-cli/agentscope agentscope-cli/agentscope agentscope-cli/agentscope-runtime-host "$HOME/.local/bin/"
+install -m 0755 agentscope-cli/as agentscope-cli/agentscope-runtime-host "$HOME/.local/bin/"
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -31,9 +31,9 @@ export PATH="$HOME/.local/bin:$PATH"
 ## 连接
 
 ```bash
-agentscope connect https://agentscope.example.com
-agentscope runtime status
-agentscope runtime probe
+as connect https://agentscope.example.com
+as runtime status
+as runtime probe
 ```
 
 按 CLI 提示完成登录或 enrollment。连接会保存本机配置并启动守护进程；用户正常使用无需反复传递共享内部令牌。
@@ -41,9 +41,9 @@ agentscope runtime probe
 ## 日常操作
 
 ```bash
-agentscope runtime logs
-agentscope runtime stop
-agentscope runtime start
+as runtime logs
+as runtime stop
+as runtime start
 ```
 
 配置与状态默认在 `~/.agentscope/runtime-host/`。保留 Host 身份和状态文件，避免把已有主机错误地注册为新实例。不要把该目录当成公开的配置样例。
@@ -57,7 +57,7 @@ Runtime Host 不是托管 Agent 的 Hands Worker；有关执行环境见 [执行
 由有权限的操作者生成短期 enrollment token，再交给待连接主机使用：
 
 ```bash
-agentscope runtime enrollment-token create
+as runtime enrollment-token create
 ```
 
 在目标主机将该值放入 `AGENTSCOPE_ENROLLMENT_TOKEN` 环境变量，再执行 connect。服务交换出绑定 Host 身份和范围的凭据。不要把 enrollment token 或 `config.json` 放进共享脚本。
@@ -66,13 +66,13 @@ agentscope runtime enrollment-token create
 
 | 命令 | 用途 |
 | --- | --- |
-| `agentscope connect URL` | 登录/注册本机，保存配置并启动 daemon |
-| `agentscope runtime status` | 查看运行状态 |
-| `agentscope runtime probe` | 检查 provider 可用性 |
-| `agentscope runtime logs -f` | 跟踪日志 |
-| `agentscope runtime restart` | 重启 daemon |
-| `agentscope runtime stop` / `start` | 停止或启动 |
-| `agentscope connect --help` | 查看该版本提供的高级参数 |
+| `as connect URL` | 登录/注册本机，保存配置并启动 daemon |
+| `as runtime status` | 查看运行状态 |
+| `as runtime probe` | 检查 provider 可用性 |
+| `as runtime logs -f` | 跟踪日志 |
+| `as runtime restart` | 重启 daemon |
+| `as runtime stop` / `start` | 停止或启动 |
+| `as connect --help` | 查看该版本提供的高级参数 |
 
 配置目录中的 `config.json` 含连接身份，`state/host.id` 保存稳定 Host ID，`daemon.log` 用于排障，`workspaces/` 保存任务工作目录。升级 CLI 前检查活跃任务，再替换配套二进制并重新启动，保留这些持久状态。
 
@@ -102,7 +102,7 @@ curl -sS "$SERVICE_URL/api/v1/runtime-host-enrollment-tokens" \
   -d '{"tenant":"default","namespace":"default"}'
 ```
 
-把响应的 `enrollmentToken` 安全地传到目标主机，再运行 `agentscope connect`，无需业务应用手动调用 Host register、heartbeat 或 claim。
+把响应的 `enrollmentToken` 安全地传到目标主机，再运行 `as connect`，无需业务应用手动调用 Host register、heartbeat 或 claim。
 
 ### Runtime Host 协议接口
 
@@ -154,7 +154,7 @@ Host 保留日志、provider 会话标识和 checkpoint，用于支持的恢复�
 
 取消会向执行链路传播，应检查 Attempt 终态以及 provider 进程是否结束。重试是新的 Attempt；只有符合恢复条件时才使用原 provider 会话。跨后端 fresh fallback 依赖持久 Issue、评论和 Artifact 重建上下文，不能搬迁进程内记忆。
 
-使用 `agentscope runtime logs -f` 配合 Task/Attempt 诊断。若无任务可领，检查范围、池、绑定、容量与所需能力；若领取后失败，检查 provider 登录、参数、工作目录和工具依赖。
+使用 `as runtime logs -f` 配合 Task/Attempt 诊断。若无任务可领，检查范围、池、绑定、容量与所需能力；若领取后失败，检查 provider 登录、参数、工作目录和工具依赖。
 
 相关：[安装连接](/v2/zh/service/runtime-host) · [支持的 provider](/v2/zh/service/hosted-agent-configuration#hosted-agent-providers) · [Team 协作](/v2/zh/service/create-team#team-collaboration)。
 

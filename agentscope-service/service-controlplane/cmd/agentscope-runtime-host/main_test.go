@@ -43,12 +43,40 @@ func TestConfiguredProviders(t *testing.T) {
 }
 
 func TestResolveAgentScopeBinaryAcceptsExplicitExecutable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "agentscope")
+	path := filepath.Join(t.TempDir(), "as")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	got := resolveAgentScopeBinary(path)
 	if got != path {
 		t.Fatalf("resolved=%q want=%q", got, path)
+	}
+}
+
+func TestAutomaticCLIDiscoveryRejectsSystemAssembler(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		script string
+		found  bool
+	}{
+		{"AgentScope", "#!/bin/sh\nprintf 'as version 2.0.5\\n'\n", true},
+		{"assembler", "#!/bin/sh\nprintf 'GNU assembler 2.43\\n'\n", false},
+		{"invalidVersionCommand", "#!/bin/sh\nexit 1\n", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			binary := filepath.Join(directory, "as")
+			if err := os.WriteFile(binary, []byte(test.script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", directory)
+			got := resolveAgentScopeBinary("auto")
+			if test.found && got != binary {
+				t.Fatalf("resolved=%q want=%q", got, binary)
+			}
+			if !test.found && got != "" {
+				t.Fatalf("non-AgentScope executable selected: %q", got)
+			}
+		})
 	}
 }

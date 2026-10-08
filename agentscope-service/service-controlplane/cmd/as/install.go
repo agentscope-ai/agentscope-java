@@ -30,7 +30,7 @@ func installCmd() *cobra.Command {
 			fmt.Println("  Deploying controller...")
 			fmt.Println("  Waiting for ready...")
 			fmt.Println("Control Plane installed successfully.")
-			fmt.Println("Run 'agentscope verify-install' to verify the installation.")
+			fmt.Println("Run 'as verify-install' to verify the installation.")
 			return nil
 		},
 	}

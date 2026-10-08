@@ -107,13 +107,13 @@ scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 
 ### 2. 连接本机 Coding Agent
 
-`agentscope` CLI 会自动发现 Codex、Claude Code 和 Qoder，签发仅限当前 Host 的运行凭证，
+`as` CLI 会自动发现 Codex、Claude Code 和 Qoder，签发仅限当前 Host 的运行凭证，
 并在后台启动 Runtime Host。开发环境可直接从源码安装两个相邻的可执行文件：
 
 ```bash
 cd service-controlplane
 make install-runtime-cli PREFIX="$HOME/.local"
-agentscope connect
+as connect
 ```
 
 `connect` 会自动发现本地服务并提示输入 AgentScope 用户名和密码；也可以为自动化设置
@@ -121,20 +121,20 @@ agentscope connect
 PID 与日志保存在 `~/.agentscope/runtime-host/`，权限仅限当前用户。日常运维只需要：
 
 ```bash
-agentscope runtime status
-agentscope runtime logs -f
-agentscope runtime restart
-agentscope runtime stop
-agentscope runtime probe
+as runtime status
+as runtime logs -f
+as runtime restart
+as runtime stop
+as runtime probe
 ```
 
 控制面会自动创建默认 Runtime Pool 和 `auto-<provider>` Runtime Profile；Host 在线后，创建
 Agent 时直接选择 `Codex (<host-key>)` 等本地 Runtime，无需手工填写 daemon 参数。
 
 执行任务时，Runtime Host 会同时为 Coding Agent 注入 `agentscope-collaboration` MCP 和
-task-scoped `agentscope` CLI。Agent 可以用 `agentscope task context` 读取当前任务，使用
-`agentscope task progress/respond --content-file ...` 写回进展或结果，通过
-`agentscope task child`、`agentscope task run graph/replan/node-complete` 参与 Team 协作。
+task-scoped `as` CLI。Agent 可以用 `as task context` 读取当前任务，使用
+`as task progress/respond --content-file ...` 写回进展或结果，通过
+`as task child`、`as task run graph/replan/node-complete` 参与 Team 协作。
 这些命令只持有当前 Attempt 的短期凭据，不能访问其他 Issue，也不会继承用户或 Runtime Host Token。
 
 ### 3. 运行第一个 Session

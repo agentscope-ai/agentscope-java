@@ -14,11 +14,11 @@ Before changing a setting, identify the scope it should affect. Host connection 
 ## Connection settings
 
 ```bash
-agentscope connect https://agentscope.example.com \
+as connect https://agentscope.example.com \
   --providers codex,qoder \
   --pool coding-default \
   --capacity 1
-agentscope runtime probe
+as runtime probe
 ```
 
 This exposes the selected providers. Their CLIs must already be installed, authenticated and executable.

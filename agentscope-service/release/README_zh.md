@@ -15,7 +15,7 @@
 | Dataplane | `agentscope-service-dataplane` 镜像 | 同上 |
 | Scheduler | `agentscope-service-scheduler` 镜像 | 同上 |
 | 完整部署配置 | Compose 压缩包、Helm Chart | GitHub Release 附件；Chart 同时发布到 OCI registry |
-| `agentscope`、兼容名称 `agentscope`、Runtime Host | Linux/macOS × amd64/arm64 压缩包 | GitHub Release 附件 |
+| `as`、Runtime Host | Linux/macOS × amd64/arm64 压缩包 | GitHub Release 附件 |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` 及所需依赖 | Maven Central，单独发布 |
 | Python SDK | `agentscope-service-sdk` wheel、sdist | PyPI，单独发布 |
 | DSH 插件 | `@agentscope/dsh-controlplane` npm 包 | npm，单独发布 |
@@ -83,7 +83,7 @@ Service 参数不带 `v` 前缀，当前脚本不接受 `+build` 元数据。Pyt
 需要更新的源码文件：
 
 - Java：根 `pom.xml` 的 `<revision>`。初始发布准备提交中为 `2.0.3-SNAPSHOT`；发 Maven 正式制品前应确定可公开发布的非 SNAPSHOT 版本，并检查所需依赖。
-- Python：`agentscope-service/service-controlplane/sdk/python/pyproject.toml` 的 `version` 和 `service-controlplane/__init__.py` 的 `__version__`，两处同步。
+- Python：`agentscope-service/service-controlplane/sdk/python/pyproject.toml` 的 `version` 和 `service-controlplane/sdk/python/agentscope_service/__init__.py` 的 `__version__`，两处同步。
 - DSH：在 `agentscope-service/service-controlplane/sdk/dsh` 执行 `npm version 新版本 --no-git-tag-version`，核对 `package.json`、`package-lock.json`。
 - Helm：`release.py package` 会把本次 Service 版本写入打包后的 Chart version/appVersion，无需为了打包手工修改模板中的默认版本。
 

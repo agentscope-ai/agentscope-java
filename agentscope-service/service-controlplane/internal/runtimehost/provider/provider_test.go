@@ -109,7 +109,7 @@ func TestApplyTaskEnvironmentInjectsScopedContextAndRemovesHostCredentials(t *te
 	t.Setenv("PATH", "/usr/bin")
 	cmd := exec.Command("ignored")
 	ApplyTaskEnvironment(cmd, Request{
-		CollaborationCLI: "/opt/agentscope/bin/agentscope", ControlPlane: "https://control.example",
+		CollaborationCLI: "/opt/agentscope/bin/as", ControlPlane: "https://control.example",
 		TaskToken: "task-secret", TaskID: "task-1", IssueID: "issue-1", AgentID: "agent-1",
 		TeamID: "team-1", RunID: "run-1",
 	})

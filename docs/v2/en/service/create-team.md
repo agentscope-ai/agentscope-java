@@ -124,13 +124,13 @@ Use Comments and mentions for updates, questions and follow-ups, Artifacts for f
 Runtime Host injects scoped credentials and context into tasks. Shell-capable providers can use:
 
 ```bash
-agentscope task context
-agentscope issue current
-agentscope task progress --content-file ./progress.md
-agentscope task respond --content-file ./reply.md
-agentscope artifact upload ./report.md
-agentscope team current
-agentscope task run graph
+as task context
+as issue current
+as task progress --content-file ./progress.md
+as task respond --content-file ./reply.md
+as artifact upload ./report.md
+as team current
+as task run graph
 ```
 
 Run these inside the Host-created task environment, not an administrator shell using copied internal credentials. MCP providers use corresponding collaboration tools. Coordinators must explicitly complete or fail their node; an ordinary reply does not finalize orchestration.

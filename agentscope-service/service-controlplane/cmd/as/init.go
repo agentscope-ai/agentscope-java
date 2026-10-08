@@ -72,7 +72,7 @@ model:
 #       memory: "256Mi"
 `, name)
 
-			agentsMD := fmt.Sprintf("# %s\n\nDescribe your agent's purpose, capabilities, and behavior here.\n\nThis file is embedded in the agent configuration during `agentscope agent deploy`.\n", name)
+			agentsMD := fmt.Sprintf("# %s\n\nDescribe your agent's purpose, capabilities, and behavior here.\n\nThis file is embedded in the agent configuration during `as agent deploy`.\n", name)
 
 			files := map[string]string{
 				"agentscope.yaml": configContent,
@@ -94,7 +94,7 @@ model:
 			fmt.Println()
 			fmt.Println("Next steps:")
 			fmt.Printf("  cd %s && $EDITOR agentscope.yaml\n", root)
-			fmt.Printf("  agentscope agent deploy %s\n", name)
+			fmt.Printf("  as agent deploy %s\n", name)
 			return nil
 		},
 	}

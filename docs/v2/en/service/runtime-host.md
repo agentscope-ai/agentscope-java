@@ -11,7 +11,7 @@ A Runtime Host runs on a computer or server with a Coding Agent provider install
 
 ## Install
 
-Download `agentscope-cli-VERSION-OS-ARCH.tar.gz` for the operating system and CPU architecture from the same Service release. Verify its checksum and extract it. The archive contains `agentscope`, the alias `agentscope`, and `agentscope-runtime-host`. Put all three executables in the same directory on PATH.
+Download `agentscope-cli-VERSION-OS-ARCH.tar.gz` for the operating system and CPU architecture from the same Service release. Verify its checksum and extract it. The archive contains `as` and `agentscope-runtime-host`. Put both executables in the same directory on PATH.
 
 Choose Linux/macOS and amd64/arm64 according to the release manifest and the machine you will connect. Install, authenticate and verify the provider separately.
 
@@ -22,7 +22,7 @@ Check the platform with `uname -sm`; package names use `linux`/`darwin` and `amd
 ```bash
 mkdir -p agentscope-cli "$HOME/.local/bin"
 tar -xzf agentscope-cli-VERSION-OS-ARCH.tar.gz -C agentscope-cli
-install -m 0755 agentscope-cli/agentscope agentscope-cli/agentscope agentscope-cli/agentscope-runtime-host "$HOME/.local/bin/"
+install -m 0755 agentscope-cli/as agentscope-cli/agentscope-runtime-host "$HOME/.local/bin/"
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -31,9 +31,9 @@ Persist the PATH setting in your shell configuration for later terminals.
 ## Connect
 
 ```bash
-agentscope connect https://agentscope.example.com
-agentscope runtime status
-agentscope runtime probe
+as connect https://agentscope.example.com
+as runtime status
+as runtime probe
 ```
 
 Follow the CLI's login or enrollment prompts. Connection saves local configuration and starts the daemon. Normal operation does not require repeatedly supplying a shared internal service token.
@@ -41,9 +41,9 @@ Follow the CLI's login or enrollment prompts. Connection saves local configurati
 ## Daily operation
 
 ```bash
-agentscope runtime logs
-agentscope runtime stop
-agentscope runtime start
+as runtime logs
+as runtime stop
+as runtime start
 ```
 
 Configuration and state default to `~/.agentscope/runtime-host/`. Preserve the Host identity and state files to avoid accidentally registering an existing computer as a new instance. Do not distribute this directory as a public configuration example.
@@ -57,7 +57,7 @@ A Runtime Host is distinct from a Managed Agent Hands Worker. See [Environments]
 An authorized operator creates a short-lived enrollment token:
 
 ```bash
-agentscope runtime enrollment-token create
+as runtime enrollment-token create
 ```
 
 On the target machine, supply it through `AGENTSCOPE_ENROLLMENT_TOKEN` and run connect. The service exchanges it for a credential bound to Host identity and scope. Keep enrollment tokens and `config.json` out of shared scripts.
@@ -66,13 +66,13 @@ On the target machine, supply it through `AGENTSCOPE_ENROLLMENT_TOKEN` and run c
 
 | Command | Purpose |
 | --- | --- |
-| `agentscope connect URL` | Authenticate/register, save configuration and start the daemon |
-| `agentscope runtime status` | Inspect state |
-| `agentscope runtime probe` | Check provider availability |
-| `agentscope runtime logs -f` | Follow logs |
-| `agentscope runtime restart` | Restart the daemon |
-| `agentscope runtime stop` / `start` | Stop or start |
-| `agentscope connect --help` | Inspect advanced flags in the installed version |
+| `as connect URL` | Authenticate/register, save configuration and start the daemon |
+| `as runtime status` | Inspect state |
+| `as runtime probe` | Check provider availability |
+| `as runtime logs -f` | Follow logs |
+| `as runtime restart` | Restart the daemon |
+| `as runtime stop` / `start` | Stop or start |
+| `as connect --help` | Inspect advanced flags in the installed version |
 
 The state directory holds connection identity in `config.json`, stable Host identity in `state/host.id`, diagnostics in `daemon.log` and task directories in `workspaces/`. Check active tasks before updating paired CLI binaries, restart and preserve these files.
 
@@ -102,7 +102,7 @@ curl -sS "$SERVICE_URL/api/v1/runtime-host-enrollment-tokens" \
   -d '{"tenant":"default","namespace":"default"}'
 ```
 
-Pass `enrollmentToken` securely to the target machine and run `agentscope connect`. Business applications do not need to call Host register, heartbeat, or claim themselves.
+Pass `enrollmentToken` securely to the target machine and run `as connect`. Business applications do not need to call Host register, heartbeat, or claim themselves.
 
 ### Runtime Host protocol
 
@@ -154,7 +154,7 @@ Host preserves journals, provider session identifiers and checkpoints for suppor
 
 Cancellation propagates through execution; check Attempt terminal state and provider process termination. A retry creates a new Attempt. Reuse a provider session only when recovery conditions hold. Cross-backend fresh fallback reconstructs context from persistent Issues, comments and Artifacts, without migrating process memory.
 
-Use `agentscope runtime logs -f` with Task/Attempt diagnostics. If no work is claimed, check scope, pool, bindings, capacity and required capabilities. If claimed work fails, check provider login, parameters, task directory and tool dependencies.
+Use `as runtime logs -f` with Task/Attempt diagnostics. If no work is claimed, check scope, pool, bindings, capacity and required capabilities. If claimed work fails, check provider login, parameters, task directory and tool dependencies.
 
 Related: [installation](/v2/en/service/runtime-host), [providers](/v2/en/service/hosted-agent-configuration#hosted-agent-providers) and [Team collaboration](/v2/en/service/create-team#team-collaboration).
 

@@ -11,9 +11,9 @@ Run all commands from the monorepo root. Development continues in the existing c
 | Control plane + Dashboard | `agentscope-service-control` image | Service release version, injected into Go build |
 | Gateway / Dataplane / Scheduler | Three `agentscope-service-*` images | Service release tag; Java revision recorded separately |
 | Complete deployment | Compose archive + `agentscope-service` Helm Chart (OCI) | Service release version |
-| `agentscope`, `agentscope`, Runtime Host | Linux/macOS amd64/arm64 archives | Service release version |
+| `as`, Runtime Host | Linux/macOS amd64/arm64 archives | Service release version |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` and reactor dependencies | Root `revision` |
-| Python SDK | `agentscope-service-sdk` wheel and sdist | `service-controlplane/sdk/python/pyproject.toml` and `service-controlplane/__init__.py` |
+| Python SDK | `agentscope-service-sdk` wheel and sdist | `service-controlplane/sdk/python/pyproject.toml` and `service-controlplane/sdk/python/agentscope_service/__init__.py` |
 | DSH plugin | `@agentscope/dsh-controlplane` npm tarball | `service-controlplane/sdk/dsh/package.json` and lockfile |
 
 The front end is private and bundled into the control image. `service-common` and executable Service modules remain excluded from Maven Central (`maven.deploy.skip=true`); they are not required by external Java SDK users. PostgreSQL is a separately operated dependency, not an AgentScope-published image. The legacy Control Plane Chart remains a separate Kubernetes-native offering. The complete Service Chart uses standalone HTTP, without ASDP gRPC.
@@ -35,7 +35,7 @@ pip install -r agentscope-service/release/requirements.txt -e 'agentscope-servic
 python agentscope-service/release/release.py verify
 ```
 
-Set `CONTROL_PLANE_TEST_POSTGRES_DSN` to a **disposable test database** for PostgreSQL integration tests; never point tests at development or production data. The verifier uses `go test -p 1` so packages sharing one PostgreSQL database do not contend during concurrent-index migrations. Some Go controller tests additionally require envtest assets (`make test-integration` in `controlplane`). Run the repository-wide `mvn clean verify` before release submission. The release verifier explicitly selects all three Java service modules and their dependencies: selecting only the aggregator with `-pl agentscope-service` does not test its children.
+Set `CONTROL_PLANE_TEST_POSTGRES_DSN` to a **disposable test database** for PostgreSQL integration tests; never point tests at development or production data. The verifier uses `go test -p 1` so packages sharing one PostgreSQL database do not contend during concurrent-index migrations. Some Go controller tests additionally require envtest assets (`make test-integration` in `service-controlplane`). Run the repository-wide `mvn clean verify` before release submission. The release verifier explicitly selects all three Java service modules and their dependencies: selecting only the aggregator with `-pl agentscope-service` does not test its children.
 
 ## 3. Package candidates
 

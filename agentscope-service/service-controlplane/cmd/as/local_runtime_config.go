@@ -76,7 +76,7 @@ func loadLocalRuntimeConfig(path string) (*localRuntimeConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("local runtime is not connected; run `agentscope connect` first")
+			return nil, fmt.Errorf("local runtime is not connected; run `as connect` first")
 		}
 		return nil, fmt.Errorf("read runtime config: %w", err)
 	}
@@ -88,10 +88,10 @@ func loadLocalRuntimeConfig(path string) (*localRuntimeConfig, error) {
 		return nil, fmt.Errorf("unsupported runtime config version %d", config.Version)
 	}
 	if strings.TrimSpace(config.ControlPlane) == "" || strings.TrimSpace(config.Credential) == "" {
-		return nil, fmt.Errorf("runtime config is incomplete; rerun `agentscope connect`")
+		return nil, fmt.Errorf("runtime config is incomplete; rerun `as connect`")
 	}
 	if len(config.Providers) == 0 {
-		return nil, fmt.Errorf("runtime config has no providers; install a supported agent CLI and rerun `agentscope connect`")
+		return nil, fmt.Errorf("runtime config has no providers; install a supported agent CLI and rerun `as connect`")
 	}
 	return &config, nil
 }

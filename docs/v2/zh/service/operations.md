@@ -150,6 +150,6 @@ Gateway 正常不代表模型或工具执行正常。Managed 会话故障查看 
 
 ## 更新 Control Plane 名称
 
-Go 组件位于 `agentscope-service/service-controlplane`，服务端二进制名为 `service-controlplane`。升级已有部署时，需要一起更新构建路径、启动命令、部署清单和环境变量。Control Plane 配置统一使用 `CONTROL_PLANE_` 前缀；HTTP 客户端使用 `CONTROL_PLANE_HTTP`，CLI 和 Runtime Host 使用 `CONTROL_PLANE_URL`。命令行工具继续使用 `agentscope`，Runtime Host 可执行文件改为 `agentscope-runtime-host`。建议以同一 Service 版本附带的环境配置模板为准，避免新二进制加载旧配置。
+Go 组件位于 `agentscope-service/service-controlplane`，服务端二进制名为 `service-controlplane`。升级已有部署时，需要一起更新构建路径、启动命令、部署清单和环境变量。Control Plane 配置统一使用 `CONTROL_PLANE_` 前缀；HTTP 客户端使用 `CONTROL_PLANE_HTTP`，CLI 和 Runtime Host 使用 `CONTROL_PLANE_URL`。命令行工具使用 `as`，Runtime Host 可执行文件改为 `agentscope-runtime-host`。建议以同一 Service 版本附带的环境配置模板为准，避免新二进制加载旧配置。
 
 Java 接入模块为 `agentscope-extensions-controlplane`，入口为 `io.agentscope.extensions.controlplane.ControlPlane` 和 `ControlPlaneConfig`。Python 分发包为 `agentscope-service-sdk`，代码中通过 `agentscope_service` 导入；DSH 插件为 `@agentscope/dsh-controlplane`。已有接入应用需要更新依赖和导入后再部署。如果使用了自定义日志目录、Helm 资源名或 Console 偏好设置，也需要在升级时迁移这些本地配置。数据库 schema 和 ASDP 的 `agentscope.protocol.v1` 线上协议标识沿用原值。

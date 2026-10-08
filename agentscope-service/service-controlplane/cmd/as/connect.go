@@ -184,7 +184,7 @@ func connectCmd() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "  %-12s %s (%s)\n", provider.Name, provider.Version, provider.Binary)
 			}
 			if noStart {
-				fmt.Fprintln(cmd.OutOrStdout(), "Run `agentscope runtime start` when you are ready.")
+				fmt.Fprintln(cmd.OutOrStdout(), "Run `as runtime start` when you are ready.")
 				return nil
 			}
 			return startLocalRuntime(cmd, &config, foreground)
@@ -226,7 +226,7 @@ func resolveControlPlane(ctx context.Context, configured string) (string, error)
 			}
 		}
 	}
-	return "", fmt.Errorf("cannot discover an AgentScope server; pass it to `agentscope connect SERVER`")
+	return "", fmt.Errorf("cannot discover an AgentScope server; pass it to `as connect SERVER`")
 }
 
 func validateControlPlane(value string) (string, error) {
