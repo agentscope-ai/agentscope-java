@@ -41,7 +41,7 @@ import reactor.core.publisher.Flux;
 
 /**
  * {@code HarnessAgent.Builder.agentId(...)}: a trimmed id reaches both {@code getAgentId()} and
- * the state dir (same namespace key), blank keeps the generated UUID with the namespace falling
+ * the legacy state dir (same namespace key), blank keeps the generated UUID with the namespace falling
  * back to name, and an invalid id is rejected before any state dir is created.
  */
 @HarnessQuiescence
@@ -73,6 +73,7 @@ class HarnessAgentIdTest {
 
         HarnessAgent custom =
                 HarnessAgent.builder()
+                        .legacySessionHistory(true)
                         .name("t")
                         .agentId("  harness-x  ")
                         .model(stubModel())
@@ -89,6 +90,7 @@ class HarnessAgentIdTest {
 
         HarnessAgent blank =
                 HarnessAgent.builder()
+                        .legacySessionHistory(true)
                         .name("fallback-name")
                         .agentId("   ")
                         .model(stubModel())
@@ -108,6 +110,7 @@ class HarnessAgentIdTest {
                 IllegalArgumentException.class,
                 () ->
                         HarnessAgent.builder()
+                                .legacySessionHistory(true)
                                 .name("t")
                                 .agentId("../evil")
                                 .model(stubModel())
