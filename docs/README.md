@@ -31,7 +31,126 @@ has a title, local images/links/anchors exist, and redirects have valid targets.
 `npm run validate` also runs Mintlify's strict build validation. The GitHub Actions
 workflow runs these checks on documentation PRs and pushes to `main` or `Mintlify`.
 
+## Refresh Service screenshots
+
+Agent and task management guides, including resource pages, share screenshots under `imgs/service/`. They are
+captured from the current React console with synthetic API fixtures; names, task
+results, channel status and credential metadata are examples, not a live deployment
+or an end-to-end execution result. Keep this distinction in each page's caption.
+
+From the repository root, with Node.js 22 installed:
+
+```bash
+cd agentscope-service/frontend
+npm ci
+npx playwright install chromium
+npm run docs:screenshots
+```
+
+The script starts Vite on `127.0.0.1:5188`, opens a fresh Chromium context, captures
+13 images of 12 pages at 1440 pixels wide (960 or 1120 pixels high, depending on
+the page), then stops both processes. Port 5188 must be available.
+It intercepts backend API calls with fixed documentation fixtures, so PostgreSQL,
+Java services, model credentials and an existing console login are unnecessary.
+It does not read or write your running Service database. Screenshot text retains
+the current console's English control labels; both documentation languages reuse
+the same images with translated explanations and alternative text.
+
+Capture steps and readiness assertions live in
+`agentscope-service/frontend/scripts/docs/capture.mjs`; example API responses live
+beside it in `fixtures.mjs`. Update these when the UI or API changes. An unexpected
+API call, page exception or visible alert fails the capture. Images are staged in
+a temporary directory and copied to the documentation only after all captures
+succeed. Review every image for loading states, clipping and readable text before
+submitting it; never substitute screenshots containing real credentials or private
+work. Playwright/Chromium and platform font updates may change the rendered pixels.
+
+After capture, run the documentation checks above and inspect the Chinese and
+English guides with `npm run dev` from `docs/`. Commit the PNG files with the
+corresponding guides and script changes; do not commit browser traces or caches.
+
 ## Authoring
+
+### Service content and scenario standards
+
+The primary Service journey is **self-host deployment → first Managed Agent →
+capability configuration → Session API application integration → collaboration
+and operations**. Managed Agents use the AgentScope HarnessAgent core. Explain
+whole-platform self-hosting separately from a self_hosted tool Worker and a Hosted
+Runtime Host. Existing deployments can skip installation. Preserve standalone
+External/Hosted onboarding while introducing them as collaboration extensions.
+
+Use Session, Turn and Events as the sole application execution model for Agents,
+Teams and Workflows. Keep three Getting started pages: overview, deployment and
+first Managed Agent. Explain core concepts in the overview. Application credentials
+belong to Applications and grant explicit target resources. Do not reintroduce a
+separate Endpoint publication path. Write connected paragraphs explaining the
+meaning, reason and next action instead of terse lists of features or nouns.
+Keep one guide per user task: tool permissions belong with tools, Skills with
+Workspaces, budgets with sessions, and Webhooks with events. Console operations
+share one guide; SDK and runtime parameters stay in focused references. Avoid
+restoring separate overview/capability/execution pages for every Agent type. Moving a section must
+preserve its existing route/anchor and link to the new guide. Keep both languages
+and navigation aligned. Keep the five onboarding pages directly visible and group
+advanced topics in collapsible navigation. Document current limits instead of implying parity
+with a referenced hosted product.
+
+Service guides should explain the user goal, prerequisites, exact console or API
+steps, observable success criteria, failure recovery, and the next relevant guide.
+Reference pages should describe defaults, allowed values, configuration scope,
+when changes take effect, and limits that affect the documented operation. Check
+these against the current console, control plane, and runtime implementation.
+Avoid adding identical sections to every page when a precise cross-link suffices.
+
+Write explanatory prose for readers learning the product. Each paragraph should
+develop one clear idea through complete sentences with explicit subjects,
+conditions, and causal connections. Introduce a term through its purpose and
+relationship to the current task; explain when an action applies, why it is needed,
+and how to interpret its result. Make limits and failure states actionable by
+explaining their consequences and the next step. Do not compress explanations into
+noun lists, semicolon-separated conclusions, or notes that require implementation
+knowledge. Tables remain useful for parameter comparisons and checklists, while
+conceptual relationships and operating logic belong in connected prose. Follow
+the material's natural structure rather than forcing every section into the same
+template or requiring an example to carry every explanation. Apply this standard
+to both language versions and future edits.
+
+Scenario tutorials live in `v2/{en,zh}/service/cases/`; downloadable inputs live in
+`examples/service/`. Code and JSON inputs use a final `.txt` extension so Mintlify
+serves them as static downloads; guides specify the executable or JSON filename
+to use after saving. Each case must have fixed inputs, explicit acceptance criteria,
+and a distinction between expected output and observed execution. Keep both
+languages and the functional-guide links aligned. The use-case entry page organizes
+application patterns around triggers, API calls, delivery, and acceptance: in-product
+file generation, code repair, document verification, conversations, recurring work,
+and specialist services called by other Agents. Each pattern has its own detailed
+bilingual tutorial and fixed request data. Managed,
+External, Hosted, Team, and Workflow remain implementation choices. Distinguish
+industry evidence, expected fixture outputs, and actual AgentScope execution records.
+Retired team-oriented tutorial URLs redirect to the corresponding new case or the
+use-case index; do not restore those tutorials as a second scenario taxonomy.
+
+From `docs/`, validate the local code and JSON fixtures with Python 3 and JDK 17+:
+
+```bash
+python3 scripts/check-service-examples.py
+```
+
+The incident-repair Java fixture intentionally fails three of five acceptance checks.
+The checker compiles it in a temporary directory, verifies the baseline, applies a
+reference repair only in that copy, and checks the repaired result. It also checks
+six API request fixtures, source versions, the document-verification contradiction,
+conversation ownership data, and Bash syntax in all twelve case pages. It does not
+execute network commands or run models, GitHub, business APIs, or Service. Do not
+fix the published starting code or commit generated classes and logs.
+
+For an actual scenario walkthrough, record Service and SDK/provider versions,
+configuration choices, input data, Session/Turn and diagnostic Issue/Run IDs, artifacts, observed
+results, deviations, and cleanup. Include the idempotency/filtering or failure
+branch described by the case. Preserve logs from real execution; generated prose
+and fixture-based screenshots do not establish end-to-end success.
+
+### Site conventions
 
 - `docs.json` is the single source of truth for navigation, versions, languages,
   branding and redirects. Default navigation is English v2.

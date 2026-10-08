@@ -16,7 +16,9 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolExecutionDetails;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
@@ -88,9 +90,17 @@ public class ShellExecuteTool {
         if (result.truncated()) {
             sb.append("\n(output was truncated)");
         }
-        // The tool call itself succeeded; a non-zero exit code is reported as data, preserving
-        // the pre-existing contract.
-        return ToolResultBlock.success(sb.toString());
+        ToolExecutionDetails.Outcome outcome =
+                result.exitCode() == null
+                        ? ToolExecutionDetails.Outcome.UNKNOWN
+                        : result.isSuccess()
+                                ? ToolExecutionDetails.Outcome.SUCCEEDED
+                                : ToolExecutionDetails.Outcome.FAILED;
+        return ToolResultBlock.text(sb.toString())
+                .withExecutionDetails(
+                        new ToolExecutionDetails(
+                                "shell", outcome, result.exitCode(), result.truncated()))
+                .withState(result.isSuccess() ? ToolResultState.SUCCESS : ToolResultState.ERROR);
     }
 
     static String commandWithWorkingDirectory(

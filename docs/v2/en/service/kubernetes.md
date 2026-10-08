@@ -1,10 +1,13 @@
 ---
-title: "Production installation with Kubernetes and Helm"
+title: "Production installation"
+zh_link: /v2/zh/service/kubernetes
 ---
 
-[简体中文](/v2/zh/service/kubernetes)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
-The published Service Chart installs Gateway, Control, Dataplane and Scheduler. You manage PostgreSQL, storage, domain and TLS. Components default to one replica with Recreate updates; plan maintenance windows.
+This guide covers production deployment with Kubernetes and Helm. The published Service Chart installs Gateway, Control, Dataplane and Scheduler. You manage PostgreSQL, storage, domain and TLS. Components default to one replica with Recreate updates; plan maintenance windows.
 
 ## 1. Prepare dependencies
 
@@ -77,4 +80,4 @@ Confirm Bound PVCs and Ready Pods. Sign in through the public domain with the bo
 
 Restart affected Deployments after Secret updates. Follow [operations](/v2/en/service/operations) before upgrading and retain prior Charts, values and image versions. PVCs are retained on uninstall; explicitly select them with existingClaim on reinstall.
 
-This Chart runs complete Service standalone HTTP. Kubernetes-native Aistio/ASDP is a separate deployment mode, requiring deliberate SDK connectivity planning rather than blindly combining Charts. The single-replica installation does not guarantee zero-downtime migrations or multi-replica HA.
+This Chart runs complete Service standalone HTTP. Kubernetes-native ControlPlane/ASDP is a separate deployment mode, requiring deliberate SDK connectivity planning rather than blindly combining Charts. The single-replica installation does not guarantee zero-downtime migrations or multi-replica HA.

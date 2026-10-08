@@ -26,6 +26,8 @@ import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.context.ContextRenderer;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.middleware.PlanModeMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
@@ -126,6 +128,8 @@ class PlanModeSubagentPropagationTest {
 
             context.setAgentState(childState);
             String prompt = middleware.onSystemPrompt(child, context, "base prompt").block();
+            assertEquals("base prompt", prompt);
+            prompt += ContextRenderer.render(context.get(WorkspaceContextMaterials.class).items());
             assertTrue(prompt.contains("PLAN MODE is active"));
             assertTrue(prompt.contains(PLAN_DIR + "/PLAN.md"));
             assertTrue(prompt.contains("execute"), "allowShellInPlanMode must be inherited");

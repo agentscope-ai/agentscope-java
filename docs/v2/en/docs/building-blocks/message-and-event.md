@@ -1,6 +1,7 @@
 ---
 title: Message & Event
 description: The core data abstractions for agent communication and streaming
+zh_link: /v2/zh/docs/building-blocks/message-and-event
 ---
 
 Message and event are the two fundamental data structures in AgentScope.
@@ -416,7 +417,7 @@ agent.streamEvents(userMsg)
 
 <Tip>
 
-This decoupling makes deployments flexible: the backend pushes the event stream over SSE, and the frontend reconstructs the message client-side. Even if the connection drops, replaying events from any checkpoint restores the message state precisely.
+For live output within the current request, adapt AgentEvent to SSE. `streamEvents()` starts execution and has no durable cursor; do not execute the request again to catch up after a disconnect. Harness also saves logs for direct calls by default. See [Session operations, events and recovery](/v2/en/docs/harness/session-log) for reading history and introducing `AgentSession` when you need background tasks. Hosted frontends use [Agent API snapshot plus SSE](/v2/en/service/session-event-log).
 
 </Tip>
 
@@ -475,3 +476,9 @@ How messages are stored and persisted
 
 
 </CardGroup>
+
+## Relationship to durable SessionEvent
+
+AgentEvent is a typed live event; SessionEvent is an immutable durable fact, not a one-to-one copy. Standard execution exposes agentId/sessionId/turnId/runId through event.getExecution(). runId matches native executionRunId. Forwarded children keep their own identity. Live event IDs, native seq and public SSE cursors remain independent; receiving a live event is not a commit acknowledgment.
+
+A logical turn may span multiple executions. AgentEndEvent only ends the current invocation. See [Session operations, events and recovery](/v2/en/docs/harness/session-log).

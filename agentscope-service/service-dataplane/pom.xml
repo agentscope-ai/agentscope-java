@@ -32,6 +32,18 @@
     <description>Data plane: session turns, HarnessAgent runtime, SSE events, HITL, work queue server</description>
 
     <dependencies>
+        <!-- Offline fixtures used by JEV Service integration tests. -->
+        <dependency>
+            <groupId>io.agentscope.examples</groupId>
+            <artifactId>jev</artifactId>
+            <version>${revision}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-jev</artifactId>
+            <version>${revision}</version>
+        </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>service-common</artifactId>
@@ -43,10 +55,10 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
-        <!-- Aistio transport and distributed-store adapters. -->
+        <!-- ControlPlane transport and distributed-store adapters. -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-aistio</artifactId>
+            <artifactId>agentscope-extensions-controlplane</artifactId>
         </dependency>
 
         <!-- Managed Environment type=sandbox → E2B cloud -->
@@ -63,7 +75,7 @@
         <!-- JdbcStore-backed BaseStore for remote filesystem routes -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-mysql</artifactId>
+            <artifactId>agentscope-extensions-jdbc</artifactId>
         </dependency>
 
         <!-- SQLite for FTS5 memory indexing (transitive use via harness extensions) -->

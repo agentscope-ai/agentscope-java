@@ -284,6 +284,63 @@ class ToolUseBlockTest {
     }
 
     @Test
+    void serverToolMarkerDistinguishesServerAndLocalCalls() {
+        ToolUseBlock serverTool =
+                ToolUseBlock.builder()
+                        .id("tool-1001")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", "test query"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+
+        assertEquals("tool-1001", serverTool.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", serverTool.getName());
+        assertEquals("test query", serverTool.getInput().get("queries"));
+        assertTrue(serverTool.isServerTool());
+
+        ToolUseBlock localTool =
+                ToolUseBlock.builder()
+                        .id("tool-1002")
+                        .name("local-tool")
+                        .input(Map.of("key", "value"))
+                        .build();
+        assertFalse(localTool.isServerTool());
+    }
+
+    @Test
+    void serverToolMarkerSurvivesJsonRoundTrip() throws JsonProcessingException {
+        ToolUseBlock original =
+                ToolUseBlock.builder()
+                        .id("tool-1009")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", "test query"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+
+        String json = objectMapper.writeValueAsString(original);
+        ToolUseBlock deserialized = objectMapper.readValue(json, ToolUseBlock.class);
+
+        assertEquals(original.isServerTool(), deserialized.isServerTool());
+        assertTrue(deserialized.isServerTool());
+    }
+
+    @Test
+    void withStatePreservesServerToolMarker() {
+        ToolUseBlock serverTool =
+                ToolUseBlock.builder()
+                        .id("tool-1010")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of())
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+
+        ToolUseBlock updated = serverTool.withState(ToolCallState.ALLOWED);
+
+        assertTrue(updated.isServerTool());
+        assertEquals(ToolCallState.ALLOWED, updated.getState());
+    }
+
+    @Test
     void testEmptyMapsForNullInputAndMetadata() {
         ToolUseBlock toolUseBlock = new ToolUseBlock("tool-999", "null-test", null, null, null);
 

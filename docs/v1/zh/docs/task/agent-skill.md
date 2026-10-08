@@ -1,5 +1,6 @@
 ---
 title: Agent Skill
+en_link: /v1/en/docs/task/agent-skill
 ---
 
 ## 概述

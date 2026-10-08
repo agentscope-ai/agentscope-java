@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "docs:screenshots": "node scripts/docs/capture.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",

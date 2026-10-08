@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
@@ -40,7 +41,6 @@ import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
-import io.agentscope.core.agui.model.ToolMergeMode;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
@@ -77,6 +77,8 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
+import io.agentscope.core.tool.ToolMergeMode;
+import io.agentscope.core.tool.ToolRequestConfig;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.lang.reflect.Field;
@@ -1233,6 +1235,7 @@ class AguiAgentAdapterV2Test {
                     (Map<String, Object>) interrupt.responseSchema().get("properties");
             assertTrue(properties.containsKey("approved"));
             assertTrue(properties.containsKey("editedArgs"));
+            assertTrue(properties.containsKey("reason"));
             assertNull(interrupt.expiresAt());
             assertTrue(interrupt.message().contains("echo"));
             assertEquals("echo", interrupt.metadata().get("toolName"));
@@ -1406,6 +1409,86 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testConfirmedToolResultsFromPreviousRunAreEmittedWithoutToolCallEvents() {
+            ToolUseBlock toolUse = ToolUseBlock.builder().id("tool-1").name("lookup").build();
+            UserConfirmResultEvent confirmation =
+                    new UserConfirmResultEvent(
+                            "previous-reply", List.of(new ConfirmResult(true, toolUse)));
+            List<AguiEvent> events =
+                    runReActEvents(
+                            confirmation,
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "text"),
+                            confirmation,
+                            new ToolResultDataDeltaEvent(
+                                    "resumed-reply",
+                                    "tool-1",
+                                    "lookup",
+                                    TextBlock.builder().text("data").build()),
+                            new ToolCallDeltaEvent("previous-reply", "tool-1", "lookup", "{}"),
+                            new ToolCallEndEvent("previous-reply", "tool-1", "lookup"),
+                            new ToolResultEndEvent("resumed-reply", "tool-1", "lookup", null));
+
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(events));
+            assertToolCallResult(events.get(0), "tool-1", "text\ndata");
+            assertEquals(
+                    "resumed-reply:tool-1", ((AguiEvent.ToolCallResult) events.get(0)).messageId());
+        }
+
+        @Test
+        void testConfirmedToolSuspensionDiscardsPartialResultWithoutEmittingToolCallEnd() {
+            ToolUseBlock toolUse = ToolUseBlock.builder().id("tool-1").name("lookup").build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new UserConfirmResultEvent(
+                                    "previous-reply", List.of(new ConfirmResult(true, toolUse))),
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "partial"),
+                            new ToolResultEndEvent(
+                                    "resumed-reply", "tool-1", "lookup", ToolResultState.RUNNING),
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "final"),
+                            new ToolResultEndEvent("resumed-reply", "tool-1", "lookup", null));
+
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(events));
+            assertToolCallResult(events.get(0), "tool-1", "final");
+        }
+
+        @Test
+        void testAdoptionIsSilentAndLocalToTheStreamContext() {
+            AguiStreamContext context =
+                    new AguiStreamContext(
+                            "thread", "resumed-run", AguiAdapterConfig.defaultConfig());
+            context.adoptToolCall(null);
+            context.adoptToolCall(" ");
+            context.adoptToolCall("resumed-tool");
+            context.adoptToolCall("resumed-tool");
+            assertTrue(context.drainEvents().isEmpty());
+            assertTrue(context.finishPendingEvents().isEmpty());
+            context.endToolResult("reply", null);
+            context.endToolResult("reply", " ");
+            assertTrue(context.drainEvents().isEmpty());
+
+            context.startToolCall("current-tool", "lookup");
+            context.adoptToolCall("current-tool");
+            context.drainEvents();
+            assertEquals(
+                    List.of(AguiEventType.TOOL_CALL_END), types(context.finishPendingEvents()));
+            context.endToolResult("reply", "resumed-tool");
+            List<AguiEvent> result = context.drainEvents();
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(result));
+            assertToolCallResult(result.get(0), "resumed-tool", null);
+
+            AguiStreamContext nextRun =
+                    new AguiStreamContext("thread", "next-run", AguiAdapterConfig.defaultConfig());
+            nextRun.endToolResult("reply", "resumed-tool");
+            assertTrue(nextRun.drainEvents().isEmpty());
+        }
+
+        @Test
         void testToolResultEventsWithoutStartedToolCallAreIgnored() {
             List<AguiEvent> events =
                     runReActEvents(
@@ -1468,14 +1551,24 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> events =
                     runReActEvents(
                             config,
-                            new ModelCallEndEvent("reply-usage", new ChatUsage(100, 20, 40, 0.8)));
+                            new ModelCallEndEvent(
+                                    "reply-usage",
+                                    ChatUsage.builder()
+                                            .inputTokens(100)
+                                            .outputTokens(20)
+                                            .cachedTokens(40)
+                                            .cacheCreationTokens(4)
+                                            .reasoningTokens(8)
+                                            .toolUsePromptTokens(6)
+                                            .time(0.8)
+                                            .build()));
 
             assertEquals(List.of(AguiEventType.CUSTOM), types(events));
             AguiEvent.Custom usageEvent = assertCustomEvent(events.get(0), "token_usage");
             Map<String, Object> value = customValue(usageEvent);
 
-            assertUsage(value.get("delta"), 100L, 20L, 40L, 120L, 0.8);
-            assertUsage(value.get("cumulative"), 100L, 20L, 40L, 120L, 0.8);
+            assertUsage(value.get("delta"), 100L, 20L, 40L, 4L, 8L, 6L, 120L, 0.8);
+            assertUsage(value.get("cumulative"), 100L, 20L, 40L, 4L, 8L, 6L, 120L, 0.8);
             assertEquals(Map.of("replyId", "reply-usage"), value.get("modelCall"));
         }
 
@@ -1485,7 +1578,17 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> events =
                     runReActEvents(
                             config,
-                            new ModelCallEndEvent("reply-1", new ChatUsage(100, 20, 40, 0.8)),
+                            new ModelCallEndEvent(
+                                    "reply-1",
+                                    ChatUsage.builder()
+                                            .inputTokens(100)
+                                            .outputTokens(20)
+                                            .cachedTokens(40)
+                                            .cacheCreationTokens(4)
+                                            .reasoningTokens(8)
+                                            .toolUsePromptTokens(6)
+                                            .time(0.8)
+                                            .build()),
                             new ModelCallEndEvent("reply-2", new ChatUsage(50, 30, 10, 1.2)));
 
             assertEquals(List.of(AguiEventType.CUSTOM, AguiEventType.CUSTOM), types(events));
@@ -1494,9 +1597,9 @@ class AguiAgentAdapterV2Test {
                     customValue(assertCustomEvent(events.get(0), "token_usage"));
             Map<String, Object> secondValue =
                     customValue(assertCustomEvent(events.get(1), "token_usage"));
-            assertUsage(firstValue.get("cumulative"), 100L, 20L, 40L, 120L, 0.8);
-            assertUsage(secondValue.get("delta"), 50L, 30L, 10L, 80L, 1.2);
-            assertUsage(secondValue.get("cumulative"), 150L, 50L, 50L, 200L, 2.0);
+            assertUsage(firstValue.get("cumulative"), 100L, 20L, 40L, 4L, 8L, 6L, 120L, 0.8);
+            assertUsage(secondValue.get("delta"), 50L, 30L, 10L, 0L, 0L, 0L, 80L, 1.2);
+            assertUsage(secondValue.get("cumulative"), 150L, 50L, 50L, 4L, 8L, 6L, 200L, 2.0);
             assertEquals(Map.of("replyId", "reply-2"), secondValue.get("modelCall"));
         }
 
@@ -1577,16 +1680,24 @@ class AguiAgentAdapterV2Test {
     class ToolMergeModeTests {
 
         @Test
-        void testRunRegistersFrontendToolsForRunAndCleansUp() {
+        void testRunRecordsExternalToolInRequestConfig() {
             ReActAgent agent = mock(ReActAgent.class);
             Toolkit toolkit = new Toolkit();
             when(agent.getToolkit()).thenReturn(toolkit);
             when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                     .thenAnswer(
                             invocation -> {
+                                RuntimeContext rc = invocation.getArgument(1);
+                                ToolRequestConfig requestConfig = rc.getToolRequestConfig();
+                                assertNotNull(requestConfig);
+                                assertTrue(
+                                        requestConfig
+                                                .externalTools()
+                                                .containsKey("frontend_lookup"));
                                 assertInstanceOf(
-                                        SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
-                                assertTrue(toolkit.isExternalTool("frontend_lookup"));
+                                        SchemaOnlyTool.class,
+                                        requestConfig.externalTools().get("frontend_lookup"));
+                                assertNull(toolkit.getTool("frontend_lookup"));
                                 return Flux.empty();
                             });
 
@@ -1595,11 +1706,13 @@ class AguiAgentAdapterV2Test {
                     .collectList()
                     .block();
 
+            verify(agent).streamEvents(anyList(), any(RuntimeContext.class));
+
             assertNull(toolkit.getTool("frontend_lookup"));
         }
 
         @Test
-        void testRunRestoresAgentToolWhenFrontendToolHasSameName() {
+        void testRequestConfigCarriesExternalOverrideForSameNameTool() {
             ReActAgent agent = mock(ReActAgent.class);
             Toolkit toolkit = new Toolkit();
             SchemaOnlyTool existingTool = schemaOnlyTool("shared_lookup");
@@ -1608,9 +1721,17 @@ class AguiAgentAdapterV2Test {
             when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                     .thenAnswer(
                             invocation -> {
+                                RuntimeContext rc = invocation.getArgument(1);
+                                ToolRequestConfig requestConfig = rc.getToolRequestConfig();
+                                assertTrue(
+                                        requestConfig.externalTools().containsKey("shared_lookup"));
                                 assertInstanceOf(
-                                        SchemaOnlyTool.class, toolkit.getTool("shared_lookup"));
-                                assertNotSame(existingTool, toolkit.getTool("shared_lookup"));
+                                        SchemaOnlyTool.class,
+                                        requestConfig.externalTools().get("shared_lookup"));
+                                assertNotSame(
+                                        existingTool,
+                                        requestConfig.externalTools().get("shared_lookup"));
+                                assertSame(existingTool, toolkit.getTool("shared_lookup"));
                                 return Flux.empty();
                             });
 
@@ -1618,6 +1739,8 @@ class AguiAgentAdapterV2Test {
                     .run(inputWithTools(frontendTool("shared_lookup")))
                     .collectList()
                     .block();
+
+            verify(agent).streamEvents(anyList(), any(RuntimeContext.class));
 
             assertSame(existingTool, toolkit.getTool("shared_lookup"));
         }
@@ -1661,15 +1784,22 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testRunUsesFrontendPriorityWhenToolMergeModeIsNull() {
+        void testRunUsesExternalPriorityWhenToolMergeModeIsNull() {
             ReActAgent agent = mock(ReActAgent.class);
             Toolkit toolkit = new Toolkit();
             when(agent.getToolkit()).thenReturn(toolkit);
             when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                     .thenAnswer(
                             invocation -> {
-                                assertInstanceOf(
-                                        SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
+                                RuntimeContext rc = invocation.getArgument(1);
+                                ToolRequestConfig requestConfig = rc.getToolRequestConfig();
+                                assertEquals(
+                                        ToolMergeMode.MERGE_EXTERNAL_PRIORITY,
+                                        requestConfig.mergeMode());
+                                assertTrue(
+                                        requestConfig
+                                                .externalTools()
+                                                .containsKey("frontend_lookup"));
                                 return Flux.empty();
                             });
 
@@ -1682,11 +1812,13 @@ class AguiAgentAdapterV2Test {
                     .collectList()
                     .block();
 
+            verify(agent).streamEvents(anyList(), any(RuntimeContext.class));
+
             assertNull(toolkit.getTool("frontend_lookup"));
         }
 
         @Test
-        void testRunWithFrontendOnlyTemporarilyReplacesToolkitAndRestoresAgentTools() {
+        void testRunWithExternalOnlyRecordsMergeModeAndKeepsToolkitIntact() {
             ReActAgent agent = mock(ReActAgent.class);
             Toolkit toolkit = new Toolkit();
             SchemaOnlyTool existingTool = schemaOnlyTool("agent_lookup");
@@ -1697,28 +1829,36 @@ class AguiAgentAdapterV2Test {
             when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                     .thenAnswer(
                             invocation -> {
-                                assertNull(toolkit.getTool("agent_lookup"));
-                                assertInstanceOf(
-                                        SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
-                                assertInstanceOf(
-                                        SchemaOnlyTool.class, toolkit.getTool("shared_lookup"));
-                                assertNotSame(existingSharedTool, toolkit.getTool("shared_lookup"));
+                                RuntimeContext rc = invocation.getArgument(1);
+                                ToolRequestConfig requestConfig = rc.getToolRequestConfig();
+                                assertEquals(
+                                        ToolMergeMode.EXTERNAL_ONLY, requestConfig.mergeMode());
+                                assertTrue(
+                                        requestConfig
+                                                .externalTools()
+                                                .containsKey("frontend_lookup"));
+                                assertTrue(
+                                        requestConfig.externalTools().containsKey("shared_lookup"));
+                                assertSame(existingTool, toolkit.getTool("agent_lookup"));
+                                assertSame(existingSharedTool, toolkit.getTool("shared_lookup"));
                                 return Flux.empty();
                             });
 
-            AguiAgentAdapter frontendOnlyAdapter =
+            AguiAgentAdapter externalOnlyAdapter =
                     new AguiAgentAdapter(
                             agent,
                             AguiAdapterConfig.builder()
-                                    .toolMergeMode(ToolMergeMode.FRONTEND_ONLY)
+                                    .toolMergeMode(ToolMergeMode.EXTERNAL_ONLY)
                                     .build());
 
-            frontendOnlyAdapter
+            externalOnlyAdapter
                     .run(
                             inputWithTools(
                                     frontendTool("frontend_lookup"), frontendTool("shared_lookup")))
                     .collectList()
                     .block();
+
+            verify(agent).streamEvents(anyList(), any(RuntimeContext.class));
 
             assertSame(existingTool, toolkit.getTool("agent_lookup"));
             assertSame(existingSharedTool, toolkit.getTool("shared_lookup"));
@@ -1726,35 +1866,7 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testRunWithFrontendOnlySkipsToolNameThatNoLongerResolves() {
-            ReActAgent agent = mock(ReActAgent.class);
-            Toolkit toolkit = new GhostToolNameToolkit();
-            when(agent.getToolkit()).thenReturn(toolkit);
-            when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
-                    .thenAnswer(
-                            invocation -> {
-                                assertInstanceOf(
-                                        SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
-                                return Flux.empty();
-                            });
-
-            AguiAgentAdapter frontendOnlyAdapter =
-                    new AguiAgentAdapter(
-                            agent,
-                            AguiAdapterConfig.builder()
-                                    .toolMergeMode(ToolMergeMode.FRONTEND_ONLY)
-                                    .build());
-
-            frontendOnlyAdapter
-                    .run(inputWithTools(frontendTool("frontend_lookup")))
-                    .collectList()
-                    .block();
-
-            assertNull(toolkit.getTool("frontend_lookup"));
-        }
-
-        @Test
-        void testRunKeepsToolThatReplacesInjectedFrontendToolBeforeCleanup() {
+        void testRunKeepsToolThatReplacesOnSharedToolkitDuringStream() {
             ReActAgent agent = mock(ReActAgent.class);
             Toolkit toolkit = new Toolkit();
             SchemaOnlyTool existingTool = schemaOnlyTool("shared_lookup");
@@ -2284,6 +2396,9 @@ class AguiAgentAdapterV2Test {
             long inputTokens,
             long outputTokens,
             long cachedTokens,
+            long cacheCreationTokens,
+            long reasoningTokens,
+            long toolUsePromptTokens,
             long totalTokens,
             double time) {
         assertInstanceOf(Map.class, value);
@@ -2291,6 +2406,9 @@ class AguiAgentAdapterV2Test {
         assertEquals(inputTokens, usage.get("inputTokens"));
         assertEquals(outputTokens, usage.get("outputTokens"));
         assertEquals(cachedTokens, usage.get("cachedTokens"));
+        assertEquals(cacheCreationTokens, usage.get("cacheCreationTokens"));
+        assertEquals(reasoningTokens, usage.get("reasoningTokens"));
+        assertEquals(toolUsePromptTokens, usage.get("toolUsePromptTokens"));
         assertEquals(totalTokens, usage.get("totalTokens"));
         assertEquals(time, (Double) usage.get("time"), 0.000001);
     }
@@ -2340,13 +2458,5 @@ class AguiAgentAdapterV2Test {
                                         "properties",
                                         Map.of("query", Map.of("type", "string"))))
                         .build());
-    }
-
-    private static final class GhostToolNameToolkit extends Toolkit {
-
-        @Override
-        public Set<String> getToolNames() {
-            return Set.of("ghost_lookup");
-        }
     }
 }

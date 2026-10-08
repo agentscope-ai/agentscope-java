@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolExecutionDetails;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
@@ -104,10 +105,29 @@ class ShellExecuteToolTest {
                 ShellExecuteTool.commandWithWorkingDirectory("workspace dir", "ls", false));
     }
 
+    @Test
+    void preservesFailureAndTruncationAsFacts() {
+        sandbox.response = new ExecuteResponse("failed", 2, true);
+        var result = tool.execute(RT, "test", null, null);
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals(
+                new ToolExecutionDetails("shell", ToolExecutionDetails.Outcome.FAILED, 2, true),
+                result.getExecutionDetails());
+    }
+
+    @Test
+    void missingExitCodeIsNotSuccess() {
+        sandbox.response = new ExecuteResponse("unknown", null, false);
+        var result = tool.execute(RT, "test", null, null);
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals(ToolExecutionDetails.Outcome.UNKNOWN, result.getExecutionDetails().outcome());
+    }
+
     private static final class RecordingSandbox extends LocalFilesystemWithShell {
 
         private String command;
         private Integer timeoutSeconds;
+        private ExecuteResponse response = new ExecuteResponse("out", 0, false);
 
         private RecordingSandbox() {
             super(Path.of(System.getProperty("java.io.tmpdir")));
@@ -118,7 +138,7 @@ class ShellExecuteToolTest {
                 RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
             this.command = command;
             this.timeoutSeconds = timeoutSeconds;
-            return new ExecuteResponse("out", 0, false);
+            return response;
         }
     }
 }

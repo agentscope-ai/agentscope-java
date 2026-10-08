@@ -1,5 +1,6 @@
 ---
 title: Distributed Storage (Distributed Store)
+zh_link: /v2/zh/integration/distributed/index
 ---
 
 AgentScope unifies all components that need distributed persistence under the `DistributedStore` interface. One line of configuration switches agent state, workspace filesystem, sandbox snapshots, and concurrency locks to the same distributed store.
@@ -22,12 +23,12 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## Capability Matrix
 
-| Component | Interface | Redis | OSS | MySQL |
-|-----------|----------|:-----:|:---:|:-----:|
-| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` |
-| Workspace filesystem KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` |
-| Sandbox snapshots | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` |
-| Sandbox concurrency lock | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` |
+| Component | Interface | Redis | OSS | MySQL | MongoDB |
+|-----------|----------|:-----:|:---:|:-----:|:-------:|
+| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` | `MongoAgentStateStore` |
+| Workspace filesystem KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` | `MongoBaseStore` |
+| Sandbox snapshots | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` | `MongoSnapshotSpec` |
+| Sandbox concurrency lock | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` | `MongoSandboxExecutionGuard` |
 
 > OSS does not provide `SandboxExecutionGuard` — object storage is unsuitable for distributed locking. Mix in a Redis guard via `DistributedStore.builder()`.
 
@@ -83,12 +84,13 @@ Explicit builder methods (.stateStore(), .snapshotSpec() on FilesystemSpec, etc.
 ## Store Documentation
 
 - [Redis](/v2/en/integration/distributed/redis) — full capability coverage, recommended for multi-replica production
-- [MySQL / JDBC](/v2/en/integration/distributed/mysql) — for existing relational database infrastructure
+- [JDBC](/v2/en/integration/distributed/jdbc) — for existing relational database infrastructure
+- [MongoDB](/v2/en/integration/distributed/mongodb) — document-oriented storage, ideal for large conversation histories
 - [Alibaba Cloud OSS](/v2/en/integration/distributed/oss) — object storage, best for large-capacity snapshots
 
-## aistio Hosted Store
+## Control Plane Hosted Store
 
-When you already run an aistio control plane, it can host the coordination side of `DistributedStore` (BaseStore, sandbox lock/snapshot, MessageBus, AsyncToolRegistry, **TaskRepository**, optional **SessionTurnGate**). You still provide **one** `AgentStateStore` backend yourself (Redis / MySQL / Postgres / OSS); core exposes `getVersioned` / `saveIfVersion` optimistic concurrency, but state storage stays off the control plane.
+When you already run an AgentScope Service Control Plane, it can host the coordination side of `DistributedStore` (BaseStore, sandbox lock/snapshot, MessageBus, AsyncToolRegistry, **TaskRepository**, optional **SessionTurnGate**). You still provide **one** `AgentStateStore` backend yourself (Redis / MySQL / Postgres / OSS); core exposes `getVersioned` / `saveIfVersion` optimistic concurrency, but state storage stays off the control plane.
 
 ```java
 ControlPlaneStores cp = ControlPlaneStores.fromEnv();

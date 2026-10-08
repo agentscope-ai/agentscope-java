@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -30,6 +31,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileData;
@@ -39,13 +41,18 @@ import io.agentscope.harness.agent.filesystem.model.GrepMatch;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Unit tests for {@link FilesystemTool}. */
 class FilesystemToolTest {
@@ -111,6 +118,40 @@ class FilesystemToolTest {
 
         assertTrue(textOf(result).contains("[DIR]"));
         verify(filesystem).ls(RT, "memory");
+    }
+
+    @Test
+    void sessionIsolation_absoluteAndRelativeWorkspacePathsResolveToSameFile(
+            @TempDir Path workspace) {
+        NamespaceFactory namespaceFactory = IsolationScope.SESSION.toNamespaceFactory();
+        AbstractFilesystem filesystem =
+                new LocalFilesystemSpec()
+                        .isolationScope(IsolationScope.SESSION)
+                        .toFilesystem(workspace, namespaceFactory);
+        WorkspacePathNormalizer normalizer =
+                WorkspacePathNormalizer.of(
+                        workspace.toAbsolutePath().normalize().toString(), namespaceFactory);
+        tool = new FilesystemTool(filesystem, normalizer);
+        RuntimeContext runtimeContext = RuntimeContext.builder().sessionId("session-1").build();
+        Path absolutePath = workspace.resolve("session-1/artifact.txt").toAbsolutePath();
+
+        assertTrue(
+                assertText(
+                                tool.writeFile(runtimeContext, absolutePath.toString(), "artifact"),
+                                ToolResultState.SUCCESS)
+                        .startsWith("Written to "));
+        assertTrue(Files.exists(absolutePath));
+        assertFalse(Files.exists(workspace.resolve("session-1/session-1/artifact.txt")));
+        assertEquals(
+                "artifact",
+                assertText(
+                        tool.readFile(runtimeContext, "artifact.txt", null, null),
+                        ToolResultState.SUCCESS));
+        assertEquals(
+                "artifact",
+                assertText(
+                        tool.readFile(runtimeContext, absolutePath.toString(), null, null),
+                        ToolResultState.SUCCESS));
     }
 
     // ==================== Bug reproduction: listFiles ambiguous error message ====================

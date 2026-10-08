@@ -1,10 +1,13 @@
 ---
-title: "生产安装：Kubernetes 与 Helm"
+title: "生产安装"
+en_link: /v2/en/service/kubernetes
 ---
 
-[English](/v2/en/service/kubernetes)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
-正式 Service Chart 安装 Gateway、Control、Dataplane 和 Scheduler。PostgreSQL、持久存储、入口域名和 TLS 由你管理。应用每组件默认单副本并采用 Recreate 更新，部署和升级需要维护窗口。
+本页介绍面向生产环境的 Kubernetes 与 Helm 安装。正式 Service Chart 安装 Gateway、Control、Dataplane 和 Scheduler。PostgreSQL、持久存储、入口域名和 TLS 由你管理。应用每组件默认单副本并采用 Recreate 更新，部署和升级需要维护窗口。
 
 ## 1. 准备依赖
 
@@ -77,4 +80,4 @@ kubectl -n agentscope port-forward service/service-agentscope-gateway 18080:8080
 
 Secret 更新后重启相关 Deployment；升级前按[运维手册](/v2/zh/service/operations)备份，并保留原 Chart、values 和镜像版本。Chart 保留 PVC；重新安装时显式指定保留的 existingClaim。
 
-此 Chart 提供完整 Service standalone HTTP。Kubernetes-native Aistio/ASDP 是另外的部署模式，应按 SDK 网络契约规划，不把两个 Chart 直接叠装为同一服务。当前 Chart 的单副本安装不提供无停机迁移或多副本 HA 保证。
+此 Chart 提供完整 Service standalone HTTP。Kubernetes-native ControlPlane/ASDP 是另外的部署模式，应按 SDK 网络契约规划，不把两个 Chart 直接叠装为同一服务。当前 Chart 的单副本安装不提供无停机迁移或多副本 HA 保证。

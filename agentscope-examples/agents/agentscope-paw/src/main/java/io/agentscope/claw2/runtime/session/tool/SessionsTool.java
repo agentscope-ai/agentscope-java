@@ -25,6 +25,7 @@ import io.agentscope.claw2.runtime.session.SessionEntry;
 import io.agentscope.claw2.runtime.session.SessionView;
 import io.agentscope.claw2.runtime.session.SpawnResult;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -559,10 +560,13 @@ public class SessionsTool {
         int count = 0;
         for (var delivery : deliveries) {
             if (count++ >= lim) break;
-            out.append(
-                            new io.agentscope.harness.agent.tool.TaskTool(repo)
-                                    .taskOutput(runtimeContext, delivery.taskId(), false, 0L))
-                    .append("\n");
+            new io.agentscope.harness.agent.tool.TaskTool(repo)
+                    .taskOutput(runtimeContext, delivery.taskId(), false, 0L).getOutput().stream()
+                            .filter(TextBlock.class::isInstance)
+                            .map(TextBlock.class::cast)
+                            .map(TextBlock::getText)
+                            .forEach(out::append);
+            out.append('\n');
         }
         return out.toString();
     }

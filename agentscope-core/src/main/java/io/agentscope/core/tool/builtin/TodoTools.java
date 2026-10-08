@@ -18,7 +18,9 @@ package io.agentscope.core.tool.builtin;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.Task;
 import io.agentscope.core.state.TaskContextState;
@@ -96,7 +98,7 @@ public class TodoTools {
             stateInjected = true,
             readOnly = false,
             concurrencySafe = false)
-    public ToolResultBlock todoWrite(
+    public ToolResultBlock write(
             @ToolParam(
                             name = "todos",
                             description =
@@ -113,6 +115,7 @@ public class TodoTools {
         // downgrade): the model is responsible for keeping exactly one active task.
         int inProgress = 0;
         for (TodoItem item : items) {
+            if (item == null) return ToolResultBlock.error("todos must not contain null items.");
             Task.State parsed = parseState(item.getStatus());
             if (parsed == null) {
                 return ToolResultBlock.error(
@@ -137,10 +140,11 @@ public class TodoTools {
         }
 
         TaskContextState ctx = state.getTasksContext();
+        TaskContextState snapshot = ctx.snapshot();
         // Preserve ids/created_at for tasks whose content matches an existing one (best-effort),
         // so stable identifiers survive across full-list rewrites.
         Map<String, Task> byContent = new LinkedHashMap<>();
-        for (Task existing : ctx.getTasks()) {
+        for (Task existing : snapshot.getTasks()) {
             byContent.putIfAbsent(existing.getSubject(), existing);
         }
 
@@ -168,14 +172,26 @@ public class TodoTools {
             rebuilt.add(b.build());
         }
 
-        List<Task> live = ctx.tasksMutable();
-        live.clear();
-        live.addAll(rebuilt);
+        ctx.replaceTasks(rebuilt, snapshot.getRevision());
 
-        return ToolResultBlock.success(render(rebuilt));
+        return ToolResultBlock.of(
+                        TextBlock.builder().text(render(rebuilt)).build(),
+                        Map.of(
+                                "context.state_key",
+                                "tasksContext",
+                                "context.state_revision",
+                                ctx.getRevision(),
+                                "context.representation",
+                                "full"))
+                .withState(ToolResultState.SUCCESS);
     }
 
-    private static String render(List<Task> tasks) {
+    /** Compatibility entry point that renders the structured update receipt. */
+    public String todoWrite(List<TodoItem> todos, AgentState state) {
+        return ((TextBlock) write(todos, state).getOutput().get(0)).getText();
+    }
+
+    public static String render(List<Task> tasks) {
         if (tasks.isEmpty()) {
             return "Todo list cleared (0 items).";
         }

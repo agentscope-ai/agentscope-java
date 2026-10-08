@@ -2,6 +2,7 @@
 title: Filesystem
 description: 'Three deployment modes: local + shell / shared store / sandbox; IsolationScope
   dimensions; multi-user isolation; how skills and tools behave in each mode'
+zh_link: /v2/zh/docs/harness/filesystem
 ---
 
 ## Role
@@ -134,7 +135,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | Method | Description | Default |
 |--------|-------------|---------|
 | `image(String)` | Docker image | required |
-| `isolationScope(IsolationScope)` | Isolation dimension | `SESSION` |
+| `isolationScope(IsolationScope)` | Isolation dimension | `USER` |
 | `memorySizeBytes(Long)` | Container memory limit | Docker default |
 | `cpuCount(Long)` | CPU limit | Docker default |
 | `network(String)` | Docker network | Docker default |
@@ -234,7 +235,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | Method | Description | Default |
 |--------|-------------|---------|
-| `isolationScope(IsolationScope)` | Isolation dimension | store-specific (usually `SESSION`) |
+| `isolationScope(IsolationScope)` | Isolation dimension | store-specific (defaults to `USER`) |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` |
 | `executionGuard(SandboxExecutionGuard)` | Concurrency serialization guard for AGENT/GLOBAL scopes | none |
 | `workspaceProjectionEnabled(boolean)` | Project static assets from host to sandbox | `true` |
