@@ -506,6 +506,27 @@ class DashScopeHttpClientTest {
     }
 
     @Test
+    void testMediaUnavailableClassificationChecksEachFieldAndIgnoresOtherErrors() {
+        String unavailable = "FAILED TO DOWNLOAD MULTIMODAL CONTENT";
+        assertTrue(
+                new DashScopeHttpClient.DashScopeHttpException(unavailable).isMediaUnavailable());
+        assertTrue(
+                new DashScopeHttpClient.DashScopeHttpException("generic error", unavailable, null)
+                        .isMediaUnavailable());
+        assertTrue(
+                new DashScopeHttpClient.DashScopeHttpException(
+                                "generic error", null, "{\"detail\":\"" + unavailable + "\"}")
+                        .isMediaUnavailable());
+        assertFalse(
+                new DashScopeHttpClient.DashScopeHttpException(null, null, null)
+                        .isMediaUnavailable());
+        assertFalse(
+                new DashScopeHttpClient.DashScopeHttpException(
+                                "bad request", "InvalidParameter", "{\"detail\":\"invalid URL\"}")
+                        .isMediaUnavailable());
+    }
+
+    @Test
     void testHttpErrorHandling() {
         mockServer.enqueue(
                 new MockResponse()

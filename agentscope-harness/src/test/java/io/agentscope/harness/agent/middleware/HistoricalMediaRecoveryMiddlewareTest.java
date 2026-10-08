@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -50,6 +51,8 @@ import io.agentscope.core.model.ModelMediaException;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -358,13 +361,473 @@ class HistoricalMediaRecoveryMiddlewareTest {
     }
 
     @Test
+    void missingRuntimeContextPassesThroughWithoutRecovery() {
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        Msg current = textMessage("current", "continue");
+        TestMediaException failure = new TestMediaException(true);
+        AtomicInteger calls = new AtomicInteger();
+
+        StepVerifier.create(
+                        invoke(
+                                middleware(),
+                                null,
+                                List.of(current),
+                                new ReasoningInput(List.of(history, current), List.of(), null),
+                                ignored -> {
+                                    calls.incrementAndGet();
+                                    return Flux.error(failure);
+                                }))
+                .expectErrorMatches(error -> error == failure)
+                .verify();
+
+        assertEquals(1, calls.get());
+    }
+
+    @Test
+    void unsafeCurrentInputCannotTriggerHistoricalRecovery() {
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        Msg missingId = textMessage(null, "continue");
+        assertNoRecoveryForCurrentInput(Collections.singletonList(null), List.of(history));
+        assertNoRecoveryForCurrentInput(List.of(missingId), List.of(history, missingId));
+    }
+
+    @Test
+    void absentCurrentInputStillAllowsHistoricalRecovery() {
+        assertRecoveryWithoutCurrentInput(null);
+        assertRecoveryWithoutCurrentInput(List.of());
+    }
+
+    @Test
+    void absentReasoningHistoryIsNotRetried() {
+        assertNoRecoveryForReasoningHistory(null);
+        assertNoRecoveryForReasoningHistory(List.of());
+    }
+
+    @Test
+    void falseMediaContractAndCyclicCausesPropagateUnchanged() {
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        Msg current = textMessage("current", "continue");
+        AgentState state = AgentState.builder().addMessage(history).addMessage(current).build();
+
+        assertUnrecoverableFailure(new TestMediaException(false), history, current, state);
+
+        RuntimeException outer = new RuntimeException("outer");
+        RuntimeException inner = new RuntimeException("inner");
+        outer.initCause(inner);
+        inner.initCause(outer);
+        assertUnrecoverableFailure(outer, history, current, state);
+    }
+
+    @Test
+    void emptyContentAndEmbeddedMediaRemainUntouchedWhenHistoryIsRecovered() {
+        Msg empty = Msg.builder().id("empty").role(MsgRole.USER).build();
+        Msg embedded =
+                Msg.builder()
+                        .id("embedded")
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("keep text").build(),
+                                        ImageBlock.builder()
+                                                .source(new Base64Source("image/png", "AA=="))
+                                                .build(),
+                                        AudioBlock.builder()
+                                                .source(new Base64Source("audio/mpeg", "AA=="))
+                                                .build(),
+                                        VideoBlock.builder()
+                                                .source(new Base64Source("video/mp4", "AA=="))
+                                                .build(),
+                                        DataBlock.builder()
+                                                .id("file")
+                                                .source(new Base64Source("application/pdf", "AA=="))
+                                                .build()))
+                        .build();
+        ToolResultBlock cleanToolResult =
+                new ToolResultBlock(
+                        "tool-id", "read", List.of(TextBlock.builder().text("ok").build()));
+        Msg tool = Msg.builder().id("tool").role(MsgRole.TOOL).content(cleanToolResult).build();
+        ToolResultBlock emptyToolResult = new ToolResultBlock("empty-tool", "read", List.of());
+        Msg emptyTool =
+                Msg.builder().id("empty-tool").role(MsgRole.TOOL).content(emptyToolResult).build();
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        Msg current = textMessage("current", "continue");
+        AgentState state =
+                AgentState.builder()
+                        .addMessage(empty)
+                        .addMessage(embedded)
+                        .addMessage(tool)
+                        .addMessage(emptyTool)
+                        .addMessage(history)
+                        .addMessage(current)
+                        .build();
+        AtomicInteger calls = new AtomicInteger();
+
+        invoke(
+                        middleware(),
+                        context(null, state),
+                        List.of(current),
+                        new ReasoningInput(state.getContext(), List.of(), null),
+                        reasoning -> {
+                            if (calls.incrementAndGet() == 1) {
+                                return Flux.error(new TestMediaException(true));
+                            }
+                            assertSame(empty, reasoning.messages().get(0));
+                            assertSame(embedded, reasoning.messages().get(1));
+                            assertSame(tool, reasoning.messages().get(2));
+                            assertSame(emptyTool, reasoning.messages().get(3));
+                            assertFalse(hasUrlMedia(reasoning.messages().get(4)));
+                            return Flux.empty();
+                        })
+                .blockLast();
+
+        assertEquals(2, calls.get());
+        assertSame(empty, state.getContext().get(0));
+        assertSame(embedded, state.getContext().get(1));
+        assertSame(tool, state.getContext().get(2));
+        assertSame(emptyTool, state.getContext().get(3));
+        assertFalse(hasUrlMedia(state.getContext().get(4)));
+    }
+
+    @Test
+    void retryPreservesToolsOptionsAndFirstVisibleStart() {
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        Msg current = textMessage("current", "continue");
+        AgentState state = AgentState.builder().addMessage(history).addMessage(current).build();
+        List<ToolSchema> tools =
+                List.of(ToolSchema.builder().name("lookup").description("look up data").build());
+        GenerateOptions options = GenerateOptions.builder().temperature(0.3).build();
+        AtomicInteger calls = new AtomicInteger();
+
+        List<AgentEvent> events =
+                invoke(
+                                middleware(),
+                                context("session", state),
+                                List.of(current),
+                                new ReasoningInput(List.of(history, current), tools, options),
+                                reasoning -> {
+                                    if (calls.incrementAndGet() == 1) {
+                                        return Flux.error(new TestMediaException(true));
+                                    }
+                                    assertSame(tools, reasoning.tools());
+                                    assertSame(options, reasoning.options());
+                                    assertFalse(hasUrlMedia(reasoning.messages().get(0)));
+                                    return Flux.just(
+                                            new ModelCallStartEvent("retry"),
+                                            new TextBlockDeltaEvent("retry", "text", "done"));
+                                })
+                        .collectList()
+                        .block();
+
+        assertEquals(2, calls.get());
+        assertEquals(2, events.size());
+        assertEquals("retry", ((ModelCallStartEvent) events.get(0)).getReplyId());
+        assertTrue(events.get(1) instanceof TextBlockDeltaEvent);
+        assertFalse(hasUrlMedia(state.getContext().get(0)));
+    }
+
+    @Test
+    void retryWithAnEarlierStartDropsOnlyTheDuplicateStart() {
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        Msg current = textMessage("current", "continue");
+        AgentState state = AgentState.builder().addMessage(history).addMessage(current).build();
+        AtomicInteger calls = new AtomicInteger();
+
+        List<AgentEvent> events =
+                invoke(
+                                middleware(),
+                                context("session", state),
+                                List.of(current),
+                                new ReasoningInput(List.of(history, current), List.of(), null),
+                                ignored -> {
+                                    if (calls.incrementAndGet() == 1) {
+                                        return Flux.concat(
+                                                Flux.just(new ModelCallStartEvent("first")),
+                                                Flux.error(new TestMediaException(true)));
+                                    }
+                                    return Flux.just(
+                                            new ModelCallStartEvent("retry"),
+                                            new TextBlockDeltaEvent("retry", "text", "done"));
+                                })
+                        .collectList()
+                        .block();
+
+        assertEquals(2, calls.get());
+        assertEquals(2, events.size());
+        assertEquals("first", ((ModelCallStartEvent) events.get(0)).getReplyId());
+        assertTrue(events.get(1) instanceof TextBlockDeltaEvent);
+        assertFalse(hasUrlMedia(state.getContext().get(0)));
+    }
+
+    @Test
+    void nullReasoningMessageIsPreservedWhileOtherHistoryIsRecovered() {
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        Msg current = textMessage("current", "continue");
+        AgentState state = AgentState.builder().addMessage(history).addMessage(current).build();
+        AtomicInteger calls = new AtomicInteger();
+
+        invoke(
+                        middleware(),
+                        context("session", state),
+                        List.of(current),
+                        new ReasoningInput(Arrays.asList(null, history, current), List.of(), null),
+                        reasoning -> {
+                            if (calls.incrementAndGet() == 1) {
+                                return Flux.error(new TestMediaException(true));
+                            }
+                            assertNull(reasoning.messages().get(0));
+                            assertFalse(hasUrlMedia(reasoning.messages().get(1)));
+                            assertSame(current, reasoning.messages().get(2));
+                            return Flux.empty();
+                        })
+                .blockLast();
+
+        assertEquals(2, calls.get());
+        assertFalse(hasUrlMedia(state.getContext().get(0)));
+    }
+
+    @Test
+    void retrySucceedsWithoutWritableAgentState() {
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        Msg current = textMessage("current", "continue");
+        AtomicInteger calls = new AtomicInteger();
+
+        invoke(
+                        middleware(),
+                        context("session", null),
+                        List.of(current),
+                        new ReasoningInput(List.of(history, current), List.of(), null),
+                        ignored ->
+                                calls.incrementAndGet() == 1
+                                        ? Flux.error(new TestMediaException(true))
+                                        : Flux.empty())
+                .blockLast();
+
+        assertEquals(2, calls.get());
+        assertTrue(hasUrlMedia(history));
+    }
+
+    @Test
+    void commitOnlyChangesRecoveredMessagesStillContainingUrlMedia() {
+        Msg first = imageMessage("first", "https://example.invalid/first.png");
+        Msg second = imageMessage("second", "https://example.invalid/second.png");
+        Msg current = textMessage("current", "continue");
+        Msg replacement = textMessage("second", "already cleaned elsewhere");
+        Msg addedLater = imageMessage("later", "https://example.invalid/later.png");
+        AgentState state =
+                AgentState.builder()
+                        .addMessage(first)
+                        .addMessage(second)
+                        .addMessage(current)
+                        .build();
+        AtomicInteger calls = new AtomicInteger();
+
+        invoke(
+                        middleware(),
+                        context("session", state),
+                        List.of(current),
+                        new ReasoningInput(List.of(first, second, current), List.of(), null),
+                        reasoning -> {
+                            if (calls.incrementAndGet() == 1) {
+                                return Flux.error(new TestMediaException(true));
+                            }
+                            assertFalse(hasUrlMedia(reasoning.messages().get(0)));
+                            assertFalse(hasUrlMedia(reasoning.messages().get(1)));
+                            state.contextMutable().set(1, replacement);
+                            state.contextMutable().add(addedLater);
+                            return Flux.empty();
+                        })
+                .blockLast();
+
+        assertEquals(2, calls.get());
+        assertFalse(hasUrlMedia(state.getContext().get(0)));
+        assertSame(replacement, state.getContext().get(1));
+        assertSame(current, state.getContext().get(2));
+        assertSame(addedLater, state.getContext().get(3));
+    }
+
+    @Test
+    void alreadyRemovedHistoryDoesNotCommitOnSuccessfulRetry() {
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        Msg current = textMessage("current", "continue");
+        AgentState state = AgentState.builder().addMessage(history).addMessage(current).build();
+        AtomicInteger calls = new AtomicInteger();
+
+        invoke(
+                        middleware(),
+                        context("session", state),
+                        List.of(current),
+                        new ReasoningInput(List.of(history, current), List.of(), null),
+                        ignored -> {
+                            if (calls.incrementAndGet() == 1) {
+                                return Flux.error(new TestMediaException(true));
+                            }
+                            state.contextMutable().remove(0);
+                            return Flux.empty();
+                        })
+                .blockLast();
+
+        assertEquals(2, calls.get());
+        assertEquals(List.of(current), state.getContext());
+    }
+
+    @Test
+    void cancellationDoesNotCommitAndClearsCurrentInputMarker() {
+        HistoricalMediaRecoveryMiddleware middleware = middleware();
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        Msg current = textMessage("current", "continue");
+        AgentState state = AgentState.builder().addMessage(history).addMessage(current).build();
+        RuntimeContext ctx = context("session", state);
+        AtomicInteger calls = new AtomicInteger();
+
+        StepVerifier.create(
+                        invoke(
+                                middleware,
+                                ctx,
+                                List.of(current),
+                                new ReasoningInput(List.of(history, current), List.of(), null),
+                                ignored ->
+                                        calls.incrementAndGet() == 1
+                                                ? Flux.error(new TestMediaException(true))
+                                                : Flux.never()))
+                .thenCancel()
+                .verify();
+
+        assertEquals(2, calls.get());
+        assertSame(history, state.getContext().get(0));
+        TestMediaException failure = new TestMediaException(true);
+        StepVerifier.create(
+                        middleware.onReasoning(
+                                agent(),
+                                ctx,
+                                new ReasoningInput(List.of(history, current), List.of(), null),
+                                ignored -> {
+                                    calls.incrementAndGet();
+                                    return Flux.error(failure);
+                                }))
+                .expectErrorMatches(error -> error == failure)
+                .verify();
+        assertEquals(3, calls.get(), "the cancelled agent call must clear its recovery marker");
+    }
+
+    @Test
     void configRejectsBlankReplacementText() {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> HistoricalMediaRecoveryConfig.builder().replacementText("  ").build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> HistoricalMediaRecoveryConfig.builder().replacementText(null).build());
         assertEquals(
                 HistoricalMediaRecoveryConfig.DEFAULT_REPLACEMENT_TEXT,
                 HistoricalMediaRecoveryConfig.defaults().getReplacementText());
+    }
+
+    @Test
+    void nullMiddlewareConfigUsesDefaultReplacementText() {
+        HistoricalMediaRecoveryMiddleware middleware = new HistoricalMediaRecoveryMiddleware(null);
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        Msg current = textMessage("current", "continue");
+        AgentState state = AgentState.builder().addMessage(history).addMessage(current).build();
+        AtomicInteger calls = new AtomicInteger();
+
+        invoke(
+                        middleware,
+                        context("session", state),
+                        List.of(current),
+                        new ReasoningInput(List.of(history, current), List.of(), null),
+                        ignored ->
+                                calls.incrementAndGet() == 1
+                                        ? Flux.error(new TestMediaException(true))
+                                        : Flux.empty())
+                .blockLast();
+
+        assertEquals(2, calls.get());
+        assertEquals(
+                HistoricalMediaRecoveryConfig.DEFAULT_REPLACEMENT_TEXT,
+                state.getContext().get(0).getContentBlocks(TextBlock.class).get(0).getText());
+    }
+
+    private void assertNoRecoveryForCurrentInput(
+            List<Msg> currentInput, List<Msg> reasoningMessages) {
+        Msg history = reasoningMessages.get(0);
+        AgentState state = AgentState.builder().addMessage(history).build();
+        TestMediaException failure = new TestMediaException(true);
+        AtomicInteger calls = new AtomicInteger();
+
+        StepVerifier.create(
+                        invoke(
+                                middleware(),
+                                context("session", state),
+                                currentInput,
+                                new ReasoningInput(reasoningMessages, List.of(), null),
+                                ignored -> {
+                                    calls.incrementAndGet();
+                                    return Flux.error(failure);
+                                }))
+                .expectErrorMatches(error -> error == failure)
+                .verify();
+
+        assertEquals(1, calls.get());
+        assertSame(history, state.getContext().get(0));
+    }
+
+    private void assertRecoveryWithoutCurrentInput(List<Msg> currentInput) {
+        Msg history = imageMessage("history", "https://example.invalid/history.png");
+        AgentState state = AgentState.builder().addMessage(history).build();
+        AtomicInteger calls = new AtomicInteger();
+
+        invoke(
+                        middleware(),
+                        context("session", state),
+                        currentInput,
+                        new ReasoningInput(List.of(history), List.of(), null),
+                        ignored ->
+                                calls.incrementAndGet() == 1
+                                        ? Flux.error(new TestMediaException(true))
+                                        : Flux.empty())
+                .blockLast();
+
+        assertEquals(2, calls.get());
+        assertFalse(hasUrlMedia(state.getContext().get(0)));
+    }
+
+    private void assertNoRecoveryForReasoningHistory(List<Msg> reasoningMessages) {
+        AtomicInteger calls = new AtomicInteger();
+        TestMediaException failure = new TestMediaException(true);
+
+        StepVerifier.create(
+                        invoke(
+                                middleware(),
+                                context("session", null),
+                                List.of(),
+                                new ReasoningInput(reasoningMessages, List.of(), null),
+                                ignored -> {
+                                    calls.incrementAndGet();
+                                    return Flux.error(failure);
+                                }))
+                .expectErrorMatches(error -> error == failure)
+                .verify();
+
+        assertEquals(1, calls.get());
+    }
+
+    private void assertUnrecoverableFailure(
+            RuntimeException failure, Msg history, Msg current, AgentState state) {
+        AtomicInteger calls = new AtomicInteger();
+        StepVerifier.create(
+                        invoke(
+                                middleware(),
+                                context("session", state),
+                                List.of(current),
+                                new ReasoningInput(List.of(history, current), List.of(), null),
+                                ignored -> {
+                                    calls.incrementAndGet();
+                                    return Flux.error(failure);
+                                }))
+                .expectErrorMatches(error -> error == failure)
+                .verify();
+        assertEquals(1, calls.get());
+        assertSame(history, state.getContext().get(0));
     }
 
     private HistoricalMediaRecoveryMiddleware middleware() {
