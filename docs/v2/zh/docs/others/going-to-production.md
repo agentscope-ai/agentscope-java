@@ -43,7 +43,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-控制面开启 `--enable-hosted-store`（生产建议 Postgres）。`withAgentStateStore` 已含托管 TaskRepository；**SandboxFilesystem 模式下的子 agent 后台任务**需此路径。AgentStateStore 的 Redis/Postgres/MySQL/InMemory 支持 versioning CAS，其余后端仍为 LWW；多副本可选 turn gate + `ConflictPolicy.FAIL` 减少重复 turn，正确性靠 CAS。鉴权为共享 internal token，租户取自请求体——不适用于同一控制面上互不信任的多租户。`queueDrain` 为 destructive（读即 ack）。详见 [分布式存储 — Control Plane 托管 Store](/v2/zh/integration/distributed/index#controlplane-托管-store)。
+控制面开启 `--enable-hosted-store`（生产建议 Postgres）。`withAgentStateStore` 已含托管 TaskRepository；**SandboxFilesystem 模式下的子 agent 后台任务**需此路径。AgentStateStore 的 Redis/Postgres/MySQL/InMemory 支持 versioning CAS，其余后端仍为 LWW；多副本可选 turn gate + `ConflictPolicy.FAIL` 减少重复 turn，正确性靠 CAS。鉴权为共享 internal token，租户取自请求体——不适用于同一控制面上互不信任的多租户。`queueDrain` 为 destructive（读即 ack）。详见 [分布式存储 — Control Plane 托管 Store](/v2/zh/integration/distributed/index#control-plane-托管-store)。
 
 ## 一图速览：单机默认 vs 分布式生产
 
