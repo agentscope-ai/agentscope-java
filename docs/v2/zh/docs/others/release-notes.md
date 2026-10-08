@@ -8,6 +8,17 @@ en_link: /v2/en/docs/others/release-notes
 
 ---
 
+## 未发布
+
+### 兼容性说明
+
+- 本地子 agent 不再继承父调用的 `ToolRequestConfig`（包括 AG-UI 前端工具），父调用的工具合并模式也不会再隐藏或覆盖子 agent 的后端工具（[#3357](https://github.com/agentscope-ai/agentscope-java/pull/3357)）。
+- 子 agent 返回 `TOOL_SUSPENDED` 时，`agent_spawn` 和 `agent_send` 会报错并列出等待执行的工具，不再将空回复报告为成功；后台任务以及同步超时后转入后台的任务会标记为 `FAILED`。
+
+**迁移建议：**将客户端交互保留在父 agent 中，或为子 agent 注册可在后端执行的工具；本地子 agent 无法将工具调用交给父 agent 的客户端执行，详见[子 Agent](/v2/zh/docs/harness/subagent#工具执行边界)。
+
+---
+
 ## 2.0.1
 
 > 发布日期：2026-08-05

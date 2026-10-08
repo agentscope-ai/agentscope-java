@@ -8,6 +8,17 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+### Compatibility
+
+- Local subagents no longer inherit the parent's per-call `ToolRequestConfig`, including AG-UI frontend tools, so the parent's tool merge mode no longer hides or overrides the child's backend tools ([#3357](https://github.com/agentscope-ai/agentscope-java/pull/3357)).
+- A child reply with `TOOL_SUSPENDED` now makes `agent_spawn` and `agent_send` report an error naming the pending tools instead of a successful empty reply; background tasks, including calls promoted after a synchronous timeout, are marked `FAILED`.
+
+**Migration:** Keep client-side interactions in the parent agent, or register backend-executable tools in the child; local subagents cannot delegate tool execution to the parent's client. See [Subagents](/v2/en/docs/harness/subagent#tool-execution-boundary) for details.
+
+---
+
 ## 2.0.1
 
 > Released: 2026-08-05

@@ -183,6 +183,8 @@ public final class DefaultAgentManager {
                         ? RuntimeContext.builder(parentRc)
                                 .sessionId(sessionId)
                                 .userId(userId)
+                                // Frontend tools belong to the parent run's client.
+                                .toolRequestConfig(null)
                                 .build()
                         : RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
         if (agent instanceof ReActAgent react) {
@@ -238,6 +240,8 @@ public final class DefaultAgentManager {
                         ? RuntimeContext.builder(parentRc)
                                 .sessionId(sessionId)
                                 .userId(userId)
+                                // Frontend tools belong to the parent run's client.
+                                .toolRequestConfig(null)
                                 .build()
                         : RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
         if (agent instanceof ReActAgent react) {
