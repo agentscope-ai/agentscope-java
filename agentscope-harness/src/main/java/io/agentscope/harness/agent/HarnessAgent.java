@@ -2517,6 +2517,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
             WorkspaceManager wsManager =
                     new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
             wsManager.validate();
+            // Agents sharing memory each append to their own daily ledger (#3436).
+            final String dailyLedgerOwner =
+                    remoteFilesystemSpec != null && remoteFilesystemSpec.isShareMemoryAcrossAgents()
+                            ? resolvedAgentId
+                            : null;
+            wsManager.setDailyLedgerOwner(dailyLedgerOwner);
 
             final AbstractFilesystem sharedFilesystemRef = filesystem;
             final Path capturedWorkspace = resolvedWorkspace;
@@ -2530,7 +2536,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         AbstractFilesystem ctxFs =
                                 new io.agentscope.harness.agent.filesystem.BakedContextFilesystem(
                                         sharedFilesystemRef, bakedRc);
-                        return new WorkspaceManager(capturedWorkspace, ctxFs, capturedIndex, ctxNs);
+                        WorkspaceManager ctxManager =
+                                new WorkspaceManager(
+                                        capturedWorkspace, ctxFs, capturedIndex, ctxNs);
+                        ctxManager.setDailyLedgerOwner(dailyLedgerOwner);
+                        return ctxManager;
                     };
 
             // ---- MessageBus / AsyncToolRegistry: workspace defaults ----

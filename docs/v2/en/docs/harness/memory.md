@@ -267,6 +267,34 @@ Entering maintenance does not necessarily call the model: consolidation skips th
 
 All thresholds are tunable via `.memory(MemoryConfig.builder()...)`, though most projects don't need to touch them.
 
+## Sharing memory across agents
+
+By default each agent keeps its own memory: in shared-store mode Alice's memory for agent `planner` lives under `agents/planner/users/alice/...`, and agent `writer` cannot see it. To give all of a user's agents one long-term memory, build every agent that should share it on the same store with `shareMemoryAcrossAgents(true)`:
+
+```java
+DistributedStore store = RedisDistributedStore.fromJedis(jedis);
+
+HarnessAgent planner = HarnessAgent.builder()
+    .name("planner")
+    .model(model)
+    .workspace(plannerWorkspace)
+    .distributedStore(store)
+    .filesystem(new RemoteFilesystemSpec().shareMemoryAcrossAgents(true))
+    .build();
+
+HarnessAgent writer = HarnessAgent.builder()
+    .name("writer")
+    .model(model)
+    .workspace(writerWorkspace)
+    .distributedStore(store)
+    .filesystem(new RemoteFilesystemSpec().shareMemoryAcrossAgents(true))
+    .build();
+```
+
+- Only `MEMORY.md` and `memory/` are shared, under store key `users/<userId>/...` (`isolationScope` still picks the key: per user by default, per session with `SESSION`). `AGENTS.md`, skills, sessions and everything else stay per agent.
+- Each agent appends to its own daily log `memory/YYYY-MM-DD.<agentId>.md`, so agents flushing at the same time don't overwrite each other. Consolidation merges every agent's logs into the shared `MEMORY.md`, and `memory_search` searches all of them.
+- This applies to shared-store mode (`RemoteFilesystemSpec`). In local mode memory lives in the workspace directory, so agents share it only when they use the same workspace; in sandbox mode memory stays inside each agent's sandbox.
+
 ## Turn it off entirely
 
 If you want to handle memory yourself or wire your own tools:

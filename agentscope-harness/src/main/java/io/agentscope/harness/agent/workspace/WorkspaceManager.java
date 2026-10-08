@@ -135,6 +135,13 @@ public class WorkspaceManager implements AutoCloseable {
      */
     private final boolean ownsIndex;
 
+    /**
+     * Writer suffix for daily ledgers, or {@code null} for the plain {@code memory/YYYY-MM-DD.md}.
+     * Set when several agents share one memory namespace: ledger appends are read-modify-write
+     * guarded only by this manager's {@link #pathLocks}, so each agent appends to its own file.
+     */
+    private volatile String dailyLedgerOwner;
+
     public WorkspaceManager(Path workspace) {
         this(workspace, null, null, null, false);
     }
@@ -283,6 +290,32 @@ public class WorkspaceManager implements AutoCloseable {
 
     public Path getMemoryDir(RuntimeContext rc) {
         return resolveRuntimeDataPath(rc, MEMORY_DIR);
+    }
+
+    /**
+     * Makes this manager append daily memory entries to {@code memory/YYYY-MM-DD.<owner>.md}
+     * instead of {@code memory/YYYY-MM-DD.md}. Used when agents share long-term memory, so that
+     * concurrent flushes from different agents never rewrite the same ledger file. Characters
+     * outside {@code [A-Za-z0-9_-]} in {@code owner} are replaced with {@code _}; a {@code null}
+     * or blank owner restores the default file name.
+     *
+     * @param owner the writing agent's id
+     */
+    public void setDailyLedgerOwner(String owner) {
+        this.dailyLedgerOwner =
+                owner == null || owner.isBlank() ? null : owner.replaceAll("[^A-Za-z0-9_-]", "_");
+    }
+
+    /**
+     * Returns the workspace-relative path of the daily memory ledger this manager appends to.
+     *
+     * @param isoDate the day in {@code YYYY-MM-DD} form
+     * @return {@code memory/<isoDate>.md}, or {@code memory/<isoDate>.<owner>.md} when a ledger
+     *     owner is set
+     */
+    public String dailyLedgerPath(String isoDate) {
+        String owner = dailyLedgerOwner;
+        return MEMORY_DIR + "/" + isoDate + (owner == null ? "" : "." + owner) + ".md";
     }
 
     public Path getSkillsDir() {

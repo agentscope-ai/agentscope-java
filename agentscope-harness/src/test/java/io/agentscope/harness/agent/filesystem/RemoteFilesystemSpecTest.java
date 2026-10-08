@@ -159,4 +159,68 @@ class RemoteFilesystemSpecTest {
                 store.get(List.of("agents", "agent-a", "users", "user-1", "root"), "/MEMORY.md"),
                 "shared routes must keep their per-user store namespaces");
     }
+
+    // ==================== Long-term memory shared across agents (#3436) ====================
+
+    @Test
+    void shareMemoryAcrossAgentsSharesOnlyMemoryRoutesPerUser() {
+        InMemoryStore store = new InMemoryStore();
+        AbstractFilesystem planner =
+                new RemoteFilesystemSpec(store)
+                        .shareMemoryAcrossAgents(true)
+                        .toFilesystem(workspace, "planner", rc -> List.of());
+        AbstractFilesystem writer =
+                new RemoteFilesystemSpec(store)
+                        .shareMemoryAcrossAgents(true)
+                        .toFilesystem(workspace, "writer", rc -> List.of());
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
+        RuntimeContext bob = RuntimeContext.builder().userId("bob").build();
+
+        planner.uploadFiles(
+                alice,
+                List.of(
+                        Map.entry("MEMORY.md", bytes("- prefers tea")),
+                        Map.entry("memory/2026-10-08.planner.md", bytes("- ledger entry")),
+                        Map.entry("AGENTS.md", bytes("planner persona"))));
+
+        assertNotNull(store.get(List.of("users", "alice", "root"), "/MEMORY.md"));
+        assertNotNull(store.get(List.of("users", "alice", "memory"), "/2026-10-08.planner.md"));
+        assertNotNull(
+                store.get(List.of("agents", "planner", "users", "alice", "root"), "/AGENTS.md"));
+
+        assertTrue(readContent(writer, alice, "MEMORY.md").contains("- prefers tea"));
+        assertTrue(
+                readContent(writer, alice, "memory/2026-10-08.planner.md")
+                        .contains("- ledger entry"));
+        assertFalse(
+                writer.read(alice, "AGENTS.md", 0, 0).isSuccess(), "AGENTS.md must stay per agent");
+        assertFalse(writer.read(bob, "MEMORY.md", 0, 0).isSuccess(), "memory must stay per user");
+    }
+
+    @Test
+    void memoryStaysPerAgentByDefault() {
+        InMemoryStore store = new InMemoryStore();
+        RemoteFilesystemSpec spec = new RemoteFilesystemSpec(store);
+        assertFalse(spec.isShareMemoryAcrossAgents());
+        AbstractFilesystem planner = spec.toFilesystem(workspace, "planner", rc -> List.of());
+        AbstractFilesystem writer =
+                new RemoteFilesystemSpec(store).toFilesystem(workspace, "writer", rc -> List.of());
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
+
+        planner.uploadFiles(alice, List.of(Map.entry("MEMORY.md", bytes("- prefers tea"))));
+
+        assertNotNull(
+                store.get(List.of("agents", "planner", "users", "alice", "root"), "/MEMORY.md"));
+        assertFalse(writer.read(alice, "MEMORY.md", 0, 0).isSuccess());
+    }
+
+    private static byte[] bytes(String text) {
+        return text.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String readContent(AbstractFilesystem fs, RuntimeContext rc, String path) {
+        ReadResult read = fs.read(rc, path, 0, 0);
+        assertTrue(read.isSuccess(), () -> path + " must be readable: " + read.error());
+        return read.fileData().content();
+    }
 }

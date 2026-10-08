@@ -73,7 +73,7 @@ public class MemorySaveTool {
         workspaceManager.appendUtf8WorkspaceRelative(rc, WorkspaceConstants.MEMORY_MD, section);
 
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
-        String dailyPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
+        String dailyPath = workspaceManager.dailyLedgerPath(today);
         String dailyEntry =
                 String.format(
                         "\n## Memory Save — %s\n%s\n", Instant.now().toString(), content.strip());

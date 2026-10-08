@@ -120,7 +120,7 @@ public class MemoryFlushManager {
 
         String existingMemory = readExistingContent(rc, WorkspaceConstants.MEMORY_MD);
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
-        String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
+        String dailyRelPath = dailyLedgerPath(today);
         String existingDaily = readExistingContent(rc, dailyRelPath);
 
         StringBuilder userPrompt = new StringBuilder();
@@ -230,8 +230,15 @@ public class MemoryFlushManager {
                         "\n## Memory Flush — %s\n%s\n",
                         java.time.Instant.now().toString(), content);
 
-        String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
+        String dailyRelPath = dailyLedgerPath(today);
         workspaceManager.appendUtf8WorkspaceRelative(rc, dailyRelPath, dailyEntry);
+    }
+
+    /** Today's ledger for this writer; the plain daily file when there is no workspace manager. */
+    private String dailyLedgerPath(String today) {
+        return workspaceManager != null
+                ? workspaceManager.dailyLedgerPath(today)
+                : WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
     }
 
     private String readExistingContent(RuntimeContext rc, String relativePath) {
