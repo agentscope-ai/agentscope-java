@@ -104,6 +104,41 @@ results, including calls loaded from a failed session. Pending permission confir
 require confirmation; empty-input resume and caller-supplied tool results retain their existing
 behavior. Remote agents and custom factories configure recovery themselves.
 
+### Custom factories
+
+When a subagent needs an instance that a declaration cannot describe — its own middleware, tools
+the parent does not have, or a `Model` object — build it yourself in a factory:
+
+```java
+HarnessAgent.builder()
+    .name("orchestrator")
+    .model(model)
+    .workspace(workspace)
+    .subagentFactory(
+        SubagentDeclaration.builder()
+            .name("note-taker")
+            .description("Keeps notes across turns")
+            .persistSession(true)
+            .build(),
+        parentRc -> HarnessAgent.builder()
+            .name("note-taker")
+            .model(noteModel)
+            .workspace(noteWorkspace)
+            .toolkit(noteToolkit)
+            .middleware(auditMiddleware)
+            .build())
+    .build();
+```
+
+The factory runs on every spawn and receives the parent's `RuntimeContext`. The declaration
+supplies the name, the description, and the spawn-time options `persistSession`, `mode`, `hidden`,
+`exposeToUser`, and `inheritParentPermissions`; fields that describe how to build the instance
+(`model`, `tools`, `skills`, `workspace`, `steps`, ...) are ignored. Remote declarations
+(`url(...)`) cannot be combined with a factory.
+
+`subagentFactory(name, description, factory)` still covers the simple case. It takes no
+declaration, so every spawn starts a fresh session.
+
 ### Built-in `general-purpose`
 
 No spec file needed; always available. Its role is "generic fallback" — it mirrors the parent's capability (same model, tools, skills) and shares the parent's workspace. Useful when the parent wants to isolate context for a sub-task without writing a dedicated spec.
@@ -214,6 +249,10 @@ By default every `agent_spawn` creates a fresh subagent with a new session — n
 ```
 
 When `persistSession` is on, the framework derives a deterministic key from `(parentSessionId, agentId, label)`. If `agent_spawn` is called again with the same combination, the existing agent instance is reused — its conversation history and state are preserved.
+
+Subagents built by a custom factory get the same behavior when they are registered with
+`subagentFactory(declaration, factory)` and the declaration sets `persistSession(true)` (see
+Custom factories above).
 
 ## Exposing subagents to the user
 

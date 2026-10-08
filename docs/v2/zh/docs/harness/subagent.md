@@ -102,6 +102,40 @@ HarnessAgent.builder()
 也适用于从失败会话中重新加载的工具调用。等待人工审批的工具仍须提供审批结果；空输入恢复执行、
 调用方补交工具结果的行为保持原有语义。远端 agent 和自定义工厂需自行配置恢复策略。
 
+### 自定义工厂
+
+子 agent 需要声明描述不了的实例时——比如自己的 middleware、父 agent 没有的工具、直接传
+`Model` 对象——可以在工厂里自己构建：
+
+```java
+HarnessAgent.builder()
+    .name("orchestrator")
+    .model(model)
+    .workspace(workspace)
+    .subagentFactory(
+        SubagentDeclaration.builder()
+            .name("note-taker")
+            .description("跨轮次积累笔记")
+            .persistSession(true)
+            .build(),
+        parentRc -> HarnessAgent.builder()
+            .name("note-taker")
+            .model(noteModel)
+            .workspace(noteWorkspace)
+            .toolkit(noteToolkit)
+            .middleware(auditMiddleware)
+            .build())
+    .build();
+```
+
+工厂在每次 spawn 时调用，参数是父 agent 的 `RuntimeContext`。声明负责名称、描述，以及 spawn
+时生效的选项：`persistSession`、`mode`、`hidden`、`exposeToUser`、`inheritParentPermissions`；
+描述"怎么构建实例"的字段（`model`、`tools`、`skills`、`workspace`、`steps` 等）会被忽略。
+远程声明（`url(...)`）不能和工厂一起用。
+
+简单场景仍可用 `subagentFactory(name, description, factory)`。它不带声明，所以每次 spawn
+都是新会话。
+
 ### 内置 `general-purpose`
 
 不需要写声明文件，总是可用。它的角色是"通用兜底"——能力和主 agent 一致（同样的模型、工具、技能），共享主工作区。适合"主 agent 想隔离上下文跑一个子任务但又懒得专门写 spec"。
@@ -212,6 +246,9 @@ agent_send label="pr-reviewer" message="顺便也看下 schema 变更"
 ```
 
 开启后，框架会根据 `(parentSessionId, agentId, label)` 生成确定性的 key。如果再次 spawn 同样的组合，就会复用已存在的 agent 实例——对话历史和状态都保留。
+
+自定义工厂构建的子 agent 也一样：用 `subagentFactory(declaration, factory)` 注册，并在声明里设
+`persistSession(true)` 即可（见上文「自定义工厂」）。
 
 ## 向用户暴露子 Agent
 
