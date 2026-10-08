@@ -144,7 +144,7 @@ AgentScope Java 2.0.4 新增 OpenAI Responses API、重新设计的 AgentScope S
 ### 重构
 
 - 将 `AguiRuntimeContextRequest` / `AguiRuntimeContextResolver` / `AguiRequestBodyParser` 从示例层下沉至 `extensions-agui` 协议层（[#2822](https://github.com/agentscope-ai/agentscope-java/pull/2822)）。
-- 将 Java 服务控制面替换为 Go `aistiod` 控制面，保留 Java 网关、数据面和调度面；`agentscope-builder` 示例提升为顶层 `agentscope-service` 模块。
+- 将 Java 服务控制面替换为 Go `service-controlplane` 控制面，保留 Java 网关、数据面和调度面；`agentscope-builder` 示例提升为顶层 `agentscope-service` 模块。
 - 按用户隔离 HITL 会话：`ThreadSessionManager` / `AgentResolver` 使用 `(userId, threadId)` 作为键，避免 `hasMemory` 和 Agent 复用混用租户；通过 `AguiUtil.asReActAgent` 解包 Harness，使停止和中断作用于实际会话（[#2856](https://github.com/agentscope-ai/agentscope-java/pull/2856)，[#2855](https://github.com/agentscope-ai/agentscope-java/issues/2855)）。
 - 新增统一的 `agentscope-extensions-jdbc` 模块，提供 `AbstractJdbcDialect` / `StoreDialect` / `SessionStateDialect` / `SnapshotDialect` 抽象及 MySQL、PostgreSQL、H2、SQLite 实现；现有 MySQL 和 PostgreSQL 分布式存储委托该模块（[#2759](https://github.com/agentscope-ai/agentscope-java/pull/2759)，[#2503](https://github.com/agentscope-ai/agentscope-java/issues/2503)）。
 

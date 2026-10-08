@@ -65,7 +65,7 @@ snapshot 用的 `TaskRecord`）。默认根目录为 `agentscope.agent-protocol.
 
 ## 并发执行
 
-Agent 在调用之间是无状态的——单例即可服务多个并发任务。每个任务通过 `RuntimeContext` 携带独立的 `(userId, sessionId)`，状态完全隔离：
+此适配器默认由 Spring 持有 `HarnessAgent` Bean，生命周期覆盖协议任务执行和恢复，在应用退出时关闭。每个任务通过 `RuntimeContext` 传入用户和会话身份。普通 Web 请求采用共享 Builder、每请求创建实例的方式，见[实例生命周期](/v2/zh/docs/building-blocks/agent#实例生命周期)；不要在协议任务刚提交时关闭适配器持有的 Agent：
 
 ```java
 @Bean

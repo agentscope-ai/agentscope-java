@@ -381,6 +381,10 @@ sequenceDiagram
 </Accordion>
 
 
+## AgentEvent 与持久 SessionEvent
+
+本页的 AgentEvent 是实时交互事件，不等同于原生 SessionEvent 或 Service 公共 SSE。原生日志记录已提交模型请求、工具边界和 checkpoint，Service 再投影为面向用户的 turn/item/action 事件；三者格式和游标独立。详见 [会话日志与恢复](/v2/zh/docs/harness/session-log)。
+
 ## 从事件流重建消息
 
 事件与消息并非相互独立，而是同一数据的两种视图。`streamEvents` 产出的事件流可以按 `replyId` / `blockId` / `toolCallId` 聚合还原成完整的 `AssistantMessage`。这保证了最终消息状态可以仅凭事件流完整还原。
@@ -417,7 +421,7 @@ agent.streamEvents(userMsg)
 
 <Tip>
 
-这种设计让部署更加灵活：后端可以通过 SSE 把事件流推给前端，前端在客户端侧重建消息。即使连接中断，从任意检查点重放事件序列也能精确恢复消息状态。
+当前请求的流式界面可以将 AgentEvent 映射为 SSE。`streamEvents()` 用于启动执行，本身没有持久游标，不应用它重新执行请求来补齐断线期间的内容。Harness 默认也会保存直接调用的日志；读取历史，以及需要后台任务时如何引入 `AgentSession`，见[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)。托管前端直接使用 [Agent API 的 snapshot + SSE](/v2/zh/service/session-event-log)。
 
 </Tip>
 
@@ -476,3 +480,9 @@ agent.streamEvents(new UserMessage("user", "帮我修复这个 bug"))
 
 
 </CardGroup>
+
+## 与持久 SessionEvent 的关系
+
+AgentEvent 是实时强类型事件，SessionEvent 是不可变的持久执行事实，不是一一对应的两个副本。标准运行时通过 `event.getExecution()` 暴露 agentId/sessionId/turnId/runId；其中 runId 对应原生日志的 executionRunId。子事件保留子执行身份。event.id、native seq 和公共 SSE cursor 仍独立，实时事件到达不代表已提交。
+
+逻辑 turn 可以包含多个恢复执行；AgentEndEvent 只说明本次调用结束。完整生命周期及用法见[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)。
