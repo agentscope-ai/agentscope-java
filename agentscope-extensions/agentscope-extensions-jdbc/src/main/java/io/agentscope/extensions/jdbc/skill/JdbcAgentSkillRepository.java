@@ -20,6 +20,7 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.jdbc.JdbcConstraintErrors;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
 import io.agentscope.extensions.jdbc.dialect.table.SkillDialect;
@@ -28,14 +29,12 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -99,38 +98,6 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
      * rejecting a POSIX filename such as {@code a:b.txt}, which is not expected in skills.
      */
     private static final Pattern DRIVE_LETTER_PREFIX = Pattern.compile("^[A-Za-z]:.*");
-
-    /** SQLite's {@code SQLITE_CONSTRAINT}; xerial reports it with a null SQLState. */
-    private static final int SQLITE_CONSTRAINT = 19;
-
-    /**
-     * Duplicate-key codes for drivers reporting no SQLState at all and not covered by {@link
-     * #SQLITE_CONSTRAINT}: Informix and GBase 8s — {@code -239} (duplicate value in a unique
-     * index) and {@code -268} (unique constraint violation). Values from the vendor
-     * documentation; those drivers were not available to verify against, unlike every other
-     * entry in {@link #isUniqueViolation}.
-     */
-    private static final Set<Integer> VENDOR_UNIQUE_VIOLATION_CODES = Set.of(-239, -268);
-
-    /**
-     * SQLStates that positively report a unique-constraint violation: {@code 23505} (the
-     * SQL:2003 code — PostgreSQL and its forks, H2, HSQLDB, Derby, DB2). The umbrella {@code
-     * 23500} is deliberately absent — no driver reporting it for duplicates could be named,
-     * and umbrella states cover sibling violations; those stacks' duplicates reach {@link
-     * #DUPLICATE_KEY_VENDOR_CODES} under {@code 23000} instead. Should such a driver ever
-     * surface, the remedy is widening that gate to its class-23 state, not reinstating the
-     * umbrella.
-     */
-    private static final Set<String> UNIQUE_SQL_STATES = Set.of("23505");
-
-    /**
-     * Duplicate-key vendor codes under the generic integrity SQLState {@code 23000}, where
-     * the state alone cannot tell a duplicate from sibling violations: MySQL / MariaDB /
-     * TiDB / OceanBase {@code 1062}, MySQL 5.5-era {@code 1022}, Oracle {@code ORA-00001}
-     * = 1, SQL Server {@code 2601} / {@code 2627}.
-     */
-    private static final Set<Integer> DUPLICATE_KEY_VENDOR_CODES =
-            Set.of(1062, 1022, 1, 2601, 2627);
 
     /** The data source holding the skill tables; never closed by this repository. */
     private final DataSource dataSource;
@@ -1022,73 +989,13 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     }
 
     /**
-     * Whether the exception reports a duplicate-key / unique-constraint violation — the
-     * authoritative conflict signal for the {@code force=false} insert. Only positive
-     * duplicate signals match, so any other constraint failure surfaces as the driver's own
-     * {@link SQLException} instead of the destructive "use force=true" advice.
-     *
-     * <p>Signals, in order:
-     *
-     * <ol>
-     *   <li>SQLState in {@link #UNIQUE_SQL_STATES} — the portable unique-violation codes.
-     *       pgjdbc and its forks never throw the JDBC 4 subtypes (issue #963 is still open),
-     *       nor do Firebird, SQL Server, 达梦, or H2 1.x; all report 23505, as do H2 2.x,
-     *       HSQLDB, Derby, and DB2 through the subtype. pgjdbc returns error code 0, so the
-     *       code cannot stand in for the state.
-     *   <li>SQLState {@code 23000} plus a code from {@link #DUPLICATE_KEY_VENDOR_CODES} —
-     *       that state is the whole class-23 umbrella for the MySQL family, Oracle, and SQL
-     *       Server, so the vendor code decides.
-     *   <li>SQLite (xerial): error 19 with a null state is every {@code
-     *       SQLITE_CONSTRAINT_*} collapsed; {@link #isSqliteUniqueViolation} narrows it.
-     *   <li>Vendor codes for drivers reporting no SQLState: {@link
-     *       #VENDOR_UNIQUE_VIOLATION_CODES}.
-     * </ol>
-     *
-     * <p>Deliberately not matched: the {@link SQLIntegrityConstraintViolationException}
-     * subtype on its own — MySQL Connector/J also raises it for NOT NULL (1048) and foreign
-     * key (1451/1452) violations, which is exactly the misreport this method must avoid —
-     * and the class-23 siblings (23502, 23503, 23514). An unmatched duplicate fails the
-     * save as a plain {@code SQLException} rather than a false conflict.
-     *
-     * <p>Also not matched: MySQL {@code ER_DUP_ENTRY_AUTOINCREMENT_CASE} (1569) reports
-     * SQLState {@code HY000} — outside class 23 — but it requires an explicit auto-increment
-     * value, which the skill insert never supplies. ClickHouse has no duplicate-key error to
-     * match: it does not enforce primary-key uniqueness.
+     * Uses the shared JDBC duplicate classifier; other constraints remain storage failures.
      *
      * @param e the exception thrown by the skill insert
-     * @return true when the failure is a duplicate-key conflict rather than any other error
+     * @return true only for a positively identified duplicate-key conflict
      */
     static boolean isUniqueViolation(SQLException e) {
-        String state = e.getSQLState();
-        // Null SQLState is real (SQLite reports one) and Set.of rejects null lookups.
-        if (state != null && UNIQUE_SQL_STATES.contains(state)) {
-            return true;
-        }
-        if ("23000".equals(state) && DUPLICATE_KEY_VENDOR_CODES.contains(e.getErrorCode())) {
-            return true;
-        }
-        if (e.getErrorCode() == SQLITE_CONSTRAINT
-                && e.getClass().getName().startsWith("org.sqlite.")) {
-            return isSqliteUniqueViolation(e);
-        }
-        return VENDOR_UNIQUE_VIOLATION_CODES.contains(e.getErrorCode());
-    }
-
-    /**
-     * Narrows SQLite's umbrella error 19 to unique violations via the driver's {@code
-     * getResultCode()}, reached reflectively to keep the driver off the compile classpath.
-     * Compares the enum's {@code name()}, not {@code toString()} — the latter renders the
-     * full message and never equals the bare constant (sqlite-jdbc 3.47.1.0). Falls back to
-     * the umbrella signal if reflection fails.
-     */
-    private static boolean isSqliteUniqueViolation(SQLException e) {
-        try {
-            Object resultCode = e.getClass().getMethod("getResultCode").invoke(e);
-            return resultCode instanceof Enum<?>
-                    && "SQLITE_CONSTRAINT_UNIQUE".equals(((Enum<?>) resultCode).name());
-        } catch (ReflectiveOperationException reflectionFailure) {
-            return true;
-        }
+        return JdbcConstraintErrors.isDuplicateKey(e);
     }
 
     /**
