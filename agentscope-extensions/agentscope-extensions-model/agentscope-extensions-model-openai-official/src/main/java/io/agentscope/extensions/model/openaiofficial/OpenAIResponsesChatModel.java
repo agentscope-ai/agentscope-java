@@ -35,6 +35,7 @@ import io.agentscope.core.model.ModelProviderSupport;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
@@ -48,6 +49,16 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
+/**
+ * OpenAI Responses chat model using the official OpenAI Java SDK.
+ *
+ * <p>This implementation sends AgentScope messages through the Responses API, with support for:
+ * <ul>
+ *   <li>Streaming and non-streaming modes</li>
+ *   <li>Local function tools and provider-executed server tools</li>
+ *   <li>Timeout, retry, and proxy configuration</li>
+ * </ul>
+ */
 public class OpenAIResponsesChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIResponsesChatModel.class);
@@ -59,6 +70,7 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
     private final Boolean strictTools;
     private final Boolean strictJsonSchema;
     private final ResponsesMultiAgentFormatter formatter;
+    private final List<OpenAIServerTool> serverTools;
 
     OpenAIResponsesChatModel(
             OpenAIClient client,
@@ -67,7 +79,8 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
             String baseUrl,
             Boolean strictTools,
             Boolean strictJsonSchema,
-            ResponsesMultiAgentFormatter formatter) {
+            ResponsesMultiAgentFormatter formatter,
+            List<OpenAIServerTool> serverTools) {
         this.client = client;
         this.configuredOptions = configuredOptions;
         this.apiKey = apiKey;
@@ -75,6 +88,7 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
         this.strictTools = strictTools;
         this.strictJsonSchema = strictJsonSchema;
         this.formatter = formatter;
+        this.serverTools = serverTools != null ? List.copyOf(serverTools) : List.of();
     }
 
     void applyNativeStructuredOutputDefaults() {
@@ -117,6 +131,7 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
                 ResponsesRequestMapper.map(
                         messages,
                         tools,
+                        serverTools,
                         effectiveOptions,
                         strictTools,
                         strictJsonSchema,
@@ -260,6 +275,7 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
         private Boolean strictTools;
         private Boolean strictJsonSchema;
         private ResponsesMultiAgentFormatter formatter;
+        private List<OpenAIServerTool> serverTools;
         private Map<String, String> additionalHeaders;
         private ProxyConfig proxyConfig;
 
@@ -305,6 +321,11 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
 
         public Builder formatter(ResponsesMultiAgentFormatter formatter) {
             this.formatter = formatter;
+            return this;
+        }
+
+        public Builder serverTools(List<OpenAIServerTool> serverTools) {
+            this.serverTools = serverTools;
             return this;
         }
 
@@ -373,7 +394,8 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
                             resolvedBaseUrl,
                             strictTools,
                             strictJsonSchema,
-                            formatter);
+                            formatter,
+                            serverTools);
 
             model.setContextWindowSize(
                     contextWindowSize >= 0

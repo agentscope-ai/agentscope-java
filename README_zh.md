@@ -113,63 +113,67 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 
 其他可选：`agentscope-extensions-model-openai`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-ollama`。详见[模型文档](https://java.agentscope.io/v2/zh/docs/building-blocks/model.html)。
 
-只想跑裸 `ReActAgent`（不需要工作区 / 持久化 / 沙箱），单独依赖 `agentscope-core` 即可。
+如果希望直接使用 `ReActAgent` 的推理和工具 API、自行组合工程能力，可依赖 `agentscope-core` 和所需模型扩展。
 
 ## Hello AgentScope!
 
-使用 AgentScope Java 2.0，启动你的第一个智能体：
+推荐在应用启动时定义共享 Builder，每次请求用 `builder.build()` 创建新 Agent，执行结束后关闭。新实例通过相同的身份和持久化配置延续会话。运行前设置 `DASHSCOPE_API_KEY`：
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.nio.file.Paths;
 
 public class FirstAgent {
+    // 应用启动时配置共享 Builder；请求期间只调用 build()。
+    private static final HarnessAgent.Builder AGENT_BUILDER = HarnessAgent.builder()
+            .name("assistant")
+            .agentId("assistant")
+            .sysPrompt("你是一个有用的 AI 助手。")
+            .model("dashscope:qwen-plus")
+            .workspace(Paths.get(".agentscope/workspace"));
+
     public static void main(String[] args) {
-        HarnessAgent agent = HarnessAgent.builder()
-                .name("assistant")
-                .sysPrompt("你是一个有用的 AI 助手。")
-                // ModelRegistry 按字符串解析，自动读取对应环境变量
-                // （如 OPENAI_API_KEY 或 DEEPSEEK_API_KEY）。
-                // 示例："openai:gpt-4.1"、"openai:o3"、
-                // "deepseek:deepseek-v4-flash"、"dashscope:qwen-plus"、
-                // "anthropic:claude-sonnet-4-7"、"ollama:llama3"
-                .model("dashscope:qwen-plus")
-                // 也可以直接传入 ChatModel 对象：
-                // .model(OpenAIChatModel.builder().model("gpt-4.1").build())
-                .workspace(Paths.get(".agentscope/workspace"))
-                .build();
+        try (HarnessAgent agent = AGENT_BUILDER.build()) {
+            RuntimeContext ctx = RuntimeContext.builder()
+                    .sessionId("demo").userId("alice").build();
+            agent.call(new UserMessage("你好！"), ctx).block();
+        }
 
-        RuntimeContext ctx = RuntimeContext.builder()
-                .sessionId("demo").userId("alice").build();
-
-        // 阻塞式调用
-        agent.call(new UserMessage("你好！"), ctx).block();
-
-        // 或者流式获取事件，用于实时 UI 渲染
-        agent.streamEvents(new UserMessage("帮我把今天的关键点列三条。"), ctx)
-                .doOnNext(event -> {
-                    switch (event.getType()) {
-                        case TEXT_BLOCK_DELTA -> System.out.print(
-                                ((io.agentscope.core.event.TextBlockDeltaEvent) event).getDelta());
-                        case TOOL_CALL_START -> System.out.println(
-                                "\n[tool] " + ((io.agentscope.core.event.ToolCallStartEvent) event).getToolCallName());
-                        default -> { }
-                    }
-                })
-                .blockLast();
+        // COMMENT_帮我把今天的关键点列三条。
+        try (HarnessAgent agent = AGENT_BUILDER.build()) {
+            RuntimeContext ctx = RuntimeContext.builder()
+                    .sessionId("demo").userId("alice").build();
+            agent.streamEvents(new UserMessage("帮我把今天的关键点列三条。"), ctx)
+                    .doOnNext(event -> {
+                        switch (event.getType()) {
+                            case TEXT_BLOCK_DELTA -> System.out.print(
+                                    ((TextBlockDeltaEvent) event).getDelta());
+                            case TOOL_CALL_START -> System.out.println(
+                                    "\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
+                            default -> { }
+                        }
+                    })
+                    .blockLast();
+        }
     }
 }
 ```
 
+普通问答、多轮对话和工作流节点从 `call` / `streamEvents` 开始，详见[快速开始](https://java.agentscope.io/v2/zh/docs/quickstart)。两者默认也会记录 Harness 会话历史。需要关闭页面后继续执行、任务排队或中断后续做时，再引入 [AgentSession](https://java.agentscope.io/v2/zh/docs/harness/session-log)；[可恢复聊天示例](./agentscope-examples/agents/agentscope-chat/README_zh.md)提供完整接入流程。
+
 ## AgentScope Service
 
-**[AgentScope Service](./agentscope-service)** — 基于 AgentScope Harness 构建的 Agent 控制面，提供：
+**[AgentScope Service](./agentscope-service)** — 面向业务应用的 Agent as a Service 平台，将生成方案、核验文档、调查异常等 Agent 能力发布为 API。用户在原有产品中发起工作、参与确认并检查交付。
 
-+ **控制面（Control Plane）。** 为企业内的所有 Agent 提供智能体注册、查询、分布式协调服务，兼容 AgentScope、LangChain、ADK、Claude / Qoder 等主流 Agent 运行时；企业可以有一个集中的 Agent 指标查看入口，同时可以对运行中的 Session 进行上下文压缩等操作。
-+ **Managed Agents 平台。** 底层基于 AgentScope Harness 运行时，可快速将多个 Agent 运行在一套统一管理的托管平台上；平台提供 Harness 能力托管，工具执行则可委托给用户自己控制的 Sandbox。
-+ **Agent Teams。** 注册在 AgentScope Service 中的智能体可以被组建为一个或多个 Teams；不论是自行部署的 AgentScope 运行时，还是低代码托管的 Agent Harness 运行时，都可以被编排在一起，共同协作完成更复杂的任务。
++ **接入业务。** 用 Endpoint 提供后台任务、交互式助手或流程中的专业处理节点；应用保留自己的界面、数据授权与验收规则。
++ **持续执行与交付。** 围绕 Invocation 跟踪状态、快照与事件，处理人工交互，获取结果和文件，再接回业务流程。
++ **按需组织执行。** 托管 AgentScope Harness、接入已有 Agent 应用，或复用 Coding Agent；按任务需要组合 Team 与 Workflow。
+
+从[场景案例](https://java.agentscope.io/v2/zh/service/usecases)选择接入方式，再按 [API 快速开始](https://java.agentscope.io/v2/zh/service/first-session)完成一次调用。
 
 ![](./docs/imgs/agentservice/agentscope-service-architecture.png)
 
@@ -202,7 +206,7 @@ AgentScope Java 2.0 从"构建一个智能体"的工具箱，迈向**面向生�
 
 - **事件流** —— 31 种类型化事件，模型调用、文本增量、工具执行、用户确认全部实时流出
 - **消息模型** —— 文本 / 文件 / 图片 / 音视频 / 工具结果统一收敛到 `ContentBlock`，按 role 严格校验
-- **Middleware** —— `onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` 五阶段取代 v1 扁平 hook
+- **Middleware** —— `onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` / `onAgentStateReady` 六阶段取代 v1 扁平 hook
 - **HITL 一等公民** —— 确认工具参数、审批敏感操作、交给外部系统执行，智能体在暂停点精确恢复
 
 完整架构概览请参阅[文档](https://java.agentscope.io/v2/zh/docs/index.html)。

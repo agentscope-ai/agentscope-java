@@ -33,8 +33,10 @@ import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -51,6 +53,13 @@ import reactor.core.publisher.Flux;
 public class AgentTraceMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(AgentTraceMiddleware.class);
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(
+                ExtensionPoint.ON_AGENT, ExtensionPoint.ON_REASONING, ExtensionPoint.ON_ACTING);
+    }
 
     @Override
     public Flux<AgentEvent> onAgent(
