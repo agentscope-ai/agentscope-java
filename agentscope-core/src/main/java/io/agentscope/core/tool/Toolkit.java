@@ -1048,7 +1048,23 @@ public class Toolkit {
      * @see #copy()
      */
     public Toolkit copyExcludingTools(Collection<? extends AgentTool> excludedTools) {
+        return copyExcludingToolsAndGroups(excludedTools, Set.of());
+    }
+
+    /**
+     * Creates a build-time copy without the specified tool instances or tool groups.
+     *
+     * <p>Excluding a group removes only its membership and activation state. Registered tools are
+     * retained unless their instances are also explicitly excluded.
+     *
+     * @param excludedTools tool instances to omit before rebuilding framework bindings
+     * @param excludedGroupNames tool groups to omit while retaining their registered tools
+     * @return an isolated toolkit sharing the remaining tool instances
+     */
+    public Toolkit copyExcludingToolsAndGroups(
+            Collection<? extends AgentTool> excludedTools, Collection<String> excludedGroupNames) {
         Objects.requireNonNull(excludedTools, "excludedTools");
+        Objects.requireNonNull(excludedGroupNames, "excludedGroupNames");
         Toolkit copy = new Toolkit(this.config);
 
         // Share tool instances (stateless/thread-safe); copy registry metadata into the target.
@@ -1058,7 +1074,7 @@ public class Toolkit {
         }
 
         // Deep-copy tool groups and activation flags for isolated group state.
-        this.groupManager.copyTo(copy.groupManager);
+        this.groupManager.copyExcludingGroupsTo(copy.groupManager, Set.copyOf(excludedGroupNames));
 
         // The framework meta tool captures its owner's group manager; bind it to the copy.
         if (registeredMetaTool != null

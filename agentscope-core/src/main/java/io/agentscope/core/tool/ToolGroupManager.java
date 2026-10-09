@@ -576,18 +576,35 @@ class ToolGroupManager {
      * @param target The target manager to copy tool groups to
      */
     void copyTo(ToolGroupManager target) {
+        copyExcludingGroupsTo(target, Set.of());
+    }
+
+    /** Copies all tool groups except the named groups to another manager. */
+    void copyExcludingGroupsTo(ToolGroupManager target, Set<String> excludedGroupNames) {
         target.tools.clear();
         target.toolGroups.clear();
         for (Map.Entry<String, ToolGroup> entry : toolGroups.entrySet()) {
+            if (excludedGroupNames.contains(entry.getKey())) {
+                continue;
+            }
             target.toolGroups.put(entry.getKey(), entry.getValue().copy());
         }
 
         for (Map.Entry<String, Set<String>> entry : tools.entrySet()) {
-            target.tools.put(entry.getKey(), new HashSet<>(entry.getValue()));
+            Set<String> retainedGroups = new HashSet<>(entry.getValue());
+            retainedGroups.removeAll(excludedGroupNames);
+            if (!retainedGroups.isEmpty()) {
+                target.tools.put(entry.getKey(), retainedGroups);
+            }
         }
 
         // Copy activeGroups list
-        target.activeGroups = new CopyOnWriteArrayList<>(this.activeGroups);
+        target.activeGroups =
+                this.activeGroups.stream()
+                        .filter(groupName -> !excludedGroupNames.contains(groupName))
+                        .collect(
+                                java.util.stream.Collectors.toCollection(
+                                        CopyOnWriteArrayList::new));
     }
 
     private boolean removeGroupFromToolIndex(String toolName, String groupName) {

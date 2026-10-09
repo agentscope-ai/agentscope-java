@@ -378,6 +378,26 @@ class ToolkitTest {
     }
 
     @Test
+    void copyExcludingToolsAndGroups_retainsToolsAndOtherMemberships() {
+        AgentTool tool = new SchemaOnlyTool("sample", "Sample", Map.of());
+        toolkit.registerAgentTool(tool);
+        toolkit.createToolGroup("framework", "Framework group", false);
+        toolkit.createToolGroup("application", "Application group", true);
+        toolkit.addToolToGroup("framework", "sample");
+        toolkit.addToolToGroup("application", "sample");
+
+        Toolkit copy = toolkit.copyExcludingToolsAndGroups(List.of(), List.of("framework"));
+
+        assertSame(tool, copy.getTool("sample"));
+        assertNull(copy.getToolGroup("framework"));
+        assertEquals(Set.of("sample"), copy.getToolGroup("application").getTools());
+        assertEquals(
+                List.of("sample"),
+                copy.getToolSchemas().stream().map(ToolSchema::getName).toList());
+        assertNotNull(toolkit.getToolGroup("framework"));
+    }
+
+    @Test
     void copyExcludingTools_doesNotRecreateExcludedMetaTool() {
         toolkit.registerMetaTool();
         AgentTool metaTool = toolkit.getTool("reset_equipped_tools");
