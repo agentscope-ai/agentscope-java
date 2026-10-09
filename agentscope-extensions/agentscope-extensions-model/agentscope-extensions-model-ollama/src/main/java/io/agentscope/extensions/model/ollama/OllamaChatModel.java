@@ -103,8 +103,6 @@ public class OllamaChatModel extends ChatModelBase {
         this.formatter = formatter != null ? formatter : new OllamaChatFormatter();
         this.stream = stream;
         setNativeStructuredOutput(true);
-        // Keep tool-assisted structured output on the synthetic tool path.
-        setNativeStructuredOutputWithTools(false);
 
         HttpTransport transport =
                 httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
