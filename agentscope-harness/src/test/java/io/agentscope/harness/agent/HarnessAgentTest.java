@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -33,6 +34,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
@@ -44,6 +46,8 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.SessionHistoryMode;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentState;
@@ -57,13 +61,17 @@ import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
+import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
@@ -80,7 +88,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -198,6 +209,7 @@ class HarnessAgentTest {
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
+                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
                         .model(stubModel("ok"))
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
@@ -332,6 +344,9 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(spec)
+                        .sessionLogStore(
+                                new WorkspaceSessionLogStore(
+                                        new LocalFilesystem(workspace.resolve("journal"))))
                         .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
                         .build();
 
@@ -355,6 +370,9 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(spec)
+                        .sessionLogStore(
+                                new WorkspaceSessionLogStore(
+                                        new LocalFilesystem(workspace.resolve("journal"))))
                         .disableFilesystemTools()
                         .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
                         .build();
@@ -508,12 +526,12 @@ class HarnessAgentTest {
         String combined =
                 captor.getAllValues().stream()
                         .map(HarnessAgentTest::joinAllText)
-                        .filter(s -> s.contains("<agents_context>"))
+                        .filter(s -> s.contains("<project_rules "))
                         .findFirst()
                         .orElse("");
         assertTrue(
-                combined.contains("<agents_context>"),
-                "expected workspace hook to wrap AGENTS.md in agents_context");
+                combined.contains("<project_rules "),
+                "expected context builder to wrap AGENTS.md in project_rules");
         assertTrue(
                 combined.contains(marker), "model should see AGENTS.md body in injected context");
     }
@@ -594,7 +612,7 @@ class HarnessAgentTest {
     }
 
     @Test
-    void runtimeContextAlreadyDefaultedReturnsSourceWhenNothingChanges() throws Exception {
+    void runtimeContextPreservesDefaultsWhenNativeRecorderIsAttached() throws Exception {
         Files.createDirectories(workspace);
 
         Model model = stubModel("assistant-done");
@@ -629,7 +647,10 @@ class HarnessAgentTest {
             agent.call(userText("hi"), source).block();
         }
 
-        assertSame(source, seen.get());
+        assertEquals(source.getSessionId(), seen.get().getSessionId());
+        assertSame(sandboxContext, seen.get().get(SandboxContext.class));
+        assertSame(agentFilesystem, seen.get().get(AbstractFilesystem.class));
+        assertNotNull(SessionRecorder.from(seen.get()));
     }
 
     @Test
@@ -638,18 +659,24 @@ class HarnessAgentTest {
         InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
         AtomicReference<RuntimeContext> active = new AtomicReference<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch failed = new CountDownLatch(1);
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("run-control")
                         .model(stubModel("done"))
                         .workspace(workspace)
                         .filesystem(spec)
+                        .sessionLogStore(
+                                new WorkspaceSessionLogStore(
+                                        new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String prompt) {
                                         active.set(ctx);
+                                        entered.countDown();
                                         return Mono.never();
                                     }
                                 })
@@ -665,21 +692,35 @@ class HarnessAgentTest {
                     agent.prepareRun(
                             List.of(userText("hello")),
                             RuntimeContext.builder().sessionId("active-run").build());
-            var subscription = run.stream().subscribe(event -> {}, failure::set);
+            var subscription =
+                    run.stream()
+                            .subscribe(
+                                    event -> {},
+                                    error -> {
+                                        failure.set(error);
+                                        failed.countDown();
+                                    });
             try {
-                assertEquals(io.agentscope.core.agent.AgentRun.Status.RUNNING, run.status());
-                assertNotNull(
-                        active.get()
-                                .get(
-                                        io.agentscope.harness.agent.sandbox.SandboxAcquireResult
-                                                .class));
+                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                assertEquals(AgentRun.Status.RUNNING, run.status());
+                assertNotNull(active.get().get(SandboxAcquireResult.class));
+                SandboxAcquireResult acquired = active.get().get(SandboxAcquireResult.class);
+                var log = agent.sessionLog(active.get());
                 assertTrue(run.cancel());
-                assertNull(
-                        active.get()
-                                .get(
-                                        io.agentscope.harness.agent.sandbox.SandboxAcquireResult
-                                                .class));
-                assertTrue(failure.get() instanceof java.util.concurrent.CancellationException);
+                Flux.interval(Duration.ofMillis(10))
+                        .filter(ignored -> acquired.isReleased() && log.head().owner() == null)
+                        .next()
+                        .block(Duration.ofSeconds(5));
+                assertTrue(acquired.isReleased());
+                assertNull(log.head().owner());
+                assertThrows(
+                        SandboxException.SandboxConfigurationException.class,
+                        () ->
+                                ((SandboxBackedFilesystem)
+                                                active.get().get(AbstractFilesystem.class))
+                                        .execute(active.get(), "echo stale", 1));
+                assertTrue(failed.await(5, TimeUnit.SECONDS));
+                assertTrue(failure.get() instanceof CancellationException);
             } finally {
                 subscription.dispose();
             }
@@ -704,6 +745,9 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sessionLogStore(
+                                new WorkspaceSessionLogStore(
+                                        new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override

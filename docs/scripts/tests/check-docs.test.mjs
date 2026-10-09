@@ -72,6 +72,14 @@ test('redirect cycles and duplicate sources fail', (t) => {
   assert(result.errors.some((e) => e.includes('redirect cycle')));
 });
 
+test('external Helm index redirects are valid local link targets', (t) => {
+  const result = checkSite(fixture(t, {
+    body: '[Chart index](/helm/index.yaml)',
+    redirects: [{ source: '/helm/index.yaml', destination: 'https://chickenlj.github.io/helm-charts/index.yaml' }],
+  }));
+  assert.deepEqual(result.errors, []);
+});
+
 test('MyST directives cannot silently become visible prose', () => {
   assert.throws(() => inspectPage(':::{note}\nA warning\n:::'), /Unconverted MyST/);
 });

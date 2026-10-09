@@ -241,6 +241,10 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         if (runtimeContext != null) {
             SandboxAcquireResult bound = runtimeContext.get(SandboxAcquireResult.class);
             if (bound != null) {
+                if (bound.isReleased()) {
+                    throw new SandboxException.SandboxConfigurationException(
+                            "Sandbox acquisition has been released for this call");
+                }
                 s = bound.getSandbox();
             }
         }

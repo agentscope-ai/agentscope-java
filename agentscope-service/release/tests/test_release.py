@@ -13,12 +13,15 @@
 # limitations under the License.
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tarfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import yaml
@@ -30,6 +33,91 @@ spec.loader.exec_module(release)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_distribution_packages_include_installation_inputs_without_local_secrets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = Path(directory)
+            for name in ('deploy', 'helm/agentscope-service', 'release'):
+                (service / name).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(SERVICE / name, service / name,
+                                ignore=shutil.ignore_patterns('dist', '__pycache__'))
+            (service / 'deploy/.env').write_text('PRIVATE_VALUE=must-not-ship\n')
+            args = SimpleNamespace(version='2.1.0-BETA1', repository='example.com/team',
+                                   output=service / 'dist', platforms='darwin/arm64', distributions_only=True)
+            original_run = release.run
+
+            def build(*command, **kwargs):
+                if command[:2] == ('go', 'build'):
+                    output = Path(command[command.index('-o') + 1])
+                    output.write_bytes(b'fake executable')
+                    output.chmod(0o755)
+                    return
+                self.assertEqual(command[:2], ('helm', 'package'))
+                return original_run(*command, **kwargs)
+
+            with mock.patch.object(release, 'SERVICE', service), mock.patch.object(release, 'run', side_effect=build), mock.patch.object(release, 'manifest', return_value={'sourceDirty': False, 'platforms': {}}):
+                release.package(args)
+            for archive in args.output.glob('*.tar.gz'):
+                with tarfile.open(archive) as package:
+                    self.assertFalse(any(Path(name).name == '.env' for name in package.getnames()))
+            with tarfile.open(args.output / 'agentscope-service-2.1.0-BETA1-kubernetes.tar.gz') as package:
+                prefix = 'agentscope-service-kubernetes/'
+                for name in ('agentscope-service-2.1.0-BETA1.tgz', 'kubernetes.env.example', 'postgres-init.sql'):
+                    self.assertIn(prefix + name, package.getnames())
+                readme = package.extractfile(prefix + 'README.md').read().decode()
+                self.assertIn('--set imageRepository=example.com/team', readme)
+                self.assertNotIn('@SERVICE_VERSION@', readme)
+            with tarfile.open(args.output / 'agentscope-cli-2.1.0-BETA1-darwin-arm64.tar.gz') as package:
+                self.assertEqual(set(package.getnames()), {'as', 'agentscope-runtime-host', 'LICENSE', 'README.md'})
+            metadata = json.loads((args.output / 'release-manifest.json').read_text())
+            self.assertEqual(set(metadata['artifacts']), {p.name for p in args.output.glob('*.tar.gz')} | {'agentscope-service-2.1.0-BETA1.tgz'})
+
+    def test_npm_publication_uses_organization_registry_and_release_tag(self):
+        for version, dry_run, tag in [('2.1.0-BETA1', True, 'next'), ('2.1.0', False, 'latest')]:
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
+                service = Path(directory)
+                sdk = service / 'service-controlplane/sdk/dsh'
+                sdk.mkdir(parents=True)
+                (sdk / 'package.json').write_text(json.dumps({'name': release.NPM_PACKAGE, 'version': version}))
+                args = SimpleNamespace(version=version, output=service / 'dist', dry_run=dry_run)
+
+                def simulated_run(*command, **kwargs):
+                    if command[:2] == ('npm', 'pack'):
+                        return json.dumps([{'filename': 'sdk.tgz', 'integrity': 'sha512-test'}])
+                    if command == ('git', 'rev-parse', 'HEAD'):
+                        return 'source-commit\n'
+
+                with mock.patch.object(release, 'SERVICE', service), mock.patch.object(release, 'run', side_effect=simulated_run) as run, mock.patch.object(release, 'require_clean') as clean:
+                    release.publish_npm(args)
+                command = ['npm', 'publish', str(args.output / 'npm/sdk.tgz'), '--registry', 'https://registry.npmjs.org', '--access', 'public', '--tag', tag]
+                if dry_run:
+                    command.append('--dry-run')
+                    clean.assert_not_called()
+                else:
+                    clean.assert_called_once()
+                run.assert_any_call(*command)
+                self.assertEqual(json.loads((args.output / 'npm/publication.json').read_text())['tag'], tag)
+
+    def test_npm_publication_rejects_wrong_name_or_version_before_build(self):
+        for name, version in [('@other/dsh-controlplane', '2.1.0-BETA1'), (release.NPM_PACKAGE, '2.0.0')]:
+            with self.subTest(name=name, version=version), tempfile.TemporaryDirectory() as directory:
+                service = Path(directory)
+                sdk = service / 'service-controlplane/sdk/dsh'
+                sdk.mkdir(parents=True)
+                (sdk / 'package.json').write_text(json.dumps({'name': name, 'version': version}))
+                args = SimpleNamespace(version='2.1.0-BETA1', output=service / 'dist', dry_run=True)
+                with mock.patch.object(release, 'SERVICE', service), mock.patch.object(release, 'run') as run:
+                    with self.assertRaises(SystemExit):
+                        release.publish_npm(args)
+                run.assert_not_called()
+
+    def test_npm_plugin_configuration_matches_package_scope(self):
+        directory = SERVICE / 'service-controlplane/sdk/dsh'
+        metadata = json.loads((directory / 'package.json').read_text())
+        patch = yaml.safe_load((directory / 'cordis.patch.yml').read_text())
+        self.assertEqual(metadata['name'], release.NPM_PACKAGE)
+        self.assertEqual(patch[0]['insert'][0]['name'], metadata['name'])
+        self.assertEqual(metadata['publishConfig'], {'access': 'public', 'registry': release.NPM_REGISTRY})
+
     def test_frontend_verification_preserves_tracked_placeholder(self):
         self.check_frontend_placeholder(build_fails=False)
 
@@ -39,7 +127,7 @@ class ReleaseTests(unittest.TestCase):
     def check_frontend_placeholder(self, build_fails):
         with tempfile.TemporaryDirectory() as directory:
             service = Path(directory)
-            placeholder = service / 'aistio/ui/.gitkeep'
+            placeholder = service / 'service-controlplane/ui/.gitkeep'
             placeholder.parent.mkdir(parents=True)
             placeholder.write_bytes(b'original contents\n')
 
@@ -76,7 +164,7 @@ class ReleaseTests(unittest.TestCase):
             subprocess.run([str(script), '2.0.4', 'example.com/other'], check=True, capture_output=True)
             self.assertEqual(env.read_bytes(), initial)
             settings = dict(line.split('=', 1) for line in initial.decode().splitlines())
-            self.assertGreaterEqual(len(settings['AISTIO_BOOTSTRAP_PASSWORD']), 12)
+            self.assertGreaterEqual(len(settings['CONTROL_PLANE_BOOTSTRAP_PASSWORD']), 12)
             self.assertNotEqual(settings['BUILDER_JWT_SECRET'], settings['BUILDER_INTERNAL_TOKEN'])
 
     def test_chart_has_four_planes_shared_storage_and_no_demo_users(self):
@@ -86,14 +174,19 @@ class ReleaseTests(unittest.TestCase):
         deployments = [o for o in objects if o['kind'] == 'Deployment']
         self.assertEqual(len(deployments), 4)
         claims = []
+        image_tag = yaml.safe_load((SERVICE / 'helm/agentscope-service/Chart.yaml').read_text())['appVersion']
         for dep in deployments:
             pod = dep['spec']['template']['spec']
             self.assertFalse(pod['automountServiceAccountToken'])
             container = pod['containers'][0]
+            self.assertEqual(container['image'],
+                             f'example.com/test/{release.IMAGE_NAMES[container["name"]]}:{image_tag}')
+            for init in pod.get('initContainers', []):
+                self.assertEqual(init['image'], container['image'])
             env = {e['name']: e['value'] for e in container['env']}
             if container['name'] == 'control':
-                self.assertEqual(env['AISTIO_SEED_USERS'], 'false')
-                self.assertEqual(env['AISTIO_ENABLE_KUBERNETES'], 'false')
+                self.assertEqual(env['CONTROL_PLANE_SEED_USERS'], 'false')
+                self.assertEqual(env['CONTROL_PLANE_ENABLE_KUBERNETES'], 'false')
             if container['name'] == 'gateway':
                 self.assertNotIn('envFrom', container)
             else:
@@ -113,7 +206,9 @@ class ReleaseTests(unittest.TestCase):
             self.assertNotIn('build', service)
             if name != 'gateway':
                 self.assertNotIn('ports', service)
-        self.assertEqual(compose['services']['control']['environment']['AISTIO_SEED_USERS'], 'false')
+        self.assertEqual(compose['services']['control']['environment']['CONTROL_PLANE_SEED_USERS'], 'false')
+        for name, plane in {'control': 'control', 'data': 'dataplane', 'gateway': 'gateway', 'scheduler': 'scheduler'}.items():
+            self.assertIn('/' + release.IMAGE_NAMES[plane] + ':', compose['services'][name]['image'])
 
 
 if __name__ == '__main__':

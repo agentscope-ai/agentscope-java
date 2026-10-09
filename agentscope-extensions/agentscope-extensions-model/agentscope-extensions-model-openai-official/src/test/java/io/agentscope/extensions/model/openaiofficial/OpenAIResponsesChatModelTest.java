@@ -31,7 +31,10 @@ import com.openai.client.OpenAIClient;
 import com.openai.core.http.StreamResponse;
 import com.openai.errors.OpenAIServiceException;
 import com.openai.models.responses.ResponseCreateParams;
+import com.openai.models.responses.ResponseIncludable;
 import com.openai.models.responses.ResponseStreamEvent;
+import com.openai.models.responses.Tool;
+import com.openai.models.responses.WebSearchTool;
 import com.openai.services.blocking.ResponseService;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -42,6 +45,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -50,6 +54,7 @@ import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
 
 class OpenAIResponsesChatModelTest {
@@ -94,9 +99,19 @@ class OpenAIResponsesChatModelTest {
 
     private static OpenAIResponsesChatModel createModel(
             OpenAIClient client, boolean stream, String apiKey, String baseUrl) {
+        return createModel(client, stream, apiKey, baseUrl, null);
+    }
+
+    private static OpenAIResponsesChatModel createModel(
+            OpenAIClient client,
+            boolean stream,
+            String apiKey,
+            String baseUrl,
+            List<OpenAIServerTool> serverTools) {
         GenerateOptions options = configuredOptions(stream, apiKey, baseUrl);
         OpenAIResponsesChatModel model =
-                new OpenAIResponsesChatModel(client, options, apiKey, baseUrl, null, null, null);
+                new OpenAIResponsesChatModel(
+                        client, options, apiKey, baseUrl, null, null, null, serverTools);
         model.applyNativeStructuredOutputDefaults();
         return model;
     }
@@ -235,6 +250,36 @@ class OpenAIResponsesChatModelTest {
             assertNotNull(results);
             assertEquals(1, results.size());
         }
+
+        @Test
+        void builderServerToolsAreSentOnEveryRequest() {
+            OpenAIClient client = mockClientWithResponseService();
+            ResponseService svc = client.responses();
+            when(svc.create(any(ResponseCreateParams.class)))
+                    .thenReturn(TestSdkFixtures.textResponse("ok"));
+
+            OpenAIServerTool serverTool =
+                    OpenAIServerTool.of(
+                            Tool.ofWebSearch(
+                                    WebSearchTool.builder()
+                                            .type(WebSearchTool.Type.WEB_SEARCH)
+                                            .build()));
+            OpenAIResponsesChatModel model =
+                    createModel(client, false, API_KEY, null, List.of(serverTool));
+
+            model.stream(simpleMessages(), null, null).collectList().block();
+
+            ArgumentCaptor<ResponseCreateParams> captor =
+                    ArgumentCaptor.forClass(ResponseCreateParams.class);
+            verify(svc).create(captor.capture());
+            ResponseCreateParams params = captor.getValue();
+            assertEquals(1, params.tools().orElseThrow().size());
+            assertTrue(params.tools().orElseThrow().get(0).isWebSearch());
+            assertTrue(
+                    params.include()
+                            .orElseThrow()
+                            .contains(ResponseIncludable.WEB_SEARCH_CALL_RESULTS));
+        }
     }
 
     @Nested
@@ -319,7 +364,8 @@ class OpenAIResponsesChatModelTest {
 
             GenerateOptions options = configuredOptions(true);
             OpenAIResponsesChatModel model =
-                    new OpenAIResponsesChatModel(client, options, API_KEY, null, null, null, null);
+                    new OpenAIResponsesChatModel(
+                            client, options, API_KEY, null, null, null, null, null);
             model.applyNativeStructuredOutputDefaults();
 
             model.stream(simpleMessages(), null, null).collectList().block();
