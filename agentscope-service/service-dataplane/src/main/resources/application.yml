@@ -71,7 +71,7 @@ builder:
   dataplane:
     agent-name: ${BUILDER_DATAPLANE_AGENT_NAME:agentscope-java-dataplane}
     namespace: ${BUILDER_DATAPLANE_NAMESPACE:default}
-    version: ${BUILDER_DATAPLANE_VERSION:2.0.1}
+    version: ${BUILDER_DATAPLANE_VERSION:2.1.0-BETA1}
     # Reachable from service-controlplane (compose: http://data:8082; local: leave empty → localhost:port)
     public-url: ${BUILDER_DATAPLANE_PUBLIC_URL:}
     register-enabled: ${BUILDER_DATAPLANE_REGISTER:false}

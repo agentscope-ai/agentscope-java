@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	authzv1 "k8s.io/api/authorization/v1"

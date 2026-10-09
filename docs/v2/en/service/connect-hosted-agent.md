@@ -5,18 +5,18 @@ description: Connect a Runtime Host, select a runtime through the API, create a 
 ---
 
 <Note>
-This is preview documentation. The release is not yet generally available.
+This guide uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 A Hosted Agent connects a Coding Agent on your computer or server. Runtime Host starts the provider, prepares its working directory, and reports results. Applications call the Agent through the Session API or use it as an executor in a Team or Workflow.
 
 Connect a host once. You can then create multiple Hosted Agents, define their responsibilities, and assign work through the API without installing a separate Host for each Agent.
 
-Hosted Agents work independently or join a team coordinated by a Managed Lead. Runtime Host runs Coding Agent providers; it differs from a Managed self_hosted tool Worker and from deploying the whole Service. Prepare the [platform](/v2/en/service/quickstart), then see [self-hosted architecture](/v2/en/service/quickstart#self-hosting) for boundaries and [orchestration](/v2/en/service/orchestration) for collaboration.
+Hosted Agents work independently or join a team coordinated by a Managed Lead. Runtime Host runs Coding Agent providers; it differs from a Managed self_hosted tool Worker and from deploying the whole Service. Prepare the [platform](/v2/en/service/quickstart), then see [self-hosted architecture](/v2/en/service/kubernetes#self-hosting) for boundaries and [orchestration](/v2/en/service/orchestration) for collaboration.
 
 ## Connect an execution host
 
-Install and authenticate the provider on the target machine, and verify that it can complete a request. Install the CLI using the [Runtime Host guide](/v2/en/service/runtime-host), then run:
+Install and authenticate the provider on the target machine, and verify that it can complete a request. Use `go install` with Go 1.26 or newer to install both CLI commands at `v2.1.0-BETA1`, following the [Runtime Host guide](/v2/en/service/runtime-host) to configure PATH. Then run:
 
 ```bash
 as connect https://agentscope.example.com

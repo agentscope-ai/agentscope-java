@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"time"
 
-	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	"github.com/google/uuid"
 )
 

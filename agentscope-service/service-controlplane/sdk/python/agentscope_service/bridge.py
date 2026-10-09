@@ -27,12 +27,14 @@ import asyncio
 import logging
 import json
 import socket
+import sys
 import threading
 import time
 import uuid
 from concurrent.futures import wait
 from typing import Any, Dict, List, Optional
 
+from . import __version__ as SDK_VERSION
 from .adapters.executable import ExecutableAdapter, TaskResult
 from .adapters.base import (
     AgentTaskAssignment,
@@ -57,9 +59,6 @@ from .transport.grpc import GrpcTransport
 from .transport.http_pull import HttpPullTransport
 from .transport.http_server import ContractHTTPServer, ContractNotFoundError
 from .transport.registration import RegisteredIdentity, register_external_agent
-
-#: SDK 版本（握手时上报）。
-SDK_VERSION = "0.1.0"
 
 # ─── 周期与批量参数（sdk-design §2.2 / §7）───
 LEVEL1_INTERVAL = 10.0  # Level 1 聚合上报周期
@@ -611,7 +610,8 @@ class SessionBridge:
                                              generation, command, context_url, task_token,
                                              attempt_token, payload, timestamp)
 
-            cancelled = asyncio.Event()
+            # Python 3.9 binds at construction; transport callbacks run outside our loop.
+            cancelled = asyncio.Event(loop=self._loop) if sys.version_info < (3, 10) else asyncio.Event()
             self._attempt_cancellations[attempt_id] = cancelled
 
             async def execute() -> None:

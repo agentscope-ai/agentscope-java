@@ -23,9 +23,9 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## Capability Matrix
 
-| Component | Interface | Redis | OSS | MySQL | MongoDB |
+| Component | Interface | Redis | OSS | JDBC | MongoDB |
 |-----------|----------|:-----:|:---:|:-----:|:-------:|
-| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` | `MongoAgentStateStore` |
+| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `JdbcAgentStateStore` | `MongoAgentStateStore` |
 | Workspace filesystem KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` | `MongoBaseStore` |
 | Sandbox snapshots | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` | `MongoSnapshotSpec` |
 | Sandbox concurrency lock | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` | `MongoSandboxExecutionGuard` |
@@ -37,13 +37,13 @@ HarnessAgent agent = HarnessAgent.builder()
 Different components can come from different storage stores:
 
 ```java
-DistributedStore mysql = MysqlDistributedStore.create(dataSource);
+DistributedStore jdbc = JdbcDistributedStore.create(dataSource);
 DistributedStore redis = RedisDistributedStore.fromJedis(jedis);
 
-// MySQL for state and files, Redis for sandbox lock and snapshots
+// JDBC for state and files, Redis for sandbox lock and snapshots
 DistributedStore mixed = DistributedStore.builder()
-    .agentStateStore(mysql.agentStateStore())
-    .baseStore(mysql.baseStore())
+    .agentStateStore(jdbc.agentStateStore())
+    .baseStore(jdbc.baseStore())
     .sandboxSnapshotSpec(redis.sandboxSnapshotSpec())
     .sandboxExecutionGuard(redis.sandboxExecutionGuard())
     .build();
@@ -90,7 +90,7 @@ Explicit builder methods (.stateStore(), .snapshotSpec() on FilesystemSpec, etc.
 
 ## Control Plane Hosted Store
 
-When you already run an AgentScope Service Control Plane, it can host the coordination side of `DistributedStore` (BaseStore, sandbox lock/snapshot, MessageBus, AsyncToolRegistry, **TaskRepository**, optional **SessionTurnGate**). You still provide **one** `AgentStateStore` backend yourself (Redis / MySQL / Postgres / OSS); core exposes `getVersioned` / `saveIfVersion` optimistic concurrency, but state storage stays off the control plane.
+When you already run an AgentScope Service Control Plane, it can host the coordination side of `DistributedStore` (BaseStore, sandbox lock/snapshot, MessageBus, AsyncToolRegistry, **TaskRepository**, optional **SessionTurnGate**). You still provide **one** `AgentStateStore` backend yourself (Redis / JDBC / OSS); core exposes `getVersioned` / `saveIfVersion` optimistic concurrency, but state storage stays off the control plane.
 
 ```java
 ControlPlaneStores cp = ControlPlaneStores.fromEnv();

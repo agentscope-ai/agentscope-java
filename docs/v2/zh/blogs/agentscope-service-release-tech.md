@@ -227,13 +227,10 @@ Sidecar 不是「再实现一个 agent loop」，而是在无法改二进制时�
 
 ### 本地启动与验收
 
-```bash
-export DASHSCOPE_API_KEY=sk-xxx
-cd agentscope-service
-BUILDER_REBUILD=1 scripts/dev-up.sh
-# Console: http://localhost:8080
-scripts/smoke.sh
-```
+按[部署并准备 Service](/v2/zh/service/quickstart)启动已发布的 Docker Compose 安装包，
+在 `http://localhost:18080` 使用 `.env` 中生成的管理员密码登录。
+接入 Hosted Agent 时通过 [Go 安装 CLI 与 Runtime Host](/v2/zh/service/runtime-host)；
+生产环境的 Kubernetes 部署使用 [Helm 安装指南](/v2/zh/service/kubernetes)。
 
 建议至少验收三类路径：
 
