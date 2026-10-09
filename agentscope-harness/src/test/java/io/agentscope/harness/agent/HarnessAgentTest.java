@@ -37,14 +37,19 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelMediaException;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.SessionHistoryMode;
 import io.agentscope.core.session.SessionRecorder;
@@ -66,6 +71,9 @@ import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
+import io.agentscope.harness.agent.middleware.CompactionMiddleware;
+import io.agentscope.harness.agent.middleware.HistoricalMediaRecoveryConfig;
+import io.agentscope.harness.agent.middleware.HistoricalMediaRecoveryMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
@@ -168,6 +176,79 @@ class HarnessAgentTest {
         assertFalse(toolNames.contains("memory_search"));
         assertFalse(toolNames.contains("memory_get"));
         assertFalse(toolNames.contains("session_search"));
+    }
+
+    @Test
+    void historicalMediaRecoveryIsEnabledOutsideCompactionByDefault() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        List<MiddlewareBase> middlewares = agent.getDelegate().getMiddlewares();
+        int recoveryIndex = indexOf(middlewares, HistoricalMediaRecoveryMiddleware.class);
+        int compactionIndex = indexOf(middlewares, CompactionMiddleware.class);
+        assertTrue(recoveryIndex >= 0, "historical media recovery should be enabled by default");
+        assertTrue(compactionIndex >= 0, "compaction should be enabled by default");
+        assertTrue(
+                recoveryIndex < compactionIndex,
+                "historical media recovery must wrap compaction fallback");
+    }
+
+    @Test
+    void historicalMediaRecoveryCanBeDisabled() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableHistoricalMediaRecovery()
+                        .build();
+
+        assertFalse(
+                agent.getDelegate().getMiddlewares().stream()
+                        .anyMatch(HistoricalMediaRecoveryMiddleware.class::isInstance));
+    }
+
+    @SuppressWarnings("deprecation")
+    @Test
+    void compatibilityCallPassesDefaultedRuntimeContextToOnAgent() throws Exception {
+        Files.createDirectories(workspace);
+        AtomicReference<RuntimeContext> seen = new AtomicReference<>();
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Flux<AgentEvent> onAgent(
+                                            Agent agent,
+                                            RuntimeContext ctx,
+                                            io.agentscope.core.middleware.AgentInput input,
+                                            java.util.function.Function<
+                                                            io.agentscope.core.middleware
+                                                                    .AgentInput,
+                                                            Flux<AgentEvent>>
+                                                    next) {
+                                        seen.set(ctx);
+                                        return next.apply(input);
+                                    }
+                                })
+                        .build();
+
+        agent.call(List.of(userText("hi"))).block();
+
+        assertNotNull(seen.get());
+        assertEquals("t", seen.get().getSessionId());
     }
 
     @Test
@@ -1246,6 +1327,16 @@ class HarnessAgentTest {
                 .build();
     }
 
+    private static int indexOf(
+            List<MiddlewareBase> middlewares, Class<? extends MiddlewareBase> type) {
+        for (int i = 0; i < middlewares.size(); i++) {
+            if (type.isInstance(middlewares.get(i))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private static String joinAllText(List<Msg> msgs) {
         return msgs.stream().map(Msg::getTextContent).collect(Collectors.joining("\n"));
     }
@@ -1564,6 +1655,112 @@ class HarnessAgentTest {
                                 .factory()
                                 .create(RuntimeContext.empty());
         assertNotNull(child.getCompactionHook(), "CompactionHook should be mirrored to GP child");
+    }
+
+    @Test
+    void generalPurposeMirrorsDisabledHistoricalMediaRecovery() throws Exception {
+        Files.createDirectories(workspace);
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .disableHistoricalMediaRecovery()
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+        assertFalse(
+                child.getDelegate().getMiddlewares().stream()
+                        .anyMatch(HistoricalMediaRecoveryMiddleware.class::isInstance));
+    }
+
+    @Test
+    void generalPurposeInheritsCustomHistoricalMediaReplacement() throws Exception {
+        Files.createDirectories(workspace);
+        String replacement = "[media unavailable in child]";
+        HistoricalMediaRecoveryConfig config =
+                HistoricalMediaRecoveryConfig.builder().replacementText(replacement).build();
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .historicalMediaRecovery(config)
+                        .buildSubagentEntries(workspace);
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+        HistoricalMediaRecoveryMiddleware recovery =
+                child.getDelegate().getMiddlewares().stream()
+                        .filter(HistoricalMediaRecoveryMiddleware.class::isInstance)
+                        .map(HistoricalMediaRecoveryMiddleware.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        Msg history =
+                Msg.builder()
+                        .id("history")
+                        .role(MsgRole.USER)
+                        .content(
+                                ImageBlock.builder()
+                                        .source(
+                                                new URLSource(
+                                                        "https://example.invalid/history.png"))
+                                        .build())
+                        .build();
+        Msg current = userText("continue");
+        AgentState state = AgentState.builder().addMessage(history).addMessage(current).build();
+        RuntimeContext ctx =
+                RuntimeContext.builder().sessionId("child-session").agentState(state).build();
+        AtomicInteger calls = new AtomicInteger();
+
+        recovery.onAgent(
+                        child.getDelegate(),
+                        ctx,
+                        new AgentInput(List.of(current)),
+                        ignored ->
+                                recovery.onReasoning(
+                                        child.getDelegate(),
+                                        ctx,
+                                        new ReasoningInput(
+                                                List.of(history, current), List.of(), null),
+                                        reasoning ->
+                                                calls.incrementAndGet() == 1
+                                                        ? Flux.error(
+                                                                new UnavailableMediaException())
+                                                        : Flux.empty()))
+                .blockLast();
+
+        assertEquals(2, calls.get());
+        assertEquals(
+                replacement,
+                state.getContext().get(0).getContentBlocks(TextBlock.class).get(0).getText());
+    }
+
+    @Test
+    void nullHistoricalMediaConfigDisablesRecovery() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .historicalMediaRecovery(null)
+                        .build();
+
+        assertFalse(
+                agent.getDelegate().getMiddlewares().stream()
+                        .anyMatch(HistoricalMediaRecoveryMiddleware.class::isInstance));
     }
 
     @Test
@@ -1894,6 +2091,15 @@ class HarnessAgentTest {
         assertTrue(
                 decl.getInlineAgentsBody().contains("inline sysPrompt"),
                 "body should be inline agents body when no workspace.path");
+    }
+
+    private static final class UnavailableMediaException extends RuntimeException
+            implements ModelMediaException {
+
+        @Override
+        public boolean isMediaUnavailable() {
+            return true;
+        }
     }
 
     // =========================================================================

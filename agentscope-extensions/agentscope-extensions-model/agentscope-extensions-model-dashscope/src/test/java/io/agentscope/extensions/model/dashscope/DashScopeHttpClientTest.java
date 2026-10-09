@@ -592,6 +592,54 @@ class DashScopeHttpClientTest {
                         () -> client.call(request, null, null, null));
 
         assertTrue(exception.getMessage().contains("Invalid API key"));
+        assertFalse(exception.isMediaUnavailable());
+    }
+
+    @Test
+    void testApiErrorClassifiesUnavailableMedia() {
+        String errorJson =
+                """
+                {
+                  "request_id": "error-request",
+                  "code": "InvalidParameter",
+                  "message": "<400> InternalError.Algo.InvalidParameter: Failed to download multimodal content."
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(errorJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeRequest request = createTestRequest("qwen-vl-plus", "test");
+        DashScopeHttpClient.DashScopeHttpException exception =
+                assertThrows(
+                        DashScopeHttpClient.DashScopeHttpException.class,
+                        () -> client.call(request, null, null, null));
+
+        assertTrue(exception.isMediaUnavailable());
+    }
+
+    @Test
+    void testMediaUnavailableClassificationChecksEachFieldAndIgnoresOtherErrors() {
+        String unavailable = "FAILED TO DOWNLOAD MULTIMODAL CONTENT";
+        assertTrue(
+                new DashScopeHttpClient.DashScopeHttpException(unavailable).isMediaUnavailable());
+        assertTrue(
+                new DashScopeHttpClient.DashScopeHttpException("generic error", unavailable, null)
+                        .isMediaUnavailable());
+        assertTrue(
+                new DashScopeHttpClient.DashScopeHttpException(
+                                "generic error", null, "{\"detail\":\"" + unavailable + "\"}")
+                        .isMediaUnavailable());
+        assertFalse(
+                new DashScopeHttpClient.DashScopeHttpException(null, null, null)
+                        .isMediaUnavailable());
+        assertFalse(
+                new DashScopeHttpClient.DashScopeHttpException(
+                                "bad request", "InvalidParameter", "{\"detail\":\"invalid URL\"}")
+                        .isMediaUnavailable());
     }
 
     @Test
@@ -610,6 +658,27 @@ class DashScopeHttpClientTest {
                         () -> client.call(request, null, null, null));
 
         assertEquals(500, exception.getStatusCode());
+        assertFalse(exception.isMediaUnavailable());
+    }
+
+    @Test
+    void testHttpErrorBodyClassifiesUnavailableMedia() {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(400)
+                        .setBody(
+                                "{\"code\":\"InvalidParameter\",\"message\":\"Failed to"
+                                        + " download multimodal content\"}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeRequest request = createTestRequest("qwen-vl-plus", "test");
+        DashScopeHttpClient.DashScopeHttpException exception =
+                assertThrows(
+                        DashScopeHttpClient.DashScopeHttpException.class,
+                        () -> client.call(request, null, null, null));
+
+        assertEquals(400, exception.getStatusCode());
+        assertTrue(exception.isMediaUnavailable());
     }
 
     @Test
@@ -783,6 +852,32 @@ class DashScopeHttpClientTest {
     }
 
     @Test
+    void testStreamClassifiesUnavailableMedia() {
+        String errorMessage =
+                "<400> InternalError.Algo.InvalidParameter: Failed to download multimodal"
+                        + " content.";
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                "data: {\"code\":\"InvalidParameter\",\"message\":\""
+                                        + errorMessage
+                                        + "\",\"request_id\":\"request_id_123\"}")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        DashScopeRequest request = createTestRequest("qwen-vl-plus", "test");
+
+        StepVerifier.create(client.stream(request, null, null, null))
+                .expectErrorMatches(
+                        error ->
+                                error
+                                                instanceof
+                                                DashScopeHttpClient.DashScopeHttpException exception
+                                        && exception.isMediaUnavailable())
+                .verify();
+    }
+
+    @Test
     void testStreamIgnoresMalformedSseData() {
         mockServer.enqueue(
                 new MockResponse()
@@ -941,6 +1036,7 @@ class DashScopeHttpClientTest {
         assertNull(exception.getStatusCode());
         assertEquals("InvalidAPIKey", exception.getErrorCode());
         assertEquals("{\"error\":\"invalid key\"}", exception.getResponseBody());
+        assertFalse(exception.isMediaUnavailable());
     }
 
     @Test
