@@ -23,7 +23,7 @@ import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEvents;
-import io.agentscope.core.agui.middleware.InputMessageDeduplicationMiddleware;
+import io.agentscope.core.middleware.InputMessageDeduplicationMiddleware;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.CustomEvent;

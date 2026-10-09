@@ -22,7 +22,7 @@ import (
 
 	"github.com/google/uuid"
 
-	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 )
 
 type WorkSourceRepository interface {

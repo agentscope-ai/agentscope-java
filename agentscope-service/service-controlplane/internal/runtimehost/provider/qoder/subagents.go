@@ -17,7 +17,7 @@ package qoder
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost/provider"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost/provider"
 	"slices"
 )
 

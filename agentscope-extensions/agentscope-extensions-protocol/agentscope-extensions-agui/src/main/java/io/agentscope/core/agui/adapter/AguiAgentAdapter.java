@@ -154,11 +154,10 @@ public class AguiAgentAdapter {
                                     .build();
 
                     AgentStream agentStream;
-                    List<Msg> msgs;
                     try {
                         // Convert AG-UI messages and official resume entries to AgentScope
                         // messages; unmappable content fails as a protocol-level run error.
-                        msgs =
+                        List<Msg> msgs =
                                 messageConverter.toMsgList(
                                         input, resumeInterrupts(effectiveRuntimeContext));
                         agentStream =

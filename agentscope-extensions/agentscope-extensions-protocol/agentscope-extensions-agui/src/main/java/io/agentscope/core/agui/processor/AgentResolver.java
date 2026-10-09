@@ -60,7 +60,7 @@ public interface AgentResolver {
      * <p>An existence probe over the resolver's sessions, e.g. for monitoring or custom routing.
      * Request message handling no longer consults this method: messages pass through in full,
      * and deduplicating a full-history resend against persisted context is done by registering
-     * {@link io.agentscope.core.agui.middleware.InputMessageDeduplicationMiddleware} on the agent.
+     * {@link io.agentscope.core.middleware.InputMessageDeduplicationMiddleware} on the agent.
      *
      * @param runtimeContext The runtime context identifying the thread and user
      * @return true if the thread has existing memory

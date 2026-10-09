@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/connector"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/asdp"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/connector"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/asdp"
 )
 
 func ExampleConnector() {

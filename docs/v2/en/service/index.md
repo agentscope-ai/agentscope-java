@@ -5,7 +5,7 @@ zh_link: /v2/zh/service/index
 ---
 
 <Note>
-These are preview docs. The formal release is not yet available.
+The current Service release is `2.1.0-BETA1`, a prerelease.
 </Note>
 
 **AgentScope Service is a self-hostable Agent as a Service platform for business applications. Its Managed Agents are built on the AgentScope HarnessAgent core.** Define the work an Agent should do on the platform and configure suitable models and tools. When an application submits a task, Service runs the Agent and preserves execution records so the application can follow progress, handle necessary interaction, and obtain the result.
@@ -39,6 +39,8 @@ The Harness SDK and Managed Agents in Service use the same HarnessAgent core. Ch
 | Managed Agents in Service | Configure Agents built on HarnessAgent and use them through Console or APIs | Service manages Agent execution and sessions; the platform team operates shared infrastructure |
 
 If you need to embed an Agent deeply in your Java or Spring Boot application and control execution in code, start with the [Harness SDK](/v2/en/docs/quickstart), with your application team owning deployment and operations. To delegate runtime management to a shared platform, configure a Managed Agent directly in Service and use it through APIs or Console without first developing a separate SDK application. An Agent already built with the SDK can also connect as an External Agent, preserving your existing implementation.
+
+Start with [Docker Compose](/v2/en/service/quickstart) for local evaluation. Use the published [Helm Chart](/v2/en/service/kubernetes) for a Kubernetes production installation. Install the CLI and Runtime Host with [Go](/v2/en/service/runtime-host) when connecting a Hosted Agent.
 
 ## From deployment to business delivery
 

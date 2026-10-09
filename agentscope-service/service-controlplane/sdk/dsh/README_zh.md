@@ -4,6 +4,8 @@
 
 把已经在跑的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 注册到 AgentScope Service 控制面。DSH 继续用自己的 loop 和 Web UI；本插件只是挂在现有 profile 上的一层 Cordis 扩展。
 
+发布包名为 `@agentscope-service/dsh-controlplane`。使用 `npm install @agentscope-service/dsh-controlplane@2.1.0-BETA1` 安装指定版本，或用 `@agentscope-service/dsh-controlplane@next` 获取预发布版本。Cordis bundle 使用同一个包名。
+
 ## 快速开始
 
 源码检出后**没有**全局 `dsh` 命令。官方启动方式是在 `deepseek-harness` **仓库根目录**执行 `pnpm dsh web`（见 DSH README 的 [Run from source](https://github.com/deepseek-ai/deepseek-harness#run-from-source)）。下面默认你就是这种用法；`pnpm dsh` 只是把参数转给仓库里的 CLI，等价于已安装环境下的 `dsh`。
@@ -68,7 +70,7 @@ pnpm dsh plugin --profile web add "$PLUGIN"
 pnpm dsh web --dump-config
 ```
 
-`--dump-config` 的输出里应出现 `# == @agentscope/dsh-controlplane` 或 `id: controlplane`。
+`--dump-config` 的输出里应出现 `# == @agentscope-service/dsh-controlplane` 或 `id: controlplane`。
 
 ### 3. 带控制面凭证重启 DSH
 
@@ -113,7 +115,7 @@ curl -s http://127.0.0.1:18091/agentscope/health
 
 ```bash
 cd "$DSH_ROOT"
-pnpm dsh plugin --profile web remove @agentscope/dsh-controlplane
+pnpm dsh plugin --profile web remove @agentscope-service/dsh-controlplane
 ```
 
 ### 用 npx 而不是源码时
@@ -163,7 +165,7 @@ npx @deepseek-ai/dsh web
 
 ## 不改 profile：`--patch` overlay
 
-不想执行 `plugin add` 时，可以按 DSH 官方插件教程用 `--patch`。Loader 从 **profile 目录**解析裸包名，所以 overlay 里不要写 `@agentscope/dsh-controlplane`，必须写本包构建产物的**绝对路径**。
+不想执行 `plugin add` 时，可以按 DSH 官方插件教程用 `--patch`。Loader 从 **profile 目录**解析裸包名，所以 overlay 里不要写 `@agentscope-service/dsh-controlplane`，必须写本包构建产物的**绝对路径**。
 
 先 `npm run build`，再写例如 `$DSH_ROOT/controlplane.patch.yml`：
 

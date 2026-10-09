@@ -20,8 +20,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
-	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store/postgres"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
+	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store/postgres"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )

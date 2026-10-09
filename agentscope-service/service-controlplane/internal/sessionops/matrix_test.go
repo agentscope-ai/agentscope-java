@@ -19,11 +19,11 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/api/v1alpha1"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/dataplane"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/prober"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/test/mock"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/api/v1alpha1"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/dataplane"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/prober"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/test/mock"
 )
 
 // CP behavior matrix: contract-level and capability conformance via memory store + Router + mock DP.
