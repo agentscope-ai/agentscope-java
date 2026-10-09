@@ -1,5 +1,5 @@
 ---
-title: 备份、升级与恢复
+title: "运维、恢复与排障"
 en_link: /v2/en/service/operations
 ---
 
@@ -52,20 +52,104 @@ pg_restore --no-owner --no-acl --dbname="$RESTORE_DATABASE_URL" backup/database.
 
 只有数据库、文件和密钥都能共同恢复，备份才算通过验证。升级按维护窗口执行；单副本安装不提供多副本 HA 或无停机升级保证。
 
+## 用 API 检查恢复后的服务
+
+恢复后先做读取，再提交一个明确的新测试任务：
+
+| 核对内容 | API |
+| --- | --- |
+| Agent 与运行绑定 | `GET /api/v1/agents`、`GET /api/v1/agents/{id}/bindings` |
+| 会话配置与版本 | `GET /api/v1/agent-sessions/{sessionId}`，读取固定 target |
+| 已有业务结果与页面 | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}`、`GET .../{id}/snapshot` |
+| 未完成编排与实际执行 | `GET /api/v1/orchestration-runs/{id}/graph`、`GET /api/v1/execution-attempts/{id}` |
+| 通知与自动化 | 查询原 Webhook/Automation 的投递记录，核对回调去重与运行状态 |
+
+读取使用原调用归属的凭据或已授权平台身份。Turn 数据、Managed 原生日志、Workspace 文件和凭据加密密钥都需恢复；只恢复其中一层不能保证任务可继续。过期事件 cursor 应重新获取 snapshot，不重新提交已完成工作。接口和认证见 [API 参考](/v2/zh/service/api-reference)。
+
 ## 恢复后重新开放服务
 
 先保持定时规则和外部入口受控，在测试工作上验证登录、历史、文件和凭据。确认 Runtime Host 重新上线，再逐个恢复计划触发与业务流量。数据库快照恢复不会撤销备份之后已经发出的消息或外部写入；对照业务系统核对幂等记录和未完成工作后再重跑。
 
 ## 用固定案例做升级回归
 
-在升级前保存[售前方案团队](/v2/zh/service/cases/presales-team)的样例知识与验收结果，在隔离的恢复环境中执行同一组问题。模型措辞可以不同，下面的事实和持久化结果应可核对：
+在升级前保存[CRM 方案交付案例](/v2/zh/service/cases/in-product-delivery)的固定请求、来源版本与验收结果，在隔离的恢复环境中重复调用。模型措辞可以不同，下面的事实和持久化结果应可核对：
 
 | 检查 | 验收依据 |
 | --- | --- |
-| 知识恢复 | 三条文档正文与备份一致，Agent 实际读取成功 |
+| 来源恢复 | 请求中的三份资料与版本一致；若生产接入了 Memory，另外验证实际读取 |
 | 文件恢复 | 原 Artifact 可以下载，内容与备份记录一致 |
-| 新任务 | 新 Invocation / Run 完成，引用正确来源，未把未确认产品能力写成承诺 |
-| 历史 | 升级前的 Issue、事件与验收状态仍能查看 |
-| Host 与自动化（如果使用） | 在测试目标上分别运行研发与订单履约案例，检查关联记录 |
+| 新任务 | 新 Turn / Run 完成，引用正确来源，未把未确认产品能力写成承诺 |
+| 历史 | 升级前的 Turn、事件、产物与应用验收记录仍能查看 |
+| Host 与调度（如果使用） | 在测试目标上运行代码修复或周期研究案例，检查关联记录 |
 
 记录升级前后版本、备份批次、用例输入、执行 ID 和差异。只在需要对应集成时验证其凭据可用性；知识读取案例本身没有外部凭据，不能证明 Vault 解密路径也已验证。
+
+<span id="troubleshooting"></span>
+
+## 获取组件日志
+
+```bash
+docker compose logs --tail=200 control data scheduler gateway
+kubectl -n agentscope logs deployment/service-agentscope-control --tail=200
+kubectl -n agentscope describe pod POD_NAME
+```
+
+Gateway 正常不代表模型或工具执行正常。Managed 会话故障查看 Dataplane；渠道与 Worker 调度查看 Scheduler；产品 Automation、资源、账号和编排派发查看 Control。Hosted provider 故障还需对应主机的 daemon 日志。
+
+## 重启没有重置管理员密码
+
+这是预期行为。`CONTROL_PLANE_BOOTSTRAP_PASSWORD` 只用于空账号表。已有账号通过 Profile 或管理员账号管理修改密码，不通过重新生成 `.env` 重置。
+
+## Vault 解密失败
+
+检查恢复时是否保留了原 `BUILDER_VAULT_MASTER_KEY`，以及各组件是否一致。不要通过随意替换密钥来修复；先恢复匹配的配置与数据。
+
+## 收到任务但没有最终结果
+
+先从 Issue 的 Executions 判断 Run、Node 和最新 Attempt，而不是看最后一条文字。waiting 时查看依赖、approval 或 signal；blocked 时补充信息；failed 时检查错误和部分产物。Inbox 的 Request changes 不自动启动执行。External 接入应核对是否实现任务回报，Hosted 接入应核对 provider 是否退出并完成回传。
+
+## Webhook 或 Session 重复请求
+
+先查询已有 Delivery/Turn 的状态。保持同一逻辑请求的幂等键和内容，只有新的业务请求才使用新 key。事件被过滤看 trigger 的 event 配置；请求被拒绝看认证头和 schema。SSE 断线后优先查询返回的 statusUrl。
+
+## 统一服务 API 调用排障
+
+保存 Session ID、Turn ID、请求幂等键和错误码。先读取 `/api/v1/agent-sessions/{sessionId}/turns/{turnId}` 确认任务状态，再通过同一 Turn 的 `/snapshot` 和 `/capabilities` 了解已保存的结果与当前可用命令。
+
+| 现象 | 核对方法 |
+| --- | --- |
+| 创建 Session 后没有 key | 凭据由 Application 单独签发，创建时显式提供 targets 和 scopes |
+| 401/403 | 检查 凭据目标授权、Application 状态与 scope、待办指定审批人 |
+| 409 | 区分资源版本冲突、幂等键内容不一致、目标能力不匹配或活动 Conversation 冲突 |
+| 输入命令已接收但没生效 | 查询返回的 command 状态；持久接收不代表模型已消费 |
+| SSE 返回 410/cursor_expired | 重新读取 snapshot 替换界面，再从新的 as_of 继续；不重发任务 |
+| 某个成员完成但调用仍运行 | 检查 Turn 与 steps，不把成员结果当成根工作终态 |
+| 恢复按钮不可用 | 按 available_commands 展示；并非所有后端支持 resume，公共 API 不支持 checkpoint restore |
+
+`/api/v1/events` 是 WebSocket 刷新通知，不能替代持久 Turn SSE。具体请求和响应字段见[统一服务 API](/v2/zh/service/service-api)。
+
+## Agent API 与 SSE
+
+以下针对 Managed 原生会话。先保存 session ID、turn ID、最近事件 ID、HTTP 状态码和脱敏错误。区分页面连接、任务执行和上下文恢复：
+
+| 现象 | 处理方式 |
+| --- | --- |
+| 刷新后只有后半段文字，或缺少离开期间的工具 | 先 GET snapshot 渲染 items/tools，再从 as_of 订阅；只恢复 cursor 不会重建 UI |
+| SSE 连接关闭，任务是否停止不确定 | GET turns/{turn} 或 snapshot；断线不取消，也不重新 POST turns |
+| run.ended / item.completed 后仍显示运行中 | 等目标 turn 的明确结果；执行、消息、工具完成不等于任务完成 |
+| 400 / 409 cursor 错误 | 核对 session 范围，重新取快照；不要自行解析、递增 cursor |
+| 410 资源分页过期 | 从资源第一页重新读取；资源分页 cursor 不可传给 SSE |
+| 确认已提交但工具没有继续 | 查 required_actions 和 GET turns/{turn}/actions；accepted 仅接收，rejected 时先读 reason 和 pending |
+| steer 返回 409 | 任务可能已结束或关闭输入；重新读取状态，新的独立问题提交新 turn |
+| checkpoint 恢复返回 409 | 先处理未关闭任务、待办、未消费输入和未知工具结果；恢复不能撤销外部操作 |
+| 费用不完整或预算拒绝执行 | 查 usage/budget 的未计价调用、模型用量和计价配置；调整限制后按任务状态显式 resume |
+| Webhook 没收到 | 检查允许主机、注册时间、事件过滤与 deliveries；连续失败暂停后修复接收端再 retry |
+| 有心跳却无文字 | 检查任务状态、工具和模型；它们可能不提供增量；若内容集中到达，检查代理缓冲 |
+
+具体请求见[会话与任务](/v2/zh/service/session-event-log)，刷新和断线恢复见 [SSE 文档](/v2/zh/service/sse-events)。应用只需要保存 Session、Turn 和游标，无需参与内部运行时记录的映射。
+
+## 更新 Control Plane 名称
+
+Go 组件位于 `agentscope-service/service-controlplane`，服务端二进制名为 `service-controlplane`。升级已有部署时，需要一起更新构建路径、启动命令、部署清单和环境变量。Control Plane 配置统一使用 `CONTROL_PLANE_` 前缀；HTTP 客户端使用 `CONTROL_PLANE_HTTP`，CLI 和 Runtime Host 使用 `CONTROL_PLANE_URL`。命令行工具使用 `as`，Runtime Host 可执行文件改为 `agentscope-runtime-host`。建议以同一 Service 版本附带的环境配置模板为准，避免新二进制加载旧配置。
+
+Java 接入模块为 `agentscope-extensions-controlplane`，入口为 `io.agentscope.extensions.controlplane.ControlPlane` 和 `ControlPlaneConfig`。Python 分发包为 `agentscope-service-sdk`，代码中通过 `agentscope_service` 导入；DSH 插件为 `@agentscope-service/dsh-controlplane`。已有接入应用需要更新依赖和导入后再部署。如果使用了自定义日志目录、Helm 资源名或 Console 偏好设置，也需要在升级时迁移这些本地配置。数据库 schema 和 ASDP 的 `agentscope.protocol.v1` 线上协议标识沿用原值。

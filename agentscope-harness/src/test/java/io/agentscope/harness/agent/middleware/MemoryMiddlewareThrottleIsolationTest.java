@@ -131,7 +131,7 @@ class MemoryMiddlewareThrottleIsolationTest {
             IsolationScope scope,
             PeriodicGate gate) {
         return new MemoryMaintenanceMiddleware(
-                workspace, consolidator, 90, 180, Duration.ofHours(24), scope, gate);
+                workspace, consolidator, 90, Duration.ofHours(24), scope, gate);
     }
 
     private static void runMaintenance(MemoryMaintenanceMiddleware middleware) {

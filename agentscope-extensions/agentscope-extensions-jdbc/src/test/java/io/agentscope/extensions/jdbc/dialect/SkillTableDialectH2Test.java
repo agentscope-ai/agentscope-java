@@ -17,6 +17,7 @@ package io.agentscope.extensions.jdbc.dialect;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -55,6 +56,7 @@ class SkillTableDialectH2Test {
     private static final Set<String> SKILL_COLUMNS =
             Set.of(
                     "id",
+                    "namespace",
                     "name",
                     "description",
                     "skill_content",
@@ -65,7 +67,13 @@ class SkillTableDialectH2Test {
 
     /** The column set every vendor's skill-resources DDL declares. */
     private static final Set<String> SKILL_RESOURCE_COLUMNS =
-            Set.of("id", "resource_path", "resource_content", "created_at", "updated_at");
+            Set.of(
+                    "id",
+                    "namespace",
+                    "resource_path",
+                    "resource_content",
+                    "created_at",
+                    "updated_at");
 
     // ------------------------------------------------------------------
     //  DDL execution and validation
@@ -219,6 +227,163 @@ class SkillTableDialectH2Test {
                             dialect.skillResourcesCreateTableDdls().get(0)),
                     dialect.getClass().getSimpleName() + " skill-resources DDL must parse");
         }
+    }
+
+    @Test
+    @DisplayName("every vendor's skill DDL declares UNIQUE(namespace, name), not UNIQUE(name)")
+    void allVendorDdlsDeclareNamespacedUnique() {
+        for (AbstractJdbcDialect dialect :
+                List.of(
+                        new H2Dialect(),
+                        new MysqlDialect(),
+                        new PostgresDialect(),
+                        new SqliteDialect())) {
+            String ddl = normalise(dialect.skillCreateTableDdls().get(0)).toUpperCase(Locale.ROOT);
+            assertTrue(
+                    ddl.matches(".*UNIQUE[^,)]*\\(\\s*NAMESPACE\\s*,\\s*NAME\\s*\\).*"),
+                    dialect.getClass().getSimpleName()
+                            + " must declare UNIQUE(namespace, name): "
+                            + ddl);
+            assertFalse(
+                    ddl.matches(".*NAME\\s+VARCHAR\\(255\\)\\s+NOT\\s+NULL\\s+UNIQUE.*"),
+                    dialect.getClass().getSimpleName()
+                            + " must not keep a global UNIQUE(name): "
+                            + ddl);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "UNIQUE(namespace, name) admits the same name in two namespaces, rejects within one")
+    void namespacedUniqueConstraint() throws Exception {
+        DataSource ds = H2TestSupport.createDataSource("skill_ddl_ns_unique");
+        H2Dialect dialect = new H2Dialect();
+        executeDdls(ds, dialect.skillCreateTableDdls());
+        executeDdls(ds, dialect.skillResourcesCreateTableDdls());
+
+        String insert =
+                "INSERT INTO "
+                        + dialect.skillTableName()
+                        + " (namespace, name, description, skill_content, source)"
+                        + " VALUES (?, 's1', 'd', 'c', 'test')";
+        try (Connection conn = ds.getConnection();
+                PreparedStatement nsA = conn.prepareStatement(insert);
+                PreparedStatement nsB = conn.prepareStatement(insert);
+                PreparedStatement dupA = conn.prepareStatement(insert)) {
+            nsA.setString(1, "team-a");
+            assertEquals(1, nsA.executeUpdate());
+            nsB.setString(1, "team-b");
+            assertEquals(1, nsB.executeUpdate(), "same name must coexist in another namespace");
+            dupA.setString(1, "team-a");
+            SQLException duplicate = assertThrows(SQLException.class, dupA::executeUpdate);
+            assertEquals(
+                    "23505",
+                    duplicate.getSQLState(),
+                    "the violation must be the portable unique-constraint state");
+        }
+    }
+
+    @Test
+    @DisplayName("a table missing the namespace column is blocked, naming it")
+    void missingNamespaceColumnBlocked() throws Exception {
+        DataSource ds = H2TestSupport.createDataSource("skill_ddl_missing_namespace");
+        H2Dialect dialect = new H2Dialect();
+        // The shape an un-upgraded deployment still has: every column but namespace, and the
+        // legacy global UNIQUE(name).
+        execute(
+                ds,
+                "CREATE TABLE "
+                        + dialect.skillTableName()
+                        + " ("
+                        + "  id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+                        + "  name VARCHAR(255) NOT NULL UNIQUE,"
+                        + "  description CLOB NOT NULL,"
+                        + "  skill_content CLOB NOT NULL,"
+                        + "  source VARCHAR(255) NOT NULL,"
+                        + "  metadata_json CLOB,"
+                        + "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        + ")");
+
+        try (Connection conn = ds.getConnection()) {
+            IllegalStateException exception =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () ->
+                                    TableSchemaValidator.validate(
+                                            conn,
+                                            dialect.skillTableName(),
+                                            dialect.skillCreateTableDdls()));
+            assertTrue(
+                    exception.getMessage().contains("namespace"),
+                    "message must name the missing column: " + exception.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("the documented upgrade (add column, rebuild index) makes namespaced saves work")
+    void legacyTableUpgradePath() throws Exception {
+        DataSource ds = H2TestSupport.createDataSource("skill_ddl_upgrade");
+        H2Dialect dialect = new H2Dialect();
+        execute(
+                ds,
+                "CREATE TABLE "
+                        + dialect.skillTableName()
+                        + " ("
+                        + "  id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+                        + "  name VARCHAR(255) NOT NULL,"
+                        + "  description CLOB NOT NULL,"
+                        + "  skill_content CLOB NOT NULL,"
+                        + "  source VARCHAR(255) NOT NULL,"
+                        + "  metadata_json CLOB,"
+                        + "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  CONSTRAINT name_key UNIQUE (name)"
+                        + ")");
+        execute(
+                ds,
+                "INSERT INTO "
+                        + dialect.skillTableName()
+                        + " (name, description, skill_content, source)"
+                        + " VALUES ('legacy', 'd', 'c', 'test')");
+
+        // The migration the deployment notes prescribe for the legacy global UNIQUE(name).
+        execute(
+                ds,
+                "ALTER TABLE "
+                        + dialect.skillTableName()
+                        + " ADD COLUMN namespace VARCHAR(64) NOT NULL DEFAULT 'default'");
+        execute(ds, "ALTER TABLE " + dialect.skillTableName() + " DROP CONSTRAINT name_key");
+        execute(
+                ds,
+                "ALTER TABLE "
+                        + dialect.skillTableName()
+                        + " ADD CONSTRAINT uk_namespace_name UNIQUE (namespace, name)");
+
+        try (Connection conn = ds.getConnection()) {
+            assertDoesNotThrow(
+                    () ->
+                            TableSchemaValidator.validate(
+                                    conn,
+                                    dialect.skillTableName(),
+                                    dialect.skillCreateTableDdls()));
+
+            String insert =
+                    "INSERT INTO "
+                            + dialect.skillTableName()
+                            + " (namespace, name, description, skill_content, source)"
+                            + " VALUES ('team-a', 'legacy', 'd', 'c', 'test')";
+            try (PreparedStatement ps = conn.prepareStatement(insert)) {
+                assertEquals(
+                        1,
+                        ps.executeUpdate(),
+                        "after the upgrade the same name must be savable in another namespace");
+            }
+        }
+    }
+
+    private static String normalise(String ddl) {
+        return ddl.replaceAll("\\s+", " ").trim();
     }
 
     // ------------------------------------------------------------------
