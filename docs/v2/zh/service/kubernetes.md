@@ -20,7 +20,7 @@ curl -fLO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/kubernete
 curl -fLO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/postgres-init.sql
 ```
 
-用应用数据库所有者在目标数据库执行 SQL，创建 `cp`、`rt`、`dp` 三个 schema。为数据库、文件和密钥建立备份策略。如需离线安装，从 [GitHub Release](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.1.0-BETA1) 下载 `agentscope-service-VERSION-kubernetes.tar.gz` 和 `SHA256SUMS`，核对校验和后解压；包中包含 Chart 和相同的配置文件。
+用应用数据库所有者在目标数据库执行 SQL，创建 `cp`、`rt`、`dp` 三个 schema。为数据库、文件和密钥建立备份策略。如需离线安装，从 [GitHub Release](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.1.0-BETA1) 下载 `agentscope-service-2.1.0-BETA1-kubernetes.tar.gz` 和 `SHA256SUMS`，核对校验和后解压；包中包含 Chart 和相同的配置文件。
 
 ## 2. 创建 Secret
 
@@ -64,12 +64,12 @@ ingress:
 添加公开 Helm 仓库并更新索引，无需登录仓库：
 
 ```bash
-helm repo add agentscope https://java.agentscope.io/helm
+helm repo add agentscope https://chickenlj.github.io/helm-charts
 helm repo update agentscope
 helm search repo agentscope/agentscope-service --versions --devel
 ```
 
-索引会跳转到托管 Chart 的 [GitHub Pages](https://chickenlj.github.io/helm-charts/index.yaml)。也可以直接使用 `https://chickenlj.github.io/helm-charts` 执行 `helm repo add`。
+已发布的 [Helm 仓库](https://github.com/chickenlj/helm-charts) 在 GitHub Pages 托管索引与安装包。使用 `--version 2.1.0-BETA1` 固定版本；查询命令的 `--devel` 会包含预发布版本。Chart 通过 `appVersion` 使用配套的镜像版本。
 
 安装指定 Chart 版本，并配置对应的镜像命名空间：
 

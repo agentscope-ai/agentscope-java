@@ -4,29 +4,35 @@ en_link: /v2/en/service/runtime-host
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 Runtime Host 运行在安装 Coding Agent 的电脑或服务器上。控制面负责派发和记录工作，Host 使用本地 provider 执行。
 
-## 安装
+## 使用 Go 安装
 
-从同一 Service Release 下载对应操作系统和 CPU 架构的 `agentscope-cli-VERSION-OS-ARCH.tar.gz`，核对校验和后解压。包中包含 `as` 和 `agentscope-runtime-host`。将两个可执行文件放在同一个 PATH 目录中。
-
-按目标机器和发布清单选择 Linux/macOS 的 amd64 或 arm64 包。provider 本身需要另行安装、登录并确认可运行。
-
-## 解压到 PATH
-
-`uname -sm` 可查看平台；包名使用 `linux`/`darwin` 与 `amd64`/`arm64`。从 [Release](https://github.com/agentscope-ai/agentscope-java/releases) 下载匹配包，将下面文件名替换为实际值：
+在目标 Linux 或 macOS 主机安装 [Go](https://go.dev/doc/install) 1.26 或更新版本。从同一个已发布版本安装两个命令，无需下载仓库源码或在该主机部署 Service：
 
 ```bash
-mkdir -p agentscope-cli "$HOME/.local/bin"
-tar -xzf agentscope-cli-VERSION-OS-ARCH.tar.gz -C agentscope-cli
-install -m 0755 agentscope-cli/as agentscope-cli/agentscope-runtime-host "$HOME/.local/bin/"
-export PATH="$HOME/.local/bin:$PATH"
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
 ```
 
-将 PATH 配置写入你使用的 shell 配置以便后续终端使用。
+Go 为当前机器编译二进制，安装到 `GOBIN`；未设置时使用 `$(go env GOPATH)/bin`。将该目录加入 PATH，并检查两个命令：
+
+```bash
+AS_CLI_BIN_DIR="$(go env GOBIN)"
+if [ -z "$AS_CLI_BIN_DIR" ]; then
+  AS_CLI_BIN_DIR="$(go env GOPATH)/bin"
+fi
+export PATH="$AS_CLI_BIN_DIR:$PATH"
+as version
+agentscope-runtime-host -help
+```
+
+将 PATH 配置写入 shell 配置文件，以便新终端使用。`as version` 应显示 `2.1.0-BETA1`。`/v2` 模块路径和 `@v2.1.0-BETA1` 指定本次已发布的预发布版本。
+
+另外在这台主机安装、登录所需的 Coding Agent provider，并确认它能完成一次请求。CLI 和 Runtime Host 连接已有 Service，不负责部署平台。升级时先停止 Runtime Host，将两个 `go install` 命令中的版本一起更新，安装后重启，并保留原状态目录。
 
 ## 连接
 

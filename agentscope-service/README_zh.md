@@ -66,98 +66,114 @@ Workspace、Environment、Memory 和 Vault 组织执行资源。应用身份与�
 
 ## 发布部署与文档
 
-发布版使用已构建镜像，参见 [Docker / Helm 部署](deploy/README.md) 和 [中文发布维护手册](release/README_zh.md)。完整用户文档位于 [AgentScope Service 专区](../docs/v2/zh/service/index.md)。以下本地启动流程用于开发，包含演示账号和可选数据库重置。
+发布版使用已构建镜像，参见 [Docker / Helm 部署](deploy/README.md) 和 [中文发布维护手册](release/README_zh.md)。完整用户文档位于 [AgentScope Service 专区](../docs/v2/zh/service/index.md)。以下快速开始使用发布版 Compose 安装；源码启动与构建见后面的开发章节。
 
-## 快速开始
+## 使用 Docker Compose 快速开始
 
-### 前置条件
+使用已发布的 `2.1.0-BETA1` 预发布版本。准备 Docker Engine 或 Docker Desktop、
+Compose v2、Bash、curl、OpenSSL 和模型 API 凭据。
+启动平台无需下载源码，也无需安装 Java、Maven 或 Go。
 
-- Docker
-- JDK 17+
-- Maven
-- Go 1.26+
-- 模型 API Key；以下示例使用 DashScope
-
-仅在重新构建 Web Console 时需要 Node.js。
-
-### 1. 启动本地环境
-
-从 Monorepo 执行：
+### 1. 下载并初始化
 
 ```bash
-git clone https://github.com/agentscope-ai/agentscope-java.git
-cd agentscope-java
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/agentscope-service-2.1.0-BETA1-compose.tar.gz
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/SHA256SUMS
+awk '$2 == "agentscope-service-2.1.0-BETA1-compose.tar.gz"' SHA256SUMS > compose.sha256
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c compose.sha256
+else
+  shasum -a 256 -c compose.sha256
+fi
+```
 
-export DASHSCOPE_API_KEY=sk-xxx
+```bash
+tar -xzf agentscope-service-2.1.0-BETA1-compose.tar.gz
 cd agentscope-service
-scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
+./init-env.sh 2.1.0-BETA1 sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope
 ```
 
-脚本会启动 PostgreSQL、`service-controlplane`、Dataplane、Scheduler 和 Gateway。本地开发设置 `CONTROL_PLANE_ENABLE_KUBERNETES=false`，Hosted Product 流程无需 CRD Reconciler 或 ASDP gRPC。
-项目尚未发布，v4 又明确替换了旧执行 schema，因此 `BUILDER_REBUILD=1` 会同时重建可丢弃的本地 `cp`、`rt`、`dp` schema。只有在需要保留已经是 v4 的本地数据时才设置 `BUILDER_RESET_DB=0`。启动脚本在报告成功前会检查三个 schema 和终态协作/编排 migration；执行 `scripts/smoke.sh` 可运行 API 级端到端验收。
+编辑生成的 `.env`，填写 `DASHSCOPE_API_KEY`。在可信本机体验时，设置
+`BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`，工具将在 Dataplane 容器内执行；
+其他安装应准备隔离的执行环境。初始化会保留已有 `.env`，请将其中的凭据和
+Vault 密钥与备份一起保存。
 
-| 项目 | 值 |
-| --- | --- |
-| Console 与公共 API | http://localhost:18080 |
-| 默认账号 | `admin` / `admin` |
-| 其他种子账号 | `alice` / `alice`、`bob` / `bob` |
-| 日志与本地状态 | `.dev-stack/` |
-
-默认账号和开发密钥只能用于本地环境。
-
-### 2. 连接本机 Coding Agent
-
-`as` CLI 会自动发现 Codex、Claude Code 和 Qoder，签发仅限当前 Host 的运行凭证，
-并在后台启动 Runtime Host。开发环境可直接从源码安装两个相邻的可执行文件：
+### 2. 启动并使用 Service
 
 ```bash
-cd service-controlplane
-make install-runtime-cli PREFIX="$HOME/.local"
-as connect
+docker compose pull
+docker compose up -d --wait --wait-timeout 600
+docker compose ps
+curl -fsS http://localhost:18080/actuator/health
 ```
 
-`connect` 会自动发现本地服务并提示输入 AgentScope 用户名和密码；也可以为自动化设置
-`AGENTSCOPE_API_TOKEN`，或使用控制台生成的 `AGENTSCOPE_RUNTIME_TOKEN`。凭证、稳定 Host ID、
-PID 与日志保存在 `~/.agentscope/runtime-host/`，权限仅限当前用户。日常运维只需要：
+安装包使用已发布的 amd64/arm64 镜像，启动 PostgreSQL、含 Dashboard 的 Control Plane、
+Dataplane、Scheduler 和 Gateway。打开 `http://localhost:18080`，以 `admin` 和 `.env` 中的
+`CONTROL_PLANE_BOOTSTRAP_PASSWORD` 登录，然后修改密码。发布安装包不创建演示用户。
+
+按[部署并准备 Service](https://java.agentscope.io/v2/zh/service/quickstart)配置账号、模型和
+执行环境，再[创建第一个托管 Agent](https://java.agentscope.io/v2/zh/service/create-managed-agent)。
+DSH 插件的安装说明见对应 [README](service-controlplane/sdk/dsh/README_zh.md)。
+
+用 `docker compose down` 停止服务，数据卷会保留；日常停止不要使用 `-v`。
+升级或恢复数据前阅读[运维手册](https://java.agentscope.io/v2/zh/service/operations)。
+
+## 使用 Go 安装 CLI 与 Runtime Host
+
+要接入运行在 Linux/macOS 主机上的 Coding Agent，先安装 Go 1.26+，
+再安装同一版本的两个命令：
 
 ```bash
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
+AS_CLI_BIN_DIR="$(go env GOBIN)"
+if [ -z "$AS_CLI_BIN_DIR" ]; then
+  AS_CLI_BIN_DIR="$(go env GOPATH)/bin"
+fi
+export PATH="$AS_CLI_BIN_DIR:$PATH"
+as version
+agentscope-runtime-host -help
+as connect http://localhost:18080
 as runtime status
-as runtime logs -f
-as runtime restart
-as runtime stop
-as runtime probe
 ```
 
-控制面会自动创建默认 Runtime Pool 和 `auto-<provider>` Runtime Profile；Host 在线后，创建
-Agent 时直接选择 `Codex (<host-key>)` 等本地 Runtime，无需手工填写 daemon 参数。
+Host 在另一台机器时，请使用实际 Service 地址。Coding Agent provider 需要另行安装和登录。
+CLI 连接已有 Service 并启动 Runtime Host，不负责部署平台。将 PATH 设置写入 shell 配置文件。
+更多说明见 [Runtime Host 安装与运维](https://java.agentscope.io/v2/zh/service/runtime-host)。
 
-执行任务时，Runtime Host 会同时为 Coding Agent 注入 `agentscope-collaboration` MCP 和
-task-scoped `as` CLI。Agent 可以用 `as task context` 读取当前任务，使用
-`as task progress/respond --content-file ...` 写回进展或结果，通过
-`as task child`、`as task run graph/replan/node-complete` 参与 Team 协作。
-这些命令只持有当前 Attempt 的短期凭据，不能访问其他 Issue，也不会继承用户或 Runtime Host Token。
+## 使用 Helm 安装生产环境
 
-### 3. 运行第一个 Session
-
-1. 打开 http://localhost:18080 并登录（`admin` / `admin`）。
-2. 在 **Managed Agents** 中创建 Agent。
-3. 本地开发栈会自动为新建的 Managed Agent 绑定共享的 `default-local` Environment；之后可在 Agent 设置中切换。
-4. 打开 **Sessions**，创建 Session 并发送第一条消息。
-5. 在 **Dashboard** 查看在线状态、事件与运行时信息。
-6. 如需协作，创建持久 **Team**、分配 Issue，并观察 discussion route 与 AgentTask。
-
-体验 BYO Agent 注册时，可使用仓库示例 `agentscope-examples/agents/agentscope-paw`；启动后即可在 Dashboard 中看到智能体注册成功。
-
-把 **DeepSeek Harness** 作为独立运行时接入时，使用 `agentscope-service/service-controlplane/sdk/dsh`（`@agentscope/dsh-controlplane`）Cordis 插件：向 service-controlplane 自注册、提供 `/agentscope/*` 契约、接收 AgentTask，并与其他 runtime 使用同一 Issue/Comment/Artifact 协议。安装与配置见该目录 [README_zh.md](service-controlplane/sdk/dsh/README_zh.md)。
-
-
-### 4. 停止环境
+先准备外部 PostgreSQL、Workspace 的共享 RWX 存储、Artifact 存储、配置 Secret、
+域名和 TLS，然后添加已发布的 Chart 仓库：
 
 ```bash
-scripts/dev-down.sh
+helm repo add agentscope https://chickenlj.github.io/helm-charts
+helm repo update agentscope
 ```
+
+按[生产安装指南](https://java.agentscope.io/v2/zh/service/kubernetes)安装
+`agentscope/agentscope-service`，固定 `--version 2.1.0-BETA1`，镜像命名空间使用
+`sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`。
+Chart 每组件单副本并采用 Recreate 更新，请安排维护窗口。
 
 ## 开发
+
+### 从源码启动开发环境
+
+源码开发需要 JDK 17+、Maven、Go 1.26+、Node.js 22 和 Docker。
+从仓库根目录运行：
+
+```bash
+export DASHSCOPE_API_KEY=YOUR_MODEL_CREDENTIAL
+cd agentscope-service
+scripts/dev-down.sh
+BUILDER_REBUILD=1 scripts/dev-up.sh
+# 日后用 scripts/dev-down.sh 停止。
+```
+
+开发栈使用开发密钥并创建演示用户。完整重建默认重置可丢弃的 `cp`、`rt`、`dp` schema；
+仅在需要保留已有兼容开发库时设置 `BUILDER_RESET_DB=0`。
+这与上面的发布版 Compose 安装是不同的环境。
 
 ### 构建后端
 
