@@ -24,6 +24,8 @@ code-reviewer/
     └── run-checks.sh
 ```
 
+Save `SKILL.md` as UTF-8. A byte order mark (BOM) before the opening `---` is supported.
+
 SKILL.md format:
 
 ```markdown

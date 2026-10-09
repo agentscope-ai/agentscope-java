@@ -213,6 +213,27 @@ class SkillManageToolTest {
         assertTrue(text(r).startsWith("Error:"));
     }
 
+    @Test
+    void createAcceptsUtf8BomBeforeFrontmatter() {
+        ToolResultBlock r =
+                toolDraftDefault
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "create",
+                                                "name", "bom-skill",
+                                                "content",
+                                                        "\uFEFF"
+                                                                + validSkillMd(
+                                                                        "bom-skill",
+                                                                        "Created with BOM."))))
+                        .block();
+        assertFalse(text(r).startsWith("Error:"), text(r));
+
+        var loaded = draftsRepo.getSkill("bom-skill");
+        assertEquals("Created with BOM.", loaded.getDescription());
+    }
+
     // ---- edit ----
 
     @Test
@@ -239,6 +260,33 @@ class SkillManageToolTest {
         var loaded = draftsRepo.getSkill("evolve");
         assertEquals("Updated.", loaded.getDescription());
         assertTrue(loaded.getSkillContent().contains("Evolved"));
+    }
+
+    @Test
+    void editAcceptsUtf8BomBeforeFrontmatter() {
+        toolDraftDefault
+                .callAsync(
+                        paramOf(
+                                args(
+                                        "action", "create",
+                                        "name", "bom-edit",
+                                        "content", validSkillMd("bom-edit", "Initial."))))
+                .block();
+        String newMd =
+                "\uFEFF---\nname: bom-edit\ndescription: Updated with BOM.\n---\n# Bom edit\n";
+        ToolResultBlock r =
+                toolDraftDefault
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "edit",
+                                                "name", "bom-edit",
+                                                "content", newMd)))
+                        .block();
+        assertFalse(text(r).startsWith("Error:"), text(r));
+
+        var loaded = draftsRepo.getSkill("bom-edit");
+        assertEquals("Updated with BOM.", loaded.getDescription());
     }
 
     // ---- patch ----
@@ -317,6 +365,51 @@ class SkillManageToolTest {
                         .block();
         assertFalse(text(r).startsWith("Error:"), text(r));
         assertTrue(text(r).contains("2 replacement"));
+    }
+
+    @Test
+    void patchMatchesCrlfSkillFileWithLfNeedle() throws Exception {
+        toolDraftDefault
+                .callAsync(
+                        paramOf(
+                                args(
+                                        "action", "create",
+                                        "name", "crlfpatch",
+                                        "content", validSkillMd("crlfpatch", "CRLF target."))))
+                .block();
+
+        // create round-trips the content through the parser and writes LF, so a CRLF skill file
+        // only ever arrives from outside the tool — authored on Windows, unpacked from a
+        // marketplace archive, or copied into the workspace by hand. Stand in for that by
+        // putting the CRLF bytes on disk directly.
+        Path skillMd = workspace.resolve("skills/_drafts/crlfpatch/SKILL.md");
+        String crlf = validSkillMd("crlfpatch", "CRLF target.").replace("\n", "\r\n");
+        Files.writeString(skillMd, crlf);
+        assertEquals(crlf, Files.readString(skillMd));
+
+        // The needle spans a line break, so the strict level cannot match a CRLF file and the
+        // patch has to be carried by the fuzziness ladder.
+        ToolResultBlock r =
+                toolDraftDefault
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "patch",
+                                                "name", "crlfpatch",
+                                                "old_string", "# crlfpatch\nBody.",
+                                                "new_string", "# crlfpatch\nBody v2.")))
+                        .block();
+        assertFalse(text(r).startsWith("Error:"), text(r));
+        assertTrue(draftsRepo.getSkill("crlfpatch").getSkillContent().contains("Body v2."));
+
+        // Only the bytes the needle named were replaced. Everything outside the span keeps its
+        // CRLF terminators, so the patch did not silently reflow the rest of the file — including
+        // the frontmatter, which the needle never touched.
+        String raw = Files.readString(skillMd);
+        assertTrue(
+                raw.startsWith("---\r\nname: crlfpatch\r\ndescription: CRLF target.\r\n---\r\n"),
+                raw);
+        assertTrue(raw.endsWith("# crlfpatch\nBody v2.\r\n"), raw);
     }
 
     // ---- write_file / remove_file ----

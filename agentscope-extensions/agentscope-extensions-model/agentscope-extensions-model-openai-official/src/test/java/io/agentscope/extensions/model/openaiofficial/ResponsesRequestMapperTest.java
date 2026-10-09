@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.openaiofficial;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,7 +26,13 @@ import com.openai.core.JsonValue;
 import com.openai.models.responses.FunctionTool;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseFunctionCallOutputItem;
+import com.openai.models.responses.ResponseFunctionToolCall;
+import com.openai.models.responses.ResponseIncludable;
 import com.openai.models.responses.ResponseInputItem;
+import com.openai.models.responses.ResponseOutputItem;
+import com.openai.models.responses.Tool;
+import com.openai.models.responses.ToolSearchTool;
+import com.openai.models.responses.WebSearchTool;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.AssistantMessage;
@@ -41,9 +48,14 @@ import io.agentscope.core.message.ToolResultMessage;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
+import io.agentscope.extensions.model.openaiofficial.tool.ResponsesServerToolHelper;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Nested;
@@ -69,8 +81,21 @@ class ResponsesRequestMapperTest {
         return ResponsesRequestMapper.map(
                 List.of(SystemMessage.builder().content(text("system")).build()),
                 tools,
+                null,
                 options,
                 strictTools,
+                null,
+                ResponsesRequestMapper::mapHistory);
+    }
+
+    private static ResponseCreateParams mapWithServerTools(
+            GenerateOptions options, List<ToolSchema> tools, List<OpenAIServerTool> serverTools) {
+        return ResponsesRequestMapper.map(
+                List.of(SystemMessage.builder().content(text("system")).build()),
+                tools,
+                serverTools,
+                options,
+                null,
                 null,
                 ResponsesRequestMapper::mapHistory);
     }
@@ -80,7 +105,7 @@ class ResponsesRequestMapperTest {
         @SuppressWarnings("unchecked")
         List<Msg> msgs = (List<Msg>) messages;
         return ResponsesRequestMapper.map(
-                msgs, null, options, null, null, ResponsesRequestMapper::mapHistory);
+                msgs, null, null, options, null, null, ResponsesRequestMapper::mapHistory);
     }
 
     // ── Options mapping ──────────────────────────────────────────
@@ -201,6 +226,7 @@ class ResponsesRequestMapperTest {
                     ResponsesRequestMapper.map(
                             List.of(SystemMessage.builder().content(text("s")).build()),
                             null,
+                            null,
                             opts,
                             null,
                             true,
@@ -225,7 +251,8 @@ class ResponsesRequestMapperTest {
                             .toolChoice(new ToolChoice.Specific("my_tool"))
                             .build();
             ResponseCreateParams params = mapWith(opts, null, null);
-            assertTrue(params.toolChoice().isPresent());
+            assertTrue(params.toolChoice().orElseThrow().isFunction());
+            assertEquals("my_tool", params.toolChoice().orElseThrow().asFunction().name());
         }
 
         @Test
@@ -284,6 +311,7 @@ class ResponsesRequestMapperTest {
                     () ->
                             ResponsesRequestMapper.map(
                                     List.of(SystemMessage.builder().content(text("s")).build()),
+                                    null,
                                     null,
                                     opts,
                                     null,
@@ -788,6 +816,85 @@ class ResponsesRequestMapperTest {
         }
 
         @Test
+        void deferredToolSchemaIsDeferredWithToolSearch() {
+            ToolSchema schema =
+                    ToolSchema.builder()
+                            .name("get_weather")
+                            .description("Get weather")
+                            .deferLoading(true)
+                            .build();
+            OpenAIServerTool serverTool =
+                    OpenAIServerTool.of(
+                            Tool.ofSearch(
+                                    ToolSearchTool.builder()
+                                            .type(JsonValue.from("tool_search"))
+                                            .parameters(JsonValue.from(Map.of("type", "object")))
+                                            .build()));
+
+            ResponseCreateParams params =
+                    mapWithServerTools(baseOptions(), List.of(schema), List.of(serverTool));
+
+            FunctionTool tool = params.tools().orElseThrow().get(0).asFunction();
+            assertTrue(tool.deferLoading().isPresent());
+            assertEquals(true, tool.deferLoading().orElseThrow());
+        }
+
+        @Test
+        void toolSearchDoesNotDeferUnmarkedLocalFunctionTools() {
+            ToolSchema schema =
+                    ToolSchema.builder().name("get_weather").description("Get weather").build();
+            OpenAIServerTool serverTool =
+                    OpenAIServerTool.of(
+                            Tool.ofSearch(
+                                    ToolSearchTool.builder()
+                                            .type(JsonValue.from("tool_search"))
+                                            .parameters(JsonValue.from(Map.of("type", "object")))
+                                            .build()));
+
+            ResponseCreateParams params =
+                    mapWithServerTools(baseOptions(), List.of(schema), List.of(serverTool));
+
+            FunctionTool tool = params.tools().orElseThrow().get(0).asFunction();
+            assertFalse(tool.deferLoading().isPresent());
+        }
+
+        @Test
+        void deferredToolWithoutToolSearchFailsFast() {
+            ToolSchema schema =
+                    ToolSchema.builder()
+                            .name("get_weather")
+                            .description("Get weather")
+                            .deferLoading(true)
+                            .build();
+
+            OpenAIOfficialModelException exception =
+                    assertThrows(
+                            OpenAIOfficialModelException.class,
+                            () -> mapWith(baseOptions(), List.of(schema), null));
+
+            assertTrue(exception.getMessage().contains("deferLoading"));
+            assertTrue(exception.getMessage().contains("tool_search"));
+        }
+
+        @Test
+        void otherServerToolsDoNotDeferUnmarkedLocalFunctionTools() {
+            ToolSchema schema =
+                    ToolSchema.builder().name("get_weather").description("Get weather").build();
+            OpenAIServerTool serverTool =
+                    OpenAIServerTool.of(
+                            Tool.ofWebSearch(
+                                    WebSearchTool.builder()
+                                            .type(WebSearchTool.Type.WEB_SEARCH)
+                                            .build()));
+
+            ResponseCreateParams params =
+                    mapWithServerTools(baseOptions(), List.of(schema), List.of(serverTool));
+
+            FunctionTool tool = params.tools().orElseThrow().get(0).asFunction();
+            assertFalse(tool.deferLoading().isPresent());
+        }
+
+        @Test
         void strictFromToolSchema() {
             ToolSchema schema =
                     ToolSchema.builder().name("tool1").description("d").strict(true).build();
@@ -820,6 +927,43 @@ class ResponsesRequestMapperTest {
                     ToolSchema.builder().name("tool1").description("d").strict(true).build();
             ResponseCreateParams params = mapWith(baseOptions(), List.of(schema), null);
             assertTrue(params.tools().isPresent());
+        }
+
+        @Test
+        void localFunctionNameMayEqualServerToolType() {
+            ToolSchema local =
+                    ToolSchema.builder().name("web_search").description("local overload").build();
+            OpenAIServerTool serverTool =
+                    OpenAIServerTool.of(
+                            Tool.ofWebSearch(
+                                    WebSearchTool.builder()
+                                            .type(WebSearchTool.Type.WEB_SEARCH)
+                                            .build()));
+
+            ResponseCreateParams params =
+                    mapWithServerTools(baseOptions(), List.of(local), List.of(serverTool));
+
+            assertEquals(2, params.tools().orElseThrow().size());
+            assertTrue(params.tools().orElseThrow().get(0).isFunction());
+            assertTrue(params.tools().orElseThrow().get(1).isWebSearch());
+        }
+
+        @Test
+        void serverToolsAreSentAndWebSearchResultsAreIncluded() {
+            OpenAIServerTool serverTool =
+                    OpenAIServerTool.of(
+                            Tool.ofWebSearch(
+                                    WebSearchTool.builder()
+                                            .type(WebSearchTool.Type.WEB_SEARCH)
+                                            .build()));
+
+            ResponseCreateParams params =
+                    mapWithServerTools(baseOptions(), null, List.of(serverTool));
+
+            assertEquals(1, params.tools().orElseThrow().size());
+            List<ResponseIncludable> includes = params.include().orElseThrow();
+            assertTrue(includes.contains(ResponseIncludable.WEB_SEARCH_CALL_RESULTS));
+            assertTrue(includes.contains(ResponseIncludable.WEB_SEARCH_CALL_ACTION_SOURCES));
         }
 
         @Test
@@ -956,6 +1100,7 @@ class ResponsesRequestMapperTest {
                     ResponsesRequestMapper.map(
                             List.of(SystemMessage.builder().content(text("s")).build()),
                             null,
+                            null,
                             opts,
                             null,
                             true,
@@ -984,6 +1129,7 @@ class ResponsesRequestMapperTest {
             ResponseCreateParams params =
                     ResponsesRequestMapper.map(
                             List.of(SystemMessage.builder().content(text("s")).build()),
+                            null,
                             null,
                             opts,
                             null,
@@ -1015,6 +1161,7 @@ class ResponsesRequestMapperTest {
                     ResponsesRequestMapper.map(
                             List.of(SystemMessage.builder().content(text("s")).build()),
                             List.of(toolSchema),
+                            null,
                             opts,
                             null,
                             true,
@@ -1032,6 +1179,90 @@ class ResponsesRequestMapperTest {
         }
 
         @Test
+        void serverToolHistoryIsRestoredFromRawItem() {
+            List<ContentBlock> blocks =
+                    ResponsesServerToolHelper.decodeBlocks(TestSdkFixtures.webSearchItem());
+            List<Msg> messages = List.of(AssistantMessage.builder().content(blocks).build());
+
+            ResponseCreateParams params = mapHistory(baseOptions(), messages);
+
+            List<ResponseInputItem> input = params.input().orElseThrow().asResponse();
+            assertEquals(1, input.size());
+            assertTrue(input.get(0).isWebSearchCall());
+            assertFalse(input.get(0).isFunctionCall());
+            assertFalse(input.get(0).isFunctionCallOutput());
+        }
+
+        @Test
+        void embeddedServerToolResultOwnsRawItemReplay() {
+            ResponseOutputItem doneItem = TestSdkFixtures.webSearchItem("done snapshot");
+            ResponseOutputItem terminalItem = TestSdkFixtures.webSearchItem("terminal snapshot");
+            ToolUseBlock call = ResponsesServerToolHelper.decodeCallBlock(doneItem).orElseThrow();
+            ToolResultBlock result =
+                    ResponsesServerToolHelper.decodeResultBlock(terminalItem).orElseThrow();
+
+            assertNull(call.getMetadata().get("openai.serverToolItem"));
+            List<ContentBlock> blocks = new ArrayList<>();
+            blocks.add(call);
+            blocks.add(result);
+            List<Msg> messages = List.of(AssistantMessage.builder().content(blocks).build());
+
+            ResponseCreateParams params = mapHistory(baseOptions(), messages);
+
+            List<ResponseInputItem> input = params.input().orElseThrow().asResponse();
+            assertEquals(1, input.size());
+            assertEquals(
+                    "terminal snapshot",
+                    input.get(0).asWebSearchCall().action().asSearch().query().orElseThrow());
+        }
+
+        @Test
+        void separatedServerToolHistoryRestoresCallAndResultItems() {
+            List<ContentBlock> blocks = new ArrayList<>();
+            blocks.addAll(
+                    ResponsesServerToolHelper.decodeBlocks(TestSdkFixtures.toolSearchCallItem()));
+            ResponsesServerToolHelper.decodeResultBlock(TestSdkFixtures.toolSearchOutputItem())
+                    .ifPresent(blocks::add);
+            List<Msg> messages = List.of(AssistantMessage.builder().content(blocks).build());
+
+            ResponseCreateParams params = mapHistory(baseOptions(), messages);
+
+            List<ResponseInputItem> input = params.input().orElseThrow().asResponse();
+            assertEquals(2, input.size());
+            assertTrue(input.get(0).isToolSearchCall());
+            assertTrue(input.get(1).isToolSearchOutput());
+            assertFalse(input.get(1).isFunctionCallOutput());
+        }
+
+        @Test
+        void functionCallNamespaceIsPreservedForHistoryReplay() {
+            ResponseOutputItem item =
+                    ResponseOutputItem.ofFunctionCall(
+                            ResponseFunctionToolCall.builder()
+                                    .callId("call_weather")
+                                    .name("get_weather")
+                                    .namespace("weather")
+                                    .arguments("{\"city\":\"Shanghai\"}")
+                                    .build());
+            ChatResponse parsed =
+                    ResponsesResponseParser.parse(
+                            TestSdkFixtures.completedResponse(List.of(item)), MODEL, Instant.now());
+            ToolUseBlock call =
+                    parsed.getContent().get(0) instanceof ToolUseBlock toolUse ? toolUse : null;
+            assertNotNull(call);
+            assertEquals(
+                    "weather",
+                    call.getMetadata().get(OpenAIOfficialConstants.MD_FUNCTION_CALL_NAMESPACE));
+
+            List<Msg> messages = List.of(AssistantMessage.builder().content(List.of(call)).build());
+            ResponseCreateParams params = mapHistory(baseOptions(), messages);
+
+            ResponseFunctionToolCall replayed =
+                    params.input().orElseThrow().asResponse().get(0).asFunctionCall();
+            assertEquals("weather", replayed.namespace().orElseThrow());
+        }
+
+        @Test
         void responseFormatJsonSchemaSchemaLevelStrictTrue() {
             JsonSchema schema =
                     JsonSchema.builder()
@@ -1046,6 +1277,7 @@ class ResponsesRequestMapperTest {
             ResponseCreateParams params =
                     ResponsesRequestMapper.map(
                             List.of(SystemMessage.builder().content(text("s")).build()),
+                            null,
                             null,
                             opts,
                             null,
@@ -1079,6 +1311,7 @@ class ResponsesRequestMapperTest {
             ResponseCreateParams params =
                     ResponsesRequestMapper.map(
                             List.of(SystemMessage.builder().content(text("s")).build()),
+                            null,
                             null,
                             opts,
                             null,

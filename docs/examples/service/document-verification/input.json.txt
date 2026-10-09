@@ -1,0 +1,29 @@
+{
+  "title": "Verify synthetic invoice DOC-101",
+  "input": {
+    "request": "Compare the extracted fields against every supplied source page and SOP. Return findings with page references and require human review for contradictions or unreadable pages.",
+    "document_id": "DOC-101",
+    "source_version": "doc-v1",
+    "pages": [
+      {
+        "page": 1,
+        "text": "Invoice INV-101. Quantity: 4. Unit price: 32.00 USD. Total: 128.00 USD."
+      }
+    ],
+    "extracted": {
+      "invoice_id": "INV-101",
+      "quantity": 4,
+      "unit_price": 32,
+      "total": 182,
+      "currency": "USD"
+    },
+    "rules": {
+      "version": "sop-v1",
+      "checks": [
+        "total must equal quantity times unit price",
+        "extracted values must match the source",
+        "unreadable pages are not verified"
+      ]
+    }
+  }
+}

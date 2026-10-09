@@ -149,6 +149,63 @@ public class SqliteDialect extends AbstractJdbcDialect {
     }
 
     // ------------------------------------------------------------------
+    //  SkillDialect / SkillResourcesDialect
+    // ------------------------------------------------------------------
+
+    /**
+     * Skill tables translated to SQLite types: {@code INTEGER PRIMARY KEY AUTOINCREMENT} id
+     * (required for {@code RETURN_GENERATED_KEYS} via {@code last_insert_rowid()}),
+     * {@code TEXT} payloads, cascading FK. SQLite only enforces foreign keys when the
+     * caller enables {@code PRAGMA foreign_keys} per connection, so repositories delete
+     * resources explicitly; the cascade stays as a second line of defense. The skill table
+     * carries the {@code namespace} column with {@code UNIQUE(namespace, name)}.
+     */
+    @Override
+    public List<String> skillCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + skillTableName()
+                        + " ("
+                        + "  id            INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        + "  namespace     VARCHAR(64) NOT NULL DEFAULT 'default',"
+                        + "  name          TEXT NOT NULL,"
+                        + "  description   TEXT NOT NULL,"
+                        + "  skill_content TEXT NOT NULL,"
+                        + "  source        TEXT NOT NULL,"
+                        + "  metadata_json TEXT NULL,"
+                        + "  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  CONSTRAINT uk_namespace_name UNIQUE (namespace, name)"
+                        + ")");
+    }
+
+    @Override
+    public List<String> skillResourcesCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + skillResourcesTableName()
+                        + " ("
+                        + "  id               INTEGER NOT NULL,"
+                        + "  namespace        VARCHAR(64)  NOT NULL DEFAULT 'default',"
+                        + "  resource_path    TEXT NOT NULL,"
+                        + "  resource_content TEXT NOT NULL,"
+                        + "  created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  PRIMARY KEY (id, resource_path),"
+                        + "  FOREIGN KEY (id) REFERENCES "
+                        + skillTableName()
+                        + "(id) ON DELETE CASCADE"
+                        + ")",
+                // SQLite cannot express a secondary index inside CREATE TABLE; without it,
+                // the namespace-scoped bulk resource statements full-scan the shared table.
+                "CREATE INDEX IF NOT EXISTS "
+                        + skillResourcesTableName()
+                        + "_namespace_idx ON "
+                        + skillResourcesTableName()
+                        + " (namespace)");
+    }
+
+    // ------------------------------------------------------------------
     //  Detection
     // ------------------------------------------------------------------
 
