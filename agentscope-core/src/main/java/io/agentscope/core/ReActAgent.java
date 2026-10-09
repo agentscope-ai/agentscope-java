@@ -1579,10 +1579,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             !scope.activeToolkit
                                     .getToolSchemas(activeGroups, scope.toolRequestConfig)
                                     .isEmpty();
+                    // Probe the model actually serving this call (per-call modelId when set),
+                    // not the build-time default: native structured-output support may differ.
+                    Model callModel = getModel(scope.rc);
                     boolean useNative =
                             hasTools
-                                    ? model.supportsNativeStructuredOutputWithTools()
-                                    : model.supportsNativeStructuredOutput();
+                                    ? callModel.supportsNativeStructuredOutputWithTools()
+                                    : callModel.supportsNativeStructuredOutput();
                     if (useNative) {
                         return doNativeStructuredCall(msgs, jsonSchema)
                                 .onErrorResume(
@@ -2771,7 +2774,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             hookDispatcher.firePreReasoning(
                                                     state.contextMutable(),
                                                     systemMsg,
-                                                    model.getModelName())))
+                                                    getModel(rc).getModelName())))
                     .flatMap(
                             event -> {
                                 GenerateOptions options =
@@ -2896,7 +2899,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         @SuppressWarnings("deprecation")
         private Mono<Msg> runPostReasoningPipeline(Msg msg, int iter) {
             return hookDispatcher
-                    .firePostReasoning(msg, model.getModelName())
+                    .firePostReasoning(msg, getModel(rc).getModelName())
                     .flatMap(
                             event -> {
                                 Msg eventMsg = event.getReasoningMessage();
@@ -2936,7 +2939,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     log.warn(
                                             "Final response has no visible content (empty reply),"
                                                     + " model: {}, iter: {}",
-                                            model.getModelName(),
+                                            getModel(rc).getModelName(),
                                             iter);
                                     state.contextMutable().add(buildEmptyResponseReminder());
                                 }
@@ -4791,13 +4794,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             RuntimeContext callContext,
             ModelRequestPreparer.Purpose purpose,
             Consumer<AgentEvent> events) {
+        // Per-call selection: the context's modelId when set (fails fast on unresolvable ids),
+        // otherwise the build-time default. Runtime provider failures of the selected model are
+        // still covered by the configured fallback model below.
+        Model callModel = getModel(callContext);
         Model fallbackModel = modelConfig.fallbackModel();
         if (fallbackModel == null) {
-            return SessionModels.wrap(model, callContext, purpose.name());
+            return SessionModels.wrap(callModel, callContext, purpose.name());
         }
         FailoverListener failoverListener = modelConfig.failoverListener();
 
-        AtomicReference<Model> activeModel = new AtomicReference<>(model);
+        AtomicReference<Model> activeModel = new AtomicReference<>(callModel);
         return new SessionModels.ManagedModel() {
             @Override
             public Flux<ChatResponse> stream(
@@ -4806,8 +4813,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 Flux<ChatResponse> primaryFlux =
                         Flux.defer(
                                 () -> {
-                                    activeModel.set(model);
-                                    return SessionModels.wrap(model, callContext, purpose.name())
+                                    activeModel.set(callModel);
+                                    return SessionModels.wrap(
+                                            callModel, callContext, purpose.name())
                                             .stream(messages, tools, options);
                                 });
                 return primaryFlux.switchOnFirst(
@@ -4823,16 +4831,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     "reason",
                                                     "fallback",
                                                     "from",
-                                                    model.getModelName(),
+                                                    callModel.getModelName(),
                                                     "to",
                                                     fallbackModel.getModelName()));
                                 activeModel.set(fallbackModel);
                                 log.warn(
                                         "Primary model {} failed, switching to fallback {}",
-                                        model.getModelName(),
+                                        callModel.getModelName(),
                                         fallbackModel.getModelName(),
                                         error);
-                                notifyFailover(failoverListener, model, error);
+                                notifyFailover(failoverListener, callModel, error);
                                 if (modelRequestPreparer == null) {
                                     return SessionModels.wrap(
                                             fallbackModel, callContext, purpose.name())
@@ -5004,6 +5012,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     public Model getModel() {
+        return model;
+    }
+
+    /**
+     * Returns the model effective for a call carrying {@code ctx}: the context's {@code modelId}
+     * resolved through {@link ModelRegistry#resolve} when set, otherwise this agent's default
+     * model. A set-but-blank or unresolvable id throws {@link IllegalArgumentException} — an
+     * explicit per-call model choice fails loudly rather than silently falling back to the
+     * default (wrong model, wrong credentials in multi-tenant setups).
+     *
+     * @param ctx the per-call runtime context (may be {@code null}, meaning the default model)
+     */
+    public Model getModel(RuntimeContext ctx) {
+        String modelId = ctx != null ? ctx.getModelId() : null;
+        if (modelId != null) {
+            return ModelRegistry.resolve(modelId);
+        }
         return model;
     }
 

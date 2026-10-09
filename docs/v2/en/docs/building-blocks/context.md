@@ -332,8 +332,36 @@ Available accessors:
 | `resolveAgentState(ctx, agent)` | Static helper: returns `ctx.getAgentState()` if available, falls back to `agent.getAgentState()`. Ensure the current call has injected its state; fallback does not guarantee the intended business session |
 | `get(String)` / `put(String, Object)` | String-keyed get/put |
 | `get(Class<T>)` / `put(Class<T>, T)` | Typed singleton get/put |
+| `getModelId()` | Per-call model selection (see [per-call model selection](#per-call-model-selection) below) |
 | `getExtra()` | Direct access to the string-attribute map (mutable view) |
 | `RuntimeContext.empty()` | Empty context |
+
+### Per-call model selection
+
+`builder().modelId(...)` selects the model for one call by id — the per-request model convention of LLM APIs. The id is resolved through `ModelRegistry` on every model call of the run (reasoning, summary, compaction, memory flush), so a singleton agent can serve sessions that need different models without reflection or per-tenant agent instances. The model choice is deterministic for the whole call: it is carried by the immutable `RuntimeContext`, not by mutable agent state, so there is no mid-call switch and no cross-session leakage.
+
+```java
+// Register models once at startup (consistent across cluster nodes):
+ModelRegistry.register("prod", openAiModel);
+ModelRegistry.registerFactory("deepseek:.*", id -> deepseekModel(id));
+
+// Every request carries the caller's choice:
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId("alice")
+        .sessionId("s-001")
+        .modelId("deepseek:deepseek-v4")   // null = the agent's default model
+        .build();
+Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
+```
+
+Semantics:
+
+- **Fail-fast, never silent fallback**: a set-but-blank or unresolvable id fails the call (`IllegalArgumentException` surfaced as an error event) instead of quietly using the default model — a wrong model usually means wrong credentials and wrong billing in multi-tenant setups. `null` (unset) simply uses the agent's default model.
+- **Auxiliary calls follow the effective model**: compaction, memory flush and max-iteration summaries use the resolved model unless a dedicated model is configured for them (`CompactionConfig.getModel()` / `MemoryConfig.model()`), in which case the dedicated one wins. Compaction trigger budgets are computed from the effective model's context window. Periodic background memory maintenance is not part of any call and always uses the build-time configured model.
+- **Subagents do not inherit it**: subagent spawning clears the caller's `modelId` — a subagent's model is a build-time contract (`SubagentDeclaration.getModel()`), and a caller's runtime choice must not silently change worker models or their cost envelope.
+- **Provider failures still fail over**: if the selected model fails at runtime, the configured `fallbackModel` takes over as usual — failover covers availability, the selection itself was honored.
+- Session-sticky switching (remember the choice across requests) is the application's concern: persist it in your own session record and stamp `modelId` on each request's context. Keeping the choice out of `AgentState` leaves a single source of truth.
+- Not to be confused with `GenerateOptions.getModelName()`, which providers treat as a routing hint and no provider consumes for model selection.
 
 ### runId correlation
 
