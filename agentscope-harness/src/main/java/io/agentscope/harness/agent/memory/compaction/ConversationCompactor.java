@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -98,13 +99,12 @@ public class ConversationCompactor {
             String agentId,
             String sessionId) {
         var recorder = SessionRecorder.from(rc);
+        int beforeMsgCount = conversationMessages == null ? 0 : conversationMessages.size();
+        int beforeTokenCount = TokenCounterUtil.calculateToken(conversationMessages);
         boolean triggered =
                 conversationMessages != null
                         && !conversationMessages.isEmpty()
-                        && shouldCompact(
-                                conversationMessages,
-                                TokenCounterUtil.calculateToken(conversationMessages),
-                                config);
+                        && shouldCompact(conversationMessages, beforeTokenCount, config);
         if (recorder == null || !triggered)
             return compactCandidate(rc, conversationMessages, config, agentId, sessionId);
         String id = UUID.randomUUID().toString();
@@ -112,22 +112,74 @@ public class ConversationCompactor {
                 recorder.record(
                                 "compaction/start",
                                 Map.of("compactionId", id, "inputMessages", conversationMessages))
-                        .thenReturn(id),
-                ignored -> compactCandidate(rc, conversationMessages, config, agentId, sessionId),
-                ignored ->
+                        .thenReturn(new CompactionExecution(id)),
+                execution ->
+                        compactCandidate(rc, conversationMessages, config, agentId, sessionId)
+                                .doOnSuccess(execution.result::set),
+                execution ->
                         recorder.record(
                                 "compaction/end",
-                                Map.of("compactionId", id, "status", "completed")),
-                (ignored, error) ->
+                                completedCompactionEndPayload(
+                                        execution.id,
+                                        beforeMsgCount,
+                                        beforeTokenCount,
+                                        execution.afterMessages(conversationMessages))),
+                (execution, error) ->
                         SessionLogException.causedBy(error)
                                 ? Mono.empty()
                                 : recorder.record(
                                         "compaction/end",
-                                        Map.of("compactionId", id, "status", "failed")),
-                ignored ->
+                                        compactionEndPayload(
+                                                execution.id,
+                                                "failed",
+                                                beforeMsgCount,
+                                                beforeTokenCount)),
+                execution ->
                         recorder.record(
                                 "compaction/end",
-                                Map.of("compactionId", id, "status", "cancelled")));
+                                compactionEndPayload(
+                                        execution.id,
+                                        "cancelled",
+                                        beforeMsgCount,
+                                        beforeTokenCount)));
+    }
+
+    private static final class CompactionExecution {
+        private final String id;
+        private final AtomicReference<Optional<List<Msg>>> result = new AtomicReference<>();
+
+        private CompactionExecution(String id) {
+            this.id = id;
+        }
+
+        private List<Msg> afterMessages(List<Msg> fallback) {
+            Optional<List<Msg>> compacted = result.get();
+            return compacted == null
+                    ? fallback == null ? List.of() : fallback
+                    : compacted.orElse(fallback == null ? List.of() : fallback);
+        }
+    }
+
+    private static Map<String, Object> completedCompactionEndPayload(
+            String compactionId,
+            int beforeMsgCount,
+            int beforeTokenCount,
+            List<Msg> afterMessages) {
+        Map<String, Object> payload =
+                compactionEndPayload(compactionId, "completed", beforeMsgCount, beforeTokenCount);
+        payload.put("afterMsgCount", afterMessages.size());
+        payload.put("afterTokenCount", TokenCounterUtil.calculateToken(afterMessages));
+        return payload;
+    }
+
+    private static Map<String, Object> compactionEndPayload(
+            String compactionId, String status, int beforeMsgCount, int beforeTokenCount) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("compactionId", compactionId);
+        payload.put("status", status);
+        payload.put("beforeMsgCount", beforeMsgCount);
+        payload.put("beforeTokenCount", beforeTokenCount);
+        return payload;
     }
 
     private Mono<Optional<List<Msg>>> compactCandidate(
