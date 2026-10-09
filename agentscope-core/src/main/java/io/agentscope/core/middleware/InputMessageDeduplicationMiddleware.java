@@ -13,14 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.agui.middleware;
+package io.agentscope.core.middleware;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.MessageUtils;
 import java.util.ArrayList;
@@ -127,7 +126,7 @@ public class InputMessageDeduplicationMiddleware implements MiddlewareBase {
      * @param incoming the caller's input for this call
      * @return a new list with the effective input messages
      */
-    static List<Msg> extractDelta(List<Msg> persistedContext, List<Msg> incoming) {
+    public static List<Msg> extractDelta(List<Msg> persistedContext, List<Msg> incoming) {
         return computeDelta(persistedContext, incoming).delta();
     }
 

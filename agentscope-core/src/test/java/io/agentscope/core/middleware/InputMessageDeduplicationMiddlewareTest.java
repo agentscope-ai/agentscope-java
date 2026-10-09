@@ -13,22 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.agui.middleware;
+package io.agentscope.core.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agui.converter.AguiMessageConverter;
-import io.agentscope.core.agui.model.AguiMessage;
-import io.agentscope.core.agui.model.MessageContent;
-import io.agentscope.core.agui.model.TextInputContent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -38,7 +33,6 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -701,50 +695,6 @@ class InputMessageDeduplicationMiddlewareTest {
             // deduplication already stripped the resent history (the first turn has 1 input
             // too).
             assertEquals("business:1", trace.get(trace.size() - 1));
-        }
-    }
-
-    @Nested
-    @DisplayName("converter round-trip and failure surface (full pass-through)")
-    class ConverterRoundTrip {
-
-        private final AguiMessageConverter converter = new AguiMessageConverter();
-
-        @Test
-        @DisplayName("native multi-block assistant message: id survives the round trip and anchors")
-        void multiBlockAssistant_roundTrip_anchorsById() {
-            Msg nativeAssistant = assistantMsgWithImage("a1", "here is the chart", "img");
-            List<Msg> context = List.of(userMsg("u1", "hello"), nativeAssistant);
-
-            Msg back = converter.toMsg(converter.toAguiMessage(nativeAssistant));
-            assertEquals("a1", back.getId(), "converter must preserve the message id (R2 basis)");
-
-            List<Msg> delta =
-                    InputMessageDeduplicationMiddleware.extractDelta(
-                            context, new ArrayList<>(List.of(back, userMsg("u2", "again"))));
-
-            assertEquals(List.of("u2"), idsOf(delta));
-        }
-
-        @Test
-        @DisplayName("a resent history the converter cannot map fails explicitly")
-        void unmappableStructuredContent_failsExplicitly() {
-            AguiMessage structuredAssistant =
-                    new AguiMessage(
-                            "a1",
-                            "assistant",
-                            new MessageContent.Blocks(List.of(new TextInputContent("hi"))),
-                            null,
-                            null);
-
-            IllegalArgumentException error =
-                    assertThrows(
-                            IllegalArgumentException.class,
-                            () -> converter.toMsg(structuredAssistant));
-
-            assertTrue(
-                    error.getMessage().contains("Structured content blocks"),
-                    "the error must be locatable: " + error.getMessage());
         }
     }
 

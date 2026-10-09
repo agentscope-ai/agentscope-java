@@ -265,7 +265,7 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 CopilotKit and most AG-UI clients resend the full message history on every turn; combined with server-side persisted context, the history duplicates each turn. `InputMessageDeduplicationMiddleware` (protocol-neutral) deduplicates this at the call boundary: the last persisted context message acts as the anchor — when it is found in the incoming list, the overlapping prefix is stripped.
 
 ```java
-import io.agentscope.core.agui.middleware.InputMessageDeduplicationMiddleware;
+import io.agentscope.core.middleware.InputMessageDeduplicationMiddleware;
 
 ReActAgent agent = ReActAgent.builder()
         // ...

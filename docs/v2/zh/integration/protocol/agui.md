@@ -264,7 +264,7 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 CopilotKit 等主流 AG-UI 客户端每轮全量重发会话历史，与服务端持久化上下文叠加会让历史逐轮重复累积。`InputMessageDeduplicationMiddleware`（协议中立）在 call 边界完成去重：以持久化上下文的末条消息为 anchor，在入站消息列表中命中时剥离重叠前缀。
 
 ```java
-import io.agentscope.core.agui.middleware.InputMessageDeduplicationMiddleware;
+import io.agentscope.core.middleware.InputMessageDeduplicationMiddleware;
 
 ReActAgent agent = ReActAgent.builder()
         // ... 既有配置 ...

@@ -26,12 +26,12 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
-import io.agentscope.core.agui.middleware.InputMessageDeduplicationMiddleware;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.InputMessageDeduplicationMiddleware;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.InMemoryAgentStateStore;
@@ -39,6 +39,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -64,7 +65,9 @@ class HarnessInputMessageDeduplicationTest {
     @BeforeEach
     void setUp() {
         mockModel = mock(Model.class);
-        modelInputs = new ArrayList<>();
+        // The harness's post-run memory-extraction model calls append concurrently with
+        // the assertions reading this capture, so iteration must tolerate concurrent adds.
+        modelInputs = new CopyOnWriteArrayList<>();
     }
 
     @Test
