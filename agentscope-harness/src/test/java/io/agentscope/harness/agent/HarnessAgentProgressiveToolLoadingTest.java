@@ -221,6 +221,227 @@ class HarnessAgentProgressiveToolLoadingTest {
         assertTrue(error.getMessage().contains("reserved"));
     }
 
+    @Test
+    void runtimeActivationPersistsRepeatsSwitchesAndIsolatesSessions() throws Exception {
+        java.nio.file.Files.writeString(workspace.resolve("probe.txt"), "runtime-marker");
+        List<List<ToolSchema>> schemas = new java.util.ArrayList<>();
+        List<io.agentscope.core.message.Msg> observed = new java.util.ArrayList<>();
+        Model model =
+                scriptedModel(
+                        schemas,
+                        observed,
+                        activate("workspace_files"),
+                        toolCall("read_file", Map.of("path", "probe.txt")),
+                        stop(),
+                        stop(),
+                        stop(),
+                        activate("workspace_files", "workspace_files"),
+                        stop(),
+                        activate("web"),
+                        stop(),
+                        activate(),
+                        stop(),
+                        stop());
+        try (HarnessAgent agent = runtimeAgent(HarnessAgent.builder(), model)) {
+            run(agent, "A");
+            assertHidden(schemas.get(0), "read_file", "web_fetch");
+            assertTrue(names(schemas.get(1)).contains("read_file"));
+            assertHidden(schemas.get(1), "web_fetch", "agent_spawn", "session_search");
+            assertTrue(
+                    observed.stream()
+                            .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                            .filter(r -> "read_file".equals(r.getName()))
+                            .flatMap(r -> r.getOutput().stream())
+                            .filter(TextBlock.class::isInstance)
+                            .map(TextBlock.class::cast)
+                            .anyMatch(t -> t.getText().contains("runtime-marker")));
+            run(agent, "B");
+            assertHidden(schemas.get(3), "read_file", "web_fetch");
+            run(agent, "A");
+            assertEquals(schemaJson(schemas.get(2)), schemaJson(schemas.get(4)));
+            run(agent, "A");
+            assertEquals(schemaJson(schemas.get(4)), schemaJson(schemas.get(6)));
+            run(agent, "A");
+            assertTrue(names(schemas.get(8)).contains("web_fetch"));
+            assertHidden(schemas.get(8), "read_file");
+            run(agent, "A");
+            assertEquals(schemaJson(schemas.get(0)), schemaJson(schemas.get(10)));
+            run(agent, "B");
+            assertEquals(schemaJson(schemas.get(0)), schemaJson(schemas.get(11)));
+        }
+    }
+
+    @Test
+    void runtimeActivationCannotRestoreDisabledOrDeniedTools() {
+        ToolsConfig config = new ToolsConfig();
+        config.setDeny(List.of("write_file"));
+        List<List<ToolSchema>> schemas = new java.util.ArrayList<>();
+        Model model =
+                scriptedModel(
+                        schemas,
+                        new java.util.ArrayList<>(),
+                        activate("web"),
+                        stop(),
+                        activate("workspace_files"),
+                        stop());
+        try (HarnessAgent agent =
+                runtimeAgent(HarnessAgent.builder().disableWebTools().toolsConfig(config), model)) {
+            run(agent, "A");
+            assertEquals(schemaJson(schemas.get(0)), schemaJson(schemas.get(1)));
+            assertHidden(schemas.get(1), "web_fetch", "web_search", "read_file");
+            run(agent, "A");
+            assertTrue(names(schemas.get(3)).contains("read_file"));
+            assertHidden(schemas.get(3), "write_file", "web_fetch", "web_search");
+        }
+    }
+
+    @Test
+    void bothLocalSubagentFactoriesInheritLoadingAndCanActivateAtRuntime() throws Exception {
+        java.nio.file.Files.writeString(
+                workspace.resolve("child-probe.txt"), "child-runtime-marker");
+        for (String childName : List.of("general-purpose", "declared-worker")) {
+            List<List<ToolSchema>> schemas = new java.util.ArrayList<>();
+            List<io.agentscope.core.message.Msg> observed = new java.util.ArrayList<>();
+            Model model =
+                    scriptedModel(
+                            schemas,
+                            observed,
+                            activate("workspace_files"),
+                            toolCall("read_file", Map.of("path", "child-probe.txt")),
+                            stop(),
+                            stop());
+            var declaration =
+                    io.agentscope.harness.agent.subagent.SubagentDeclaration.builder()
+                            .name("declared-worker")
+                            .description("offline worker")
+                            .workspaceMode(
+                                    io.agentscope.harness.agent.subagent.WorkspaceMode.SHARED)
+                            .inlineAgentsBody("Read the requested fixture.")
+                            .build();
+            var entries =
+                    HarnessAgent.builder()
+                            .name("parent")
+                            .disableMemoryHooks()
+                            .model(model)
+                            .workspace(workspace)
+                            .abstractFilesystem(new LocalFilesystem(workspace))
+                            .disableWebTools()
+                            .enableProgressiveToolLoading()
+                            .subagent(declaration)
+                            .buildSubagentEntries(workspace);
+            try (HarnessAgent child =
+                    (HarnessAgent)
+                            entries.stream()
+                                    .filter(e -> childName.equals(e.name()))
+                                    .findFirst()
+                                    .orElseThrow()
+                                    .factory()
+                                    .create(io.agentscope.core.agent.RuntimeContext.empty())) {
+                run(child, "child-A");
+                assertHidden(schemas.get(0), "read_file", "web_fetch");
+                assertTrue(names(schemas.get(1)).contains("read_file"));
+                assertHidden(schemas.get(1), "web_fetch");
+                assertTrue(
+                        observed.stream()
+                                .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                                .filter(r -> "read_file".equals(r.getName()))
+                                .flatMap(r -> r.getOutput().stream())
+                                .filter(TextBlock.class::isInstance)
+                                .map(TextBlock.class::cast)
+                                .anyMatch(t -> t.getText().contains("child-runtime-marker")),
+                        childName);
+                run(child, "child-B");
+                assertHidden(schemas.get(3), "read_file", "web_fetch");
+            }
+        }
+    }
+
+    private HarnessAgent runtimeAgent(HarnessAgent.Builder builder, Model model) {
+        return builder.disableMemoryHooks()
+                .name("runtime-progressive")
+                .model(model)
+                .workspace(workspace)
+                .abstractFilesystem(new LocalFilesystem(workspace))
+                .enableProgressiveToolLoading()
+                .build();
+    }
+
+    private static void run(HarnessAgent agent, String session) {
+        assertNotNull(
+                agent.call(
+                                "continue",
+                                io.agentscope.core.agent.RuntimeContext.builder()
+                                        .userId("user")
+                                        .sessionId(session)
+                                        .build())
+                        .block(java.time.Duration.ofSeconds(10)));
+    }
+
+    // Compare ordered schema values, not ToolSchema object identity. A stable activation set
+    // should preserve this prefix; switching groups is an intentional prefix change.
+    private static String schemaJson(List<ToolSchema> schemas) {
+        return io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(schemas);
+    }
+
+    private static Set<String> names(List<ToolSchema> schemas) {
+        return schemas.stream()
+                .map(ToolSchema::getName)
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private static void assertHidden(List<ToolSchema> schemas, String... tools) {
+        for (String tool : tools) assertFalse(names(schemas).contains(tool), tool);
+    }
+
+    private static ChatResponse activate(String... groups) {
+        return toolCall("reset_equipped_tools", Map.of("to_activate", List.of(groups)));
+    }
+
+    private static ChatResponse toolCall(String name, Map<String, Object> input) {
+        return new ChatResponse(
+                "response",
+                List.of(
+                        io.agentscope.core.message.ToolUseBlock.builder()
+                                .id(java.util.UUID.randomUUID().toString())
+                                .name(name)
+                                .input(input)
+                                .content(
+                                        io.agentscope.core.util.JsonUtils.getJsonCodec()
+                                                .toJson(input))
+                                .build()),
+                null,
+                Map.of(),
+                "tool_use");
+    }
+
+    private static ChatResponse stop() {
+        return new ChatResponse(
+                "stop", List.of(TextBlock.builder().text("done").build()), null, Map.of(), "stop");
+    }
+
+    private static Model scriptedModel(
+            List<List<ToolSchema>> schemas,
+            List<io.agentscope.core.message.Msg> observed,
+            ChatResponse... responses) {
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("offline-script");
+        java.util.concurrent.atomic.AtomicInteger step =
+                new java.util.concurrent.atomic.AtomicInteger();
+        when(model.stream(anyList(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            List<ToolSchema> tools = invocation.getArgument(1);
+                            schemas.add(List.copyOf(tools));
+                            observed.addAll(
+                                    invocation.<List<io.agentscope.core.message.Msg>>getArgument(
+                                            0));
+                            int index = step.getAndIncrement();
+                            assertTrue(index < responses.length, "Unexpected extra reasoning step");
+                            return Flux.just(responses[index]);
+                        });
+        return model;
+    }
+
     private HarnessAgent buildAgent(HarnessAgent.Builder builder) {
         return builder.name("progressive-tools-test")
                 .model(stubModel())
