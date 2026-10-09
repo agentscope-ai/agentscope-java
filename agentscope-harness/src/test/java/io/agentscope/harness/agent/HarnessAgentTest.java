@@ -1517,6 +1517,41 @@ class HarnessAgentTest {
         verify(model, times(1)).stream(anyList(), any(), any());
     }
 
+    @Test
+    void declaredSubagent_mirrorsProgressiveToolLoading() throws Exception {
+        Files.createDirectories(workspace);
+        SubagentDeclaration declaration =
+                SubagentDeclaration.builder()
+                        .name("progressive-worker")
+                        .description("declared worker")
+                        .workspaceMode(WorkspaceMode.ISOLATED)
+                        .inlineAgentsBody("You are a worker subagent.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .subagent(declaration)
+                        .enableProgressiveToolLoading()
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "progressive-worker".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+        List<String> toolNames =
+                child.getToolkit().getToolSchemas().stream().map(ToolSchema::getName).toList();
+
+        assertFalse(toolNames.contains("read_file"));
+        assertTrue(toolNames.contains("reset_equipped_tools"));
+        assertNotNull(child.getToolkit().getToolGroup("workspace_files"));
+    }
+
     // =========================================================================
     // general-purpose mirroring
     // =========================================================================
@@ -1542,6 +1577,31 @@ class HarnessAgentTest {
         List<String> toolNames =
                 child.getToolkit().getToolSchemas().stream().map(ToolSchema::getName).toList();
         assertFalse(toolNames.contains("read_file"), "disableFilesystemTools should be mirrored");
+    }
+
+    @Test
+    void generalPurpose_mirrorsProgressiveToolLoading() throws Exception {
+        Files.createDirectories(workspace);
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .enableProgressiveToolLoading()
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+        List<String> toolNames =
+                child.getToolkit().getToolSchemas().stream().map(ToolSchema::getName).toList();
+        assertFalse(toolNames.contains("read_file"));
+        assertTrue(toolNames.contains("reset_equipped_tools"));
+        assertNotNull(child.getToolkit().getToolGroup("workspace_files"));
     }
 
     @Test
