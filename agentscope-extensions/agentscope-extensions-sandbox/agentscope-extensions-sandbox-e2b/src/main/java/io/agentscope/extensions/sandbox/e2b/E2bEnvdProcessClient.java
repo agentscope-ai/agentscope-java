@@ -42,6 +42,8 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Minimal Connect client for envd {@code process.Process/Start} (server streaming), sufficient
@@ -119,10 +121,42 @@ final class E2bEnvdProcessClient {
     private ShellCapture runShellCapture(
             E2bSandboxState state, String cwd, String shellCommand, int timeoutSeconds)
             throws Exception {
+        // Deliberately fail fast instead of clamping like daytona/agentrun, and
+        // unlike the official SDKs where 0 means unbounded: this transport cannot
+        // model an unbounded stream (OkHttp needs an explicit callTimeout, and the
+        // base read timeout would otherwise misreport idleness as a 0s exec
+        // timeout), so 0/negative is rejected as a caller bug rather than silently
+        // clamped to 1s, which would mask it.
+        if (timeoutSeconds <= 0) {
+            throw new IllegalArgumentException(
+                    "[e2b] timeoutSeconds must be positive, got "
+                            + timeoutSeconds
+                            + ". This is a caller bug, not a sandbox failure;"
+                            + " check the timeout argument.");
+        }
+        // Snapshot the interrupt bit: a stale bit set before this call must neither
+        // turn a genuine exec timeout into a fake cancellation below, nor block an
+        // already-cancelled caller for the full timeout.
+        boolean preInterrupted = Thread.interrupted();
+        if (preInterrupted) {
+            Thread.currentThread().interrupt();
+            throw new InterruptedIOException("exec cancelled before start");
+        }
         OkHttpClient callClient =
-                timeoutSeconds > 0
-                        ? http.newBuilder().callTimeout(timeoutSeconds, TimeUnit.SECONDS).build()
-                        : http;
+                http.newBuilder()
+                        // Server deadline stays exact so the kill lands on time; the
+                        // client backup runs CLIENT_TIMEOUT_SLACK_MILLIS later as a
+                        // pure failsafe (mishaving server / hung stream) that never
+                        // wins the race itself in the normal path.
+                        .callTimeout(
+                                timeoutSeconds * 1000L + CLIENT_TIMEOUT_SLACK_MILLIS,
+                                TimeUnit.MILLISECONDS)
+                        // Disable the idle read timeout: it fires on gaps between bytes and
+                        // would preempt callTimeout (both surface as InterruptedIOException),
+                        // misreporting a short idle stall as a full exec timeout (#2974).
+                        // Total-duration semantics is owned solely by callTimeout.
+                        .readTimeout(0, TimeUnit.SECONDS)
+                        .build();
         String host = envdHost(state);
         String url = host + "/process.Process/Start";
         byte[] envelope = encodeStartRequestEnvelope(shellCommand, cwd);
@@ -134,7 +168,10 @@ final class E2bEnvdProcessClient {
                         .addHeader("User-Agent", "agentscope-java-e2b")
                         .addHeader("E2b-Sandbox-Id", state.getSandboxId())
                         .addHeader("E2b-Sandbox-Port", Integer.toString(ENVD_PORT))
-                        .addHeader("Authorization", basicAuthUser(opt.getRunUser()));
+                        .addHeader("Authorization", basicAuthUser(opt.getRunUser()))
+                        // Ask envd to kill the remote process when this lapses; otherwise a
+                        // client-side timeout only drops our HTTP stream and leaks the process.
+                        .addHeader("Connect-Timeout-Ms", String.valueOf(timeoutSeconds * 1000L));
         if (state.getEnvdAccessToken() != null && !state.getEnvdAccessToken().isBlank()) {
             rb.addHeader("X-Access-Token", state.getEnvdAccessToken());
         }
@@ -143,24 +180,154 @@ final class E2bEnvdProcessClient {
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
         int exit;
+        long startNanos = System.nanoTime();
         try (Response res = callClient.newCall(req).execute()) {
             if (!res.isSuccessful()) {
-                String err = res.body() != null ? res.body().string() : "";
+                String err = Objects.requireNonNull(res.body(), "envd response body").string();
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_START_ERROR,
                         "envd Start failed HTTP " + res.code() + ": " + err);
             }
-            try (InputStream in = res.body().byteStream()) {
+            try (InputStream in =
+                    Objects.requireNonNull(res.body(), "envd response body").byteStream()) {
                 exit = drainStartStream(in, stdout, stderr);
             }
         } catch (InterruptedIOException e) {
+            // External cancellation surfaces here too; don't misreport it as a timeout
+            // and don't swallow the interrupt bit. Only a bit set during this call
+            // counts (pre-existing stale bits were cleared above).
+            if (Thread.currentThread().isInterrupted()) {
+                throw e;
+            }
             throw new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
+        } catch (ConnectStreamException e) {
+            if (CONNECT_DEADLINE_EXCEEDED.equals(e.code())) {
+                logPartialStreams(
+                        "timed out (server deadline_exceeded)",
+                        timeoutSeconds,
+                        startNanos,
+                        stdout,
+                        stderr);
+                throw new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
+            }
+            throw new IOException(
+                    "envd process stream error [" + e.code() + "]: " + e.getMessage(), e);
+        } catch (MissingExitCodeException e) {
+            logPartialStreams(
+                    "ended without exit code", timeoutSeconds, startNanos, stdout, stderr);
+            throw mapPrematureEnd(e, shellCommand, timeoutSeconds, startNanos);
         }
         return new ShellCapture(exit, stdout, stderr);
     }
 
     private record ShellCapture(
             int exitCode, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr) {}
+
+    /** Connect envelope flag marking the terminal end-stream frame. */
+    private static final int END_STREAM_FLAG = 0x02;
+
+    /** Connect error code envd returns when the server-side exec deadline fires. */
+    private static final String CONNECT_DEADLINE_EXCEEDED = "deadline_exceeded";
+
+    /**
+     * Fault-grading threshold between the server deadline and the client backup timeout.
+     * Within T: the server kills on time and the client observes it via {@code
+     * deadline_exceeded} — the slack is never consumed. Within T+slack: engineering
+     * tolerance absorbing connect/setup jitter (cold handshakes, weak networks), so the
+     * kill still lands before any retry can overlap a running process. Beyond T+slack:
+     * treated as a network-layer fault (request never arrived, or the server hung) and
+     * the client backup fires to guarantee a local return. 5s covers the connection
+     * setup distribution short of extreme degradation; larger values would approach the
+     * agent retry interval and buy nothing further.
+     */
+    private static final long CLIENT_TIMEOUT_SLACK_MILLIS = 5000;
+
+    private static final Logger log = LoggerFactory.getLogger(E2bEnvdProcessClient.class);
+
+    private record ConnectError(String code, String message) {}
+
+    /** End-stream frame carrying a Connect error (e.g. server-side timeout kill). */
+    static final class ConnectStreamException extends IOException {
+        private final String code;
+
+        ConnectStreamException(String code, String message) {
+            super(message);
+            this.code = code;
+        }
+
+        String code() {
+            return code;
+        }
+    }
+
+    /** Stream ended without a process exit code (#2828). */
+    static final class MissingExitCodeException extends IOException {
+        MissingExitCodeException() {
+            super("envd process stream ended before receiving a process exit code");
+        }
+    }
+
+    /**
+     * Decodes a Connect end-stream error frame. The payload is always JSON regardless of the
+     * negotiated codec: connect-go hardcodes {@code json.Marshal} in {@code MarshalEndStream}
+     * (the end-stream message is not routed through the codec). Verified against a live envd —
+     * {@code application/connect+proto} and {@code application/connect+json} both return the
+     * identical 76-byte JSON frame {@code {"error":{"code":"deadline_exceeded",...}}}.
+     */
+    private static ConnectError parseEndStreamError(byte[] data) {
+        try {
+            JsonNode root = JSON.readTree(data);
+            JsonNode error = root.path("error");
+            if (error.isMissingNode() || error.isNull()) {
+                return null;
+            }
+            String code = error.path("code").asText(null);
+            if (code == null || code.isBlank()) {
+                return null;
+            }
+            return new ConnectError(code, error.path("message").asText(""));
+        } catch (Exception e) {
+            log.debug("[e2b] unparsable end-stream frame, falling through: {}", e.toString());
+            return null;
+        }
+    }
+
+    private static long elapsedSeconds(long startNanos) {
+        return TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startNanos);
+    }
+
+    static Exception mapPrematureEnd(
+            MissingExitCodeException e, String shellCommand, int timeoutSeconds, long startNanos) {
+        if (elapsedSeconds(startNanos) >= timeoutSeconds) {
+            return new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
+        }
+        return e;
+    }
+
+    private static void logPartialStreams(
+            String why,
+            int timeoutSeconds,
+            long startNanos,
+            ByteArrayOutputStream stdout,
+            ByteArrayOutputStream stderr) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
+        log.debug(
+                "[e2b] exec {} after {}s of {}s timeout;"
+                        + " partial stdout tail: {}; partial stderr tail: {}",
+                why,
+                elapsedSeconds(startNanos),
+                timeoutSeconds,
+                tailUtf8(stdout),
+                tailUtf8(stderr));
+    }
+
+    private static String tailUtf8(ByteArrayOutputStream out) {
+        byte[] b = out.toByteArray();
+        int n = Math.min(b.length, 512);
+        return new String(b, b.length - n, n, StandardCharsets.UTF_8);
+    }
 
     private int drainStartStream(
             InputStream in, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr)
@@ -179,7 +346,7 @@ final class E2bEnvdProcessClient {
                 break;
             }
             int len = ByteBuffer.wrap(lenB).order(ByteOrder.BIG_ENDIAN).getInt() & 0x7FFFFFFF;
-            if (len < 0 || len > 64 * 1024 * 1024) {
+            if (len > 64 * 1024 * 1024) {
                 throw new IOException("Invalid connect frame length: " + len);
             }
             byte[] data = in.readNBytes(len);
@@ -187,6 +354,12 @@ final class E2bEnvdProcessClient {
                 break;
             }
             if (flags != 0x00) {
+                if ((flags & END_STREAM_FLAG) != 0) {
+                    ConnectError endError = parseEndStreamError(data);
+                    if (endError != null) {
+                        throw new ConnectStreamException(endError.code(), endError.message());
+                    }
+                }
                 continue;
             }
             try {
@@ -213,7 +386,7 @@ final class E2bEnvdProcessClient {
             }
         }
         if (exit == null) {
-            throw new IOException("envd process stream ended before receiving a process exit code");
+            throw new MissingExitCodeException();
         }
         return exit;
     }
