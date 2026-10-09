@@ -53,9 +53,6 @@ public interface SessionStateDialect {
     /** UPSERT a single state value. On conflict, updates state_data. */
     BoundSql sessionStateUpsert(String sessionId, String stateKey, int itemIndex, String stateData);
 
-    /** Table-existence probe SQL. One bind param: the table name. */
-    BoundSql sessionStateCheckTableExists(String tableName);
-
     // ------------------------------------------------------------------
     //  Default — ANSI baseline
     // ------------------------------------------------------------------

@@ -23,8 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * Composed annotation that registers {@link HarnessBackgroundTaskQuiescenceExtension} so
- * fire-and-forget harness background tasks (memory flush/maintenance, session/transcript
- * mirrors) are drained after each test, before JUnit deletes its {@code @TempDir}.
+ * fire-and-forget harness background tasks (memory flush/maintenance) are drained after each test, before JUnit deletes its {@code @TempDir}.
  *
  * <p>Apply to any test that builds a {@code HarnessAgent}, drives it to completion
  * ({@code .block()} / {@code .stream()...block()}), and uses {@code @TempDir} for the

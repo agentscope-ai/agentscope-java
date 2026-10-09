@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -27,6 +28,7 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SandboxState;
@@ -112,6 +114,10 @@ class SandboxLifecycleConcurrencyReproTest {
                 "s2",
                 proxy.execute(ctxB, "whoami", null).output(),
                 "call B must still run against its own sandbox after A released");
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(ctxA, "whoami", null),
+                "released A must not fall back to the still-running B sandbox");
     }
 
     private static RuntimeContext callContext(String sessionId) {

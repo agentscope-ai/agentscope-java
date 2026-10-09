@@ -84,13 +84,13 @@ Agent 的对话上下文、压缩摘要、权限规则、Plan Mode 状态等，�
 ## 后端详细文档
 
 - [Redis](/v2/zh/integration/distributed/redis) — 最全功能覆盖，多副本生产首选
-- [MySQL / JDBC](/v2/zh/integration/distributed/mysql) — 已有关系型数据库的场景
+- [JDBC](/v2/zh/integration/distributed/jdbc) — 已有关系型数据库的场景
 - [MongoDB](/v2/zh/integration/distributed/mongodb) — 文档型存储，适合大量会话历史
 - [阿里云 OSS](/v2/zh/integration/distributed/oss) — 对象存储，大容量快照首选
 
-## aistio 托管 Store
+## Control Plane 托管 Store
 
-若已部署 aistio 控制面，可由控制面托管 `DistributedStore` 的协调类能力（BaseStore、沙箱锁/快照、MessageBus、AsyncToolRegistry、**TaskRepository**、可选 **SessionTurnGate**）。**`AgentStateStore` 仍需自备一个后端**（Redis / MySQL / Postgres / OSS）；core 已提供 `getVersioned` / `saveIfVersion` 乐观并发，但存储不在控制面。
+若已部署 Control Plane 控制面，可由控制面托管 `DistributedStore` 的协调类能力（BaseStore、沙箱锁/快照、MessageBus、AsyncToolRegistry、**TaskRepository**、可选 **SessionTurnGate**）。**`AgentStateStore` 仍需自备一个后端**（Redis / MySQL / Postgres / OSS）；core 已提供 `getVersioned` / `saveIfVersion` 乐观并发，但存储不在控制面。
 
 ```java
 ControlPlaneStores cp = ControlPlaneStores.fromEnv();

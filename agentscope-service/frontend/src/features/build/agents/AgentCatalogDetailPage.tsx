@@ -51,7 +51,7 @@ import { useControlPlaneScope } from "@/app/ScopeContext";
 import { EmptyState } from "@/components/EmptyState";
 import { JsonViewer } from "@/components/JsonViewer";
 import { Page } from "@/components/Page";
-import { PublishEndpointCard } from "@/components/PublishEndpointCard";
+import { SessionUsageCard } from "@/components/SessionUsageCard";
 import AgentSettingsForm from "@/components/AgentSettingsForm";
 import ShareAgentDialog from "@/components/ShareAgentDialog";
 import { Badge } from "@/components/ui/badge";
@@ -770,7 +770,7 @@ export default function AgentCatalogDetailPage() {
                 variant={channels ? "ghost" : "secondary"}
                 onClick={() => setTab("connections")}
               >
-                Published APIs
+                Session API
               </Button>
               <Button
                 size="sm"
@@ -789,11 +789,10 @@ export default function AgentCatalogDetailPage() {
           {channels ? (
             <Outlet context={context} />
           ) : (
-            <PublishEndpointCard
+            <SessionUsageCard
               targetType="agent"
               targetRef={value.id}
               targetName={value.name}
-              ownerPath={`${base}?tab=connections`}
             />
           )}
         </div>

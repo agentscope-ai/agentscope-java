@@ -31,9 +31,9 @@ DistributedStore store = DistributedStore.builder()
     .build();
 ```
 
-### 备选：aistio 托管 Store
+### 备选：Control Plane 托管 Store
 
-若已部署 aistio 控制面，可由其托管 BaseStore / 沙箱锁与快照 / MessageBus / AsyncToolRegistry / **TaskRepository** / 可选 **SessionTurnGate**。**仍需自备一个 `AgentStateStore`**（Redis/MySQL/Postgres/OSS）；core 提供 `getVersioned` / `saveIfVersion`，但存储不在控制面：
+若已部署 Control Plane 控制面，可由其托管 BaseStore / 沙箱锁与快照 / MessageBus / AsyncToolRegistry / **TaskRepository** / 可选 **SessionTurnGate**。**仍需自备一个 `AgentStateStore`**（Redis/MySQL/Postgres/OSS）；core 提供 `getVersioned` / `saveIfVersion`，但存储不在控制面：
 
 ```java
 ControlPlaneStores cp = ControlPlaneStores.fromEnv();
@@ -43,7 +43,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-控制面开启 `--enable-hosted-store`（生产建议 Postgres）。`withAgentStateStore` 已含托管 TaskRepository；**SandboxFilesystem 模式下的子 agent 后台任务**需此路径。AgentStateStore 的 Redis/Postgres/MySQL/InMemory 支持 versioning CAS，其余后端仍为 LWW；多副本可选 turn gate + `ConflictPolicy.FAIL` 减少重复 turn，正确性靠 CAS。鉴权为共享 internal token，租户取自请求体——不适用于同一控制面上互不信任的多租户。`queueDrain` 为 destructive（读即 ack）。详见 [分布式存储 — aistio 托管 Store](/v2/zh/integration/distributed/index#aistio-托管-store)。
+控制面开启 `--enable-hosted-store`（生产建议 Postgres）。`withAgentStateStore` 已含托管 TaskRepository；**SandboxFilesystem 模式下的子 agent 后台任务**需此路径。AgentStateStore 的 Redis/Postgres/MySQL/InMemory 支持 versioning CAS，其余后端仍为 LWW；多副本可选 turn gate + `ConflictPolicy.FAIL` 减少重复 turn，正确性靠 CAS。鉴权为共享 internal token，租户取自请求体——不适用于同一控制面上互不信任的多租户。`queueDrain` 为 destructive（读即 ack）。详见 [分布式存储 — Control Plane 托管 Store](/v2/zh/integration/distributed/index#control-plane-托管-store)。
 
 ## 一图速览：单机默认 vs 分布式生产
 
@@ -304,7 +304,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `LocalSnapshotSpec(Path)` | 本地目录 `tar` 文件 | `agentscope-harness` | 单机调试 |
 | `OssSnapshotSpec` | 阿里云 OSS | `agentscope-extensions-oss` | **大对象首选**；天然适合对象存储 |
 | `RedisSnapshotSpec` | Redis | `agentscope-extensions-redis` | 小工作区 + 短 TTL（注意 Redis 内存代价） |
-| `JdbcSnapshotSpec` | MySQL / JDBC BLOB | `agentscope-extensions-mysql` | 已有关系型数据库、不想引入额外中间件 |
+| `JdbcSnapshotSpec` | JDBC BLOB | `agentscope-extensions-jdbc` | 已有关系型数据库、不想引入额外中间件 |
 | 自实现 `RemoteSnapshotClient` → `RemoteSnapshotSpec` | S3 / GCS / MinIO | — | 不在内置列表里 |
 
 ```java
@@ -419,10 +419,11 @@ HarnessAgent.builder()
 
 ## 7. 一个完整的生产 builder 模板
 
-Agent 在调用之间是无状态的——单例即可服务并发请求。每次 `call()` 通过 `RuntimeContext` 的 `(userId, sessionId)` 定位状态，互不干扰。
+应用启动时配置共享 Builder 和外部依赖；每次请求用 `agentBuilder.build()` 获得新的实例，并在执行结束后关闭。Builder 不保存本次请求的用户或会话参数，身份通过 `RuntimeContext` 传入。完整生命周期约定见[智能体](/v2/zh/docs/building-blocks/agent#实例生命周期)。
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.skill.repository.mysql.MysqlSkillRepository;
 import io.agentscope.extensions.redis.RedisDistributedStore;
 import io.agentscope.core.tracing.OtelTracingMiddleware;
 import io.agentscope.harness.agent.DistributedStore;
@@ -441,9 +442,10 @@ Path workspace = Paths.get("/var/agentscope/workspace");
 JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
 DistributedStore store = RedisDistributedStore.fromJedis(jedis);
 
-// --- 单例 agent（应用启动时创建一次） ---
-HarnessAgent agent = HarnessAgent.builder()
+// --- 共享 Builder（应用启动时配置一次） ---
+HarnessAgent.Builder agentBuilder = HarnessAgent.builder()
         .name("coding-assistant")
+        .agentId("coding-assistant")
         .model("dashscope:qwen-plus")
         .workspace(workspace)
         .distributedStore(store)  // 自动注入 stateStore + snapshotSpec + executionGuard
@@ -455,23 +457,24 @@ HarnessAgent agent = HarnessAgent.builder()
                 .keepMessages(20)
                 .build())
         .toolResultEviction(ToolResultEvictionConfig.defaults())
-        .skillRepository(io.agentscope.core.skill.repository.mysql.MysqlSkillRepository
+        .skillRepository(MysqlSkillRepository
                 .builder(skillsDataSource())
                 .createIfNotExist(false)
                 .writeable(false)
                 .build())
-        .middlewares(List.of(new OtelTracingMiddleware()))
-        .build();
+        .middlewares(List.of(new OtelTracingMiddleware()));
 ```
 
-调用时传入 `RuntimeContext` 标识用户和会话。不同 session 在同一个 agent 实例上自动并行：
+同步请求使用 `try-with-resources`，等待执行结束后再释放实例。同一会话跨实例的调用由应用调度协调：
 
 ```java
 // 在 HTTP handler 中
-agent.call(msg, RuntimeContext.builder()
-        .userId(httpRequest.tenantUserId())
-        .sessionId(httpRequest.sessionId())
-        .build()).block();
+try (HarnessAgent agent = agentBuilder.build()) {
+    agent.call(msg, RuntimeContext.builder()
+            .userId(httpRequest.tenantUserId())
+            .sessionId(httpRequest.sessionId())
+            .build()).block();
+}
 ```
 
 ## 8. 常见坑位
@@ -490,7 +493,7 @@ agent.call(msg, RuntimeContext.builder()
 - [Quickstart](/v2/zh/docs/quickstart) —— 端到端跑通第一个 `HarnessAgent`
 - [Harness 架构](/v2/zh/docs/harness/architecture) —— 各能力如何协作
 - [上下文与 AgentState](/v2/zh/docs/building-blocks/context) —— `AgentState` / `AgentStateStore` / 跨节点恢复
-- [上下文压缩](/v2/zh/docs/harness/compaction) —— 对话摘要、工具结果卸载、溢出恢复
+- [上下文管理](/v2/zh/docs/harness/context) —— 对话摘要、工具结果卸载、溢出恢复
 - [Workspace](/v2/zh/docs/harness/workspace) —— 目录布局、两层读、`tools.json`
 - [Filesystem](/v2/zh/docs/harness/filesystem) —— 三种部署模式、`IsolationScope`
 - [Sandbox](/v2/zh/docs/harness/sandbox) —— 沙箱细节、五种实现、快照机制
