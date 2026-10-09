@@ -23,7 +23,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/prober"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/prober"
 )
 
 // TranscriptMessagesFunc reads Level-3 messages from a CP-side transcript

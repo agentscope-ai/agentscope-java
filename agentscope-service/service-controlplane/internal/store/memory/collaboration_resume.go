@@ -20,7 +20,7 @@ package memory
 import (
 	"encoding/json"
 	"fmt"
-	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
+	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	"github.com/google/uuid"
 	"time"
 )

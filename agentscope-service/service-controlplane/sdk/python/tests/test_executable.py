@@ -16,6 +16,7 @@ import asyncio
 import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -164,7 +165,8 @@ def test_task_adapter_emits_portable_events_and_result():
     assert json.loads(observed[0].framework_meta)["public_event"]["type"] == "item.delta"
 
 
-def test_cancel_is_reported_after_runner_cleanup_and_dispatch_does_not_block():
+@pytest.mark.parametrize("worker_thread", [False, True])
+def test_cancel_is_reported_after_runner_cleanup_and_dispatch_does_not_block(worker_thread):
     entered, cleaning, release = threading.Event(), threading.Event(), threading.Event()
     async def run(ctx):
         entered.set()
@@ -188,15 +190,24 @@ def test_cancel_is_reported_after_runner_cleanup_and_dispatch_does_not_block():
     transport = Capture()
     bridge._grpc = transport
     arguments = ("a", "t", "r", "n", 1)
+
+    def command(action):
+        args = (*arguments, action, "", "", "", b"{}", 0)
+        if worker_thread:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                executor.submit(bridge._on_execution_attempt, *args).result(timeout=3)
+        else:
+            bridge._on_execution_attempt(*args)
+
     try:
-        bridge._on_execution_attempt(*arguments, "dispatch", "", "", "", b"{}", 0)
+        command("dispatch")
         wait_for(entered.is_set)
-        bridge._on_execution_attempt(*arguments, "cancel", "", "", "", b"{}", 0)
+        command("cancel")
         wait_for(cleaning.is_set)
         assert not any(r.action == "cancelled" for r in transport.reports)
         release.set()
         wait_for(lambda: any(r.action == "cancelled" for r in transport.reports))
-        bridge._on_execution_attempt(*arguments, "dispatch", "", "", "", b"{}", 0)
+        command("dispatch")
         assert transport.reports[-1].action == "cancelled"
     finally:
         release.set()

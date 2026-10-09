@@ -25,7 +25,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
 // startManagedSession acknowledges the durable task transition before the data

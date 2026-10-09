@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/metrics"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/metrics"
 )
 
 // service implements the AgentDataPlaneServiceServer gRPC interface.

@@ -384,6 +384,10 @@ The framework provides two structured output paths:
 
 If the native path fails (e.g. model returns HTTP 400), the framework **automatically falls back** to the synthetic tool path — no user intervention needed.
 
+Native structured output does not force a schema to strict mode. OpenAI and OpenAI Official
+manufacturer can enable it explicitly with `strictJsonSchema(true)`; a schema-level `strict` value
+always takes precedence.
+
 #### Default behavior per provider
 
 | Provider | `supportsNativeStructuredOutput` | Notes |

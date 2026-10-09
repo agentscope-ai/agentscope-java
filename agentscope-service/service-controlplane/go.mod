@@ -1,4 +1,4 @@
-module github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane
+module github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2
 
 go 1.26.0
 

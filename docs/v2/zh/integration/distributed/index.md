@@ -23,9 +23,9 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 能力矩阵
 
-| 功能组件 | 接口 | Redis | OSS | MySQL | MongoDB |
+| 功能组件 | 接口 | Redis | OSS | JDBC | MongoDB |
 |---------|------|:-----:|:---:|:-----:|:-------:|
-| Agent 状态持久化 | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` | `MongoAgentStateStore` |
+| Agent 状态持久化 | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `JdbcAgentStateStore` | `MongoAgentStateStore` |
 | 工作区文件系统 KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` | `MongoBaseStore` |
 | 沙箱快照 | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` | `MongoSnapshotSpec` |
 | 沙箱并发锁 | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` | `MongoSandboxExecutionGuard` |
@@ -37,13 +37,13 @@ HarnessAgent agent = HarnessAgent.builder()
 不同组件可以来自不同的存储后端：
 
 ```java
-DistributedStore mysql = MysqlDistributedStore.create(dataSource);
+DistributedStore jdbc = JdbcDistributedStore.create(dataSource);
 DistributedStore redis = RedisDistributedStore.fromJedis(jedis);
 
-// MySQL 管状态和文件，Redis 管沙箱锁和快照
+// JDBC 管状态和文件，Redis 管沙箱锁和快照
 DistributedStore mixed = DistributedStore.builder()
-    .agentStateStore(mysql.agentStateStore())
-    .baseStore(mysql.baseStore())
+    .agentStateStore(jdbc.agentStateStore())
+    .baseStore(jdbc.baseStore())
     .sandboxSnapshotSpec(redis.sandboxSnapshotSpec())
     .sandboxExecutionGuard(redis.sandboxExecutionGuard())
     .build();
@@ -90,7 +90,7 @@ Agent 的对话上下文、压缩摘要、权限规则、Plan Mode 状态等，�
 
 ## Control Plane 托管 Store
 
-若已部署 Control Plane 控制面，可由控制面托管 `DistributedStore` 的协调类能力（BaseStore、沙箱锁/快照、MessageBus、AsyncToolRegistry、**TaskRepository**、可选 **SessionTurnGate**）。**`AgentStateStore` 仍需自备一个后端**（Redis / MySQL / Postgres / OSS）；core 已提供 `getVersioned` / `saveIfVersion` 乐观并发，但存储不在控制面。
+若已部署 Control Plane 控制面，可由控制面托管 `DistributedStore` 的协调类能力（BaseStore、沙箱锁/快照、MessageBus、AsyncToolRegistry、**TaskRepository**、可选 **SessionTurnGate**）。**`AgentStateStore` 仍需自备一个后端**（Redis / JDBC / OSS）；core 已提供 `getVersioned` / `saveIfVersion` 乐观并发，但存储不在控制面。
 
 ```java
 ControlPlaneStores cp = ControlPlaneStores.fromEnv();

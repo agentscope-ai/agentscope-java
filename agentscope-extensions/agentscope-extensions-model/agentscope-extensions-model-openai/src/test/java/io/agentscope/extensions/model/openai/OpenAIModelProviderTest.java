@@ -67,6 +67,7 @@ class OpenAIModelProviderTest {
                         .option("nativeStructuredOutput", false)
                         .option("nativeStructuredOutputWithTools", true)
                         .option("supportsToolChoiceSpecific", false)
+                        .option("strictJsonSchema", true)
                         .build();
 
         Model model = provider.create("openai:gpt-4o-mini", context);
@@ -76,6 +77,7 @@ class OpenAIModelProviderTest {
         assertEquals(128000, model.getContextWindowSize());
         assertFalse(model.supportsNativeStructuredOutput());
         assertFalse(model.supportsToolChoiceSpecific());
+        assertEquals(Boolean.TRUE, ((OpenAIChatModel) model).getStrictJsonSchema());
     }
 
     @Test

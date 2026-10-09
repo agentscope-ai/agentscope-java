@@ -17,7 +17,7 @@
 # cordis.patch.yml or via environment variables (see README).
 - insert:
     - id: controlplane
-      name: '@agentscope/dsh-controlplane'
+      name: '@agentscope-service/dsh-controlplane'
       config:
         controlHttp: http://localhost:8081
         contractPort: 18091

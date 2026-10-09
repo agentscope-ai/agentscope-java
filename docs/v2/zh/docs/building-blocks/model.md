@@ -382,6 +382,9 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 
 当 native 路径失败（如模型返回 400），框架会**自动降级**到 fallback 路径，无需用户干预。
 
+Native structured output 默认不会强制 schema 进入 strict 模式。OpenAI 与 OpenAI Official
+厂商可以通过 `strictJsonSchema(true)` 显式开启；schema 内的 `strict` 值优先。
+
 #### 各模型提供商默认行为
 
 | 模型提供商 | `supportsNativeStructuredOutput` | 说明 |

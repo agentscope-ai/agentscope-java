@@ -18,7 +18,7 @@ package httpapi
 
 import (
 	"encoding/json"
-	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"net/http/httptest"
