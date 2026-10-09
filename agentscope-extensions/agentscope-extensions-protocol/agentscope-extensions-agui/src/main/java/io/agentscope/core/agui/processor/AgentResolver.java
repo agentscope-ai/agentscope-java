@@ -57,8 +57,10 @@ public interface AgentResolver {
     /**
      * Check if a thread has existing memory/conversation history.
      *
-     * <p>This is used to determine whether to use frontend-provided history
-     * or rely on server-side memory.
+     * <p>An existence probe over the resolver's sessions, e.g. for monitoring or custom routing.
+     * Request message handling no longer consults this method: messages pass through in full,
+     * and deduplicating a full-history resend against persisted context is done by registering
+     * {@link io.agentscope.core.agui.middleware.InputMessageDeduplicationMiddleware} on the agent.
      *
      * @param runtimeContext The runtime context identifying the thread and user
      * @return true if the thread has existing memory

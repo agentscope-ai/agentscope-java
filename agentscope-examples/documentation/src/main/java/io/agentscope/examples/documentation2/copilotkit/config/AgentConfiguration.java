@@ -25,6 +25,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEvents;
+import io.agentscope.core.agui.middleware.InputMessageDeduplicationMiddleware;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
@@ -201,6 +202,9 @@ public class AgentConfiguration {
                 .enableTaskList()
                 .permissionContext(workbenchPermissionContext())
                 .middleware(new WorkbenchEventMiddleware(workbenchStateRegistry))
+                // CopilotKit resends the full history every turn while this agent's context
+                // persists across calls: strip the overlapping prefix.
+                .middleware(new InputMessageDeduplicationMiddleware())
                 .maxIters(16)
                 .build();
     }
@@ -294,6 +298,9 @@ public class AgentConfiguration {
                                 .build())
                 .toolkit(toolkit)
                 //                .middleware(exampleCustomEventMiddleware())
+                // Full-history client resend × persisted agent context: deduplicate at
+                // the call boundary.
+                .middleware(new InputMessageDeduplicationMiddleware())
                 .maxIters(10)
                 .build();
     }
@@ -340,6 +347,7 @@ public class AgentConfiguration {
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
                 .middleware(exampleCustomEventMiddleware())
+                .middleware(new InputMessageDeduplicationMiddleware())
                 .maxIters(1)
                 .build();
     }
@@ -369,6 +377,7 @@ public class AgentConfiguration {
                                 .build())
                 .toolkit(toolkit)
                 .middleware(exampleCustomEventMiddleware())
+                .middleware(new InputMessageDeduplicationMiddleware())
                 .maxIters(5)
                 .build();
     }

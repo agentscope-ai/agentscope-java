@@ -70,6 +70,8 @@ Flux<AguiEvent> events = Flux.using(
 
 The front end provides `RunAgentInput`, including `threadId`, `runId`, `messages`, `tools`, `state`, and related fields. The adapter converts AG-UI messages to AgentScope `Msg` objects, invokes v2 `streamEvents(...)`, and converts each `AgentEvent` to AG-UI events.
 
+Clients that resend the full message history against a server-side persisted context must additionally register `InputMessageDeduplicationMiddleware` on the agent — see [Server-Side Memory And Message Deduplication](#server-side-memory-and-message-deduplication).
+
 ## Event Mapping
 
 The v2 path consumes `AgentEvent`. Built-in converters handle semantic mapping, and unmapped events fall back to the official `RAW` event.
@@ -255,6 +257,29 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 ```
 
 `forwardedProps` comes from the client request body and is suitable for UI options or frontend context. Do not treat it as a trusted identity source; server-side user identity should come from authentication or a server-side resolver.
+
+## Server-Side Memory And Message Deduplication
+
+CopilotKit and most AG-UI clients resend the full message history on every turn; combined with server-side persisted context, the history duplicates each turn. `InputMessageDeduplicationMiddleware` (protocol-neutral) deduplicates this at the call boundary: the last persisted context message acts as the anchor — when it is found in the incoming list, the overlapping prefix is stripped.
+
+```java
+import io.agentscope.core.agui.middleware.InputMessageDeduplicationMiddleware;
+
+ReActAgent agent = ReActAgent.builder()
+        // ...
+        .middleware(new InputMessageDeduplicationMiddleware())
+        .build();
+```
+
+Registration is identical for `HarnessAgent`. The anchor is matched by message id first, then by a role + text + block-signature fallback; when neither matches, the input passes through unchanged (fail-open). A resend that strips to an empty list re-answers the last user message (regenerate semantics); with pending tool calls it stays empty, resuming the interrupted run. Same-turn system messages and tool call/result pairs are preserved.
+
+**Register it when** the client resends the full history and the server owns the conversation context through an `AgentStateStore` — including starter deployments with `server-side-memory: true`, and multi-replica deployments (the deduplication reads persisted state per call, no session affinity needed).
+
+**Do not register it when** the frontend's full message list is the single source of truth (the server keeps no history, or you rebuild state from each request): deduplication would wrongly strip that prefix.
+
+> **Migration for `server-side-memory: true`** — the old logic that trimmed requests to the last user message was removed (it dropped same-turn system/tool messages and misdetected some server-side memory setups); register `InputMessageDeduplicationMiddleware` on agents served with `server-side-memory: true`.
+
+Any transport with the same "full resend × persisted context" shape (A2A, custom HTTP/RPC) can register the same middleware.
 
 ## Frontend Tools And Merge Mode
 
