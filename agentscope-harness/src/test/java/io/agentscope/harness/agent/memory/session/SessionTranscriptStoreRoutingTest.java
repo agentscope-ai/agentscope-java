@@ -55,7 +55,7 @@ class SessionTranscriptStoreRoutingTest {
     }
 
     @Test
-    void objectStoreTranscriptKeysHitTheSessionsRoute() {
+    void objectStoreTranscriptKeysHitTheSessionsRoute() throws InterruptedException {
         InMemoryStore store = new InMemoryStore();
         RemoteFilesystem sessionsRoute =
                 new RemoteFilesystem(
@@ -68,14 +68,23 @@ class SessionTranscriptStoreRoutingTest {
 
         try (WorkspaceManager wm = new WorkspaceManager(workspace, composite)) {
             ObjectStoreTranscriptStore transcriptStore = new ObjectStoreTranscriptStore(composite);
+            // stableAgentId="agent-a" (the id the route was built with) while the caller
+            // passes a display name — exactly the agentscope-service shape the review
+            // flagged: only the stable id hits the route (#3386).
             SessionTranscriptWriter writer =
-                    new SessionTranscriptWriter(wm, transcriptStore, "default");
+                    new SessionTranscriptWriter(wm, transcriptStore, "default", "agent-a");
             writer.appendMessages(
                     RuntimeContext.builder().userId("user-1").sessionId("session-1").build(),
                     List.of(message("m1", "hello"), message("m2", "world")),
-                    "agent-a",
+                    "agent-qa-display",
                     "session-1");
         }
+
+        // The mirror upload is async; wait for it so the assertion is deterministic
+        // instead of racing the shared daemon executor (#3386 review).
+        assertTrue(
+                SessionTree.awaitMirrorQuiescence(5, java.util.concurrent.TimeUnit.SECONDS),
+                "mirror upload did not settle in time");
 
         // The segment must be reachable through the routed store namespace — the SQL-level
         // check from the issue (LIKE '%sessions%') at the store API level.

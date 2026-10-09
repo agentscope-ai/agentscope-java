@@ -69,15 +69,31 @@ public class SessionTranscriptWriter {
     private final TranscriptStore transcriptStore;
     private final String tenant;
 
+    /**
+     * Stable agent id the filesystem routes were built with; used for route-aligned
+     * transcript keys when it differs from the display-name agentId callers pass (#2918,
+     * #3386). {@code null} keeps the caller's id.
+     */
+    private final String stableAgentId;
+
     public SessionTranscriptWriter(WorkspaceManager workspaceManager) {
         this(workspaceManager, null, null);
     }
 
     public SessionTranscriptWriter(
             WorkspaceManager workspaceManager, TranscriptStore transcriptStore, String tenant) {
+        this(workspaceManager, transcriptStore, tenant, null);
+    }
+
+    public SessionTranscriptWriter(
+            WorkspaceManager workspaceManager,
+            TranscriptStore transcriptStore,
+            String tenant,
+            String stableAgentId) {
         this.workspaceManager = workspaceManager;
         this.transcriptStore = transcriptStore;
         this.tenant = tenant != null && !tenant.isBlank() ? tenant : "default";
+        this.stableAgentId = stableAgentId;
     }
 
     /**
@@ -99,8 +115,13 @@ public class SessionTranscriptWriter {
             // Route-aligned layout: matches the "agents/{agentId}/sessions/" prefix that
             // RemoteFilesystemSpec registers, so segment keys hit the sessions route and
             // persist to the distributed store instead of the default backend (#2918).
-            // Note: transcriptTenant only applies to non-routed store implementations.
-            return new TranscriptRef("agents", agentId, "sessions/" + sessionId);
+            // The ROUTING id is the builder's stable agentId — the caller's agentId may be a
+            // display name that differs (agentscope-service pins agentId(instanceId) +
+            // name(displayName)), in which case the caller's id would miss the route
+            // entirely (#3386). transcriptTenant only applies to non-routed implementations.
+            String routingId =
+                    stableAgentId != null && !stableAgentId.isBlank() ? stableAgentId : agentId;
+            return new TranscriptRef("agents", routingId, "sessions/" + sessionId);
         }
         return new TranscriptRef(tenant, agentId, sessionId);
     }

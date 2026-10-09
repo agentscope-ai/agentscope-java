@@ -18,7 +18,6 @@ package io.agentscope.harness.agent;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
@@ -133,6 +132,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -300,6 +300,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return Mono.empty();
         }
         return Mono.fromCallable(() -> skillCurator.runOnce(null));
+    }
+
+    /**
+     * Promote a draft skill from {@code skills/_drafts/} to the live skills root via the
+     * configured {@link SkillPromotionGate}.
+     */
+    public Mono<SkillPromoter.PromotionResult> promoteSkill(String name, String reviewerId) {
+        return promoteSkill(name, reviewerId, getRuntimeContext());
     }
 
     /**
@@ -499,6 +507,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     public int getMaxIters() {
         return delegate.getMaxIters();
+    }
+
+    public RuntimeContext getRuntimeContext() {
+        return delegate.getRuntimeContext();
     }
 
     public AgentStateStore getStateStore() {
@@ -840,29 +852,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
         return wrappedStream(effective, () -> delegate.stream(msgs, options, schema, effective));
-    }
-
-    /**
-     * Prepare a cancellable execution covering the complete harness/sandbox lifecycle. Adopts the
-     * context's runId ({@code run.runId() == ctx.getRunId()}); {@code ensureSessionDefaults}
-     * still runs at subscribe time and never alters it. A null context uses a fresh {@link
-     * RuntimeContext#empty()} so derived defaults inherit this runId.
-     */
-    public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext ctx) {
-        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
-        return AgentRun.create(getAgentId(), source.getRunId(), () -> streamEvents(msgs, source));
-    }
-
-    /**
-     * Prepare a cancellable reply execution covering the complete harness/sandbox lifecycle.
-     * Adopts the context's runId ({@code run.runId() == ctx.getRunId()});
-     * {@code ensureSessionDefaults} still runs at subscribe time and never alters it. A null
-     * context uses a fresh {@link RuntimeContext#empty()} so derived defaults inherit this
-     * runId.
-     */
-    public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext ctx) {
-        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
-        return AgentRun.create(getAgentId(), source.getRunId(), () -> call(msgs, source));
     }
 
     // ==================== streamEvents (AgentEvent — v2 aligned) ====================
@@ -2273,7 +2262,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Tenant segment used in transcript object keys (default {@code "default"}). */
+        /**
+         * Tenant segment used in transcript object keys (default {@code "default"}).
+         *
+         * <p>Applies only to {@code TranscriptStore} implementations that are not the default
+         * object-store one: with a filesystem present, the default
+         * {@code ObjectStoreTranscriptStore} uses the route-aligned {@code
+         * agents/{agentId}/sessions/...} key layout (keyed on the builder's stable {@code
+         * agentId}), which has no tenant segment (#2918).
+         */
         public Builder transcriptTenant(String transcriptTenant) {
             this.transcriptTenant = transcriptTenant;
             return this;
@@ -2570,7 +2567,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 }
                 inner.middleware(
                         new TranscriptMiddleware(
-                                wsManager, effectiveTranscriptStore, transcriptTenant));
+                                wsManager,
+                                effectiveTranscriptStore,
+                                transcriptTenant,
+                                resolvedAgentId));
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
             if (memoryModel != null && !disableMemoryHooks) {
@@ -2784,9 +2784,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
 
             // ---- Skills ----
+            final AtomicReference<ReActAgent> selfRef = new AtomicReference<>();
+            Supplier<RuntimeContext> currentRcSupplier =
+                    () -> {
+                        ReActAgent self = selfRef.get();
+                        RuntimeContext rc = self != null ? self.getRuntimeContext() : null;
+                        return rc != null ? rc : RuntimeContext.empty();
+                    };
             List<AgentSkillRepository> orderedSkillRepos =
                     HarnessAgentBuilderSupport.composeSkillRepositories(
-                            this, wsManager, filesystem);
+                            this, wsManager, filesystem, currentRcSupplier);
 
             // ---- Skill self-learning: writable workspace skills + skill_manage tool ----
             SkillPromoter pendingSkillPromoter = null;
@@ -2808,7 +2815,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     if (r instanceof WorkspaceSkillRepository wsr && !wsr.isWriteable()) {
                         mainWritableRepo =
                                 new WorkspaceSkillRepository(
-                                        filesystem, smConfig.mainDir(), "workspace-writable");
+                                        filesystem,
+                                        smConfig.mainDir(),
+                                        currentRcSupplier,
+                                        "workspace-writable");
                         orderedSkillRepos.set(i, mainWritableRepo);
                         break;
                     }
@@ -2816,12 +2826,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 if (mainWritableRepo == null) {
                     mainWritableRepo =
                             new WorkspaceSkillRepository(
-                                    filesystem, smConfig.mainDir(), "workspace-writable");
+                                    filesystem,
+                                    smConfig.mainDir(),
+                                    currentRcSupplier,
+                                    "workspace-writable");
                     orderedSkillRepos.add(mainWritableRepo);
                 }
                 WorkspaceSkillRepository draftsWritableRepo =
                         new WorkspaceSkillRepository(
-                                filesystem, smConfig.draftsDir(), "workspace-drafts");
+                                filesystem,
+                                smConfig.draftsDir(),
+                                currentRcSupplier,
+                                "workspace-drafts");
                 SkillUsageStore usageStore =
                         distributedStore != null
                                 ? SkillUsageStore.baseStore(distributedStore.baseStore())
@@ -2959,6 +2975,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // ---- Build inner ReActAgent ----
             inner.toolkit(agentToolkit);
             ReActAgent delegate = inner.build();
+            selfRef.set(delegate);
 
             return new HarnessAgent(
                     delegate,

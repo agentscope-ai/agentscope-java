@@ -25,9 +25,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.session.SessionTranscriptWriter;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,21 +47,32 @@ public class TranscriptMiddleware implements HarnessRuntimeMiddleware {
     private final TranscriptStore transcriptStore;
     private final String tenant;
 
+    /**
+     * The stable agent id the filesystem routes were built with ({@code resolvedAgentId} at
+     * build time — builder {@code agentId(...)} falling back to the display name). Threaded
+     * here so {@link SessionTranscriptWriter} can emit route-aligned transcript keys even when
+     * {@code agent.getName()} is a different display name (#2918, #3386).
+     */
+    private final String stableAgentId;
+
     public TranscriptMiddleware(WorkspaceManager workspaceManager) {
-        this(workspaceManager, null, null);
+        this(workspaceManager, null, null, null);
     }
 
     public TranscriptMiddleware(
             WorkspaceManager workspaceManager, TranscriptStore transcriptStore, String tenant) {
+        this(workspaceManager, transcriptStore, tenant, null);
+    }
+
+    public TranscriptMiddleware(
+            WorkspaceManager workspaceManager,
+            TranscriptStore transcriptStore,
+            String tenant,
+            String stableAgentId) {
         this.workspaceManager = workspaceManager;
         this.transcriptStore = transcriptStore;
         this.tenant = tenant;
-    }
-
-    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
-    @Override
-    public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_AGENT);
+        this.stableAgentId = stableAgentId;
     }
 
     @Override
@@ -107,7 +116,8 @@ public class TranscriptMiddleware implements HarnessRuntimeMiddleware {
                         ? rc.getSessionId()
                         : "default";
         SessionTranscriptWriter writer =
-                new SessionTranscriptWriter(workspaceManager, transcriptStore, tenant);
+                new SessionTranscriptWriter(
+                        workspaceManager, transcriptStore, tenant, stableAgentId);
         final String key = agentId;
         return Mono.fromRunnable(() -> writer.appendMessages(rc, messages, key, sessionId))
                 .then()
