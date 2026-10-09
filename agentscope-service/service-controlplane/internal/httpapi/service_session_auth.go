@@ -28,6 +28,7 @@ import (
 	"time"
 
 	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/sessionapi"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/gin-gonic/gin"
@@ -186,6 +187,13 @@ func (s *Server) revokeSessionCredential(c *gin.Context) {
 // namespace membership bounds the credential; it never makes the key a human actor.
 func (s *Server) publicSessionAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if s.localDev {
+			s.setLocalDeveloper(c)
+			c.Set(endpointPrincipalContextKey, "platform-user:"+product.LocalDeveloperID)
+			c.Set(endpointActorContextKey, model.Actor{Type: model.ActorHuman, Ref: product.LocalDeveloperID})
+			c.Next()
+			return
+		}
 		key := c.GetHeader("X-API-Key")
 		if key == "" {
 			principal, valid := s.platformPrincipal(c, requestBearerToken(c))
@@ -273,6 +281,9 @@ func (s *Server) sessionAccess(c *gin.Context, v *sessionapi.Session, scope stri
 	if v.Status == "deleted" || tenant != v.Tenant || namespace != v.Namespace {
 		c.JSON(404, ErrorResponse{Error: "session not found"})
 		return false
+	}
+	if s.localDev {
+		return true
 	}
 	principal := c.GetString(endpointPrincipalContextKey)
 	if v.Principal == principal {

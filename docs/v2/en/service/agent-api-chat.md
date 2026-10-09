@@ -12,14 +12,13 @@ First, [create a Managed Agent](/v2/en/service/create-managed-agent), configure 
 
 ## 1. Create a session and submit work
 
-Use curl, jq and a [user login token](/v2/en/service/api-reference#authentication-and-scope) to test the same interaction as the local console. A business backend can instead use the authorized Application key from the integration guide. Substitute actual resource IDs; omit `environmentId` from the creation request if the Agent has a default Environment. Local Gateway defaults to port 18080.
+Use curl and jq in local development mode without authentication headers. Substitute actual resource IDs; omit `environmentId` if the Agent has a default Environment. Local Gateway defaults to port 18080. See [production deployment](/v2/en/service/kubernetes#production-api-access) for identities.
 
 ```bash
 set -euo pipefail
 export BASE_URL="http://localhost:18080"
-export TOKEN="YOUR_USER_TOKEN"
-export TENANT="YOUR_TENANT"
-export NAMESPACE="YOUR_NAMESPACE"
+export TENANT="default"
+export NAMESPACE="default"
 export AGENT_ID="YOUR_MANAGED_AGENT_ID"
 export ENVIRONMENT_ID="YOUR_ENVIRONMENT_ID"
 ```
@@ -29,9 +28,6 @@ Create the conversation’s Session:
 ```bash
 SESSION_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: notes-session-001" \
     --data-binary @- <<JSON
@@ -54,9 +50,6 @@ Submit the first question:
 TURN_KEY="notes-chat-001"
 TURN_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/turns" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: $TURN_KEY" \
     --data-binary @- <<'JSON'
@@ -76,10 +69,7 @@ The two example idempotency keys identify Session creation and task submission s
 
 ```bash
 SNAPSHOT=$(
-  curl -sS --fail-with-body "$SESSION_URL/snapshot" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE"
+  curl -sS --fail-with-body "$SESSION_URL/snapshot"
 )
 jq '{items, tools, turns, required_actions}' <<< "$SNAPSHOT"
 CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
@@ -87,9 +77,6 @@ CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
 
 ```bash
 curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
   -H "Accept: text/event-stream" \
   --data-urlencode "after=$CURSOR"
 ```
@@ -99,10 +86,7 @@ Ctrl-C closes the subscription while background work continues. Running this blo
 A Session SSE connection can stay open across multiple Turns, so closing it does not establish task completion. Use the target `turn_id` and its `turn.completed` event or queried Turn state to determine success. See [SSE and event replay](/v2/en/service/sse-events) for deduplication, reconnects, and backend notifications.
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
 ```
 
 ## 3. Connect your page
@@ -176,10 +160,7 @@ The following table connects chat page actions to the Session API. Paths are rel
 Read current Turn capabilities before displaying controls. Choose the following operations according to user intent rather than running them in sequence:
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities"
 ```
 
 | Button / scenario | Request | Next step |
@@ -199,9 +180,6 @@ Correct a running task:
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/steer" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: notes-correction-001" \
   --data-binary @- <<'JSON'
@@ -215,9 +193,6 @@ Save context without starting inference:
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/inputs/inject" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: notes-context-001" \
   --data-binary @- <<'JSON'
@@ -234,9 +209,6 @@ JSON
 ```bash
 CANCEL_JSON=$(
   curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/cancel" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Idempotency-Key: notes-cancel-001"
 )
 CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
@@ -245,17 +217,11 @@ CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
 Read the cancellation command, then the Turn state to confirm termination:
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$CANCEL_COMMAND_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$CANCEL_COMMAND_ID"
 ```
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
 ```
 
 </Accordion>
@@ -267,19 +233,13 @@ Resume only when `available_commands` includes `resume` and pending actions and 
 ```bash
 RESUME_JSON=$(
   curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/resume" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Idempotency-Key: notes-resume-001"
 )
 RESUME_COMMAND_ID=$(jq -er '.command.id' <<< "$RESUME_JSON")
 ```
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$RESUME_COMMAND_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$RESUME_COMMAND_ID"
 ```
 
 </Accordion>
@@ -289,19 +249,13 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$RESUME_COMMAND_
 Provide a stable `Idempotency-Key` when creating a Turn, changing requirements, adding context, or answering a pending action. The example below submits confirmation after the user inspects the tool request and chooses “Allow”. `REQUEST_ID` must come from the pending card's `request_id`; a tool call ID cannot replace it:
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions"
 ```
 
 ```bash
 REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
 COMMAND_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: notes-approval-001" \
     --data-binary @- <<JSON
@@ -320,13 +274,10 @@ COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 After the answer is accepted, follow the returned command status and observe whether the action has been handled and execution continues. A successful HTTP request only means the service received this operation; it does not immediately resolve the pending action. If the command fails or the action remains pending, reload the latest records before asking the user to decide whether to retry.
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID"
 ```
 
-For an action requesting external tool execution, submit the actual `output` and `is_error` inside `payload`. An identity-bound confirmation requires the designated person's authorized user identity. See [Answer a required action](/v2/en/service/session-event-log#answer-a-required-action) for locating the action and following command receipts. These answers advance the existing task; its Turn result still determines completion.
+For an action requesting external tool execution, submit the actual `output` and `is_error` inside `payload`. Local mode accepts confirmation answers directly; see [production deployment](/v2/en/service/kubernetes#production-api-access) for approval identities. See [Answer a required action](/v2/en/service/session-event-log#answer-a-required-action) for locating the action and following command receipts. These answers advance the existing task; its Turn result still determines completion.
 
 ## 5. Exercise the flow with real tools
 

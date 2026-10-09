@@ -87,6 +87,7 @@ type InventoryProvider interface {
 
 // ServerOptions configures the REST API server.
 type ServerOptions struct {
+	LocalDev              bool // Explicitly bypass end-user authentication/authorization for local development.
 	ServiceEventRetention time.Duration
 	AccountDirectory      AccountDirectory
 	Client                client.Client
@@ -149,6 +150,7 @@ type ServerOptions struct {
 
 // Server is the REST API server for the control plane.
 type Server struct {
+	localDev              bool
 	accounts              AccountDirectory
 	client                client.Client
 	store                 store.Store
@@ -198,6 +200,9 @@ func NewServer(opts ServerOptions) *Server {
 	}}))
 
 	scopeMode := strings.ToLower(strings.TrimSpace(opts.ScopeMode))
+	if opts.LocalDev {
+		scopeMode = ScopeModeSingle
+	}
 	if scopeMode != ScopeModeSingle {
 		scopeMode = ScopeModeMulti
 	}
@@ -210,6 +215,7 @@ func NewServer(opts ServerOptions) *Server {
 		configuredNamespace = defaultNamespace
 	}
 	s := &Server{
+		localDev:             opts.LocalDev,
 		accounts:             opts.AccountDirectory,
 		client:               opts.Client,
 		store:                opts.Store,
@@ -619,6 +625,9 @@ func (s *Server) registerRoutes() {
 
 		collab := s.router.Group("/api/v1")
 		collab.Use(s.teamsAuthMiddleware())
+		if s.localDev {
+			collab.Use(s.scopeMiddleware())
+		}
 		collab.Use(s.collaborationTaskScopeMiddleware())
 		collab.Use(s.namespaceAccessMiddleware())
 		collab.Use(s.workspaceRBACMiddleware())
@@ -836,6 +845,11 @@ func (s *Server) spaFallback() gin.HandlerFunc {
 // configured, then against the static authToken. No-op when none apply.
 func (s *Server) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if s.localDev {
+			s.setLocalDeveloper(c)
+			c.Next()
+			return
+		}
 		token := requestBearerToken(c)
 
 		if s.product != nil {
@@ -880,6 +894,9 @@ func (s *Server) validPlatformToken(ctx context.Context, token string) bool {
 }
 
 func (s *Server) platformPrincipal(ctx context.Context, token string) (string, bool) {
+	if s.localDev {
+		return "platform-user:" + product.LocalDeveloperID, true
+	}
 	if token == "" {
 		return "", false
 	}

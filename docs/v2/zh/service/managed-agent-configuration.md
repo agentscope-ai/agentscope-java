@@ -17,7 +17,7 @@ en_link: /v2/en/service/managed-agent-configuration
 | 更新定义 | `PATCH /api/v1/agents/{id}/definition` | 顶层传行为字段和当前定义的 `version`；`name` 必填；返回 `agent,definition` |
 | 定义版本列表 / 单版 | `GET /api/v1/agents/{id}/versions`、`GET /api/v1/agents/{id}/versions/{version}` | 分别返回 `versions`、`version`，并包含 `agentId` |
 
-使用平台 Bearer token 和已授权 Namespace。创建时的行为字段位于 `definition` 中；更新时直接放在请求顶层。目录 `agent.version` 与 `definition.version` 分别控制各自更新，不能混用。
+本地开发模式使用默认 Namespace，无需认证请求头。创建时的行为字段位于 `definition` 中；更新时直接放在请求顶层。目录 `agent.version` 与 `definition.version` 分别控制各自更新，不能混用。
 
 ## Agent 定义参数
 
@@ -44,18 +44,17 @@ en_link: /v2/en/service/managed-agent-configuration
 定义更新不是任意字段的局部合并。应读取原定义、保留未修改的可写字段，再发出 PATCH，避免清空其他人配置的工具或资源。以下例子沿用[创建指南](/v2/zh/service/create-managed-agent)中的环境变量，仅修改 system：
 
 ```bash
-DEFINITION=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+DEFINITION=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/definition"
+)
 UPDATED=$(printf '%s' "$DEFINITION" | jq '.definition | {
   name, description, system, model, maxIters, tools, mcpServers, skills, multiagent,
   workspaceId, workspacePath, workspaceBinding, defaultEnvironmentId,
   defaultVaultIds, defaultMemoryStoreIds, version
 } | .system = "Read supplied sources. Cite evidence and list open questions."')
-curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$UPDATED"
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+  -H "Content-Type: application/json" \
+  --data-binary "$UPDATED"
 ```
 
 有 Workspace 绑定时，指令和工具覆盖还需遵循 `workspaceBinding.overrides` 与 `instructions` 的规则。Agent key 是目录中的稳定身份，不通过改显示名称来迁移。
@@ -111,9 +110,9 @@ Agent 的默认资源用于创建新会话，不会在修改定义后自动替�
 沿用[创建指南](/v2/zh/service/create-managed-agent)的 `AGENT_ID` 和平台身份变量。命令先读取完整定义，保留其他可写字段，再合入资源默认值并提交定义版本，因此不会因为只修改资源而清空工具或指令。
 
 ```bash
-CURRENT=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+CURRENT=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/definition"
+)
 UPDATED=$(printf '%s' "$CURRENT" | jq --slurpfile resources resource-defaults.json '
   .definition | {
     name, description, system, model, maxIters, tools, mcpServers, skills, multiagent,
@@ -122,11 +121,9 @@ UPDATED=$(printf '%s' "$CURRENT" | jq --slurpfile resources resource-defaults.js
   } | . + ($resources[0] | with_entries(select(
     .key == "defaultEnvironmentId" or .key == "defaultMemoryStoreIds" or .key == "defaultVaultIds"
   )))')
-curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$UPDATED" \
-  | jq '.definition | {version, defaultEnvironmentId, defaultMemoryStoreIds, defaultVaultIds}'
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+  -H "Content-Type: application/json" \
+  --data-binary "$UPDATED"| jq '.definition | {version, defaultEnvironmentId, defaultMemoryStoreIds, defaultVaultIds}'
 ```
 
 保存成功后，检查返回的资源 ID 和新定义版本，再创建新的 Session。若返回 `409 Conflict`，说明定义在读取后又被修改，应重新读取并核对后再提交。默认绑定只决定运行时可以使用哪些资源；工具是否启用、是否需要确认，以及外部服务是否授予访问权限，仍按各自配置生效。
@@ -152,10 +149,28 @@ curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition
 }
 ```
 
-创建响应包含 Session 的 `id`，随后可以向该 Session 提交 Turn。资源需对当前身份可用；不要把 Environment key 用作用户 Bearer token。输入、文件、动作、预算和恢复请求体见[会话指南](/v2/zh/service/session-event-log)，路径索引见 [API 参考](/v2/zh/service/api-reference)。
+创建响应包含 Session 的 `id`，随后可以向该 Session 提交 Turn。输入、文件、动作、预算和恢复请求体见[会话指南](/v2/zh/service/session-event-log)，路径索引见 [API 参考](/v2/zh/service/api-reference)。
 
 通过 Session API 创建会话时，Service 固定当时的 Agent 定义和运行配置。更新定义后创建新的 Session，已有会话继续使用自己的版本；需要调整当前会话的环境、Memory 或 Vault 时，使用该 Session 的 PATCH 接口，并遵守相应资源的访问权限。应用接入流程见[服务 API](/v2/zh/service/service-api)。
 
 ## 一次调整一个层次
 
 先用默认模型验证文本请求，再调整职责和迭代上限；随后绑定 Workspace、Environment、Memory 和 Vault，逐项检查工具行为。模型解析错误应检查 provider 与部署，工具等待应检查 Environment 或待确认事项；增加 `maxIters` 不能修复连接故障。
+
+<span id="curl-management"></span>
+
+## 查询历史定义版本
+
+以下示例沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的本地地址和默认空间变量。将资源 ID 替换为前面创建或查询得到的值。
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/versions"
+```
+
+从列表选择一个真实的 version，下面读取该定义，不会切换现有 Session 的版本。
+
+```bash
+AGENT_VERSION="VERSION_FROM_LIST"
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/versions/$AGENT_VERSION"
+```
