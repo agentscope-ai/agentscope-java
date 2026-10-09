@@ -113,7 +113,7 @@ call(msgs, RuntimeContext(userId, sessionId))
 | `InMemoryAgentStateStore` | `agentscope-core` | 单元测试 / 单进程演示;进程退出全部丢失 |
 | `JsonFileAgentStateStore` | `agentscope-core` | 单机开发、文件落盘即可恢复;不能跨节点共享。**`HarnessAgent` LEGACY 模式默认值**,落在 `~/.agentscope/state/<agentId>/`(可通过 `agentscope.state.home` 系统属性改根目录);**单机** |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | **生产首选**,多副本共享;支持 Jedis / Lettuce / Redisson(Standalone / Cluster / Sentinel) |
-| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | 需要把状态沉淀进关系型库(审计、报表)时使用 |
+| `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | 需要把状态沉淀进关系型库(审计、报表)时使用 |
 
 切换非常简单——只在构造期 `.stateStore(...)` 一次:
 
