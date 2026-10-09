@@ -2658,8 +2658,8 @@ const file_internal_asdp_asdp_proto_rawDesc = "" +
 	"\x14CONFIG_TYPE_OVERRIDE\x10\x04\x12\x15\n" +
 	"\x11CONFIG_TYPE_MODEL\x10\x052l\n" +
 	"\x15AgentDataPlaneService\x12S\n" +
-	"\aConnect\x12 .agentscope.protocol.v1.Upstream\x1a\".agentscope.protocol.v1.Downstream(\x010\x01B\x8f\x01\n" +
-	" io.agentscope.controlplane.protoB\tAsdpProtoP\x01Z^github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/asdpb\x06proto3"
+	"\aConnect\x12 .agentscope.protocol.v1.Upstream\x1a\".agentscope.protocol.v1.Downstream(\x010\x01B\x92\x01\n" +
+	" io.agentscope.controlplane.protoB\tAsdpProtoP\x01Zagithub.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/asdpb\x06proto3"
 
 var (
 	file_internal_asdp_asdp_proto_rawDescOnce sync.Once

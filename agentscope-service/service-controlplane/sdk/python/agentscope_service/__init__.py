@@ -39,7 +39,7 @@ import os
 import socket
 from typing import Any, Optional
 
-__version__ = "0.1.0"
+__version__ = "2.1.0b1"
 
 from .adapters.base import FrameworkAdapter
 from .adapters.registry import find_adapter, register_adapter, registered_adapters

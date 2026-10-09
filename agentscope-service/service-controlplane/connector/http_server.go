@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/prober"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/prober"
 )
 
 // ErrNotFound is returned by ContractProvider methods when the requested

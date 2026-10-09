@@ -60,12 +60,18 @@ class AgentBuilderReuseTest {
 
     @Test
     void configurationCopyDoesNotChangeSourceRegistrations() {
-        var builder = ReActAgent.builder().name("original").model(mock(Model.class));
+        var builder =
+                ReActAgent.builder()
+                        .name("original")
+                        .agentId("original-id")
+                        .model(mock(Model.class));
         var copy = builder.copy().name("copy").skillRepository(mock(AgentSkillRepository.class));
         try (var original = builder.build();
                 var changed = copy.build()) {
             assertEquals("original", original.getName());
             assertEquals("copy", changed.getName());
+            assertEquals("original-id", original.getAgentId());
+            assertEquals("original-id", changed.getAgentId());
             assertEquals(
                     0,
                     original.getMiddlewares().stream()

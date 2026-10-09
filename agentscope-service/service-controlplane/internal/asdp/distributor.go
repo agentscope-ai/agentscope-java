@@ -26,7 +26,7 @@ import (
 	otelTrace "go.opentelemetry.io/otel/trace"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/tracing"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/tracing"
 )
 
 // Distributor handles config push distribution to connected data plane instances.

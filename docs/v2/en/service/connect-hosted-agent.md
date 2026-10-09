@@ -5,7 +5,7 @@ description: Connect a Runtime Host, select a runtime through the API, create a 
 ---
 
 <Note>
-This is preview documentation. The release is not yet generally available.
+This guide uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 A Hosted Agent connects a Coding Agent on your computer or server. Runtime Host starts the provider, prepares its working directory, and reports results. Applications call the Agent through the Session API or use it as an executor in a Team or Workflow.
@@ -16,7 +16,7 @@ Hosted Agents work independently or join a team coordinated by a Managed Lead. R
 
 ## Connect an execution host
 
-Install and authenticate the provider on the target machine, and verify that it can complete a request. Install the CLI using the [Runtime Host guide](/v2/en/service/runtime-host), then run:
+Install and authenticate the provider on the target machine, and verify that it can complete a request. Use `go install` with Go 1.26 or newer to install both CLI commands at `v2.1.0-BETA1`, following the [Runtime Host guide](/v2/en/service/runtime-host) to configure PATH. Then run:
 
 ```bash
 as connect https://agentscope.example.com

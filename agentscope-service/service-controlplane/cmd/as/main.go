@@ -19,7 +19,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/version"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/version"
 	"github.com/spf13/cobra"
 )
 

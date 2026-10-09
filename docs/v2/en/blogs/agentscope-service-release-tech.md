@@ -227,13 +227,11 @@ The Sidecar is not "reimplementing an agent loop"; it is the minimal observabili
 
 ### Local Startup and Validation
 
-```bash
-export DASHSCOPE_API_KEY=sk-xxx
-cd agentscope-service
-BUILDER_REBUILD=1 scripts/dev-up.sh
-# Console: http://localhost:8080
-scripts/smoke.sh
-```
+Follow [Deploy and prepare Service](/v2/en/service/quickstart) to start the published
+Docker Compose package. Use the generated administrator password from `.env` at
+http://localhost:18080. Install CLI/Runtime Host with [Go](/v2/en/service/runtime-host)
+for Hosted Agent execution, or use the [Helm installation guide](/v2/en/service/kubernetes)
+for production Kubernetes deployment.
 
 It is recommended to validate at least three paths:
 

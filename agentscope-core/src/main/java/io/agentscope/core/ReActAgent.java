@@ -5693,6 +5693,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             copy.sessionLogStore = this.sessionLogStore;
             copy.sessionLogAgentId = this.sessionLogAgentId;
             copy.name = this.name;
+            copy.agentId = this.agentId;
             copy.description = this.description;
             copy.sysPrompt = this.sysPrompt;
             copy.model = this.model;
