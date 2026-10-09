@@ -280,6 +280,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final StructuredOutputRetryPolicy structuredOutputPolicy;
 
     /**
+     * Test-only seam for the structured-output validation loop: when non-null, replaces
+     * {@link StructuredOutputUtils#extractJsonObject(String)} during validation. The
+     * structured-output test suite sets it via reflection to inject unexpected (non-parse)
+     * extraction failures that no model response can produce. Volatile because the reactive
+     * pipeline runs the validation on a worker thread; production code never assigns it.
+     */
+    private volatile Function<String, JsonNode> structuredOutputExtractionOverride;
+
+    /**
      * Agent-owned toolkit (a deep copy made at {@code build()} time, isolated per agent instance).
      * Shared across this agent's concurrent calls; per-call structured-output tools are NOT
      * registered here — they live on the per-call {@link CallExecution} scope.
@@ -2899,7 +2908,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         List<StructuredOutputValidator.ValidationError> errors;
                         String parseErrorMessage = null;
                         try {
-                            payload = StructuredOutputUtils.extractJsonObject(text);
+                            Function<String, JsonNode> extractor =
+                                    structuredOutputExtractionOverride != null
+                                            ? structuredOutputExtractionOverride
+                                            : StructuredOutputUtils::extractJsonObject;
+                            payload = extractor.apply(text);
                             errors = StructuredOutputValidator.validate(payload, schema);
                         } catch (StructuredOutputParseException parseFailure) {
                             parseErrorMessage = parseFailure.getMessage();

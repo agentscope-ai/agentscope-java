@@ -54,13 +54,12 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.mockito.MockedStatic;
-import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -965,10 +964,10 @@ class ReActAgentStructuredOutputTest {
     @Test
     @DisplayName("unknown transient failure keeps limited recovery: retried, then succeeds")
     void testUnknownTransientFailureIsRetriedAndRecovers() {
-        // Attempt 1: extraction throws an unexpected NON-parse exception (simulated by
-        // stubbing StructuredOutputUtils.extractJsonObject — the unknown branch). The
-        // unknown branch must keep limited recovery instead of failing the whole call.
-        // Attempt 2: the real extraction runs and succeeds.
+        // Attempt 1: extraction throws an unexpected NON-parse exception (injected via
+        // the structuredOutputExtractionOverride seam — no model response can produce
+        // this). The unknown branch must keep limited recovery instead of failing the
+        // whole call. Attempt 2: the real extraction runs and succeeds.
         AtomicInteger calls = new AtomicInteger();
         MockModel flakyModel =
                 new MockModel(
@@ -1006,22 +1005,23 @@ class ReActAgentStructuredOutputTest {
 
         Msg responseMsg;
         AtomicBoolean firstExtractionFails = new AtomicBoolean(true);
-        try (MockedStatic<StructuredOutputUtils> utils =
-                Mockito.mockStatic(
-                        StructuredOutputUtils.class,
-                        invocation -> {
-                            // CALLS_REAL_METHODS as the default answer: only the first
-                            // extractJsonObject call is intercepted, everything else runs
-                            // for real — unstubbed methods can never silently become
-                            // null-returning mocks as production code evolves.
-                            if (invocation.getMethod().getName().equals("extractJsonObject")
-                                    && firstExtractionFails.getAndSet(false)) {
-                                throw new IllegalStateException("transient registry hiccup");
-                            }
-                            return invocation.callRealMethod();
-                        })) {
+        // Only the first extraction fails; the retry runs the real extractor. The seam is
+        // an instance field, so it applies regardless of the thread the reactive pipeline
+        // runs the validation on (Mockito static mocks are thread-scoped and miss the
+        // boundedElastic hop in the execution pipeline).
+        setExtractionOverride(
+                agent,
+                text -> {
+                    if (firstExtractionFails.getAndSet(false)) {
+                        throw new IllegalStateException("transient registry hiccup");
+                    }
+                    return StructuredOutputUtils.extractJsonObject(text);
+                });
+        try {
             responseMsg = agent.call(inputMsg, MathAnswer.class).block();
             assertNotNull(responseMsg);
+        } finally {
+            setExtractionOverride(agent, null);
         }
         assertEquals(2, calls.get(), "transient failure must be retried, not fatal");
         assertEquals(42, responseMsg.getStructuredData(MathAnswer.class).answer);
@@ -1070,15 +1070,12 @@ class ReActAgentStructuredOutputTest {
                         .content(TextBlock.builder().text("What is 3 + 4?").build())
                         .build();
 
-        try (MockedStatic<StructuredOutputUtils> utils =
-                Mockito.mockStatic(
-                        StructuredOutputUtils.class,
-                        invocation -> {
-                            if (invocation.getMethod().getName().equals("extractJsonObject")) {
-                                throw new IllegalStateException("persistent internal fault");
-                            }
-                            return invocation.callRealMethod();
-                        })) {
+        setExtractionOverride(
+                agent,
+                text -> {
+                    throw new IllegalStateException("persistent internal fault");
+                });
+        try {
             StructuredOutputUnknownFailureException ex =
                     assertThrows(
                             StructuredOutputUnknownFailureException.class,
@@ -1089,6 +1086,8 @@ class ReActAgentStructuredOutputTest {
                     calls.get(),
                     "the fault consumes the default retry budget (3 attempts) and is"
                             + " rethrown without a synthetic-tool round trip");
+        } finally {
+            setExtractionOverride(agent, null);
         }
     }
 
@@ -1161,18 +1160,19 @@ class ReActAgentStructuredOutputTest {
 
         Msg responseMsg;
         AtomicBoolean firstExtractionFails = new AtomicBoolean(true);
-        try (MockedStatic<StructuredOutputUtils> utils =
-                Mockito.mockStatic(
-                        StructuredOutputUtils.class,
-                        invocation -> {
-                            if (invocation.getMethod().getName().equals("extractJsonObject")
-                                    && firstExtractionFails.getAndSet(false)) {
-                                throw new IllegalStateException("transient registry hiccup");
-                            }
-                            return invocation.callRealMethod();
-                        })) {
+        setExtractionOverride(
+                agent,
+                text -> {
+                    if (firstExtractionFails.getAndSet(false)) {
+                        throw new IllegalStateException("transient registry hiccup");
+                    }
+                    return StructuredOutputUtils.extractJsonObject(text);
+                });
+        try {
             responseMsg = agent.call(inputMsg, MathAnswer.class).block();
             assertNotNull(responseMsg);
+        } finally {
+            setExtractionOverride(agent, null);
         }
         assertEquals(2, calls.get());
         assertEquals(42, responseMsg.getStructuredData(MathAnswer.class).answer);
@@ -1235,18 +1235,19 @@ class ReActAgentStructuredOutputTest {
 
         Msg responseMsg;
         AtomicBoolean firstExtractionFails = new AtomicBoolean(true);
-        try (MockedStatic<StructuredOutputUtils> utils =
-                Mockito.mockStatic(
-                        StructuredOutputUtils.class,
-                        invocation -> {
-                            if (invocation.getMethod().getName().equals("extractJsonObject")
-                                    && firstExtractionFails.getAndSet(false)) {
-                                throw new IllegalStateException("transient registry hiccup");
-                            }
-                            return invocation.callRealMethod();
-                        })) {
+        setExtractionOverride(
+                agent,
+                text -> {
+                    if (firstExtractionFails.getAndSet(false)) {
+                        throw new IllegalStateException("transient registry hiccup");
+                    }
+                    return StructuredOutputUtils.extractJsonObject(text);
+                });
+        try {
             responseMsg = agent.call(inputMsg, MathAnswer.class).block();
             assertNotNull(responseMsg);
+        } finally {
+            setExtractionOverride(agent, null);
         }
         assertEquals(42, responseMsg.getStructuredData(MathAnswer.class).answer);
 
@@ -1400,6 +1401,22 @@ class ReActAgentStructuredOutputTest {
                                                         .getThinking()
                                                         .contains("bad attempt"));
         assertTrue(!leakedThinking, "failed-turn thinking leaked into final message");
+    }
+
+    /**
+     * Sets the structured-output extraction seam on the agent. Uses reflection because the
+     * field is private to {@code io.agentscope.core.ReActAgent} while this suite lives in
+     * {@code io.agentscope.core.agent} (same pattern as ReActAgentPerSessionStateTest).
+     */
+    private static void setExtractionOverride(ReActAgent agent, Function<String, JsonNode> fn) {
+        try {
+            java.lang.reflect.Field field =
+                    ReActAgent.class.getDeclaredField("structuredOutputExtractionOverride");
+            field.setAccessible(true);
+            field.set(agent, fn);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("failed to set extraction override", e);
+        }
     }
 
     /** Schema target for the error-feedback retry test. */
