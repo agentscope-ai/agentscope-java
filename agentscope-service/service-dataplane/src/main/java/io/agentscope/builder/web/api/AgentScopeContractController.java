@@ -19,13 +19,11 @@ import io.agentscope.builder.control.ControlPlaneClient;
 import io.agentscope.builder.control.SessionListItem;
 import io.agentscope.builder.control.SessionResolveResult;
 import io.agentscope.builder.web.managed.DataSessionService;
+import io.agentscope.builder.web.managed.LegacySessionEventAdapter;
 import io.agentscope.builder.web.managed.SessionEventDto;
 import io.agentscope.builder.web.managed.SessionEventTypes;
 import io.agentscope.builder.web.managed.SessionStatuses;
-import io.agentscope.builder.web.managed.service.ManagedJsonHelper;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
-import io.agentscope.builder.web.persistence.jpa.SessionEventEntity;
-import io.agentscope.builder.web.persistence.jpa.SessionEventEntityRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -47,7 +45,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * aistio data-plane HTTP contract ({@code /agentscope/*}). Public so the control-plane poller can
+ * controlplane data-plane HTTP contract ({@code /agentscope/*}). Public so the control-plane poller can
  * probe without a console JWT. Session rows come from the control plane; transcripts from the local
  * event log.
  */
@@ -84,8 +82,6 @@ public class AgentScopeContractController {
     private final ControlPlaneClient controlPlaneClient;
     private final DataSessionService sessionService;
     private final SessionEventLog eventLog;
-    private final SessionEventEntityRepository eventRepository;
-    private final ManagedJsonHelper jsonHelper;
     private final int serverPort;
     private final String agentName;
     private final String version;
@@ -94,16 +90,12 @@ public class AgentScopeContractController {
             ControlPlaneClient controlPlaneClient,
             DataSessionService sessionService,
             SessionEventLog eventLog,
-            SessionEventEntityRepository eventRepository,
-            ManagedJsonHelper jsonHelper,
             @Value("${server.port:8082}") int serverPort,
             @Value("${builder.dataplane.agent-name:agentscope-java-dataplane}") String agentName,
             @Value("${builder.dataplane.version:2.0.1}") String version) {
         this.controlPlaneClient = controlPlaneClient;
         this.sessionService = sessionService;
         this.eventLog = eventLog;
-        this.eventRepository = eventRepository;
-        this.jsonHelper = jsonHelper;
         this.serverPort = serverPort;
         this.agentName = agentName;
         this.version = version;
@@ -128,7 +120,7 @@ public class AgentScopeContractController {
         return Map.of("status", "ok");
     }
 
-    /** Level-2 session snapshots for the aistiod poller. */
+    /** Level-2 session snapshots for the service-controlplane poller. */
     @GetMapping("/sessions")
     public Map<String, Object> sessions() {
         List<Map<String, Object>> snapshots = new ArrayList<>();
@@ -181,7 +173,7 @@ public class AgentScopeContractController {
     @GetMapping("/sessions/{id}/context")
     public Map<String, Object> context(@PathVariable("id") String id) {
         SessionResolveResult resolved = requireKnownSession(id);
-        List<SessionEventDto> events = eventLog.list(id);
+        List<SessionEventDto> events = history(id);
         List<Map<String, Object>> messages = new ArrayList<>();
         for (SessionEventDto event : events) {
             if (!CONTEXT_MESSAGE_TYPES.contains(event.type())) {
@@ -194,8 +186,11 @@ public class AgentScopeContractController {
         }
         String systemPrompt = extractSystemPrompt(resolved.agentSnapshot());
         boolean compacted =
-                eventRepository.existsBySessionIdAndEventType(
-                        id, SessionEventTypes.AGENT_THREAD_CONTEXT_COMPACTED);
+                events.stream()
+                        .anyMatch(
+                                event ->
+                                        SessionEventTypes.AGENT_THREAD_CONTEXT_COMPACTED.equals(
+                                                event.type()));
         String contextHash = hashContext(systemPrompt, messages);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("sessionId", id);
@@ -218,13 +213,15 @@ public class AgentScopeContractController {
         requireKnownSession(id);
         int safeOffset = Math.max(0, offset);
         int safeLimit = limit <= 0 ? 100 : Math.min(limit, 1000);
-        List<SessionEventEntity> events =
-                eventRepository.findBySessionIdAndEventTypeInOrderBySeqAsc(id, MESSAGE_EVENT_TYPES);
+        List<SessionEventDto> events =
+                history(id).stream()
+                        .filter(event -> MESSAGE_EVENT_TYPES.contains(event.type()))
+                        .toList();
         int total = events.size();
         int to = Math.min(safeOffset + safeLimit, total);
         List<Map<String, Object>> page = new ArrayList<>();
         if (safeOffset < total) {
-            for (SessionEventEntity entity : events.subList(safeOffset, to)) {
+            for (SessionEventDto entity : events.subList(safeOffset, to)) {
                 Map<String, Object> item = toMessageItem(entity);
                 if (item != null) {
                     page.add(item);
@@ -242,29 +239,32 @@ public class AgentScopeContractController {
 
     private Map<String, Object> toSnapshot(SessionListItem item) {
         String id = item.id();
+        List<SessionEventDto> events = history(id);
         long messageCount =
-                eventRepository.countBySessionIdAndEventTypeIn(id, USER_AGENT_MESSAGE_TYPES);
-        long lastEventAt = eventRepository.maxCreatedAt(id);
+                events.stream()
+                        .filter(event -> USER_AGENT_MESSAGE_TYPES.contains(event.type()))
+                        .count();
+        long lastEventAt = events.stream().mapToLong(SessionEventDto::createdAt).max().orElse(0);
         long lastActiveMs = Math.max(item.updatedAt(), lastEventAt);
         long promptTokens = 0L;
         long completionTokens = 0L;
-        List<SessionEventEntity> usageEvents =
-                eventRepository.findBySessionIdAndEventTypeInOrderBySeqAsc(
-                        id, List.of(SessionEventTypes.SPAN_MODEL_REQUEST_END));
-        for (SessionEventEntity entity : usageEvents) {
-            long[] tokens = extractUsage(entity.getPayloadJson());
+        for (SessionEventDto event : events) {
+            if (!SessionEventTypes.SPAN_MODEL_REQUEST_END.equals(event.type())) continue;
+            long[] tokens = extractUsage(event.payload());
             promptTokens += tokens[0];
             completionTokens += tokens[1];
         }
         boolean compacted =
-                eventRepository.existsBySessionIdAndEventType(
-                        id, SessionEventTypes.AGENT_THREAD_CONTEXT_COMPACTED);
+                events.stream()
+                        .anyMatch(
+                                event ->
+                                        SessionEventTypes.AGENT_THREAD_CONTEXT_COMPACTED.equals(
+                                                event.type()));
         int effective =
-                compacted
-                        ? (int)
-                                eventRepository.countBySessionIdAndEventTypeIn(
-                                        id, CONTEXT_MESSAGE_TYPES)
-                        : (int) messageCount;
+                (int)
+                        events.stream()
+                                .filter(event -> CONTEXT_MESSAGE_TYPES.contains(event.type()))
+                                .count();
         String contextHash =
                 hashContext(
                         null,
@@ -292,6 +292,21 @@ public class AgentScopeContractController {
         snap.put("isCompacted", compacted);
         snap.put("effectiveMessageCount", effective);
         return snap;
+    }
+
+    /** The final turn output can revise a message; expose its latest value only. */
+    private List<SessionEventDto> history(String sessionId) {
+        Map<String, SessionEventDto> events = new LinkedHashMap<>();
+        for (SessionEventDto source : eventLog.list(sessionId)) {
+            SessionEventDto event = LegacySessionEventAdapter.adapt(source);
+            Object messageId = event.payload().get("message_id");
+            String identity =
+                    USER_AGENT_MESSAGE_TYPES.contains(event.type()) && messageId != null
+                            ? "message:" + messageId
+                            : "event:" + event.id();
+            events.put(identity, event);
+        }
+        return List.copyOf(events.values());
     }
 
     private SessionResolveResult requireKnownSession(String id) {
@@ -349,14 +364,14 @@ public class AgentScopeContractController {
         return msg;
     }
 
-    private Map<String, Object> toMessageItem(SessionEventEntity entity) {
-        String role = roleForType(entity.getEventType());
+    private Map<String, Object> toMessageItem(SessionEventDto entity) {
+        String role = roleForType(entity.type());
         if (role == null) {
             return null;
         }
-        Map<String, Object> payload = jsonHelper.readMap(entity.getPayloadJson());
+        Map<String, Object> payload = entity.payload();
         Map<String, Object> item = new LinkedHashMap<>();
-        item.put("seq", (int) Math.min(Integer.MAX_VALUE, entity.getSeq()));
+        item.put("seq", (int) Math.min(Integer.MAX_VALUE, entity.seq()));
         item.put("role", role);
         item.put("content", textFromPayload(payload));
         if (payload.get("name") instanceof String name) {
@@ -367,9 +382,9 @@ public class AgentScopeContractController {
         if (payload.get("input") != null) {
             item.put("toolInput", payload.get("input"));
         }
-        if (SessionEventTypes.AGENT_TOOL_RESULT.equals(entity.getEventType())
-                || SessionEventTypes.USER_TOOL_RESULT.equals(entity.getEventType())
-                || SessionEventTypes.USER_CUSTOM_TOOL_RESULT.equals(entity.getEventType())) {
+        if (SessionEventTypes.AGENT_TOOL_RESULT.equals(entity.type())
+                || SessionEventTypes.USER_TOOL_RESULT.equals(entity.type())
+                || SessionEventTypes.USER_CUSTOM_TOOL_RESULT.equals(entity.type())) {
             Object out = payload.get("output");
             if (out == null) {
                 out = payload.get("text");
@@ -378,7 +393,7 @@ public class AgentScopeContractController {
                 item.put("toolOutput", String.valueOf(out));
             }
         }
-        item.put("occurredAt", toRfc3339(entity.getCreatedAt()));
+        item.put("occurredAt", toRfc3339(entity.createdAt()));
         return item;
     }
 
@@ -432,8 +447,7 @@ public class AgentScopeContractController {
         return "";
     }
 
-    private long[] extractUsage(String payloadJson) {
-        Map<String, Object> payload = jsonHelper.readMap(payloadJson);
+    private long[] extractUsage(Map<String, Object> payload) {
         Object usage = payload.get("usage");
         if (!(usage instanceof Map<?, ?> map)) {
             return new long[] {0L, 0L};

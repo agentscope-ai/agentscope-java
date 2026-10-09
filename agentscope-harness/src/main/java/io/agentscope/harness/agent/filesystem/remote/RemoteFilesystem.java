@@ -145,6 +145,11 @@ public class RemoteFilesystem implements AbstractFilesystem {
         return rc -> frozen;
     }
 
+    @Override
+    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
+        return new io.agentscope.harness.agent.session.StoreSessionStorage(store, getNamespace(rc));
+    }
+
     private List<String> getNamespace(RuntimeContext rc) {
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {

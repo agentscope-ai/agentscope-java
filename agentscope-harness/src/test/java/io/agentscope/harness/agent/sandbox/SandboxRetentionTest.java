@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doCallRealMethod;
@@ -91,12 +92,21 @@ class SandboxRetentionTest {
         assertEquals(SandboxReleasePolicy.RETAIN, result.getReleasePolicy());
         ctx.put(SandboxContext.class, config);
         ctx.put(SandboxAcquireResult.class, result);
-        new SandboxLifecycleMiddleware(guarded, new SandboxBackedFilesystem()).releaseForCall(ctx);
+        RuntimeContext copied = RuntimeContext.builder(ctx).build();
+        SandboxLifecycleMiddleware middleware =
+                new SandboxLifecycleMiddleware(guarded, new SandboxBackedFilesystem());
+        middleware.releaseForCall(ctx);
+        assertTrue(copied.get(SandboxAcquireResult.class).isReleased());
+        middleware.releaseForCall(copied);
         InOrder order = inOrder(sandbox, store, lease);
         order.verify(sandbox).stop();
         order.verify(sandbox).onRetained();
         order.verify(store).save(any(), eq("saved"));
         order.verify(lease).close();
+        verify(sandbox).stop();
+        verify(sandbox).onRetained();
+        verify(store).save(any(), eq("saved"));
+        verify(lease).close();
         verify(sandbox, never()).shutdown();
     }
 

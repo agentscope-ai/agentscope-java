@@ -1,0 +1,3 @@
+{
+  "message": "For fictional order O-1001, explain the delay and whether delivery tomorrow can be guaranteed. Ask before creating a support ticket."
+}

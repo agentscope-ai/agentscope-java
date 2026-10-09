@@ -1,5 +1,5 @@
 ---
-title: Customer Use Cases
+title: User Case Studies
 zh_link: /v2/zh/blogs/usecases/index
 ---
 

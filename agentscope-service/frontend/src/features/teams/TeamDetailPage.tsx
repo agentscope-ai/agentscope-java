@@ -24,7 +24,7 @@ import { useControlPlaneScope } from "@/app/ScopeContext";
 import { AgentIdentity } from "@/components/AgentPicker";
 import { EmptyState } from "@/components/EmptyState";
 import { Page, PageHeader } from "@/components/Page";
-import { PublishEndpointCard } from "@/components/PublishEndpointCard";
+import { SessionUsageCard } from "@/components/SessionUsageCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -155,7 +155,7 @@ export default function TeamDetailPage() {
           </span>
         </span>
         <span>{team.members?.length || 0} workers</span>
-        <span>{overview.endpoints.published} published APIs</span>
+        <span>Session API</span>
         <span>{overview.reason}</span>
       </div>
       <nav
@@ -271,11 +271,10 @@ export default function TeamDetailPage() {
         />
       )}
       {tab === "connections" && (
-        <PublishEndpointCard
+        <SessionUsageCard
           targetType="team"
           targetRef={team.id}
           targetName={team.name}
-          ownerPath={`/agent-center/teams/${team.id}?tab=connections`}
         />
       )}
       {tab === "settings" && (
