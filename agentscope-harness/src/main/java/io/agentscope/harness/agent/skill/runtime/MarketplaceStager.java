@@ -23,6 +23,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -235,7 +236,15 @@ public final class MarketplaceStager {
 
             Path stagedDir = scopeRoot.resolve(ns).resolve(name);
             try {
-                materializeIfChanged(stagedDir, skill.getResources());
+                Map<String, String> resources = skill.getResources();
+                if (resources.isEmpty() && skill.getOriginDir().isPresent()) {
+                    // A rejected disk source may itself live in this cache. Failure must not
+                    // make the still-visible skill eligible for orphan GC in this pass.
+                    retained.add(stagedDir);
+                    materializeFromOrigin(stagedDir, skill.getOriginDir().get());
+                } else {
+                    materializeIfChanged(stagedDir, resources);
+                }
                 // Mark as live before GC runs: this is what stops a concurrent call — or
                 // another replica sharing the volume — from treating it as an orphan.
                 touch(stagedDir);
@@ -299,6 +308,74 @@ public final class MarketplaceStager {
         // Remove stale files under the staged dir that no longer correspond to a published
         // resource for this skill. Keeps stage idempotent and self-cleaning per skill.
         removeUnexpected(stagedDir, expected);
+    }
+
+    /**
+     * Lazy host repositories keep support files on disk rather than in the resource map.
+     * Read one file at a time, applying the eager loader's hidden-file and SKILL.md exclusions.
+     * Symbolic links inside the source tree are not followed or copied.
+     */
+    private void materializeFromOrigin(Path stagedDir, Path originDir) throws IOException {
+        Path source = originDir.toRealPath();
+        Path destination = stagedDir.toAbsolutePath().normalize();
+        validateOriginTarget(destination);
+        // Resolve workspace/ancestor aliases without creating a potentially overlapping cache.
+        Path existingAncestor = destination;
+        while (!Files.exists(existingAncestor, LinkOption.NOFOLLOW_LINKS)) {
+            existingAncestor = existingAncestor.getParent();
+        }
+        Path realDestination =
+                existingAncestor.toRealPath().resolve(existingAncestor.relativize(destination));
+        if (realDestination.startsWith(source) || source.startsWith(realDestination)) {
+            throw new IOException("Skill cache and source directory must not overlap");
+        }
+        Files.createDirectories(destination);
+        Set<Path> expected = new HashSet<>();
+        Files.walkFileTree(
+                source,
+                new SimpleFileVisitor<>() {
+                    @Override
+                    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs)
+                            throws IOException {
+                        if (!dir.equals(source)
+                                && (dir.getFileName().toString().startsWith(".")
+                                        || Files.isHidden(dir))) {
+                            return FileVisitResult.SKIP_SUBTREE;
+                        }
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                            throws IOException {
+                        if (!attrs.isRegularFile()
+                                || file.equals(source.resolve("SKILL.md"))
+                                || file.getFileName().toString().startsWith(".")
+                                || Files.isHidden(file)) {
+                            return FileVisitResult.CONTINUE;
+                        }
+                        Path target = destination.resolve(source.relativize(file)).normalize();
+                        validateOriginTarget(target);
+                        writeIfChanged(target, Files.readAllBytes(file));
+                        expected.add(target);
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
+        removeUnexpected(destination, expected);
+    }
+
+    /** Do not let an existing cache symlink redirect the new disk-backed staging path. */
+    private void validateOriginTarget(Path target) throws IOException {
+        Path workspace = workspaceRoot.toAbsolutePath().normalize();
+        Path cache = workspace.resolve(CACHE_DIR);
+        if (!target.startsWith(cache) || target.equals(cache)) {
+            throw new IOException("Skill resource must stay inside the cache");
+        }
+        for (Path path = target; !path.equals(workspace); path = path.getParent()) {
+            if (Files.isSymbolicLink(path)) {
+                throw new IOException("Symbolic links are not allowed in the skill cache: " + path);
+            }
+        }
     }
 
     private void writeIfChanged(Path target, byte[] bytes) throws IOException {
