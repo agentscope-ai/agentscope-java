@@ -143,22 +143,21 @@ class HarnessAgentIntegrationExampleTest {
             String combined =
                     captor.getAllValues().stream()
                             .map(HarnessAgentIntegrationExampleTest::joinAllText)
-                            .filter(s -> s.contains("## AgentStateStore Context"))
+                            .filter(s -> s.contains("## Runtime Environment"))
                             .findFirst()
                             .orElse("");
 
             assertTrue(
-                    combined.contains("## AgentStateStore Context"),
-                    "AgentStateStore context should be injected; model saw: "
+                    combined.contains("## Runtime Environment"),
+                    "Runtime environment should be injected; model saw: "
                             + captor.getAllValues().stream()
                                     .map(HarnessAgentIntegrationExampleTest::joinAllText)
                                     .toList());
-            // Current WorkspaceContextHook uses markdown (##) guidance + XML <loaded_context>
-            // blocks
+            // The final builder renders workspace instructions and references separately.
             assertTrue(
                     combined.contains("## Domain Knowledge") || combined.contains("## Workspace"),
                     "expected workspace guidance sections");
-            assertTrue(combined.contains("`AGENTS.md`") || combined.contains("agents_context"));
+            assertTrue(combined.contains("<project_rules "));
             assertTrue(
                     combined.contains(agentsPersona),
                     "AGENTS.md should appear under workspace hook");

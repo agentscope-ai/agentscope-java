@@ -325,6 +325,7 @@ final class HarnessAgentBuilderSupport {
         final GenerateOptions capturedGenOpts = b.generateOptions;
         final String capturedEnvMemory = b.environmentMemory;
         final MemoryConfig capturedMemoryConfig = b.memoryConfig;
+        final var capturedContextPolicy = b.contextPolicy;
         final List<Hook> capturedHooks = List.copyOf(b.hooks);
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
@@ -353,6 +354,7 @@ final class HarnessAgentBuilderSupport {
         // history by sessionId. Null in purely local default deployments — children then keep
         // their own local store, preserving legacy behaviour.
         final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
+        final var capturedSessionHistory = b.sessionHistoryConfigurer();
 
         return (RuntimeContext parentRc) -> {
             // general-purpose subagent shares the parent's workspace and is short-lived per spawn;
@@ -371,6 +373,7 @@ final class HarnessAgentBuilderSupport {
                             .maxIters(capturedMaxIters)
                             .environmentMemory(capturedEnvMemory)
                             .memory(capturedMemoryConfig)
+                            .contextPolicy(capturedContextPolicy)
                             .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .enableAgentTracingLog(capturedAgentTracingLogEnabled)
                             .maxContextTokens(capturedMaxContextTokens);
@@ -401,6 +404,7 @@ final class HarnessAgentBuilderSupport {
                 sub.projectGlobalSkillsDir(capturedProjectGlobalSkillsDir);
             }
             if (capturedBackend != null) sub.abstractFilesystem(capturedBackend);
+            capturedSessionHistory.accept(sub);
             if (capturedStateStore != null) sub.stateStore(capturedStateStore);
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
@@ -451,6 +455,7 @@ final class HarnessAgentBuilderSupport {
         final AbstractFilesystem capturedSharedBackend =
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
         final MemoryConfig capturedMemoryConfig = b.memoryConfig;
+        final var capturedContextPolicy = b.contextPolicy;
         final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final boolean capturedDisableShellTool = b.disableShellTool;
@@ -479,6 +484,7 @@ final class HarnessAgentBuilderSupport {
         // See buildGeneralPurposeFactory: propagate the parent's (distributed) state store so the
         // subagent's conversation survives cross-node re-materialization. Null in local defaults.
         final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
+        final var capturedSessionHistory = b.sessionHistoryConfigurer();
 
         return (RuntimeContext parentRc) -> {
             if (decl.isRemote()) {
@@ -515,6 +521,7 @@ final class HarnessAgentBuilderSupport {
                             .maxIters(decl.getSteps())
                             .asLeafSubagent()
                             .memory(capturedMemoryConfig)
+                            .contextPolicy(capturedContextPolicy)
                             .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .sysPrompt(buildSubagentSysPrompt(sysPromptBase));
 
@@ -549,6 +556,7 @@ final class HarnessAgentBuilderSupport {
                 sub.filesystem(cloneLocalSpecForSubagent(capturedLocalFilesystemSpec));
             }
 
+            capturedSessionHistory.accept(sub);
             if (capturedStateStore != null) {
                 sub.stateStore(capturedStateStore);
             }

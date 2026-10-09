@@ -76,6 +76,7 @@ Spring Boot applications should use the provider-specific starters instead of re
 | Provider | Spring Boot starter |
 |---|---|
 | OpenAI | `agentscope-openai-spring-boot-starter` |
+| OpenAI Official | `agentscope-openai-official-spring-boot-starter` |
 | DashScope | `agentscope-dashscope-spring-boot-starter` |
 | Gemini | `agentscope-gemini-spring-boot-starter` |
 | Anthropic | `agentscope-anthropic-spring-boot-starter` |

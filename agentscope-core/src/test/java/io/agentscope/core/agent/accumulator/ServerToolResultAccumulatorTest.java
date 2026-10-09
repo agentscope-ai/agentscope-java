@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +51,7 @@ class ServerToolResultAccumulatorTest {
                 .name("web_search")
                 .output(TextBlock.builder().text(text).build())
                 .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
+                .state(ToolResultState.SUCCESS)
                 .build();
     }
 
@@ -86,6 +88,23 @@ class ServerToolResultAccumulatorTest {
 
         assertEquals(1, results.size());
         assertEquals("first", ((TextBlock) results.get(0).getOutput().get(0)).getText());
+    }
+
+    @Test
+    @DisplayName("Should replace a running partial result with a terminal result")
+    void testRunningResultIsReplacedByTerminalResult() {
+        ToolResultBlock running =
+                toolResult("call_1", "partial").withState(ToolResultState.RUNNING);
+        ToolResultBlock terminal = toolResult("call_1", "final");
+
+        accumulator.add(running);
+        accumulator.add(terminal);
+
+        List<ToolResultBlock> results = accumulator.buildAllToolResults();
+
+        assertEquals(1, results.size());
+        assertEquals(ToolResultState.SUCCESS, results.get(0).getState());
+        assertEquals("final", ((TextBlock) results.get(0).getOutput().get(0)).getText());
     }
 
     @Test

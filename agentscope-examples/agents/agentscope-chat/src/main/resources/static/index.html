@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentScope · Session Chat</title><link rel="stylesheet" href="/chat.css"></head>
+<body>
+<header><div class="brand"><span class="mark">A</span><div><b>AgentScope</b><span>Session Chat</span></div></div>
+<div class="connection"><span id="connection">正在连接</span><button id="connect">断开事件连接</button></div></header>
+<main>
+<aside><button id="new-session" class="primary">＋ 新建会话</button><label for="sessions">保存的会话</label><select id="sessions" size="8" aria-label="保存的会话"></select>
+<section class="guide"><h2>试一试</h2><button data-prompt="你好，请记住我喜欢简洁的回答。">日常聊天</button><button data-prompt="/slow 请查询资料并核对，让我试试消息与工具的断线续传。">多步执行 · 刷新续传</button><button data-prompt="/ask 请先询问我的偏好，再继续。">等待补充 · 恢复执行</button><p>默认是离线演示模型，不会访问外部服务。重启程序后选择原会话，可以继续对话。</p></section>
+<p class="model">模型 <code id="model">—</code></p></aside>
+<section class="chat"><div class="chat-heading"><div><h1>一段可以接着聊的对话</h1><p id="session-label"></p></div><span id="status" class="badge">就绪</span></div>
+<div id="notice" role="status" aria-live="polite"></div><div id="messages" aria-live="polite"></div><div id="pending"></div>
+<div class="actions"><button id="interrupt" hidden>中断执行</button><button id="resume" hidden>继续原任务</button><span id="run-label"></span></div>
+<div id="queue" class="hint"></div><label for="input-mode">输入用途</label><select id="input-mode"><option value="submit">新任务（忙时排队）</option><option value="steer">补充当前任务</option><option value="inject">只补充材料（不启动任务）</option></select><form id="compose"><label class="sr-only" for="prompt">消息</label><textarea id="prompt" rows="2" placeholder="输入消息；Enter 发送，Shift + Enter 换行" required maxlength="8000"></textarea><button id="send" class="primary">发送</button></form></section>
+<section class="history"><div class="history-heading"><h2>执行记录</h2><span>已提交</span></div><dl><div><dt>事件游标</dt><dd id="cursor">0</dd></div><div><dt>最近 checkpoint</dt><dd id="checkpoint">0</dd></div><div><dt>历史 / 工作消息</dt><dd id="counts">0 / 0</dd></div></dl><p class="hint">点击记录查看本地原始载荷。消息片段、工具参数和执行进度均从已提交日志重建。</p><ol id="trace"></ol></section>
+</main><dialog id="detail"><button id="close-detail">关闭</button><h2>原生事件</h2><pre id="payload"></pre></dialog>
+<script src="/chat.js" type="module"></script></body></html>
