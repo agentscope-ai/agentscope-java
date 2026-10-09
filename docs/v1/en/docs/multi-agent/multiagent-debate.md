@@ -1,5 +1,6 @@
 ---
 title: Multi-Agent Debate
+zh_link: /v1/zh/docs/multi-agent/multiagent-debate
 ---
 
 Multi-Agent Debate is a workflow pattern that simulates a multi-turn discussion between different agents. This pattern is particularly useful for problem-solving tasks where multiple perspectives can lead to better solutions.

@@ -1,5 +1,6 @@
 ---
 title: MongoDB
+zh_link: /v2/zh/integration/distributed/mongodb
 ---
 
 # MongoDB

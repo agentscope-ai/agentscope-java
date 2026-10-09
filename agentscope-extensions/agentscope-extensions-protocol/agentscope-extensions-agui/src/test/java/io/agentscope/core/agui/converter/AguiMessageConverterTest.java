@@ -881,6 +881,49 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertConfirmationResumeWithReasonCarriesDenialReason() {
+        AguiEvent.Interrupt interrupt =
+                new AguiEvent.Interrupt(
+                        "reply-1:tool-call-1",
+                        "tool_call",
+                        "confirm",
+                        "tool-call-1",
+                        null,
+                        null,
+                        Map.of(
+                                "toolName",
+                                "shell",
+                                "toolContent",
+                                "{\"command\":\"date\"}",
+                                "agentscope.interruptKind",
+                                "permission_confirm"));
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "reply-1:tool-call-1",
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of(
+                                                        "approved",
+                                                        false,
+                                                        "reason",
+                                                        "production command is not allowed"))))
+                        .build();
+
+        List<Msg> msgs = converter.toMsgList(input, Map.of("reply-1:tool-call-1", interrupt));
+
+        ConfirmResult cr =
+                (ConfirmResult)
+                        ((List<?>) msgs.get(0).getMetadata().get(Msg.METADATA_CONFIRM_RESULTS))
+                                .get(0);
+        assertFalse(cr.isConfirmed());
+        assertEquals("production command is not allowed", cr.getReason());
+    }
+
+    @Test
     void testConfirmationResumeWithoutApprovedFieldIsDenied() {
         AguiEvent.Interrupt interrupt =
                 new AguiEvent.Interrupt(

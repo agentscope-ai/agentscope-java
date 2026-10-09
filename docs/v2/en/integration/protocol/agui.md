@@ -1,5 +1,6 @@
 ---
 title: AG-UI
+zh_link: /v2/zh/integration/protocol/agui
 ---
 
 ## Compatibility Notes
@@ -44,11 +45,15 @@ Spring Boot applications can use the starter:
 
 ## Quickstart
 
+Configure a shared `HarnessAgent.Builder agentBuilder` as in the [Quickstart](/v2/en/docs/quickstart). Build an Agent for each request and close it when the SSE stream ends or is cancelled:
+
 ```java
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.harness.agent.HarnessAgent;
+import java.time.Duration;
 import reactor.core.publisher.Flux;
 
 AguiAdapterConfig config = AguiAdapterConfig.builder()
@@ -57,10 +62,10 @@ AguiAdapterConfig config = AguiAdapterConfig.builder()
     .runTimeout(Duration.ofMinutes(5))
     .build();
 
-AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
-
-// Events you'd ship to the front end via SSE
-Flux<AguiEvent> events = adapter.run(runAgentInput);
+Flux<AguiEvent> events = Flux.using(
+    agentBuilder::build,
+    agent -> new AguiAgentAdapter(agent, config).run(runAgentInput),
+    HarnessAgent::close);
 ```
 
 The front end provides `RunAgentInput`, including `threadId`, `runId`, `messages`, `tools`, `state`, and related fields. The adapter converts AG-UI messages to AgentScope `Msg` objects, invokes v2 `streamEvents(...)`, and converts each `AgentEvent` to AG-UI events.
@@ -201,7 +206,7 @@ When enabled, every `ModelCallEndEvent` with usage emits a `CUSTOM` event: `delt
 | `agui.forwardedProps` | `RunAgentInput.forwardedProps` |
 | `agui.resume` | `RunAgentInput.resume` |
 
-Because `sessionId` always comes from `threadId`, the same agent instance remains isolated across AG-UI threads.
+`sessionId` comes from `threadId`. With the same user, thread and persistent storage configuration, a new instance can continue the conversation; different threads use separate session identities.
 
 ## Spring Boot Integration
 
@@ -253,15 +258,15 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 
 ## Frontend Tools And Merge Mode
 
-An AG-UI front end can pass tool schemas through `RunAgentInput.tools`. The adapter injects those tools into the agent toolkit at the start of one run and cleans them up after the run completes or is cancelled.
+An AG-UI front end can pass tool schemas through `RunAgentInput.tools`. The adapter converts them into a run-scoped `ToolRequestConfig` carried by RuntimeContext. It never mutates the agent toolkit, so completion and cancellation require no registry restoration.
 
 | `ToolMergeMode` | Behavior |
 | --- | --- |
-| `FRONTEND_ONLY` | Use only frontend-provided tools and temporarily hide existing agent tools |
+| `EXTERNAL_ONLY` | Use only frontend-provided tools and temporarily hide existing agent tools |
 | `AGENT_ONLY` | Ignore frontend-provided tools and use only the agent toolkit |
-| `MERGE_FRONTEND_PRIORITY` | Merge both sides; frontend tools win on name conflicts |
+| `MERGE_EXTERNAL_PRIORITY` | Merge both sides; frontend tools win on name conflicts |
 
-The default is `MERGE_FRONTEND_PRIORITY`. Injection is run scoped and does not permanently mutate the agent toolkit.
+The default is `MERGE_EXTERNAL_PRIORITY`. Import the enum from `io.agentscope.core.tool.ToolMergeMode`. `EXTERNAL_ONLY` exposes no tools when the external list is empty, regardless of the Toolkit deletion policy: it controls request visibility only.
 
 ## HITL Interrupts
 
@@ -290,6 +295,10 @@ Both use the official AG-UI `reason: "tool_call"` because the interrupt is bound
             "editedArgs": {
               "type": "object",
               "description": "Full replacement of the tool args. Not merged."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Optional explanation supplied when the tool call is denied."
             }
           },
           "required": ["approved"]
@@ -333,16 +342,18 @@ The front end can show an approval or external-execution UI. After the user acts
 
 For permission confirmations, `payload.approved` must be the boolean `true` to approve the tool. Any missing, non-boolean, or `false` value is treated as denial. `payload.editedArgs`, when present, must be a JSON object and is a **full replacement** of the original tool arguments, not a partial merge. AgentScope Java rebuilds both the `ToolUseBlock.input` and raw JSON `ToolUseBlock.content` from `editedArgs`, so the approved tool executes the edited arguments.
 
+`payload.reason` is an optional string. On denial it becomes `ConfirmResult.reason` and is used as the DENIED tool-result text; when it is missing or blank, AgentScope keeps the default `Permission denied by user` message.
+
 The front end does not need to echo `metadata` in `resume[]`; it only sends `interruptId`, `status`, and `payload`. Through the Spring `AguiRequestProcessor` entry point, AgentScope Java records the latest `RUN_FINISHED.outcome.interrupts[]` server-side, validates that the next `resume[]` covers all open interrupts, and passes the originating interrupts into the adapter for conversion.
 
 ## Example Project
 
-See the complete example at [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui):
+See the complete example at [agentscope-examples/documentation](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/documentation):
 
 ```bash
 export DASHSCOPE_API_KEY=your-key
-cd agentscope-examples/agui
-mvn spring-boot:run
+cd agentscope-examples/documentation
+mvn spring-boot:run -Dspring-boot.run.mainClass=io.agentscope.examples.documentation2.agui.AguiExampleApplication
 ```
 
 Visit http://localhost:8080 after startup. The example demonstrates multi-agent routing, custom converters, custom enrichers, token usage, and HITL interrupts.

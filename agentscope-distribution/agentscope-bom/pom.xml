@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>2.0.3-SNAPSHOT</revision>
+        <revision>2.1.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -71,7 +71,7 @@
 
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
-        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
+        <maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
         <central.publishing.maven.version>0.10.0</central.publishing.maven.version>
 
         <maven.deploy.skip>false</maven.deploy.skip>
@@ -303,10 +303,10 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope aistio BYO data-plane SDK -->
+            <!-- AgentScope controlplane BYO data-plane SDK -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-aistio</artifactId>
+                <artifactId>agentscope-extensions-controlplane</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -341,11 +341,23 @@
                 <artifactId>agentscope-extensions-channel-gitlab</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-weixin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- AgentScope Training Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-training</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Jev Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-jev</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -355,11 +367,11 @@
                 <artifactId>agentscope-extensions-model-openai</artifactId>
                 <version>${project.version}</version>
             </dependency>
-<!--            <dependency>-->
-<!--                <groupId>io.agentscope</groupId>-->
-<!--                <artifactId>agentscope-extensions-model-openai-official</artifactId>-->
-<!--                <version>${project.version}</version>-->
-<!--            </dependency>-->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-model-openai-official</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-model-gemini</artifactId>
@@ -455,10 +467,24 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Jev Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-jev-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope OpenAI Spring Boot Starter -->
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-openai-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope OpenAI Official Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-openai-official-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

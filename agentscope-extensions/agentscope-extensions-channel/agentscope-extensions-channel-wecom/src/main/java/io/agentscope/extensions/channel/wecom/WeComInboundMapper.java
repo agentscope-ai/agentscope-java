@@ -17,11 +17,16 @@ package io.agentscope.extensions.channel.wecom;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.extensions.channel.common.ChannelMediaMetadata;
 import io.agentscope.harness.agent.gateway.channel.InboundMessage;
 import io.agentscope.harness.agent.gateway.channel.Peer;
 import io.agentscope.harness.agent.gateway.channel.PeerKind;
 import java.io.StringReader;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -34,9 +39,13 @@ import org.xml.sax.InputSource;
 /**
  * Parses a decrypted WeCom callback XML body into an {@link InboundMessage}.
  *
- * <p>For MVP only {@code MsgType=text} (single-user app message) is mapped. Other inbound types
- * (event, image, voice, ...) are returned as {@link Optional#empty()} so the caller can ack the
- * webhook without dispatching to the agent.
+ * <p>Text messages ({@code MsgType=text}, single-user app message) map to their content. Media
+ * messages ({@code MsgType} {@code image} / {@code voice} / {@code video}) map to a neutral
+ * marker text plus the {@link ChannelMediaMetadata} contract: the provider material identifiers
+ * are preserved verbatim and decoding them (a token-authenticated {@code media/get} exchange,
+ * valid for three days) is left to the application. Other inbound types (event, location, link,
+ * ...) are returned as {@link Optional#empty()} so the caller can ack the webhook without
+ * dispatching to the agent.
  */
 public final class WeComInboundMapper {
 
@@ -51,8 +60,10 @@ public final class WeComInboundMapper {
     }
 
     /**
-     * Builds an {@link InboundMessage} from a decrypted WeCom message XML, or returns empty when
-     * the payload is not a user-text message we should dispatch.
+     * Builds an {@link InboundMessage} from a decrypted WeCom message XML. Text messages map to
+     * their content; media messages map to a neutral marker plus {@link ChannelMediaMetadata}
+     * entries. Returns empty for other payload kinds or malformed events so the caller can ack
+     * without dispatching.
      */
     public Optional<InboundMessage> map(String xml) {
         try {
@@ -60,35 +71,99 @@ public final class WeComInboundMapper {
             Document doc = builder.parse(new InputSource(new StringReader(xml)));
             Element root = doc.getDocumentElement();
             String msgType = textValue(root, "MsgType");
-            if (!"text".equalsIgnoreCase(msgType)) {
-                return Optional.empty();
+            if ("text".equalsIgnoreCase(msgType)) {
+                return mapText(root);
             }
-            String fromUser = textValue(root, "FromUserName");
-            String content = textValue(root, "Content");
-            if (fromUser == null || fromUser.isBlank() || content == null) {
-                return Optional.empty();
-            }
-            Msg msg =
-                    Msg.builder()
-                            .role(MsgRole.USER)
-                            .name(fromUser)
-                            .textContent(content)
-                            .metadata(
-                                    java.util.Map.of(
-                                            "channelMessageId",
-                                            java.util.Objects.toString(
-                                                    textValue(root, "MsgId"), "")))
-                            .build();
-            Peer peer = new Peer(PeerKind.DIRECT, fromUser);
-            return Optional.of(
-                    InboundMessage.builder(channelId, peer, List.of(msg))
-                            .accountId(accountId)
-                            .senderId(fromUser)
-                            .build());
+            return mapMedia(root, msgType);
         } catch (Exception e) {
             throw new IllegalStateException(
                     "Failed to parse WeCom callback XML: " + e.getMessage(), e);
         }
+    }
+
+    private Optional<InboundMessage> mapText(Element root) {
+        String fromUser = textValue(root, "FromUserName");
+        String content = textValue(root, "Content");
+        if (fromUser == null || fromUser.isBlank() || content == null) {
+            return Optional.empty();
+        }
+        return assemble(
+                fromUser,
+                content,
+                Map.of("channelMessageId", Objects.toString(textValue(root, "MsgId"), "")));
+    }
+
+    /**
+     * Maps a media message to a neutral marker plus the {@link ChannelMediaMetadata} contract.
+     * {@code image} carries {@code PicUrl} + {@code MediaId}; {@code voice} carries {@code
+     * MediaId} + {@code Format}; {@code video} carries {@code MediaId} + {@code ThumbMediaId}.
+     */
+    private Optional<InboundMessage> mapMedia(Element root, String msgType) {
+        String kind = mediaKind(msgType);
+        if (kind == null) {
+            return Optional.empty();
+        }
+        String fromUser = textValue(root, "FromUserName");
+        String mediaId = textValue(root, "MediaId");
+        if (fromUser == null || fromUser.isBlank() || mediaId == null || mediaId.isBlank()) {
+            return Optional.empty();
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("channelMessageId", Objects.toString(textValue(root, "MsgId"), ""));
+        metadata.put(ChannelMediaMetadata.KIND, kind);
+        metadata.put(ChannelMediaMetadata.PROVIDER_TYPE, msgType);
+        metadata.put(ChannelMediaMetadata.ID, mediaId);
+        switch (kind) {
+            case ChannelMediaMetadata.KIND_IMAGE ->
+                    ChannelMediaMetadata.putIfPresent(
+                            metadata, ChannelMediaMetadata.URL, textValue(root, "PicUrl"));
+            case ChannelMediaMetadata.KIND_AUDIO ->
+                    ChannelMediaMetadata.putIfPresent(
+                            metadata, ChannelMediaMetadata.FORMAT, textValue(root, "Format"));
+            case ChannelMediaMetadata.KIND_VIDEO ->
+                    ChannelMediaMetadata.putIfPresent(
+                            metadata,
+                            ChannelMediaMetadata.SECONDARY_ID,
+                            textValue(root, "ThumbMediaId"));
+            default -> {
+                // Unreachable: kinds are enumerated by mediaKind.
+            }
+        }
+        return assemble(fromUser, ChannelMediaMetadata.markerText(kind, null), metadata);
+    }
+
+    /** Builds the direct-message {@link InboundMessage} from mapped text content and metadata. */
+    private Optional<InboundMessage> assemble(
+            String fromUser, String textContent, Map<String, Object> metadata) {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name(fromUser)
+                        .textContent(textContent)
+                        .metadata(metadata)
+                        .build();
+        Peer peer = new Peer(PeerKind.DIRECT, fromUser);
+        return Optional.of(
+                InboundMessage.builder(channelId, peer, List.of(msg))
+                        .accountId(accountId)
+                        .senderId(fromUser)
+                        .build());
+    }
+
+    /**
+     * Returns the normalized media kind for a WeCom {@code MsgType}, or {@code null} when the
+     * type is not a mapped media message.
+     */
+    private static String mediaKind(String msgType) {
+        if (msgType == null) {
+            return null;
+        }
+        return switch (msgType.toLowerCase(Locale.ROOT)) {
+            case "image" -> ChannelMediaMetadata.KIND_IMAGE;
+            case "voice" -> ChannelMediaMetadata.KIND_AUDIO;
+            case "video" -> ChannelMediaMetadata.KIND_VIDEO;
+            default -> null;
+        };
     }
 
     /** Returns the {@code MsgId} field if present, used by the idempotency store. */

@@ -1,6 +1,7 @@
 ---
 title: 沙箱（Sandbox）
 description: 隔离执行 + 跨调用恢复 + 多副本部署
+en_link: /v2/en/docs/harness/sandbox
 ---
 
 > 三种文件系统模式的对比见 [文件系统](/v2/zh/docs/harness/filesystem)。本文专门讲沙箱模式怎么用。
@@ -72,7 +73,7 @@ agent.call(msg, RuntimeContext.builder()
 | `LocalSnapshotSpec` | 宿主本地文件（单机长期运行） |
 | `OssSnapshotSpec` | OSS / S3 兼容存储（多副本） |
 | `RedisSnapshotSpec` | Redis（低延迟、小工作区） |
-| `JdbcSnapshotSpec` | MySQL / JDBC BLOB（已有关系型数据库） |
+| `JdbcSnapshotSpec` | JDBC BLOB（已有关系型数据库） |
 
 ```java
 .filesystem(new DockerFilesystemSpec()

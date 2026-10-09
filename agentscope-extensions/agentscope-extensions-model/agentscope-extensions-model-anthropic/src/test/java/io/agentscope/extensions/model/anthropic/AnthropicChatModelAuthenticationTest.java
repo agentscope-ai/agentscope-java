@@ -19,11 +19,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.anthropic.models.messages.ToolUnion;
+import com.anthropic.models.messages.WebSearchTool20250305;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
@@ -109,6 +116,89 @@ class AnthropicChatModelAuthenticationTest {
         assertExchange(model, streaming, apiKey, authToken);
     }
 
+    @ParameterizedTest
+    @CsvSource({
+        "false, , test-gateway-token",
+        "true, , test-gateway-token",
+        "false, test-api-key, ",
+        "true, test-api-key, "
+    })
+    void shouldSendServerToolsAndCacheTtlWithEitherAuthentication(
+            boolean streaming, String apiKey, String authToken) throws Exception {
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .baseUrl(server.url("/anthropic/").toString())
+                        .apiKey(apiKey)
+                        .authToken(authToken)
+                        .modelName("claude-sonnet-4.5")
+                        .stream(streaming)
+                        .addServerTool(
+                                AnthropicServerTool.of(
+                                        ToolUnion.ofWebSearchTool20250305(
+                                                WebSearchTool20250305.builder()
+                                                        .maxUses(3)
+                                                        .build())))
+                        .cacheTtl("1h")
+                        .defaultOptions(GenerateOptions.builder().cacheControl(true).build())
+                        .build();
+
+        RecordedRequest request = assertExchange(model, streaming, apiKey, authToken);
+        assertServerToolAndCacheTtl(request);
+    }
+
+    @Test
+    void shouldApplyParallelToolUseOptionsToServerOnlyTools() throws Exception {
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .baseUrl(server.url("/anthropic/").toString())
+                        .apiKey("test-api-key")
+                        .modelName("claude-sonnet-4.5")
+                        .stream(false)
+                        .addServerTool(
+                                AnthropicServerTool.of(
+                                        ToolUnion.ofWebSearchTool20250305(
+                                                WebSearchTool20250305.builder().build())))
+                        .defaultOptions(GenerateOptions.builder().parallelToolCalls(false).build())
+                        .build();
+
+        RecordedRequest request = assertExchange(model, false, "test-api-key", null);
+        JsonNode body = new ObjectMapper().readTree(request.getBody().readUtf8());
+        assertEquals(1, body.path("tools").size());
+        assertEquals("auto", body.at("/tool_choice/type").asText());
+        assertTrue(body.at("/tool_choice/disable_parallel_tool_use").asBoolean());
+    }
+
+    @Test
+    void shouldPreserveServerToolsWithExistingConstructor() throws Exception {
+        AnthropicChatModel model =
+                new AnthropicChatModel(
+                        server.url("/anthropic/").toString(),
+                        "test-api-key",
+                        "claude-sonnet-4.5",
+                        false,
+                        GenerateOptions.builder().cacheControl(true).build(),
+                        null,
+                        null,
+                        List.of(
+                                AnthropicServerTool.of(
+                                        ToolUnion.ofWebSearchTool20250305(
+                                                WebSearchTool20250305.builder()
+                                                        .maxUses(3)
+                                                        .build()))),
+                        "1h");
+
+        assertServerToolAndCacheTtl(assertExchange(model, false, "test-api-key", null));
+    }
+
+    private void assertServerToolAndCacheTtl(RecordedRequest request) throws IOException {
+        JsonNode body = new ObjectMapper().readTree(request.getBody().readUtf8());
+        assertEquals(1, body.path("tools").size());
+        assertEquals("web_search_20250305", body.at("/tools/0/type").asText());
+        assertEquals("web_search", body.at("/tools/0/name").asText());
+        assertEquals(3, body.at("/tools/0/max_uses").asInt());
+        assertEquals("1h", body.at("/messages/0/content/0/cache_control/ttl").asText());
+    }
+
     @Test
     void shouldPreserveApiKeyAuthenticationWithExistingConstructor() throws Exception {
         AnthropicChatModel model =
@@ -168,7 +258,7 @@ class AnthropicChatModelAuthenticationTest {
         assertFalse(builder.build().toString().contains("secret-bearer-token"));
     }
 
-    private void assertExchange(
+    private RecordedRequest assertExchange(
             AnthropicChatModel model, boolean streaming, String apiKey, String authToken)
             throws Exception {
         server.enqueue(
@@ -205,5 +295,6 @@ class AnthropicChatModelAuthenticationTest {
                 authToken == null ? List.of() : List.of("Bearer " + authToken),
                 request.getHeaders().values("Authorization"));
         assertEquals(1, server.getRequestCount());
+        return request;
     }
 }

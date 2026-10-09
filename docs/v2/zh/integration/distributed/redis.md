@@ -1,5 +1,6 @@
 ---
 title: Redis
+en_link: /v2/en/integration/distributed/redis
 ---
 
 `agentscope-extensions-redis` 提供全链路的 Redis 分布式存储实现，是多副本生产部署的首选后端。
