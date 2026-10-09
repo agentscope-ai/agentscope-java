@@ -128,3 +128,34 @@ jobs:
           fail_ci_if_error: true
           verbose: true
 
+  redis-cluster-it:
+    name: "Redis Cluster Integration Test"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Cache Maven repository [${{ runner.os }}]
+        uses: actions/cache@v4
+        with:
+          path: '~/.m2/repository'
+          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-${{ runner.os }}-
+
+      - name: Run Redis Cluster integration tests
+        env:
+          # REQUIRE_CLUSTER_IT=1 turns a cluster startup failure into a hard error instead of a
+          # skip: this job exists to verify the cluster code path (CROSSSLOT guards, multi-master
+          # SCAN), so silently skipping here would defeat its purpose.
+          REQUIRE_CLUSTER_IT: '1'
+        run: >
+          mvn -B -pl agentscope-extensions/agentscope-extensions-redis -am test
+          -Dtest=RedisClusterIntegrationTest
+          -Dsurefire.failIfNoSpecifiedTests=false
+
