@@ -26,8 +26,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
 func (r *collaborationRepo) CreateTeam(ctx context.Context, team *controlmodel.CollaborationTeam) (*controlmodel.CollaborationTeam, error) {

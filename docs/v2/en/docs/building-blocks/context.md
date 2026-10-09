@@ -116,7 +116,7 @@ Anything implementing `io.agentscope.core.state.AgentStateStore` works. Pick by 
 | `InMemoryAgentStateStore` | `agentscope-core` | Unit tests / single-process demos; lost on exit |
 | `JsonFileAgentStateStore` | `agentscope-core` | Local dev with file persistence; not cross-node. **`HarnessAgent` LEGACY default**, rooted at `~/.agentscope/state/<agentId>/` (override the base via the `agentscope.state.home` system property); **single-host** |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | **Production default** for multi-replica deployments; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
-| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | When state needs to flow into a relational store (audit, reporting) |
+| `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | When state needs to flow into a relational store (audit, reporting) |
 
 Switching is one call at builder time:
 

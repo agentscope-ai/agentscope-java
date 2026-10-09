@@ -28,15 +28,15 @@ import (
 	"syscall"
 	"time"
 
-	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost/provider"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost/provider/anthropiccli"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost/provider/codex"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost/provider/openclaw"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost/provider/qoder"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost/provider/qwenpaw"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/version"
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost/provider"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost/provider/anthropiccli"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost/provider/codex"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost/provider/openclaw"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost/provider/qoder"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost/provider/qwenpaw"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/version"
 )
 
 func main() {

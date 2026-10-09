@@ -29,13 +29,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/automation"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/collaboration"
-	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/metrics"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/orchestration"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/scheduler"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/automation"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/collaboration"
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/metrics"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/orchestration"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/scheduler"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
 func (s *Server) collaborationService() *collaboration.Service {

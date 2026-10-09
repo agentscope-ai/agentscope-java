@@ -277,31 +277,16 @@ AgentScope Java 目前原生支持 Agent 应用接入，通过引入 `agentscope
 QwenPaw 等个人工作区助手理论上也可以通过 sidecar 方式实现接入，具体请查看 roadmap。
 
 ## 本地快速体验
-AgentScope Service 处于快速迭代阶段，如果你想先完整体验产品面，可以下载仓库源码启动，在本地环境快速体验。
 
-1. 启动控制面、Managed Agents 数据面等所有组件（如上文中的生产部署架构图）：
+按[部署并准备 Service](/v2/zh/service/quickstart)，使用 Docker Compose 启动已发布的
+`2.1.0-BETA1`，无需从源码构建。指南包含安装包下载、SHA-256 校验、模型配置和启动步骤。
+打开 `http://localhost:18080`，以 `admin` 和 `.env` 中生成的
+`CONTROL_PLANE_BOOTSTRAP_PASSWORD` 登录，然后修改密码。
 
-```shell
-git clone https://github.com/agentscope-ai/agentscope-java.git
-cd agentscope-java
-```
-
-```bash
-export DASHSCOPE_API_KEY=sk-xxx
-cd agentscope-service
-scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
-```
-
-2. 打开 [http://localhost:8080](http://localhost:8080)，输入用户名/密码（`admin` / `admin`）
-
-接下来就可以直接体验 Managed Agents 快速创建智能体了：
-
-    1. 在 **Managed Agents** 创建 Agent；
-    2. 创建一个 `local` Environment；
-    3. 打开 **Sessions**，绑定 Agent 与 Environment，发送第一条消息；
-    4. 回到 **Dashboard** 查看在线状态、事件与运行时信息；
-    5. 如需协作，再进入 **Agent Teams** 创建团队并观察任务与成员状态。
-3. 如果要体验 BYO Agent 注册，可以使用源码仓库中的示例 agentscope-samples/agents/agentscope-paw，启动后即可在 dashboard 中看到智能体注册成功。
+接下来[运行第一个托管 Agent](/v2/zh/service/create-managed-agent)。
+要接入已有 Coding Agent，通过 [Go 安装 CLI 与 Runtime Host](/v2/zh/service/runtime-host)，
+再按[连接 Hosted Agent](/v2/zh/service/connect-hosted-agent)完成接入。
+生产环境的 Kubernetes 部署使用已发布的 [Helm Chart](/v2/zh/service/kubernetes)。
 
 ## Roadmap & 总结
 AgentScope Service 把不同模式构建的 Agent（Framework、Coding Agent、Managed Agents）等收敛在统一控制平面内，为 Agent 间协作提供统一视图。无论你从 Console 新建第一个 Agent，把 Harness 运行托管给 AgentScope Service 平台，还是把现有 AgentScope / LangChain / Claude 应用接入控制面，目标都一样——**让企业拥有一站式的 Agent 管控与治理中心**。

@@ -17,9 +17,9 @@ package orchestration
 import (
 	"context"
 
-	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/taskplane"
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/taskplane"
 )
 
 // stopNodeWork closes durable obligations before their owning node becomes

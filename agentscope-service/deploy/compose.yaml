@@ -55,7 +55,7 @@ services:
       timeout: 5s
       retries: 30
   control:
-    image: ${IMAGE_REPOSITORY:?Set image repository}/agentscope-service-control:${SERVICE_VERSION:?Set release version}
+    image: ${IMAGE_REPOSITORY:?Set image repository}/as-controlplane:${SERVICE_VERSION:?Set release version}
     restart: unless-stopped
     command: [--storage-driver=postgres]
     environment:
@@ -85,7 +85,7 @@ services:
     depends_on:
       db: {condition: service_healthy}
   data:
-    image: ${IMAGE_REPOSITORY}/agentscope-service-dataplane:${SERVICE_VERSION}
+    image: ${IMAGE_REPOSITORY}/as-dataplane:${SERVICE_VERSION}
     restart: unless-stopped
     environment:
       <<: *runtime-env
@@ -97,7 +97,7 @@ services:
     depends_on:
       control: {condition: service_healthy}
   scheduler:
-    image: ${IMAGE_REPOSITORY}/agentscope-service-scheduler:${SERVICE_VERSION}
+    image: ${IMAGE_REPOSITORY}/as-scheduler:${SERVICE_VERSION}
     restart: unless-stopped
     environment:
       <<: *runtime-env
@@ -108,7 +108,7 @@ services:
     depends_on:
       data: {condition: service_healthy}
   gateway:
-    image: ${IMAGE_REPOSITORY}/agentscope-service-gateway:${SERVICE_VERSION}
+    image: ${IMAGE_REPOSITORY}/as-gateway:${SERVICE_VERSION}
     restart: unless-stopped
     environment:
       SERVER_PORT: 8080

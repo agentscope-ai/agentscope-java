@@ -63,68 +63,119 @@ In production, the recommended AgentScope Service deployment looks like this:
 
 Application developers can validate a call with the [API quickstart](../docs/v2/en/service/first-session.md). Platform teams prepare models, execution resources, identities, and releases. Existing applications implement the [External execution adapter](../docs/v2/en/service/register-agentscope-agent.md) before publishing a service.
 
-## Release deployment and documentation
+## Quick start with Docker Compose
 
-For published-image Docker and Helm installation, see the [deployment guide](deploy/README.md) and [release runbook](release/README.md). The complete [Service documentation](../docs/v2/en/service/index.md) covers usage and operations. The local startup instructions below are for development and include demo users and optional database resets.
+Use the published `2.1.0-BETA1` prerelease. Install Docker Engine or Docker Desktop
+with Compose v2, Bash, curl and OpenSSL; have a model API credential available.
+No source checkout, Java, Maven or Go is needed to start the platform.
 
-## Quick start
-
-### Prerequisites
-
-- Docker
-- JDK 17+
-- Maven
-- Go 1.26+
-- A model API key; the example below uses DashScope
-
-Node.js 22 is required for a fresh local source checkout or a console rebuild. Published-image deployments do not require Node.js.
-
-### 1. Start the local stack
-
-From the monorepo:
+### 1. Download and initialize
 
 ```bash
-git clone https://github.com/agentscope-ai/agentscope-java.git
-cd agentscope-java
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/agentscope-service-2.1.0-BETA1-compose.tar.gz
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/SHA256SUMS
+awk '$2 == "agentscope-service-2.1.0-BETA1-compose.tar.gz"' SHA256SUMS > compose.sha256
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c compose.sha256
+else
+  shasum -a 256 -c compose.sha256
+fi
+```
 
-export DASHSCOPE_API_KEY=sk-xxx
+```bash
+tar -xzf agentscope-service-2.1.0-BETA1-compose.tar.gz
 cd agentscope-service
-scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
+./init-env.sh 2.1.0-BETA1 sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope
 ```
 
-This starts PostgreSQL, `service-controlplane`, the data plane, scheduler, and gateway. Local development sets `CONTROL_PLANE_ENABLE_KUBERNETES=false`; CRD reconcilers and ASDP gRPC are not required for the hosted product flow.
-Because the project has not been released and v4 deliberately replaces the legacy execution schema, `BUILDER_REBUILD=1` also recreates the disposable `cp`, `rt`, and `dp` development schemas. Use `BUILDER_RESET_DB=0` only when an already-v4 local database must be preserved. The startup script verifies all three schemas and the terminal collaboration/orchestration migrations before reporting success; run `scripts/smoke.sh` for the API-level end-to-end check.
+Edit the generated `.env` to set `DASHSCOPE_API_KEY`. For a trusted local evaluation,
+set `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`; tools then run inside the Dataplane
+container. Other installations should prepare an isolated execution Environment.
+Initialization preserves an existing `.env`; keep its credentials and Vault key
+with your backups.
 
-| Item | Value |
-| --- | --- |
-| Console and public API | http://localhost:18080 |
-| Default login | `admin` / `admin` |
-| Additional seed users | `alice` / `alice`, `bob` / `bob` |
-| Logs and local state | `.dev-stack/` |
-
-Default users and development secrets are for local use only.
-
-### 2. Run your first session
-
-1. Open http://localhost:18080 and sign in (`admin` / `admin`).
-2. In **Managed Agents**, create an Agent.
-3. In the local development stack, a new Managed Agent is automatically bound to a shared `default-local` Environment. You can select a different Environment in Agent settings.
-4. Open **Sessions**, create a session, and send the first message.
-5. In **Dashboard**, inspect online status, events, and runtime state.
-6. For collaboration, create a persistent **Team**, assign an Issue, and inspect discussion routes and AgentTasks.
-
-To try BYO Agent registration, use the sample at `agentscope-examples/agents/agentscope-paw`. After it starts, the agent should appear in the Dashboard.
-
-To bring **DeepSeek Harness** into the same fleet, load the Cordis plugin at `agentscope-service/service-controlplane/sdk/dsh` (`@agentscope/dsh-controlplane`). It self-registers with service-controlplane, serves `/agentscope/*`, receives AgentTask events, and uses the same Issue/Comment/Artifact contract as other runtimes. See that directory's [README](service-controlplane/sdk/dsh/README.md).
-
-
-### 3. Stop the stack
+### 2. Start and use Service
 
 ```bash
-scripts/dev-down.sh
+docker compose pull
+docker compose up -d --wait --wait-timeout 600
+docker compose ps
+curl -fsS http://localhost:18080/actuator/health
 ```
+
+The stack starts PostgreSQL, Control Plane with Dashboard, Dataplane, Scheduler
+and Gateway using published amd64/arm64 images. Open http://localhost:18080 and
+sign in as `admin` with `CONTROL_PLANE_BOOTSTRAP_PASSWORD` from `.env`, then change
+the password. The release installation creates no demo users.
+
+Follow [Deploy and prepare Service](https://java.agentscope.io/v2/en/service/quickstart)
+to configure accounts, a model and an execution Environment, then
+[create your first Managed Agent](https://java.agentscope.io/v2/en/service/create-managed-agent).
+For the DSH plugin, see its [installation guide](service-controlplane/sdk/dsh/README.md).
+
+Stop with `docker compose down`. Data volumes are retained; do not use `-v` for an
+ordinary shutdown. See [operations](https://java.agentscope.io/v2/en/service/operations)
+before upgrading or restoring data.
+
+## Install CLI and Runtime Host with Go
+
+To connect a Coding Agent on a separate Linux/macOS host, install Go 1.26+ and
+both commands at the same version:
+
+```bash
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
+AS_CLI_BIN_DIR="$(go env GOBIN)"
+if [ -z "$AS_CLI_BIN_DIR" ]; then
+  AS_CLI_BIN_DIR="$(go env GOPATH)/bin"
+fi
+export PATH="$AS_CLI_BIN_DIR:$PATH"
+as version
+agentscope-runtime-host -help
+as connect http://localhost:18080
+as runtime status
+```
+
+Use your actual Service URL when the Host is on another machine. Install and
+authenticate the Coding Agent provider separately. The CLI connects to an existing
+Service and starts Runtime Host; it does not deploy the platform. Persist the PATH
+setting in your shell configuration. See the
+[Runtime Host guide](https://java.agentscope.io/v2/en/service/runtime-host).
+
+## Production installation with Helm
+
+Prepare external PostgreSQL, shared RWX Workspace storage, Artifact storage,
+a configuration Secret, domain and TLS. Add the published Chart repository:
+
+```bash
+helm repo add agentscope https://chickenlj.github.io/helm-charts
+helm repo update agentscope
+```
+
+Follow the [production installation guide](https://java.agentscope.io/v2/en/service/kubernetes)
+to install `agentscope/agentscope-service` with `--version 2.1.0-BETA1` and the ACR
+namespace `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`. The Chart runs one
+replica per component with Recreate updates; allow a maintenance window.
 
 ## Development
+
+### Start the source development stack
+
+Source development needs JDK 17+, Maven, Go 1.26+, Node.js 22 and Docker.
+From the repository root:
+
+```bash
+export DASHSCOPE_API_KEY=YOUR_MODEL_CREDENTIAL
+cd agentscope-service
+scripts/dev-down.sh
+BUILDER_REBUILD=1 scripts/dev-up.sh
+# Stop later with scripts/dev-down.sh.
+```
+
+The development stack seeds demo users and uses development secrets. A full
+rebuild resets the disposable `cp`, `rt` and `dp` schemas by default; set
+`BUILDER_RESET_DB=0` only to retain an existing compatible development database.
+It is separate from the release Compose installation above.
 
 ### Build the backend
 

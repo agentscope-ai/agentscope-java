@@ -18,7 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/api/v1alpha1"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/api/v1alpha1"
 )
 
 // ToolConfig holds resolved tool configuration for building ConfigMaps.

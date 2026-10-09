@@ -24,8 +24,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store/memory"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store/memory"
 )
 
 func newHostedStoreTestServer(t *testing.T) *Server {

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package agentscope.protocol.v1;
 
-option go_package = "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/asdp";
+option go_package = "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/asdp";
 
 // Java stubs are generated from this same file by the Java data-plane SDK
 // (agentscope-extensions-controlplane), which copies it in at build time so the wire

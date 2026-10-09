@@ -32,10 +32,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/api/v1alpha1"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/metrics"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/prober"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/api/v1alpha1"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/metrics"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/prober"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
 // BYOWorkloadReconciler observes adopted external Deployments,

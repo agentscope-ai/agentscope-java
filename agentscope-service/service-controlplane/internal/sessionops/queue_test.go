@@ -22,10 +22,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/api/v1alpha1"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/dataplane"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/prober"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/api/v1alpha1"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/dataplane"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/prober"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
 func TestExecute_QueuesWhenBusy(t *testing.T) {

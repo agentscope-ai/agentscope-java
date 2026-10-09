@@ -7,14 +7,15 @@ COPY agentscope-service/frontend/ ./
 RUN npm run build
 
 FROM --platform=$BUILDPLATFORM golang:1.26 AS build
-ARG VERSION=dev
+ARG VERSION=2.1.0-BETA1
+ARG GIT_COMMIT=unknown
 ARG TARGETOS=linux
 ARG TARGETARCH
 WORKDIR /src
 COPY agentscope-service/service-controlplane/go.mod agentscope-service/service-controlplane/go.sum ./
 RUN go mod download
 COPY agentscope-service/service-controlplane/ ./
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/version.Version=$VERSION" -o /out/service-controlplane ./cmd/service-controlplane
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/version.Version=$VERSION -X main.gitCommit=$GIT_COMMIT" -o /out/service-controlplane ./cmd/service-controlplane
 RUN mkdir -p /out/data/workspaces /out/data/artifacts
 
 FROM gcr.io/distroless/static:nonroot

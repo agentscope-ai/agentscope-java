@@ -27,8 +27,8 @@ import (
 	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
 type ControlEventHandler interface {
