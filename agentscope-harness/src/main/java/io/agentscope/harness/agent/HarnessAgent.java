@@ -198,7 +198,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
     /** Records framework-owned bindings for construction-time copies; no runtime hooks. */
-    private record HarnessToolBindings(Map<String, AgentTool> tools)
+    private record HarnessToolBindings(Map<String, AgentTool> tools, boolean progressiveToolLoading)
             implements HarnessRuntimeMiddleware {
         @Override
         public Set<ExtensionPoint> activePoints() {
@@ -1442,6 +1442,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean disableDefaultWorkspaceSkills = false;
         boolean disableDynamicSubagents = false;
         boolean disableToolsConfig = false;
+        boolean progressiveToolLoading = false;
 
         boolean skillManageToolEnabled = false;
         SkillManageConfig skillManageConfig;
@@ -1624,19 +1625,30 @@ public class HarnessAgent implements Agent, AutoCloseable {
             b.model(agent.getModel(null));
             b.maxIters(agent.getMaxIters());
             b.generateOptions(agent.getGenerateOptions());
+            HarnessToolBindings harnessBindings =
+                    agent.getMiddlewares().stream()
+                            .filter(HarnessToolBindings.class::isInstance)
+                            .map(HarnessToolBindings.class::cast)
+                            .findFirst()
+                            .orElse(null);
             List<AgentTool> frameworkTools =
-                    new ArrayList<>(
-                            agent.getMiddlewares().stream()
-                                    .filter(HarnessToolBindings.class::isInstance)
-                                    .map(HarnessToolBindings.class::cast)
-                                    .flatMap(bindings -> bindings.tools().values().stream())
-                                    .toList());
+                    harnessBindings == null
+                            ? new ArrayList<>()
+                            : new ArrayList<>(harnessBindings.tools().values());
             if (b.contextSources.taskContext().requirementProposals()) {
                 // Plain ReActAgent sources have no Harness ownership marker.
                 frameworkTools.addAll(
                         agent.getToolkit().getToolsFromSource(RequirementTools.class));
             }
-            b.toolkit(agent.getToolkit().copyExcludingTools(frameworkTools));
+            if (harnessBindings != null && harnessBindings.progressiveToolLoading()) {
+                b.toolkit(
+                        agent.getToolkit()
+                                .copyExcludingToolsAndGroups(
+                                        frameworkTools, HarnessBuiltinToolGroups.groupNames()));
+                b.enableProgressiveToolLoading();
+            } else {
+                b.toolkit(agent.getToolkit().copyExcludingTools(frameworkTools));
+            }
             // Persistence.
             AgentStateStore srcSession = agent.getStateStore();
             if (srcSession != null) {
@@ -1912,6 +1924,35 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         public Builder enableMetaTool(boolean enableMetaTool) {
             this.enableMetaTool = enableMetaTool;
+            return this;
+        }
+
+        /**
+         * Enables progressive disclosure for optional Harness built-in tools.
+         *
+         * <p>Filesystem, subagent, session-history, and web tools are registered in inactive
+         * META-scoped groups. The ungrouped {@code reset_equipped_tools} meta tool lets the agent
+         * activate those groups per session. Memory and skill tools remain visible. Existing
+         * {@code disable*()} switches and {@code tools.json} filtering run before grouping, so
+         * unavailable families do not create empty groups.
+         *
+         * <p>This option is disabled by default and automatically enables the meta tool when set.
+         *
+         * @return this builder for chaining
+         */
+        public Builder enableProgressiveToolLoading() {
+            return enableProgressiveToolLoading(true);
+        }
+
+        /**
+         * Enables or disables progressive disclosure for optional Harness built-in tools.
+         *
+         * @param enabled true to group optional built-ins and expose them on demand
+         * @return this builder for chaining
+         * @see #enableProgressiveToolLoading()
+         */
+        public Builder enableProgressiveToolLoading(boolean enabled) {
+            this.progressiveToolLoading = enabled;
             return this;
         }
 
@@ -3319,8 +3360,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 ToolFilter.apply(agentToolkit, resolvedToolsConfig);
             }
             captureFrameworkTools(agentToolkit, externalToolNames, frameworkTools);
+            if (progressiveToolLoading) {
+                HarnessBuiltinToolGroups.apply(agentToolkit, frameworkTools);
+            }
             // Toolkit copies rebind their own meta tool; Harness must not exclude it.
-            if (enableMetaTool) {
+            if (enableMetaTool || progressiveToolLoading) {
                 agentToolkit.registerMetaTool();
             }
             Set<String> coreInheritedNames = agentToolkit.getToolNames();
@@ -3333,7 +3377,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     !leafSubagent && !disableSubagents && model != null);
 
             // ---- Build inner ReActAgent ----
-            inner.middleware(new HarnessToolBindings(Collections.unmodifiableMap(frameworkTools)));
+            inner.middleware(
+                    new HarnessToolBindings(
+                            Collections.unmodifiableMap(frameworkTools), progressiveToolLoading));
             inner.toolkit(agentToolkit);
             ReActAgent delegate = inner.build();
             // Core adds tools during build; finish ownership before exposing the agent.
