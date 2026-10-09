@@ -373,6 +373,9 @@ McpClientWrapper weather =
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
+
+// ... 使用 agent；结束后关闭 MCP 会话（wrapper 实现了 AutoCloseable）
+weather.close();
 ```
 
 </Tab>
