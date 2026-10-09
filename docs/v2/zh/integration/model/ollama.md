@@ -39,6 +39,24 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## 结构化输出
+
+调用 `agent.call(messages, Output.class)` 且没有注册业务工具时，Ollama provider 会把输出类的 JSON Schema 写入原生 `format` 字段。返回消息包含 `_structured_output`，可通过 `getStructuredData(Output.class)` 读取结果，同时保留响应正文、思考内容和用量统计。
+
+```java
+public record ImageDescription(java.util.List<String> description, String name) {}
+
+try (ReActAgent agent = ReActAgent.builder()
+        .name("image-analysis")
+        .model(model) // 图片输入需要使用本地视觉模型。
+        .build()) {
+    Msg result = agent.call(messages, ImageDescription.class).block();
+    ImageDescription description = result.getStructuredData(ImageDescription.class);
+}
+```
+
+文本和图片输入、流式和非流式模式均使用这一格式。注册业务工具后，结构化输出继续使用合成的 `generate_response` 工具；此工具路径不应设置仅输出 JSON 的默认 `format`。原生 JSON Schema 输出需要支持 `format` 的本地 Ollama 服务，Ollama Cloud 当前不支持此功能。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 Ollama starter：
