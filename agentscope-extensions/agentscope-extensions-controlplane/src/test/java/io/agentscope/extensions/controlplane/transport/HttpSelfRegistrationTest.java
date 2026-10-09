@@ -16,8 +16,13 @@
 package io.agentscope.extensions.controlplane.transport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sun.net.httpserver.HttpExchange;
@@ -34,10 +39,88 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 
 class HttpSelfRegistrationTest {
+
+    @Test
+    void queuedHeartbeatDoesNotRetryRegistrationAfterClose() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/api/v1/",
+                exchange -> {
+                    requests.incrementAndGet();
+                    if (exchange.getRequestMethod().equals("DELETE")) {
+                        respond(exchange, 204, "");
+                    } else {
+                        respond(
+                                exchange,
+                                201,
+                                "{\"agent\":{\"id\":\"agent\"},\"binding\":{\"id\":\"binding\"},"
+                                        + "\"instance\":{\"id\":\"instance\",\"generation\":7},"
+                                        + "\"registrationCredential\":\"asreg_test\"}");
+                    }
+                });
+        server.start();
+        Handler handler = mock(Handler.class);
+        Logger logger = Logger.getLogger(HttpSelfRegistration.class.getName());
+        logger.addHandler(handler);
+        try (HttpSelfRegistration registration =
+                new HttpSelfRegistration(
+                        "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "secret-token",
+                        "",
+                        "reviewer",
+                        "tenant-a",
+                        "namespace-a",
+                        "runtime-instance-key",
+                        "http://127.0.0.1:9191",
+                        "agentscope-java",
+                        "agentscope",
+                        3,
+                        List.of("sessions"),
+                        20)) {
+            Thread pending = null;
+            // Hold the lifecycle lock until the scheduled callback is waiting for it, then
+            // close before releasing it. Assertions check HTTP traffic and retry diagnostics.
+            synchronized (registration) {
+                registration.start();
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (pending == null && System.nanoTime() < deadline) {
+                    for (Thread thread : Thread.getAllStackTraces().keySet()) {
+                        if (thread.getName().equals("controlplane-http-register")
+                                && thread.getState() == Thread.State.BLOCKED) {
+                            pending = thread;
+                            break;
+                        }
+                    }
+                    if (pending == null) {
+                        Thread.sleep(5);
+                    }
+                }
+                assertTrue(pending != null, "Heartbeat should be waiting before close");
+                registration.close();
+            }
+            pending.join(2000);
+            assertFalse(pending.isAlive(), "Registration worker should stop after close");
+            assertEquals(2, requests.get(), "Only registration and unregister requests expected");
+            verify(handler, never())
+                    .publish(
+                            argThat(
+                                    record ->
+                                            record.getLevel().intValue()
+                                                    >= Level.WARNING.intValue()));
+        } finally {
+            logger.removeHandler(handler);
+            server.stop(0);
+        }
+    }
 
     @Test
     void registrationUsesTenantAndDurableIdentityForHeartbeatAndDelete() throws Exception {
