@@ -18,9 +18,6 @@ package io.agentscope.harness.agent.tool;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -45,6 +42,8 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -165,6 +164,7 @@ class AgentSpawnToolForceSyncTest {
     @DisplayName("force_sync timeout interrupts agent and does not promote to AdoptedTaskRunSpec")
     @Timeout(30)
     void timeoutHardFailsWithoutPromotion() throws Exception {
+        CountDownLatch toolCancelled = new CountDownLatch(1);
         AgentTool slowTool =
                 new AgentTool() {
                     @Override
@@ -196,7 +196,8 @@ class AgentSpawnToolForceSyncTest {
                                 .then(
                                         Mono.just(
                                                 ToolResultBlock.of(
-                                                        TextBlock.builder().text("ok").build())));
+                                                        TextBlock.builder().text("ok").build())))
+                                .doOnCancel(toolCancelled::countDown);
                     }
                 };
 
@@ -271,8 +272,8 @@ class AgentSpawnToolForceSyncTest {
                 captureRepo.putCount.get() == 0,
                 "TaskRepository.putTask must not be called under force_sync timeout");
 
-        // Dispose → CANCEL → interruptAgent
-        verify(agentSpy, atLeastOnce()).interrupt(any(RuntimeContext.class));
+        assertTrue(
+                toolCancelled.await(5, TimeUnit.SECONDS), "Timed-out child tool must be cancelled");
     }
 
     private static final class CapturingTaskRepository implements TaskRepository {

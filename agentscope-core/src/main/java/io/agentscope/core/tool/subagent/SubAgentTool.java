@@ -241,7 +241,7 @@ public class SubAgentTool implements AgentTool {
      * {@link AgentState}. Errors are logged but do not interrupt execution.
      */
     private void loadAgentState(String sessionId, Agent agent) {
-        if (!(agent instanceof ReActAgent ra)) {
+        if (!(agent instanceof ReActAgent ra) || ra.sessionLogEnabled()) {
             return;
         }
         AgentStateStore subSession = config.getStateStore();
@@ -264,7 +264,7 @@ public class SubAgentTool implements AgentTool {
      * {@link SubAgentConfig#getStateStore()}. Errors are logged but do not interrupt execution.
      */
     private void saveAgentState(String sessionId, Agent agent) {
-        if (!(agent instanceof ReActAgent ra)) {
+        if (!(agent instanceof ReActAgent ra) || ra.sessionLogEnabled()) {
             return;
         }
         AgentStateStore subSession = config.getStateStore();

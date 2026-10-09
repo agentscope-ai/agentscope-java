@@ -27,9 +27,12 @@ package io.agentscope.builder.web.managed.service;
 
 import io.agentscope.builder.web.managed.SessionEventDto;
 
-/** Best-effort observer used to project persisted managed events to another read model. */
+/**
+ * Transactional delivery staging. Implementations must persist an outbox in the caller's
+ * transaction and must not perform network I/O. Throwing rolls back the source event.
+ */
 @FunctionalInterface
 public interface SessionEventMirror {
 
-    void mirror(SessionEventDto event);
+    void mirror(SessionEventDto event, SessionEventScope scope);
 }

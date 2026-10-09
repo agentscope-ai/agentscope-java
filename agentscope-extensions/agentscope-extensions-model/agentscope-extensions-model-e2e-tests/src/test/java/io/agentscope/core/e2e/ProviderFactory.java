@@ -24,6 +24,7 @@ import io.agentscope.core.e2e.providers.GLMProvider;
 import io.agentscope.core.e2e.providers.GeminiProvider;
 import io.agentscope.core.e2e.providers.ModelCapability;
 import io.agentscope.core.e2e.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.OpenAIOfficialResponsesProvider;
 import io.agentscope.core.e2e.providers.OpenRouterProvider;
 import java.util.ArrayList;
 import java.util.List;
@@ -87,6 +88,10 @@ public class ProviderFactory {
      */
     private static List<ModelProvider> getAllProviders() {
         List<ModelProvider> providers = new ArrayList<>();
+
+        // OpenAI Official SDK providers (Responses API)
+        providers.add(new OpenAIOfficialResponsesProvider.Gpt54());
+        providers.add(new OpenAIOfficialResponsesProvider.Gpt54MultiAgent());
 
         // DashScope Compatible providers
         providers.add(new DashScopeCompatibleProvider.QwenPlusOpenAI());

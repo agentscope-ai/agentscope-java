@@ -1,5 +1,6 @@
 ---
 title: 在线训练
+en_link: /v1/en/docs/task/online-training
 ---
 
 ## 概述

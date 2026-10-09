@@ -24,10 +24,15 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE = ROOT / 'agentscope-service'
 PLANES = ('control', 'gateway', 'dataplane', 'scheduler')
+IMAGE_NAMES = {'control': 'as-controlplane', 'gateway': 'as-gateway',
+               'dataplane': 'as-dataplane', 'scheduler': 'as-scheduler'}
+NPM_PACKAGE = '@agentscope-service/dsh-controlplane'
+NPM_REGISTRY = 'https://registry.npmjs.org'
 
 
 def run(*args, cwd=ROOT, env=None, capture=False):
@@ -46,7 +51,7 @@ def tracked_hygiene():
             errors.append(name)
         if name.startswith('agentscope-service/'):
             generated = any(part in p.parts for part in ('node_modules', 'test-reports', 'playwright-report', 'test-results', 'target'))
-            ui = name.startswith('agentscope-service/aistio/ui/') and p.name != '.gitkeep'
+            ui = name.startswith('agentscope-service/service-controlplane/ui/') and p.name != '.gitkeep'
             package = p.suffix.lower() in ('.ppt', '.pptx', '.jar', '.war', '.class', '.zip', '.tgz', '.exe')
             generated |= name.startswith('agentscope-service/release/dist/')
             if generated or ui or package:
@@ -63,7 +68,7 @@ def tracked_hygiene():
 
 def verify_npm(directory):
     # Vite empties its output directory, including this tracked source placeholder.
-    placeholder = SERVICE / 'aistio/ui/.gitkeep'
+    placeholder = SERVICE / 'service-controlplane/ui/.gitkeep'
     original = placeholder.read_bytes() if directory == SERVICE / 'frontend' and placeholder.is_file() else None
     run('npm', 'ci', cwd=directory)
     try:
@@ -77,13 +82,13 @@ def verify_npm(directory):
 
 def verify():
     tracked_hygiene()
-    run('mvn', '-B', '-ntp', '-pl', 'agentscope-service/service-gateway,agentscope-service/service-dataplane,agentscope-service/service-scheduler', '-am', 'clean', 'verify')
+    run('mvn', '-B', '-ntp', '-T1', '-pl', 'agentscope-service/service-gateway,agentscope-service/service-dataplane,agentscope-service/service-scheduler', '-am', 'clean', 'verify')
     # Integration packages share PostgreSQL migration locks; serialize packages.
-    run('go', 'test', '-p', '1', './...', cwd=SERVICE / 'aistio')
-    run('go', 'vet', './...', cwd=SERVICE / 'aistio')
-    for directory in (SERVICE / 'frontend', SERVICE / 'aistio/sdk/dsh'):
+    run('go', 'test', '-p', '1', './...', cwd=SERVICE / 'service-controlplane')
+    run('go', 'vet', './...', cwd=SERVICE / 'service-controlplane')
+    for directory in (SERVICE / 'frontend', SERVICE / 'service-controlplane/sdk/dsh'):
         verify_npm(directory)
-    run(sys.executable, '-m', 'pytest', '-q', cwd=SERVICE / 'aistio/sdk/python')
+    run(sys.executable, '-m', 'pytest', '-q', cwd=SERVICE / 'service-controlplane/sdk/python')
     run('helm', 'lint', str(SERVICE / 'helm/agentscope-service'), '--set', 'imageRepository=example.com/ci', '--set', 'existingSecret=ci')
     run(sys.executable, '-m', 'unittest', 'discover', '-s', str(SERVICE / 'release/tests'))
 
@@ -99,8 +104,8 @@ def manifest(args):
             'sourceCommit': run('git', 'rev-parse', 'HEAD', capture=True).strip(),
             'javaRevision': re.search(r'<revision>([^<]+)</revision>', (ROOT / 'pom.xml').read_text())[1],
             'sourceDirty': bool(run('git', 'status', '--porcelain', capture=True).strip()),
-            'images': {p: f'{args.repository}/agentscope-service-{p}:{args.version}' for p in PLANES},
-            'sdkVersions': {'python': re.search(r'^version = "([^"]+)"', (SERVICE / 'aistio/sdk/python/pyproject.toml').read_text(), re.M)[1], 'dsh': json.loads((SERVICE / 'aistio/sdk/dsh/package.json').read_text())['version']},
+            'images': {p: f'{args.repository}/{IMAGE_NAMES[p]}:{args.version}' for p in PLANES},
+            'sdkVersions': {'python': re.search(r'^version = "([^"]+)"', (SERVICE / 'service-controlplane/sdk/python/pyproject.toml').read_text(), re.M)[1], 'dsh': json.loads((SERVICE / 'service-controlplane/sdk/dsh/package.json').read_text())['version']},
             'platforms': {'images': ['linux/amd64', 'linux/arm64'], 'cli': ['linux/amd64', 'linux/arm64', 'darwin/amd64', 'darwin/arm64']},
             'notes': 'Image digests are recorded separately by the images command. Registry references are publication targets, not proof of availability.'}
 
@@ -123,6 +128,20 @@ def package(args):
     shutil.rmtree(deploy)
     run('helm', 'package', str(SERVICE / 'helm/agentscope-service'), '--version', args.version,
         '--app-version', args.version, '--destination', str(out))
+    deploy = out / 'agentscope-service-kubernetes'
+    deploy.mkdir()
+    for name in ('kubernetes.env.example', 'postgres-init.sql'):
+        shutil.copy2(SERVICE / 'deploy' / name, deploy / name)
+    readme = (SERVICE / 'release/KUBERNETES_README.md').read_text()
+    readme = readme.replace('@SERVICE_VERSION@', args.version).replace('@IMAGE_REPOSITORY@', args.repository)
+    (deploy / 'README.md').write_text(readme)
+    shutil.copy2(out / f'agentscope-service-{args.version}.tgz', deploy)
+    for name in ('LICENSE', 'NOTICE'):
+        if (ROOT / name).exists():
+            shutil.copy2(ROOT / name, deploy / name)
+    with tarfile.open(out / f'agentscope-service-{args.version}-kubernetes.tar.gz', 'w:gz') as archive:
+        archive.add(deploy, arcname=deploy.name)
+    shutil.rmtree(deploy)
     for target in args.platforms.split(','):
         if target not in ('linux/amd64', 'linux/arm64', 'darwin/amd64', 'darwin/arm64'):
             raise SystemExit(f'Unsupported CLI platform: {target}')
@@ -130,19 +149,20 @@ def package(args):
         stage = out / f'cli-{system}-{arch}'
         stage.mkdir()
         env = dict(os.environ, CGO_ENABLED='0', GOOS=system, GOARCH=arch)
-        for name, command in (('agentscope', 'aistioctl'), ('aistio-runtime-host', 'aistio-runtime-host')):
-            run('go', 'build', '-trimpath', '-ldflags=-s -w -X github.com/spring-ai-alibaba/aistio/internal/version.Version=' + args.version, '-o', str(stage / name), './cmd/' + command,
-                cwd=SERVICE / 'aistio', env=env)
-        shutil.copy2(stage / 'agentscope', stage / 'aistioctl')
+        for name, command in (('as', 'as'), ('agentscope-runtime-host', 'agentscope-runtime-host')):
+            run('go', 'build', '-trimpath', '-ldflags=-s -w -X github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/version.Version=' + args.version, '-o', str(stage / name), './cmd/' + command,
+                cwd=SERVICE / 'service-controlplane', env=env)
         shutil.copy2(ROOT / 'LICENSE', stage / 'LICENSE')
+        shutil.copy2(SERVICE / 'release/CLI_README.md', stage / 'README.md')
         with tarfile.open(out / f'agentscope-cli-{args.version}-{system}-{arch}.tar.gz', 'w:gz') as archive:
             for file in sorted(stage.iterdir()):
                 archive.add(file, arcname=file.name)
         shutil.rmtree(stage)
-    run(sys.executable, '-m', 'build', '--outdir', str(out), cwd=SERVICE / 'aistio/sdk/python')
-    run('npm', 'ci', cwd=SERVICE / 'aistio/sdk/dsh')
-    run('npm', 'run', 'build', cwd=SERVICE / 'aistio/sdk/dsh')
-    run('npm', 'pack', '--pack-destination', str(out), cwd=SERVICE / 'aistio/sdk/dsh')
+    if not args.distributions_only:
+        run(sys.executable, '-m', 'build', '--outdir', str(out), cwd=SERVICE / 'service-controlplane/sdk/python')
+        run('npm', 'ci', cwd=SERVICE / 'service-controlplane/sdk/dsh')
+        run('npm', 'run', 'build', cwd=SERVICE / 'service-controlplane/sdk/dsh')
+        run('npm', 'pack', '--pack-destination', str(out), cwd=SERVICE / 'service-controlplane/sdk/dsh')
     data = manifest(args)
     data['platforms']['cli'] = args.platforms.split(',')
     data['artifacts'] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(out.iterdir()) if p.is_file()}
@@ -155,6 +175,116 @@ def require_clean():
         raise SystemExit('Publishing requires a clean, committed source tree.')
 
 
+def check_release_source(version):
+    validate_version(version)
+    require_clean()
+    commit = run('git', 'rev-parse', 'HEAD', capture=True).strip()
+    tag = 'v' + version
+    if run('git', 'rev-parse', f'refs/tags/{tag}^{{commit}}', capture=True).strip() != commit:
+        raise SystemExit('The main release tag must point to the checked-out source.')
+    run('git', 'fetch', '--no-tags', 'origin', 'main')
+    run('git', 'merge-base', '--is-ancestor', commit, 'FETCH_HEAD')
+    revision = re.search(r'<revision>([^<]+)</revision>', (ROOT / 'pom.xml').read_text())[1]
+    go_version = re.search(r'Version = "([^"]+)"', (SERVICE / 'service-controlplane/internal/version/version.go').read_text())[1]
+    module = re.search(r'^module (\S+)', (SERVICE / 'service-controlplane/go.mod').read_text())[1]
+    if revision != version or go_version != version:
+        raise SystemExit('Update the Java revision and Go version before tagging this release.')
+    if not module.endswith('/v' + version.split('.')[0]):
+        raise SystemExit('The release major version must match the Go module path.')
+    return commit
+
+
+def ensure_go_tag(version, commit):
+    tag = 'agentscope-service/service-controlplane/v' + version
+    ref = 'refs/tags/' + tag
+    remote = run('git', 'ls-remote', '--tags', 'origin', ref, ref + '^{}', capture=True)
+    refs = dict((name, sha) for sha, name in (line.split() for line in remote.splitlines()))
+    existing = refs.get(ref + '^{}', refs.get(ref))
+    if existing and existing != commit:
+        raise SystemExit(f'Refusing to move published Go tag {tag}.')
+    if not existing:
+        run('git', 'push', 'origin', f'{commit}:{ref}')
+
+
+def publish_github(args):
+    commit = check_release_source(args.version)
+    tag = 'v' + args.version
+    repo = os.environ['GH_REPO']
+    result = subprocess.run(['gh', 'api', f'repos/{repo}/releases/tags/{tag}'],
+                            text=True, capture_output=True)
+    if result.returncode:
+        if 'HTTP 404' not in result.stderr:
+            raise SystemExit(result.stderr)
+        existing = None
+    else:
+        existing = json.loads(result.stdout)
+    if existing and not existing['draft']:
+        print(f'{tag} is already published; its assets are unchanged.')
+        return
+    assets = [f'agentscope-cli-{args.version}-{system}-{arch}.tar.gz'
+              for system, arch in [('linux', 'amd64'), ('linux', 'arm64'),
+                                   ('darwin', 'amd64'), ('darwin', 'arm64')]]
+    assets += [f'agentscope-service-{args.version}-compose.tar.gz',
+               f'agentscope-service-{args.version}-kubernetes.tar.gz',
+               f'agentscope-service-{args.version}.tgz', 'release-manifest.json', 'SHA256SUMS']
+    metadata = json.loads((args.output / 'release-manifest.json').read_text())
+    if metadata['sourceCommit'] != commit or metadata['serviceVersion'] != args.version or metadata['sourceDirty']:
+        raise SystemExit('The package manifest does not match the clean tagged source.')
+    checksums = dict((name, digest) for digest, name in
+                     (line.split() for line in (args.output / 'SHA256SUMS').read_text().splitlines()))
+    if set(checksums) != set(assets) - {'SHA256SUMS'}:
+        raise SystemExit('The checksums must cover exactly the distribution assets.')
+    digests = {name: 'sha256:' + hashlib.sha256((args.output / name).read_bytes()).hexdigest()
+               for name in assets}
+    if any(digests[name] != 'sha256:' + digest for name, digest in checksums.items()):
+        raise SystemExit('Distribution checksum verification failed.')
+    uploaded = {asset['name']: asset.get('digest') for asset in existing['assets']} if existing else {}
+    if any(uploaded[name] != digests[name] for name in assets if name in uploaded):
+        raise SystemExit('Existing draft assets differ; refuse to overwrite them. Rerun the publish job with its original artifacts.')
+    if not existing:
+        with tempfile.TemporaryDirectory() as directory:
+            notes = Path(directory) / 'notes.md'
+            notes.write_text(f'AgentScope Service {args.version}. Installation and usage: '
+                             '[English](https://java.agentscope.io/v2/en/service/overview) / '
+                             '[中文](https://java.agentscope.io/v2/zh/service/overview).\n')
+            run('gh', 'release', 'create', tag, '--verify-tag', '--draft',
+                '--title', f'AgentScope Service {args.version}', '--notes-file', str(notes))
+    missing = [str(args.output / name) for name in assets if name not in uploaded]
+    if missing:
+        run('gh', 'release', 'upload', tag, *missing)
+    ensure_go_tag(args.version, commit)
+    run('gh', 'release', 'edit', tag, '--draft=false',
+        '--prerelease=' + str('-' in args.version).lower(), '--latest=false')
+
+
+def publish_npm(args):
+    directory = SERVICE / 'service-controlplane/sdk/dsh'
+    metadata = json.loads((directory / 'package.json').read_text())
+    if metadata['name'] != NPM_PACKAGE or metadata['version'] != args.version:
+        raise SystemExit('npm package name/version does not match the release target.')
+    if not args.dry_run:
+        require_clean()
+    run('npm', 'ci', cwd=directory)
+    run('npm', 'test', cwd=directory)
+    run('npm', 'run', 'build', cwd=directory)
+    out = args.output / 'npm'
+    out.mkdir(parents=True, exist_ok=True)
+    packed = json.loads(run('npm', 'pack', '--json', '--pack-destination', str(out),
+                            cwd=directory, capture=True))[0]
+    archive = out / packed['filename']
+    tag = 'next' if '-' in args.version else 'latest'
+    command = ['npm', 'publish', str(archive), '--registry', NPM_REGISTRY,
+               '--access', 'public', '--tag', tag]
+    if args.dry_run:
+        command.append('--dry-run')
+    run(*command)
+    record = {'name': metadata['name'], 'version': args.version, 'registry': NPM_REGISTRY,
+              'tag': tag, 'integrity': packed['integrity'],
+              'sourceCommit': run('git', 'rev-parse', 'HEAD', capture=True).strip(),
+              'status': 'dry-run' if args.dry_run else 'published'}
+    (out / 'publication.json').write_text(json.dumps(record, indent=2) + '\n')
+
+
 def images(args):
     if args.push:
         require_clean()
@@ -164,12 +294,13 @@ def images(args):
     for plane in PLANES:
         dockerfile = 'Dockerfile.control' if plane == 'control' else 'Dockerfile.service'
         cmd = ['docker', 'buildx', 'build', '--platform', args.platforms, '-f', str(SERVICE / 'docker' / dockerfile),
-               '-t', f'{args.repository}/agentscope-service-{plane}:{args.version}',
+               '-t', f'{args.repository}/{IMAGE_NAMES[plane]}:{args.version}',
                '--label', f'org.opencontainers.image.version={args.version}',
                '--label', 'org.opencontainers.image.revision=' + run('git', 'rev-parse', 'HEAD', capture=True).strip(),
                '--metadata-file', str(args.output / f'image-{plane}.json')]
         if plane == 'control':
-            cmd += ['--build-arg', 'VERSION=' + args.version]
+            cmd += ['--build-arg', 'VERSION=' + args.version,
+                    '--build-arg', 'GIT_COMMIT=' + run('git', 'rev-parse', 'HEAD', capture=True).strip()]
         if plane != 'control':
             cmd += ['--build-arg', 'MODULE=service-' + plane]
         cmd += ['--push', '--sbom=true', '--provenance=mode=max'] if args.push else ['--load']
@@ -178,19 +309,30 @@ def images(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('hygiene', 'verify', 'package', 'images', 'publish-chart'))
+    parser.add_argument('command', choices=('hygiene', 'verify', 'package', 'images', 'publish-chart', 'publish-npm', 'check-tag', 'publish-github'))
     parser.add_argument('--version')
     parser.add_argument('--repository', help='Registry hostname/namespace; no URL scheme')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--platforms', default='linux/amd64,linux/arm64,darwin/amd64,darwin/arm64')
     parser.add_argument('--push', action='store_true', help='Push images (otherwise load one platform locally)')
+    parser.add_argument('--dry-run', action='store_true', help='Validate npm publication without uploading')
+    parser.add_argument('--distributions-only', action='store_true', help='Package CLI, Compose and Kubernetes without SDK archives')
     args = parser.parse_args()
     if args.command == 'hygiene': return tracked_hygiene()
     if args.command == 'verify': return verify()
     validate_version(args.version)
+    args.output = (args.output or SERVICE / 'release/dist' / args.version).resolve()
+    if args.command == 'check-tag':
+        check_release_source(args.version)
+        return
+    if args.command == 'publish-github':
+        publish_github(args)
+        return
+    if args.command == 'publish-npm':
+        publish_npm(args)
+        return
     if not re.fullmatch(r'[a-z0-9][a-z0-9./:_-]+', args.repository or '') or '://' in args.repository:
         parser.error('--repository must be a registry hostname/namespace')
-    args.output = (args.output or SERVICE / 'release/dist' / args.version).resolve()
     if args.command == 'package': package(args)
     if args.command == 'images': images(args)
     if args.command == 'publish-chart':

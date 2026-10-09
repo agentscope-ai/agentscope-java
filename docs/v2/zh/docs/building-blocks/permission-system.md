@@ -1,6 +1,7 @@
 ---
 title: Permission System
 description: 精细控制 agent 可以执行哪些 tool、何时执行
+en_link: /v2/en/docs/building-blocks/permission-system
 ---
 
 ## 概述
@@ -203,13 +204,12 @@ PermissionContextState permCtx =
 ```java
 import io.agentscope.core.event.ConfirmResult;
 
-// ASK 决策中包含基于本次调用生成的 suggestedRules（位于 ToolUseBlock 上）。
-// 接受建议时，把它放入结果即可：
+// ASK 决策会把建议规则挂在 PermissionDecision 上（权限钩子可见），而不是 ToolUseBlock 上。
+// 恢复层可以直接放行，也可以显式传入规则，让今后相同的调用自动放行：
 ConfirmResult result =
         new ConfirmResult(
                 /* confirmed = */ true,
-                /* toolCall  = */ toolCall,
-                /* rules     = */ toolCall.getSuggestedRules());
+                /* toolCall  = */ toolCall);
 ```
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/PermissionContextExample.java`、`hitl/PermissionHITLExample.java`。

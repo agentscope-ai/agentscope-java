@@ -1,5 +1,6 @@
 ---
 title: AgentScope 2.0 Production-Ready - Enterprise Harness Explained
+zh_link: /v2/zh/blogs/agentscope-v2-explained
 ---
 
 <font style="color:rgb(44, 44, 43);">The core idea behind AgentScope Java 2.0 is to add a </font>`Harness`<font style="color:rgb(44, 44, 43);"> engineering layer on top of the </font>`ReActAgent`<font style="color:rgb(44, 44, 43);"> reasoning kernel. Developers can keep using the lightweight ReAct loop, or selectively enable Workspace, persistent memory, Session, Sandbox, Skill, and Subagent capabilities to land the same set of Agent logic in an enterprise-grade distributed service.</font>

@@ -61,7 +61,9 @@ public final class OpenAIModelProvider implements ModelProvider {
                             + modelId);
         }
         String modelName = modelId.substring(PREFIX.length());
-        String baseUrl = firstNonBlank(context.getBaseUrl(), DEFAULT_BASE_URL);
+        String baseUrl =
+                firstNonBlank(
+                        context.getBaseUrl(), System.getenv("OPENAI_BASE_URL"), DEFAULT_BASE_URL);
         String endpointPath = trimToNull(context.getEndpointPath());
         boolean stream = context.getStream() != null ? context.getStream() : true;
 

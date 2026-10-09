@@ -87,7 +87,13 @@ public final class JevToolSelectionMiddlewareTest {
                 JevToolSelectionMiddleware.builder(loggingJevCall(jevClient))
                         .maxTools(2)
                         .confidenceThreshold(0.2)
-                        .failOpen(false)
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(5),
+                                        "example-v1",
+                                        (ctx, record) -> {}))
                         .build();
 
         ReActAgent agent =

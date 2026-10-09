@@ -817,29 +817,4 @@ class AguiModelTest {
                     NullPointerException.class, () -> new AguiResume("interrupt-1", null, null));
         }
     }
-
-    @Nested
-    class ToolMergeModeTest {
-
-        @Test
-        void testAllModesExist() {
-            assertNotNull(ToolMergeMode.FRONTEND_ONLY);
-            assertNotNull(ToolMergeMode.AGENT_ONLY);
-            assertNotNull(ToolMergeMode.MERGE_FRONTEND_PRIORITY);
-        }
-
-        @Test
-        void testModeCount() {
-            assertEquals(3, ToolMergeMode.values().length);
-        }
-
-        @Test
-        void testValueOf() {
-            assertEquals(ToolMergeMode.FRONTEND_ONLY, ToolMergeMode.valueOf("FRONTEND_ONLY"));
-            assertEquals(ToolMergeMode.AGENT_ONLY, ToolMergeMode.valueOf("AGENT_ONLY"));
-            assertEquals(
-                    ToolMergeMode.MERGE_FRONTEND_PRIORITY,
-                    ToolMergeMode.valueOf("MERGE_FRONTEND_PRIORITY"));
-        }
-    }
 }

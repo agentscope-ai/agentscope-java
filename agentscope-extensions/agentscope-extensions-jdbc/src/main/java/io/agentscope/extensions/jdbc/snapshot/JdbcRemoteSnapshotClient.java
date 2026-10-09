@@ -24,7 +24,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.List;
 import java.util.Objects;
 import javax.sql.DataSource;
@@ -43,40 +42,15 @@ public class JdbcRemoteSnapshotClient implements RemoteSnapshotClient {
     private final SnapshotDialect dialect;
 
     /**
-     * Creates a client with auto table creation.
+     * Creates a client. Null checks only — tables are created and validated once by {@code
+     * AbstractJdbcDialect.from(dataSource).build()}; this client never touches the schema.
      *
      * @param dataSource the JDBC data source
      * @param dialect the snapshot dialect
      */
     public JdbcRemoteSnapshotClient(DataSource dataSource, SnapshotDialect dialect) {
-        this(dataSource, dialect, true);
-    }
-
-    /**
-     * Creates a client with optional auto table creation.
-     *
-     * @param dataSource the JDBC data source
-     * @param dialect the snapshot dialect
-     * @param initializeSchema when true, auto-creates the table
-     */
-    public JdbcRemoteSnapshotClient(
-            DataSource dataSource, SnapshotDialect dialect, boolean initializeSchema) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
         this.dialect = Objects.requireNonNull(dialect, "dialect");
-        if (initializeSchema) {
-            initSchema();
-        }
-    }
-
-    private void initSchema() {
-        try (Connection conn = dataSource.getConnection();
-                Statement stmt = conn.createStatement()) {
-            for (String ddl : dialect.snapshotCreateTableDdls()) {
-                stmt.execute(ddl);
-            }
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to initialize snapshot table", e);
-        }
     }
 
     @Override

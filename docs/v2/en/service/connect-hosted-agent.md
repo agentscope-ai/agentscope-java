@@ -1,38 +1,117 @@
 ---
-title: "Hosted: connect and create an Agent"
+title: "Connect a Hosted Agent"
+zh_link: /v2/zh/service/connect-hosted-agent
+description: Connect a Runtime Host, select a runtime through the API, create a Hosted Agent, and assign work
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This guide uses the `2.1.0-BETA1` prerelease.
 </Note>
 
-Connect a computer or server with a Coding Agent so Service can dispatch work there. Install and authenticate the provider first, then install the `agentscope` CLI using the [Runtime Host guide](/v2/en/service/runtime-host).
+A Hosted Agent connects a Coding Agent on your computer or server. Runtime Host starts the provider, prepares its working directory, and reports results. Applications call the Agent through the Session API or use it as an executor in a Team or Workflow.
 
-## Connect the host
+Connect a host once. You can then create multiple Hosted Agents, define their responsibilities, and assign work through the API without installing a separate Host for each Agent.
 
-Replace the URL with a Service address reachable from the host:
+Hosted Agents work independently or join a team coordinated by a Managed Lead. Runtime Host runs Coding Agent providers; it differs from a Managed self_hosted tool Worker and from deploying the whole Service. Prepare the [platform](/v2/en/service/quickstart), then see [self-hosted architecture](/v2/en/service/quickstart#self-hosting) for boundaries and [orchestration](/v2/en/service/orchestration) for collaboration.
+
+## Connect an execution host
+
+Install and authenticate the provider on the target machine, and verify that it can complete a request. Use `go install` with Go 1.26 or newer to install both CLI commands at `v2.1.0-BETA1`, following the [Runtime Host guide](/v2/en/service/runtime-host) to configure PATH. Then run:
 
 ```bash
-agentscope connect https://agentscope.example.com
-agentscope runtime status
-agentscope runtime probe
+as connect https://agentscope.example.com
+as runtime status
+as runtime probe
 ```
 
-Complete authentication through the connection flow. Confirm the Host is online and provider discovery succeeds, then verify that the provider itself can complete a request. See the [provider reference](/v2/en/service/hosted-agent-providers) for supported types and capabilities.
+The CLI handles identity exchange, local configuration, and the daemon. For unattended servers, an authorized platform account can call `POST /api/v1/runtime-host-enrollment-tokens` with `tenant` and `namespace` to obtain a short-lived `enrollmentToken`. Supply it as `AGENTSCOPE_ENROLLMENT_TOKEN` on the target host before connecting. Host enrollment and execution also have APIs; business applications do not need to reimplement the daemon.
 
-## Create a Hosted Agent
+## Find an available runtime
 
-1. Open **DESIGN → Agents → New agent** and enter a name and responsibilities.
-2. Select a discovered Coding Agent provider as Runtime.
-3. Leave Model empty for defaults if appropriate; link only Workspace capabilities supported by the provider.
-4. Save and check Runtime readiness.
+The examples use a platform account token, `TOKEN`, authorized to manage the target namespace. Replace the Service address and scope with your deployment values:
 
-## Dispatch and verify
+```bash
+export SERVICE_URL="http://localhost:8081"
 
-Create a read-only [Issue](/v2/en/service/issues), such as “Suggest three documentation improvements based on the supplied README”, and select this Agent. Inspect Execution, result comments and deliverables to confirm the intended host performed the work.
+curl -sS "$SERVICE_URL/api/v1/agents/runtime-options?tenant=default&namespace=default" \
+  -H "Authorization: Bearer $TOKEN"
+```
 
-Host manages the task directory. An already-open local Git repository does not automatically become task input. Prepare the actual material before requesting file operations and upload shared results as Artifacts.
+The response's `runtimes` array contains available options with `provider`, `runtimeProfileId`, `runtimePoolId`, `hostCount`, and advertised provider capabilities. Select an appropriate option and retain both IDs. The accompanying `profiles` and `pools` describe how to launch a provider and which hosts may run it.
 
-If no Runtime is available, check Host and provider discovery. If claimed work fails, inspect login, parameters and dependencies. See the [Hosted Agent reference](/v2/en/service/hosted-agent) for configuration, definition mapping and recovery.
+If `runtimes` is empty, check whether the Host is online and the provider was detected. You can inspect hosts directly:
 
-After single-task acceptance, continue with the [all-Hosted engineering case](/v2/en/service/cases/sdlc-team) for analysis, implementation, PR, review, CI, and approval.
+```bash
+curl -sS "$SERVICE_URL/api/v1/runtime-hosts?tenant=default&namespace=default" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+See the [provider reference](/v2/en/service/hosted-agent-configuration#hosted-agent-providers) for differences in Workspace, tool, and recovery support.
+
+## Create the Hosted Agent
+
+Use the common `POST /api/v1/agents` operation with a `hosted-runtime` binding. The portable `definition` describes the Agent's name and instructions; the profile and pool determine how and where it runs.
+
+Replace both ID placeholders with UUIDs returned by the previous request:
+
+```bash
+curl -sS "$SERVICE_URL/api/v1/agents" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "tenant": "default",
+    "namespace": "default",
+    "agentKey": "code-reviewer",
+    "displayName": "Code reviewer",
+    "binding": {
+      "kind": "hosted-runtime",
+      "configuration": {
+        "runtimeProfileId": "<runtime-profile-id>",
+        "runtimePoolId": "<runtime-pool-id>"
+      }
+    },
+    "definition": {
+      "name": "Code reviewer",
+      "system": "Review the supplied code, explain evidence and recommendations, and do not modify files without instruction."
+    }
+  }' > hosted-agent.json
+```
+
+The response contains `agent`, `binding`, `policy`, and `definition`. Use `agent.id` in later requests. This example leaves model selection to the provider's defaults. Support for other definition fields depends on the provider's advertised capabilities.
+
+```bash
+AGENT_ID=$(jq -r '.agent.id' hosted-agent.json)
+
+curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/bindings" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Use `PATCH /api/v1/agents/{agentId}/definition` to update instructions. Provider execution options are available through `GET/PATCH /api/v1/agents/{agentId}/hosted-settings`. Read the current configuration and version before updating it; see the [Hosted Agent reference](/v2/en/service/connect-hosted-agent#hosted-agent) for the fields.
+
+## Assign work and read the result
+
+Create a small read-only task through the [Issue API](/v2/en/service/issues), setting `assigneeType: "agent"` and `assigneeRef` to the Agent ID. For example, include README text in the description and ask for three improvements. The platform creates an AgentTask and dispatches it asynchronously. Business code does not need to call the Host's claim protocol.
+
+Use Issue, task, and ExecutionAttempt queries to follow progress and read result comments and artifacts. The Host prepares the working directory; a repository open on that machine does not automatically become task input. Explicitly associate a supported Workspace or supply the necessary materials.
+
+After validating one task, add the Agent to a [Team](/v2/en/service/create-team) or create a Session targeting it directly. Hosted interaction support depends on the provider and adapter; do not assume every Managed input, approval, or checkpoint feature is available. Read Session and Turn capabilities. See the [API guide](/v2/en/service/service-api).
+
+For the visual workflow, see [Console: Agent management](/v2/en/service/console/index#console-agents). For publishing a Coding Agent as a business capability, see the [incident repair service](/v2/en/service/cases/incident-to-pr).
+
+<span id="hosted-agent"></span>
+<span id="in-this-chapter"></span>
+<span id="prepare-the-machine"></span>
+<span id="create-the-agent"></span>
+<span id="deliver-a-small-task"></span>
+<span id="extend-capabilities"></span>
+<span id="interrupt-and-recover"></span>
+<span id="publish-it-as-a-service"></span>
+
+## Working directories and delivery
+
+Runtime Host manages task directories; it does not automatically use your open Git checkout. Prepare the repository, branch, and inputs explicitly, and upload shared results as Artifacts. An online Host does not prove that the provider is authenticated or that its tools can execute.
+
+Workspace instructions, Skills, and tools are mapped according to provider capabilities. Dependencies and third-party authentication remain on the Host. Native provider session recovery differs from Turn recovery commands; read invocation capabilities before showing controls.

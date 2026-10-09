@@ -1,9 +1,10 @@
 ---
 title: "Production installation"
+zh_link: /v2/zh/service/kubernetes
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+The current release is `2.1.0-BETA1`, a prerelease. Validate your deployment before using it in production.
 </Note>
 
 This guide covers production deployment with Kubernetes and Helm. The published Service Chart installs Gateway, Control, Dataplane and Scheduler. You manage PostgreSQL, storage, domain and TLS. Components default to one replica with Recreate updates; plan maintenance windows.
@@ -12,7 +13,14 @@ This guide covers production deployment with Kubernetes and Helm. The published 
 
 Prepare Kubernetes, Helm and reachable PostgreSQL. Workspaces need an RWX StorageClass or an existing shared PVC because several components mount them. Artifacts default to RWO. Single-node RWO behavior does not establish shared access across nodes.
 
-Download the Chart and deployment configuration package from the Release and verify SHA256SUMS. Execute `postgres-init.sql` in the target database as its application owner to create `cp`, `rt` and `dp`. Plan backups for the database, files and keys.
+You can install the Chart directly from the public Helm repository, without cloning the source. Download the matching configuration template and initialization SQL:
+
+```bash
+curl -fLO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/kubernetes.env.example
+curl -fLO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/postgres-init.sql
+```
+
+Execute the SQL in the target database as its application owner to create `cp`, `rt` and `dp`. Plan backups for the database, files and keys. For an offline installation, download `agentscope-service-2.1.0-BETA1-kubernetes.tar.gz` and `SHA256SUMS` from the [GitHub Release](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.1.0-BETA1), verify the checksum and extract the bundle. It includes the Chart and the same configuration files.
 
 ## 2. Create a Secret
 
@@ -53,18 +61,28 @@ Use `existingClaim` for retained PVCs. Configure `imagePullSecrets` for private 
 
 ## 4. Install a pinned version
 
-Use the Release's OCI Chart location and image namespace:
+Add the public Helm repository and refresh its index. Repository access needs no login:
 
 ```bash
-helm upgrade --install service oci://REGISTRY/NAMESPACE/charts/agentscope-service \
-  --version VERSION \
+helm repo add agentscope https://chickenlj.github.io/helm-charts
+helm repo update agentscope
+helm search repo agentscope/agentscope-service --versions --devel
+```
+
+The published [Helm repository](https://github.com/chickenlj/helm-charts) hosts the index and archives on GitHub Pages. Pin `--version 2.1.0-BETA1`; `--devel` in the search command includes prereleases. The Chart supplies the matching image tag through `appVersion`.
+
+Install a specific Chart version with the matching image namespace:
+
+```bash
+helm upgrade --install service agentscope/agentscope-service \
+  --version 2.1.0-BETA1 \
   --namespace agentscope \
-  --set imageRepository=REGISTRY/NAMESPACE \
+  --set imageRepository=sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope \
   -f production-values.yaml \
   --wait --timeout 10m
 ```
 
-Alternatively replace the OCI location and `--version VERSION` with the downloaded `./agentscope-service-VERSION.tgz`. Authenticate to private OCI registries with Helm first. Keep Chart and component image versions aligned.
+For an offline installation, replace `agentscope/agentscope-service` and `--version 2.1.0-BETA1` with the downloaded `./agentscope-service-2.1.0-BETA1.tgz`. Keep Chart and component image versions aligned. The Chart creates workloads in your cluster; Helm repository publication does not deploy a running Service.
 
 ## 5. Verify user workflows
 
@@ -79,4 +97,4 @@ Confirm Bound PVCs and Ready Pods. Sign in through the public domain with the bo
 
 Restart affected Deployments after Secret updates. Follow [operations](/v2/en/service/operations) before upgrading and retain prior Charts, values and image versions. PVCs are retained on uninstall; explicitly select them with existingClaim on reinstall.
 
-This Chart runs complete Service standalone HTTP. Kubernetes-native Aistio/ASDP is a separate deployment mode, requiring deliberate SDK connectivity planning rather than blindly combining Charts. The single-replica installation does not guarantee zero-downtime migrations or multi-replica HA.
+This Chart runs complete Service standalone HTTP. Kubernetes-native ControlPlane/ASDP is a separate deployment mode, requiring deliberate SDK connectivity planning rather than blindly combining Charts. The single-replica installation does not guarantee zero-downtime migrations or multi-replica HA.

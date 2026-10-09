@@ -22,8 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.ClientOptions;
+import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GoogleSearch;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.ProxyOptions;
+import com.google.genai.types.Tool;
+import com.google.genai.types.UrlContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
@@ -35,6 +39,7 @@ import io.agentscope.core.model.test.ModelTestUtils;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.gemini.formatter.GeminiChatFormatter;
 import io.agentscope.extensions.model.gemini.formatter.GeminiMultiAgentFormatter;
+import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.List;
@@ -190,6 +195,36 @@ class GeminiChatModelTest {
                 List.of(ModelTestUtils.createSimpleToolSchema("test_tool", "A test tool"));
 
         assertNotNull(tools, "Tool schemas should be created");
+    }
+
+    @Test
+    @DisplayName("Should combine function tools and Gemini server tools in request config")
+    void testBuildConfigCombinesFunctionAndServerTools() {
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .serverTools(
+                                List.of(
+                                        GeminiServerTool.of(
+                                                Tool.builder()
+                                                        .googleSearch(
+                                                                GoogleSearch.builder().build())
+                                                        .build()),
+                                        GeminiServerTool.of(
+                                                Tool.builder()
+                                                        .urlContext(UrlContext.builder().build())
+                                                        .build())))
+                        .build();
+        ToolSchema functionTool =
+                ModelTestUtils.createSimpleToolSchema("test_tool", "A test function tool");
+
+        GenerateContentConfig config =
+                model.buildGenerateContentConfig(List.of(functionTool), null);
+
+        assertEquals(3, config.tools().orElseThrow().size());
+        assertTrue(config.tools().orElseThrow().get(0).functionDeclarations().isPresent());
+        assertTrue(config.tools().orElseThrow().get(1).googleSearch().isPresent());
+        assertTrue(config.tools().orElseThrow().get(2).urlContext().isPresent());
     }
 
     @Test

@@ -17,8 +17,10 @@ package io.agentscope.core.event;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import io.agentscope.core.agent.ExecutionIdentity;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -99,6 +101,9 @@ public abstract class AgentEvent {
     private final String createdAt;
     private String source;
 
+    @JsonProperty("execution")
+    private ExecutionIdentity execution;
+
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     private Map<String, Object> metadata;
 
@@ -110,6 +115,16 @@ public abstract class AgentEvent {
     protected AgentEvent(String id, String createdAt) {
         this.id = id;
         this.createdAt = createdAt;
+    }
+
+    /** Correlation with native history; forwarded child events retain their own identity. */
+    public ExecutionIdentity getExecution() {
+        return execution;
+    }
+
+    public AgentEvent withExecution(ExecutionIdentity identity) {
+        if (execution == null) execution = identity;
+        return this;
     }
 
     public abstract AgentEventType getType();
