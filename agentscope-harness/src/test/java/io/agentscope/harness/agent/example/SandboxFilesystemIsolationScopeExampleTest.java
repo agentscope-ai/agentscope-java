@@ -31,6 +31,8 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -117,6 +119,9 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sessionLogStore(
+                                new WorkspaceSessionLogStore(
+                                        new LocalFilesystem(workspace.resolve("journal"))))
                         .build();
 
         // First call — no persisted state → create
@@ -147,6 +152,9 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sessionLogStore(
+                                new WorkspaceSessionLogStore(
+                                        new LocalFilesystem(workspace.resolve("journal"))))
                         .build();
 
         agent.call(userMsg("call from session-1"), ctx("session-2-1", "alice")).block();
@@ -181,6 +189,9 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sessionLogStore(
+                                new WorkspaceSessionLogStore(
+                                        new LocalFilesystem(workspace.resolve("journal"))))
                         .build();
 
         agent.call(userMsg("session A"), ctx("session-a", "alice")).block();
@@ -210,6 +221,9 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sessionLogStore(
+                                new WorkspaceSessionLogStore(
+                                        new LocalFilesystem(workspace.resolve("journal"))))
                         .build();
 
         agent.call(userMsg("hi from alice2"), ctx("s1", "alice2")).block();
@@ -243,6 +257,9 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sessionLogStore(
+                                new WorkspaceSessionLogStore(
+                                        new LocalFilesystem(workspace.resolve("journal"))))
                         .build();
 
         // Different users, different sessions — all share one AGENT-scoped sandbox

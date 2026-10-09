@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>2.0.4-SNAPSHOT</revision>
+        <revision>2.1.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -121,7 +121,7 @@
 
         <spotless.version>3.4.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
-        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
+        <maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
         <google-java-format.version>1.28.0</google-java-format.version>
         <maven.deploy.skip>false</maven.deploy.skip>

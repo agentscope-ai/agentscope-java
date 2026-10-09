@@ -113,62 +113,66 @@ Model providers are shipped as separate extension modules in 2.0. Add the one yo
 
 Other options: `agentscope-extensions-model-openai`, `agentscope-extensions-model-anthropic`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-ollama`. See the [Model docs](https://java.agentscope.io/v2/en/docs/building-blocks/model.html) for details.
 
-If you only need a bare `ReActAgent` without workspace / persistence / sandbox, depend on `agentscope-core` alone.
+To use the reasoning and tool APIs of `ReActAgent` and compose application capabilities yourself, depend on `agentscope-core` and your model extension.
 
 ## Hello AgentScope!
 
-Start your first agent with AgentScope Java 2.0:
+Configure a shared Builder at startup, then use `builder.build()` to create and close an Agent for each request. The same identity and persistent storage keep the conversation across instances. Set `DASHSCOPE_API_KEY` before running:
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.nio.file.Paths;
 
 public class FirstAgent {
+    // Configure once at startup; requests only call build().
+    private static final HarnessAgent.Builder AGENT_BUILDER = HarnessAgent.builder()
+            .name("assistant")
+            .agentId("assistant")
+            .sysPrompt("You are a helpful AI assistant.")
+            .model("dashscope:qwen-plus")
+            .workspace(Paths.get(".agentscope/workspace"));
+
     public static void main(String[] args) {
-        HarnessAgent agent = HarnessAgent.builder()
-                .name("assistant")
-                .sysPrompt("You are a helpful AI assistant.")
-                // ModelRegistry resolves the string and reads the matching
-                // API-key env var (e.g. OPENAI_API_KEY or DEEPSEEK_API_KEY)
-                // automatically.
-                // Examples: "openai:gpt-4.1", "openai:o3",
-                // "deepseek:deepseek-v4-flash", "dashscope:qwen-plus",
-                // "anthropic:claude-sonnet-4-7", "ollama:llama3"
-                .model("dashscope:qwen-plus")
-                // Or pass a ChatModel object directly:
-                // .model(OpenAIChatModel.builder().model("gpt-4.1").build())
-                .workspace(Paths.get(".agentscope/workspace"))
-                .build();
+        try (HarnessAgent agent = AGENT_BUILDER.build()) {
+            RuntimeContext ctx = RuntimeContext.builder()
+                    .sessionId("demo").userId("alice").build();
+            agent.call(new UserMessage("Hello!"), ctx).block();
+        }
 
-        RuntimeContext ctx = RuntimeContext.builder()
-                .sessionId("demo").userId("alice").build();
-
-        // Blocking call
-        agent.call(new UserMessage("Hello!"), ctx).block();
-
-        // Or stream events for real-time UI rendering
-        agent.streamEvents(new UserMessage("Summarize today in three bullets."), ctx)
-                .doOnNext(event -> {
-                    switch (event.getType()) {
-                        case TEXT_BLOCK_DELTA -> System.out.print(
-                                ((io.agentscope.core.event.TextBlockDeltaEvent) event).getDelta());
-                        case TOOL_CALL_START -> System.out.println(
-                                "\n[tool] " + ((io.agentscope.core.event.ToolCallStartEvent) event).getToolCallName());
-                        default -> { }
-                    }
-                })
-                .blockLast();
+        // COMMENT_Summarize today in three bullets.
+        try (HarnessAgent agent = AGENT_BUILDER.build()) {
+            RuntimeContext ctx = RuntimeContext.builder()
+                    .sessionId("demo").userId("alice").build();
+            agent.streamEvents(new UserMessage("Summarize today in three bullets."), ctx)
+                    .doOnNext(event -> {
+                        switch (event.getType()) {
+                            case TEXT_BLOCK_DELTA -> System.out.print(
+                                    ((TextBlockDeltaEvent) event).getDelta());
+                            case TOOL_CALL_START -> System.out.println(
+                                    "\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
+                            default -> { }
+                        }
+                    })
+                    .blockLast();
+        }
     }
 }
 ```
 
+Start with `call` / `streamEvents` for ordinary replies, multi-turn chat and workflow steps; follow the [Quick Start](https://java.agentscope.io/v2/en/docs/quickstart). Both also record Harness conversation history by default. Introduce [AgentSession](https://java.agentscope.io/v2/en/docs/harness/session-log) when work must continue after a page closes, queue while busy or resume after interruption. The [recoverable chat example](./agentscope-examples/agents/agentscope-chat/README.md) shows the full integration.
+
 ## AgentScope Service
-**[AgentScope Service](./agentscope-service)** — an Agent Control Plane built on AgentScope Harness that provides:
-+ **Control Plane.** It provides agent registration, discovery, and distributed coordination services for every agent in the enterprise. It works with mainstream agent runtimes including AgentScope, LangChain, ADK, and Claude / Qoder, giving you a single place to inspect agent metrics and operate on live sessions — for example, compressing session context.
-+ **Managed Agents Platform** Built on the AgentScope Harness runtime, managed agents lets you run multiple Agents on one fully-managed platform under unified operations. The platform hosts Harness capabilities, while tool execution can be delegated to a sandbox that you control.
-+ **Agent Teams** Agents registered with AgentScope Service can be assembled into one or more Teams, whether the Agent is a self-hosted AgentScope runtime or a low-code Managed Agent Harness runtime, Agents can be orchestrated together to tackle more complex work.
+**[AgentScope Service](./agentscope-service)** — an Agent as a Service platform for business applications. Publish capabilities such as proposal writing, document verification, and exception investigation through APIs. Users start work, handle decisions, and review delivery inside their existing product.
+
++ **Business integration.** Offer background tasks, interactive assistants, or specialist process steps through Endpoints. Applications retain their interface, data authorization, and acceptance rules.
++ **Persistent work and delivery.** Follow status, snapshots, and events through Invocations, handle human interaction, and retrieve results and files for the business process.
++ **Execution suited to the task.** Run AgentScope Harness, connect an existing Agent application, or reuse a Coding Agent. Add Teams and Workflows when needed.
+
+Choose an integration in [Use cases](https://java.agentscope.io/v2/en/service/usecases), then complete a call with the [API quickstart](https://java.agentscope.io/v2/en/service/first-session).
 
 ![agentscope-service-architecture.png](docs/imgs/agentservice/agentscope-service-architecture.png)
 

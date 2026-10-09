@@ -33,6 +33,15 @@ describe('conversation adapters', () => {
       expect(messages[0]).toMatchObject({ state: 'complete', blocks: [{ text: 'partial answer' }] });
     }
   });
+  it('uses the final native message revision without changing the event timeline', () => {
+    const events = [
+      { id: 1, seq: 1, eventType: 'agent.message', role: 'assistant', content: 'draft', frameworkMeta: { message_id: 'item' } },
+      { id: 2, seq: 2, eventType: 'agent.message', role: 'assistant', content: 'final', frameworkMeta: { message_id: 'item' } },
+    ];
+    expect(runtimeEventsToMessages(events)).toMatchObject([{ blocks: [{ text: 'final' }] }]);
+    expect(runtimeEventsToMessages(events)).toHaveLength(1);
+    expect(runtimeEventsToConversation(events)).toHaveLength(2);
+  });
   it('combines External deltas and replaces them with the final response once', () => {
     const events = [
       { seq: 1, eventType: 'assistant.delta', role: 'assistant', content: 'hel', frameworkMeta: { turnId: 'one' } },

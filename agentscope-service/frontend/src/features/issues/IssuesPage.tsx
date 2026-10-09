@@ -174,7 +174,7 @@ export default function IssuesPage() {
   }
 
   const emptyDescription = source === "endpoint_jobs"
-    ? "No Endpoint Job has created an operational issue in this scope."
+    ? "No Session task has created an operational issue in this scope."
     : search
       ? "Try another search or clear the active filters."
       : view === "archived"
@@ -229,7 +229,7 @@ export default function IssuesPage() {
           >
             <option value="all">All sources</option>
             <option value="work">Work Hub</option>
-            <option value="endpoint_jobs">Endpoint jobs</option>
+            <option value="endpoint_jobs">Session tasks</option>
           </select>
         </div>
       </div>
@@ -274,7 +274,7 @@ export default function IssuesPage() {
                         </Link>
                         <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-slate-400">
                           <span>{issue.identifier || issue.id.slice(0, 8)}</span>
-                          {issue.kind === "endpoint_job" && <Badge>Endpoint job</Badge>}
+                          {issue.kind === "endpoint_job" && <Badge>Session task</Badge>}
                         </div>
                       </td>
                       <td className="px-4 py-4"><Badge tone={priorityTone(issue.priority)} className="capitalize">{issue.priority}</Badge></td>

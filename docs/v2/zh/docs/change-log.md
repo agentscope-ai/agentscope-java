@@ -76,6 +76,7 @@ Spring Boot 应用应使用对应模型提供商的 starter，而不是依赖 co
 | 模型提供商 | Spring Boot starter |
 |---|---|
 | OpenAI | `agentscope-openai-spring-boot-starter` |
+| OpenAI Official | `agentscope-openai-official-spring-boot-starter` |
 | DashScope | `agentscope-dashscope-spring-boot-starter` |
 | Gemini | `agentscope-gemini-spring-boot-starter` |
 | Anthropic | `agentscope-anthropic-spring-boot-starter` |

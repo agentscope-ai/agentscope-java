@@ -1,5 +1,5 @@
 ---
-title: Backup, upgrade and recovery
+title: "Operations, recovery, and troubleshooting"
 zh_link: /v2/zh/service/operations
 ---
 
@@ -52,20 +52,106 @@ Check administrator login, existing Agents and Session history, workspace files,
 
 A backup is qualified only when database, files and keys recover together. Plan maintenance windows for this single-replica installation.
 
+## Check recovered services through APIs
+
+Read existing resources before submitting a clearly new test task:
+
+| Check | API |
+| --- | --- |
+| Agents and bindings | `GET /api/v1/agents`, `GET /api/v1/agents/{id}/bindings` |
+| Session configuration | `GET /api/v1/agent-sessions/{sessionId}` and its frozen target |
+| Existing business results and UI | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}`, `GET .../{id}/snapshot` |
+| Orchestration and actual attempts | `GET /api/v1/orchestration-runs/{id}/graph`, `GET /api/v1/execution-attempts/{id}` |
+| Notification and automation | Inspect original Webhook/Automation delivery records and deduplication state |
+
+Use the original invocation ownership credentials or authorized platform identity. Recover Turn data, native Managed logs, workspace files, and encryption keys together. Expired event cursors require a fresh snapshot, not resubmission of completed work. See [API reference](/v2/en/service/api-reference).
+
 ## Reopen service after recovery
 
 Keep scheduled rules and external traffic controlled while verifying login, history, files and credentials with test work. Confirm Runtime Hosts reconnect before restoring schedules and application traffic. Restoring a snapshot does not undo external messages or writes made after it; reconcile idempotency records and unfinished work before rerunning.
 
 ## Use fixed cases for upgrade regression
 
-Before upgrading, retain the sample knowledge and acceptance results from the [presales team case](/v2/en/service/cases/presales-team). Ask the same questions in an isolated restored environment. Model wording may differ; compare these facts and persistent records:
+Before upgrading, retain the fixed request, source versions, and acceptance results from the [CRM proposal case](/v2/en/service/cases/in-product-delivery). Repeat the call in an isolated restored environment. Model wording may differ; compare these facts and persistent records:
 
 | Check | Evidence |
 | --- | --- |
-| Knowledge recovery | All three document bodies match the backup and the Agent actually reads them |
+| Source recovery | All three inline sources and versions match; separately verify reads if production uses Memory |
 | File recovery | Previous Artifacts download and match the recorded content |
-| New work | A new Invocation / Run completes with correct sources and no unsupported capability promises |
-| History | Pre-upgrade Issues, events, and acceptance states remain readable |
-| Host and automation, if used | Run the engineering and fulfillment cases against test targets and inspect linked records |
+| New work | A new Turn / Run completes with correct sources and no unsupported capability promises |
+| History | Previous Turns, events, artifacts, and application acceptance records remain readable |
+| Host and scheduling, if used | Run code repair or recurring research against test targets and inspect linked records |
 
 Record versions, backup batch, inputs, execution IDs, and differences. Validate credentials through the integrations that use them; the knowledge-only case has no external credential and cannot establish that Vault decryption works.
+
+<span id="troubleshooting"></span>
+
+## Collect component logs
+
+```bash
+docker compose logs --tail=200 control data scheduler gateway
+kubectl -n agentscope logs deployment/service-agentscope-control --tail=200
+kubectl -n agentscope describe pod POD_NAME
+```
+
+Gateway health does not verify model or tool execution. Inspect Dataplane for Managed Session failures, Scheduler for channel/Worker scheduling, and Control for product Automations, resources, accounts and orchestration. Hosted provider failures also need the machine's daemon logs.
+
+## Restarting did not reset the administrator password
+
+This is expected. `CONTROL_PLANE_BOOTSTRAP_PASSWORD` applies only to an empty account table. Change existing passwords through Profile or administrator account management rather than regenerating `.env`.
+
+## Vault decryption fails
+
+Check that recovery preserved the original `BUILDER_VAULT_MASTER_KEY` and that all components use the same value. Restore matching configuration and data before trying to replace keys.
+
+## Work arrived but no final result
+
+Inspect the Run, Node and latest Attempt from Issue Executions, not just the last message. Check dependencies, approvals or signals for waiting, missing input for blocked, and errors/partial artifacts for failed. Inbox Request changes does not start execution. Verify task reporting for External adapters and provider exit/reporting for Hosted work.
+
+## Repeated Webhook or Session requests
+
+Query the existing Delivery/Turn first. Reuse the same key and content for the same logical request; assign a new key only to new work. Check trigger event filters, authentication and schemas. After SSE disconnects, query the returned statusUrl before resubmitting.
+
+## Diagnose unified service API calls
+
+Save the Session ID, Turn ID, idempotency key, and error code. Read `/api/v1/agent-sessions/{sessionId}/turns/{turnId}` for task status, then that Turn’s `/snapshot` and `/capabilities` for saved results and available commands.
+
+| Symptom | Check |
+| --- | --- |
+| No key after Session creation | Create a credential under an Application with explicit targets and scopes |
+| 401/403 | Credential target grants, Application status/scopes, and designated approver identity |
+| 409 | Resource version, reused key with changed input, incompatible target, or active Conversation conflict |
+| Accepted input has no visible effect | Query the command receipt; acceptance does not mean model consumption |
+| SSE 410/cursor_expired | Replace the UI from a fresh snapshot and resume after as_of without resubmitting work |
+| A member finished but the call is active | Inspect Turn and steps, not just member output |
+| Resume unavailable | Respect available_commands; backend support differs and public checkpoint restore is unavailable |
+
+`/api/v1/events` is a WebSocket refresh notification, not durable Turn SSE. See [Unified service API](/v2/en/service/service-api).
+
+## Agent API and SSE
+
+The following applies to native Managed sessions.
+
+Keep the session ID, turn ID, latest event ID, HTTP status and sanitized error. Distinguish the page connection, task execution and context recovery:
+
+| Symptom | Action |
+| --- | --- |
+| Refresh shows only a suffix or loses tools produced while away | Render snapshot.items/tools first, then stream after as_of; a cursor alone cannot rebuild UI state |
+| Stream closes and task status is unclear | Read turns/{turn} or snapshot; disconnect neither cancels nor calls for a new turn |
+| Task stays running after run.ended / item.completed | Wait for the target turn outcome; an attempt, message or tool is not the whole task |
+| 400 / 409 cursor error | Verify session scope and reload snapshot; never parse or increment cursors yourself |
+| Resource pagination returns 410 | Restart from its first page; resource-page cursors are not SSE cursors |
+| Answer submitted but the tool does not continue | Read required_actions and GET turns/{turn}/actions; accepted is receipt, rejected requires checking reason and pending |
+| Steer returns 409 | The task may have ended or closed input; reread status, and use a new turn for a separate question |
+| Checkpoint restore returns 409 | Resolve open tasks, actions, pending inputs and unknown tool outcomes; restoring does not undo external operations |
+| Cost is incomplete or budget blocks execution | Inspect unpriced calls, usage and pricing in usage/budget; adjust limits and explicitly resume as task state permits |
+| No webhook received | Check allowed hosts, registration time, event filters and deliveries; fix the receiver before retrying a paused webhook |
+| Heartbeats but no text | Check task, tool and model state; deltas may be unavailable. If content arrives in bursts, inspect proxy buffering |
+
+See [Sessions and tasks](/v2/en/service/session-event-log) and [SSE replay](/v2/en/service/sse-events). Applications retain Sessions, Turns, and cursors without managing internal runtime identity mappings.
+
+## Updating Control Plane naming
+
+The Go component lives in `agentscope-service/service-controlplane` and its server binary is `service-controlplane`. When updating an existing installation, update build paths, startup commands, deployment manifests, and environment variables together. Control Plane configuration uses the `CONTROL_PLANE_` prefix; HTTP clients use `CONTROL_PLANE_HTTP`, while the CLI and Runtime Host use `CONTROL_PLANE_URL`. The CLI is `as` and the Runtime Host executable is `agentscope-runtime-host`. Use the environment templates shipped with the same Service version to avoid combining old configuration with new binaries.
+
+The Java integration is `agentscope-extensions-controlplane`, with `io.agentscope.extensions.controlplane.ControlPlane` and `ControlPlaneConfig`. The Python distribution is `agentscope-service-sdk`, imported as `agentscope_service`; the DSH plugin is `@agentscope-service/dsh-controlplane`. Update dependencies and imports before redeploying connected agents. If you customize journal paths, Helm resource names, or Console preferences, migrate those local settings as part of the upgrade. Database schemas and the ASDP `agentscope.protocol.v1` wire contract keep their existing identities.
