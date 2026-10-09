@@ -30,6 +30,7 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
+import io.agentscope.harness.agent.skill.runtime.MarketplaceStager;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.BufferedReader;
@@ -712,6 +713,13 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (ns == null || ns.isEmpty()) {
             return key;
         }
+        // MarketplaceStager writes the skill cache at the workspace root, one subtree per
+        // identity. The relative spelling ls/glob/grep hand back for the caller's own subtree
+        // must round-trip, but every other identity's subtree stays behind the namespace.
+        if (ns.size() == 1
+                && isOwnSkillsCachePath(key, MarketplaceStager.scopeSegment(ns.get(0)))) {
+            return key;
+        }
         String prefix = String.join("/", ns);
         return prefix + "/" + key;
     }
@@ -734,6 +742,26 @@ public class LocalFilesystem implements AbstractFilesystem {
         }
         // Windows UNC: "\\server\share"
         return key.startsWith("\\\\");
+    }
+
+    /**
+     * Returns {@code true} when {@code key} is a relative path into the caller's own
+     * {@code .skills-cache/<scopeSegment>} subtree. The cache root itself and other scopes'
+     * subtrees do not qualify, and neither does any path with a {@code ..} segment.
+     */
+    private static boolean isOwnSkillsCachePath(String key, String scopeSegment) {
+        List<String> parts = new ArrayList<>();
+        for (String segment : key.replace('\\', '/').split("/")) {
+            if ("..".equals(segment)) {
+                return false;
+            }
+            if (!segment.isEmpty() && !".".equals(segment)) {
+                parts.add(segment);
+            }
+        }
+        return parts.size() >= 2
+                && MarketplaceStager.CACHE_DIR.equals(parts.get(0))
+                && scopeSegment.equals(parts.get(1));
     }
 
     protected String toVirtualPath(Path path) {
