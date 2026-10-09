@@ -355,6 +355,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     + " to the reasoning channel only. Reply again and write the final answer into"
                     + " the content channel.</system-reminder>";
 
+    /**
+     * Placeholder text for synthetic terminal messages whose model output is absent or
+     * non-presentable ({@code buildReturnDirectResultMsg}, the {@code summarizing()} fallback,
+     * and the middleware-stop result), keeping assistant content non-empty for providers that
+     * reject empty content. Consumers can tell it apart from a real answer via the surrounding
+     * metadata markers ({@code Msg.METADATA_SYNTHETIC}, {@code _tool_return_direct}).
+     */
+    private static final String NO_OUTPUT_PLACEHOLDER = "(no output)";
+
     @SuppressWarnings("deprecation")
     private final LegacyHookDispatcher hookDispatcher;
 
@@ -2753,6 +2762,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             SessionRecorder recorder = SessionRecorder.from(rc);
             if (recorder != null) recorder.step(iter);
             ReasoningContext context = new ReasoningContext(getName());
+            // Set by the final-message defer below when this round produced nothing accumulable
+            // and no middleware stop was requested; read by the trailing switchIfEmpty to run
+            // the empty-response retry instead of completing the call empty.
+            AtomicBoolean producedNullFinalMsg = new AtomicBoolean(false);
+            // Captures a RequestStopEvent emitted by an onReasoning middleware; read by the
+            // trailing switchIfEmpty to build a stop-marked result when nothing was accumulated.
+            AtomicReference<RequestStopEvent> stopRequested = new AtomicReference<>();
 
             return checkInterrupted()
                     .then(
@@ -2827,8 +2843,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // Track any RequestStopEvent emitted by middlewares while still
                                 // exhausting the stream. Publish at the outer reasoning boundary
                                 // so events added by onReasoning middlewares are forwarded too.
-                                AtomicReference<RequestStopEvent> stopRequested =
-                                        new AtomicReference<>();
+                                // (stopRequested itself lives in the reasoning() scope above so
+                                // the trailing switchIfEmpty can read it.)
                                 return stream.doOnNext(this::publishEvent)
                                         .doOnNext(
                                                 ev -> {
@@ -2855,6 +2871,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                         finalMsg.withGenerateReason(
                                                                                 rs
                                                                                         .getGenerateReason()));
+                                                            }
+                                                            if (finalMsg == null && rs == null) {
+                                                                // Nothing accumulable was
+                                                                // produced; the switchIfEmpty
+                                                                // below runs the retry.
+                                                                producedNullFinalMsg.set(true);
                                                             }
                                                             return Mono.justOrEmpty(finalMsg);
                                                         }));
@@ -2889,7 +2911,64 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     return Mono.just(msg);
                                 }
                                 return runPostReasoningPipeline(msg, iter);
-                            });
+                            })
+                    .switchIfEmpty(
+                            Mono.defer(
+                                    () -> {
+                                        if (!producedNullFinalMsg.get()) {
+                                            RequestStopEvent rs = stopRequested.get();
+                                            if (rs == null) {
+                                                // Only the postReasoning stop-without-message
+                                                // path remains empty (deprecated hook contract).
+                                                return Mono.empty();
+                                            }
+                                            // A middleware requested a stop and nothing was
+                                            // accumulated: end the call with a persisted,
+                                            // stop-marked synthetic message so the terminal
+                                            // AgentResultEvent fires and the turn's terminal
+                                            // fact survives in the state store — a
+                                            // short-circuiting onReasoning/onModelCall
+                                            // middleware is a real pattern (#2362). Unlike the
+                                            // null-lastAssistant branch of
+                                            // emitAllToolsDeniedThroughMiddleware (which builds
+                                            // a return value only), this branch PERSISTS: there
+                                            // the context already holds the denied batch's
+                                            // assistant message, while here nothing else would
+                                            // record that the turn was stopped. The placeholder
+                                            // text keeps the message non-empty for providers
+                                            // that reject empty assistant content, matching the
+                                            // summarizing() fallback. rs.getGenerateReason() is
+                                            // never null — both RequestStopEvent constructors
+                                            // coalesce it to MIDDLEWARE_STOP_REQUESTED.
+                                            Msg stopMsg =
+                                                    Msg.builder()
+                                                            .role(MsgRole.ASSISTANT)
+                                                            .name(getName())
+                                                            .textContent(NO_OUTPUT_PLACEHOLDER)
+                                                            .metadata(
+                                                                    Map.of(
+                                                                            Msg.METADATA_SYNTHETIC,
+                                                                            true))
+                                                            .generateReason(rs.getGenerateReason())
+                                                            .build();
+                                            state.contextMutable().add(stopMsg);
+                                            return Mono.just(stopMsg);
+                                        }
+                                        // A null final message (an empty model stream, or chunks
+                                        // that accumulate to nothing) never reaches the
+                                        // empty-response guard in runPostReasoningPipeline,
+                                        // which only covers non-null messages: retry with the
+                                        // same synthetic reminder, bounded by maxIters. Chained
+                                        // AFTER the pipeline so the retried round's result does
+                                        // not flow back through this round's post-processing.
+                                        log.warn(
+                                                "Model produced no content blocks (null final"
+                                                        + " message), model: {}, iter: {}",
+                                                model.getModelName(),
+                                                iter);
+                                        state.contextMutable().add(buildEmptyResponseReminder());
+                                        return checkInterrupted().then(executeIteration(iter + 1));
+                                    }));
         }
 
         @SuppressWarnings("deprecation")
@@ -4333,7 +4412,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 content.addAll(pair.getValue().getOutput());
             }
             if (content.isEmpty()) {
-                content.add(TextBlock.builder().text("(no output)").build());
+                content.add(TextBlock.builder().text(NO_OUTPUT_PLACEHOLDER).build());
             }
             return AssistantMessage.builder()
                     .name(getName())
@@ -4345,6 +4424,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * Generate summary when max iterations reached.
+         *
+         * <p>If the summary call itself produces no accumulable content, a synthetic "(no
+         * output)" message (marked {@link Msg#METADATA_SYNTHETIC}) is returned so the call
+         * still terminates with a result message instead of completing empty.
          */
         protected Mono<Msg> summarizing() {
             log.debug("Maximum iterations reached. Generating summary...");
@@ -4406,6 +4489,36 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 Mono.justOrEmpty(
                                                                         context
                                                                                 .buildFinalMessage())))
+                                        .switchIfEmpty(
+                                                Mono.defer(
+                                                        () -> {
+                                                            // The summary call produced
+                                                            // nothing accumulable; without
+                                                            // this fallback summarizing()
+                                                            // would complete empty and the
+                                                            // whole call would silently end
+                                                            // with a null result. Persistence
+                                                            // happens once, downstream, via
+                                                            // the postSummary flatMap — the
+                                                            // same write the normal summary
+                                                            // path performs.
+                                                            Msg fallback =
+                                                                    AssistantMessage.builder()
+                                                                            .name(getName())
+                                                                            .content(
+                                                                                    TextBlock
+                                                                                            .builder()
+                                                                                            .text(
+                                                                                                    NO_OUTPUT_PLACEHOLDER)
+                                                                                            .build())
+                                                                            .metadata(
+                                                                                    Map.of(
+                                                                                            Msg
+                                                                                                    .METADATA_SYNTHETIC,
+                                                                                            true))
+                                                                            .build();
+                                                            return Mono.just(fallback);
+                                                        }))
                                         .flatMap(
                                                 msg ->
                                                         hookDispatcher
@@ -4604,7 +4717,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Completed server tool calls do not require local execution. A tool-free response
          * finishes only when it carries visible content: empty or thinking-only responses (the
          * entire answer in the reasoning channel) loop back to reasoning, bounded by {@code
-         * maxIters}, instead of silently ending the agent with an empty reply.
+         * maxIters}, instead of silently ending the agent with an empty reply. A null final
+         * message (nothing accumulable) is retried by the same guard before this check is
+         * reached.
          *
          * @param msg The reasoning message
          * @return true if should finish, false if should continue to acting
