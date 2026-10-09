@@ -15,8 +15,10 @@
  */
 package io.agentscope.core.formatter;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -24,13 +26,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 /**
  * Unit tests for MediaUtils.
@@ -49,6 +65,251 @@ import org.junit.jupiter.api.io.TempDir;
 class MediaUtilsTest {
 
     @TempDir Path tempDir;
+
+    @Test
+    @DisplayName("Should reuse the same path for identical Base64 media content")
+    void materializeBase64ReusesPathForSameContent() throws IOException {
+        byte[] expected = "stable-media".getBytes(StandardCharsets.UTF_8);
+        String data = Base64.getEncoder().encodeToString(expected);
+
+        Path first = MediaUtils.materializeBase64ToTempFile("image/png", data, tempDir);
+        Path second = MediaUtils.materializeBase64ToTempFile("image/png", data, tempDir);
+
+        assertEquals(first, second);
+        assertArrayEquals(expected, Files.readAllBytes(first));
+    }
+
+    @Test
+    @DisplayName("Should materialize public calls inside a process-private temporary directory")
+    void materializeBase64UsesProcessPrivateDirectory() throws IOException {
+        byte[] expected = ("private-media-" + UUID.randomUUID()).getBytes(StandardCharsets.UTF_8);
+        String data = Base64.getEncoder().encodeToString(expected);
+        Path systemTemp =
+                Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize();
+        Path path = Path.of(MediaUtils.materializeBase64ToTempFile("image/png", data));
+
+        assertTrue(path.startsWith(systemTemp));
+        assertNotEquals(systemTemp, path.getParent());
+        assertArrayEquals(expected, Files.readAllBytes(path));
+    }
+
+    @Test
+    @DisplayName("Should derive path identity from decoded bytes")
+    void materializeBase64UsesDecodedContentIdentity() throws IOException {
+        Path padded =
+                MediaUtils.materializeBase64ToTempFile("application/octet-stream", "Zg==", tempDir);
+        Path unpadded =
+                MediaUtils.materializeBase64ToTempFile("application/octet-stream", "Zg", tempDir);
+
+        assertEquals(padded, unpadded);
+        assertArrayEquals(new byte[] {'f'}, Files.readAllBytes(padded));
+    }
+
+    @Test
+    @DisplayName("Should use different paths for different Base64 media content")
+    void materializeBase64UsesDifferentPathsForDifferentContent() throws IOException {
+        Path first = materialize("first", "image/png");
+        Path second = materialize("second", "image/png");
+
+        assertNotEquals(first, second);
+    }
+
+    @Test
+    @DisplayName("Should sanitize unsafe media type suffixes")
+    void materializeBase64SanitizesMediaTypeSuffix() throws IOException {
+        Path path = materialize("safe", "image/..");
+
+        assertEquals(tempDir.toAbsolutePath(), path.getParent());
+        assertTrue(path.getFileName().toString().endsWith(".bin"));
+    }
+
+    @Test
+    @DisplayName("Should consistently reject a corrupted file without replacing it")
+    void materializeBase64RejectsCorruptExistingTarget() throws IOException {
+        Path path = materialize("expected", "image/png");
+        Files.writeString(path, "corrupt");
+
+        for (int i = 0; i < 2; i++) {
+            IOException error =
+                    assertThrows(IOException.class, () -> materialize("expected", "image/png"));
+            assertEquals("Existing materialized media file is invalid", error.getMessage());
+            assertEquals("corrupt", Files.readString(path));
+        }
+    }
+
+    @Test
+    @DisplayName("Should keep a published file usable when staging cleanup fails")
+    void materializeBase64KeepsSuccessfulPublicationWhenCleanupFails() throws IOException {
+        byte[] expected = "cleanup-failure".getBytes(StandardCharsets.UTF_8);
+        String data = Base64.getEncoder().encodeToString(expected);
+        try (MockedStatic<Files> files =
+                Mockito.mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
+            files.when(() -> Files.deleteIfExists(Mockito.any(Path.class)))
+                    .thenThrow(new IOException("cleanup denied"));
+
+            Path path = MediaUtils.materializeBase64ToTempFile("image/png", data, tempDir);
+
+            assertArrayEquals(expected, Files.readAllBytes(path));
+        }
+    }
+
+    @Test
+    @DisplayName("Should retain the write error and suppress staging cleanup errors")
+    void materializeBase64PreservesWriteErrorWhenCleanupFails() {
+        String data =
+                Base64.getEncoder()
+                        .encodeToString("write-failure".getBytes(StandardCharsets.UTF_8));
+        try (MockedStatic<Files> files =
+                Mockito.mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
+            files.when(
+                            () ->
+                                    Files.write(
+                                            Mockito.any(Path.class),
+                                            Mockito.any(byte[].class),
+                                            Mockito.eq(StandardOpenOption.WRITE),
+                                            Mockito.eq(StandardOpenOption.TRUNCATE_EXISTING)))
+                    .thenThrow(new IOException("write denied"));
+            files.when(() -> Files.deleteIfExists(Mockito.any(Path.class)))
+                    .thenThrow(new IOException("cleanup denied"));
+
+            IOException error =
+                    assertThrows(
+                            IOException.class,
+                            () ->
+                                    MediaUtils.materializeBase64ToTempFile(
+                                            "image/png", data, tempDir));
+
+            assertEquals("write denied", error.getMessage());
+            assertEquals(1, error.getSuppressed().length);
+            assertEquals("cleanup denied", error.getSuppressed()[0].getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("Should keep a published file usable when staging cleanup is denied")
+    void materializeBase64KeepsSuccessfulPublicationWhenCleanupIsDenied() throws IOException {
+        byte[] expected = "cleanup-security".getBytes(StandardCharsets.UTF_8);
+        String data = Base64.getEncoder().encodeToString(expected);
+        try (MockedStatic<Files> files =
+                Mockito.mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
+            files.when(() -> Files.deleteIfExists(Mockito.any(Path.class)))
+                    .thenThrow(new SecurityException("cleanup denied"));
+
+            Path path = MediaUtils.materializeBase64ToTempFile("image/png", data, tempDir);
+
+            assertArrayEquals(expected, Files.readAllBytes(path));
+        }
+    }
+
+    @Test
+    @DisplayName("Should retain the write error when staging cleanup is denied")
+    void materializeBase64PreservesWriteErrorWhenCleanupIsDenied() {
+        String data =
+                Base64.getEncoder()
+                        .encodeToString("write-security".getBytes(StandardCharsets.UTF_8));
+        try (MockedStatic<Files> files =
+                Mockito.mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
+            files.when(
+                            () ->
+                                    Files.write(
+                                            Mockito.any(Path.class),
+                                            Mockito.any(byte[].class),
+                                            Mockito.eq(StandardOpenOption.WRITE),
+                                            Mockito.eq(StandardOpenOption.TRUNCATE_EXISTING)))
+                    .thenThrow(new IOException("write denied"));
+            files.when(() -> Files.deleteIfExists(Mockito.any(Path.class)))
+                    .thenThrow(new SecurityException("cleanup denied"));
+
+            IOException error =
+                    assertThrows(
+                            IOException.class,
+                            () ->
+                                    MediaUtils.materializeBase64ToTempFile(
+                                            "image/png", data, tempDir));
+
+            assertEquals("write denied", error.getMessage());
+            assertEquals(1, error.getSuppressed().length);
+            assertEquals("cleanup denied", error.getSuppressed()[0].getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("Should report malformed Base64 media through the checked error path")
+    void materializeBase64RejectsMalformedPayload() {
+        IOException error =
+                assertThrows(
+                        IOException.class,
+                        () ->
+                                MediaUtils.materializeBase64ToTempFile(
+                                        "image/png", "not-base64!", tempDir));
+
+        assertTrue(error.getMessage().contains("Invalid Base64 media payload"));
+        assertTrue(error.getCause() instanceof IllegalArgumentException);
+    }
+
+    @Test
+    @DisplayName("Should reject a symbolic link at the materialized path")
+    void materializeBase64RejectsSymbolicLinkTarget() throws IOException {
+        Path path = materialize("expected", "image/png");
+        Files.delete(path);
+        Path other = Files.writeString(tempDir.resolve("other"), "expected");
+
+        try {
+            Files.createSymbolicLink(path, other.toAbsolutePath());
+        } catch (UnsupportedOperationException | IOException e) {
+            Assumptions.abort("Symbolic links are unavailable: " + e.getMessage());
+        }
+
+        assertThrows(IOException.class, () -> materialize("expected", "image/png"));
+    }
+
+    @Test
+    @DisplayName("Should publish one complete file for concurrent callers")
+    void materializeBase64PublishesCompleteFileUnderConcurrency() throws Exception {
+        assertConcurrentMaterialization(true);
+    }
+
+    @Test
+    @DisplayName("Should publish one complete file using non-atomic moves")
+    void materializeBase64PublishesCompleteFileWithoutAtomicMove() throws Exception {
+        assertConcurrentMaterialization(false);
+    }
+
+    private void assertConcurrentMaterialization(boolean preferAtomicMove) throws Exception {
+        byte[] expected = "concurrent-media".getBytes(StandardCharsets.UTF_8);
+        String data = Base64.getEncoder().encodeToString(expected);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+
+        try {
+            List<Future<Path>> futures = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                futures.add(
+                        executor.submit(
+                                () -> {
+                                    start.await();
+                                    return MediaUtils.materializeBase64ToTempFile(
+                                            "image/png", data, tempDir, preferAtomicMove);
+                                }));
+            }
+
+            start.countDown();
+            Set<Path> paths = new HashSet<>();
+            for (Future<Path> future : futures) {
+                paths.add(future.get());
+            }
+
+            assertEquals(1, paths.size());
+            assertArrayEquals(expected, Files.readAllBytes(paths.iterator().next()));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private Path materialize(String content, String mediaType) throws IOException {
+        String data = Base64.getEncoder().encodeToString(content.getBytes(StandardCharsets.UTF_8));
+        return MediaUtils.materializeBase64ToTempFile(mediaType, data, tempDir);
+    }
 
     @Test
     @DisplayName("Should identify local file paths")
