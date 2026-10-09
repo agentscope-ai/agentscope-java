@@ -422,6 +422,19 @@ tools: [read_file, grep_files]   # 可选；继承工具的白名单
       "command": "python",
       "args": ["mcp_servers/my_server.py"],
       "env": {"PYTHONUNBUFFERED": "1"}
+    },
+    "untrusted-3p": {
+      // 连接级一刀切：会话 meta 整体不出进程
+      "transport": "http",
+      "url": "https://third-party.example.com/mcp",
+      "propagateMeta": false
+    },
+    "internal": {
+      // 注册级默认静默，再对个别工具细粒度放行
+      "transport": "http",
+      "url": "https://internal.example.com/mcp",
+      "propagateMetaDefault": false,
+      "propagateMetaOverrides": {"send_callback": true}
     }
   }
 }
@@ -430,6 +443,7 @@ tools: [read_file, grep_files]   # 可选；继承工具的白名单
 行为细节：
 
 - **MCP server 在构建期一次性注册到 toolkit**，agent 看到的就是这些 server 暴露的工具。
+- **meta 透传由三个可选字段控制**，与 core MCP client 的三级开关一一对应：`propagateMeta`（连接级——部署态一刀切；core 每次调用实时判定该开关，但 Harness 当前不提供运行时取回入口，按构建期配置对待）、`propagateMetaDefault`（注册级——该 server 注册的所有工具默认静默）、`propagateMetaOverrides`（工具级——放行个别工具；写错的工具名会让本次注册直接失败，绝不静默丢失；工具级 `true` 压不过连接级 `false`，连接级始终是实时天花板）。三个都不写时保持 core 默认行为（meta 全部透传）。
 - **`allow` / `deny` 在所有工具注册完之后才应用**——所以也会过滤掉 Harness 的内置工具（`read_file` / `memory_search` / `agent_spawn` 等）。**用 `allow` 列白名单时务必把要保留的内置工具一并列出**，否则会一起被砍掉。
 - `${ENV_VAR}` 语法做环境变量替换；未设置时给 warning 并替换成空字符串。
 - 不想用文件？直接 `builder.toolsConfig(ToolsConfig.builder()...)` 编程注入；要完全关掉读取用 `disableToolsConfig()`。
