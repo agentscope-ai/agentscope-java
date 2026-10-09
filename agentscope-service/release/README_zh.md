@@ -31,7 +31,7 @@ SDK 可以独立发版。SDK 内容未变且已有兼容公开版本时，发布
 
 当前项目的 `origin` 是 `agentscope-ai/agentscope-java`。你需要相应的代码合并、tag、Actions 和 Release 操作权限，并遵循组织的分支保护规则。
 
-先让 `.github/workflows/service-release.yml` 进入仓库默认分支，再使用 Actions 的手动发布入口。GitHub 要求 `workflow_dispatch` 工作流存在于默认分支，才能手动触发；实际构建仍可选定其他分支或 tag。[GitHub 官方说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+先让 `.github/workflows/service-release.yml` 和 `service-dist-release.yml` 进入仓库默认分支，再使用 Actions 的手动发布入口或主 tag 自动发布入口。GitHub 要求 `workflow_dispatch` 工作流存在于默认分支，才能手动触发；实际构建仍可选定其他分支或 tag。[GitHub 官方说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
 
 这一步可以先只合入发布基础设施。完整文档何时对外上线单独安排，因为当前网站工作流会在 `main` push 时部署官网。
 
@@ -181,11 +181,10 @@ python agentscope-service/release/smoke.py \
 ```bash
 git rev-parse HEAD
 git tag -a "$RELEASE_TAG" -m "AgentScope Service $SERVICE_VERSION"
-git tag -a "agentscope-service/service-controlplane/v${SERVICE_VERSION}" -m "AgentScope Service Go $SERVICE_VERSION"
-git push origin "$RELEASE_TAG" "agentscope-service/service-controlplane/v${SERVICE_VERSION}"
+git push origin "$RELEASE_TAG"
 ```
 
-遵循仓库保护规则完成必要的 PR 合并和分支推送。Tag 应指向最终要发布的提交。当前工作流只检查选择的是 tag，不检查 tag 名与 `version` 是否相符，这个对应关系由管理员核对。
+遵循仓库保护规则，先将最终发布源码和工作流合入 `main`，再在该提交创建主 tag。`service-dist-release.yml` 会核对主 tag、Java/Go 版本及 `main` 来源，并自动创建同一提交的 Go 模块 tag；镜像手动工作流的 `version` 仍由管理员填写并核对。
 
 对外发布后不移动 tag、不覆盖同名镜像或包。需要修正内容时发布下一个 RC 或补丁版本。
 
@@ -200,7 +199,7 @@ git push origin "$RELEASE_TAG" "agentscope-service/service-controlplane/v${SERVI
 | 构建产物 | 上传 `agentscope-service-release` Actions artifact |
 | 镜像元数据 | 上传 `agentscope-service-image-metadata` Actions artifact |
 | Docker/Helm 业务安装演练 | 不自动执行，需管理员完成第四节验收 |
-| Maven/PyPI/npm、GitHub Release、官网 | 不由此工作流发布 |
+| Maven/PyPI/npm、GitHub Release、官网 | 不由镜像工作流发布；GitHub Release 和 Go 模块 tag 由第八节的独立工作流自动完成 |
 
 `publish=false` 的镜像只存在于临时 runner，不是可下载的 Docker 镜像归档。需要本地安装演练时使用第四节的本地镜像构建命令。
 
@@ -337,18 +336,41 @@ mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-controlplane -am \
 - Compose `.tar.gz`、Helm `.tgz`。
 - Kubernetes `.tar.gz`，包含 Chart、配置模板和初始化 SQL。
 - 四个平台的 `agentscope-cli-*.tar.gz`，每份包含 CLI 与 Runtime Host。
-- Python wheel/sdist 和 DSH npm tarball，说明哪些版本本次新发布、哪些沿用已有版本。
-- `release-manifest.json`、`SHA256SUMS`、四个 `image-*.json`。
+- `release-manifest.json`、`SHA256SUMS`。
+
+以上九个附件由安装包工作流自动上传。Python wheel/sdist、DSH npm tarball 及镜像 digest 元数据由各自发布流程提供，按实际发布情况另行补充。
 
 只上传这些公开制品；不要把工作目录、测试 `.env`、数据库备份或密钥一起打包。GitHub 自动生成的源码压缩包不能替代 Compose、CLI 和 SDK 附件。
 
-对外 Release 使用 `vVERSION` tag，例如 `v2.1.0-BETA1`。SDK 工作流仅发布已合入 `main` 的源码；提前创建的 tag 在合并后手动运行 SDK 工作流。从干净且已提交的源码执行 `release.py package --distributions-only`，创建预发布草稿，上传明确列出的公开附件，下载并核对 SHA-256 后再公开。公开 HTTP Helm 仓库和可选的 Homebrew tap 是独立发布渠道。
+工作流 **AgentScope Service distribution release**（`service-dist-release.yml`）在推送主 `v*` tag 时自动执行。先更新根 POM 的 Java revision 与 Go 版本常量，完成发布验证并把源码、工作流合入 `main`，然后只创建主 tag。例如准备好下一版本后：
+
+```bash
+git fetch origin main
+RELEASE_TAG=v2.1.0-BETA2
+git tag -a "$RELEASE_TAG" origin/main -m "$RELEASE_TAG"
+git push origin "$RELEASE_TAG"
+```
+
+工作流校验提交已进入 `main`、Java/Go 版本与 tag 一致、Go 模块主版本一致，执行打包和 CLI 测试并构建上述附件。附件先上传至草稿，随后创建指向同一提交的 `agentscope-service/service-controlplane/vVERSION` tag，最后公开 GitHub Release；带预发布后缀的版本自动标记为 prerelease。Release Notes 保持一句话，链接到中英文官方文档。
+
+仅发布 job 使用 `contents: write` 和仓库自带的 `GITHUB_TOKEN`，无需新增 Secret。可选的 Repository variable `SERVICE_IMAGE_REPOSITORY` 控制安装包内引用的镜像命名空间，默认是 `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`。此工作流不构建或推送镜像，不发布 Maven/npm/PyPI，也不更新独立的 HTTP Helm 仓库或 Homebrew tap；各渠道保留已有发布流程。SDK 工作流仍独立响应主 tag。
+
+对于已经包含此工作流的现有 tag，可手动重跑，无需新建 tag：
+
+```bash
+gh workflow run service-dist-release.yml --repo agentscope-ai/agentscope-java \
+  --ref main -f tag=vVERSION
+```
+
+已经公开的 Release 保持不变；同提交的 Go tag 和同校验和的草稿附件会复用，tag 或校验和冲突时停止，不覆盖。失败时优先重跑 **publish job**，复用该次 Actions 原始制品；重新打包可能生成不同字节，不能覆盖已有草稿附件。已发布的 `v2.1.0-BETA1` 与 Go tag 早于此工作流，保持原样，自动化用于之后包含该工作流的新版本。通过 `GITHUB_TOKEN` 创建的 Go tag 不会再次触发 push 工作流，避免递归发布。见 [GitHub 工作流触发说明](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)。
+
+公开 HTTP Helm 仓库和可选的 Homebrew tap 是独立发布渠道。
 
 用户按 [Runtime Host 安装指南](https://java.agentscope.io/v2/zh/service/runtime-host)，通过 `go install` 安装同一版本的 CLI 和 Runtime Host。可选的个人公开 tap 为 [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap)。配方源码保留在 `release/homebrew/agentscope-cli.rb`。每次 CLI 发版后，更新四个平台的 URL、已验证的 SHA-256、配方版本和测试中的版本断言，再将配方发布到 tap。既有二进制附件保持不变。组织仓库的 CI 若要自动更新这个个人仓库，需要另行配置对 tap 拥有 Contents 写权限的凭据；默认 `GITHUB_TOKEN` 不包含这个跨仓库权限。
 
-Go 模块要求 Go 1.26，使用 `/v2` 模块路径。除 `v2.1.0-BETA1` 外，还须在同一提交创建嵌套模块 tag `agentscope-service/service-controlplane/v2.1.0-BETA1`，用户即可通过 `@v2.1.0-BETA1` 安装两个命令，见中英文 Runtime Host 安装页。后续 Go 版本同样需要两个 tag 指向同一提交，不移动已发布 tag。
+Go 模块要求 Go 1.26，使用 `/v2` 模块路径。除主 `vVERSION` tag 外，安装包工作流会在同一提交创建嵌套模块 tag `agentscope-service/service-controlplane/vVERSION`，用户即可通过 `@v2.1.0-BETA1` 安装两个命令，见中英文 Runtime Host 安装页。后续 Go 版本同样需要两个 tag 指向同一提交，管理员只需推送主 tag，不移动已发布 tag。
 
-先在 GitHub Releases 建立草稿，选用已存在的 tag，上传附件并校验下载。若使用 CLI，先在仓库之外准备完整的 Markdown Release Notes：
+需要手动发布作为替代方案时，先在 GitHub Releases 建立草稿，选用已存在的 tag，上传附件并校验下载。若使用 CLI，先在仓库之外准备 Markdown Release Notes：
 
 ```bash
 gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" \

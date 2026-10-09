@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE = ROOT / 'agentscope-service'
@@ -174,6 +175,88 @@ def require_clean():
         raise SystemExit('Publishing requires a clean, committed source tree.')
 
 
+def check_release_source(version):
+    validate_version(version)
+    require_clean()
+    commit = run('git', 'rev-parse', 'HEAD', capture=True).strip()
+    tag = 'v' + version
+    if run('git', 'rev-parse', f'refs/tags/{tag}^{{commit}}', capture=True).strip() != commit:
+        raise SystemExit('The main release tag must point to the checked-out source.')
+    run('git', 'fetch', '--no-tags', 'origin', 'main')
+    run('git', 'merge-base', '--is-ancestor', commit, 'FETCH_HEAD')
+    revision = re.search(r'<revision>([^<]+)</revision>', (ROOT / 'pom.xml').read_text())[1]
+    go_version = re.search(r'Version = "([^"]+)"', (SERVICE / 'service-controlplane/internal/version/version.go').read_text())[1]
+    module = re.search(r'^module (\S+)', (SERVICE / 'service-controlplane/go.mod').read_text())[1]
+    if revision != version or go_version != version:
+        raise SystemExit('Update the Java revision and Go version before tagging this release.')
+    if not module.endswith('/v' + version.split('.')[0]):
+        raise SystemExit('The release major version must match the Go module path.')
+    return commit
+
+
+def ensure_go_tag(version, commit):
+    tag = 'agentscope-service/service-controlplane/v' + version
+    ref = 'refs/tags/' + tag
+    remote = run('git', 'ls-remote', '--tags', 'origin', ref, ref + '^{}', capture=True)
+    refs = dict((name, sha) for sha, name in (line.split() for line in remote.splitlines()))
+    existing = refs.get(ref + '^{}', refs.get(ref))
+    if existing and existing != commit:
+        raise SystemExit(f'Refusing to move published Go tag {tag}.')
+    if not existing:
+        run('git', 'push', 'origin', f'{commit}:{ref}')
+
+
+def publish_github(args):
+    commit = check_release_source(args.version)
+    tag = 'v' + args.version
+    repo = os.environ['GH_REPO']
+    result = subprocess.run(['gh', 'api', f'repos/{repo}/releases/tags/{tag}'],
+                            text=True, capture_output=True)
+    if result.returncode:
+        if 'HTTP 404' not in result.stderr:
+            raise SystemExit(result.stderr)
+        existing = None
+    else:
+        existing = json.loads(result.stdout)
+    if existing and not existing['draft']:
+        print(f'{tag} is already published; its assets are unchanged.')
+        return
+    assets = [f'agentscope-cli-{args.version}-{system}-{arch}.tar.gz'
+              for system, arch in [('linux', 'amd64'), ('linux', 'arm64'),
+                                   ('darwin', 'amd64'), ('darwin', 'arm64')]]
+    assets += [f'agentscope-service-{args.version}-compose.tar.gz',
+               f'agentscope-service-{args.version}-kubernetes.tar.gz',
+               f'agentscope-service-{args.version}.tgz', 'release-manifest.json', 'SHA256SUMS']
+    metadata = json.loads((args.output / 'release-manifest.json').read_text())
+    if metadata['sourceCommit'] != commit or metadata['serviceVersion'] != args.version or metadata['sourceDirty']:
+        raise SystemExit('The package manifest does not match the clean tagged source.')
+    checksums = dict((name, digest) for digest, name in
+                     (line.split() for line in (args.output / 'SHA256SUMS').read_text().splitlines()))
+    if set(checksums) != set(assets) - {'SHA256SUMS'}:
+        raise SystemExit('The checksums must cover exactly the distribution assets.')
+    digests = {name: 'sha256:' + hashlib.sha256((args.output / name).read_bytes()).hexdigest()
+               for name in assets}
+    if any(digests[name] != 'sha256:' + digest for name, digest in checksums.items()):
+        raise SystemExit('Distribution checksum verification failed.')
+    uploaded = {asset['name']: asset.get('digest') for asset in existing['assets']} if existing else {}
+    if any(uploaded[name] != digests[name] for name in assets if name in uploaded):
+        raise SystemExit('Existing draft assets differ; refuse to overwrite them. Rerun the publish job with its original artifacts.')
+    if not existing:
+        with tempfile.TemporaryDirectory() as directory:
+            notes = Path(directory) / 'notes.md'
+            notes.write_text(f'AgentScope Service {args.version}. Installation and usage: '
+                             '[English](https://java.agentscope.io/v2/en/service/overview) / '
+                             '[中文](https://java.agentscope.io/v2/zh/service/overview).\n')
+            run('gh', 'release', 'create', tag, '--verify-tag', '--draft',
+                '--title', f'AgentScope Service {args.version}', '--notes-file', str(notes))
+    missing = [str(args.output / name) for name in assets if name not in uploaded]
+    if missing:
+        run('gh', 'release', 'upload', tag, *missing)
+    ensure_go_tag(args.version, commit)
+    run('gh', 'release', 'edit', tag, '--draft=false',
+        '--prerelease=' + str('-' in args.version).lower(), '--latest=false')
+
+
 def publish_npm(args):
     directory = SERVICE / 'service-controlplane/sdk/dsh'
     metadata = json.loads((directory / 'package.json').read_text())
@@ -226,7 +309,7 @@ def images(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('hygiene', 'verify', 'package', 'images', 'publish-chart', 'publish-npm'))
+    parser.add_argument('command', choices=('hygiene', 'verify', 'package', 'images', 'publish-chart', 'publish-npm', 'check-tag', 'publish-github'))
     parser.add_argument('--version')
     parser.add_argument('--repository', help='Registry hostname/namespace; no URL scheme')
     parser.add_argument('--output', type=Path)
@@ -239,6 +322,12 @@ def main():
     if args.command == 'verify': return verify()
     validate_version(args.version)
     args.output = (args.output or SERVICE / 'release/dist' / args.version).resolve()
+    if args.command == 'check-tag':
+        check_release_source(args.version)
+        return
+    if args.command == 'publish-github':
+        publish_github(args)
+        return
     if args.command == 'publish-npm':
         publish_npm(args)
         return

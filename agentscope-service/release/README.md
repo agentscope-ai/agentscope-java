@@ -99,7 +99,7 @@ python agentscope-service/release/release.py publish-chart \
 
 Image pushes request SBOM and provenance attestations. Preserve the resulting digest metadata alongside the package manifest. Source-package checksums do not cover subsequently created image metadata; publish that metadata separately. Do not reuse a released image tag.
 
-The manual `AgentScope Service release` workflow verifies and packages before building images. `publish=false` builds a local amd64 candidate. `publish=true` requires a selected Git tag and `SERVICE_REGISTRY_HOST`, `SERVICE_REGISTRY_USER`, `SERVICE_REGISTRY_TOKEN` repository secrets. Registry namespace is an explicit input. The workflow does not publish Maven, PyPI, npm or a public GitHub Release automatically.
+The manual `AgentScope Service release` workflow verifies and packages before building images. `publish=false` builds a local amd64 candidate. `publish=true` requires a selected Git tag and `SERVICE_REGISTRY_HOST`, `SERVICE_REGISTRY_USER`, `SERVICE_REGISTRY_TOKEN` repository secrets. Registry namespace is an explicit input. This image workflow does not publish Maven, PyPI, npm or GitHub Release assets. The separate tag-triggered `service-dist-release.yml` workflow handles GitHub Release assets and the Go module tag (section 7).
 
 ## 6. Publish SDK packages
 
@@ -172,11 +172,33 @@ Release archive, verifies its SHA256 and Chart metadata, preserves existing inde
 entries, refuses different bytes under an existing version, and deploys Pages.
 No extra registry credential or cross-repository write token is required. Production checks currently return 404 for the official `/helm/index.yaml` route despite the merged redirects, so installation guides use the verified direct Pages URL until the alias passes real Helm checks.
 
-Use `vVERSION` as the public release tag (for example `v2.1.0-BETA1`). SDK workflows only publish source already merged into `main`; if a tag is created earlier, run the SDK workflow manually after merging. Build from clean, committed source with `release.py package --distributions-only`, create a prerelease draft, upload only the named public files, verify downloaded SHA-256 values, then publish the draft. The HTTP Helm repository and optional Homebrew tap are independent publication channels.
+The `AgentScope Service distribution release` workflow (`service-dist-release.yml`) runs when a main `v*` tag is pushed. First update the root Java revision and Go version constant, complete release validation, and merge the release source and this workflow into `main`. Then create only the main tag from the reviewed commit; for example, after preparing the next version:
+
+```bash
+git fetch origin main
+RELEASE_TAG=v2.1.0-BETA2
+git tag -a "$RELEASE_TAG" origin/main -m "$RELEASE_TAG"
+git push origin "$RELEASE_TAG"
+```
+
+The workflow checks that the tagged commit is on `main`, that Java/Go versions match the tag, and that the Go module major matches. It tests packaging and the CLI commands, builds all four Linux/macOS amd64/arm64 CLI/Runtime Host archives, the Compose and Kubernetes archives, and the standalone Helm Chart. It attaches these seven archives plus `release-manifest.json` and `SHA256SUMS` to a draft, creates `agentscope-service/service-controlplane/vVERSION` at the exact main-tag commit, then publishes the GitHub Release. Versions containing a prerelease suffix are marked as prereleases. Release notes contain one sentence linking to the official English and Chinese documentation.
+
+Only the publish job needs `contents: write`, using the built-in `GITHUB_TOKEN`; no new secret is required. `SERVICE_IMAGE_REPOSITORY` is an optional repository variable for image references in the packages; it defaults to `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`. This workflow does not build/push images, publish Maven/npm/PyPI packages, or update the separate HTTP Helm repository or Homebrew tap. Those channels retain their existing workflows and configuration. The SDK tag workflows also run independently on the main tag.
+
+For an existing tag containing this workflow, rerun it without creating another tag:
+
+```bash
+gh workflow run service-dist-release.yml --repo agentscope-ai/agentscope-java \
+  --ref main -f tag=vVERSION
+```
+
+Published Releases are left unchanged. Matching Go tags and matching draft assets are reused; a conflicting tag or checksum stops publication without overwriting it. Rerun a failed **publish job** with its original Actions artifacts; rebuilding archives can produce different bytes and is deliberately not allowed to replace existing draft assets. Keep the already published `v2.1.0-BETA1` and its Go tag unchanged; they predate this workflow. New automation applies to future tagged source containing the workflow. Tags created by `GITHUB_TOKEN` do not trigger further push workflows, so the generated Go module tag does not recursively run release jobs. See [GitHub workflow triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+The HTTP Helm repository and optional Homebrew tap remain independent publication channels.
 
 Users install CLI and Runtime Host with the `go install` commands in the [Runtime Host guide](https://java.agentscope.io/v2/en/service/runtime-host). The optional public personal tap is [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap). The formula source is retained under `release/homebrew/agentscope-cli.rb`. For each new CLI release, update all four URLs, their verified SHA-256 values, the formula version and its version assertion, then publish the updated formula to the tap. Existing binary archives remain immutable. A future CI job updating this personal repository from the organization repository needs a separate credential with Contents write permission on the tap; the organization's default `GITHUB_TOKEN` does not grant that access.
 
-The Go module requires Go 1.26 and uses the `/v2` module path. In addition to `v2.1.0-BETA1`, create the nested-module tag `agentscope-service/service-controlplane/v2.1.0-BETA1` at the same commit. This lets users install either CLI command with `@v2.1.0-BETA1`; see the bilingual Runtime Host installation page. Future Go releases need both tags at the same commit. Do not move published tags.
+The Go module requires Go 1.26 and uses the `/v2` module path. In addition to the main `vVERSION` tag, the distribution workflow creates the nested-module tag `agentscope-service/service-controlplane/vVERSION` at the same commit. This lets users install either CLI command with `@v2.1.0-BETA1`; see the bilingual Runtime Host installation page. Future Go releases need both tags at the same commit; administrators only push the main tag. Do not move published tags.
 
 Documentation lives under `docs/v2/{zh,en}/service/`; `docs/docs.json` configures navigation and redirects. Validate both languages with the documentation npm scripts before merging into `main`, Mintlify's deployment branch. Confirm the Mintlify deployment separately from the validation workflow, then check direct page access, links, images, search and language switching.
 
