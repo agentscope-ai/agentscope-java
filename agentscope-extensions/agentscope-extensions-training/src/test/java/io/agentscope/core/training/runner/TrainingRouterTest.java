@@ -205,6 +205,48 @@ class TrainingRouterTest {
     }
 
     @Test
+    @DisplayName("Should drop the saved inputs when the call ends in an error")
+    void shouldDropSavedInputsWhenTheCallEndsInAnError() {
+        when(mockAgent.getAgentId()).thenReturn("agent-error");
+        when(mockAgent.getName()).thenReturn("TestAgent");
+
+        Object callScope = new Object();
+        List<Msg> inputs =
+                Collections.singletonList(
+                        Msg.builder().role(MsgRole.USER).textContent("doomed").build());
+
+        router.onEvent(new PreCallEvent(mockAgent, inputs))
+                .contextWrite(c -> c.put(AgentBase.CALL_SCOPE_KEY, callScope))
+                .block();
+        router.onEvent(new ErrorEvent(mockAgent, new RuntimeException("boom")))
+                .contextWrite(c -> c.put(AgentBase.CALL_SCOPE_KEY, callScope))
+                .block();
+
+        Msg outputMsg = Msg.builder().role(MsgRole.ASSISTANT).textContent("Response").build();
+        router.onEvent(new PostCallEvent(mockAgent, outputMsg))
+                .contextWrite(c -> c.put(AgentBase.CALL_SCOPE_KEY, callScope))
+                .block();
+
+        // The error already consumed the entry, so the late PostCall has nothing to train on.
+        verify(selectionStrategy, never()).shouldSelect(any(), anyList(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Should tolerate an agent that exposes no id to key the call by")
+    void shouldTolerateAnAgentWithoutId() {
+        when(mockAgent.getAgentId()).thenReturn(null);
+
+        List<Msg> inputs =
+                Collections.singletonList(
+                        Msg.builder().role(MsgRole.USER).textContent("Hello").build());
+        PreCallEvent event = new PreCallEvent(mockAgent, inputs);
+
+        StepVerifier.create(router.onEvent(event).contextWrite(Context.empty()))
+                .expectNext(event)
+                .verifyComplete();
+    }
+
+    @Test
     @DisplayName("Should create router with valid config")
     void shouldCreateRouterWithValidConfig() {
         TrainingRouter newRouter =
