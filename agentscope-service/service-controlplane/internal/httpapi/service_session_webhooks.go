@@ -21,9 +21,9 @@ import (
 	"encoding/json"
 	"time"
 
-	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
-	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/invocation"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/sessionapi"
+	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/sessionapi"
 	"github.com/gin-gonic/gin"
 )
 

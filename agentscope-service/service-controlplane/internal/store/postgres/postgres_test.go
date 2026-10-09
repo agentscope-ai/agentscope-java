@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
-	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store/postgres"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store/storetest"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
+	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store/postgres"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store/storetest"
 	"github.com/jackc/pgx/v5"
 )
 

@@ -25,11 +25,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/artifact"
-	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
-	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/invocation"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/sessionapi"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/artifact"
+	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/sessionapi"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/google/uuid"
 )
 

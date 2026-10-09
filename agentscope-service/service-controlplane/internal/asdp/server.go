@@ -29,8 +29,8 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/metrics"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/metrics"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
 // Connection represents a connected data plane instance with its gRPC stream.

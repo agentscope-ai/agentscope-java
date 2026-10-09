@@ -2,8 +2,8 @@ apiVersion: v2
 name: controlplane
 description: Control Plane - Kubernetes-native AI Agent Management
 type: application
-version: 0.2.0
-appVersion: "0.2.0"
+version: 2.1.0-BETA1
+appVersion: "2.1.0-BETA1"
 keywords:
   - agent
   - ai

@@ -30,7 +30,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/asdp"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/asdp"
 )
 
 // Config holds the connector configuration.

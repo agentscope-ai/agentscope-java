@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/connector"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/prober"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/connector"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/prober"
 )
 
 // stubProvider implements connector.ContractProvider against in-memory fixtures.

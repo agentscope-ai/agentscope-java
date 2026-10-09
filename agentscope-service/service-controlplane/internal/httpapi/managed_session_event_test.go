@@ -31,12 +31,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/collaboration"
-	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/orchestration"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/product"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
-	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store/memory"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/collaboration"
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/orchestration"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
+	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store/memory"
 )
 
 func TestManagedSessionEventsProjectMessagesAndAreIdempotent(t *testing.T) {

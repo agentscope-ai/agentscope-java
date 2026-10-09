@@ -24,9 +24,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost/provider"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost/provider/codex"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost/provider/qoder"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost/provider"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost/provider/codex"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost/provider/qoder"
 )
 
 // Opt-in live contract test: consumes a small provider request in a temporary

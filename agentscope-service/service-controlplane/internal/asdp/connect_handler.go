@@ -24,7 +24,7 @@ import (
 	"google.golang.org/grpc/peer"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/version"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/version"
 )
 
 // ConnectHandler processes incoming Connect handshakes from data plane instances.

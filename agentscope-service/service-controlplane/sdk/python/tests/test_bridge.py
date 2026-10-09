@@ -217,6 +217,8 @@ def test_handshake_reports_capabilities(fake_cp, claude, fast_periods):
     try:
         assert bridge.grpc_transport.wait_connected(5)
         assert _wait_for(lambda: len(servicer.connects) > 0)
+        assert servicer.connects[0].sdk_version == agentscope_service.__version__
+        assert bridge.info()["sdkVersion"] == agentscope_service.__version__
         caps = set(servicer.connects[0].capabilities)
         assert {
             "session-reporting",

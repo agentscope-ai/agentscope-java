@@ -105,7 +105,7 @@ public final class HttpSelfRegistration implements AutoCloseable {
         this.heartbeatIntervalMs = heartbeatIntervalMs > 0 ? heartbeatIntervalMs : 15_000L;
     }
 
-    public void start() {
+    public synchronized void start() {
         if (scheduler != null) {
             return;
         }
@@ -135,7 +135,7 @@ public final class HttpSelfRegistration implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         if (scheduler != null) {
             scheduler.shutdownNow();
             scheduler = null;
@@ -160,7 +160,10 @@ public final class HttpSelfRegistration implements AutoCloseable {
         }
     }
 
-    private void heartbeatSafe() {
+    private synchronized void heartbeatSafe() {
+        if (scheduler == null) {
+            return;
+        }
         try {
             if (!registered.get()) {
                 tryRegister();
