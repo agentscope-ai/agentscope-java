@@ -18,7 +18,7 @@ package invocation
 
 import (
 	"encoding/json"
-	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
+	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 )
 
 // View is the public resource shared by admission, lifecycle reports and projections.

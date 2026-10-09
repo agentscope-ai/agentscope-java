@@ -32,12 +32,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/artifact"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/collaboration"
-	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/features"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
-	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store/memory"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/artifact"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/collaboration"
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/features"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
+	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store/memory"
 )
 
 func TestCollaborationMCPToolCatalogFollowsTaskRole(t *testing.T) {

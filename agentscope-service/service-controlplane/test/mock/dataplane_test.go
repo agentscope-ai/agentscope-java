@@ -18,8 +18,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/api/v1alpha1"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/prober"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/api/v1alpha1"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/prober"
 )
 
 func TestMockDataPlane(t *testing.T) {

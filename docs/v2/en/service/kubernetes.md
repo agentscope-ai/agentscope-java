@@ -20,7 +20,7 @@ curl -fLO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/kubernete
 curl -fLO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/postgres-init.sql
 ```
 
-Execute the SQL in the target database as its application owner to create `cp`, `rt` and `dp`. Plan backups for the database, files and keys. For an offline installation, download `agentscope-service-VERSION-kubernetes.tar.gz` and `SHA256SUMS` from the [GitHub Release](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.1.0-BETA1), verify the checksum and extract the bundle. It includes the Chart and the same configuration files.
+Execute the SQL in the target database as its application owner to create `cp`, `rt` and `dp`. Plan backups for the database, files and keys. For an offline installation, download `agentscope-service-2.1.0-BETA1-kubernetes.tar.gz` and `SHA256SUMS` from the [GitHub Release](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.1.0-BETA1), verify the checksum and extract the bundle. It includes the Chart and the same configuration files.
 
 ## 2. Create a Secret
 
@@ -64,12 +64,12 @@ Use `existingClaim` for retained PVCs. Configure `imagePullSecrets` for private 
 Add the public Helm repository and refresh its index. Repository access needs no login:
 
 ```bash
-helm repo add agentscope https://java.agentscope.io/helm
+helm repo add agentscope https://chickenlj.github.io/helm-charts
 helm repo update agentscope
 helm search repo agentscope/agentscope-service --versions --devel
 ```
 
-The index redirects to [GitHub Pages](https://chickenlj.github.io/helm-charts/index.yaml), which hosts the archives. You can also use `https://chickenlj.github.io/helm-charts` directly with `helm repo add`.
+The published [Helm repository](https://github.com/chickenlj/helm-charts) hosts the index and archives on GitHub Pages. Pin `--version 2.1.0-BETA1`; `--devel` in the search command includes prereleases. The Chart supplies the matching image tag through `appVersion`.
 
 Install a specific Chart version with the matching image namespace:
 

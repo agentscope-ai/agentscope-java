@@ -23,8 +23,8 @@ import (
 	"io"
 	"net/http"
 
-	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/invocation"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/sessionapi"
+	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/sessionapi"
 	"github.com/gin-gonic/gin"
 )
 

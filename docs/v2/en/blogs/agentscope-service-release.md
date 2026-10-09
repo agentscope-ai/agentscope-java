@@ -295,31 +295,17 @@ Personal workspace assistants such as QwenPaw can in principle attach via Sideca
 
 ## Try It Locally
 
-AgentScope Service is iterating quickly. If you want the full product surface first, clone the repository and start it in a local environment.
+Start the published `2.1.0-BETA1` Service with Docker Compose by following
+[Deploy and prepare Service](/v2/en/service/quickstart). No source build is needed.
+The guide covers package download, SHA-256 verification, model configuration and
+startup. Open http://localhost:18080 and sign in as `admin` with the generated
+`CONTROL_PLANE_BOOTSTRAP_PASSWORD` in `.env`, then change the password.
 
-1. Start the control plane, Managed Agents dataplane, and other components (as in the production deployment diagram above):
-
-```shell
-git clone https://github.com/agentscope-ai/agentscope-java.git
-cd agentscope-java
-```
-
-```bash
-export DASHSCOPE_API_KEY=sk-xxx
-cd agentscope-service
-scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
-```
-
-2. Open [http://localhost:8080](http://localhost:8080) and sign in with username / password (`admin` / `admin`).
-
-From there you can try Managed Agents and create an Agent quickly:
-
-    1. Create an Agent under **Managed Agents**;
-    2. Create a `local` Environment;
-    3. Open **Sessions**, bind the Agent and Environment, and send the first message;
-    4. Return to the **Dashboard** to inspect online status, events, and runtime info;
-    5. For collaboration, open **Agent Teams**, create a team, and watch tasks and member state.
-3. To try BYO Agent registration, use the sample at `agentscope-samples/agents/agentscope-paw` in the repository. After it starts, you should see the agent registered successfully in the Dashboard.
+Continue with [your first Managed Agent](/v2/en/service/create-managed-agent).
+To connect an existing Coding Agent, install the CLI and Runtime Host with
+[Go](/v2/en/service/runtime-host), then follow [Hosted Agent onboarding](/v2/en/service/connect-hosted-agent).
+For production Kubernetes deployment, use the published
+[Helm Chart](/v2/en/service/kubernetes).
 
 ## Roadmap & Closing
 

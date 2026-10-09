@@ -10,15 +10,15 @@
 
 | 组件 | 用户获取形式 | 发布方式 |
 | --- | --- | --- |
-| Control Plane + Dashboard | `agentscope-service-control` 镜像 | Actions 或 `release.py images --push` |
-| Gateway | `agentscope-service-gateway` 镜像 | 同上 |
-| Dataplane | `agentscope-service-dataplane` 镜像 | 同上 |
-| Scheduler | `agentscope-service-scheduler` 镜像 | 同上 |
-| 完整部署配置 | Compose 压缩包、Helm Chart | GitHub Release 附件；Chart 同时发布到 OCI registry |
+| Control Plane + Dashboard | `as-controlplane` 镜像 | Actions 或 `release.py images --push` |
+| Gateway | `as-gateway` 镜像 | 同上 |
+| Dataplane | `as-dataplane` 镜像 | 同上 |
+| Scheduler | `as-scheduler` 镜像 | 同上 |
+| 完整部署配置 | Compose 压缩包、Helm Chart | GitHub Release 附件；Chart 发布到公开 HTTP Helm 仓库 |
 | `as`、Runtime Host | Linux/macOS × amd64/arm64 压缩包 | GitHub Release 附件 |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` 及所需依赖 | Maven Central，单独发布 |
 | Python SDK | `agentscope-service-sdk` wheel、sdist | PyPI，单独发布 |
-| DSH 插件 | `@agentscope/dsh-controlplane` npm 包 | npm，单独发布 |
+| DSH 插件 | `@agentscope-service/dsh-controlplane` npm 包 | npm，单独发布 |
 | 用户文档 | 官网 Service 专区 | 合入 `main` 后由网站工作流部署 |
 
 前端已经包含在 control 镜像中，不单独发布 npm 包。PostgreSQL 使用上游镜像或外部数据库。`service-common` 和 Service 可执行模块默认不发布到 Maven Central。完整 Service Chart 使用 standalone HTTP 模式；旧 Control Plane Chart 与 ASDP gRPC 属于另一种部署形态，发布说明应区分它们。
@@ -31,7 +31,7 @@ SDK 可以独立发版。SDK 内容未变且已有兼容公开版本时，发布
 
 当前项目的 `origin` 是 `agentscope-ai/agentscope-java`。你需要相应的代码合并、tag、Actions 和 Release 操作权限，并遵循组织的分支保护规则。
 
-先让 `.github/workflows/service-release.yml` 进入仓库默认分支，再使用 Actions 的手动发布入口。GitHub 要求 `workflow_dispatch` 工作流存在于默认分支，才能手动触发；实际构建仍可选定其他分支或 tag。[GitHub 官方说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+先让 `.github/workflows/service-release.yml` 和 `service-dist-release.yml` 进入仓库默认分支，再使用 Actions 的手动发布入口或主 tag 自动发布入口。GitHub 要求 `workflow_dispatch` 工作流存在于默认分支，才能手动触发；实际构建仍可选定其他分支或 tag。[GitHub 官方说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
 
 这一步可以先只合入发布基础设施。完整文档何时对外上线单独安排，因为当前网站工作流会在 `main` push 时部署官网。
 
@@ -58,11 +58,11 @@ SDK 可以独立发版。SDK 内容未变且已有兼容公开版本时，发布
 | 发布目标 | 管理员需要准备 |
 | --- | --- |
 | Maven Central | `io.agentscope` 命名空间发布权限、Central Portal user token、可用的 GPG 签名配置 |
-| PyPI | `agentscope-service-sdk` 的发布权限；首次发布先确认包名归属；用于 Twine 的 API token |
-| npm | `@agentscope` scope 和目标包发布权限；交互登录及账号要求的 2FA |
+| PyPI | 首次配置 `agentscope-service-sdk` 的 GitHub Pending Publisher；已有项目则配置 Trusted Publisher |
+| npm | `@agentscope-service` scope 和目标包发布权限；交互登录及账号要求的 2FA |
 | 官网 | 网站工作流的写权限、GitHub Pages 发布源、`java.agentscope.io` 域名配置 |
 
-本仓库现有 Service 工作流没有接入 PyPI/npm 的 Trusted Publishing，也没有 SDK 发布 Secret；本手册采用管理员单独发布 SDK 的流程。PyPI 凭据可通过 Twine 的交互提示或 keyring 提供，避免写进命令和 Git。[PyPI 打包发布说明](https://packaging.python.org/en/latest/tutorials/packaging-projects/)、[Twine 凭据配置](https://packaging.python.org/en/latest/specifications/pypirc/)
+PyPI 和 npm 使用第七节的独立 OIDC 工作流发布，无需 SDK 发布 Secret。本地 Twine 是替代方式，凭据可通过交互提示或 keyring 提供，避免写进命令和 Git。[PyPI 打包发布说明](https://packaging.python.org/en/latest/tutorials/packaging-projects/)、[Twine 凭据配置](https://packaging.python.org/en/latest/specifications/pypirc/)
 
 npm 的发布权限和 2FA 要求由包设置决定；此处使用交互式 `npm login` / `npm publish`，按提示完成验证。[npm 官方发布认证说明](https://docs.npmjs.com/requiring-2fa-for-package-publishing-and-settings-modification/)
 
@@ -71,7 +71,7 @@ npm 的发布权限和 2FA 要求由包设置决定；此处使用交互式 `npm
 | 项目 | 本次需要确定的值 | 影响范围 |
 | --- | --- | --- |
 | Service 版本 | 例如 `2.0.3-rc.1` | 四个镜像、Chart version/appVersion、CLI、Compose 文件名 |
-| Git tag | 建议 `agentscope-service-v2.0.3-rc.1` | 唯一指向本次审核过的源码 |
+| Git tag | `v2.1.0-BETA1` | 唯一指向本次审核过的源码 |
 | Registry namespace | 例如 `ghcr.io/agentscope-ai` | 镜像和 Chart 的公开安装地址 |
 | Java 版本 | 根 `pom.xml` 的 `revision` | Java SDK、父 POM、相关 reactor 依赖 |
 | Python 版本 | 两处 Python 版本声明 | PyPI 包版本 |
@@ -93,7 +93,7 @@ Service 参数不带 `v` 前缀，当前脚本不接受 `+build` 元数据。Pyt
 
 ```bash
 export SERVICE_VERSION=2.0.3-rc.1
-export RELEASE_TAG="agentscope-service-v${SERVICE_VERSION}"
+export RELEASE_TAG="v${SERVICE_VERSION}"
 export IMAGE_REPOSITORY=ghcr.io/agentscope-ai
 export RELEASE_REPO=agentscope-ai/agentscope-java
 ```
@@ -126,10 +126,13 @@ python -m pip install -r agentscope-service/release/requirements.txt \
 
 ```bash
 python agentscope-service/release/release.py verify
-mvn -B -ntp clean verify
-python -m pip install -e 'docs[dev]'
-jupyter-book build docs
-python docs/scripts/check_service_docs.py
+mvn -B -ntp -T1 clean verify
+cd docs
+npm ci
+npm test
+npm run validate
+npm run broken-links
+cd ..
 ```
 
 `verify` 覆盖 Service Java reactor、Go、前端、Python、DSH 和 Chart 检查；不是完整仓库 `mvn clean verify` 的替代。Go 共享测试库的包按 `-p 1` 串行执行。部分 Kubernetes controller 集成测试还需要 envtest 资源，按 Control Plane Makefile 的 `test-integration` 入口运行。
@@ -147,6 +150,8 @@ python agentscope-service/release/release.py images \
 ```
 
 默认制品目录是 `agentscope-service/release/dist/$SERVICE_VERSION/`。`package` 拒绝覆盖已有目录；重新演练用新的 `--output`，后续 `images` / `publish-chart` 也应指向同一个目录。对外交付使用冻结源码后生成的包，不能直接上传早先 `sourceDirty: true` 的候选包。
+
+CLI 压缩包包含两个可执行文件和中英文安装说明。`agentscope-service-VERSION-kubernetes.tar.gz` 包含 Chart、Secret 配置模板、数据库 schema 初始化 SQL 及安装说明，同时保留独立的 Chart `.tgz`。SDK 已单独发布时，给 `package` 加 `--distributions-only`，只构建 CLI、Compose、Kubernetes 和 Chart 制品。
 
 校验包文件；镜像元数据是之后生成的独立证据，不包含在这份校验和中：
 
@@ -179,7 +184,7 @@ git tag -a "$RELEASE_TAG" -m "AgentScope Service $SERVICE_VERSION"
 git push origin "$RELEASE_TAG"
 ```
 
-遵循仓库保护规则完成必要的 PR 合并和分支推送。Tag 应指向最终要发布的提交。当前工作流只检查选择的是 tag，不检查 tag 名与 `version` 是否相符，这个对应关系由管理员核对。
+遵循仓库保护规则，先将最终发布源码和工作流合入 `main`，再在该提交创建主 tag。`service-dist-release.yml` 会核对主 tag、Java/Go 版本及 `main` 来源，并自动创建同一提交的 Go 模块 tag；镜像手动工作流的 `version` 仍由管理员填写并核对。
 
 对外发布后不移动 tag、不覆盖同名镜像或包。需要修正内容时发布下一个 RC 或补丁版本。
 
@@ -194,7 +199,7 @@ git push origin "$RELEASE_TAG"
 | 构建产物 | 上传 `agentscope-service-release` Actions artifact |
 | 镜像元数据 | 上传 `agentscope-service-image-metadata` Actions artifact |
 | Docker/Helm 业务安装演练 | 不自动执行，需管理员完成第四节验收 |
-| Maven/PyPI/npm、GitHub Release、官网 | 不由此工作流发布 |
+| Maven/PyPI/npm、GitHub Release、官网 | 不由镜像工作流发布；GitHub Release 和 Go 模块 tag 由第八节的独立工作流自动完成 |
 
 `publish=false` 的镜像只存在于临时 runner，不是可下载的 Docker 镜像归档。需要本地安装演练时使用第四节的本地镜像构建命令。
 
@@ -246,6 +251,27 @@ python agentscope-service/release/release.py publish-chart \
 
 ### 7.1 Python → PyPI
 
+首次发布前，在 [PyPI 账号 Publishing 设置](https://pypi.org/manage/account/publishing/) 中新增 GitHub Pending Publisher：
+
+| 字段 | 填写值 |
+| --- | --- |
+| PyPI project name | `agentscope-service-sdk` |
+| Owner | `agentscope-ai` |
+| Repository | `agentscope-java` |
+| Workflow filename | `service-pypi-release.yml`，不要带 `.github/workflows/` 路径 |
+| Environment | `pypi` |
+
+工作流显示名称为 **AgentScope Service PyPI release**。它测试 Python 3.9–3.14，核对 tag/输入版本与 SDK 的两处版本声明，构建并校验 wheel/sdist，最后通过 OIDC 上传。仅上传 job 拥有 `id-token: write`，不需要 PyPI API token 或 GitHub SDK Secret；首次成功上传会创建 PyPI 项目。见 [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)。
+
+推送包含该工作流的 `v*` 或 `agentscope-service-v*` tag 会触发发布，但源码必须已合入 `main`；手动入口要求工作流先进入默认分支。本次输入 `2.1.0-BETA1` 或等价的 Python 版本 `2.1.0b1`。配置 Publisher 并将工作流合入默认分支后，指定待发布的源码分支运行：
+
+```bash
+gh workflow run service-pypi-release.yml --repo agentscope-ai/agentscope-java \
+  --ref main -f version=2.1.0-BETA1
+```
+
+发布后在新的虚拟环境中执行 `pip install agentscope-service-sdk==2.1.0b1` 并验证导入。已发布版本不能重复上传。需要本地 Twine 替代方式时，先确认包名归属、版本未发布及 API token，再执行：
+
 ```bash
 export RELEASE_ARTIFACT_DIR=/private/path/release-artifacts/VERSION
 python -m twine check \
@@ -262,11 +288,20 @@ python -m twine upload \
 
 ```bash
 npm login
-npm publish "$RELEASE_ARTIFACT_DIR"/agentscope-dsh-controlplane-*.tgz \
-  --access public --tag next
+python agentscope-service/release/release.py publish-npm --version "$SERVICE_VERSION"
 ```
 
-RC 使用 `next`；稳定版审核通过后发布时改为 `--tag latest`。发布前核对 tarball 内的实际版本，按 npm 提示完成 2FA。发布后在独立目录安装 `@agentscope/dsh-controlplane@实际版本` 并验证导入。
+发布命令会测试、构建并将 `@agentscope-service/dsh-controlplane` 公开发布到 `https://registry.npmjs.org`，预发布自动选择 `next`，稳定版选择 `latest`。加 `--dry-run` 可检查候选包而不上传；实际发布要求已提交的干净源码。
+
+`service-npm-release.yml` 会在推送 `v*` 或 `agentscope-service-v*` tag 时自动发布，也支持手动填写版本；tag/输入版本必须与 SDK 版本一致。首次本地发布成功后，在 npm 包设置中配置 Trusted Publisher：GitHub owner 为 `agentscope-ai`，repository 为 `agentscope-java`，workflow 为 `service-npm-release.yml`，environment 为 `npm`。工作流使用 npm 11 和 OIDC，无需 `NPM_TOKEN`。tag 对应源码须包含该工作流且已合入 `main`；手动入口还要求它进入默认分支。也可用 npm 11.15+ 完成首次绑定：
+
+```bash
+npm trust github @agentscope-service/dsh-controlplane \
+  --repo agentscope-ai/agentscope-java --file service-npm-release.yml \
+  --env npm --allow-publish
+```
+
+首次绑定可能需要浏览器/2FA 验证。 新 Trusted Publisher 须在两天内完成首次成功的 CI 发布；否则下次发布前需要重建过期绑定。已经从本机上传的首版不能重复上传来验证 CI。见 [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/#trusted-publisher-configuration-expiry)。用 `npm trust list @agentscope-service/dsh-controlplane` 确认配置。发布前核对 tarball 内的实际版本，按 npm 提示完成 2FA。发布后在独立目录安装 `@agentscope-service/dsh-controlplane@实际版本` 并验证导入。
 
 ### 7.3 Java → Maven Central
 
@@ -299,13 +334,43 @@ mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-controlplane -am \
 从同一 tag 的工作流取出以下文件：
 
 - Compose `.tar.gz`、Helm `.tgz`。
+- Kubernetes `.tar.gz`，包含 Chart、配置模板和初始化 SQL。
 - 四个平台的 `agentscope-cli-*.tar.gz`，每份包含 CLI 与 Runtime Host。
-- Python wheel/sdist 和 DSH npm tarball，说明哪些版本本次新发布、哪些沿用已有版本。
-- `release-manifest.json`、`SHA256SUMS`、四个 `image-*.json`。
+- `release-manifest.json`、`SHA256SUMS`。
+
+以上九个附件由安装包工作流自动上传。Python wheel/sdist、DSH npm tarball 及镜像 digest 元数据由各自发布流程提供，按实际发布情况另行补充。
 
 只上传这些公开制品；不要把工作目录、测试 `.env`、数据库备份或密钥一起打包。GitHub 自动生成的源码压缩包不能替代 Compose、CLI 和 SDK 附件。
 
-先在 GitHub Releases 建立草稿，选用已存在的 tag，上传附件并校验下载。若使用 CLI，先在仓库之外准备完整的 Markdown Release Notes：
+工作流 **AgentScope Service distribution release**（`service-dist-release.yml`）在推送主 `v*` tag 时自动执行。先更新根 POM 的 Java revision 与 Go 版本常量，完成发布验证并把源码、工作流合入 `main`，然后只创建主 tag。例如准备好下一版本后：
+
+```bash
+git fetch origin main
+RELEASE_TAG=v2.1.0-BETA2
+git tag -a "$RELEASE_TAG" origin/main -m "$RELEASE_TAG"
+git push origin "$RELEASE_TAG"
+```
+
+工作流校验提交已进入 `main`、Java/Go 版本与 tag 一致、Go 模块主版本一致，执行打包和 CLI 测试并构建上述附件。附件先上传至草稿，随后创建指向同一提交的 `agentscope-service/service-controlplane/vVERSION` tag，最后公开 GitHub Release；带预发布后缀的版本自动标记为 prerelease。Release Notes 保持一句话，链接到中英文官方文档。
+
+仅发布 job 使用 `contents: write` 和仓库自带的 `GITHUB_TOKEN`，无需新增 Secret。可选的 Repository variable `SERVICE_IMAGE_REPOSITORY` 控制安装包内引用的镜像命名空间，默认是 `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`。此工作流不构建或推送镜像，不发布 Maven/npm/PyPI，也不更新独立的 HTTP Helm 仓库或 Homebrew tap；各渠道保留已有发布流程。SDK 工作流仍独立响应主 tag。
+
+对于已经包含此工作流的现有 tag，可手动重跑，无需新建 tag：
+
+```bash
+gh workflow run service-dist-release.yml --repo agentscope-ai/agentscope-java \
+  --ref main -f tag=vVERSION
+```
+
+已经公开的 Release 保持不变；同提交的 Go tag 和同校验和的草稿附件会复用，tag 或校验和冲突时停止，不覆盖。失败时优先重跑 **publish job**，复用该次 Actions 原始制品；重新打包可能生成不同字节，不能覆盖已有草稿附件。已发布的 `v2.1.0-BETA1` 与 Go tag 早于此工作流，保持原样，自动化用于之后包含该工作流的新版本。通过 `GITHUB_TOKEN` 创建的 Go tag 不会再次触发 push 工作流，避免递归发布。见 [GitHub 工作流触发说明](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)。
+
+公开 HTTP Helm 仓库和可选的 Homebrew tap 是独立发布渠道。
+
+用户按 [Runtime Host 安装指南](https://java.agentscope.io/v2/zh/service/runtime-host)，通过 `go install` 安装同一版本的 CLI 和 Runtime Host。可选的个人公开 tap 为 [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap)。配方源码保留在 `release/homebrew/agentscope-cli.rb`。每次 CLI 发版后，更新四个平台的 URL、已验证的 SHA-256、配方版本和测试中的版本断言，再将配方发布到 tap。既有二进制附件保持不变。组织仓库的 CI 若要自动更新这个个人仓库，需要另行配置对 tap 拥有 Contents 写权限的凭据；默认 `GITHUB_TOKEN` 不包含这个跨仓库权限。
+
+Go 模块要求 Go 1.26，使用 `/v2` 模块路径。除主 `vVERSION` tag 外，安装包工作流会在同一提交创建嵌套模块 tag `agentscope-service/service-controlplane/vVERSION`，用户即可通过 `@v2.1.0-BETA1` 安装两个命令，见中英文 Runtime Host 安装页。后续 Go 版本同样需要两个 tag 指向同一提交，管理员只需推送主 tag，不移动已发布 tag。
+
+需要手动发布作为替代方案时，先在 GitHub Releases 建立草稿，选用已存在的 tag，上传附件并校验下载。若使用 CLI，先在仓库之外准备 Markdown Release Notes：
 
 ```bash
 gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" \
@@ -314,35 +379,34 @@ gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" \
   --notes-file /private/path/release-notes.md
 ```
 
-通过草稿页面添加上述附件。RC 勾选 **Set as a pre-release**；稳定版完成验收后再设置为正式发布及合适的 latest 状态。发布说明至少包含：
-
-```markdown
-# AgentScope Service VERSION
-
-## 新增与修复
-- 本次用户可感知的变化。
-
-## 安装入口
-- Compose 附件名称与校验方式。
-- 四个镜像的确切版本及 digest。
-- OCI Chart 地址与版本。
-- Java / Python / DSH 安装坐标及各自版本。
-- 对应官网文档链接。
-
-## 升级与兼容性
-- 已验证的架构、数据库及存储条件。
-- 数据迁移、维护窗口、备份和恢复要求。
-- 已知限制、尚未验证的集成。
-```
+通过草稿页面添加上述附件。RC 勾选 **Set as a pre-release**；稳定版完成验收后再设置为正式发布及合适的 latest 状态。公开 Release 说明保持一两句话，并链接到官方 Service 文档。Compose 快速启动、
+Go CLI 安装、公开 HTTP Helm 仓库与运行要求集中维护在相应安装文档中。
+制品清单、校验和及详细验证记录继续保留在 Release 附件中。
 
 ### 8.2 发布官网
 
-官网源码位于 `docs/v2/{zh,en}/service/`。把对应版本文档按审核流程合入 `main`，查看 **Deploy Docs to GitHub Pages** 工作流。当前配置只有 `main` push 会部署；手动触发及 PR 只做构建检查，不会上线。
+公开 HTTP Helm 仓库位于 [chickenlj/helm-charts](https://github.com/chickenlj/helm-charts)。
+先公开发布上游 `vVERSION` Release，并上传独立 Chart `.tgz`，然后运行独立仓库的工作流。
+该分发渠道不要求执行前面的 OCI Chart 推送：
+
+```bash
+gh workflow run publish.yml --repo chickenlj/helm-charts --ref main -f version=2.1.0-BETA1
+helm repo add agentscope https://chickenlj.github.io/helm-charts
+helm repo update agentscope
+helm pull agentscope/agentscope-service --version 2.1.0-BETA1
+```
+
+后续发版替换为实际版本。工作流从上游 Release 下载原包，核对 SHA256 与 Chart 元数据，
+保留旧版本索引，拒绝以不同内容覆盖已发布版本，并部署 GitHub Pages。
+不需要额外 registry 凭据或跨仓库写入 token。官网跳转配置虽已合并，但线上 `/helm/index.yaml` 仍返回 404；
+安装文档默认使用已验证的 Pages 地址，待官网入口通过实际 Helm 检查后再启用别名。
+
+官网源码位于 `docs/v2/{zh,en}/service/`。把对应版本文档按审核流程合入 `main`，检查 **Validate Mintlify Docs** 工作流，并确认 Mintlify 从 `main` 部署成功；文档校验通过本身不等于官网已上线。
 
 上线后使用浏览器打开：
 
-- 中文：`https://java.agentscope.io/v2/zh/service/index.html`
-- 英文：`https://java.agentscope.io/v2/en/service/index.html`
+- 中文：`https://java.agentscope.io/v2/zh/service/index`
+- 英文：`https://java.agentscope.io/v2/en/service/index`
 
 确认 Service 导航、语言切换、搜索、图片、直接页面链接均可用，并核对安装文档使用的是已经公开可获取的版本。随后完成 GitHub Release 的公开发布。
 
@@ -351,11 +415,13 @@ gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" \
 使用没有管理员 registry 登录状态的临时客户端或全新 CI job 验证公开获取，避免复用本机缓存把私有镜像误判为公开可用：
 
 ```bash
-docker pull "$IMAGE_REPOSITORY/agentscope-service-control:$SERVICE_VERSION"
-docker pull "$IMAGE_REPOSITORY/agentscope-service-gateway:$SERVICE_VERSION"
-docker pull "$IMAGE_REPOSITORY/agentscope-service-dataplane:$SERVICE_VERSION"
-docker pull "$IMAGE_REPOSITORY/agentscope-service-scheduler:$SERVICE_VERSION"
-helm pull "oci://$IMAGE_REPOSITORY/charts/agentscope-service" \
+docker pull "$IMAGE_REPOSITORY/as-controlplane:$SERVICE_VERSION"
+docker pull "$IMAGE_REPOSITORY/as-gateway:$SERVICE_VERSION"
+docker pull "$IMAGE_REPOSITORY/as-dataplane:$SERVICE_VERSION"
+docker pull "$IMAGE_REPOSITORY/as-scheduler:$SERVICE_VERSION"
+helm repo add agentscope https://chickenlj.github.io/helm-charts
+helm repo update agentscope
+helm pull agentscope/agentscope-service \
   --version "$SERVICE_VERSION"
 ```
 

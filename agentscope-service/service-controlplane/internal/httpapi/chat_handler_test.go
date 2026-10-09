@@ -23,7 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/conversation"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/conversation"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -31,8 +31,8 @@ import (
 
 	"github.com/google/uuid"
 
-	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/controlplane/model"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
 func chatRequest(server *Server, method, path, body string) *httptest.ResponseRecorder {
