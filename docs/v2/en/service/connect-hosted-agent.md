@@ -12,7 +12,7 @@ A Hosted Agent connects a Coding Agent on your computer or server. Runtime Host 
 
 Connect a host once. You can then create multiple Hosted Agents, define their responsibilities, and assign work through the API without installing a separate Host for each Agent.
 
-Hosted Agents work independently or join a team coordinated by a Managed Lead. Runtime Host runs Coding Agent providers; it differs from a Managed self_hosted tool Worker and from deploying the whole Service. Prepare the [platform](/v2/en/service/quickstart), then see [self-hosted architecture](/v2/en/service/quickstart#self-hosting) for boundaries and [orchestration](/v2/en/service/orchestration) for collaboration.
+Hosted Agents work independently or join a team coordinated by a Managed Lead. Runtime Host runs Coding Agent providers; it differs from a Managed self_hosted tool Worker and from deploying the whole Service. Prepare the [platform](/v2/en/service/quickstart), then see [self-hosted architecture](/v2/en/service/kubernetes#self-hosting) for boundaries and [orchestration](/v2/en/service/orchestration) for collaboration.
 
 ## Connect an execution host
 
