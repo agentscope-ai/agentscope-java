@@ -18,8 +18,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/dataplane"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/dataplane"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
 func agentKey(namespace, name string) string {

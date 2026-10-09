@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/store"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )

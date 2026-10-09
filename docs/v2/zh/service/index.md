@@ -5,7 +5,7 @@ en_link: /v2/en/service/index
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+当前 Service 版本为 `2.1.0-BETA1`，属于预发布版本。
 </Note>
 
 **AgentScope Service 是面向业务应用、可自托管的 Agent as a Service 平台。平台上的托管 Agent（Managed Agent）基于 AgentScope HarnessAgent 内核。** 你在平台中定义 Agent 要完成的工作，并为它配置合适的模型和工具。应用提交任务后，由 Service 运行 Agent 并保存执行过程，使应用能够跟踪进展、参与必要的交互，直到获得结果。
@@ -39,6 +39,8 @@ Harness SDK 和 Service 托管 Agent 使用同一个 HarnessAgent 内核，你�
 | Service 托管 Agent | 在平台配置基于 HarnessAgent 内核的 Agent，通过 Console 或 API 使用 | Service 管理 Agent 执行与会话；平台团队统一维护基础设施 |
 
 如果需要将 Agent 深度嵌入自己的 Java 或 Spring Boot 应用，并在代码中控制运行逻辑，可以从 [Harness SDK](/v2/zh/docs/quickstart) 开始，由应用团队负责部署和运维。如果希望把运行管理交给共享平台，则可以直接在 Service 中配置 Managed Agent，通过 API 或 Console 使用它，而无需先开发一个独立 SDK 应用。已经用 SDK 开发好的 Agent 也有接入路径，可以作为 External Agent 纳入平台，继续复用原有实现。
+
+本机快速体验默认使用 [Docker Compose](/v2/zh/service/quickstart)；Kubernetes 生产安装使用已发布的 [Helm Chart](/v2/zh/service/kubernetes)。接入 Hosted Agent 时，通过 [Go 安装 CLI 与 Runtime Host](/v2/zh/service/runtime-host)。
 
 ## 从部署到业务交付
 

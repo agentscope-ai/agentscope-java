@@ -15,6 +15,7 @@
 {{- $name := include "service.name" . -}}
 {{- $secret := required "existingSecret is required; see deploy/kubernetes.env.example" .Values.existingSecret -}}
 {{- $repository := required "imageRepository is required" .Values.imageRepository -}}
+{{- $images := dict "control" "as-controlplane" "gateway" "as-gateway" "dataplane" "as-dataplane" "scheduler" "as-scheduler" -}}
 {{- range $plane, $port := dict "control" 8081 "dataplane" 8082 "scheduler" 8083 "gateway" 8080 }}
 ---
 apiVersion: apps/v1
@@ -61,7 +62,7 @@ spec:
       {{- if or (eq $plane "dataplane") (eq $plane "scheduler") }}
       initContainers:
         - name: wait-for-upstream
-          image: {{ printf "%s/agentscope-service-%s:%s" $repository $plane ($.Values.imageTag | default $.Chart.AppVersion) | quote }}
+          image: {{ printf "%s/%s:%s" $repository (index $images $plane) ($.Values.imageTag | default $.Chart.AppVersion) | quote }}
           imagePullPolicy: {{ $.Values.imagePullPolicy }}
           command: [sh, -ec]
           args:
@@ -76,7 +77,7 @@ spec:
       {{- end }}
       containers:
         - name: {{ $plane }}
-          image: {{ printf "%s/agentscope-service-%s:%s" $repository $plane ($.Values.imageTag | default $.Chart.AppVersion) | quote }}
+          image: {{ printf "%s/%s:%s" $repository (index $images $plane) ($.Values.imageTag | default $.Chart.AppVersion) | quote }}
           imagePullPolicy: {{ $.Values.imagePullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false

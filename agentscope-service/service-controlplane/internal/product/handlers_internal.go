@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/invocation"
+	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
 	"io"
 	"log"
 	"net/http"

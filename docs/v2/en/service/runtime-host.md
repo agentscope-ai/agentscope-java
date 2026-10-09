@@ -4,29 +4,35 @@ zh_link: /v2/zh/service/runtime-host
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This guide uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 A Runtime Host runs on a computer or server with a Coding Agent provider installed. The control plane dispatches and records work; the Host executes it with the local provider.
 
-## Install
+## Install with Go
 
-Download `agentscope-cli-VERSION-OS-ARCH.tar.gz` for the operating system and CPU architecture from the same Service release. Verify its checksum and extract it. The archive contains `as` and `agentscope-runtime-host`. Put both executables in the same directory on PATH.
-
-Choose Linux/macOS and amd64/arm64 according to the release manifest and the machine you will connect. Install, authenticate and verify the provider separately.
-
-## Extract onto PATH
-
-Check the platform with `uname -sm`; package names use `linux`/`darwin` and `amd64`/`arm64`. Download the matching [Release](https://github.com/agentscope-ai/agentscope-java/releases) archive and replace the filename below:
+Install [Go](https://go.dev/doc/install) 1.26 or newer on the target Linux or macOS host. Install both commands from the same published version; no repository checkout or Service deployment is required:
 
 ```bash
-mkdir -p agentscope-cli "$HOME/.local/bin"
-tar -xzf agentscope-cli-VERSION-OS-ARCH.tar.gz -C agentscope-cli
-install -m 0755 agentscope-cli/as agentscope-cli/agentscope-runtime-host "$HOME/.local/bin/"
-export PATH="$HOME/.local/bin:$PATH"
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
 ```
 
-Persist the PATH setting in your shell configuration for later terminals.
+Go builds the binaries for the current machine and writes them to `GOBIN`, or `$(go env GOPATH)/bin` when `GOBIN` is unset. Add that directory to PATH and check both commands:
+
+```bash
+AS_CLI_BIN_DIR="$(go env GOBIN)"
+if [ -z "$AS_CLI_BIN_DIR" ]; then
+  AS_CLI_BIN_DIR="$(go env GOPATH)/bin"
+fi
+export PATH="$AS_CLI_BIN_DIR:$PATH"
+as version
+agentscope-runtime-host -help
+```
+
+Persist the PATH setting in your shell configuration for later terminals. `as version` should report `2.1.0-BETA1`. The `/v2` module path and `@v2.1.0-BETA1` select the published prerelease.
+
+Install and authenticate a supported Coding Agent provider separately on this host, and verify that it can run a request. The CLI and Runtime Host connect to an existing Service; they do not deploy the platform. To update, stop the Runtime Host, rerun both `go install` commands with the same new version, and restart it while preserving its state directory.
 
 ## Connect
 

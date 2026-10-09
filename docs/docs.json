@@ -1056,6 +1056,16 @@
   },
   "redirects": [
     {
+      "source": "/helm/index.yaml",
+      "destination": "https://chickenlj.github.io/helm-charts/index.yaml",
+      "permanent": false
+    },
+    {
+      "source": "/helm",
+      "destination": "https://chickenlj.github.io/helm-charts/",
+      "permanent": false
+    },
+    {
       "source": "/v2/en/service/cases/sdlc-team",
       "destination": "/v2/en/service/cases/incident-to-pr"
     },

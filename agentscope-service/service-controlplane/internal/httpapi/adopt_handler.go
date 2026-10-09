@@ -19,7 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/discovery"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/discovery"
 )
 
 func (s *Server) adoptAgent(c *gin.Context) {

@@ -19,7 +19,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/secretcrypto"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/secretcrypto"
 )
 
 // vaultKey derives a 32-byte AES key from VAULT_MASTER_KEY or jwt-secret.

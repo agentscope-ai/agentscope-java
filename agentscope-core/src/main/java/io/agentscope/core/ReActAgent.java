@@ -385,7 +385,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final String sessionLogAgentId;
 
     private ReActAgent(Builder builder, Toolkit agentToolkit) {
-        super(builder.name, builder.description, new ArrayList<>(builder.hooks));
+        super(builder.name, builder.description, new ArrayList<>(builder.hooks), builder.agentId);
 
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
         this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
@@ -5577,6 +5577,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         String name;
+        String agentId;
         String description;
         String sysPrompt;
         Model model;
@@ -5692,6 +5693,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             copy.sessionLogStore = this.sessionLogStore;
             copy.sessionLogAgentId = this.sessionLogAgentId;
             copy.name = this.name;
+            copy.agentId = this.agentId;
             copy.description = this.description;
             copy.sysPrompt = this.sysPrompt;
             copy.model = this.model;
@@ -5740,6 +5742,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        /**
+         * Sets the agent id (trimmed; null/blank falls back to a generated UUID). Format contract:
+         * {@link AgentBase#normalizeAgentId(String)}, validated at {@code build()} time.
+         * Framework internals key off it.
+         *
+         * <p>You normally do not need to set this: unless you need a specific, externally known
+         * id for the agent (e.g. to keep a stable identity — state, tracing, routing — across
+         * restarts), leave it unset and the framework generates a unique random UUID for you.
+         * If you do set it, uniqueness is your responsibility — it is not enforced or checked
+         * by the framework, so keep the id unique among live agents at all times; duplicates
+         * can collide in state storage, filesystem namespaces, and message routing.
+         *
+         * @param agentId The agent id
+         * @return This builder instance for method chaining
+         */
+        public Builder agentId(String agentId) {
+            this.agentId = agentId;
             return this;
         }
 

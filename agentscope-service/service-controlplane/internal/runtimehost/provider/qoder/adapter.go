@@ -31,7 +31,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/runtimehost/provider"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimehost/provider"
 )
 
 // Adapter uses Qoder's bidirectional stream-json host contract. Tool approval
