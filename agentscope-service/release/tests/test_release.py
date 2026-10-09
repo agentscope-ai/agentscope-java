@@ -211,5 +211,96 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn('/' + release.IMAGE_NAMES[plane] + ':', compose['services'][name]['image'])
 
 
+class ReleaseImageTests(unittest.TestCase):
+    def test_registry_missing_image_can_build_but_auth_and_network_errors_stop(self):
+        for error, missing in [('image: not found', True), ('manifest unknown', True),
+                               ('401 Unauthorized', False), ('connection refused', False)]:
+            result = SimpleNamespace(returncode=1, stderr=error)
+            with self.subTest(error=error), mock.patch.object(release.subprocess, 'run', return_value=result):
+                if missing:
+                    self.assertIsNone(release.inspect_release_image('image:version', 'version', 'commit',
+                                                                    'linux/amd64,linux/arm64', allow_missing=True))
+                else:
+                    with self.assertRaises(SystemExit):
+                        release.inspect_release_image('image:version', 'version', 'commit',
+                                                      'linux/amd64,linux/arm64', allow_missing=True)
+
+    def test_existing_images_require_both_platforms_and_matching_source_labels(self):
+        manifest = {'digest': 'sha256:' + 'a' * 64,
+                    'manifests': [{'platform': {'os': 'linux', 'architecture': arch}}
+                                  for arch in ['amd64', 'arm64']]}
+        manifest['manifests'].append({'platform': {'os': 'unknown', 'architecture': 'unknown'}})
+        configs = {platform: {'config': {'Labels': {'org.opencontainers.image.version': 'version',
+                                                   'org.opencontainers.image.revision': 'commit'}}}
+                   for platform in ['linux/amd64', 'linux/arm64']}
+        for valid in [True, False]:
+            if not valid:
+                configs['linux/arm64']['config']['Labels']['org.opencontainers.image.revision'] = 'other'
+            result = SimpleNamespace(returncode=0, stdout=json.dumps(manifest))
+            with self.subTest(valid=valid), mock.patch.object(release.subprocess, 'run', return_value=result), \
+                    mock.patch.object(release, 'run', return_value=json.dumps(configs)) as run:
+                if valid:
+                    self.assertEqual(release.inspect_release_image('example.com/image:version', 'version', 'commit',
+                                                                   'linux/amd64,linux/arm64'), manifest['digest'])
+                    run.assert_any_call('docker', 'buildx', 'imagetools', 'inspect',
+                                        'example.com/image@' + manifest['digest'], '--format', '{{json .Image}}', capture=True)
+                else:
+                    with self.assertRaisesRegex(SystemExit, 'labels differ'):
+                        release.inspect_release_image('example.com/image:version', 'version', 'commit',
+                                                      'linux/amd64,linux/arm64')
+        manifest['manifests'].pop(1)
+        result.stdout = json.dumps(manifest)
+        with mock.patch.object(release.subprocess, 'run', return_value=result):
+            with self.assertRaisesRegex(SystemExit, 'platforms'):
+                release.inspect_release_image('example.com/image:version', 'version', 'commit', 'linux/amd64,linux/arm64')
+
+    def test_retry_reuses_matching_images_and_verifies_new_pushes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = SimpleNamespace(push=True, skip_existing=True, platforms='linux/amd64,linux/arm64',
+                                   version='2.1.0-BETA1', repository='example.com/team', output=Path(directory))
+            def inspect(reference, *values, allow_missing=False):
+                if reference.endswith('/as-gateway:2.1.0-BETA1') and allow_missing:
+                    return None
+                return 'sha256:' + 'a' * 64
+            with mock.patch.object(release, 'require_clean'), mock.patch.object(release, 'run', return_value='commit'), \
+                    mock.patch.object(release, 'inspect_release_image', side_effect=inspect) as inspections, \
+                    mock.patch.object(release, 'build_image') as build:
+                release.images(args)
+            build.assert_called_once_with(args, 'gateway', 'commit')
+            self.assertEqual(inspections.call_count, 5)
+            metadata = json.loads((args.output / 'images.json').read_text())
+            self.assertEqual(metadata['sourceCommit'], 'commit')
+            self.assertEqual(set(metadata['images']), set(release.PLANES))
+            self.assertEqual(metadata['images']['gateway']['platforms'], ['linux/amd64', 'linux/arm64'])
+
+    def test_conflicting_image_prevents_any_push(self):
+        args = SimpleNamespace(push=True, skip_existing=True, platforms='linux/amd64,linux/arm64',
+                               version='2.1.0-BETA1', repository='example.com/team', output=Path('/unused'))
+        with mock.patch.object(release, 'require_clean'), mock.patch.object(release, 'run', return_value='commit'), \
+                mock.patch.object(release, 'inspect_release_image', side_effect=[None, SystemExit('conflict')]), \
+                mock.patch.object(release, 'build_image') as build:
+            with self.assertRaisesRegex(SystemExit, 'conflict'):
+                release.images(args)
+            build.assert_not_called()
+
+    def test_build_arguments_use_the_release_version_commit_and_multiarch_push(self):
+        args = SimpleNamespace(push=True, platforms='linux/amd64,linux/arm64', version='version',
+                               repository='example.com/team', output=Path('/output'))
+        for plane in release.PLANES:
+            with self.subTest(plane=plane), mock.patch.object(release, 'run') as run:
+                release.build_image(args, plane, 'commit')
+                command = run.call_args.args
+                self.assertIn('--push', command)
+                self.assertIn('--sbom=true', command)
+                self.assertIn('--provenance=mode=max', command)
+                self.assertIn('org.opencontainers.image.revision=commit', command)
+                self.assertIn(f'example.com/team/{release.IMAGE_NAMES[plane]}:version', command)
+                if plane == 'control':
+                    self.assertIn('VERSION=version', command)
+                    self.assertIn('GIT_COMMIT=commit', command)
+                else:
+                    self.assertIn('MODULE=service-' + plane, command)
+
+
 if __name__ == '__main__':
     unittest.main()
