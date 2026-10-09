@@ -1,12 +1,11 @@
 ---
-hide-toc: true
+title: 'AgentScope Service Explained: Control Plane, Data Plane & Recoverable Runtime'
+zh_link: /v2/zh/blogs/agentscope-service-release-tech
 ---
-
-# AgentScope Service Technical Deep Dive: Control Plane, Data Plane, and Recoverable Agent Runtime
 
 If the launch announcement answers "what AgentScope Service can do," this post focuses on "how it is built." We will walk through the product resource model, plane boundaries, the Turn lifecycle, the Brain / Hands split, the Session event contract, and multi-framework integration paths to explain the system design behind the platform.
 
-For a product overview and capability summary, see the companion post: [AgentScope Service Official Release](./agentscope-service-release.md). This post assumes readers already understand the basics of AgentScope 2.0 / Harness and are interested in scaling a single runnable agent into an operable platform.
+For a product overview and capability summary, see the companion post: [AgentScope Service Official Release](/v2/en/blogs/agentscope-service-release). This post assumes readers already understand the basics of AgentScope 2.0 / Harness and are interested in scaling a single runnable agent into an operable platform.
 
 ## What Is AgentScope Service (Implementation View)
 
@@ -15,7 +14,7 @@ From an implementation perspective, AgentScope Service is not a single process b
 | Component | Role |
 | --- | --- |
 | `service-gateway` | External entry point: authentication, routing, public APIs |
-| `aistiod` | Go control plane: product resources, fleet registration, Session / Team runtime state, console backend |
+| `service-controlplane` | Go control plane: product resources, fleet registration, Session / Team runtime state, console backend |
 | `service-dataplane` | Java data plane: Managed Session Brain, executes Turns based on AgentScope Harness |
 | `service-scheduler` | Channel, Cron, outbound tasks, Self-hosted Hands Worker |
 | PostgreSQL | Authoritative state split by schema: `cp` / `rt` / `dp` |
@@ -28,7 +27,7 @@ It serves two kinds of workloads at the same time:
 
 The control plane manages desired state and runtime state, but **does not execute model Turns**; the inference loop stays in the data plane or in the connecting party's own Runtime. This boundary runs through the entire architecture: once the control plane starts "running models on the side," plane responsibilities, scaling, and failure domains all become tangled.
 
-For deployment shapes, local development can disable the Kubernetes Reconciler and take the Hosted Product path; production can enable Aistio's CRD / Workload capabilities to connect declarative agents and fleet governance to the cluster. The product brand remains Agent Service, and the underlying control component is `aistiod`.
+For deployment shapes, local development can disable the Kubernetes Reconciler and take the Hosted Product path; production can enable Control Plane's CRD / Workload capabilities to connect declarative agents and fleet governance to the cluster. The product brand remains Agent Service, and the underlying control component is `service-controlplane`.
 
 ## Why a Platform Like This Is Needed
 
@@ -55,7 +54,7 @@ The business side should define only agent differences (prompt, tools, Skills, p
 ┌────────────────────────────────────────────────────────────────────────────┐
 │                              Agent Service                                 │
 │                                                                            │
-│  Web Console ──► Gateway :8080 ──┬──► aistiod :8081 （CP / RT）            │
+│  Web Console ──► Gateway :8080 ──┬──► service-controlplane :8081 （CP / RT）            │
 │                                  └──► dataplane :8082 （DP Brain）         │
 │                                              │                             │
 │                                              ▼                             │
@@ -73,7 +72,7 @@ The business side should define only agent differences (prompt, tools, Skills, p
 | Plane | Responsible For | Explicitly Not Responsible For |
 | --- | --- | --- |
 | Gateway | JWT / public routing | Business state, model invocation |
-| Control (`aistiod`) | Users, Agent versions, Environment, Session binding, Team, fleet instances, runtime commands | Model Turn |
+| Control (`service-controlplane`) | Users, Agent versions, Environment, Session binding, Team, fleet instances, runtime commands | Model Turn |
 | Dataplane | Turn Lease, event persistence, SSE, HITL, building Harness from Snapshot, Work Queue | Reading `cp` tables directly as a Catalog fallback |
 | Scheduler | Channel, Cron, outbound Hands Worker | Inference loop |
 
@@ -83,8 +82,8 @@ The planes may share a single PostgreSQL server, but **they do not share tables*
 
 | Schema | Owner | Data |
 | --- | --- | --- |
-| `cp` | `aistiod` product API | Users, Agents, versions, Environment, Session, Vault, Memory, Deployment |
-| `rt` | Aistio Runtime Store | Fleet instances, runtime Session, Context, Team, Task, Message |
+| `cp` | `service-controlplane` product API | Users, Agents, versions, Environment, Session, Vault, Memory, Deployment |
+| `rt` | Control Plane Runtime Store | Fleet instances, runtime Session, Context, Team, Task, Message |
 | `dp` | Java Dataplane | Session Event, coordination state, HITL, Work Item, data-plane projections |
 
 The Dataplane resolves Managed Sessions through the control plane's internal API and builds the runtime only from the returned Agent Snapshot. Data-plane replicas can scale horizontally, but the product Catalog still takes the control plane as the source of truth, avoiding dual writes and cache drift. A local Catalog fallback may look convenient, but in the long run it tends to create ghost bugs where "instance A has been updated, but instance B is still running the old definition."
@@ -191,20 +190,20 @@ A pragmatic constraint is that Teams do not assume all members come from the sam
 
 ### AgentScope (Native)
 
-The Java side connects through `agentscope-extensions-aistio`. The extension registers the Runtime with the control plane, reports Session / Context / health information, and handles operational commands. For existing AgentScope applications, this is the least invasive and most contract-complete path: it shares the Dashboard and Session observability model with Managed Agents.
+The Java side connects through `agentscope-extensions-controlplane`. The extension registers the Runtime with the control plane, reports Session / Context / health information, and handles operational commands. For existing AgentScope applications, this is the least invasive and most contract-complete path: it shares the Dashboard and Session observability model with Managed Agents.
 
 Because both sides share the same set of AgentScope event and state semantics, Level-1 / Context / compaction capabilities are usually the first to align. If you are already using `HarnessAgent`, the marginal cost of integration is mainly dependencies, registration config, and runtime identity, not rewriting business prompts.
 
 ### LangChain
 
-The Python SDK provides `aistio.instrument()`. For LangChain / LangGraph, the adapter hooks into Callback / Checkpointer interception points:
+The Python SDK provides `agentscope_service.instrument()`. For LangChain / LangGraph, the adapter hooks into Callback / Checkpointer interception points:
 
 ```python
-import aistio
+import agentscope_service
 
-aistio.instrument(
+agentscope_service.instrument(
     app_or_client,
-    control_plane="aistiod.aistio-system:9090",
+    control_plane="service-controlplane.controlplane-system:9090",
     agent_name="my-langchain-agent",
     namespace="default",
     enable_events=False,  # Level 2 events are off by default; enable as needed
@@ -228,13 +227,11 @@ The Sidecar is not "reimplementing an agent loop"; it is the minimal observabili
 
 ### Local Startup and Validation
 
-```bash
-export DASHSCOPE_API_KEY=sk-xxx
-cd agentscope-service
-BUILDER_REBUILD=1 scripts/dev-up.sh
-# Console: http://localhost:8080
-scripts/smoke.sh
-```
+Follow [Deploy and prepare Service](/v2/en/service/quickstart) to start the published
+Docker Compose package. Use the generated administrator password from `.env` at
+http://localhost:18080. Install CLI/Runtime Host with [Go](/v2/en/service/runtime-host)
+for Hosted Agent execution, or use the [Helm installation guide](/v2/en/service/kubernetes)
+for production Kubernetes deployment.
 
 It is recommended to validate at least three paths:
 
@@ -242,7 +239,7 @@ It is recommended to validate at least three paths:
 2. HITL: trigger Ask Policy, continue after confirmation, and verify the history is complete;
 3. `self_hosted`: Worker poll / ack / heartbeat / return `tool_result`, and confirm the Turn recovers correctly.
 
-See [`docs/guide/14-validation.md`](../../../agentscope-service/docs/guide/14-validation.md) and the architecture notes in [`docs/guide/02-architecture.md`](../../../agentscope-service/docs/guide/02-architecture.md).
+See [`docs/guide/14-validation.md`](/v2/en/service/service-api) and the architecture notes in [`docs/guide/02-architecture.md`](/v2/en/service/index).
 
 ## Implementation Pitfalls Worth Avoiding Early
 
@@ -301,4 +298,4 @@ The technical kernel of AgentScope Service can be summarized in three sentences:
 2. **The persisted event sequence is the source of truth for Session; in-process objects are only disposable caches**;
 3. **Managed and BYO share the fleet contract; framework differences converge in adapters, not scattered across the Console**.
 
-If you are moving from "a single Harness Agent" to "an operable agent fleet," this layering eliminates a lot of duplicated infrastructure. You are welcome to read [`agentscope-service/README.md`](../../../agentscope-service/README.md) directly; for product capabilities and onboarding stories, return to the [release post](./agentscope-service-release.md).
+If you are moving from "a single Harness Agent" to "an operable agent fleet," this layering eliminates a lot of duplicated infrastructure. You are welcome to read [`agentscope-service/README.md`](/v2/en/service/quickstart) directly; for product capabilities and onboarding stories, return to the [release post](/v2/en/blogs/agentscope-service-release).

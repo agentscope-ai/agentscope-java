@@ -28,7 +28,7 @@ import reactor.core.publisher.Sinks;
  * Per-task event bus for Agent Protocol SSE streaming. Uses a replay buffer so late subscribers /
  * reconnects can catch up from {@code fromSeq}.
  */
-public final class AgentProtocolTaskEventBus {
+public final class AgentProtocolTaskEventBus implements AgentProtocolEventBus {
 
     private static final Logger log = LoggerFactory.getLogger(AgentProtocolTaskEventBus.class);
 
@@ -44,6 +44,7 @@ public final class AgentProtocolTaskEventBus {
     }
 
     /** Publishes an event, assigning a monotonic {@code seq}. */
+    @Override
     public RemoteAgentEvent publish(String taskId, RemoteAgentEvent event) {
         Channel ch = channels.computeIfAbsent(taskId, id -> new Channel(replayBufferSize));
         long seq = ch.seq.incrementAndGet();
@@ -60,6 +61,7 @@ public final class AgentProtocolTaskEventBus {
      * Subscribes to events for {@code taskId}, optionally skipping those with {@code seq <=
      * fromSeq}.
      */
+    @Override
     public Flux<RemoteAgentEvent> subscribe(String taskId, long fromSeq) {
         Channel ch = channels.computeIfAbsent(taskId, id -> new Channel(replayBufferSize));
         Flux<RemoteAgentEvent> flux = ch.sink.asFlux();
@@ -70,6 +72,7 @@ public final class AgentProtocolTaskEventBus {
     }
 
     /** Completes and removes the channel after a terminal event has been published. */
+    @Override
     public void complete(String taskId) {
         Channel ch = channels.remove(taskId);
         if (ch != null) {

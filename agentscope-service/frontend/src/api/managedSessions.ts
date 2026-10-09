@@ -20,6 +20,7 @@ import { authHeaders, readApiError } from './http';
 export interface ManagedSession {
   id: string;
   ownerId?: string;
+  runtimeKind?: string;
   agentId: string;
   agentOwnerId?: string;
   agentVersion?: number | null;
@@ -70,46 +71,35 @@ export interface InboundEvent {
   payload?: Record<string, unknown>;
 }
 
-/** Parsed from product `externalKey` = `team|{namespace}/{teamName}|{memberName}`. */
-export interface TeamSessionRef {
-  namespace: string;
-  teamName: string;
-  memberName: string;
+/** Parsed from product `externalKey` = `agent-task|{agentTaskId}`. */
+export interface AgentTaskSessionRef {
+  agentTaskId: string;
 }
 
-export function parseTeamExternalKey(key?: string | null): TeamSessionRef | null {
-  if (!key || !key.startsWith('team|')) return null;
-  const rest = key.slice('team|'.length);
-  const pipe = rest.lastIndexOf('|');
-  if (pipe <= 0) return null;
-  const nsTeam = rest.slice(0, pipe);
-  const memberName = rest.slice(pipe + 1);
-  const slash = nsTeam.indexOf('/');
-  if (slash <= 0 || !memberName) return null;
-  return {
-    namespace: nsTeam.slice(0, slash),
-    teamName: nsTeam.slice(slash + 1),
-    memberName,
-  };
+export function parseAgentTaskExternalKey(key?: string | null): AgentTaskSessionRef | null {
+  if (!key || !key.startsWith('agent-task|')) return null;
+  const [agentTaskId, ...extra] = key.slice('agent-task|'.length).split('|');
+  if (!agentTaskId || extra.length > 0) return null;
+  return { agentTaskId };
 }
 
-export function isTeamOriginatedSession(s: Pick<ManagedSession, 'externalKey'>): boolean {
-  return parseTeamExternalKey(s.externalKey) != null;
+export function isAgentTaskSession(s: Pick<ManagedSession, 'externalKey'>): boolean {
+  return parseAgentTaskExternalKey(s.externalKey) != null;
 }
 
-export function teamDetailPath(ref: TeamSessionRef): string {
-  return `/teams/${encodeURIComponent(ref.teamName)}?namespace=${encodeURIComponent(ref.namespace)}`;
+export function agentTaskDetailPath(ref: AgentTaskSessionRef): string {
+  return `/control/tasks/${encodeURIComponent(ref.agentTaskId)}`;
 }
 
 
 export async function createManagedSession(req: CreateManagedSessionRequest): Promise<ManagedSession> {
-  const res = await fetch('/api/sessions', {
+  const res = await fetch('/api/v1/agent-sessions', {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { ...authHeaders(), 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify(req),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to create session');
-  return res.json();
+  return normalizeManagedSession(await res.json() as ManagedSession);
 }
 
 export async function listManagedSessions(
@@ -121,55 +111,66 @@ export async function listManagedSessions(
   if (status && status !== 'active') params.set('status', status);
   // Always send status=active explicitly for clarity when listing active; server defaults match.
   if (status === 'active') params.set('status', 'active');
-  const qs = params.toString() ? `?${params.toString()}` : '';
-  const res = await fetch(`/api/sessions${qs}`, { headers: authHeaders() });
-  if (!res.ok) throw await readApiError(res, 'Failed to list sessions');
-  return res.json();
+  const sessions: ManagedSession[] = [];
+  let offset: number | null = 0;
+  while (offset !== null) {
+    params.set('offset', String(offset));
+    const res = await fetch(`/api/v1/agent-sessions?${params}`, { headers: authHeaders() });
+    if (!res.ok) throw await readApiError(res, 'Failed to list sessions');
+    const page = await res.json() as { items: ManagedSession[]; next_offset?: number | null };
+    sessions.push(...page.items.map(normalizeManagedSession));
+    offset = page.next_offset ?? null;
+  }
+  return sessions.filter(session => !session.runtimeKind || session.runtimeKind === 'managed');
 }
 
 export async function getManagedSession(id: string): Promise<ManagedSession> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { headers: authHeaders() });
+  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}`, { headers: authHeaders() });
   if (!res.ok) throw await readApiError(res, 'Failed to load session');
-  return res.json();
+  return normalizeManagedSession(await res.json() as ManagedSession);
 }
 
 export async function updateManagedSession(
   id: string,
   req: UpdateManagedSessionRequest,
 ): Promise<ManagedSession> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify(req),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to update session');
-  return res.json();
+  return normalizeManagedSession(await res.json() as ManagedSession);
 }
 
 export async function archiveManagedSession(id: string): Promise<ManagedSession> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/archive`, {
+  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}/archive`, {
     method: 'POST',
     headers: authHeaders(),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to archive session');
-  return res.json();
+  return normalizeManagedSession(await res.json() as ManagedSession);
 }
 
 export async function restoreManagedSession(id: string): Promise<ManagedSession> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/restore`, {
+  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}/restore`, {
     method: 'POST',
     headers: authHeaders(),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to restore session');
-  return res.json();
+  return normalizeManagedSession(await res.json() as ManagedSession);
 }
 
 export async function deleteManagedSession(id: string): Promise<void> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     headers: authHeaders(),
   });
   if (!res.ok && res.status !== 204) throw await readApiError(res, 'Failed to delete session');
+}
+
+export function normalizeManagedSession(value: ManagedSession): ManagedSession {
+  return { ...value, createdAt: typeof value.createdAt === 'string' ? Date.parse(value.createdAt) : value.createdAt, updatedAt: typeof value.updatedAt === 'string' ? Date.parse(value.updatedAt) : value.updatedAt };
 }
 
 export async function postEvents(sessionId: string, events: InboundEvent[]): Promise<SessionEvent[]> {
@@ -204,67 +205,106 @@ export interface EventStreamHandle {
   close: () => void;
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
- * Subscribes to session events over SSE. Uses fetch (not native EventSource) so JWT Bearer auth works.
+ * Subscribes to session events over SSE. Uses fetch (not native EventSource) so JWT Bearer auth
+ * works. Reconnects automatically when the stream ends or fails, resuming from the last seen
+ * sequence via {@code getAfter} so no events are lost across plane restarts or network drops.
  */
 export function streamEvents(
   sessionId: string,
   onEvent: (event: SessionEvent) => void,
   onError?: (err: Error) => void,
-  options?: { eventDeltas?: string[]; after?: number },
+  options?: {
+    eventDeltas?: string[];
+    after?: number;
+    /** Called before each (re)connect to compute the resume cursor. */
+    getAfter?: () => number | undefined;
+    /** Base reconnect delay; doubles up to {@link maxRetryMs} and resets on progress. */
+    retryMs?: number;
+    maxRetryMs?: number;
+  },
 ): EventStreamHandle {
   const token = getToken();
   const controller = new AbortController();
   let closed = false;
+  let backoffMs = Math.max(500, options?.retryMs ?? 2000);
+  const maxRetryMs = options?.maxRetryMs ?? 30000;
+  let previewSequence = 0;
 
-  (async () => {
-    try {
-      const params = new URLSearchParams();
-      if (options?.after != null && options.after > 0) {
-        params.set('after', String(options.after));
-      }
-      for (const t of options?.eventDeltas ?? []) {
-        params.append('event_deltas', t);
-      }
-      const qs = params.toString();
-      const res = await fetch(
-        `/api/sessions/${encodeURIComponent(sessionId)}/events/stream${qs ? `?${qs}` : ''}`,
-        {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          signal: controller.signal,
+  async function connect(): Promise<void> {
+    const after = options?.getAfter ? options.getAfter() : options?.after;
+    const params = new URLSearchParams();
+    if (after != null && after > 0) {
+      params.set('after', String(after));
+    }
+    for (const t of options?.eventDeltas ?? []) {
+      params.append('event_deltas', t);
+    }
+    const qs = params.toString();
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(sessionId)}/events/stream${qs ? `?${qs}` : ''}`,
+      {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(after != null && after > 0 ? { 'Last-Event-ID': String(after) } : {}),
         },
-      );
-      if (!res.ok || !res.body) {
-        throw new Error(`Event stream failed: ${res.status}`);
-      }
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      while (!closed) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let idx;
-        while ((idx = buf.indexOf('\n\n')) >= 0) {
-          const block = buf.slice(0, idx);
-          buf = buf.slice(idx + 2);
-          const lines = block.split('\n');
-          let data = '';
-          for (const ln of lines) {
-            if (ln.startsWith('data:')) data += ln.slice(5).trim();
+        signal: controller.signal,
+      },
+    );
+    if (!res.ok || !res.body) {
+      throw new Error(`Event stream failed: ${res.status}`);
+    }
+    backoffMs = Math.max(500, options?.retryMs ?? 2000);
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (!closed) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf = (buf + dec.decode(value, { stream: true })).replace(/\r\n/g, '\n');
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        let data = '';
+        for (const ln of block.split('\n')) {
+          if (ln.startsWith('data:')) data += ln.slice(5).trim();
+        }
+        if (!data) continue;
+        try {
+          const parsed = JSON.parse(data) as SessionEvent;
+          // Stream-only preview frames deliberately have no durable id. Give
+          // each frame a connection-local presentation id so the Events view
+          // does not collapse every delta into one React row.
+          if (!parsed.id) {
+            previewSequence += 1;
+            parsed.id = `preview:${sessionId}:${parsed.createdAt}:${previewSequence}`;
           }
-          if (!data) continue;
-          try {
-            onEvent(JSON.parse(data) as SessionEvent);
-          } catch {
-            // ignore malformed frames
-          }
+          onEvent(parsed);
+          // Any delivered event means the connection is healthy; reset backoff.
+          backoffMs = Math.max(500, options?.retryMs ?? 2000);
+        } catch {
+          // ignore malformed frames
         }
       }
-    } catch (e: unknown) {
+    }
+  }
+
+  (async () => {
+    while (!closed) {
+      try {
+        await connect();
+      } catch (e: unknown) {
+        if (closed) return;
+        if (e instanceof Error && e.name === 'AbortError') return;
+        onError?.(e instanceof Error ? e : new Error(String(e)));
+      }
       if (closed) return;
-      if (e instanceof Error && e.name === 'AbortError') return;
-      onError?.(e instanceof Error ? e : new Error(String(e)));
+      const delayMs = backoffMs;
+      backoffMs = Math.min(maxRetryMs, backoffMs * 2);
+      await sleep(delayMs);
     }
   })();
 

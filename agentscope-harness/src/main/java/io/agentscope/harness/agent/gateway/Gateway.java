@@ -15,9 +15,11 @@
  */
 package io.agentscope.harness.agent.gateway;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.gateway.channel.InboundMessage;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.util.List;
 import reactor.core.publisher.Flux;
@@ -29,6 +31,10 @@ import reactor.core.publisher.Mono;
  *
  * <p>Implementations should serialize turns per logical session (fair wait) so injected announce
  * runs and user/channel {@link #run} calls do not race the same {@code HarnessAgent} turn.
+ *
+ * <p>Callers may supply a {@link RuntimeContext} that is merged into the agent turn. Gateway-owned
+ * identity fields ({@code sessionId}, {@code userId}, {@code outboundAddress}, …) always win on
+ * conflict.
  */
 public interface Gateway {
 
@@ -58,6 +64,41 @@ public interface Gateway {
      * @param outboundAddress the delivery target for proactive replies; may be null
      */
     default Mono<Msg> run(MsgContext context, List<Msg> messages, OutboundAddress outboundAddress) {
+        return run(context, messages, outboundAddress, null);
+    }
+
+    /**
+     * Inbound turn with outbound address and an optional caller {@link RuntimeContext}.
+     *
+     * <p>The caller context is merged into the turn; gateway identity fields take precedence. The
+     * default implementation ignores {@code callerContext} and delegates to {@link
+     * #run(MsgContext, List)}.
+     *
+     * @param context routing context for session key resolution
+     * @param messages the inbound messages
+     * @param outboundAddress the delivery target for proactive replies; may be null
+     * @param callerContext optional application context to merge; may be null
+     */
+    default Mono<Msg> run(
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext) {
+        return run(context, messages, outboundAddress, callerContext, null);
+    }
+
+    /**
+     * Inbound turn with full Channel metadata for {@link
+     * io.agentscope.harness.agent.gateway.channel.ChannelRuntimeContextResolver}.
+     *
+     * @param inboundMessage optional inbound envelope passed to the resolver; may be null
+     */
+    default Mono<Msg> run(
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext,
+            InboundMessage inboundMessage) {
         return run(context, messages);
     }
 
@@ -68,12 +109,38 @@ public interface Gateway {
 
     /** Streaming variant of {@link #run(MsgContext, List)}. Returns fine-grained events. */
     default Flux<AgentEvent> runStream(MsgContext context, List<Msg> messages) {
-        return runStream(context, messages, null);
+        return runStream(context, messages, null, null);
     }
 
     /** Streaming variant of {@link #run(MsgContext, List, OutboundAddress)}. */
     default Flux<AgentEvent> runStream(
             MsgContext context, List<Msg> messages, OutboundAddress outboundAddress) {
+        return runStream(context, messages, outboundAddress, null);
+    }
+
+    /**
+     * Streaming variant of {@link #run(MsgContext, List, OutboundAddress, RuntimeContext)}.
+     *
+     * <p>The default signals unsupported streaming.
+     */
+    default Flux<AgentEvent> runStream(
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext) {
+        return runStream(context, messages, outboundAddress, callerContext, null);
+    }
+
+    /**
+     * Streaming variant of {@link #run(MsgContext, List, OutboundAddress, RuntimeContext,
+     * InboundMessage)}.
+     */
+    default Flux<AgentEvent> runStream(
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext,
+            InboundMessage inboundMessage) {
         return Flux.error(new UnsupportedOperationException("Streaming not supported"));
     }
 

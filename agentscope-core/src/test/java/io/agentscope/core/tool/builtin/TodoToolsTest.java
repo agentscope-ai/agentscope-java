@@ -19,13 +19,63 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.Task;
+import io.agentscope.core.state.TaskRequirement;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.builtin.TodoTools.TodoItem;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class TodoToolsTest {
+    @Test
+    void modelToolOnlyProposesAndSchemaHasNoConfirmationFields() {
+        var state = AgentState.builder().build();
+        var result =
+                new RequirementTools()
+                        .proposeRequirement(
+                                TaskRequirement.Kind.CONSTRAINT,
+                                "No deployment",
+                                "message:1",
+                                state);
+        assertFalse(result.getState() == ToolResultState.ERROR);
+        assertEquals(
+                TaskRequirement.Status.CANDIDATE,
+                state.getTasksContext().getRequirements().get(0).status());
+        var toolkit = new Toolkit();
+        toolkit.registerTool(new RequirementTools());
+        var schema =
+                toolkit.getToolSchemas().stream()
+                        .filter(tool -> tool.getName().equals("task_requirement_propose"))
+                        .findFirst()
+                        .orElseThrow();
+        var properties = (Map<?, ?>) schema.getParameters().get("properties");
+        assertEquals(3, properties.size());
+        assertTrue(properties.containsKey("kind"));
+        assertTrue(properties.containsKey("text"));
+        assertTrue(properties.containsKey("source_ref"));
+        assertFalse(
+                toolkit.getToolSchemas().stream()
+                        .anyMatch(tool -> tool.getName().contains("confirm")));
+    }
+
+    @Test
+    void invalidProposalAndInvalidTodoDoNotMutateState() {
+        var state = AgentState.builder().build();
+        assertEquals(
+                ToolResultState.ERROR,
+                new RequirementTools()
+                        .proposeRequirement(TaskRequirement.Kind.CONSTRAINT, "", "message:1", state)
+                        .getState());
+        assertEquals(
+                ToolResultState.ERROR,
+                new TodoTools()
+                        .write(List.of(new TodoItem("task", "invalid", null)), state)
+                        .getState());
+        assertEquals(0, state.getTasksContext().getRevision());
+    }
 
     private final TodoTools tool = new TodoTools();
 

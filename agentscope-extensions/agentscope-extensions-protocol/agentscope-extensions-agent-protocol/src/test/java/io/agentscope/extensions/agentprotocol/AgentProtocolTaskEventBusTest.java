@@ -26,6 +26,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.Disposable;
@@ -51,6 +52,32 @@ class AgentProtocolTaskEventBusTest {
         assertEquals("task-a", second.getTaskId());
         assertEquals(1L, other.getSeq());
         assertEquals("task-b", other.getTaskId());
+    }
+
+    @Test
+    void implementsEventBusContract() {
+        assertTrue(bus instanceof AgentProtocolEventBus);
+    }
+
+    @Test
+    void publish_assignsUniqueSequencesForConcurrentPublishers() {
+        int eventCount = 200;
+
+        List<RemoteAgentEvent> published =
+                LongStream.range(0, eventCount)
+                        .parallel()
+                        .mapToObj(
+                                ignored ->
+                                        bus.publish(
+                                                "task-concurrent", event(RemoteEventType.STATUS)))
+                        .toList();
+
+        assertEquals(
+                eventCount, published.stream().map(RemoteAgentEvent::getSeq).distinct().count());
+        assertEquals(
+                LongStream.rangeClosed(1, eventCount).boxed().toList(),
+                published.stream().map(RemoteAgentEvent::getSeq).sorted().toList());
+        assertTrue(published.stream().allMatch(e -> "task-concurrent".equals(e.getTaskId())));
     }
 
     @Test

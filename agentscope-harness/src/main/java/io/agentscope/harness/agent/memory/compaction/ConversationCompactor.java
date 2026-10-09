@@ -23,6 +23,11 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.session.SessionLogException;
+import io.agentscope.core.session.SessionRecorder;
+import io.agentscope.core.util.ExceptionUtils;
+import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.context.ContextModelCalls;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig.TruncateArgsConfig;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
@@ -47,8 +52,6 @@ import reactor.core.publisher.Mono;
  *       "keep" budget; never split an ASSISTANT tool-call from its TOOL result(s)</li>
  *   <li><b>Memory flush</b> (optional) — extract long-term memories from the prefix via
  *       {@link MemoryFlushManager#flushMemories}</li>
- *   <li><b>Message offload</b> (optional) — persist the full conversation to the session
- *       JSONL via {@link MemoryFlushManager#offloadMessages}</li>
  *   <li><b>Summarize</b> — one LLM call to distill the prefix into a structured summary</li>
  *   <li><b>Rebuild</b> — return {@code [summaryUserMsg] + preservedTail}</li>
  * </ol>
@@ -83,12 +86,51 @@ public class ConversationCompactor {
      *
      * @param conversationMessages non-SYSTEM messages (USER / ASSISTANT / TOOL)
      * @param config               compaction configuration
-     * @param agentId              agent identifier used for the memory offload path
-     * @param sessionId            session identifier used for the memory offload path
+     * @param agentId              agent identifier used for the session history reference
+     * @param sessionId            session identifier used for the session history reference
      * @return {@code Optional.empty()} when no compaction was needed; otherwise the replacement
      *         message list consisting of {@code [summaryUserMsg] + preservedTail}
      */
     public Mono<Optional<List<Msg>>> compactIfNeeded(
+            RuntimeContext rc,
+            List<Msg> conversationMessages,
+            CompactionConfig config,
+            String agentId,
+            String sessionId) {
+        var recorder = SessionRecorder.from(rc);
+        boolean triggered =
+                conversationMessages != null
+                        && !conversationMessages.isEmpty()
+                        && shouldCompact(
+                                conversationMessages,
+                                TokenCounterUtil.calculateToken(conversationMessages),
+                                config);
+        if (recorder == null || !triggered)
+            return compactCandidate(rc, conversationMessages, config, agentId, sessionId);
+        String id = UUID.randomUUID().toString();
+        return Mono.usingWhen(
+                recorder.record(
+                                "compaction/start",
+                                Map.of("compactionId", id, "inputMessages", conversationMessages))
+                        .thenReturn(id),
+                ignored -> compactCandidate(rc, conversationMessages, config, agentId, sessionId),
+                ignored ->
+                        recorder.record(
+                                "compaction/end",
+                                Map.of("compactionId", id, "status", "completed")),
+                (ignored, error) ->
+                        SessionLogException.causedBy(error)
+                                ? Mono.empty()
+                                : recorder.record(
+                                        "compaction/end",
+                                        Map.of("compactionId", id, "status", "failed")),
+                ignored ->
+                        recorder.record(
+                                "compaction/end",
+                                Map.of("compactionId", id, "status", "cancelled")));
+    }
+
+    private Mono<Optional<List<Msg>>> compactCandidate(
             RuntimeContext rc,
             List<Msg> conversationMessages,
             CompactionConfig config,
@@ -99,6 +141,45 @@ public class ConversationCompactor {
             return Mono.just(Optional.empty());
         }
 
+        if (config.getStrategy() != null
+                && shouldCompact(
+                        conversationMessages,
+                        TokenCounterUtil.calculateToken(conversationMessages),
+                        config)) {
+            return Mono.defer(
+                            () ->
+                                    config.getStrategy()
+                                            .compact(
+                                                    new ConversationCompactionStrategy.Request(
+                                                            rc,
+                                                            conversationMessages,
+                                                            agentId,
+                                                            sessionId,
+                                                            config.getTriggerTokens())))
+                    .switchIfEmpty(
+                            Mono.error(
+                                    new IllegalStateException(
+                                            "empty compaction strategy publisher")))
+                    .flatMap(
+                            candidate ->
+                                    candidate.isPresent()
+                                            ? Mono.just(candidate)
+                                            : compactStandard(
+                                                    rc,
+                                                    conversationMessages,
+                                                    config,
+                                                    agentId,
+                                                    sessionId));
+        }
+        return compactStandard(rc, conversationMessages, config, agentId, sessionId);
+    }
+
+    private Mono<Optional<List<Msg>>> compactStandard(
+            RuntimeContext rc,
+            List<Msg> conversationMessages,
+            CompactionConfig config,
+            String agentId,
+            String sessionId) {
         // Step 1a: Lightweight arg truncation (non-LLM).
         // Step 1b: Aggregate tool-result pruning (non-LLM).
         List<Msg> messages =
@@ -108,7 +189,10 @@ public class ConversationCompactor {
 
         int totalTokens = TokenCounterUtil.calculateToken(messages);
         if (!shouldCompact(messages, totalTokens, config)) {
-            return Mono.just(Optional.empty());
+            return Mono.just(
+                    messages.equals(conversationMessages)
+                            ? Optional.empty()
+                            : Optional.of(messages));
         }
 
         int cutoff = determineCutoffIndex(messages, totalTokens, config);
@@ -138,6 +222,10 @@ public class ConversationCompactor {
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))
                                 .onErrorResume(
                                         e -> {
+                                            if ((ExceptionUtils.containsInterruptedException(e)
+                                                    || SessionLogException.causedBy(e))) {
+                                                return Mono.error(e);
+                                            }
                                             log.warn(
                                                     "Memory flush before compaction failed: {}",
                                                     e.getMessage());
@@ -145,62 +233,45 @@ public class ConversationCompactor {
                                         })
                         : Mono.empty();
 
-        // Step 3: Offload raw messages to JSONL and capture the file path.
-        // If offload fails, we continue with null — the summary message falls back to the
-        // simple format without a file reference.
-        Mono<String> offloadStep;
-        if (config.isOffloadBeforeCompact()) {
-            offloadStep =
-                    Mono.fromCallable(
-                                    () -> {
-                                        flushManager.offloadMessages(
-                                                rc, messages, agentId, sessionId);
-                                        return flushManager.resolveOffloadPath(
-                                                rc, agentId, sessionId);
-                                    })
-                            .doOnSuccess(
-                                    path ->
-                                            log.debug(
-                                                    "Message offload before compaction done,"
-                                                            + " path={}",
-                                                    path))
-                            .onErrorResume(
-                                    e -> {
-                                        log.warn(
-                                                "Message offload before compaction failed: {}",
-                                                e.getMessage());
-                                        return Mono.just("");
-                                    });
-        } else {
-            offloadStep = Mono.just("");
-        }
+        // Native logging already preserves all pre-compaction messages. Reference the logical
+        // history API; never write another full transcript or expose private journal paths.
+        String historyReference =
+                SessionRecorder.from(rc) == null
+                        ? null
+                        : "session_history(agentId="
+                                + JsonUtils.getJsonCodec().toJson(agentId)
+                                + ", sessionId="
+                                + JsonUtils.getJsonCodec().toJson(sessionId)
+                                + ")";
 
         // Step 4: LLM summarization of prior summaries plus the newly compacted prefix.
         return flushStep
-                .then(offloadStep)
-                .flatMap(
-                        offloadPath ->
-                                summarizePrefix(summaryInput, config)
-                                        .map(
-                                                summary -> {
-                                                    String filePath =
-                                                            offloadPath.isBlank()
-                                                                    ? null
-                                                                    : offloadPath;
-                                                    Msg summaryMsg =
-                                                            buildSummaryMessage(summary, filePath);
-                                                    List<Msg> compacted = new ArrayList<>();
-                                                    compacted.add(summaryMsg);
-                                                    compacted.addAll(tail);
-                                                    log.info(
-                                                            "Compaction complete: {} msgs → 1"
-                                                                    + " summary + {} tail = {}"
-                                                                    + " total",
-                                                            messages.size(),
-                                                            tail.size(),
-                                                            compacted.size());
-                                                    return Optional.of(compacted);
-                                                }));
+                .then(summarizePrefix(summaryInput, config))
+                .map(
+                        summary -> {
+                            Msg summaryMsg =
+                                    buildSummaryMessage(summary, historyReference)
+                                            .withMetadata(
+                                                    Map.of(
+                                                            "context.summary_version", 1,
+                                                            "context.covered_messages",
+                                                                    summaryInput.stream()
+                                                                            .map(Msg::getId)
+                                                                            .toList(),
+                                                            "context.summary_model",
+                                                                    model.getModelName()));
+                            List<Msg> compacted = new ArrayList<>();
+                            compacted.add(summaryMsg);
+                            compacted.addAll(tail);
+                            log.info(
+                                    "Compaction complete: {} msgs → 1"
+                                            + " summary + {} tail = {}"
+                                            + " total",
+                                    messages.size(),
+                                    tail.size(),
+                                    compacted.size());
+                            return Optional.of(compacted);
+                        });
     }
 
     // -------------------------------------------------------------------------
@@ -349,7 +420,7 @@ public class ConversationCompactor {
                                 .content(TextBlock.builder().text(prompt).build())
                                 .build());
 
-        return model.stream(summarizationInput, null, null)
+        return ContextModelCalls.auxiliary(model, summarizationInput)
                 .reduce(
                         new StringBuilder(),
                         (sb, resp) -> {
@@ -365,12 +436,8 @@ public class ConversationCompactor {
                 .map(StringBuilder::toString)
                 .map(String::strip)
                 .filter(s -> !s.isBlank())
-                .defaultIfEmpty("(Summary unavailable)")
-                .onErrorResume(
-                        e -> {
-                            log.warn("Summarization LLM call failed: {}", e.getMessage());
-                            return Mono.just("(Summarization failed: " + e.getMessage() + ")");
-                        });
+                .switchIfEmpty(
+                        Mono.error(new IllegalStateException("Summary model returned no content")));
     }
 
     /**
@@ -434,21 +501,20 @@ public class ConversationCompactor {
     /**
      * Builds a USER message carrying the summary.
      *
-     * <p>When {@code filePath} is non-null, the message includes a reference to where the full
-     * conversation history was offloaded.
-     * When null, falls back to the simple "summary to date" format.
+     * <p>When a native session is active, include its logical history lookup. Otherwise use a
+     * summary without claiming that a durable full history exists.
      *
      * <p>The message name is set to {@link #SUMMARY_MSG_NAME} so hooks can identify generated
-     * summaries, and the stable content-based ID keeps repeated session offloads idempotent.
+     * summaries, and the stable content-based ID keeps repeated summaries identifiable.
      */
-    private static Msg buildSummaryMessage(String summary, String filePath) {
+    private static Msg buildSummaryMessage(String summary, String historyReference) {
         String content;
-        if (filePath != null) {
+        if (historyReference != null) {
             content =
                     "You are in the middle of a conversation that has been summarized.\n\n"
-                            + "The full conversation history has been saved to "
-                            + filePath
-                            + " should you need to refer back to it for details.\n\n"
+                            + "Retrieve earlier conversation details with "
+                            + historyReference
+                            + ".\n\n"
                             + "A condensed summary follows:\n\n"
                             + "<summary>\n"
                             + summary

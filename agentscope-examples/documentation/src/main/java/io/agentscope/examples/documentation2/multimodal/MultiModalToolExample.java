@@ -128,6 +128,7 @@ public class MultiModalToolExample {
                 """
                 Registered tools:
                 - dashscope_text_to_image: Generate image(s) based on the given text.
+                - dashscope_image_to_image: Edit or transform an existing image based on a text prompt and an input image.
                 - dashscope_image_to_text: Generate text based on the given images.
                 - dashscope_text_to_audio: Convert the given text to audio.
                 - dashscope_audio_to_text: Convert the given audio to text.
@@ -146,6 +147,8 @@ public class MultiModalToolExample {
                 Example Prompts:
                 [dashscope_text_to_image]:
                 Generate a black dog image url.
+                [dashscope_image_to_image]:
+                Repaint the tiger image url of 'https://dashscope.oss-cn-beijing.aliyuncs.com/images/tiger.png' as a watercolor painting.
                 [dashscope_image_to_text]:
                 Describe the image url of 'https://dashscope.oss-cn-beijing.aliyuncs.com/images/tiger.png'.
                 [dashscope_text_to_audio]:

@@ -1,0 +1,17 @@
+name: order-query
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile
+        run: mkdir -p out && javac --release 17 -d out OrderQuery.java OrderQueryTest.java
+      - name: Acceptance checks
+        run: java -cp out OrderQueryTest

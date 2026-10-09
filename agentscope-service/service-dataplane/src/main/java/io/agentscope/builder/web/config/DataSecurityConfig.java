@@ -74,6 +74,8 @@ public class DataSecurityConfig {
                         auth ->
                                 auth.pathMatchers("/actuator/health", "/actuator/info")
                                         .permitAll()
+                                        .pathMatchers("/api/internal/**")
+                                        .hasAuthority(InternalTokenAuthFilter.ROLE_INTERNAL)
                                         .pathMatchers("/api/**")
                                         .authenticated()
                                         .anyExchange()

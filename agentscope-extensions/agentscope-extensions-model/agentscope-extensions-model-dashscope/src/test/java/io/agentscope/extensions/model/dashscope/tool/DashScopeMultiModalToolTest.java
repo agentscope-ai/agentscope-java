@@ -17,8 +17,10 @@ package io.agentscope.extensions.model.dashscope.tool;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -55,6 +57,7 @@ import com.alibaba.dashscope.audio.tts.SpeechSynthesisParam;
 import com.alibaba.dashscope.audio.tts.SpeechSynthesizer;
 import com.alibaba.dashscope.common.MultiModalMessage;
 import com.alibaba.dashscope.common.ResultCallback;
+import com.alibaba.dashscope.common.Role;
 import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
@@ -74,6 +77,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -345,6 +349,492 @@ class DashScopeMultiModalToolTest {
                 .verifyComplete();
 
         mockCtor.close();
+    }
+
+    /**
+     * Mocks the multimodal-generation client that {@code dashscope_image_to_image} talks to.
+     *
+     * @param captured        receives the request param so a test can assert on the outgoing call
+     * @param responseContent content map of the single choice; null leaves the output empty
+     */
+    private MockedConstruction<MultiModalConversation> mockImageEditConversation(
+            AtomicReference<MultiModalConversationParam> captured,
+            Map<String, Object> responseContent) {
+        return mockConstruction(
+                MultiModalConversation.class,
+                (mock, context) -> {
+                    MultiModalConversationResult mockResult =
+                            mock(MultiModalConversationResult.class);
+                    MultiModalConversationOutput mockOutput =
+                            mock(MultiModalConversationOutput.class);
+
+                    when(mockResult.getOutput()).thenReturn(mockOutput);
+                    if (responseContent != null) {
+                        MultiModalConversationOutput.Choice choice =
+                                new MultiModalConversationOutput.Choice();
+                        choice.setMessage(
+                                MultiModalMessage.builder()
+                                        .content(List.of(responseContent))
+                                        .build());
+                        choice.setFinishReason("stop");
+                        when(mockOutput.getChoices()).thenReturn(List.of(choice));
+                    }
+                    when(mock.call(any(MultiModalConversationParam.class)))
+                            .thenAnswer(
+                                    invocation -> {
+                                        captured.set(invocation.getArgument(0));
+                                        return mockResult;
+                                    });
+                });
+    }
+
+    @Test
+    @DisplayName("Image to image with web url")
+    void testImageToImageWithUrl() {
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(
+                        captured, Map.of("image", TEST_IMAGE0_URL, "text", "unused"));
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToImage(
+                        TEST_IMAGE0_URL, "Make it night-time", "qwen-image-edit", null, false);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(ImageBlock.class, toolResultBlock.getOutput().get(0));
+                            ImageBlock imageBlock = (ImageBlock) toolResultBlock.getOutput().get(0);
+                            assertInstanceOf(URLSource.class, imageBlock.getSource());
+                            assertEquals(
+                                    TEST_IMAGE0_URL, ((URLSource) imageBlock.getSource()).getUrl());
+                        })
+                .verifyComplete();
+
+        mockConv.close();
+
+        // The endpoint takes exactly one `user` message carrying the image then the prompt.
+        MultiModalConversationParam param = captured.get();
+        assertNotNull(param);
+        assertEquals("qwen-image-edit", param.getModel());
+        assertEquals(1, param.getMessages().size());
+        MultiModalMessage message =
+                assertInstanceOf(MultiModalMessage.class, param.getMessages().get(0));
+        assertEquals(Role.USER.getValue(), message.getRole());
+        assertEquals(TEST_IMAGE0_URL, message.getContent().get(0).get("image"));
+        assertEquals("Make it night-time", message.getContent().get(1).get("text"));
+    }
+
+    @Test
+    @DisplayName("Image to image defaults to the edit model when model is blank")
+    void testImageToImageDefaultModel() {
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(captured, Map.of("image", TEST_IMAGE0_URL));
+
+        multiModalTool
+                .dashscopeImageToImage(TEST_IMAGE0_URL, "Colorize this sketch", "   ", null, null)
+                .block();
+        mockConv.close();
+
+        assertEquals("qwen-image-edit", captured.get().getModel());
+    }
+
+    @Test
+    @DisplayName("Image to image keeps size for models that support an output resolution")
+    void testImageToImageSizeIsSentForSupportedModel() {
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(captured, Map.of("image", TEST_IMAGE0_URL));
+
+        StepVerifier.create(
+                        multiModalTool.dashscopeImageToImage(
+                                TEST_IMAGE0_URL,
+                                "Colorize",
+                                "qwen-image-edit-plus",
+                                "1280*1280",
+                                false))
+                .expectNextCount(1)
+                .verifyComplete();
+        mockConv.close();
+
+        assertEquals("1280*1280", captured.get().getParameters().get("size"));
+    }
+
+    @Test
+    @DisplayName("A generation newer than the ones released today is neither blocked nor degraded")
+    void testImageToImageSupportsFutureGenerations() {
+        // The vendor keeps releasing numbered generations of this family. Detecting the generation
+        // by its leading digit rather than by a concrete version has to keep such a model usable,
+        // including an explicit output resolution.
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(captured, Map.of("image", TEST_IMAGE0_URL));
+
+        StepVerifier.create(
+                        multiModalTool.dashscopeImageToImage(
+                                TEST_IMAGE0_URL,
+                                "Colorize",
+                                "qwen-image-3.0-pro",
+                                "1280*1280",
+                                false))
+                .expectNextCount(1)
+                .verifyComplete();
+        mockConv.close();
+
+        MultiModalConversationParam param = captured.get();
+        assertNotNull(param);
+        assertEquals("qwen-image-3.0-pro", param.getModel());
+        assertEquals("1280*1280", param.getParameters().get("size"));
+    }
+
+    @Test
+    @DisplayName("Image to image drops size for the base edit model instead of failing")
+    void testImageToImageSizeIsDroppedForBaseModel() {
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(captured, Map.of("image", TEST_IMAGE0_URL));
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToImage(
+                        TEST_IMAGE0_URL, "Colorize", "qwen-image-edit", "1280*1280", false);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock ->
+                                assertInstanceOf(
+                                        ImageBlock.class, toolResultBlock.getOutput().get(0)))
+                .verifyComplete();
+        mockConv.close();
+
+        // getParameters() also carries the typed fields, so only `size` is asserted on.
+        assertNull(captured.get().getParameters().get("size"));
+    }
+
+    @Test
+    @DisplayName("Image to image use Base64 mode")
+    void testImageToImageBase64Mode() throws IOException {
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(captured, Map.of("image", TEST_IMAGE0_URL));
+
+        MockedStatic<MediaUtils> mockMediaUtils = mockStatic(MediaUtils.class);
+        when(MediaUtils.determineMediaType(anyString())).thenReturn("image/png");
+        when(MediaUtils.downloadUrlToBase64(anyString())).thenReturn(TEST_BASE64_DATA);
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToImage(
+                        TEST_IMAGE0_URL, "Colorize", "qwen-image-edit", null, true);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            ImageBlock imageBlock = (ImageBlock) toolResultBlock.getOutput().get(0);
+                            assertInstanceOf(Base64Source.class, imageBlock.getSource());
+                            assertEquals(
+                                    "image/png",
+                                    ((Base64Source) imageBlock.getSource()).getMediaType());
+                            assertEquals(
+                                    TEST_BASE64_DATA,
+                                    ((Base64Source) imageBlock.getSource()).getData());
+                        })
+                .verifyComplete();
+
+        mockMediaUtils.close();
+        mockConv.close();
+    }
+
+    @Test
+    @DisplayName("Image to image inlines a local file as a Base64 data URL")
+    void testImageToImageWithLocalFile() throws IOException {
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(captured, Map.of("image", TEST_IMAGE0_URL));
+
+        // This endpoint rejects file:// URLs, unlike the vision models.
+        MockedStatic<MediaUtils> mockMediaUtils = mockStatic(MediaUtils.class);
+        when(MediaUtils.isFileExists(TEST_IMAGE_PATH)).thenReturn(true);
+        when(MediaUtils.urlToBase64DataUrl(TEST_IMAGE_PATH)).thenReturn(TEST_IMAGE_BASE64_DATA_URL);
+
+        StepVerifier.create(
+                        multiModalTool.dashscopeImageToImage(
+                                TEST_IMAGE_PATH, "Colorize", "qwen-image-edit", null, false))
+                .expectNextCount(1)
+                .verifyComplete();
+        mockMediaUtils.close();
+        mockConv.close();
+
+        MultiModalMessage message = (MultiModalMessage) captured.get().getMessages().get(0);
+        assertEquals(TEST_IMAGE_BASE64_DATA_URL, message.getContent().get(0).get("image"));
+    }
+
+    @Test
+    @DisplayName("Image to image with base64 data url input")
+    void testImageToImageWithBase64DataUrlInput() {
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(captured, Map.of("image", TEST_IMAGE0_URL));
+
+        StepVerifier.create(
+                        multiModalTool.dashscopeImageToImage(
+                                TEST_IMAGE_BASE64_DATA_URL,
+                                "Colorize",
+                                "qwen-image-edit",
+                                null,
+                                false))
+                .expectNextCount(1)
+                .verifyComplete();
+        mockConv.close();
+
+        MultiModalMessage message = (MultiModalMessage) captured.get().getMessages().get(0);
+        assertEquals(TEST_IMAGE_BASE64_DATA_URL, message.getContent().get(0).get("image"));
+    }
+
+    @Test
+    @DisplayName(
+            "Should return an actionable hint and skip the call when the model takes no image"
+                    + " input")
+    void testImageToImageUnsupportedModel() {
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(captured, Map.of("image", TEST_IMAGE0_URL));
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToImage(
+                        TEST_IMAGE0_URL, "Colorize", "wanx2.1-t2i-turbo", null, false);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            String text =
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText();
+                            assertTrue(text.contains("wanx2.1-t2i-turbo"));
+                            assertTrue(text.contains("qwen-image-edit"));
+                            assertTrue(text.contains("dashscope_text_to_image"));
+                        })
+                .verifyComplete();
+
+        // Guarded locally: no request must reach the service.
+        assertTrue(mockConv.constructed().isEmpty());
+
+        mockConv.close();
+    }
+
+    @Test
+    @DisplayName(
+            "Should surface the model-side refusal when the image to image response has no"
+                    + " image")
+    void testImageToImageResponseCarriesRefusalText() {
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(captured, Map.of("text", "Image edited is not valid"));
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToImage(
+                        TEST_IMAGE0_URL, "Colorize", "qwen-image-edit", null, false);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format(
+                                            "Error: Failed to generate image: Image edited is not"
+                                                    + " valid"),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockConv.close();
+    }
+
+    @Test
+    @DisplayName("Should return error TextBlock when image to image response has no content")
+    void testImageToImageResponseEmpty() {
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(captured, null);
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToImage(
+                        TEST_IMAGE0_URL, "Colorize", "qwen-image-edit", null, false);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format(
+                                            "Error: Failed to generate image: no image in"
+                                                    + " response"),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockConv.close();
+    }
+
+    @Test
+    @DisplayName("Should return error TextBlock when call image to image occurs error")
+    void testImageToImageError() {
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockConstruction(
+                        MultiModalConversation.class,
+                        (mock, context) ->
+                                when(mock.call(any(MultiModalConversationParam.class)))
+                                        .thenThrow(TEST_ERROR));
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToImage(
+                        TEST_IMAGE0_URL, "Colorize", "qwen-image-edit", null, false);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format("Error: %s", TEST_ERROR.getMessage()),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockConv.close();
+    }
+
+    @Nested
+    @DisplayName("Image edit model capability guards")
+    class ImageEditGuardTests {
+
+        /** Use reflection to call a private static predicate for unit testing. */
+        private boolean invokeStatic(String methodName, String model) throws Exception {
+            Method method =
+                    DashScopeMultiModalTool.class.getDeclaredMethod(methodName, String.class);
+            method.setAccessible(true);
+            return (boolean) method.invoke(null, model);
+        }
+
+        @Test
+        @DisplayName("Text-to-image and wan models cannot edit an input image")
+        void testRejectsImageInput() throws Exception {
+            assertTrue(invokeStatic("rejectsImageInput", "wanx-v1"));
+            assertTrue(invokeStatic("rejectsImageInput", "wan2.6-i2v-flash"));
+            assertTrue(invokeStatic("rejectsImageInput", "qwen-image"));
+            assertTrue(invokeStatic("rejectsImageInput", "qwen-image-plus"));
+            assertFalse(invokeStatic("rejectsImageInput", "qwen-image-edit"));
+            assertFalse(invokeStatic("rejectsImageInput", "Qwen-Image-Edit-Max"));
+            assertFalse(invokeStatic("rejectsImageInput", "qwen-image-2.0"));
+            assertFalse(invokeStatic("rejectsImageInput", "qwen-image-2.0-pro"));
+            // Same naming scheme, not released yet: must not be refused by a wrong reason.
+            assertFalse(invokeStatic("rejectsImageInput", "qwen-image-3.0"));
+            assertFalse(invokeStatic("rejectsImageInput", "qwen-image-4.5-max"));
+            // Unrecognized families reach the service, which reports the actual cause.
+            assertFalse(invokeStatic("rejectsImageInput", "some-future-editor"));
+        }
+
+        @Test
+        @DisplayName("Plus / max tiers and every numbered generation accept a resolution")
+        void testSupportsOutputSize() throws Exception {
+            assertFalse(invokeStatic("supportsOutputSize", "qwen-image-edit"));
+            assertTrue(invokeStatic("supportsOutputSize", "qwen-image-edit-plus"));
+            assertTrue(invokeStatic("supportsOutputSize", "qwen-image-edit-max"));
+            assertTrue(invokeStatic("supportsOutputSize", "qwen-image-2.0"));
+            assertTrue(invokeStatic("supportsOutputSize", "qwen-image-2.0-pro"));
+            assertTrue(invokeStatic("supportsOutputSize", "qwen-image-3.0"));
+            // An unexpected `size` fails the whole request, so a snapshot of the base model stays
+            // off the list: dropping the parameter only degrades the output resolution.
+            assertFalse(
+                    invokeStatic("supportsOutputSize", "qwen-image-edit-2026-05-22"),
+                    "a dated snapshot of the base model must not send a size");
+        }
+
+        @Test
+        @DisplayName("Only a digit after the family prefix marks a numbered generation")
+        void testNumberedEditGenerationBoundary() throws Exception {
+            assertTrue(invokeStatic("isNumberedEditGeneration", "qwen-image-2.0"));
+            assertTrue(invokeStatic("isNumberedEditGeneration", "qwen-image-3.0-pro"));
+            assertTrue(invokeStatic("isNumberedEditGeneration", "qwen-image-10.0"));
+            assertFalse(invokeStatic("isNumberedEditGeneration", "qwen-image-edit"));
+            assertFalse(invokeStatic("isNumberedEditGeneration", "qwen-image-edit-plus"));
+            // Nothing after the separator, and the family name itself, carry no generation.
+            assertFalse(invokeStatic("isNumberedEditGeneration", "qwen-image-"));
+            assertFalse(invokeStatic("isNumberedEditGeneration", "qwen-image"));
+        }
+
+        @Test
+        @DisplayName("Blank or unsupported size is resolved to no parameter")
+        void testResolveOutputSize() throws Exception {
+            Method method =
+                    DashScopeMultiModalTool.class.getDeclaredMethod(
+                            "resolveOutputSize", String.class, String.class);
+            method.setAccessible(true);
+
+            assertNull(
+                    (String) method.invoke(null, "qwen-image-edit-plus", null),
+                    "absent size stays absent");
+            assertNull(
+                    (String) method.invoke(null, "qwen-image-edit-plus", "  "),
+                    "blank size is dropped");
+            assertNull(
+                    (String) method.invoke(null, "qwen-image-edit", "1024*1024"),
+                    "unsupported model drops the size");
+            assertEquals("1024*1024", method.invoke(null, "qwen-image-edit-max", "1024*1024"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Image edit logging contract")
+    class ImageEditLoggingContractTests {
+
+        /** Use reflection to call the private summarizer used by the debug log. */
+        private String summarize(String imageUrl, String prompt) throws Exception {
+            Method method =
+                    DashScopeMultiModalTool.class.getDeclaredMethod(
+                            "describeEditRequest", String.class, String.class);
+            method.setAccessible(true);
+            return (String) method.invoke(null, imageUrl, prompt);
+        }
+
+        @Test
+        @DisplayName("A Base64 data URL is reduced to kind and length, never to its bytes")
+        void testInlineDataUrlIsNotRendered() throws Exception {
+            String imageUrl = TEST_IMAGE_BASE64_DATA_URL + TEST_BASE64_DATA + TEST_BASE64_DATA;
+            String prompt = "Repaint the sketch of my house at 4 Oak Street";
+
+            String summary = summarize(imageUrl, prompt);
+
+            assertTrue(summary.contains("base64-data-url"), summary);
+            assertTrue(summary.contains("len=" + imageUrl.length()), summary);
+            assertTrue(summary.contains("promptLength=" + prompt.length()), summary);
+            // The encoded image must not appear, not even as a prefix of it.
+            assertFalse(summary.contains(TEST_BASE64_DATA), summary);
+            assertFalse(summary.contains("iVBORw0KGgo"), summary);
+            // Nor may the prompt, which is user content.
+            assertFalse(summary.contains(prompt), summary);
+            assertFalse(summary.contains("Oak Street"), summary);
+        }
+
+        @Test
+        @DisplayName("Every accepted input form is classified by shape, without its address")
+        void testReferenceKindsCarryNoAddress() throws Exception {
+            assertTrue(summarize(TEST_IMAGE0_URL, "x").contains("imageRef=http-url("));
+            assertTrue(summarize("oss://bucket/key.png", "x").contains("imageRef=oss-url("));
+            assertTrue(summarize(TEST_IMAGE_PATH, "x").contains("imageRef=local-path("));
+            assertTrue(summarize("DATA:IMAGE/PNG;BASE64,AAAA", "x").contains("base64-data-url"));
+            // A signed object URL carries credentials in its query string, so the host and path
+            // are not part of the contract either.
+            assertFalse(summarize(TEST_IMAGE0_URL, "x").contains("example.com"));
+            assertFalse(summarize("oss://bucket/key.png", "x").contains("key.png"));
+            assertEquals("imageRef=absent(len=0), promptLength=0", summarize(null, null));
+            assertEquals("imageRef=absent(len=0), promptLength=0", summarize("   ", null));
+        }
     }
 
     @Test

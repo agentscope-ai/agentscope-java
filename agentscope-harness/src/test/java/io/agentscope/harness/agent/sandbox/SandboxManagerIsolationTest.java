@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -173,6 +174,55 @@ class SandboxManagerIsolationTest {
 
         assertSame(resumedSandbox, result.getSandbox());
         verify(client).deserializeState(STATE_JSON, snapshotSpec);
+    }
+
+    // ---- Priority 3 resume failure → Priority 4 fresh create keeps persisted snapshot id ----
+
+    @Test
+    void priority3_resumeFails_freshCreateCarriesOverPersistedSnapshotId() throws Exception {
+        SandboxSnapshot persistedSnapshot = mock(SandboxSnapshot.class);
+        SandboxSnapshot freshSnapshot = mock(SandboxSnapshot.class);
+        SandboxSnapshot carriedOverSnapshot = mock(SandboxSnapshot.class);
+        SandboxState freshState = mock(SandboxState.class);
+        when(persistedSnapshot.getId()).thenReturn("persisted-id");
+        when(freshSnapshot.getId()).thenReturn("fresh-id");
+        when(resumedState.getSnapshot()).thenReturn(persistedSnapshot);
+        when(freshSandbox.getState()).thenReturn(freshState);
+        when(freshState.getSnapshot()).thenReturn(freshSnapshot);
+        when(snapshotSpec.build("persisted-id")).thenReturn(carriedOverSnapshot);
+
+        SandboxAcquireResult result = acquireAfterFailedResume();
+
+        assertSame(freshSandbox, result.getSandbox());
+        verify(freshState).setSnapshot(carriedOverSnapshot);
+    }
+
+    @Test
+    void priority3_resumeFails_noPersistedSnapshot_keepsFreshSnapshot() throws Exception {
+        SandboxState freshState = mock(SandboxState.class);
+        when(freshSandbox.getState()).thenReturn(freshState);
+
+        SandboxAcquireResult result = acquireAfterFailedResume();
+
+        assertSame(freshSandbox, result.getSandbox());
+        verify(freshState, never()).setSnapshot(any());
+        verify(snapshotSpec, never()).build(any());
+    }
+
+    /** Session-scope acquire where persisted state exists but resume fails (claim/pod gone). */
+    private SandboxAcquireResult acquireAfterFailedResume() throws Exception {
+        when(stateStore.load(any())).thenReturn(Optional.of(STATE_JSON));
+        when(client.deserializeState(STATE_JSON, snapshotSpec)).thenReturn(resumedState);
+        when(client.resume(resumedState)).thenThrow(new RuntimeException("claim gone"));
+        when(client.create(any(), any(), any())).thenReturn(freshSandbox);
+
+        RuntimeContext rtx = RuntimeContext.builder().sessionId("sess-1").build();
+        SandboxContext sCtx =
+                SandboxContext.builder()
+                        .isolationScope(IsolationScope.SESSION)
+                        .snapshotSpec(snapshotSpec)
+                        .build();
+        return manager.acquire(sCtx, rtx);
     }
 
     @Test

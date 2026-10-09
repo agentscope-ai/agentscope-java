@@ -19,6 +19,7 @@ import io.agentscope.builder.web.auth.UserStore;
 import io.agentscope.builder.web.catalog.UserAgentDefinitionStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -71,9 +72,11 @@ public class JpaPersistenceConfig {
     }
 
     @Bean
-    public UserStore jpaUserStore(UserEntityRepository repository) {
+    public UserStore jpaUserStore(
+            UserEntityRepository repository,
+            @Value("${builder.seed-users:true}") boolean seedUsers) {
         log.info("Persistence: user store backed by JPA");
-        return new JpaUserStore(repository);
+        return new JpaUserStore(repository, seedUsers);
     }
 
     @Bean

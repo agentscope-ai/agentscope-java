@@ -25,6 +25,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeChoice;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeFunction;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
@@ -189,6 +190,52 @@ class DashScopeResponseParserTest {
         assertNotNull(chatResponse.getUsage());
         assertEquals(10, chatResponse.getUsage().getInputTokens());
         assertEquals(5, chatResponse.getUsage().getOutputTokens());
+    }
+
+    @Test
+    void testParseResponseWithDetailedUsage() {
+        String json =
+                """
+                {
+                  "request_id": "req-detailed-usage",
+                  "output": {
+                    "choices": [
+                      {
+                        "message": {
+                          "role": "assistant",
+                          "content": "Hello!"
+                        },
+                        "finish_reason": "stop"
+                      }
+                    ]
+                  },
+                  "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "total_tokens": 150,
+                    "output_tokens_details": {
+                      "reasoning_tokens": 20
+                    },
+                    "prompt_tokens_details": {
+                      "cached_tokens": 70,
+                      "cache_creation_input_tokens": 8
+                    }
+                  }
+                }
+                """;
+        DashScopeResponse response =
+                JsonUtils.getJsonCodec().fromJson(json, DashScopeResponse.class);
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertNotNull(chatResponse.getUsage());
+        assertEquals(100, chatResponse.getUsage().getInputTokens());
+        assertEquals(50, chatResponse.getUsage().getOutputTokens());
+        assertEquals(70, chatResponse.getUsage().getCachedTokens());
+        assertEquals(20, chatResponse.getUsage().getReasoningTokens());
+        assertEquals(8, chatResponse.getUsage().getCacheCreationTokens());
+        assertEquals(0, chatResponse.getUsage().getToolUsePromptTokens());
     }
 
     @Test

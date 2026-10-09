@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.subagent.protocol;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -35,6 +36,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Bidirectional mapping between internal {@link AgentEvent}s and stable {@link RemoteAgentEvent}
@@ -42,13 +45,25 @@ import java.util.Optional;
  */
 public final class RemoteEventCodec {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Logger log = LoggerFactory.getLogger(RemoteEventCodec.class);
+
+    /**
+     * Unknown properties are ignored so that a payload survives derived getters that no constructor
+     * accepts (for example {@code ChatUsage.getTotalTokens()}) and fields added by a newer peer.
+     */
+    private static final ObjectMapper JSON =
+            new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private RemoteEventCodec() {}
 
     /**
      * Maps an internal agent event to a protocol DTO (without seq/taskId — those are assigned by
      * the server event bus).
+     *
+     * <p>Every event also carries its full serialization in {@link RemoteAgentEvent#getPayload()},
+     * so a client can restore the original instance instead of the lossy flat fields. Event types
+     * without a dedicated wire type are forwarded as {@link RemoteEventType#AGENT_EVENT} and are
+     * only visible at {@code detail=verbose}.
      */
     public static Optional<RemoteAgentEvent> fromAgentEvent(AgentEvent event) {
         if (event == null) {
@@ -56,36 +71,49 @@ public final class RemoteEventCodec {
         }
         RemoteAgentEvent dto = new RemoteAgentEvent();
         dto.setTimestamp(event.getCreatedAt());
+        if (event.getType() != null) {
+            dto.setEventType(event.getType().name());
+        }
+        dto.setPayload(serializeEvent(event));
+        return Optional.of(withTypedFields(dto, event));
+    }
+
+    /**
+     * Fills the flat, type-specific fields kept for clients that do not read {@code payload}, and
+     * assigns the wire type. Falls back to {@link RemoteEventType#AGENT_EVENT} for events that
+     * never had a dedicated wire type.
+     */
+    private static RemoteAgentEvent withTypedFields(RemoteAgentEvent dto, AgentEvent event) {
         if (event instanceof AgentStartEvent start) {
             dto.setType(RemoteEventType.RUN_STARTED);
             dto.setAgentId(start.getName());
-            return Optional.of(dto);
+            return dto;
         }
         if (event instanceof AgentEndEvent) {
             dto.setType(RemoteEventType.RUN_FINISHED);
-            return Optional.of(dto);
+            return dto;
         }
         if (event instanceof TextBlockDeltaEvent text) {
             dto.setType(RemoteEventType.TEXT_DELTA);
             dto.setText(text.getDelta());
-            return Optional.of(dto);
+            return dto;
         }
         if (event instanceof ThinkingBlockDeltaEvent thinking) {
             dto.setType(RemoteEventType.THINKING_DELTA);
             dto.setText(thinking.getDelta());
-            return Optional.of(dto);
+            return dto;
         }
         if (event instanceof ToolCallStartEvent toolStart) {
             dto.setType(RemoteEventType.TOOL_CALL_START);
             dto.setToolCallId(toolStart.getToolCallId());
             dto.setToolName(toolStart.getToolCallName());
-            return Optional.of(dto);
+            return dto;
         }
         if (event instanceof ToolCallEndEvent toolEnd) {
             dto.setType(RemoteEventType.TOOL_CALL_END);
             dto.setToolCallId(toolEnd.getToolCallId());
             dto.setToolName(toolEnd.getToolCallName());
-            return Optional.of(dto);
+            return dto;
         }
         if (event instanceof ToolResultEndEvent toolResult) {
             dto.setType(RemoteEventType.TOOL_RESULT);
@@ -95,7 +123,7 @@ public final class RemoteEventCodec {
             if (state != null) {
                 dto.setStatus(state.name());
             }
-            return Optional.of(dto);
+            return dto;
         }
         if (event instanceof RequireUserConfirmEvent confirm) {
             dto.setType(RemoteEventType.REQUIRE_CONFIRM);
@@ -106,18 +134,31 @@ public final class RemoteEventCodec {
                                 block.getId(), block.getName(), toJson(block.getInput())));
             }
             dto.setPendingConfirms(pending);
-            return Optional.of(dto);
+            return dto;
         }
-        return Optional.empty();
+        dto.setType(RemoteEventType.AGENT_EVENT);
+        return dto;
     }
 
     /**
      * Maps a protocol DTO back to an internal {@link AgentEvent}. Unknown or incomplete types are
      * dropped. When the DTO carries a {@code taskId}, it is copied onto {@link
      * AgentEvent#METADATA_TASK_ID}.
+     *
+     * <p>A {@code payload} is preferred over the flat fields: it restores the original event with
+     * its ids, timestamps and metadata intact, and is the only way to recover events sent as
+     * {@link RemoteEventType#AGENT_EVENT}. Servers too old to send one still decode through the
+     * per-type mapping below.
      */
     public static Optional<AgentEvent> toAgentEvent(RemoteAgentEvent remote) {
-        if (remote == null || remote.getType() == null) {
+        if (remote == null) {
+            return Optional.empty();
+        }
+        Optional<AgentEvent> fromPayload = deserializeEvent(remote.getPayload());
+        if (fromPayload.isPresent()) {
+            return fromPayload.map(event -> stampTaskId(event, remote));
+        }
+        if (remote.getType() == null) {
             return Optional.empty();
         }
         Optional<AgentEvent> mapped =
@@ -161,31 +202,39 @@ public final class RemoteEventCodec {
                                             parseToolResultState(remote.getStatus())));
                     case REQUIRE_CONFIRM -> Optional.of(toRequireConfirm(remote));
                     case STATUS -> Optional.empty();
+                    case AGENT_EVENT -> Optional.empty();
                 };
-        return mapped.map(
-                event -> {
-                    if (remote.getTaskId() != null && !remote.getTaskId().isBlank()) {
-                        event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, remote.getTaskId());
-                    }
-                    return event;
-                });
+        return mapped.map(event -> stampTaskId(event, remote));
+    }
+
+    private static AgentEvent stampTaskId(AgentEvent event, RemoteAgentEvent remote) {
+        if (remote.getTaskId() != null && !remote.getTaskId().isBlank()) {
+            event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, remote.getTaskId());
+        }
+        return event;
     }
 
     /**
      * Whether this event type should be emitted for the given detail level.
      *
      * @param type event type
-     * @param detail {@code "full"} includes text/thinking deltas; anything else is status-level
+     * @param detail see {@link RemoteStreamDetail}
      */
     public static boolean matchesDetail(RemoteEventType type, String detail) {
         if (type == null) {
             return false;
         }
-        boolean full = detail != null && "full".equalsIgnoreCase(detail);
+        RemoteStreamDetail level = RemoteStreamDetail.parse(detail);
         return switch (type) {
-            case TEXT_DELTA, THINKING_DELTA -> full;
+            case TEXT_DELTA, THINKING_DELTA -> level.includes(RemoteStreamDetail.FULL);
+            case AGENT_EVENT -> level.includes(RemoteStreamDetail.VERBOSE);
             default -> true;
         };
+    }
+
+    /** Detail check for a whole DTO; equivalent to {@link #matchesDetail(RemoteEventType, String)}. */
+    public static boolean matchesDetail(RemoteAgentEvent event, String detail) {
+        return event != null && matchesDetail(event.getType(), detail);
     }
 
     private static RequireUserConfirmEvent toRequireConfirm(RemoteAgentEvent remote) {
@@ -240,6 +289,35 @@ public final class RemoteEventCodec {
             return Map.of("raw", parsed);
         } catch (JsonProcessingException e) {
             return Map.of("raw", json);
+        }
+    }
+
+    /**
+     * Serializes an event for {@link RemoteAgentEvent#getPayload()}. Returns {@code null} when the
+     * event cannot be represented as JSON, in which case the receiver falls back to the flat wire
+     * fields rather than the run failing.
+     */
+    private static String serializeEvent(AgentEvent event) {
+        try {
+            return JSON.writeValueAsString(event);
+        } catch (Exception e) {
+            log.debug(
+                    "Skipping payload for event {}: {}",
+                    event.getClass().getSimpleName(),
+                    e.toString());
+            return null;
+        }
+    }
+
+    private static Optional<AgentEvent> deserializeEvent(String payload) {
+        if (payload == null || payload.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.ofNullable(JSON.readValue(payload, AgentEvent.class));
+        } catch (Exception e) {
+            log.debug("Skipping unreadable event payload: {}", e.toString());
+            return Optional.empty();
         }
     }
 

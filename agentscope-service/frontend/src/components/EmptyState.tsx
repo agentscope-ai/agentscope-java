@@ -30,15 +30,16 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/40 px-8 py-20 text-center',
+        'flex min-h-56 flex-col items-center justify-center rounded-2xl border border-slate-200/90 bg-white px-6 py-12 text-center shadow-[0_1px_2px_rgba(15,23,42,0.035)]',
         className,
       )}
     >
-      <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+      <div className="h-10 w-10 rounded-full border border-slate-200 bg-slate-50" />
+      <h3 className="mt-4 text-sm font-semibold text-slate-900">{title}</h3>
       {description && (
-        <p className="mt-2.5 max-w-md text-sm leading-relaxed text-muted-foreground">{description}</p>
+        <p className="mt-1 max-w-md text-sm leading-6 text-slate-500">{description}</p>
       )}
-      {action && <div className="mt-5">{action}</div>}
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }

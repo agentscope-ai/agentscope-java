@@ -90,7 +90,9 @@ public class SandboxConnector {
         this.httpClient =
                 HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(30))
-                        .followRedirects(HttpClient.Redirect.NEVER)
+                        // Gateways may redirect encoded multi-segment paths (e.g. %2F
+                        // normalization); follow redirects so file API downloads survive.
+                        .followRedirects(HttpClient.Redirect.NORMAL)
                         .build();
     }
 
@@ -114,7 +116,7 @@ public class SandboxConnector {
         this.httpClient =
                 HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(30))
-                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .followRedirects(HttpClient.Redirect.NORMAL)
                         .build();
     }
 

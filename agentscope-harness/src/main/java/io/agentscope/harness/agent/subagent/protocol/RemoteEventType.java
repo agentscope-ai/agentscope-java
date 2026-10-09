@@ -31,5 +31,12 @@ public enum RemoteEventType {
     TOOL_CALL_END,
     TOOL_RESULT,
     REQUIRE_CONFIRM,
-    STATUS
+    STATUS,
+
+    /**
+     * Carries an {@link io.agentscope.core.event.AgentEvent} that has no dedicated wire type, fully
+     * serialized in {@link RemoteAgentEvent#getPayload()}. Emitted only at {@code detail=verbose};
+     * clients that predate this type skip it.
+     */
+    AGENT_EVENT
 }

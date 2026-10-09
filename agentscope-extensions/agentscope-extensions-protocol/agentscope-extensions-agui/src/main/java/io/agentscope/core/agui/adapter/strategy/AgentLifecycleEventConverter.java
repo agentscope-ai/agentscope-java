@@ -15,7 +15,15 @@
  */
 package io.agentscope.core.agui.adapter.strategy;
 
+import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_REPLY_ID;
+import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_CONTENT;
+import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_INPUT;
+import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_NAME;
+import static io.agentscope.core.agui.AguiInterruptConstants.TOOL_CALL_INTERRUPT_REASON;
+
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.model.AguiTool;
+import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
@@ -24,9 +32,9 @@ import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +49,8 @@ import java.util.stream.Collectors;
  * outcomes on run finish.
  */
 final class AgentLifecycleEventConverter implements AgentEventConverter {
+
+    private static final String DEFAULT_SUSPEND_MESSAGE = "Awaiting external execution";
 
     @Override
     public Set<Class<? extends AgentEvent>> eventTypes() {
@@ -89,6 +99,7 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
         if (result == null || result.getGenerateReason() != GenerateReason.TOOL_SUSPENDED) {
             return;
         }
+        Set<String> frontTools = frontendToolNames(context);
 
         Map<String, ToolUseBlock> toolUses = new LinkedHashMap<>();
         for (ContentBlock block : result.getContent()) {
@@ -98,13 +109,19 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
         }
 
         for (ContentBlock block : result.getContent()) {
-            if (!(block instanceof ToolResultBlock toolResult)
-                    || !toolResult.isSuspended()
-                    || isBlank(toolResult.getId())) {
+            if (!(block instanceof ToolResultBlock toolResult) || !toolResult.isSuspended()) {
                 continue;
             }
-            context.addInterrupt(
-                    buildToolCallInterrupt(result, toolUses.get(toolResult.getId()), toolResult));
+            if (isBlank(toolResult.getId())) {
+                throw new IllegalStateException(
+                        "TOOL_SUSPENDED result contains a suspended tool result without a stable"
+                                + " id");
+            }
+            ToolUseBlock toolUse = toolUses.get(toolResult.getId());
+            if (toolUse == null || frontTools.contains(toolUse.getName())) {
+                continue;
+            }
+            context.addInterrupt(buildToolCallInterrupt(result, toolUse, toolResult));
         }
     }
 
@@ -112,28 +129,27 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
             Msg result, ToolUseBlock toolUse, ToolResultBlock toolResult) {
         String toolCallId = toolResult.getId();
         Map<String, Object> metadata = new LinkedHashMap<>();
-        String toolName =
-                toolUse != null && !isBlank(toolUse.getName())
-                        ? toolUse.getName()
-                        : toolResult.getName();
-        if (!isBlank(toolName)) {
-            metadata.put("toolName", toolName);
+        if (!isBlank(toolUse.getName())) {
+            metadata.put(METADATA_TOOL_NAME, toolUse.getName());
         }
         if (toolUse != null && toolUse.getInput() != null && !toolUse.getInput().isEmpty()) {
-            metadata.put("toolInput", toolUse.getInput());
+            metadata.put(METADATA_TOOL_INPUT, toolUse.getInput());
         }
+        metadata.put(METADATA_TOOL_CONTENT, JsonUtils.resolveToolCallArgsJson(toolUse));
         if (!isBlank(result.getId())) {
-            metadata.put("replyId", result.getId());
+            metadata.put(METADATA_REPLY_ID, result.getId());
         }
 
         return new AguiEvent.Interrupt(
                 interruptId(result, toolCallId),
-                "tool_call",
-                extractText(toolResult.getOutput()),
+                TOOL_CALL_INTERRUPT_REASON,
+                toolResult.getSuspendReason() != null
+                        ? toolResult.getSuspendReason()
+                        : DEFAULT_SUSPEND_MESSAGE,
                 toolCallId,
                 null,
                 null,
-                metadata.isEmpty() ? null : Map.copyOf(metadata));
+                Map.copyOf(metadata));
     }
 
     private static String interruptId(Msg result, String toolCallId) {
@@ -143,18 +159,12 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
         return toolCallId;
     }
 
-    private static String extractText(List<ContentBlock> blocks) {
-        if (blocks == null || blocks.isEmpty()) {
-            return null;
+    private static Set<String> frontendToolNames(AguiStreamContext context) {
+        RunAgentInput runInput = context.getRunInput();
+        if (runInput == null || runInput.getTools() == null || runInput.getTools().isEmpty()) {
+            return Set.of();
         }
-        String text =
-                blocks.stream()
-                        .filter(TextBlock.class::isInstance)
-                        .map(TextBlock.class::cast)
-                        .map(TextBlock::getText)
-                        .filter(value -> value != null && !value.isEmpty())
-                        .collect(Collectors.joining("\n"));
-        return text.isEmpty() ? null : text;
+        return runInput.getTools().stream().map(AguiTool::getName).collect(Collectors.toSet());
     }
 
     private static boolean isBlank(String value) {

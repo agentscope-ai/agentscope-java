@@ -21,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultState;
+import java.util.Map;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -118,6 +121,74 @@ class AgentEventStreamTest {
         @DisplayName("fromValue rejects null")
         void fromValueRejectsNull() {
             assertThrows(IllegalArgumentException.class, () -> AgentEventType.fromValue(null));
+        }
+    }
+
+    @Nested
+    @DisplayName("Tool result event metadata round-trips via Jackson")
+    class ToolResultMetadataRoundTrip {
+
+        private final ObjectMapper mapper = new ObjectMapper();
+
+        @Test
+        @DisplayName("ToolResultEndEvent serializes and deserializes metadata")
+        void toolResultEndEventMetadataRoundTrip() throws Exception {
+            Map<String, Object> metadata = Map.of("source", "meta_tool", "cost", 1);
+            ToolResultEndEvent original =
+                    new ToolResultEndEvent("reply-1", "tc-1", "search", ToolResultState.SUCCESS);
+            original.withMetadata(metadata);
+
+            String json = mapper.writeValueAsString(original);
+            assertTrue(json.contains("\"metadata\""));
+            assertTrue(json.contains("\"source\""));
+
+            AgentEvent deserialized = mapper.readValue(json, AgentEvent.class);
+            assertTrue(deserialized instanceof ToolResultEndEvent);
+            assertEquals(metadata, deserialized.getMetadata());
+        }
+
+        @Test
+        @DisplayName("ToolResultTextDeltaEvent serializes and deserializes metadata")
+        void toolResultTextDeltaEventMetadataRoundTrip() throws Exception {
+            Map<String, Object> metadata = Map.of("chunk", true);
+            ToolResultTextDeltaEvent original =
+                    new ToolResultTextDeltaEvent("reply-1", "tc-1", "search", "partial");
+            original.withMetadata(metadata);
+
+            String json = mapper.writeValueAsString(original);
+            AgentEvent deserialized = mapper.readValue(json, AgentEvent.class);
+            assertTrue(deserialized instanceof ToolResultTextDeltaEvent);
+            assertEquals(metadata, deserialized.getMetadata());
+        }
+
+        @Test
+        @DisplayName("ToolResultDataDeltaEvent serializes and deserializes metadata")
+        void toolResultDataDeltaEventMetadataRoundTrip() throws Exception {
+            Map<String, Object> metadata = Map.of("binary", true);
+            ToolResultDataDeltaEvent original =
+                    new ToolResultDataDeltaEvent(
+                            "reply-1", "tc-1", "search", TextBlock.builder().text("data").build());
+            original.withMetadata(metadata);
+
+            String json = mapper.writeValueAsString(original);
+            AgentEvent deserialized = mapper.readValue(json, AgentEvent.class);
+            assertTrue(deserialized instanceof ToolResultDataDeltaEvent);
+            assertEquals(metadata, deserialized.getMetadata());
+        }
+
+        @Test
+        @DisplayName("ToolResultStartEvent keeps metadata capability but emits empty by default")
+        void toolResultStartEventEmptyMetadata() throws Exception {
+            ToolResultStartEvent original = new ToolResultStartEvent("reply-1", "tc-1", "search");
+
+            String json = mapper.writeValueAsString(original);
+            assertTrue(json.contains("\"type\":\"TOOL_RESULT_START\""));
+
+            AgentEvent deserialized = mapper.readValue(json, AgentEvent.class);
+            assertTrue(deserialized instanceof ToolResultStartEvent);
+            assertTrue(
+                    deserialized.getMetadata() == null || deserialized.getMetadata().isEmpty(),
+                    "ToolResultStartEvent should not carry result metadata before execution");
         }
     }
 

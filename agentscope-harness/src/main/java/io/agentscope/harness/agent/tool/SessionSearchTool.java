@@ -16,327 +16,192 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.session.SessionLogStore;
+import io.agentscope.core.session.SessionViews;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import io.agentscope.harness.agent.memory.session.SessionEntry;
-import io.agentscope.harness.agent.memory.session.SessionTree;
-import io.agentscope.harness.agent.workspace.WorkspaceConstants;
+import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Predicate;
 
-/**
- * Tool for searching past session transcripts and viewing session history.
- *
- * <p>Operates exclusively on the local session cache. Remote synchronisation is handled by
- * {@link io.agentscope.harness.agent.memory.session.SessionTree#load()} in write paths
- * (e.g. {@link io.agentscope.harness.agent.memory.MemoryFlushManager}), keeping this tool
- * lightweight and fast for in-process search.
- */
+/** Read-only session discovery and full conversation views from the authoritative native log. */
 public class SessionSearchTool {
+    private final SessionLogStore store;
 
-    private static final Logger log = LoggerFactory.getLogger(SessionSearchTool.class);
+    public SessionSearchTool(WorkspaceManager workspace) {
+        this(new WorkspaceSessionLogStore(workspace));
+    }
 
-    private final WorkspaceManager workspaceManager;
+    public SessionSearchTool(SessionLogStore store) {
+        this.store = Objects.requireNonNull(store);
+    }
 
-    public SessionSearchTool(WorkspaceManager workspaceManager) {
-        this.workspaceManager = workspaceManager;
+    /** Compatibility constructor; the supplied native store owns discovery and history. */
+    public SessionSearchTool(WorkspaceManager workspace, SessionLogStore store) {
+        this(store == null ? new WorkspaceSessionLogStore(workspace) : store);
+    }
+
+    public String sessionSearch(
+            RuntimeContext runtimeContext, String query, String agentId, Integer maxResults) {
+        return sessionSearch(runtimeContext, query, agentId, maxResults, null);
     }
 
     @Tool(
             name = "session_search",
             readOnly = true,
             description =
-                    "Search past session transcripts for a keyword or phrase."
-                            + " Returns matching entries with session context.")
+                    "Search native session conversation messages, tool calls and results for a"
+                            + " keyword or phrase.")
     public String sessionSearch(
             RuntimeContext runtimeContext,
-            @ToolParam(name = "query", description = "Search query (keyword or phrase)")
+            @ToolParam(
+                            name = "query",
+                            description =
+                                    "Literal phrase, or whitespace-separated keywords when"
+                                            + " matchMode is all/any; no automatic Chinese word"
+                                            + " segmentation")
                     String query,
             @ToolParam(
                             name = "agentId",
-                            description = "Agent ID to search sessions for",
+                            description = "Agent ID to search (all accessible agents if omitted)",
                             required = false)
                     String agentId,
             @ToolParam(
                             name = "maxResults",
-                            description = "Maximum number of results to return (default: 10)",
+                            description = "Maximum number of results (default: 10)",
                             required = false)
-                    Integer maxResults) {
-        if (query == null || query.isBlank()) {
-            return "Error: query is required";
+                    Integer maxResults,
+            @ToolParam(
+                            name = "matchMode",
+                            description =
+                                    "phrase (default): exact substring; all: every keyword in the"
+                                            + " same message; any: at least one keyword in that"
+                                            + " message. Case-insensitive literal matching.",
+                            required = false)
+                    String matchMode) {
+        if (query == null || query.isBlank()) return "Error: query is required";
+        RuntimeContext rc = context(runtimeContext);
+        int limit = positiveLimit(maxResults, 10);
+        Predicate<String> matcher;
+        try {
+            matcher =
+                    KeywordMatcher.compile(
+                            query,
+                            matchMode,
+                            term -> {
+                                String lowerTerm = term.toLowerCase(Locale.ROOT);
+                                return text -> text.contains(lowerTerm);
+                            });
+        } catch (IllegalArgumentException error) {
+            return "Error: " + error.getMessage();
         }
-
-        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        int limit = maxResults != null && maxResults > 0 ? maxResults : 10;
-        String effectiveAgentId = agentId != null && !agentId.isBlank() ? agentId : null;
-        String lowerQuery = query.toLowerCase();
-
-        List<String> results = new ArrayList<>();
-
-        List<Path> sessionFiles = listLogFiles(rc, effectiveAgentId);
-        for (Path file : sessionFiles) {
-            if (results.size() >= limit) {
-                break;
+        var matches = new ArrayList<Map<String, Object>>();
+        for (SessionKey key : sessions(rc, agentId)) {
+            RuntimeContext sessionContext =
+                    RuntimeContext.builder(rc).sessionId(key.sessionId()).build();
+            var view = SessionViews.transcript(store.open(key, sessionContext));
+            for (var message : view.messages()) {
+                String text = JsonUtils.getJsonCodec().toJson(message.getContent());
+                if (matcher.test(text.toLowerCase(Locale.ROOT))) {
+                    matches.add(
+                            Map.of(
+                                    "agentId",
+                                    key.agentId(),
+                                    "sessionId",
+                                    key.sessionId(),
+                                    "asOfSeq",
+                                    view.asOfSeq(),
+                                    "message",
+                                    message));
+                    if (matches.size() >= limit) return JsonUtils.getJsonCodec().toJson(matches);
+                }
             }
-            searchInSessionFile(file, lowerQuery, results, limit);
         }
-
-        if (results.isEmpty()) {
-            return "No matches found for: " + query;
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append(String.format("Found %d matches for \"%s\":\n\n", results.size(), query));
-        for (String result : results) {
-            sb.append(result).append("\n");
-        }
-        return sb.toString();
+        return JsonUtils.getJsonCodec().toJson(matches);
     }
 
     @Tool(
             name = "session_list",
             readOnly = true,
-            description = "List available sessions for an agent, showing session IDs and metadata.")
+            description =
+                    "List native sessions for an agent in the caller's workspace storage"
+                            + " namespace.")
     public String sessionList(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID to list sessions for")
                     String agentId) {
-        if (agentId == null || agentId.isBlank()) {
-            return "Error: agentId is required";
-        }
-
-        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-
-        // Prefer the structured session-store index (already two-layer: remote then local).
-        String storeContent =
-                workspaceManager.readManagedWorkspaceFileUtf8(
-                        rc,
-                        WorkspaceConstants.AGENTS_DIR
-                                + "/"
-                                + agentId
-                                + "/"
-                                + WorkspaceConstants.SESSIONS_DIR
-                                + "/"
-                                + WorkspaceConstants.SESSIONS_STORE);
-        if (!storeContent.isBlank()) {
-            return storeContent;
-        }
-
-        // List sessions from local cache only — remote sync is handled at write time.
-        Path sessionDir = workspaceManager.getSessionDir(rc, agentId);
-        if (!Files.isDirectory(sessionDir)) {
-            return "No sessions found for agent: " + agentId;
-        }
-
-        List<Path> sessionFiles = new ArrayList<>();
-        try (Stream<Path> walk = Files.list(sessionDir)) {
-            walk.filter(Files::isRegularFile)
-                    .filter(
-                            p ->
-                                    p.getFileName()
-                                            .toString()
-                                            .endsWith(WorkspaceConstants.SESSION_CONTEXT_EXT))
-                    .forEach(sessionFiles::add);
-        } catch (IOException e) {
-            log.debug("Could not list local session dir for agent {}: {}", agentId, e.getMessage());
-        }
-
-        if (sessionFiles.isEmpty()) {
-            return "No sessions found for agent: " + agentId;
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("Sessions for agent ").append(agentId).append(":\n");
-        for (Path file : sessionFiles) {
-            String name = file.getFileName().toString();
-            String sessionId = name.replace(WorkspaceConstants.SESSION_CONTEXT_EXT, "");
-            sb.append("  - ").append(sessionId).append("\n");
-        }
-        return sb.toString();
+        if (agentId == null || agentId.isBlank()) return "Error: agentId is required";
+        RuntimeContext rc = context(runtimeContext);
+        return JsonUtils.getJsonCodec().toJson(sessions(rc, agentId));
     }
 
     @Tool(
             name = "session_history",
             readOnly = true,
             description =
-                    "Get the conversation history for a specific session."
-                            + " Returns the messages in the session.")
+                    "Read committed conversation history including messages before context"
+                            + " compaction.")
     public String sessionHistory(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID") String agentId,
-            @ToolParam(name = "sessionId", description = "AgentStateStore Session ID")
-                    String sessionId,
+            @ToolParam(name = "sessionId", description = "Session ID") String sessionId,
             @ToolParam(
                             name = "lastN",
-                            description = "Number of recent messages to return (default: 20)",
+                            description = "Number of recent messages (default: 20)",
                             required = false)
                     Integer lastN) {
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
             return "Error: agentId and sessionId are required";
         }
-
-        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        int limit = lastN != null && lastN > 0 ? lastN : 20;
-
-        Path contextFile = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
-        if (!Files.isRegularFile(contextFile)) {
-            @SuppressWarnings("deprecation")
-            Path legacyFile = workspaceManager.resolveSessionFile(rc, agentId, sessionId);
-            if (Files.isRegularFile(legacyFile)) {
-                log.debug("Falling back to legacy .json session file for {}", sessionId);
-                return readLegacySession(legacyFile, limit);
-            }
-            return "AgentStateStore not found: " + sessionId;
-        }
-
-        SessionTree tree = new SessionTree(contextFile, workspaceManager.getWorkspace(), null);
-        tree.load();
-
-        List<SessionEntry.MessageEntry> messages = tree.getMessageEntries();
-        int start = Math.max(0, messages.size() - limit);
-
-        StringBuilder sb = new StringBuilder();
-        sb.append(
-                String.format(
-                        "AgentStateStore %s (%d total messages, showing last %d):\n\n",
-                        sessionId, messages.size(), Math.min(limit, messages.size())));
-        for (int i = start; i < messages.size(); i++) {
-            SessionEntry.MessageEntry msg = messages.get(i);
-            String content = msg.getContent();
-            if (content != null && content.length() > 500) {
-                content = content.substring(0, 500) + "... [truncated]";
-            }
-            sb.append(String.format("[%s]: %s\n", msg.getRole(), content));
-        }
-        return sb.toString();
+        RuntimeContext rc = context(runtimeContext);
+        RuntimeContext sessionContext = RuntimeContext.builder(rc).sessionId(sessionId).build();
+        var log = store.open(new SessionKey(rc.getUserId(), agentId, sessionId), sessionContext);
+        if (log.head().seq() == 0) return "Session not found: " + sessionId;
+        var view = SessionViews.transcript(log);
+        var messages = view.messages();
+        int limit = positiveLimit(lastN, 20);
+        return JsonUtils.getJsonCodec()
+                .toJson(
+                        Map.of(
+                                "asOfSeq",
+                                view.asOfSeq(),
+                                "totalMessages",
+                                messages.size(),
+                                "messages",
+                                messages.subList(
+                                        Math.max(0, messages.size() - limit), messages.size())));
     }
 
-    // -------------------------------------------------------------------------
-    //  Private helpers
-    // -------------------------------------------------------------------------
-
-    /**
-     * Collects all {@code .log.jsonl} files under the sessions directory for the given agent
-     * (or all agents when {@code agentId} is {@code null}).
-     * Only scans the local disk; remote-only sessions are handled via sessionList / sessionHistory.
-     */
-    private List<Path> listLogFiles(RuntimeContext rc, String agentId) {
-        List<Path> files = new ArrayList<>();
-        Path agentsDir = workspaceManager.resolveRuntimeDataPath(rc, WorkspaceConstants.AGENTS_DIR);
-        if (!Files.isDirectory(agentsDir)) {
-            return files;
-        }
-
-        if (agentId != null) {
-            Path sessionDir = agentsDir.resolve(agentId).resolve(WorkspaceConstants.SESSIONS_DIR);
-            collectLogFiles(sessionDir, files);
-            return files;
-        }
-
-        try (Stream<Path> walk = Files.list(agentsDir)) {
-            walk.filter(Files::isDirectory)
-                    .forEach(
-                            agentDir ->
-                                    collectLogFiles(
-                                            agentDir.resolve(WorkspaceConstants.SESSIONS_DIR),
-                                            files));
-        } catch (IOException e) {
-            // ignore
-        }
-        return files;
+    private List<SessionKey> sessions(RuntimeContext rc, String agentId) {
+        return store.list(rc).stream()
+                .filter(
+                        key ->
+                                Objects.equals(
+                                        normalizeUser(key.userId()), normalizeUser(rc.getUserId())))
+                .filter(
+                        key ->
+                                agentId == null
+                                        || agentId.isBlank()
+                                        || key.agentId().equals(agentId))
+                .toList();
     }
 
-    private void collectLogFiles(Path sessionDir, List<Path> collector) {
-        if (!Files.isDirectory(sessionDir)) {
-            return;
-        }
-        try (Stream<Path> walk = Files.list(sessionDir)) {
-            walk.filter(p -> p.toString().endsWith(WorkspaceConstants.SESSION_LOG_EXT))
-                    .filter(Files::isRegularFile)
-                    .forEach(collector::add);
-        } catch (IOException e) {
-            // ignore
-        }
+    private static String normalizeUser(String user) {
+        return user == null || user.isEmpty() ? null : user;
     }
 
-    private void searchInSessionFile(
-            Path logFile, String lowerQuery, List<String> results, int limit) {
-        try {
-            Path contextFile =
-                    logFile.resolveSibling(
-                            logFile.getFileName()
-                                    .toString()
-                                    .replace(
-                                            WorkspaceConstants.SESSION_LOG_EXT,
-                                            WorkspaceConstants.SESSION_CONTEXT_EXT));
-            SessionTree tree = new SessionTree(contextFile, workspaceManager.getWorkspace(), null);
-            tree.load();
-
-            String relPath = workspaceManager.getWorkspace().relativize(logFile).toString();
-            for (SessionEntry entry : tree.getAllEntries()) {
-                if (results.size() >= limit) {
-                    break;
-                }
-                String content = searchableText(entry);
-                if (content != null && content.toLowerCase().contains(lowerQuery)) {
-                    String preview =
-                            content.length() > 200 ? content.substring(0, 200) + "..." : content;
-                    String roleLabel =
-                            entry instanceof SessionEntry.MessageEntry me
-                                    ? me.getRole()
-                                    : entry instanceof SessionEntry.ToolUseEntry
-                                            ? "TOOL_USE"
-                                            : entry instanceof SessionEntry.ToolResultEntry
-                                                    ? "TOOL_RESULT"
-                                                    : entry.getClass().getSimpleName();
-                    results.add(
-                            String.format(
-                                    "  [%s] %s — [%s]: %s",
-                                    relPath, entry.getId(), roleLabel, preview));
-                }
-            }
-        } catch (Exception e) {
-            // skip corrupted files
-        }
+    private static RuntimeContext context(RuntimeContext context) {
+        return context == null ? RuntimeContext.empty() : context;
     }
 
-    private static String searchableText(SessionEntry entry) {
-        if (entry instanceof SessionEntry.MessageEntry me) {
-            return me.getContent();
-        }
-        if (entry instanceof SessionEntry.ToolUseEntry use) {
-            return use.getName() + " " + (use.getInput() != null ? use.getInput().toString() : "");
-        }
-        if (entry instanceof SessionEntry.ToolResultEntry result) {
-            return (result.getName() != null ? result.getName() + " " : "")
-                    + (result.getOutput() != null ? result.getOutput() : "");
-        }
-        return null;
-    }
-
-    private String readLegacySession(Path file, int limit) {
-        try {
-            String content = Files.readString(file);
-            String[] lines = content.split("\n");
-            int start = Math.max(0, lines.length - limit);
-            StringBuilder sb = new StringBuilder();
-            sb.append(
-                    String.format(
-                            "Legacy session (%d lines, showing last %d):\n",
-                            lines.length, Math.min(limit, lines.length)));
-            for (int i = start; i < lines.length; i++) {
-                sb.append(lines[i]).append("\n");
-            }
-            return sb.toString();
-        } catch (IOException e) {
-            return "Error reading session file: " + e.getMessage();
-        }
+    private static int positiveLimit(Integer value, int fallback) {
+        return value == null || value <= 0 ? fallback : value;
     }
 }

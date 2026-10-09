@@ -1,12 +1,11 @@
 ---
-hide-toc: true
+title: AgentScope Service 技术解读：控制面、数据面与可恢复的 Agent 运行时
+en_link: /v2/en/blogs/agentscope-service-release-tech
 ---
-
-# AgentScope Service 技术解读：控制面、数据面与可恢复的 Agent 运行时
 
 如果把发布通告看作「AgentScope Service 能做什么」，这篇更关注「它是怎么做成的」。我们将沿着产品资源模型、平面边界、Turn 生命周期、Brain / Hands 拆分、Session 事件契约，以及多框架接入路径，把平台背后的系统设计讲清楚。
 
-产品概述与能力说明见姊妹篇：[AgentScope Service 正式发布](./agentscope-service-release.md)。本文默认读者已了解 AgentScope 2.0 / Harness 的基本概念，并关心如何把单个可运行 Agent 扩展成可运营平台。
+产品概述与能力说明见姊妹篇：[AgentScope Service 正式发布](/v2/zh/blogs/agentscope-service-release)。本文默认读者已了解 AgentScope 2.0 / Harness 的基本概念，并关心如何把单个可运行 Agent 扩展成可运营平台。
 
 ## 什么是 AgentScope Service（实现视角）
 
@@ -15,7 +14,7 @@ hide-toc: true
 | 组件 | 角色 |
 | --- | --- |
 | `service-gateway` | 对外入口：认证、路由、公共 API |
-| `aistiod` | Go 控制面：产品资源、舰队注册、Session / Team 运行时状态、控制台后端 |
+| `service-controlplane` | Go 控制面：产品资源、舰队注册、Session / Team 运行时状态、控制台后端 |
 | `service-dataplane` | Java 数据面：Managed Session Brain，基于 AgentScope Harness 执行 Turn |
 | `service-scheduler` | Channel、Cron、出站任务、Self-hosted Hands Worker |
 | PostgreSQL | 按 schema 分割的权威状态：`cp` / `rt` / `dp` |
@@ -28,7 +27,7 @@ hide-toc: true
 
 控制面管理期望状态与运行状态，但**不执行模型 Turn**；推理循环留在数据面或接入方自己的 Runtime。这个边界贯穿整套架构：一旦控制面开始「顺便跑模型」，平面职责、扩缩容和故障域都会纠缠在一起。
 
-对部署形态而言，本地开发可关闭 Kubernetes Reconciler，走 Hosted Product 路径；生产也可启用 Aistio 的 CRD / Workload 能力，把声明式 Agent 与舰队治理接到集群。产品品牌仍是 Agent Service，底层控制组件是 `aistiod`。
+对部署形态而言，本地开发可关闭 Kubernetes Reconciler，走 Hosted Product 路径；生产也可启用 Control Plane 的 CRD / Workload 能力，把声明式 Agent 与舰队治理接到集群。产品品牌仍是 Agent Service，底层控制组件是 `service-controlplane`。
 
 ## 为什么需要这样一套平台
 
@@ -55,7 +54,7 @@ hide-toc: true
 ┌────────────────────────────────────────────────────────────────────────────┐
 │                              Agent Service                                 │
 │                                                                            │
-│  Web Console ──► Gateway :8080 ──┬──► aistiod :8081 （CP / RT）            │
+│  Web Console ──► Gateway :8080 ──┬──► service-controlplane :8081 （CP / RT）            │
 │                                  └──► dataplane :8082 （DP Brain）         │
 │                                              │                             │
 │                                              ▼                             │
@@ -73,7 +72,7 @@ hide-toc: true
 | 平面 | 负责 | 明确不负责 |
 | --- | --- | --- |
 | Gateway | JWT / 公共路由 | 业务状态、模型调用 |
-| Control（`aistiod`） | 用户、Agent 版本、Environment、Session 绑定、Team、舰队实例、运行时命令 | 模型 Turn |
+| Control（`service-controlplane`） | 用户、Agent 版本、Environment、Session 绑定、Team、舰队实例、运行时命令 | 模型 Turn |
 | Dataplane | Turn Lease、事件落库、SSE、HITL、按 Snapshot 构建 Harness、Work Queue | 直读 `cp` 表作为 Catalog 回退 |
 | Scheduler | Channel、Cron、出站 Hands Worker | 推理循环 |
 
@@ -83,8 +82,8 @@ hide-toc: true
 
 | Schema | Owner | 数据 |
 | --- | --- | --- |
-| `cp` | `aistiod` 产品 API | 用户、Agent、版本、Environment、Session、Vault、Memory、Deployment |
-| `rt` | Aistio Runtime Store | 舰队实例、运行时 Session、Context、Team、Task、Message |
+| `cp` | `service-controlplane` 产品 API | 用户、Agent、版本、Environment、Session、Vault、Memory、Deployment |
+| `rt` | Control Plane Runtime Store | 舰队实例、运行时 Session、Context、Team、Task、Message |
 | `dp` | Java Dataplane | Session Event、协调状态、HITL、Work Item、数据面投影 |
 
 Dataplane 通过控制面内部 API 解析 Managed Session，并只使用返回的 Agent Snapshot 构建运行时。数据面副本可以水平扩展，但产品 Catalog 仍以控制面为准，避免双写和缓存漂移。本地 Catalog 回退看起来省事，长期往往制造「实例 A 已更新、实例 B 还在跑旧定义」的幽灵 bug。
@@ -191,20 +190,20 @@ Agent Teams 把多 Agent 协作做成控制面资源，而不是某个进程内�
 
 ### AgentScope（原生）
 
-Java 侧通过 `agentscope-extensions-aistio` 接入。扩展负责把 Runtime 注册到控制面，上报 Session / Context / 健康信息，并承接运营命令。对已有 AgentScope 应用，这是侵入性最低、契约最完整的路径：与 Managed Agent 共用 Dashboard 与 Session 观测模型。
+Java 侧通过 `agentscope-extensions-controlplane` 接入。扩展负责把 Runtime 注册到控制面，上报 Session / Context / 健康信息，并承接运营命令。对已有 AgentScope 应用，这是侵入性最低、契约最完整的路径：与 Managed Agent 共用 Dashboard 与 Session 观测模型。
 
 因为双方共享同一套 AgentScope 事件与状态语义，Level-1 / Context / 压缩等能力通常最先对齐。若你已经在用 `HarnessAgent`，接入的边际成本主要是依赖、注册配置与运行时标识，而不是重写业务 Prompt。
 
 ### LangChain
 
-Python SDK 提供 `aistio.instrument()`。对 LangChain / LangGraph，适配器挂在 Callback / Checkpointer 等拦截点：
+Python SDK 提供 `agentscope_service.instrument()`。对 LangChain / LangGraph，适配器挂在 Callback / Checkpointer 等拦截点：
 
 ```python
-import aistio
+import agentscope_service
 
-aistio.instrument(
+agentscope_service.instrument(
     app_or_client,
-    control_plane="aistiod.aistio-system:9090",
+    control_plane="service-controlplane.controlplane-system:9090",
     agent_name="my-langchain-agent",
     namespace="default",
     enable_events=False,  # Level 2 事件默认关，可按需打开
@@ -228,13 +227,10 @@ Sidecar 不是「再实现一个 agent loop」，而是在无法改二进制时�
 
 ### 本地启动与验收
 
-```bash
-export DASHSCOPE_API_KEY=sk-xxx
-cd agentscope-service
-BUILDER_REBUILD=1 scripts/dev-up.sh
-# Console: http://localhost:8080
-scripts/smoke.sh
-```
+按[部署并准备 Service](/v2/zh/service/quickstart)启动已发布的 Docker Compose 安装包，
+在 `http://localhost:18080` 使用 `.env` 中生成的管理员密码登录。
+接入 Hosted Agent 时通过 [Go 安装 CLI 与 Runtime Host](/v2/zh/service/runtime-host)；
+生产环境的 Kubernetes 部署使用 [Helm 安装指南](/v2/zh/service/kubernetes)。
 
 建议至少验收三类路径：
 
@@ -242,7 +238,7 @@ scripts/smoke.sh
 2. HITL：触发 Ask Policy，确认后续跑，历史完整；
 3. `self_hosted`：Worker poll / ack / heartbeat / 回传 `tool_result`，Turn 正确恢复。
 
-详见 [`docs/guide/14-validation.md`](../../../agentscope-service/docs/guide/14-validation.md) 与架构说明 [`docs/guide/02-architecture.md`](../../../agentscope-service/docs/guide/02-architecture.md)。
+详见 [`docs/guide/14-validation.md`](/v2/zh/service/service-api) 与架构说明 [`docs/guide/02-architecture.md`](/v2/zh/service/index)。
 
 ## 几个值得提前避开的实现误区
 
@@ -301,4 +297,4 @@ AgentScope Service 的技术内核可以概括成三句话：
 2. **持久化事件序列才是 Session 真相，进程内对象只是可丢弃的缓存**；
 3. **Managed 与 BYO 共用舰队契约，框架差异收敛在适配器，而不是散落在 Console**。
 
-如果你正在从「单个 Harness Agent」走向「可运营的 Agent 舰队」，这套分层会减少大量重复基础设施。欢迎直接阅读 [`agentscope-service/README_zh.md`](../../../agentscope-service/README_zh.md)；产品能力与接入故事则可回到[发布版文章](./agentscope-service-release.md)。
+如果你正在从「单个 Harness Agent」走向「可运营的 Agent 舰队」，这套分层会减少大量重复基础设施。欢迎直接阅读 [`agentscope-service/README_zh.md`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-service/README_zh.md)；产品能力与接入故事则可回到[发布版文章](/v2/zh/blogs/agentscope-service-release)。

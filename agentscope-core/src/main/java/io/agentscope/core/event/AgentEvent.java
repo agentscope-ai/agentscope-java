@@ -17,8 +17,10 @@ package io.agentscope.core.event;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import io.agentscope.core.agent.ExecutionIdentity;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -79,9 +81,28 @@ public abstract class AgentEvent {
      */
     public static final String METADATA_TASK_ID = "taskId";
 
+    /**
+     * Well-known {@link #metadata} key identifying the parent agent's session that initiated a
+     * remote subagent run. Distinct from {@link #source} (which embeds the same id as a path
+     * prefix) and from {@link #METADATA_TASK_ID} (which identifies the harness task).
+     */
+    public static final String METADATA_PARENT_SESSION_ID = "parentSessionId";
+
+    /**
+     * Well-known {@link #metadata} key carrying the {@code GenerateReason} name behind a text
+     * projection. Currently attached to the {@code TextBlock} events synthesized for a
+     * {@code returnDirect} closing message, letting observers distinguish "the model said this"
+     * from "a tool result was substituted for the model's final answer". Absent on ordinary
+     * model-generated text events.
+     */
+    public static final String METADATA_GENERATE_REASON = "generate_reason";
+
     private final String id;
     private final String createdAt;
     private String source;
+
+    @JsonProperty("execution")
+    private ExecutionIdentity execution;
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     private Map<String, Object> metadata;
@@ -94,6 +115,16 @@ public abstract class AgentEvent {
     protected AgentEvent(String id, String createdAt) {
         this.id = id;
         this.createdAt = createdAt;
+    }
+
+    /** Correlation with native history; forwarded child events retain their own identity. */
+    public ExecutionIdentity getExecution() {
+        return execution;
+    }
+
+    public AgentEvent withExecution(ExecutionIdentity identity) {
+        if (execution == null) execution = identity;
+        return this;
     }
 
     public abstract AgentEventType getType();

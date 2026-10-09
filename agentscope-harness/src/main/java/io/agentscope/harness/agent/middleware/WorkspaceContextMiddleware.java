@@ -17,6 +17,8 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.context.ContextItem;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
@@ -30,18 +32,21 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
- * Appends workspace context (session info, AGENTS.md, MEMORY.md, knowledge) to the
- * system prompt via {@link #onSystemPrompt(Agent, RuntimeContext, String)}.
+ * Collects workspace instructions and reference materials for final request rendering via
+ * {@link #onSystemPrompt(Agent, RuntimeContext, String)}.
  *
  * <p>Runs once per {@code call()} (just like the previous {@code WorkspaceContextHook}
  * fired on {@code PreCallEvent}).
  *
- * <p>Memory-related guidance and {@code <memory_context>} injection are gated by the same
+ * <p>Memory-related guidance and reference material loading are gated by the same
  * builder flags as Harness memory tools/hooks ({@code disableMemoryTools} /
  * {@code disableMemoryHooks}) so the model is not instructed to use capabilities that are
  * turned off.
@@ -50,7 +55,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private static final String SESSION_CONTEXT_SECTION_TEMPLATE =
             """
-            ## AgentStateStore Context
+            ## Runtime Environment
             This is the %s. We are setting up the context for our chat.
             Today's date is %s.
             My operating system is: %s
@@ -63,7 +68,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             """
             ## Domain Knowledge
             The workspace `knowledge/` tree holds many detailed reference documents (not only a single summary file). When the task needs specs, procedures, schemas, or domain facts, treat that directory as the source of truth.
-            Below, `<domain_knowledge_context>` already includes what you need to navigate it: injected `knowledge/KNOWLEDGE.md` (if present) plus a **full list of knowledge file paths** under `knowledge/` — use that as the catalog of what exists and where.
+            Reference material in HARNESS_CONTEXT may include `knowledge/KNOWLEDGE.md` and a catalog of knowledge paths. If omitted for budget, inspect `knowledge/` with targeted tools.
             For content not inlined here, open only the paths you need with read_file, grep, or glob (prefer targeted reads over loading entire trees into the reply).
             """;
 
@@ -105,20 +110,6 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private static final String MEMORY_AUTO_EXTRACT_GUIDANCE =
             "Memory is also automatically extracted at conversation end.\n";
 
-    private static final String WORKSPACE_FILES_NOTICE_WITH_MEMORY =
-            """
-            ## Workspace Files (Injected)
-            The following <loaded_context> was loaded in from files in your workspace.
-            These files (for example, `AGENTS.md`, `MEMORY.md`, and `knowledge/KNOWLEDGE.md`) contain memory, facts, preferences, guidelines, and user-specific details learned from prior interactions with user.
-            """;
-
-    private static final String WORKSPACE_FILES_NOTICE_WITHOUT_MEMORY =
-            """
-            ## Workspace Files (Injected)
-            The following <loaded_context> was loaded in from files in your workspace.
-            These files (for example, `AGENTS.md` and `knowledge/KNOWLEDGE.md`) contain guidelines and domain context for this agent.
-            """;
-
     private static final String TRUNCATION_NOTICE_WITH_SEARCH =
             "\n\n... (memory truncated — use memory_search for older entries) ...\n";
 
@@ -133,6 +124,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private final boolean disableMemoryTools;
     private final boolean disableMemoryHooks;
     private List<String> additionalContextFiles = List.of();
+    private boolean artifactDeliveryEnabled = false;
 
     public WorkspaceContextMiddleware(WorkspaceManager workspaceManager) {
         this(workspaceManager, "HarnessAgent", null, DEFAULT_MAX_CONTEXT_TOKENS, false, false);
@@ -165,40 +157,65 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         this.disableMemoryHooks = disableMemoryHooks;
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+    }
+
     public void setAdditionalContextFiles(List<String> files) {
         this.additionalContextFiles = files != null ? files : List.of();
     }
 
-    /** Whether memory tools are disabled for this middleware (affects prompt guidance). */
+    /**
+     * Whether memory tools are disabled for this middleware (affects prompt guidance).
+     */
     public boolean isDisableMemoryTools() {
         return disableMemoryTools;
     }
 
-    /** Whether memory hooks are disabled for this middleware (affects prompt guidance). */
+    /**
+     * Whether memory hooks are disabled for this middleware (affects prompt guidance).
+     */
     public boolean isDisableMemoryHooks() {
         return disableMemoryHooks;
     }
 
-    @Override
-    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
-        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        String section = buildWorkspaceSection(rc);
-        if (section.isEmpty()) {
-            return Mono.just(currentPrompt);
-        }
-        String base = currentPrompt != null ? currentPrompt : "";
-        String separator = base.isEmpty() || base.endsWith("\n") ? "" : "\n";
-        return Mono.just(base + separator + section);
+    /**
+     * Whether an {@link io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget} is configured
+     * and the {@code deliver_artifact} tool is exposed. When {@code true}, the sandbox branch of the
+     * workspace paragraph tells the model to use that tool; when {@code false}, it states that files
+     * cannot leave the sandbox.
+     */
+    public void setArtifactDeliveryEnabled(boolean artifactDeliveryEnabled) {
+        this.artifactDeliveryEnabled = artifactDeliveryEnabled;
     }
 
-    private String buildWorkspaceSection(RuntimeContext rc) {
+    @Override
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
+        return Mono.fromCallable(
+                        () -> {
+                            RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+                            String base = currentPrompt != null ? currentPrompt : "";
+                            collectWorkspaceMaterials(rc);
+                            return base;
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private void collectWorkspaceMaterials(RuntimeContext rc) {
         String agentsContent = workspaceManager.readAgentsMd(rc).strip();
         boolean includeMemoryContext = includeMemoryContext();
         String memoryContent =
                 includeMemoryContext ? workspaceManager.readMemoryMd(rc).strip() : "";
         String knowledgeContent = workspaceManager.readKnowledgeMd(rc).strip();
         Path workspace = workspaceManager.getWorkspace();
-        String sessionContext = buildSessionContextSection(workspace, rc);
+        AbstractFilesystem filesystem = workspaceManager.getFilesystem();
+        Path effectiveWorkspace =
+                detectLocalUpper(filesystem) != null
+                        ? workspaceManager.resolveRuntimeDataPath(rc, "")
+                        : workspace;
+        String sessionContext = buildSessionContextSection(effectiveWorkspace, rc);
 
         String knowledgeBlock = buildKnowledgeBlock(rc, knowledgeContent, workspace);
         String additionalBlock = buildAdditionalContextBlock(rc);
@@ -211,17 +228,33 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         if (includeMemoryContext) {
             int memoryTokens = estimateTokens(memoryContent);
             int available = maxContextTokens - fixedTokens;
-            if (available > 0 && memoryTokens > available) {
+            if (available <= 0) {
+                memoryContent = "";
+            } else if (memoryTokens > available) {
                 memoryContent = truncateToTokenBudget(memoryContent, available);
             }
         }
 
         String workspaceParagraph =
-                buildWorkspaceParagraph(workspace, workspaceManager.getFilesystem());
-        String loadedContext =
-                buildLoadedContextSection(
-                        agentsContent, memoryContent, knowledgeBlock, additionalBlock);
-        return assembleSection(sessionContext, buildGuidance(), workspaceParagraph, loadedContext);
+                buildWorkspaceParagraph(
+                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled);
+        WorkspaceContextMaterials.register(
+                rc,
+                List.of(
+                        ContextItem.instruction(
+                                "project_rules", "workspace:AGENTS.md", agentsContent),
+                        ContextItem.instruction(
+                                "working_principles",
+                                "harness:workspace-guidance",
+                                buildGuidance()),
+                        ContextItem.instruction(
+                                "environment",
+                                "harness:workspace-environment",
+                                sessionContext + "\n" + workspaceParagraph),
+                        new ContextItem("memory", "workspace:MEMORY.md", memoryContent),
+                        new ContextItem("knowledge", "workspace:knowledge", knowledgeBlock),
+                        new ContextItem(
+                                "additional", "workspace:additional-files", additionalBlock)));
     }
 
     /**
@@ -263,23 +296,6 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         return sb.toString();
     }
 
-    private static String assembleSection(
-            String sessionContext,
-            String guidance,
-            String workspaceParagraph,
-            String loadedContextSection) {
-        StringBuilder sb = new StringBuilder();
-        if (!sessionContext.isBlank()) {
-            sb.append(sessionContext).append("\n\n");
-        }
-        sb.append(guidance);
-        if (!workspaceParagraph.isEmpty()) {
-            sb.append("\n").append(workspaceParagraph);
-        }
-        sb.append("\n").append(loadedContextSection);
-        return sb.toString();
-    }
-
     /**
      * Builds the {@code ## Workspace} paragraph, branching by the active filesystem type so the
      * LLM sees a description that matches its real deployment surface.
@@ -297,7 +313,11 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
      *       don't recognize.
      * </ul>
      */
-    private static String buildWorkspaceParagraph(Path workspace, AbstractFilesystem fs) {
+    private static String buildWorkspaceParagraph(
+            Path workspace,
+            Path effectiveWorkspace,
+            AbstractFilesystem fs,
+            boolean artifactDeliveryEnabled) {
         StringBuilder sb = new StringBuilder("## Workspace\n");
         LocalFilesystemWithShell localUpper = detectLocalUpper(fs);
         Path project = localUpper != null ? localUpper.getShellCwd() : null;
@@ -306,7 +326,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                     .append(project.toAbsolutePath())
                     .append("\n");
             sb.append("Workspace (your home base — memory, sessions, skills, runtime data): ")
-                    .append(workspace.toAbsolutePath())
+                    .append(effectiveWorkspace.toAbsolutePath())
                     .append("\n");
             List<Path> extraRoots = extraRootsOf(localUpper, project, workspace);
             if (!extraRoots.isEmpty()) {
@@ -341,10 +361,17 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             sb.append("Sandbox root: /workspace (container id: ")
                     .append(sandbox.id())
                     .append(")\n");
-            sb.append(
-                    "Files are isolated inside this container. The host filesystem is not"
-                            + " directly accessible — use upload/download tools when you need to"
-                            + " move bytes across the boundary.\n");
+            if (artifactDeliveryEnabled) {
+                sb.append(
+                        "Files are isolated inside this container. The host filesystem is not"
+                                + " directly accessible — see the File Isolation Notice below for"
+                                + " how to deliver files out of the sandbox.\n");
+            } else {
+                sb.append(
+                        "Files are isolated inside this container. The host filesystem is not"
+                                + " accessible and there is no mechanism for moving files across"
+                                + " the boundary.\n");
+            }
         } else if (fs instanceof CompositeFilesystem) {
             sb.append("Distributed workspace template root: ")
                     .append(workspace.toAbsolutePath())
@@ -364,6 +391,30 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         sb.append(
                 "AGENTS.md defines persona and local conventions — honor them when consistent"
                         + " with safety and policy.\n");
+        if (artifactDeliveryEnabled
+                && fs instanceof AbstractSandboxFilesystem
+                && !(fs instanceof OverlayFilesystem)) {
+            sb.append(
+                    "**File Isolation Notice**\n"
+                            + "Files inside this container are isolated from the host filesystem"
+                            + " and are not directly accessible from outside. If your work"
+                            + " produces any final deliverables—such as documents, reports,"
+                            + " images, spreadsheets, archives, audio/video files, code"
+                            + " artifacts, or similar—you **must** call deliver_artifact"
+                            + " automatically when you finish the task to export them to their"
+                            + " configured external destination. Deliver it silently: do not ask"
+                            + " the user whether they want it delivered — the tool call itself lets"
+                            + " the user see and retrieve the artifact directly, so do not mention"
+                            + " the delivery or the deliver_artifact tool in your reply.\n"
+                            + "\n"
+                            + "**Important Notes**:\n"
+                            + "- Only deliver the final output of your task. **Do not** deliver"
+                            + " temporary files, working copies, internal intermediate files, or"
+                            + " any sensitive information (e.g., credentials, keys, personal"
+                            + " data).\n"
+                            + "- Do not simply print the file path as a reference; the user"
+                            + " cannot access your container's filesystem directly.\n");
+        }
         return sb.toString();
     }
 
@@ -443,40 +494,6 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         return parts.isEmpty() ? "" : String.join("\n", parts);
     }
 
-    private String buildLoadedContextSection(
-            String agentsContent,
-            String memoryContent,
-            String knowledgeBlock,
-            String additionalBlock) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(workspaceFilesNotice());
-        sb.append("\n");
-        sb.append("<loaded_context>\n");
-        sb.append(buildXmlContext("agents_context", agentsContent));
-        if (includeMemoryContext()) {
-            sb.append(buildXmlContext("memory_context", memoryContent));
-        }
-        sb.append(buildXmlContext("domain_knowledge_context", knowledgeBlock));
-        if (!additionalBlock.isBlank()) {
-            sb.append(additionalBlock);
-        }
-        sb.append("</loaded_context>\n");
-        return sb.toString();
-    }
-
-    private String workspaceFilesNotice() {
-        return includeMemoryContext()
-                ? WORKSPACE_FILES_NOTICE_WITH_MEMORY
-                : WORKSPACE_FILES_NOTICE_WITHOUT_MEMORY;
-    }
-
-    private static String buildXmlContext(String tagName, String content) {
-        if (content == null || content.isBlank()) {
-            return "  <" + tagName + "></" + tagName + ">\n";
-        }
-        return "  <" + tagName + ">\n" + indentByTwo(content.strip()) + "\n  </" + tagName + ">\n";
-    }
-
     private static String indentByTwo(String text) {
         return text.lines().map(line -> "  " + line).collect(Collectors.joining("\n"));
     }
@@ -509,7 +526,10 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         }
         String notice =
                 disableMemoryTools ? TRUNCATION_NOTICE_PLAIN : TRUNCATION_NOTICE_WITH_SEARCH;
-        return text.substring(0, maxChars) + notice;
+        if (notice.length() >= maxChars) {
+            return text.substring(0, maxChars);
+        }
+        return text.substring(0, maxChars - notice.length()) + notice;
     }
 
     private String buildKnowledgeBlock(RuntimeContext rc, String knowledgeContent, Path workspace) {

@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.subagent.task;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -52,7 +53,15 @@ import org.slf4j.LoggerFactory;
 public final class AgentProtocolTaskClient {
 
     private static final Logger log = LoggerFactory.getLogger(AgentProtocolTaskClient.class);
-    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /**
+     * Unknown {@code type} values deserialize to {@code null} instead of throwing, so a newer
+     * server introducing a wire event type degrades to "this client ignores it" rather than
+     * dropping the event as unparseable — and an event carrying a {@code payload} still decodes.
+     */
+    private static final ObjectMapper JSON =
+            new ObjectMapper()
+                    .configure(DeserializationFeature.READ_UNKNOWN_ENUM_VALUES_AS_NULL, true);
 
     private final HttpClient http;
 

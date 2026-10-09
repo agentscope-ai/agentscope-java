@@ -110,6 +110,10 @@ public final class HarnessGateway implements Gateway {
     private final ConcurrentHashMap<String, OutboundAddress> lastRouteBySessionKey =
             new ConcurrentHashMap<>();
 
+    /** Control-plane session ids adopted for externally dispatched AgentTasks. */
+    private final ConcurrentHashMap<String, String> externalSessionToGateKey =
+            new ConcurrentHashMap<>();
+
     private final SessionTurnGate sessionTurnGate = new LocalSessionTurnGate();
 
     private HarnessGateway(SessionAgentManager sessionAgentManager, ChannelManager channelManager) {
@@ -132,6 +136,7 @@ public final class HarnessGateway implements Gateway {
         HarnessGateway gateway = new HarnessGateway(sessionAgentManager, channelManager);
         sessionAgentManager.setAnnounceDispatcher(gateway::tryDispatchAnnounce);
         sessionAgentManager.setSpawnInterceptor(gateway::onSpawn);
+        sessionAgentManager.setMainHistoryAgentResolver(gateway::resolveMainHistoryAgent);
         gateway.restorePersistedMainSessions();
         return gateway;
     }
@@ -191,7 +196,7 @@ public final class HarnessGateway implements Gateway {
 
     /**
      * Binds the primary harness agent. Also registers it under its {@link
-     * HarnessAgent#getAgentId()} for routing.
+     * HarnessAgent#sessionKey(RuntimeContext)} stable agent identity for routing.
      */
     @Override
     public void bindMainAgent(HarnessAgent agent) {
@@ -200,6 +205,20 @@ public final class HarnessGateway implements Gateway {
         String id = resolveAgentId(agent);
         agentRegistry.put(id, agent);
         defaultAgentId = id;
+    }
+
+    /**
+     * Adopts a control-plane-allocated session id so later injects and wakeups can resolve it.
+     * Used by external AgentTask dispatch.
+     */
+    public void registerExternalSession(String sessionId, String gateKey) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId required");
+        }
+        if (gateKey == null || gateKey.isBlank()) {
+            throw new IllegalArgumentException("gateKey required");
+        }
+        externalSessionToGateKey.put(sessionId, gateKey);
     }
 
     @Override
@@ -437,8 +456,32 @@ public final class HarnessGateway implements Gateway {
                 .orElse(false);
     }
 
+    /** Resolves persisted MAIN metadata without dispatching work or creating a subagent. */
+    private HarnessAgent resolveMainHistoryAgent(SessionEntry entry) {
+        // Prefer the precise catalog/tenant routing id. Display names can repeat across workspaces.
+        String gate = entry.gateKey();
+        String marker = "|x:agentId=";
+        int start = gate == null ? -1 : gate.indexOf(marker);
+        if (start >= 0) {
+            start += marker.length();
+            int end = gate.indexOf('|', start);
+            return agentRegistry.get(end < 0 ? gate.substring(start) : gate.substring(start, end));
+        }
+        HarnessAgent direct = agentRegistry.get(entry.agentId());
+        if (direct != null) return direct;
+        HarnessAgent match = null;
+        for (HarnessAgent candidate : agentRegistry.values()) {
+            if (entry.agentId().equals(candidate.getAgentId())
+                    || entry.agentId().equals(resolveAgentId(candidate))) {
+                if (match != null && match != candidate) return null;
+                match = candidate;
+            }
+        }
+        return match;
+    }
+
     private static String resolveAgentId(HarnessAgent ha) {
-        String id = ha != null ? ha.getAgentId() : null;
+        String id = ha != null ? ha.sessionKey(RuntimeContext.empty()).agentId() : null;
         return (id != null && !id.isBlank()) ? id : "main";
     }
 

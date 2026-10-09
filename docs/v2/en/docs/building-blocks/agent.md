@@ -1,18 +1,16 @@
 ---
-title: "Agent"
-description: "Learn how to define and configure agents in AgentScope Java 2.0"
+title: Agent
+description: Learn how to define and configure agents in AgentScope Java 2.0
+zh_link: /v2/zh/docs/building-blocks/agent
 ---
 
 ## Overview
 
-`Agent` (interface at `io.agentscope.core.agent.Agent`, default implementation `ReActAgent`) is the core abstraction — a reasoning-acting loop engine that integrates models, tools, the permission system, human-in-the-loop, context management, middlewares, state management, and the event system into a single unified interface.
+`Agent` (`io.agentscope.core.agent.Agent`) is the common interface for agent execution. `ReActAgent` implements the fundamental reasoning-acting loop: the model reasons, calls tools and uses their results to continue until it can respond. This loop is the foundation of AgentScope Harness.
 
-Its primary responsibilities are:
+`HarnessAgent` wraps a `ReActAgent`, keeping that loop unchanged while adding built-in workspace, long-term memory, context compaction, skills, subagents, sandboxes, and session logging and recovery. **Start with `HarnessAgent` for most business applications.** Use `ReActAgent` directly when you need the underlying engine or want to compose these capabilities yourself. See [Quickstart](/v2/en/docs/quickstart) to get started and [Harness architecture](/v2/en/docs/harness/architecture) for the available capabilities.
 
-- Receive input messages or events; orchestrate tools to complete tasks.
-- Manage context (conversation history is held on `AgentState.getContext()` and can be persisted automatically via an `AgentStateStore`).
-- Provide middleware hooks at key lifecycle points for custom logic.
-- Manage concurrent and sequential tool execution automatically.
+This page explains the common underlying APIs using `ReActAgent` examples. For both agent types, share a configured Builder, build an instance for each direct request, and close it after execution; see [Instance lifecycle](#instance-lifecycle) for details.
 
 ### Core interface
 
@@ -24,13 +22,25 @@ The `Agent` interface composes three capability interfaces: `CallableAgent`, `St
 | `streamEvents(List<Msg>)` / `streamEvents(Msg)` | Same loop, but emits `AgentEvent`s incrementally |
 | `observe(Msg)` / `observe(List<Msg>)` | Append messages to context without triggering reasoning (returns `Mono<Void>`) |
 
-`ReActAgent` adds overloads for structured output (`call(msgs, structuredOutputClass, runtimeContext)`) and convenient per-call metadata via `RuntimeContext`.
+Both `ReActAgent` and `HarnessAgent` support structured output (`call(msgs, structuredOutputClass, runtimeContext)`) and convenient per-call metadata via `RuntimeContext`.
+
+### Choose an invocation style for your application
+
+| What you want to build | Use |
+| --- | --- |
+| Replies, structured extraction or one step in a workflow | `agent.call(input, ctx)` |
+| Incremental text and tool progress within the current request | `agent.streamEvents(input, ctx)` |
+| Background execution, durable queueing, guidance during work or interrupted-task continuation | Session operations from `agent.session(ctx)`, available on HarnessAgent |
+
+Both `call` and `streamEvents` support ongoing conversations, and each call can include multiple reasoning steps and tool calls. With the default HarnessAgent configuration, both also save Session Log and checkpoints. Continue using direct calls if you only need conversation memory or history queries.
+
+Start with direct calls below. For background task management, read [Session operations, events and recovery](/v2/en/docs/harness/session-log). To use hosted agents over HTTP, read the [Service Agent API](/v2/en/service/session-event-log).
 
 ### Main loop
 
-Each `call` runs through the reasoning-acting loop. The diagram below shows the main control flow:
+Both `ReActAgent` and `HarnessAgent` run the same reasoning-acting loop for each `call`. The diagram below shows the main control flow:
 
-```{mermaid}
+```mermaid
 flowchart TD
     A([Input: messages / event]) --> B{Waiting on\nexternal event?}
     B -- yes --> C[Apply event\nupdate tool state]
@@ -57,17 +67,33 @@ flowchart TD
     P --> E
 ```
 
+## Instance lifecycle
+
+**Share a configured Builder, call `builder.build()` for each request, and close that Agent when execution ends.** Configure the Builder at application startup and only build from it in handlers. Pass request identity and parameters in a fresh `RuntimeContext` instead of changing the shared Builder.
+
+Use try-with-resources around synchronous execution and its wait. For reactive calls, use `Mono.using` / `Flux.using` to close on completion, error or cancellation. The application can manage shared model clients, pools, stores and skill repositories until shutdown. Shared tools and middleware must be thread-safe and must not store the current user or context in instance fields.
+
+A new instance does not mean a new conversation. Harness restores committed state using stable `agentId`, `userId`, `sessionId` and storage configuration. A plain ReActAgent without a session log or `stateStore` cannot transfer history held only in the old instance to a new one.
+
+**Sharing an Agent instance is also supported.** The execution engine is stateless, with session state addressed by identity. The application closes a shared instance at shutdown. Within one instance, the execution gate serializes direct calls for the same user/session while different sessions can run concurrently. Instances still own caches, execution gates and background resources; stateless does not mean lifecycle-free. The examples below use the recommended per-request pattern.
+
+Background `AgentSession`, Channel and hosted runtimes are owned by their managers. Do not close their Agent when a submission request returns. Interrupting a direct call also requires its running instance; constructing another Agent cannot interrupt the old instance's execution.
+
 ## Configuring an agent
 
-Build an agent with `ReActAgent.builder()...build()`. `.model(...)` takes either a `ModelRegistry`-resolved string id (most common — picks up env vars automatically) or an explicit `Model` instance (when you need explicit control over timeouts / custom endpoints / etc.).
+Define shared configuration with `ReActAgent.builder()`, then call `agentBuilder.build()` for each request. `.model(...)` takes either a `ModelRegistry`-resolved string id (most common — picks up env vars automatically) or an explicit `Model` instance (when you need explicit control over timeouts / custom endpoints / etc.).
 
-::::{tab-set}
-:::{tab-item} String model id (recommended)
+
+<Tabs>
+
+
+<Tab title="String model id (recommended)">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
 
-ReActAgent agent =
+ReActAgent.Builder agentBuilder =
         ReActAgent.builder()
                 .name("my_agent")
                 .sysPrompt("You are a helpful assistant.")
@@ -75,18 +101,21 @@ ReActAgent agent =
                 // Switch providers by using "openai:gpt-5.5" / "anthropic:claude-sonnet-4-5"
                 // / "deepseek:deepseek-v4-flash" / "gemini:gemini-2.0-flash" / "ollama:llama3".
                 .model("dashscope:qwen-plus")
-                .toolkit(new Toolkit())
-                .build();
+                .toolkit(new Toolkit());
 ```
-:::
-:::{tab-item} Explicit Model builder
+
+</Tab>
+
+
+<Tab title="Explicit Model builder">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 
-ReActAgent agent =
+ReActAgent.Builder agentBuilder =
         ReActAgent.builder()
                 .name("my_agent")
                 .sysPrompt("You are a helpful assistant.")
@@ -97,11 +126,14 @@ ReActAgent agent =
                                 .stream(true)
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
-                .toolkit(new Toolkit())
-                .build();
+                .toolkit(new Toolkit());
 ```
-:::
-:::{tab-item} With Toolkit / MCP
+
+</Tab>
+
+
+<Tab title="With Toolkit / MCP">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
@@ -113,26 +145,34 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new TodoTools());          // reflectively register @Tool methods
 toolkit.registerTool(new MyCustomTools());      // custom tool class
 
-McpClientWrapper amap = McpClientBuilder.streamableHttp()
-        .name("amap")
-        .url("https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
-        .build();
+McpClientWrapper amap =
+        McpClientBuilder.create("amap")
+                .streamableHttpTransport(
+                        "https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
+                .buildAsync()
+                .block();
 toolkit.registerMcpClient(amap).block();
 
-ReActAgent agent =
+ReActAgent.Builder agentBuilder =
         ReActAgent.builder()
                 .name("my_agent")
                 .sysPrompt("You are a helpful assistant.")
                 .model("dashscope:qwen-max")
-                .toolkit(toolkit)
-                .build();
+                .toolkit(toolkit);
 ```
-:::
-::::
 
-:::{tip}
-The `ModelRegistry` string form (`<provider>:<model>`) requires the matching model extension module on the classpath. It supports `dashscope` / `openai` / `deepseek` / `anthropic` / `gemini` / `ollama` and reads the matching API key (`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) from the environment. For long-running scenarios that also need a workspace, session persistence, memory compaction, subagents, and so on, use [`HarnessAgent`](../harness/architecture.md) — it is a thin wrapper around `ReActAgent` with a largely identical builder.
-:::
+</Tab>
+
+
+</Tabs>
+
+
+
+<Tip>
+
+The `ModelRegistry` string form (`<provider>:<model>`) requires the matching model extension module on the classpath. It supports `dashscope` / `openai` / `openai-official` / `deepseek` / `anthropic` / `gemini` / `ollama` and reads the matching API key (`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) from the environment. For long-running scenarios that also need a workspace, session persistence, memory compaction, subagents, and so on, use [`HarnessAgent`](/v2/en/docs/harness/architecture) — it is a thin wrapper around `ReActAgent` with a largely identical builder.
+
+</Tip>
 
 ### Builder fields
 
@@ -145,50 +185,126 @@ The `ModelRegistry` string form (`<provider>:<model>`) requires the matching mod
 | `middlewares` | `List<? extends MiddlewareBase>` | `List.of()` | Applied to agent / reasoning / acting / model call / system prompt hooks |
 | `stateStore` | `AgentStateStore` | `null` (no persistence) | When set, agent automatically loads/saves `AgentState` on every `call`, keyed by the `(userId, sessionId)` of the call's `RuntimeContext` |
 | `defaultSessionId` | `String` | agent `name` | Fallback `sessionId` used when a call's `RuntimeContext` carries none |
-| `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules, see [Permission System](./permission-system.md) |
-| `modelConfig` | `ModelConfig` | default | Model retries and fallback model |
-| `reactConfig` | `ReactConfig` | default | Max iterations and reject handling |
-| `maxIters` | `int` | `10` | Max iterations of the ReAct main loop (alternative to `reactConfig`) |
+| `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules, see [Permission System](/v2/en/docs/building-blocks/permission-system) |
+| `maxIters` | `int` | `10` | Max iterations of the ReAct main loop |
+
+## Running an agent
+
+Below, `agentBuilder` is the shared application configuration. In fragments that omit the surrounding resource scope, `agent` is the instance created for the current request and closed after execution.
+
+`call` and `streamEvents` accept the same input messages and drive the same reasoning-acting loop. They differ in how the result is delivered.
+
+`call` returns `Mono<Msg>` and `streamEvents` returns `Flux<AgentEvent>`; both start on subscription. A CLI can wait with `block()` / `blockLast()`, while a WebFlux handler can return the publisher for the framework to subscribe. The caller owns this execution subscription; cancelling it cancels that execution.
+
+Choose one entry point and subscribe once for each request. `streamEvents` starts an execution with live events; use log read APIs to query committed history.
+
+### call
+
+`call` consumes all events internally and returns the final `Msg` when the agent finishes or pauses for external interaction.
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
+import java.util.List;
+
+UserMessage msg = new UserMessage("What files are in the current directory?");
+RuntimeContext ctx = RuntimeContext.builder().userId("alice").sessionId("session-001").build();
+try (ReActAgent agent = agentBuilder.build()) {
+    Msg result = agent.call(List.of(msg), ctx).block();
+    System.out.println(result.getTextContent());
+}
+```
+
+### streamEvents
+
+`streamEvents` emits `AgentEvent`s one by one so you can stream text, tool-call progress, and lifecycle events to your UI in real time. Dispatch on `event.getType()` to handle each kind:
+
+```java
+import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+
+try (ReActAgent agent = agentBuilder.build()) {
+    agent.streamEvents(new UserMessage("Summarize the README."), ctx)
+            .doOnNext(event -> {
+                if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
+                    // Streaming text fragment — append to UI or stdout
+                    System.out.print(((TextBlockDeltaEvent) event).getDelta());
+                } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
+                    // The agent is about to call a tool — surface the call info
+                    System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
+                }
+                // Other events: thinking blocks, tool results, reply end, etc.
+            })
+            .blockLast();
+}
+```
+
+Full event-type and field reference: [Message and event](/v2/en/docs/building-blocks/message-and-event).
+
+### observe
+
+Use `observe` to inject a message into the agent's context without triggering a reply — useful in multi-agent setups where one agent observes another agent's output.
+
+```java
+agent.observe(otherAgentMsg).block();
+```
 
 ## Multi-user / multi-session concurrency
 
-`ReActAgent` is **stateless between calls** — a single instance can serve multiple users and sessions concurrently. Each `call()` uses the `(userId, sessionId)` carried by its `RuntimeContext` to locate the correct conversation state; different sessions are fully isolated.
+Each request creates its own instance and `RuntimeContext` from the shared Builder. This WebFlux handler expression uses the previously configured `agentBuilder`:
 
 ```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.state.JsonFileAgentStateStore;
-import java.nio.file.Paths;
+import reactor.core.publisher.Mono;
 
-// Create one agent instance at application startup (singleton)
-ReActAgent agent = ReActAgent.builder()
-        .name("assistant")
-        .sysPrompt("You are a helpful assistant.")
-        .model("dashscope:qwen-plus")
-        .stateStore(new JsonFileAgentStateStore(
-                Paths.get(System.getProperty("user.home"), ".agentscope/sessions")))
-        .build();
-
-// In your HTTP handler — different requests pass different RuntimeContexts, fully isolated
-agent.call(List.of(new UserMessage("Hello")),
-        RuntimeContext.builder().userId("alice").sessionId("session-1").build()).block();
-
-agent.call(List.of(new UserMessage("Hi there")),
-        RuntimeContext.builder().userId("bob").sessionId("session-2").build()).block();
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId(userId).sessionId(sessionId).build();
+return Mono.using(
+        agentBuilder::build,
+        agent -> agent.call(new UserMessage(userInput), ctx),
+        ReActAgent::close);
 ```
 
-At the start of each `call()`, the agent automatically loads the `AgentState` (conversation context, permission rules, etc.) for the given `(userId, sessionId)`. When the call finishes, the state is saved back. Different sessions are completely isolated.
+For a streaming HTTP response, use `Flux.using(agentBuilder::build, agent -> agent.streamEvents(input, ctx), ReActAgent::close)`. Let the web framework subscribe; do not close the Agent before subscription.
 
-:::{tip}
-Calls targeting the same `(userId, sessionId)` are **serialized** — a second request waits for the first to complete. Calls targeting different sessions run in parallel.
-:::
+Different sessions can run concurrently. Per-instance execution gates do not coordinate other instances. Order requests to the same conversation in an application queue, or use an `AgentSession` owned by a background manager. Native journal fencing prevents competing writes but does not provide cross-instance FIFO queueing; a legacy `stateStore` alone is not a distributed execution lock.
 
-A complete Spring Boot example: `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`.
+The full Spring Boot example is `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`.
+
+## Execution control in session applications
+
+Use `AgentSession` when a chat product needs work to continue after the page closes, durable task queueing, or coordinated recovery and pending-action handling. Ordinary conversations, streaming interfaces and applications managing their own HITL flow can continue using direct calls.
+
+The session accepts new tasks through `submit`, receives guidance through `steer` / `inject`, and continues existing tasks through `respond` / `resume`. The framework owns background execution; frontends read snapshots and durable events. See the [session guide](/v2/en/docs/harness/session-log) for the complete workflow.
+
+Choose direct calls or session operations to drive a given conversation; read-only history access can be shared. Observe an already submitted task by reading its events. Calling `streamEvents` would start another execution.
+
+<Accordion title="Advanced: own a single execution">
+
+`ReActAgent` and `HarnessAgent` provide `prepareRun(messages, context)` for events and `prepareCall(messages, context)` for the final reply. Both return an `AgentRun<T>` with a unique `runId()`. Preparing a handle does not execute the agent; subscribe once to `stream()` to start it.
+
+```java
+AgentRun<AgentEvent> run = agent.prepareRun(List.of(new UserMessage("Hello")), context);
+String runId = run.runId(); // Register the handle in the application's run manager first.
+run.stream().subscribe(this::onEvent, this::onError);
+
+// A separate request can look up this handle by runId.
+run.cancel();
+```
+
+- `cancel()` cancels the reactive execution immediately, including before subscription and while waiting for the session gate. Subscribers receive `CancellationException`. Cancelling queued B never interrupts running A or allows C to overtake A.
+- `interrupt()` / `interrupt(message)` asks an admitted execution to stop at a cooperative checkpoint. ReActAgent returns its interrupted recovery reply; the handle then completes normally. Before admission, interruption cancels only that queued execution.
+- `status()` returns `CREATED`, `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELLED`. `QUEUED` includes setup before admission to the core lifecycle. `termination()` observes the terminal status without starting execution. Downstream subscription disposal also cancels the handle.
+- A handle permits one subscription. Create a new handle for a new execution; repeated subscriptions are rejected. Terminal handles cannot interrupt later calls.
+
+Run managers own lookup, authorization and terminal cleanup. The Agent does not retain a registry of RuntimeContext objects. Cancellation does not roll back external effects or forcibly terminate a blocking tool that ignores cancellation. Hard cancellation also does not promise the cooperative interrupted reply/state-save path.
+
+</Accordion>
 
 ## Interrupt
 
-To cancel an in-flight call from the outside (user cancellation, timeout, graceful shutdown), use `interrupt`:
+The following applies to executions started with `call` / `streamEvents`. For interruption from another request, the application must locate the Agent instance running the target execution and remove and close it when execution ends. Use `agent.interrupt` for cooperative interruption. For tasks submitted through AgentSession, use `session.interrupt()` and follow the [session continuation guide](/v2/en/docs/harness/session-log#continue-after-interruption):
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -202,16 +318,16 @@ RuntimeContext target = RuntimeContext.builder()
 // Interrupt the in-flight call for that session
 agent.interrupt(target);
 
-// Interrupt with a message — the LLM sees this message when the session resumes
+// Attach a message to the interruption context
 agent.interrupt(target, new UserMessage("User cancelled the operation"));
 ```
 
-Interrupt is **per-session**: it only affects the call running on the specified `(userId, sessionId)` — other concurrent sessions on the same agent are unaffected.
+This convenience API selects the call currently running in `(userId, sessionId)`. It does not select a queued call: use its execution handle for that. Interrupting an idle session is a no-op. The signal itself belongs to the execution and is not persisted in AgentState.
 
 **What happens after interrupt:**
 - The current reasoning/tool execution is stopped at the next checkpoint (start of reasoning, start of acting, each streaming chunk)
 - The agent returns a Msg tagged with `GenerateReason.INTERRUPTED`
-- The conversation state (AgentState) is saved automatically — the next `call()` to the same session resumes from the interruption point
+- State is saved through the configured backend, and the next call reads the saved context. Pending tool interactions still require the corresponding answers; a tool’s internal execution progress is not restored
 
 You can also use raw `(userId, sessionId)` strings:
 
@@ -220,61 +336,9 @@ agent.interrupt("alice", "session-001");
 agent.interrupt("alice", "session-001", interruptMsg);
 ```
 
-## Running an agent
-
-`call` and `streamEvents` accept the same input messages and drive the same reasoning-acting loop. They differ in how the result is delivered.
-
-### call
-
-`call` consumes all events internally and returns the final `Msg` when the agent finishes or pauses for external interaction.
-
-```java
-import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.UserMessage;
-import java.util.List;
-
-UserMessage msg = new UserMessage("What files are in the current directory?");
-Msg result = agent.call(List.of(msg), RuntimeContext.empty()).block();
-System.out.println(result.getTextContent());
-```
-
-### streamEvents
-
-`streamEvents` emits `AgentEvent`s one by one so you can stream text, tool-call progress, and lifecycle events to your UI in real time. Dispatch on `event.getType()` to handle each kind:
-
-```java
-import io.agentscope.core.event.AgentEventType;
-import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ToolCallStartEvent;
-
-agent.streamEvents(new UserMessage("Summarize the README."))
-        .doOnNext(event -> {
-            if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
-                // Streaming text fragment — append to UI or stdout
-                System.out.print(((TextBlockDeltaEvent) event).getDelta());
-            } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
-                // The agent is about to call a tool — surface the call info
-                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
-            }
-            // Other events: thinking blocks, tool results, reply end, etc.
-        })
-        .blockLast();
-```
-
-Full event-type and field reference: [Message and event](./message-and-event.md).
-
-### observe
-
-Use `observe` to inject a message into the agent's context without triggering a reply — useful in multi-agent setups where one agent observes another agent's output.
-
-```java
-agent.observe(otherAgentMsg).block();
-```
-
 ## RuntimeContext (per-call context)
 
-`RuntimeContext` (`io.agentscope.core.agent.RuntimeContext`) is a **per-call metadata bag**: pass one instance to `call` / `stream`, and the agent binds it for the duration of that call so downstream tools, middlewares, and hooks all observe the same reference. The framework unbinds it on completion.
+`RuntimeContext` (`io.agentscope.core.agent.RuntimeContext`) is a **per-call metadata bag**. Pass a separate instance to each call; tools and middlewares receive the context through their parameters. The agent does not expose a shared current-context getter or inject contexts into shared hook fields. Skill repository operations and `HarnessAgent.promoteSkill(name, reviewerId, ctx)` likewise take an explicit context; context-less repository operations use the default namespace.
 
 It is **not** persistent state — `AgentState` (conversation context, compressed summaries, permission rules, tool state) covers that. `RuntimeContext` carries data that is scoped to a single invocation: tenant / userId / request-id, DB connections, audit loggers, feature flags, and so on.
 
@@ -288,7 +352,7 @@ It is **not** persistent state — `AgentState` (conversation context, compresse
 | String attributes (free-form key-value) | `put(String key, Object value)` | `<T> T get(String key)` |
 | Typed attributes (inject business POJOs by `Class<T>`) | `put(Class<T> type, T value)` / `put(String key, Class<T> type, T value)` | `<T> T get(Class<T> type)` / `<T> T get(String key, Class<T> type)` |
 
-Typed attributes power tool injection — declare a parameter of the matching type on a `@Tool` method and the framework supplies the value. See [Tool — Receiving context](./tool.md#receiving-context). String attributes are typically used for in-process coordination (e.g. middleware-to-middleware signalling). The two layers are isolated: typed values do not appear in `getExtra()` and vice-versa.
+Typed attributes power tool injection — declare a parameter of the matching type on a `@Tool` method and the framework supplies the value. See [Tool — Receiving context](/v2/en/docs/building-blocks/tool#receiving-context). String attributes are typically used for in-process coordination (e.g. middleware-to-middleware signalling). The two layers are isolated: typed values do not appear in `getExtra()` and vice-versa.
 
 ### Construct and pass
 
@@ -309,13 +373,13 @@ RuntimeContext ctx =
 Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ```
 
-`ReActAgent` provides `RuntimeContext` overloads for `call` and `stream`; `streamEvents` does not — when you need a context with the event stream, use `stream(msgs, options, ctx)`, or configure a global `toolExecutionContext` on the builder. When no context is passed the framework substitutes `RuntimeContext.empty()` (null session fields, empty attribute maps), and the agent falls back to its builder-time `defaultSessionId`.
+`ReActAgent` provides `RuntimeContext` overloads for `call` and `streamEvents` (plus deprecated `stream` overloads kept for compatibility). For event streams, pass the context explicitly with `streamEvents(msgs, ctx)`. When no context is passed the framework substitutes `RuntimeContext.empty()` (null session fields, empty attribute maps), and the agent falls back to its builder-time `defaultSessionId`.
 
 ### Who reads it
 
-- **Tools** (`@Tool` methods and `ToolBase.callAsync`) — see [Tool — Receiving context](./tool.md#receiving-context).
-- **Middleware** (every `MiddlewareBase` hook) — received as the second parameter `ctx`. See [Middleware — Reading RuntimeContext](./middleware.md#reading-runtimecontext).
-- **All threads within the same call** — the internal maps are `ConcurrentMap`s, so hooks and tools can read/write the same instance to coordinate.
+- **Tools** (`@Tool` methods and `ToolBase.callAsync`) — see [Tool — Receiving context](/v2/en/docs/building-blocks/tool#receiving-context).
+- **Middleware** (every `MiddlewareBase` hook) — received as the second parameter `ctx`. See [Middleware — Reading RuntimeContext](/v2/en/docs/building-blocks/middleware#reading-runtimecontext).
+- **All threads within the same call** — the internal maps are `ConcurrentMap`s, so middlewares and tools can read/write the same instance to coordinate.
 
 ### Relation to persistence
 
@@ -324,11 +388,17 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 Runnable examples: `agentscope-examples/documentation/.../context/RuntimeContextExample.java`, `tool/ToolExecutionContextExample.java`.
 
-:::{note}
+
+<Note>
+
 A legacy `ToolExecutionContext` (`io.agentscope.core.tool`) is `@Deprecated`. New code should use `RuntimeContext`. The legacy type is bridged automatically via `RuntimeContext.asToolExecutionContext()`, so existing code keeps working.
-:::
+
+</Note>
+
 
 ## Human-in-the-loop
+
+The examples below handle confirmations and external results through direct calls. Use the same conversation context (`ctx`) for the request and its answer. Your application manages the interaction UI and subsequent invocation. For durable pending actions and automatic task association, use [AgentSession.respond](/v2/en/docs/harness/session-log#answer-hitl-requests).
 
 The agent pauses and emits a special event in two cases: a tool call requiring **user confirmation** (the permission system returned ASK), or a tool marked as **external execution** (the result must come from outside the agent). In both cases, you resume the agent by feeding the result back through the next `call`.
 
@@ -336,24 +406,28 @@ The agent pauses and emits a special event in two cases: a tool call requiring *
 
 When the permission system decides a tool call needs user approval, the agent emits `RequireUserConfirmEvent` and pauses.
 
-**1. Receive `RequireUserConfirmEvent`** — use `streamEvents` to detect the pause. The event carries `getReplyId()` (used to resume) and `getToolCalls()` — a list of `ToolUseBlock` each exposing `getId()` / `getName()` / `getInput()` / `getSuggestedRules()`.
+**1. Receive `RequireUserConfirmEvent`** — use `streamEvents` to detect the pause. The event carries `getReplyId()` (used to resume) and `getToolCalls()` — a list of `ToolUseBlock` each exposing `getId()` / `getName()` / `getInput()`.
 
 ```java
 import io.agentscope.core.event.RequireUserConfirmEvent;
 
-agent.streamEvents(msg)
+agent.streamEvents(msg, ctx)
         .doOnNext(event -> {
             if (event instanceof RequireUserConfirmEvent confirm) {
-                confirm.getToolCalls().forEach(tc -> {
-                    System.out.println("Tool: " + tc.getName() + ", input: " + tc.getInput());
-                    System.out.println("Suggested rules: " + tc.getSuggestedRules());
-                });
+                confirm.getToolCalls()
+                        .forEach(
+                                tc ->
+                                        System.out.println(
+                                                "Tool: "
+                                                        + tc.getName()
+                                                        + ", input: "
+                                                        + tc.getInput()));
             }
         })
         .blockLast();
 ```
 
-**2. Build confirm results** — construct a `ConfirmResult` per pending call. You can tweak the tool input on the way back, or accept the suggested rules so identical future calls auto-allow:
+**2. Build confirm results** — construct a `ConfirmResult` per pending call. You can tweak the tool input on the way back; to remember a choice for identical future calls, pass explicit `PermissionRule`s in the `rules` argument (suggested rules surface on the permission engine's `PermissionDecision`, not on the tool call):
 
 ```java
 import io.agentscope.core.event.ConfirmResult;
@@ -364,10 +438,8 @@ List<ConfirmResult> confirmResults = new ArrayList<>();
 for (var tc : confirmEvent.getToolCalls()) {
     confirmResults.add(
             new ConfirmResult(
-                    /* confirmed = */ true,                  // false to deny
-                    /* toolCall  = */ tc,                    // pass back (optionally modified)
-                    /* rules     = */ tc.getSuggestedRules() // accept rules → future calls auto-allow
-                    ));
+                    /* confirmed = */ true, // false to deny
+                    /* toolCall  = */ tc)); // pass back (optionally modified)
 }
 ```
 
@@ -376,14 +448,15 @@ for (var tc : confirmEvent.getToolCalls()) {
 ```java
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
+import java.util.Map;
 
 UserMessage resumeMsg =
         UserMessage.builder()
-                .metadata(java.util.Map.of(
+                .metadata(Map.of(
                         Msg.METADATA_CONFIRM_RESULTS, confirmResults))
                 .build();
 
-Msg result = agent.call(List.of(resumeMsg), RuntimeContext.empty()).block();
+Msg result = agent.call(List.of(resumeMsg), ctx).block();
 ```
 
 - **Confirmed** tool calls execute immediately; the agent continues reasoning.
@@ -399,7 +472,7 @@ When the agent invokes a tool with `isExternalTool() == true`, it emits `Require
 ```java
 import io.agentscope.core.event.RequireExternalExecutionEvent;
 
-agent.streamEvents(msg)
+agent.streamEvents(msg, ctx)
         .doOnNext(event -> {
             if (event instanceof RequireExternalExecutionEvent ext) {
                 ext.getToolCalls().forEach(tc ->
@@ -431,15 +504,21 @@ for (var tc : externalEvent.getToolCalls()) {
 }
 ```
 
-**3. Resume the agent** — feed the results back as the next `call`'s input message. The results are injected into the agent context and reasoning continues from where it paused. See `agentscope-examples/documentation/.../hitl/InterruptionExample.java` for a complete walkthrough.
+**3. Resume the agent** — feed the results back as the next `call`'s input message. After the results are validated, they are injected into the agent context and the agent emits `ExternalExecutionResultEvent`; its `getReplyId()` matches the earlier `RequireExternalExecutionEvent#getReplyId()`. Reasoning then continues from where it paused.
 
-:::{tip}
+
+<Tip>
+
 Use `streamEvents` when building interactive UIs — it lets you detect pauses in real time and prompt the user immediately. Use `call` for programmatic flows that handle events automatically. Complete runnable examples: `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`.
-:::
+
+</Tip>
+
 
 ## Configuring state persistence (AgentStateStore)
 
-`AgentState` holds everything required to resume the agent — conversation context, compressed summaries, permission rules, tool state, and the current reply position. [`AgentStateStore`](../../integration/session/index.md) is its storage abstraction.
+The examples below configure state storage for a directly built `ReActAgent`. `HarnessAgent` saves history and checkpoints in Session Log by default, without an additional `stateStore` setting; see [storage configuration](/v2/en/docs/harness/session-log#storage-and-backend-configuration). See [Context](/v2/en/docs/building-blocks/context#session-log-and-agentstatestore) for the relationship between the stores.
+
+`AgentState` holds everything required to resume the agent — conversation context, compressed summaries, permission rules, tool state, and the current reply position. [`AgentStateStore`](/v2/en/integration/session/index) is its storage abstraction.
 
 **Set `stateStore(...)` on the builder and the agent persists and recovers automatically**: every `call` writes `AgentState` back; the next time you call with the same `(userId, sessionId)`, it loads. The agent instance is stateless with respect to sessions — the slot is chosen per-call from the `RuntimeContext` (falling back to `defaultSessionId`).
 
@@ -474,7 +553,7 @@ Built-in and extension implementations:
 | `InMemoryAgentStateStore` | `agentscope-core` | unit tests / single-process demos |
 | `JsonFileAgentStateStore` | `agentscope-core` | single-machine dev; JSON per `(userId, sessionId)` directory |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | multi-replica production; shared across processes and nodes |
-| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | when state must live in a relational store (audit / reporting) |
+| `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | when state must live in a relational store (audit / reporting) |
 
 A single `sessionId` is enough for most cases. For per-user partitioning, also set `userId` on the `RuntimeContext`; the store addresses each slot by the `(userId, sessionId)` pair.
 
@@ -486,7 +565,7 @@ state.getContext().size();                  // current message count
 String json = state.toJson();               // serialize to JSON
 ```
 
-For full field-by-field details, cross-node continuation, and how the state store interacts with compaction / Plan Mode / subagents, see [Context & AgentState](context.md) and [Compaction](../harness/compaction.md).
+For full field-by-field details, cross-node continuation, and how the state store interacts with compaction / Plan Mode / subagents, see [Context & AgentState](/v2/en/docs/building-blocks/context) and [Context management](/v2/en/docs/harness/context).
 
 ## Structured Output
 
@@ -581,8 +660,15 @@ ReActAgent.builder()
         .model("dashscope:qwen-plus")
         .maxRetries(3)                              // auto-retry on model call failure
         .fallbackModel("dashscope:qwen-max")        // switch to fallback after consecutive failures
+        .failoverListener((primary, error) ->       // observe the switch: which model failed, and why
+                metrics.recordFailover(primary.getModelName(), error))
         .build();
 ```
+
+The failover listener is invoked synchronously at the switch site with the original error — the
+only in-process signal of the switch, since the primary's error never reaches the event stream or
+the middlewares. Implementations must be non-blocking and thread-safe; exceptions they throw are
+logged and ignored without affecting the switch.
 
 ### Skills
 
@@ -603,18 +689,27 @@ ReActAgent.builder()
 
 ## Further reading
 
-::::{grid} 2
 
-:::{grid-item-card} Permission System
-:link: ./permission-system.html
+<CardGroup cols={2}>
+
+
+
+<Card title="Permission System" href="/v2/en/docs/building-blocks/permission-system">
+
 
 Control which tools the agent can call, and under what conditions.
-:::
 
-:::{grid-item-card} Middleware
-:link: ./middleware.html
+</Card>
+
+
+
+<Card title="Middleware" href="/v2/en/docs/building-blocks/middleware">
+
 
 Intercept and modify agent behavior at the agent, reasoning, acting, and model-call hooks.
-:::
 
-::::
+</Card>
+
+
+
+</CardGroup>
