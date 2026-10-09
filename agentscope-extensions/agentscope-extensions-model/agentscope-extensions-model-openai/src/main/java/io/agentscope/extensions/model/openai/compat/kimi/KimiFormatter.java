@@ -59,8 +59,10 @@ import org.slf4j.LoggerFactory;
  * parameter (e.g. {@code {"type": "disabled"}}), which can be passed through
  * {@code GenerateOptions.additionalBodyParam("thinking", Map.of("type", "disabled"))}.
  * {@code kimi-k3} uses the top-level {@code reasoning_effort} option
- * ({@code GenerateOptions.reasoningEffort}) instead. JSON mode is enabled via
- * {@code response_format = {"type": "json_object"}}; {@code json_schema} is not supported.
+ * ({@code GenerateOptions.reasoningEffort}) instead. Structured output is enabled via
+ * {@code response_format = {"type": "json_schema", "json_schema": {...}}}. When tools are
+ * also present, Kimi prioritises {@code response_format} over tool invocations, so the
+ * provider keeps the with-tools combination on the fallback path.
  *
  * <p>Usage:
  * <pre>{@code
@@ -78,6 +80,7 @@ import org.slf4j.LoggerFactory;
  * @see <a href="https://platform.kimi.com/docs/guide/use-thinking-models">Kimi thinking
  *     mode guide</a>
  * @see <a href="https://platform.kimi.com/docs/guide/use-tool-choice">Kimi tool choice guide</a>
+ * @see <a href="https://platform.kimi.com/docs/guide/response_format">Structured Output guide</a>
  */
 public class KimiFormatter extends OpenAIChatFormatter {
 

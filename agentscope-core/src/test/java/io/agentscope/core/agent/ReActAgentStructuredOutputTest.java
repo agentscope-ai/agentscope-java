@@ -38,6 +38,8 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolChoice;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
@@ -61,6 +63,13 @@ class ReActAgentStructuredOutputTest {
         public String location;
         public String temperature;
         public String condition;
+    }
+
+    static class WeatherTools {
+        @Tool(description = "Look up the current weather for a city")
+        public String lookupWeather(@ToolParam(name = "city", description = "city") String city) {
+            return "Sunny, 72°F";
+        }
     }
 
     @BeforeEach
@@ -161,198 +170,6 @@ class ReActAgentStructuredOutputTest {
         assertEquals("San Francisco", result.location);
         assertEquals("72°F", result.temperature);
         assertEquals("Sunny", result.condition);
-    }
-
-    @Test
-    void testStructuredOutputAutoFallbackToToolBased() {
-        Memory memory = new InMemoryMemory();
-
-        // Create a mock model that returns tool call, then text
-        Map<String, Object> toolInput =
-                Map.of(
-                        "response",
-                        Map.of(
-                                "location",
-                                "San Francisco",
-                                "temperature",
-                                "72°F",
-                                "condition",
-                                "Sunny"));
-
-        MockModel mockModel =
-                new MockModel(
-                        msgs -> {
-                            // Check if we have any TOOL role messages
-                            boolean hasToolResults =
-                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
-
-                            if (!hasToolResults) {
-                                // First call: return tool use
-                                return List.of(
-                                        ChatResponse.builder()
-                                                .id("msg_1")
-                                                .content(
-                                                        List.of(
-                                                                ToolUseBlock.builder()
-                                                                        .id("call_123")
-                                                                        .name("generate_response")
-                                                                        .input(toolInput)
-                                                                        .content(
-                                                                                JsonUtils
-                                                                                        .getJsonCodec()
-                                                                                        .toJson(
-                                                                                                toolInput))
-                                                                        .build()))
-                                                .usage(new ChatUsage(10, 20, 30))
-                                                .build());
-                            } else {
-                                // Second call: return text (finished)
-                                return List.of(
-                                        ChatResponse.builder()
-                                                .id("msg_2")
-                                                .content(
-                                                        List.of(
-                                                                TextBlock.builder()
-                                                                        .text("Done")
-                                                                        .build()))
-                                                .usage(new ChatUsage(5, 10, 15))
-                                                .build());
-                            }
-                        });
-
-        // Create agent with AUTO strategy (default)
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("weather-agent")
-                        .sysPrompt("You are a weather assistant")
-                        .model(mockModel)
-                        .toolkit(toolkit)
-                        .build();
-
-        Msg inputMsg =
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(
-                                TextBlock.builder()
-                                        .text("What's the weather in San Francisco?")
-                                        .build())
-                        .build();
-
-        // Call agent and extract structured data from response message
-        Msg responseMsg = agent.call(inputMsg, WeatherResponse.class).block();
-        assertNotNull(responseMsg);
-        assertNotNull(responseMsg.getMetadata());
-
-        // Extract structured data from metadata
-        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
-
-        assertNotNull(result);
-        assertEquals("San Francisco", result.location);
-        assertEquals("72°F", result.temperature);
-        assertEquals("Sunny", result.condition);
-    }
-
-    @Test
-    void testStructuredOutputWithoutNewMessages() {
-        Memory memory = new InMemoryMemory();
-
-        // Pre-populate memory with some conversation
-        Msg userMsg =
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(
-                                TextBlock.builder()
-                                        .text("What's the weather in San Francisco?")
-                                        .build())
-                        .build();
-        memory.addMessage(userMsg);
-
-        // Create a mock model that returns tool call, then text
-        Map<String, Object> toolInput =
-                Map.of(
-                        "response",
-                        Map.of(
-                                "location",
-                                "San Francisco",
-                                "temperature",
-                                "72°F",
-                                "condition",
-                                "Sunny"));
-
-        MockModel mockModel =
-                new MockModel(
-                        msgs -> {
-                            // Check if we have any TOOL role messages (tool execution results)
-                            boolean hasToolResults =
-                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
-
-                            if (!hasToolResults) {
-                                // First call: return tool use for generate_response
-                                return List.of(
-                                        ChatResponse.builder()
-                                                .id("msg_1")
-                                                .content(
-                                                        List.of(
-                                                                ToolUseBlock.builder()
-                                                                        .id("call_123")
-                                                                        .name("generate_response")
-                                                                        .input(toolInput)
-                                                                        .content(
-                                                                                JsonUtils
-                                                                                        .getJsonCodec()
-                                                                                        .toJson(
-                                                                                                toolInput))
-                                                                        .build()))
-                                                .usage(new ChatUsage(10, 20, 30))
-                                                .build());
-                            } else {
-                                // Second call (after tool execution): return simple text
-                                return List.of(
-                                        ChatResponse.builder()
-                                                .id("msg_2")
-                                                .content(
-                                                        List.of(
-                                                                TextBlock.builder()
-                                                                        .text("Response generated")
-                                                                        .build()))
-                                                .usage(new ChatUsage(5, 10, 15))
-                                                .build());
-                            }
-                        });
-
-        // Create agent
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("weather-agent")
-                        .sysPrompt("You are a weather assistant")
-                        .model(mockModel)
-                        .toolkit(toolkit)
-                        .build();
-
-        // Call with only structured output class - no new messages
-        // Should use existing memory state to generate structured output
-        Msg responseMsg = agent.call(WeatherResponse.class).block();
-        assertNotNull(responseMsg);
-        assertNotNull(responseMsg.getMetadata());
-
-        // Extract structured data from metadata
-        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
-
-        // Verify structured output
-        assertNotNull(result);
-        assertEquals("San Francisco", result.location);
-        assertEquals("72°F", result.temperature);
-        assertEquals("Sunny", result.condition);
-
-        // Verify memory size: should have original user message + assistant responses
-        // but NO new user messages were added
-        List<Msg> memoryMessages = memory.getMessages();
-        assertEquals(
-                1,
-                memoryMessages.stream().filter(m -> m.getRole() == MsgRole.USER).count(),
-                "Should only have the original user message, no new ones added");
     }
 
     @Test
@@ -822,9 +639,10 @@ class ReActAgentStructuredOutputTest {
         assertTrue(mockModel.getLastOptions().getToolChoice() instanceof ToolChoice.Specific);
     }
 
-    /** Falls back to a prompt reminder when {@code ToolChoice.Specific} is unsupported. */
+    /** Sends a prompt reminder on the first fallback call when {@code ToolChoice.Specific} is unsupported. */
     @Test
-    @DisplayName("Falls back to a prompt reminder when ToolChoice.Specific is unsupported")
+    @DisplayName(
+            "Sends prompt reminder on first fallback call when ToolChoice.Specific unsupported")
     void testStructuredOutputPromptReminderWhenToolChoiceUnsupported() {
         Map<String, Object> toolInput = weatherToolInput();
         AtomicInteger calls = new AtomicInteger();
@@ -860,17 +678,17 @@ class ReActAgentStructuredOutputTest {
         assertNotNull(result);
         assertEquals("San Francisco", result.location);
 
-        // Round 0: free text → prompt reminder injected; round 1: reminder seen → complies.
-        assertEquals(2, mockModel.getCallCount());
+        // The always-on reminder is visible from the first fallback round.
+        assertEquals(1, mockModel.getCallCount());
 
         // The prompt strategy must NOT set tool_choice.
         assertNull(mockModel.getLastOptions().getToolChoice());
     }
 
-    /** Strategy-B force reminders are replaced, not stacked, across forced retries. */
+    /** The request-local reminder is present once on every fallback round. */
     @Test
-    @DisplayName("Replaces the prompt force reminder on each retry instead of stacking copies")
-    void testStructuredOutputPromptReminderReplacedNotStacked() {
+    @DisplayName("Sends one request-local reminder on every fallback round")
+    void testStructuredOutputPromptReminderPresentOnEveryFallbackRound() {
         Map<String, Object> toolInput = weatherToolInput();
         AtomicInteger calls = new AtomicInteger();
         List<Integer> reminderCounts = new CopyOnWriteArrayList<>();
@@ -898,15 +716,15 @@ class ReActAgentStructuredOutputTest {
         assertNotNull(responseMsg);
         assertNotNull(responseMsg.getStructuredData(WeatherResponse.class));
 
-        // Round 0 sees no reminder; rounds 1-2 each see exactly one (replaced, not stacked).
+        // Every round sees exactly one reminder, including retries after free-text output.
         assertEquals(3, mockModel.getCallCount());
-        assertEquals(List.of(0, 1, 1), reminderCounts);
+        assertEquals(List.of(1, 1, 1), reminderCounts);
     }
 
-    /** After give-up, stale force reminders are stripped from durable context; banner stays. */
+    /** After give-up, a later normal call does not receive the structured-output reminder. */
     @Test
-    @DisplayName("Strips force reminders from durable context after giving up, keeps mode banner")
-    void testStructuredOutputGiveUpStripsForceReminders() {
+    @DisplayName("Does not send structured-output reminder on a later normal call")
+    void testStructuredOutputGiveUpLeavesNoReminderForLaterNormalCall() {
         AtomicInteger calls = new AtomicInteger();
 
         MockModel mockModel =
@@ -927,56 +745,35 @@ class ReActAgentStructuredOutputTest {
         // 1 initial round + 3 forced retries = 4 reasoning calls, then give up.
         assertEquals(4, mockModel.getCallCount());
 
-        // Follow-up normal call: its input must contain no stale force reminder, while the
-        // persistent enter banner is kept and an exit banner closes the mode.
+        // Follow-up normal call: its input contains no request-local structured-output reminder.
         Msg followUp = agent.call(weatherInput()).block();
         assertNotNull(followUp);
         assertEquals(
                 0,
                 countTextOccurrences(
                         mockModel.getLastMessages(), "You MUST call the `generate_response` tool"));
-        assertEquals(
-                1,
-                countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode is now active"));
-        assertEquals(
-                1,
-                countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode has ended"));
     }
 
-    /** Injects enter/exit reminders once per mode transition, without duplication. */
+    /** Merges the transient reminder into the last user message without changing durable state. */
     @Test
-    @DisplayName("Injects one-shot enter/exit reminders across structured-output mode transitions")
-    void testStructuredOutputEnterExitReminders() {
+    @DisplayName("Merges reminder into last user message without changing durable state")
+    void testStructuredOutputReminderMergesIntoLastUserMessage() {
         Map<String, Object> toolInput = weatherToolInput();
 
         MockModel mockModel =
                 new MockModel(
                         msgs -> {
-                            boolean exit =
+                            boolean reminderPresent =
                                     msgs.stream()
                                             .anyMatch(
                                                     m ->
                                                             m.getTextContent() != null
                                                                     && m.getTextContent()
                                                                             .contains(
-                                                                                    "STRUCTURED"
-                                                                                        + " OUTPUT"
-                                                                                        + " mode"
-                                                                                        + " has ended"));
-                            boolean enter =
-                                    msgs.stream()
-                                            .anyMatch(
-                                                    m ->
-                                                            m.getTextContent() != null
-                                                                    && m.getTextContent()
-                                                                            .contains(
-                                                                                    "STRUCTURED"
-                                                                                        + " OUTPUT"
-                                                                                        + " mode is"
-                                                                                        + " now active"));
-                            if (enter && !exit) {
+                                                                                    "You MUST call"
+                                                                                        + " the `generate_response`"
+                                                                                        + " tool"));
+                            if (reminderPresent) {
                                 return List.of(structuredToolResponse("msg_so", toolInput));
                             }
                             return List.of(textResponse("msg_text", "ok"));
@@ -984,98 +781,85 @@ class ReActAgentStructuredOutputTest {
 
         ReActAgent agent = buildWeatherAgent(mockModel);
 
-        // First structured call: inject the enter reminder.
-        Msg r1 = agent.call(weatherInput(), WeatherResponse.class).block();
-        assertNotNull(r1);
-        assertEquals(
-                1,
-                countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode is now active"));
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+        assertNotNull(responseMsg.getStructuredData(WeatherResponse.class));
 
-        // Second structured call: enter reminder is persistent, not duplicated.
-        Msg r2 = agent.call(weatherInput(), WeatherResponse.class).block();
-        assertNotNull(r2);
-        assertEquals(
-                1,
-                countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode is now active"));
+        List<Msg> requestMessages = mockModel.getLastMessages();
+        assertNotNull(requestMessages);
+        Msg lastMessage = requestMessages.get(requestMessages.size() - 1);
+        assertEquals(MsgRole.USER, lastMessage.getRole());
+        assertTrue(lastMessage.getTextContent().contains("What's the weather in San Francisco?"));
+        assertTrue(lastMessage.getTextContent().contains("You MUST call the `generate_response`"));
 
-        // Normal (no schema) call: inject the exit reminder, keep the persistent enter reminder.
-        Msg r3 = agent.call(weatherInput()).block();
-        assertNotNull(r3);
+        List<Msg> durableContext = agent.getAgentState().getContext();
         assertEquals(
-                1,
-                countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode has ended"));
-        assertEquals(
-                1,
-                countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode is now active"));
+                0,
+                countTextOccurrences(durableContext, "You MUST call the `generate_response` tool"));
+        durableContext.stream()
+                .filter(msg -> msg.getRole() == MsgRole.USER)
+                .filter(msg -> msg.getTextContent().contains("What's the weather in San"))
+                .findFirst()
+                .ifPresent(
+                        msg ->
+                                assertFalse(
+                                        msg.getTextContent()
+                                                .contains(
+                                                        "You MUST call the"
+                                                                + " `generate_response`")));
     }
 
-    /** Re-injects enter/exit reminders across interleaved structured/normal transitions. */
+    /** Adds a separate user reminder when the final model input ends with a tool result. */
     @Test
-    @DisplayName("Re-injects enter/exit reminders across interleaved structured/normal transitions")
-    void testStructuredOutputEnterExitInterleaved() {
+    @DisplayName("Adds separate user reminder after a tool result")
+    void testStructuredOutputReminderAfterToolResultUsesSeparateUserMessage() {
         Map<String, Object> toolInput = weatherToolInput();
-        AtomicInteger phase = new AtomicInteger();
+        AtomicInteger calls = new AtomicInteger();
+        Map<String, Object> businessToolInput = Map.of("city", "San Francisco");
 
-        // Phase 0/2 = structured call (generate_response tool call), 1/3 = normal call (text).
         MockModel mockModel =
                 new MockModel(
                         msgs -> {
-                            int p = phase.get();
-                            if (p % 2 == 0) {
-                                return List.of(structuredToolResponse("so_" + p, toolInput));
+                            if (calls.getAndIncrement() == 0) {
+                                return List.of(
+                                        businessToolResponse(
+                                                "business_1", "lookupWeather", businessToolInput));
                             }
-                            return List.of(textResponse("txt_" + p, "ok"));
+                            return List.of(structuredToolResponse("so_1", toolInput));
                         });
 
-        ReActAgent agent = buildWeatherAgent(mockModel);
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new WeatherTools());
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("weather-agent")
+                        .sysPrompt("You are a weather assistant")
+                        .model(mockModel)
+                        .toolkit(toolkit)
+                        .build();
 
-        // 1. structured -> enter
-        assertNotNull(agent.call(weatherInput(), WeatherResponse.class).block());
-        phase.incrementAndGet();
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+        assertNotNull(responseMsg.getStructuredData(WeatherResponse.class));
+        assertEquals(2, mockModel.getCallCount());
+
+        List<Msg> requestMessages = mockModel.getLastMessages();
+        assertNotNull(requestMessages);
+        assertTrue(requestMessages.size() >= 2);
+        assertEquals(MsgRole.TOOL, requestMessages.get(requestMessages.size() - 2).getRole());
+        Msg reminderMessage = requestMessages.get(requestMessages.size() - 1);
+        assertEquals(MsgRole.USER, reminderMessage.getRole());
+        assertTrue(
+                reminderMessage.getTextContent().contains("You MUST call the `generate_response`"));
         assertEquals(
                 1,
                 countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode is now active"));
+                        requestMessages, "You MUST call the `generate_response` tool"));
         assertEquals(
                 0,
                 countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode has ended"));
-
-        // 2. normal -> exit
-        assertNotNull(agent.call(weatherInput()).block());
-        phase.incrementAndGet();
-        assertEquals(
-                1,
-                countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode has ended"));
-
-        // 3. structured again -> enter re-injected (not missed)
-        assertNotNull(agent.call(weatherInput(), WeatherResponse.class).block());
-        phase.incrementAndGet();
-        assertEquals(
-                2,
-                countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode is now active"));
-        assertEquals(
-                1,
-                countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode has ended"));
-
-        // 4. normal again -> exit re-injected
-        assertNotNull(agent.call(weatherInput()).block());
-        phase.incrementAndGet();
-        assertEquals(
-                2,
-                countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode is now active"));
-        assertEquals(
-                2,
-                countTextOccurrences(
-                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode has ended"));
+                        agent.getAgentState().getContext(),
+                        "You MUST call the `generate_response` tool"));
     }
 
     // ==================== Helpers ====================
@@ -1128,6 +912,23 @@ class ReActAgentStructuredOutputTest {
                                         .content(JsonUtils.getJsonCodec().toJson(toolInput))
                                         .build()))
                 .usage(new ChatUsage(10, 20, 30))
+                .build();
+    }
+
+    /** Builds a business tool-call response with the given payload. */
+    private static ChatResponse businessToolResponse(
+            String id, String toolName, Map<String, Object> toolInput) {
+        return ChatResponse.builder()
+                .id(id)
+                .content(
+                        List.of(
+                                ToolUseBlock.builder()
+                                        .id(id)
+                                        .name(toolName)
+                                        .input(toolInput)
+                                        .content(JsonUtils.getJsonCodec().toJson(toolInput))
+                                        .build()))
+                .usage(new ChatUsage(1, 2, 3))
                 .build();
     }
 

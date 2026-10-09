@@ -49,7 +49,6 @@ import java.util.UUID;
     "reply_id",
     "cur_iter",
     "shutdown_interrupted",
-    "so_tool_active",
     "permission_context",
     "tool_context",
     "tasks_context",
@@ -64,7 +63,6 @@ public final class AgentState implements State {
     private String replyId;
     private int curIter;
     private boolean shutdownInterrupted;
-    private boolean soToolActive;
     private PermissionContextState permissionContext;
     private final ToolContextState toolContext;
     private final TaskContextState tasksContext;
@@ -78,7 +76,6 @@ public final class AgentState implements State {
         this.replyId = builder.replyId == null ? newHex() : builder.replyId;
         this.curIter = builder.curIter;
         this.shutdownInterrupted = builder.shutdownInterrupted;
-        this.soToolActive = builder.soToolActive;
         this.permissionContext =
                 builder.permissionContext == null
                         ? PermissionContextState.builder().build()
@@ -104,7 +101,6 @@ public final class AgentState implements State {
             @JsonProperty("reply_id") String replyId,
             @JsonProperty("cur_iter") Integer curIter,
             @JsonProperty("shutdown_interrupted") Boolean shutdownInterrupted,
-            @JsonProperty("so_tool_active") Boolean soToolActive,
             @JsonProperty("permission_context") PermissionContextState permissionContext,
             @JsonProperty("tool_context") ToolContextState toolContext,
             @JsonProperty("tasks_context") TaskContextState tasksContext,
@@ -130,9 +126,6 @@ public final class AgentState implements State {
         }
         if (shutdownInterrupted != null) {
             b.shutdownInterrupted(shutdownInterrupted);
-        }
-        if (soToolActive != null) {
-            b.soToolActive(soToolActive);
         }
         if (permissionContext != null) {
             b.permissionContext(permissionContext);
@@ -211,15 +204,6 @@ public final class AgentState implements State {
         this.shutdownInterrupted = shutdownInterrupted;
     }
 
-    @JsonProperty("so_tool_active")
-    public boolean isSoToolActive() {
-        return soToolActive;
-    }
-
-    public void setSoToolActive(boolean soToolActive) {
-        this.soToolActive = soToolActive;
-    }
-
     @JsonProperty("permission_context")
     public PermissionContextState getPermissionContext() {
         return permissionContext;
@@ -284,7 +268,6 @@ public final class AgentState implements State {
         }
         return curIter == other.curIter
                 && shutdownInterrupted == other.shutdownInterrupted
-                && soToolActive == other.soToolActive
                 && Objects.equals(sessionId, other.sessionId)
                 && Objects.equals(userId, other.userId)
                 && Objects.equals(summary, other.summary)
@@ -306,7 +289,6 @@ public final class AgentState implements State {
                 replyId,
                 curIter,
                 shutdownInterrupted,
-                soToolActive,
                 permissionContext,
                 toolContext,
                 tasksContext,
@@ -336,7 +318,6 @@ public final class AgentState implements State {
         private String replyId;
         private int curIter;
         private boolean shutdownInterrupted;
-        private boolean soToolActive;
         private PermissionContextState permissionContext;
         private ToolContextState toolContext;
         private TaskContextState tasksContext;
@@ -383,11 +364,6 @@ public final class AgentState implements State {
 
         public Builder shutdownInterrupted(boolean shutdownInterrupted) {
             this.shutdownInterrupted = shutdownInterrupted;
-            return this;
-        }
-
-        public Builder soToolActive(boolean soToolActive) {
-            this.soToolActive = soToolActive;
             return this;
         }
 

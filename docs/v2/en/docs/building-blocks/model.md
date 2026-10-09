@@ -390,15 +390,17 @@ always takes precedence.
 
 #### Default behavior per provider
 
-| Provider | `supportsNativeStructuredOutput` | Notes |
-|----------|----------------------------------|-------|
-| OpenAI (GPT-4o, etc.) | `true` | Native `json_schema` support |
-| OpenAI Official (Responses API) | `true` | Native `json_schema` support |
-| OpenAI (DeepSeek/GLM formatter) | `false` | Not supported; auto-fallback |
-| DashScope | `false` | Native endpoint only supports `json_object`, not `json_schema`; fallback by default |
-| Anthropic | `false` (default) | — |
+| Provider                        | `supportsNativeStructuredOutput` | `supportsNativeStructuredOutputWithTools` | Notes |
+|---------------------------------|----------------------------------|------------------------------------------|-------|
+| OpenAI (Chat Completions API)   | `true` | `true` | Native `json_schema` support; works alongside tool calling |
+| OpenAI Official (Responses API) | `true` | `true` | Native `json_schema` support; works alongside tool calling |
+| Kimi formatter                  | `true` | `false` | Native `json_schema` support; `response_format` suppresses tool invocations, so the with-tools path falls back |
+| DeepSeek/GLM/MiniMax formatter  | `false` | `false` | — |
+| DashScope                       | `false` | `false` | Some models do not support ` json_schema` |
+| Anthropic                       | `false` | `false` | — |
+| Gemini                          | `false` | `false` | — |
 
-> **DashScope users**: Thinking mode (`enableThinking(true)`) does not support structured output at all — the framework forces the fallback path.
+> **DashScope users**: Thinking mode (`enableThinking(true)`) does not support structured output for some models — the framework forces the fallback path.
 
 #### Explicit configuration
 
@@ -414,7 +416,7 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 
 #### Structured output with tool calling
 
-When an agent has both tools and structured output, some OpenAI-compatible providers (e.g. Kimi, Deepseek) prioritise the `response_format` constraint and skip tool calling entirely. Set `nativeStructuredOutputWithTools(false)` to resolve this:
+When an agent has both tools and structured output, some OpenAI-compatible providers (e.g. Kimi) prioritise the `response_format` constraint and skip tool calling entirely. Set `nativeStructuredOutputWithTools(false)` to resolve this:
 
 ```java
 OpenAIChatModel model = OpenAIChatModel.builder()

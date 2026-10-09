@@ -141,30 +141,29 @@ class KimiModelProviderTest {
     }
 
     @Test
-    void nativeStructuredOutputDisabledByDefault() {
+    void nativeStructuredOutputEnabledByDefault() {
         KimiModelProvider provider = new KimiModelProvider();
         ModelCreationContext context =
                 ModelCreationContext.builder().apiKey("test-kimi-key").build();
 
         Model model = provider.create("kimi:kimi-k3", context);
 
-        // Kimi response_format only supports json_object, so native structured
-        // output falls back to the generate_response tool by default
-        assertFalse(model.supportsNativeStructuredOutput());
+        // Kimi response_format supports json_schema with strict constrained decoding
+        assertTrue(model.supportsNativeStructuredOutput());
     }
 
     @Test
-    void nativeStructuredOutputCanBeEnabledByOption() {
+    void nativeStructuredOutputCanBeDisabledByOption() {
         KimiModelProvider provider = new KimiModelProvider();
         ModelCreationContext context =
                 ModelCreationContext.builder()
                         .apiKey("test-kimi-key")
-                        .option("nativeStructuredOutput", true)
+                        .option("nativeStructuredOutput", false)
                         .build();
 
         Model model = provider.create("kimi:kimi-k3", context);
 
-        assertTrue(model.supportsNativeStructuredOutput());
+        assertFalse(model.supportsNativeStructuredOutput());
     }
 
     @Test
@@ -175,7 +174,8 @@ class KimiModelProviderTest {
 
         Model model = provider.create("kimi:kimi-k3", context);
 
-        // Kimi prioritises response_format over tool invocations when both are present
+        // Real-API testing confirmed Kimi prioritises response_format over tool
+        // invocations when both are present, so tools fall back to generate_response
         assertFalse(model.supportsNativeStructuredOutputWithTools());
     }
 
@@ -185,13 +185,14 @@ class KimiModelProviderTest {
         ModelCreationContext context =
                 ModelCreationContext.builder()
                         .apiKey("test-kimi-key")
-                        .option("nativeStructuredOutput", true)
                         .option("nativeStructuredOutputWithTools", true)
                         .build();
 
         Model model = provider.create("kimi:kimi-k3", context);
 
+        // Opt-in for users who observe their endpoint handles the combination correctly
         assertTrue(model.supportsNativeStructuredOutputWithTools());
+        assertTrue(model.supportsNativeStructuredOutput());
     }
 
     @Test

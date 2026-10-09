@@ -387,15 +387,17 @@ Native structured output 默认不会强制 schema 进入 strict 模式。OpenAI
 
 #### 各模型提供商默认行为
 
-| 模型提供商 | `supportsNativeStructuredOutput` | 说明 |
-|----------|----------------------------------|------|
-| OpenAI (GPT-4o 等) | `true` | 原生支持 `json_schema` |
-| OpenAI Official (Responses API) | `true` | 原生支持 `json_schema` |
-| OpenAI (DeepSeek/GLM formatter) | `false` | 不支持，自动走 fallback |
-| DashScope | `false` | DashScope 原生端点仅支持 `json_object`，不支持 `json_schema`；框架默认走 fallback |
-| Anthropic | `false`（默认） | — |
+| 模型提供商                           | `supportsNativeStructuredOutput` | `supportsNativeStructuredOutputWithTools` | 说明                                                         |
+|---------------------------------|----------------------------------|------------------------------------------|------------------------------------------------------------|
+| OpenAI (Chat Completions API)   | `true` | `true` | 原生支持 `json_schema`，与工具调用兼容                                 |
+| OpenAI Official (Responses API) | `true` | `true` | 原生支持 `json_schema`，与工具调用兼容                                 |
+| Kimi formatter                  | `true` | `false` | 原生支持 `json_schema`；`response_format` 会压制工具调用，带工具时走 fallback |
+| DeepSeek/GLM/MiniMax formatter  | `false` | `false` | —                                                          |
+| DashScope                       | `false` | `false` | 部分模型不支持 `json_schema`                                      |
+| Anthropic                       | `false` | `false` | —                                                          |
+| Gemini                          | `false` | `false` | —                                                          |
 
-> **DashScope 用户注意**：DashScope 的思考模式（`enableThinking(true)`）不支持结构化输出，框架会强制走 fallback 路径。
+> **DashScope 用户注意**：DashScope 部分模型思考模式（`enableThinking(true)`）不支持结构化输出，框架会强制走 fallback 路径。
 
 #### 显式配置
 
@@ -411,7 +413,7 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 
 #### 结构化输出与工具调用共存
 
-当 Agent 同时注册了工具并请求结构化输出时，部分 OpenAI 兼容 API（如 Kimi、Deepseek 等）会优先遵循 `response_format` 约束而跳过工具调用。设置 `nativeStructuredOutputWithTools(false)` 可解决此问题：
+当 Agent 同时注册了工具并请求结构化输出时，部分 OpenAI 兼容 API（如 Kimi 等）会优先遵循 `response_format` 约束而跳过工具调用。设置 `nativeStructuredOutputWithTools(false)` 可解决此问题：
 
 ```java
 OpenAIChatModel model = OpenAIChatModel.builder()

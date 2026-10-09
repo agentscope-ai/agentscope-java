@@ -37,8 +37,8 @@ import java.util.regex.Pattern;
  *   <li>Base URL defaults to {@code https://api.moonshot.cn/v1}</li>
  *   <li>Formatter defaults to {@link KimiFormatter} (a custom {@link Formatter} component in the
  *       {@link ModelCreationContext} takes precedence, e.g. {@link KimiMultiAgentFormatter})</li>
- *   <li>Native structured output defaults to disabled; the agent falls back to the
- *       {@code generate_response} tool instead</li>
+ *   <li>Native structured output defaults to enabled via {@code response_format} with
+ *       {@code json_schema}</li>
  *   <li>Native structured output alongside tools defaults to disabled, because Kimi prioritises
  *       {@code response_format} over tool invocations when both are present</li>
  *   <li>{@code ToolChoice.Specific} is reported unsupported on thinking-enabled models
@@ -117,7 +117,8 @@ public final class KimiModelProvider implements ModelProvider {
                         .baseUrl(baseUrl)
                         .endpointPath(endpointPath)
                         .formatter(new KimiFormatter())
-                        .nativeStructuredOutput(false)
+                        .nativeStructuredOutput(true)
+                        .nativeStructuredOutputWithTools(false)
                         .supportsToolChoiceSpecific(specificUsable)
                         .contextWindowSize(
                                 ModelContextWindows.lookup(modelName, ModelContextWindows.KIMI));
