@@ -126,6 +126,20 @@ class GLMMultiAgentFormatterTest {
         }
 
         @Test
+        @DisplayName("Should ensure user message on the options-aware format path")
+        void testFormatWithOptionsEnsuresUserMessage() {
+            List<Msg> messages = List.of(textMsg(MsgRole.SYSTEM, null, "You are helpful"));
+
+            List<OpenAIMessage> result =
+                    formatter.format(messages, GenerateOptions.builder().build());
+
+            assertEquals(2, result.size());
+            assertEquals("system", result.get(0).getRole());
+            assertEquals("user", result.get(1).getRole());
+            assertEquals("", result.get(1).getContentAsString());
+        }
+
+        @Test
         @DisplayName("Should strip name from direct multi-agent messages")
         void testStripsNameFromDirectMessages() {
             List<Msg> messages = List.of(textMsg(MsgRole.SYSTEM, "System Agent", "Be helpful"));

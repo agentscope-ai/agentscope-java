@@ -212,7 +212,7 @@ Agent Teams 或 AgentScope Subagent 委派的目标，不一定运行在同一�
 上图体现了使用控制面实现 remote subagent 调用的流量代理能力，而不是一次特定的 API 设计：
 
 + **本地优先，能不经过控制面就不经过**。如果 `techlead` 恰好是 Agent A 同一个 `HarnessAgent` 进程内声明的本地 Subagent，委派直接走进程内调用，控制面完全不参与——这是延迟最低、也是最常见的路径。
-+ **跨实例 / 跨框架时，控制面负责"发现 + 鉴权 + 代理"三件事**：先确认 Agent A 与 `techlead` 之间存在合法的协作关系（同一 Team、白名单 ACL），再按 Agent ID 在舰队注册表里查到目标实例——这里的目标可能是一个 Managed Agent（转发到 Dataplane 的 Session Turn 接口），也可能是一个通过 `aistio.instrument()` 注册上来的 LangChain Agent（转发到其上报的 chat 端点）——最后把请求代理转发过去，并把响应原样透传回 Agent A。
++ **跨实例 / 跨框架时，控制面负责"发现 + 鉴权 + 代理"三件事**：先确认 Agent A 与 `techlead` 之间存在合法的协作关系（同一 Team、白名单 ACL），再按 Agent ID 在舰队注册表里查到目标实例——这里的目标可能是一个 Managed Agent（转发到 Dataplane 的 Session Turn 接口），也可能是一个通过 `agentscope_service.instrument()` 注册上来的 LangChain Agent（转发到其上报的 chat 端点）——最后把请求代理转发过去，并把响应原样透传回 Agent A。
 + **Agent A 全程不知道对方是什么框架**。对发起方而言，`delegate("techlead", ...)` 的调用方式不因为目标是本地 Subagent、Managed Agent 还是 LangChain Agent 而改变；框架差异被控制面的路由层吸收掉了。
 
 这也是为什么前面在“如何接入”里强调 AgentScope、LangChain、Claude 可以用不同方式接入同一个控制面：一旦接入完成，它们就都具备了被其他 Agent 找到、委派任务、并拿到结果的能力，而不需要每一对框架之间单独打通。
@@ -226,7 +226,7 @@ Agent Teams 或 AgentScope Subagent 委派的目标，不一定运行在同一�
 | **平面** | **负责** | **不负责** |
 | --- | --- | --- |
 | Gateway | 公共入口、认证与 API 路由 | 业务状态与 Agent 执行 |
-| Control Plane（`aistiod`） | 产品资源、控制台、Agent状态、Session、Team 与运行时命令 | Harness 推理、Session 流传输 |
+| Control Plane（`service-controlplane`） | 产品资源、控制台、Agent状态、Session、Team 与运行时命令 | Harness 推理、Session 流传输 |
 | Dataplane | Managed Harness Runtime、事件日志、SSE、Turn Lease、HITL 与 Work Queue | 直读产品 Catalog 表 |
 | Scheduler | Channel、Cron、出站任务与 Self-hosted Hands Worker | 推理循环 |
 
@@ -254,12 +254,12 @@ AgentScope Service 同时服务两类用户：
 
 ### Agent Framework
 #### AgentScope
-AgentScope Java 目前原生支持 Agent 应用接入，通过引入 `agentscope-extensions-aistio` 依赖，即可自动将现有 AgentScope Runtime 注册到控制面，与 Managed Agent 一同出现在 Dashboard。会话状态、健康信息与运行时观测沿同一套契约上报。
+AgentScope Java 目前原生支持 Agent 应用接入，通过引入 `agentscope-extensions-controlplane` 依赖，即可自动将现有 AgentScope Runtime 注册到控制面，与 Managed Agent 一同出现在 Dashboard。会话状态、健康信息与运行时观测沿同一套契约上报。
 
 同时 AgentScope 分布式部署需要的 Agent Teams 跨副本的消息投递与子任务委派、跨节点异步任务状态跟踪、Session 并发控制、Workspace 状态同步等，都可以由控制面提供原生支持。
 
 #### LangChain
-目前我们在社区提供了 python sdk，用户可以通过 `aistio.instrument()` wrapper 实现接入。对 LangChain / LangGraph 应用，控制面侧以旁路方式采集 Session 快照、上下文与运行时指标；主业务路径先成功，上报失败不影响推理本身。
+目前我们在社区提供了 python sdk，用户可以通过 `agentscope_service.instrument()` wrapper 实现接入。对 LangChain / LangGraph 应用，控制面侧以旁路方式采集 Session 快照、上下文与运行时指标；主业务路径先成功，上报失败不影响推理本身。
 
 这样一来，LangChain 开发的 Agent 也能进入 AgentScope Service 的舰队管理与 Session 观测，而不必重写业务链路。
 

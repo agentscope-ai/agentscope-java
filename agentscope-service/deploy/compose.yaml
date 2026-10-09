@@ -59,15 +59,15 @@ services:
     restart: unless-stopped
     command: [--storage-driver=postgres]
     environment:
-      AISTIO_ENABLE_KUBERNETES: 'false'
-      AISTIO_HTTP_BIND: ':8081'
-      AISTIO_PRODUCT_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable
-      AISTIO_STORAGE_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable&search_path=rt
-      AISTIO_SEED_USERS: 'false'
-      AISTIO_BOOTSTRAP_ADMIN: ${AISTIO_BOOTSTRAP_ADMIN:-admin}
-      AISTIO_BOOTSTRAP_PASSWORD: ${AISTIO_BOOTSTRAP_PASSWORD:?Required}
-      AISTIO_WORKSPACE_ROOT: /data/workspaces
-      AISTIO_ARTIFACT_ROOT: /data/artifacts
+      CONTROL_PLANE_ENABLE_KUBERNETES: 'false'
+      CONTROL_PLANE_HTTP_BIND: ':8081'
+      CONTROL_PLANE_PRODUCT_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable
+      CONTROL_PLANE_STORAGE_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable&search_path=rt
+      CONTROL_PLANE_SEED_USERS: 'false'
+      CONTROL_PLANE_BOOTSTRAP_ADMIN: ${CONTROL_PLANE_BOOTSTRAP_ADMIN:-admin}
+      CONTROL_PLANE_BOOTSTRAP_PASSWORD: ${CONTROL_PLANE_BOOTSTRAP_PASSWORD:?Required}
+      CONTROL_PLANE_WORKSPACE_ROOT: /data/workspaces
+      CONTROL_PLANE_ARTIFACT_ROOT: /data/artifacts
       BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET}
       BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN}
       BUILDER_VAULT_MASTER_KEY: ${BUILDER_VAULT_MASTER_KEY}
@@ -78,7 +78,7 @@ services:
       - workspaces:/data/workspaces
       - artifacts:/data/artifacts
     healthcheck:
-      test: [CMD, /aistiod, --healthcheck]
+      test: [CMD, /service-controlplane, --healthcheck]
       interval: 5s
       timeout: 5s
       retries: 30

@@ -20,7 +20,6 @@ import static io.agentscope.core.model.ModelProviderSupport.findAssignableCompon
 import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
 import static io.agentscope.core.model.ModelProviderSupport.intOption;
 import static io.agentscope.core.model.ModelProviderSupport.stringOption;
-import static io.agentscope.core.model.ModelProviderSupport.trimToNull;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.genai.types.ClientOptions;
@@ -104,7 +103,7 @@ public final class GeminiModelProvider implements ModelProvider {
                 builder.vertexAI(false);
             }
         }
-        String baseUrl = trimToNull(context.getBaseUrl());
+        String baseUrl = firstNonBlank(context.getBaseUrl(), System.getenv("GEMINI_BASE_URL"));
         if (baseUrl != null) {
             builder.baseUrl(baseUrl);
         }

@@ -73,6 +73,28 @@ corresponding guides and script changes; do not commit browser traces or caches.
 
 ### Service content and scenario standards
 
+The primary Service journey is **self-host deployment → first Managed Agent →
+capability configuration → Session API application integration → collaboration
+and operations**. Managed Agents use the AgentScope HarnessAgent core. Explain
+whole-platform self-hosting separately from a self_hosted tool Worker and a Hosted
+Runtime Host. Existing deployments can skip installation. Preserve standalone
+External/Hosted onboarding while introducing them as collaboration extensions.
+
+Use Session, Turn and Events as the sole application execution model for Agents,
+Teams and Workflows. Keep three Getting started pages: overview, deployment and
+first Managed Agent. Explain core concepts in the overview. Application credentials
+belong to Applications and grant explicit target resources. Do not reintroduce a
+separate Endpoint publication path. Write connected paragraphs explaining the
+meaning, reason and next action instead of terse lists of features or nouns.
+Keep one guide per user task: tool permissions belong with tools, Skills with
+Workspaces, budgets with sessions, and Webhooks with events. Console operations
+share one guide; SDK and runtime parameters stay in focused references. Avoid
+restoring separate overview/capability/execution pages for every Agent type. Moving a section must
+preserve its existing route/anchor and link to the new guide. Keep both languages
+and navigation aligned. Keep the five onboarding pages directly visible and group
+advanced topics in collapsible navigation. Document current limits instead of implying parity
+with a referenced hosted product.
+
 Service guides should explain the user goal, prerequisites, exact console or API
 steps, observable success criteria, failure recovery, and the next relevant guide.
 Reference pages should describe defaults, allowed values, configuration scope,
@@ -80,14 +102,33 @@ when changes take effect, and limits that affect the documented operation. Check
 these against the current console, control plane, and runtime implementation.
 Avoid adding identical sections to every page when a precise cross-link suffices.
 
+Write explanatory prose for readers learning the product. Each paragraph should
+develop one clear idea through complete sentences with explicit subjects,
+conditions, and causal connections. Introduce a term through its purpose and
+relationship to the current task; explain when an action applies, why it is needed,
+and how to interpret its result. Make limits and failure states actionable by
+explaining their consequences and the next step. Do not compress explanations into
+noun lists, semicolon-separated conclusions, or notes that require implementation
+knowledge. Tables remain useful for parameter comparisons and checklists, while
+conceptual relationships and operating logic belong in connected prose. Follow
+the material's natural structure rather than forcing every section into the same
+template or requiring an example to carry every explanation. Apply this standard
+to both language versions and future edits.
+
 Scenario tutorials live in `v2/{en,zh}/service/cases/`; downloadable inputs live in
 `examples/service/`. Code and JSON inputs use a final `.txt` extension so Mintlify
 serves them as static downloads; guides specify the executable or JSON filename
 to use after saving. Each case must have fixed inputs, explicit acceptance criteria,
 and a distinction between expected output and observed execution. Keep both
-languages and the functional-guide links aligned. Current cases cover an all-Hosted GitHub development cycle, an External
-fulfillment Team built with AgentScope, and a Managed presales Team with mixed
-execution extensions.
+languages and the functional-guide links aligned. The use-case entry page organizes
+application patterns around triggers, API calls, delivery, and acceptance: in-product
+file generation, code repair, document verification, conversations, recurring work,
+and specialist services called by other Agents. Each pattern has its own detailed
+bilingual tutorial and fixed request data. Managed,
+External, Hosted, Team, and Workflow remain implementation choices. Distinguish
+industry evidence, expected fixture outputs, and actual AgentScope execution records.
+Retired team-oriented tutorial URLs redirect to the corresponding new case or the
+use-case index; do not restore those tutorials as a second scenario taxonomy.
 
 From `docs/`, validate the local code and JSON fixtures with Python 3 and JDK 17+:
 
@@ -95,16 +136,16 @@ From `docs/`, validate the local code and JSON fixtures with Python 3 and JDK 17
 python3 scripts/check-service-examples.py
 ```
 
-The order-query starting file intentionally fails three of five acceptance checks.
-The checker compiles it in a temporary directory with `javac --release 17`, verifies
-that baseline, applies a reference repair only in the copy, and checks the repaired
-result. It also checks the fulfillment JSON and presales source paths. Do not fix
-the published starting file or commit generated classes and logs. This check does
-not run GitHub, models, enterprise APIs, or Service scenarios. The fulfillment
-fixture is data for application tool development, not a bundled business server.
+The incident-repair Java fixture intentionally fails three of five acceptance checks.
+The checker compiles it in a temporary directory, verifies the baseline, applies a
+reference repair only in that copy, and checks the repaired result. It also checks
+six API request fixtures, source versions, the document-verification contradiction,
+conversation ownership data, and Bash syntax in all twelve case pages. It does not
+execute network commands or run models, GitHub, business APIs, or Service. Do not
+fix the published starting code or commit generated classes and logs.
 
 For an actual scenario walkthrough, record Service and SDK/provider versions,
-configuration choices, input data, Issue/Run/Invocation IDs, artifacts, observed
+configuration choices, input data, Session/Turn and diagnostic Issue/Run IDs, artifacts, observed
 results, deviations, and cleanup. Include the idempotency/filtering or failure
 branch described by the case. Preserve logs from real execution; generated prose
 and fixture-based screenshots do not establish end-to-end success.
@@ -190,3 +231,21 @@ Official references:
 - https://www.mintlify.com/docs/deploy/github
 - https://www.mintlify.com/docs/organize/navigation
 - https://www.mintlify.com/docs/customize/custom-domain
+
+## Helm repository route
+
+`chickenlj/helm-charts` is the independent public repository for packaged Charts.
+Its Pages workflow serves `index.yaml`, immutable archives and versioned deployment
+examples at `https://chickenlj.github.io/helm-charts`. Run its `publish.yml` workflow
+with a Chart version to import the exact upstream GitHub Release asset; publication
+checks its SHA256 and preserves older index entries.
+
+`docs.json` redirects `/helm/index.yaml` to that index and `/helm` to its landing
+page, with temporary redirects (`permanent: false`). Archive URLs are absolute,
+so Helm follows the index redirect and downloads archives directly from Pages.
+No change to the official website's DNS or Mintlify hosting is needed. Merge the
+configuration into Mintlify's deployment branch before announcing
+`helm repo add agentscope https://java.agentscope.io/helm`; until it is deployed,
+the direct Pages URL works independently. Verify both `helm repo add` and a pinned
+`helm pull` after deployment. Do not assign `java.agentscope.io` as the standalone
+repository's Pages custom domain, which would replace the documentation site.

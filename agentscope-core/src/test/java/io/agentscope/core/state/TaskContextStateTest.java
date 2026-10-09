@@ -21,10 +21,119 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.tool.builtin.TodoTools;
+import io.agentscope.core.tool.builtin.TodoTools.TodoItem;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.ConcurrentModificationException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class TaskContextStateTest {
+    @Test
+    void proposalRequiresExplicitDecisionAndTodoDoesNotEraseIt() {
+        var state = AgentState.builder().build();
+        var context = state.getTasksContext();
+        var candidate =
+                context.propose(TaskRequirement.Kind.CONSTRAINT, "Do not deploy", "message:u1");
+        assertEquals(TaskRequirement.Status.CANDIDATE, candidate.status());
+        context.decide(
+                candidate.id(),
+                TaskRequirement.Status.CONFIRMED,
+                new TaskRequirement.Decision(TaskRequirement.Authority.USER, "message:u2"),
+                context.getRevision());
+        new TodoTools().write(List.of(new TodoItem("implementation", "completed", null)), state);
+        assertEquals(TaskRequirement.Status.CONFIRMED, context.getRequirements().get(0).status());
+        assertEquals(3, context.getRevision());
+        assertEquals(Task.State.COMPLETED, context.getTasks().get(0).getState());
+        assertEquals(TaskRequirement.Status.CANDIDATE, candidate.status());
+    }
+
+    @Test
+    void staleDecisionsAndTodoUpdatesFailWithoutMutation() {
+        var context = new TaskContextState();
+        var candidate =
+                context.propose(
+                        TaskRequirement.Kind.ACCEPTANCE_CRITERION, "Tests pass", "PLAN.md#tests");
+        var before = context.snapshot();
+        assertThrows(
+                ConcurrentModificationException.class,
+                () ->
+                        context.decide(
+                                candidate.id(),
+                                TaskRequirement.Status.CONFIRMED,
+                                new TaskRequirement.Decision(
+                                        TaskRequirement.Authority.CALLER, "request:1"),
+                                0));
+        assertThrows(
+                ConcurrentModificationException.class,
+                () -> context.replaceTasks(List.of(task("new")), 0));
+        assertEquals(before, context);
+        assertThrows(
+                NullPointerException.class,
+                () -> context.decide(candidate.id(), TaskRequirement.Status.CONFIRMED, null, 1));
+        assertEquals(before, context);
+    }
+
+    @Test
+    void proposalsAreIdempotentAndCannotOverwriteConfirmedText() {
+        var context = new TaskContextState();
+        var candidate = context.propose(TaskRequirement.Kind.CONSTRAINT, "No deploy", "message:1");
+        assertEquals(
+                candidate,
+                context.propose(candidate.kind(), candidate.text(), candidate.proposedSourceRef()));
+        assertEquals(1, context.getRevision());
+        context.decide(
+                candidate.id(),
+                TaskRequirement.Status.CONFIRMED,
+                new TaskRequirement.Decision(TaskRequirement.Authority.USER, "message:2"),
+                1);
+        context.propose(candidate.kind(), "Deploy now", candidate.proposedSourceRef());
+        assertEquals("No deploy", context.getRequirements().get(0).text());
+        assertEquals(TaskRequirement.Status.CANDIDATE, context.getRequirements().get(1).status());
+        assertThrows(UnsupportedOperationException.class, () -> context.getRequirements().clear());
+    }
+
+    @Test
+    void explicitTaskSwitchResetsAllTaskOwnedState() {
+        var context = new TaskContextState();
+        var first = new TaskContextState.Scope("task1", "First objective", "request:1");
+        context.beginTask(first, 0);
+        context.propose(TaskRequirement.Kind.CONSTRAINT, "No deploy", "message:1");
+        context.replaceTasks(List.of(task("a")), 2);
+        context.beginTask(first, 3);
+        assertEquals(3, context.getRevision());
+        context.beginTask(new TaskContextState.Scope("task2", "Second objective", "request:2"), 3);
+        assertTrue(context.getTasks().isEmpty());
+        assertTrue(context.getRequirements().isEmpty());
+        assertEquals(4, context.getRevision());
+    }
+
+    @Test
+    void taskAggregateSurvivesSessionStoreReload(@TempDir Path directory) {
+        var state = AgentState.builder().build();
+        var context = state.getTasksContext();
+        context.beginTask(new TaskContextState.Scope("task", "Build", "request:1"), 0);
+        var candidate =
+                context.propose(
+                        TaskRequirement.Kind.ACCEPTANCE_CRITERION, "Tests pass", "message:1");
+        context.decide(
+                candidate.id(),
+                TaskRequirement.Status.CONFIRMED,
+                new TaskRequirement.Decision(TaskRequirement.Authority.CALLER, "request:1"),
+                2);
+        new JsonFileAgentStateStore(directory).save("user", "session", "agent", state);
+        var restored =
+                new JsonFileAgentStateStore(directory)
+                        .get("user", "session", "agent", AgentState.class)
+                        .orElseThrow();
+        assertEquals(context, restored.getTasksContext());
+        assertTrue(
+                new JsonFileAgentStateStore(directory)
+                        .get("user", "other", "agent", AgentState.class)
+                        .isEmpty());
+    }
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -46,12 +155,11 @@ class TaskContextStateTest {
     @Test
     void getTasksReturnsDefensiveCopy() {
         TaskContextState ctx = new TaskContextState();
-        ctx.tasksMutable().add(task("a"));
+        ctx.replaceTasks(List.of(task("a")), ctx.getRevision());
         List<Task> snapshot = ctx.getTasks();
         assertEquals(1, snapshot.size());
         assertThrows(UnsupportedOperationException.class, () -> snapshot.add(task("b")));
-        // Mutation through tasksMutable is reflected in subsequent snapshots
-        ctx.tasksMutable().add(task("b"));
+        ctx.replaceTasks(List.of(task("a"), task("b")), ctx.getRevision());
         assertEquals(2, ctx.getTasks().size());
         // Snapshot is independent from internal storage
         assertNotSame(snapshot, ctx.getTasks());
@@ -59,7 +167,7 @@ class TaskContextStateTest {
 
     @Test
     void copyConstructorTakesDefensiveCopy() {
-        List<Task> input = new java.util.ArrayList<>(List.of(task("a")));
+        List<Task> input = new ArrayList<>(List.of(task("a")));
         TaskContextState ctx = new TaskContextState(input);
         input.add(task("b"));
         assertEquals(1, ctx.getTasks().size());
