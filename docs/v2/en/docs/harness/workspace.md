@@ -180,9 +180,9 @@ and reference data separately rather than appending all files to System.
 | Material | Model placement | Budget behavior |
 | --- | --- | --- |
 | AGENTS.md | System / `project_rules` | Not directly evicted; head-truncated at 100 KiB (UTF-8-safe) with a truncation marker |
-| Guidance and environment | System / `working_principles`, `environment` | Included in final budget |
+| Guidance and environment | System / `working_principles`, `environment` | Included in final budget. `## Domain Knowledge` guidance is omitted when `disableKnowledgeContext()` is set |
 | MEMORY.md | USER reference / `HARNESS_CONTEXT`, kind=memory | May be truncated during preparation or omitted for final budget |
-| Knowledge entry and path index | USER reference / `HARNESS_CONTEXT`, kind=knowledge | May be omitted for final budget |
+| Knowledge entry and path index | USER reference / `HARNESS_CONTEXT`, kind=knowledge | May be omitted for final budget. Omitted entirely when `disableKnowledgeContext()` is set |
 | additionalContextFile | USER reference / `HARNESS_CONTEXT`, kind=additional | Required, not arbitrarily evicted |
 
 maxContextTokens defaults to 8000 for workspace material preparation, not the final input cap.

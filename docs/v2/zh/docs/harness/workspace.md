@@ -174,9 +174,9 @@ env:
 | 材料 | 模型中的位置 | 预算行为 |
 | --- | --- | --- |
 | AGENTS.md | System / `project_rules` | 不直接淘汰；超过 100 KiB 按 UTF-8 安全方式从头部截断并带截断标记 |
-| 工作原则、环境信息 | System / `working_principles`、`environment` | 计入最终预算 |
+| 工作原则、环境信息 | System / `working_principles`、`environment` | 计入最终预算。`disableKnowledgeContext()` 时省略 `## Domain Knowledge` 引导段 |
 | MEMORY.md | USER 参考消息 / `HARNESS_CONTEXT`，kind=memory | 准备时可截断，最终预算不足时可省略 |
-| knowledge 入口及路径索引 | USER 参考消息 / `HARNESS_CONTEXT`，kind=knowledge | 可因最终预算省略 |
+| knowledge 入口及路径索引 | USER 参考消息 / `HARNESS_CONTEXT`，kind=knowledge | 可因最终预算省略。`disableKnowledgeContext()` 时整段不注入 |
 | additionalContextFile | USER 参考消息 / `HARNESS_CONTEXT`，kind=additional | 必需材料，不能任意淘汰 |
 
 `maxContextTokens` 默认 8000，用于工作区材料准备，不代表最终模型输入上限。
