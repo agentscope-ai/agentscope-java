@@ -98,6 +98,11 @@ BaseStore store = JdbcStore.builder(dataSource)
 ```
 
 **Concurrency**: `putIfVersion` uses a single-statement CAS `UPDATE ... WHERE version = ?`, supported on all databases above.
+**Key length**: `item_key` holds workspace file paths and session journal paths (`agents/<name>/users/<user>/sessions/<id>.log.jsonl`), so it is `VARCHAR(2048)` on PostgreSQL and H2 (`TEXT` on SQLite). MySQL keeps `VARCHAR(255)`: next to `namespace_path VARCHAR(512)` the utf8mb4 composite primary key already sits at InnoDB's 3072-byte limit. A PostgreSQL table created before this change still has the 255-character column — startup validation compares column names only, so widen it once by hand:
+
+```sql
+ALTER TABLE agentscope_store ALTER COLUMN item_key TYPE VARCHAR(2048);
+```
 
 ### 3. JdbcSnapshotSpec
 
