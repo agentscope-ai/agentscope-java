@@ -894,7 +894,8 @@ class AguiAgentAdapterV2Test {
         @Test
         void testMultimodalResultKeepsEveryPartInArrivalOrder() {
             // A producer emits each block of the return value as its own delta, so the buffer holds
-            // the whole result in the order the parts arrived, ahead of the end event's joined text.
+            // the whole result in the order the parts arrived, ahead of the end event's joined
+            // text.
             ImageBlock image =
                     ImageBlock.builder()
                             .source(URLSource.builder().url("https://example.com/cat.png").build())
