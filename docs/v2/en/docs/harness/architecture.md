@@ -44,6 +44,33 @@ Configure capabilities and use session operations as your application needs them
 | MCP integration & tool allowlist | Declarative MCP servers + allow/deny per tool | `workspace/tools.json` | [Workspace](/v2/en/docs/harness/workspace) |
 | Channel routing | Session management, per-session concurrency, multi-agent routing, streaming events | `agent.channel(...)` / `GatewayBootstrap` | [Channel](/v2/en/docs/harness/channel) |
 
+## Progressive built-in tool loading
+
+By default, all registered Harness built-in tools remain visible to the model. Applications with a large tool surface can opt into progressive disclosure:
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("assistant")
+    .model(model)
+    .enableProgressiveToolLoading()
+    .build();
+```
+
+This automatically enables the ungrouped `reset_equipped_tools` meta tool and places optional built-ins into inactive META groups:
+
+| Group | Capabilities |
+|---|---|
+| `workspace_files` | Filesystem, shell execution and artifact delivery |
+| `subagents` | Subagents, teams, background tasks and async-result waiting |
+| `session_history` | Session search, listing and history |
+| `web` | Web search and page fetching |
+
+Memory, skill and Plan Mode tools stay ungrouped and visible. Existing `disable*()` options and `tools.json` filtering run first; a family with no remaining tools does not create an empty group. Custom and MCP tools are not classified automatically, even when their names match a disabled built-in. The model can activate one or more groups with `reset_equipped_tools`, and the next reasoning step receives those schemas.
+
+Activation is isolated and persisted per session. It is not automatically reset at the end of a single call. Because changing active groups changes the model's tool-schema prefix, applications that depend heavily on prompt caching should weigh the smaller schema against reduced prefix-cache reuse.
+
+The four group names above are reserved while this option is enabled. A build fails fast if one of those names already exists or a Harness built-in selected for progressive loading already belongs to another group; this preserves the guarantee that optional built-ins start hidden.
+
 ## How state flows
 
 Three layers exist; the framework moves data between them automatically.
