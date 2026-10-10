@@ -30,6 +30,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
@@ -103,7 +104,7 @@ public class AgentTraceMiddleware implements HarnessRuntimeMiddleware {
             return next.apply(input);
         }
         String name = agent.getName();
-        String modelName = resolveModelName(agent);
+        String modelName = resolveModelName(agent, ctx);
         int msgCount = input.messages() != null ? input.messages().size() : 0;
         log.info("[{}] PRE_REASONING  | model={}, messages={}", name, modelName, msgCount);
         if (log.isDebugEnabled() && input.messages() != null) {
@@ -263,9 +264,23 @@ public class AgentTraceMiddleware implements HarnessRuntimeMiddleware {
         }
     }
 
-    private static String resolveModelName(Agent agent) {
-        if (agent instanceof ReActAgent r && r.getModel() != null) {
-            return r.getModel().getModelName();
+    /**
+     * Resolves the model name serving this call — the per-call model (the {@link RuntimeContext}
+     * model id when set, else the build-time default) — so traces attribute the model actually
+     * executing the run.
+     */
+    private static String resolveModelName(Agent agent, RuntimeContext ctx) {
+        if (agent instanceof ReActAgent r) {
+            try {
+                Model effective = ctx != null ? r.getModel(ctx) : r.getModel();
+                if (effective != null) {
+                    return effective.getModelName();
+                }
+            } catch (IllegalArgumentException e) {
+                // Unresolvable per-call id: the call itself fails fast at the model boundary;
+                // the trace reports the raw id instead of failing the turn here.
+                return "<unresolved:" + ctx.getModelId() + ">";
+            }
         }
         return "<unknown>";
     }

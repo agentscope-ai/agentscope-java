@@ -89,8 +89,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             RuntimeContext ctx,
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
-        Model executionModel = agent instanceof ReActAgent react ? react.getModel() : model;
-        if (executionModel == null) executionModel = model;
+        Model executionModel = effectiveModel(agent, ctx);
         int window = executionModel.getContextWindowSize();
         int budget =
                 window > 0
@@ -109,6 +108,26 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                 prepared.messages(),
                                                 prepared.tools(),
                                                 prepared.options())));
+    }
+
+    /**
+     * Resolves the model that will actually process this conversation, so the trigger budget is
+     * derived from the effective model's context window: a dedicated {@link
+     * CompactionConfig#getModel()} when configured, else the executing {@link ReActAgent}'s
+     * per-call model (the {@link RuntimeContext} model id when set, else its build-time
+     * default). Wiring guarantees one of the two exists.
+     */
+    private Model effectiveModel(Agent agent, RuntimeContext ctx) {
+        if (model != null) {
+            return model;
+        }
+        if (agent instanceof ReActAgent react) {
+            Model perCall = ctx != null ? react.getModel(ctx) : react.getModel();
+            if (perCall != null) {
+                return perCall;
+            }
+        }
+        return null;
     }
 
     /** Retry provider context overflow inside the same execution, before its recorder is closed. */
@@ -145,7 +164,11 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             var forced =
                                     new CompactionMiddleware(
                                             workspaceManager,
-                                            model,
+                                            // Overflow recovery summarizes through the
+                                            // dedicated model when configured, else the agent's
+                                            // build-time default — never the per-call model that
+                                            // just overflowed.
+                                            model != null ? model : react.getModel(),
                                             CompactionConfig.builder()
                                                     .triggerMessages(1)
                                                     .keepMessages(1)
@@ -259,9 +282,20 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             config.withEffective(
                                     Math.max(1, trigger),
                                     Math.min(keep, Math.max(0, conversationBudget / 2)));
+                    // Dedicated compaction model when configured; otherwise the executing
+                    // agent's per-call model (RuntimeContext modelId when set, else its
+                    // default), so the summary follows the model serving the conversation.
+                    Model compactModel = model;
+                    if (compactModel == null && agent instanceof ReActAgent react) {
+                        compactModel = react.getModel(rc);
+                    }
+                    if (compactModel == null) {
+                        compactModel = input.model();
+                    }
                     ConversationCompactor compactor =
                             new ConversationCompactor(
-                                    model, new MemoryFlushManager(workspaceManager, model));
+                                    compactModel,
+                                    new MemoryFlushManager(workspaceManager, compactModel));
                     // Commit only if the view is exactly the canonical history. Hook-added context
                     // must never leak into durable history, and concurrent changes must not be
                     // erased.

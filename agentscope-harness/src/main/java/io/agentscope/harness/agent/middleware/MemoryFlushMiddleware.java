@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -272,8 +273,14 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             return Mono.empty();
         }
 
+        Model effective = effectiveFlushModel(agent, rc);
+        if (effective == null) {
+            // No dedicated model and the agent cannot resolve a per-call one (non-ReActAgent
+            // direct construction): nothing to extract memories with.
+            return Mono.empty();
+        }
         MemoryFlushManager flushManager =
-                new MemoryFlushManager(workspaceManager, model, flushPrompt);
+                new MemoryFlushManager(workspaceManager, effective, flushPrompt);
         return flushManager
                 .flushMemories(rc, messages)
                 .doOnSuccess(v -> log.debug("Memory flush completed"))
@@ -282,6 +289,19 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                             log.warn("Memory flush failed: {}", e.getMessage());
                             return Mono.empty();
                         });
+    }
+
+    /**
+     * Resolves the model used for memory extraction: a dedicated flush model when configured,
+     * else the executing {@link ReActAgent}'s per-call model (its {@link RuntimeContext} model id
+     * when set, else its build-time default), so flush follows the model actually serving the
+     * conversation. Package-private for unit testing.
+     */
+    Model effectiveFlushModel(Agent agent, RuntimeContext rc) {
+        if (model != null) {
+            return model;
+        }
+        return agent instanceof ReActAgent react ? react.getModel(rc) : null;
     }
 
     /**

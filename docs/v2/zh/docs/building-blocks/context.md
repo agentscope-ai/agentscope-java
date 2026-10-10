@@ -328,8 +328,36 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 | `resolveAgentState(ctx, agent)` | 静态辅助方法:优先返回 `ctx.getAgentState()`,回退到 `agent.getAgentState()`。执行期间应确保当前调用已注入状态；回退不保证选中正确业务会话 |
 | `get(String)` / `put(String, Object)` | 字符串键存取 |
 | `get(Class<T>)` / `put(Class<T>, T)` | 按类型存取(typed singleton) |
+| `getModelId()` | 按调用选择模型(见下方[按调用选择模型](#按调用选择模型)) |
 | `getExtra()` | 直接拿到字符串属性 map(可变视图) |
 | `RuntimeContext.empty()` | 空上下文 |
+
+### 按调用选择模型
+
+`builder().modelId(...)` 按 id 为单次调用选择模型——即 LLM API 的 per-request 模型惯例。id 在本次 run 的每一次模型调用(推理、摘要、压缩、记忆清洗)中都经 `ModelRegistry` 解析,因此单例 Agent 无需反射、也无需为每个租户实例化一个 Agent,就能服务需要不同模型的多个会话。模型选择对整个调用是确定性的:由不可变的 `RuntimeContext` 携带,而非可变的 Agent 状态,不存在调用中途切换,也不会跨会话泄漏。
+
+```java
+// 启动时注册一次(集群各节点保持一致):
+ModelRegistry.register("prod", openAiModel);
+ModelRegistry.registerFactory("deepseek:.*", id -> deepseekModel(id));
+
+// 每个请求携带调用方的选择:
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId("alice")
+        .sessionId("s-001")
+        .modelId("deepseek:deepseek-v4")   // null = Agent 的默认模型
+        .build();
+Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
+```
+
+语义:
+
+- **fail-fast,绝不静默回退**:设置了但为空白或无法解析的 id 会让本次调用失败(`IllegalArgumentException` 以 error event 呈现),而不是悄悄用默认模型——多租户下用错模型通常意味着用错凭证、算错账单。`null`(未设置)就是用 Agent 的默认模型。
+- **辅助调用跟随 effective 模型**:压缩、记忆清洗、超轮摘要使用解析出的模型;若为它们配置了专用模型(`CompactionConfig.getModel()` / `MemoryConfig.model()`)则专用模型优先。压缩触发阈值按 effective 模型的上下文窗口计算。后台的定期记忆整合不在此列——它不属于任何调用,始终使用构建期配置的模型。
+- **子代理不继承**:子代理派生上下文时会清空调用方的 `modelId`——子代理的模型是构建期契约(`SubagentDeclaration.getModel()`),调用方的运行时选择不得悄悄改变 worker 模型或其成本面。
+- **provider 故障仍然 failover**:选中的模型运行期出错时,已配置的 `fallbackModel` 照常接管——failover 管可用性,选择本身已被尊重。
+- 会话级粘性(跨请求记住选择)是应用自己的职责:存在你自己的会话记录里,每个请求 stamp 到 context 的 `modelId` 上。选择不进 `AgentState`,事实源只有一个。
+- 不要与 `GenerateOptions.getModelName()` 混淆——那是 provider 侧的路由提示,不参与模型选择。
 
 ### runId 关联
 

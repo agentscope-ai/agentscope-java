@@ -373,16 +373,26 @@ public class SubAgentTool implements AgentTool {
     private Flux<Event> streamWithContext(
             Agent agent, Msg userMsg, StreamOptions options, RuntimeContext runtimeContext) {
         if (runtimeContext != null && agent instanceof ReActAgent reActAgent) {
-            return reActAgent.stream(List.of(userMsg), options, runtimeContext);
+            return reActAgent.stream(List.of(userMsg), options, stripCallerModel(runtimeContext));
         }
         return agent.stream(List.of(userMsg), options);
     }
 
     private Mono<Msg> callWithContext(Agent agent, Msg userMsg, RuntimeContext runtimeContext) {
         if (runtimeContext != null && agent instanceof ReActAgent reActAgent) {
-            return reActAgent.call(List.of(userMsg), runtimeContext);
+            return reActAgent.call(List.of(userMsg), stripCallerModel(runtimeContext));
         }
         return agent.call(List.of(userMsg));
+    }
+
+    /**
+     * Drops the caller's per-call model choice before handing the context to a subagent: a
+     * subagent's model is a build-time contract and must not be overridden by the caller's
+     * runtime selection. The derived copy keeps everything else (ids, attributes, run
+     * correlation); when no model id is set the original context is passed through unchanged.
+     */
+    private static RuntimeContext stripCallerModel(RuntimeContext rc) {
+        return rc.getModelId() == null ? rc : RuntimeContext.builder(rc).modelId(null).build();
     }
 
     /**
