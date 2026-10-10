@@ -30,6 +30,7 @@ import io.agentscope.core.agui.model.AguiToolCall;
 import io.agentscope.core.agui.model.AudioInputContent;
 import io.agentscope.core.agui.model.DocumentInputContent;
 import io.agentscope.core.agui.model.ImageInputContent;
+import io.agentscope.core.agui.model.InputContent;
 import io.agentscope.core.agui.model.InputContentDataSource;
 import io.agentscope.core.agui.model.InputContentUrlSource;
 import io.agentscope.core.agui.model.MessageContent;
@@ -48,6 +49,8 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -600,6 +603,22 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testNullInputContentIsRejectedWithoutDereferencingIt() throws Exception {
+        // Blocks rejects null elements, so exercise this defensive guard directly.
+        Method method =
+                AguiMessageConverter.class.getDeclaredMethod("toContentBlock", InputContent.class);
+        method.setAccessible(true);
+
+        InvocationTargetException exception =
+                assertThrows(
+                        InvocationTargetException.class,
+                        () -> method.invoke(converter, new Object[] {null}));
+
+        assertEquals(IllegalStateException.class, exception.getCause().getClass());
+        assertEquals("Unhandled InputContent type: null", exception.getCause().getMessage());
+    }
+
+    @Test
     void testConvertDocumentInputContentIsRejectedForUrlSource() {
         AguiMessage aguiMsg =
                 AguiMessage.userMessage(
@@ -607,11 +626,14 @@ class AguiMessageConverterTest {
                         List.of(
                                 new DocumentInputContent(
                                         new InputContentUrlSource("https://example.com/doc.pdf"),
-                                        null)));
+                                        Map.of("private", "private-metadata"))));
 
         IllegalStateException exception =
                 assertThrows(IllegalStateException.class, () -> converter.toMsg(aguiMsg));
-        assertTrue(exception.getMessage().startsWith("Unhandled InputContent type:"));
+        assertEquals(
+                "Unsupported AG-UI input content type 'document': document input is not supported"
+                        + " yet",
+                exception.getMessage());
     }
 
     @Test
@@ -622,11 +644,14 @@ class AguiMessageConverterTest {
                         List.of(
                                 new DocumentInputContent(
                                         new InputContentDataSource("dGVzdA==", "application/pdf"),
-                                        null)));
+                                        Map.of("private", "private-metadata"))));
 
         IllegalStateException exception =
                 assertThrows(IllegalStateException.class, () -> converter.toMsg(aguiMsg));
-        assertTrue(exception.getMessage().startsWith("Unhandled InputContent type:"));
+        assertEquals(
+                "Unsupported AG-UI input content type 'document': document input is not supported"
+                        + " yet",
+                exception.getMessage());
     }
 
     @Test
@@ -878,6 +903,49 @@ class AguiMessageConverterTest {
                         ((List<?>) msgs.get(0).getMetadata().get(Msg.METADATA_CONFIRM_RESULTS))
                                 .get(0);
         assertFalse(cr.isConfirmed());
+    }
+
+    @Test
+    void testConvertConfirmationResumeWithReasonCarriesDenialReason() {
+        AguiEvent.Interrupt interrupt =
+                new AguiEvent.Interrupt(
+                        "reply-1:tool-call-1",
+                        "tool_call",
+                        "confirm",
+                        "tool-call-1",
+                        null,
+                        null,
+                        Map.of(
+                                "toolName",
+                                "shell",
+                                "toolContent",
+                                "{\"command\":\"date\"}",
+                                "agentscope.interruptKind",
+                                "permission_confirm"));
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "reply-1:tool-call-1",
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of(
+                                                        "approved",
+                                                        false,
+                                                        "reason",
+                                                        "production command is not allowed"))))
+                        .build();
+
+        List<Msg> msgs = converter.toMsgList(input, Map.of("reply-1:tool-call-1", interrupt));
+
+        ConfirmResult cr =
+                (ConfirmResult)
+                        ((List<?>) msgs.get(0).getMetadata().get(Msg.METADATA_CONFIRM_RESULTS))
+                                .get(0);
+        assertFalse(cr.isConfirmed());
+        assertEquals("production command is not allowed", cr.getReason());
     }
 
     @Test

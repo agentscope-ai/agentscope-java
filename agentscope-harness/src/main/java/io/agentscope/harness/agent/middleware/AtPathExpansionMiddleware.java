@@ -30,9 +30,11 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -91,6 +93,12 @@ public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
         this.workspaceManager = workspaceManager;
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
+    }
+
     @Override
     public Flux<AgentEvent> onAgent(
             Agent agent,
@@ -105,13 +113,14 @@ public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
 
         List<Msg> rewritten = new ArrayList<>(input.msgs().size());
+        int[] remainingChars = {64000};
         boolean changed = false;
         for (Msg msg : input.msgs()) {
             if (msg.getRole() != MsgRole.USER) {
                 rewritten.add(msg);
                 continue;
             }
-            Msg expanded = expand(msg, fs, rc);
+            Msg expanded = expand(msg, fs, rc, remainingChars);
             if (expanded != msg) {
                 changed = true;
             }
@@ -131,7 +140,7 @@ public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
         return true;
     }
 
-    private Msg expand(Msg msg, AbstractFilesystem fs, RuntimeContext rc) {
+    private Msg expand(Msg msg, AbstractFilesystem fs, RuntimeContext rc, int[] remainingChars) {
         String text = msg.getTextContent();
         if (text == null || text.indexOf('@') < 0) {
             return msg;
@@ -140,12 +149,21 @@ public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
         Matcher m = AT_PATH.matcher(text);
         Map<String, String> attached = new LinkedHashMap<>();
         while (m.find()) {
+            if (remainingChars[0] <= 0) break;
             String ref = m.group("path");
             if (attached.containsKey(ref)) {
                 continue;
             }
             String content = tryRead(fs, rc, ref);
             if (content != null) {
+                if (content.length() > remainingChars[0]) {
+                    content =
+                            content.substring(0, remainingChars[0])
+                                    + "\n"
+                                    + "[Attachment preview truncated; read the original path for"
+                                    + " more.]";
+                }
+                remainingChars[0] = Math.max(0, remainingChars[0] - content.length());
                 attached.put(ref, content);
             }
         }

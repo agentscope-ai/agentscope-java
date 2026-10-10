@@ -122,6 +122,30 @@ public final class MessageUtils {
     }
 
     /**
+     * Returns the IDs of server tool results contained in the supplied message.
+     *
+     * <p>Only provider-produced terminal results are included. Local tool results normally live
+     * in TOOL-role messages, so a local result that unexpectedly appears in an assistant message
+     * must not mark a matching server tool call as complete. A running provider result is also
+     * excluded because it represents an intermediate partial result, not a completed tool call.
+     *
+     * @param message the message to inspect
+     * @return the inline server tool result IDs
+     */
+    public static Set<String> inlineServerToolResultIds(Msg message) {
+        if (message == null) {
+            return Set.of();
+        }
+
+        return message.getContentBlocks(ToolResultBlock.class).stream()
+                .filter(ToolResultBlock::isServerTool)
+                .filter(result -> result.getState() != ToolResultState.RUNNING)
+                .map(ToolResultBlock::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /**
      * Replaces the most recent message with the requested role.
      *
      * @param messages the mutable message list to update
@@ -145,8 +169,9 @@ public final class MessageUtils {
     }
 
     /**
-     * Returns the IDs of tool calls in the last assistant message that do not yet have a matching
-     * tool result anywhere in the conversation.
+     * Returns the IDs of local tool calls in the last assistant message that do not yet have a
+     * matching tool result anywhere in the conversation. Server tools are executed by the provider
+     * and must not enter local execution or pending-tool recovery.
      *
      * @param messages the conversation messages
      * @return the pending tool-call IDs
@@ -165,6 +190,7 @@ public final class MessageUtils {
                         .collect(Collectors.toSet());
 
         return lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
+                .filter(toolUse -> !toolUse.isServerTool())
                 .map(ToolUseBlock::getId)
                 .filter(id -> !existingResultIds.contains(id))
                 .collect(Collectors.toSet());

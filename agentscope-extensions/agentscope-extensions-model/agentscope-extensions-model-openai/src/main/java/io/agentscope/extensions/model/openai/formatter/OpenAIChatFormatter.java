@@ -64,6 +64,21 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
         return result;
     }
 
+    @Override
+    protected List<OpenAIMessage> doFormat(List<Msg> msgs, GenerateOptions options) {
+        List<OpenAIMessage> result = new ArrayList<>();
+        List<Boolean> cacheDirectives = new ArrayList<>();
+        for (Msg msg : msgs) {
+            OpenAIMessage openAIMsg = convertMessage(msg, hasMediaContent(msg));
+            if (openAIMsg != null) {
+                result.add(openAIMsg);
+                cacheDirectives.add(cacheControlDirective(msg));
+            }
+        }
+        applyAutomaticCacheControl(result, cacheDirectives, options);
+        return result;
+    }
+
     /**
      * Convert one AgentScope message to OpenAI message format.
      *

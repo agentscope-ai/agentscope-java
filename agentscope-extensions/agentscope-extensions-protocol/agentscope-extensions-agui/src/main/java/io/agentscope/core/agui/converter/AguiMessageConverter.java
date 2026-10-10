@@ -29,6 +29,7 @@ import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiToolCall;
 import io.agentscope.core.agui.model.AudioInputContent;
+import io.agentscope.core.agui.model.DocumentInputContent;
 import io.agentscope.core.agui.model.ImageInputContent;
 import io.agentscope.core.agui.model.InputContent;
 import io.agentscope.core.agui.model.InputContentDataSource;
@@ -77,6 +78,9 @@ public class AguiMessageConverter {
 
     /** AG-UI resume payload key: full replacement tool arguments. */
     private static final String RESUME_PAYLOAD_EDITED_ARGS = "editedArgs";
+
+    /** AG-UI resume payload key: optional reason supplied when denying the tool call. */
+    private static final String RESUME_PAYLOAD_REASON = "reason";
 
     /**
      * Creates a new AguiMessageConverter
@@ -329,12 +333,14 @@ public class AguiMessageConverter {
         if (input instanceof VideoInputContent video) {
             return VideoBlock.builder().source(toSource(video.source())).build();
         }
-        //        if (input instanceof DocumentInputContent doc) {
-        //            // AgentScope currently lacks a native DocumentBlock; falling back to
-        // DataBlock
-        //            return DataBlock.builder().source(toSource(doc.source())).build();
-        //        }
-        throw new IllegalStateException("Unhandled InputContent type: " + input);
+        if (input instanceof DocumentInputContent) {
+            throw new IllegalStateException(
+                    "Unsupported AG-UI input content type 'document': document input is not"
+                            + " supported yet");
+        }
+        throw new IllegalStateException(
+                "Unhandled InputContent type: "
+                        + (input == null ? "null" : input.getClass().getSimpleName()));
     }
 
     /**
@@ -470,7 +476,8 @@ public class AguiMessageConverter {
                         .content(toolContent)
                         .build();
 
-        ConfirmResult confirmResult = new ConfirmResult(approved, toolUseBlock);
+        ConfirmResult confirmResult =
+                new ConfirmResult(approved, toolUseBlock, null, reason(resume));
         return Msg.builder()
                 .id("agui-confirm-" + resume.getInterruptId())
                 .role(MsgRole.USER)
@@ -518,6 +525,15 @@ public class AguiMessageConverter {
             result.put(key, entry.getValue());
         }
         return Collections.unmodifiableMap(result);
+    }
+
+    private static String reason(AguiResume resume) {
+        Object payload = resume.getPayload();
+        if (!(payload instanceof Map<?, ?> map)) {
+            return null;
+        }
+        String reason = stringValue(map.get(RESUME_PAYLOAD_REASON));
+        return reason == null || reason.isBlank() ? null : reason;
     }
 
     private static String stringValue(Object value) {

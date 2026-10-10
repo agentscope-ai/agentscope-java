@@ -21,16 +21,24 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** HTTP client for {@code https://api.e2b.app} sandbox lifecycle. */
 final class E2bPlatformHttp {
+
+    private static final Logger log = LoggerFactory.getLogger(E2bPlatformHttp.class);
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
@@ -67,10 +75,78 @@ final class E2bPlatformHttp {
         return E2bRetry.withRetries(opt.getMaxRetries(), () -> postJson(url, body, true));
     }
 
-    JsonNode createSandboxSnapshot(String sandboxId) throws IOException {
+    JsonNode createSandboxSnapshot(String sandboxId, String name) throws IOException {
         ObjectNode body = json.createObjectNode();
+        if (name != null && !name.isBlank()) {
+            body.put("name", name);
+        }
         String url = trimSlash(opt.getApiBaseUrl()) + "/sandboxes/" + sandboxId + "/snapshots";
         return E2bRetry.withRetries(opt.getMaxRetries(), () -> postJson(url, body, true));
+    }
+
+    void deleteSnapshot(String snapshotId) throws IOException {
+        HttpUrl parsed = HttpUrl.parse(trimSlash(opt.getApiBaseUrl()) + "/templates");
+        if (parsed == null) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "Invalid E2B apiBaseUrl: " + opt.getApiBaseUrl());
+        }
+        HttpUrl url = parsed.newBuilder().addPathSegment(snapshotId).build();
+        Request req =
+                new Request.Builder()
+                        .url(url)
+                        .addHeader("X-API-Key", requireApiKey())
+                        .delete()
+                        .build();
+        E2bRetry.withRetries(
+                opt.getMaxRetries(),
+                () -> {
+                    try (Response res = http.newCall(req).execute()) {
+                        if (!res.isSuccessful() && res.code() != 404) {
+                            throw new SandboxException.SandboxRuntimeException(
+                                    SandboxErrorCode.SNAPSHOT_PERSIST_ERROR,
+                                    "E2B snapshot delete failed: HTTP " + res.code());
+                        }
+                    }
+                    return null;
+                });
+    }
+
+    /**
+     * One-shot cleanup keeps the last {@code retention} ids by insertion order (most recent last).
+     * Duplicate ids are collapsed (first occurrence wins) so the "keep last N" contract counts
+     * distinct snapshots; blank ids are dropped.
+     */
+    List<String> cleanupSnapshots(List<String> snapshotIds, int retention) {
+        List<String> ids = dedupe(snapshotIds);
+        if (retention <= 0 || ids.isEmpty() || ids.size() <= retention) {
+            return ids;
+        }
+        int deleteCount = ids.size() - retention;
+        List<String> toDelete = new ArrayList<>(ids.subList(0, deleteCount));
+        List<String> kept = new ArrayList<>(ids.subList(deleteCount, ids.size()));
+        for (String old : toDelete) {
+            try {
+                deleteSnapshot(old);
+            } catch (Exception e) {
+                log.warn("[sandbox-e2b] failed to prune snapshot {}: {}", old, e.getMessage());
+                kept.add(0, old);
+            }
+        }
+        return kept;
+    }
+
+    private static List<String> dedupe(List<String> snapshotIds) {
+        if (snapshotIds == null) {
+            return new ArrayList<>();
+        }
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        for (String id : snapshotIds) {
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            seen.add(id);
+        }
+        return new ArrayList<>(seen);
     }
 
     void killSandbox(String sandboxId) throws IOException {
@@ -136,7 +212,8 @@ final class E2bPlatformHttp {
         return opt.getApiKey();
     }
 
-    private static String trimSlash(String u) {
+    /** Blank base URL means the E2B cloud default; a trailing slash is dropped for path joins. */
+    static String trimSlash(String u) {
         if (u == null || u.isBlank()) {
             return "https://api.e2b.app";
         }

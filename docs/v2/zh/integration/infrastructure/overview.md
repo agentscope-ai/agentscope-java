@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v2/en/integration/infrastructure/overview
 ---
 
 这一组扩展把 AgentScope 接到企业里常见的基础设施上，让 Agent 能像普通服务一样被治理、被调度、被发现。

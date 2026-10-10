@@ -21,6 +21,9 @@ public final class SessionEventTypes {
     private SessionEventTypes() {}
 
     // ---- Agent (persisted) ----
+    /** Announces the exact SDK execution id for targeted cancellation. */
+    public static final String SESSION_RUN_STARTED = "session.run_started";
+
     public static final String AGENT_MESSAGE = "agent.message";
     public static final String AGENT_THINKING = "agent.thinking";
     public static final String AGENT_TOOL_USE = "agent.tool_use";
@@ -46,6 +49,9 @@ public final class SessionEventTypes {
 
     // ---- Span (persisted) ----
     public static final String SPAN_MODEL_REQUEST_START = "span.model_request_start";
+    public static final String SPAN_CONTEXT_BUILD = "span.context_build";
+    public static final String SPAN_ACTION_OBSERVATION = "span.action_observation";
+    public static final String SPAN_TASK_VERIFICATION = "span.task_verification";
     public static final String SPAN_MODEL_REQUEST_END = "span.model_request_end";
 
     // ---- Inbound ----

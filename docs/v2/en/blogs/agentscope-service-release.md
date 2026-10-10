@@ -1,5 +1,6 @@
 ---
 title: AgentScope Service Release
+zh_link: /v2/zh/blogs/agentscope-service-release
 ---
 
 **AgentScope Service** — an Agent control plane built on AgentScope Harness.
@@ -222,7 +223,7 @@ For remote cases, the AgentScope Service Control Plane's role is to let Agent A 
 The figure above shows **traffic proxying** for remote Subagent calls through the control plane — not a one-off API design:
 
 + **Local first — skip the control plane when you can.** If `techlead` happens to be a local Subagent declared inside the same `HarnessAgent` process as Agent A, delegation is an in-process call and the control plane is not involved. That is the lowest-latency path, and usually the most common one.
-+ **Across instances / frameworks, the control plane does three jobs: discovery, auth, and proxying.** It first confirms a legitimate collaboration relationship between Agent A and `techlead` (same Team, whitelist ACL), then looks up the target instance by Agent ID in the fleet registry — the target may be a Managed Agent (forwarded to the Dataplane Session Turn API) or a LangChain Agent registered via `aistio.instrument()` (forwarded to the chat endpoint it reported) — and finally proxies the request and streams the response back to Agent A unchanged.
++ **Across instances / frameworks, the control plane does three jobs: discovery, auth, and proxying.** It first confirms a legitimate collaboration relationship between Agent A and `techlead` (same Team, whitelist ACL), then looks up the target instance by Agent ID in the fleet registry — the target may be a Managed Agent (forwarded to the Dataplane Session Turn API) or a LangChain Agent registered via `agentscope_service.instrument()` (forwarded to the chat endpoint it reported) — and finally proxies the request and streams the response back to Agent A unchanged.
 + **Agent A never needs to know the peer's framework.** For the caller, `delegate("techlead", ...)` does not change whether the target is a local Subagent, a Managed Agent, or a LangChain Agent. Framework differences are absorbed by the control plane's routing layer.
 
 That is why the "how to attach" section stresses that AgentScope, LangChain, and Claude can attach to the same control plane in different ways: once attached, each becomes discoverable to other Agents, can receive delegated work, and can return results — without point-to-point integration between every pair of frameworks.
@@ -237,7 +238,7 @@ The four planes can be understood as follows:
 | **Plane** | **Owns** | **Does not own** |
 | --- | --- | --- |
 | Gateway | Public entry, authentication, and API routing | Business state and Agent execution |
-| Control Plane (`aistiod`) | Product resources, console, Agent state, Sessions, Teams, and runtime commands | Harness inference and Session stream transport |
+| Control Plane (`service-controlplane`) | Product resources, console, Agent state, Sessions, Teams, and runtime commands | Harness inference and Session stream transport |
 | Dataplane | Managed Harness Runtime, event log, SSE, Turn Lease, HITL, and Work Queue | Direct reads of product Catalog tables |
 | Scheduler | Channel, Cron, outbound jobs, and Self-hosted Hands Workers | The inference loop |
 
@@ -268,13 +269,13 @@ Below we focus on the second path: how a self-developed, self-deployed Agent att
 
 #### AgentScope
 
-AgentScope Java natively supports attaching Agent applications. By adding the `agentscope-extensions-aistio` dependency, an existing AgentScope Runtime can register itself with the control plane automatically and appear in the Dashboard alongside Managed Agents. Session state, health, and runtime signals report through the same contract.
+AgentScope Java natively supports attaching Agent applications. By adding the `agentscope-extensions-controlplane` dependency, an existing AgentScope Runtime can register itself with the control plane automatically and appear in the Dashboard alongside Managed Agents. Session state, health, and runtime signals report through the same contract.
 
 Cross-replica message delivery and subtask delegation for Agent Teams, cross-node async task tracking, Session concurrency control, Workspace state sync, and other distributed deployment needs can all be provided natively by the control plane.
 
 #### LangChain
 
-The community currently ships a Python SDK. Users can attach through the `aistio.instrument()` wrapper. For LangChain / LangGraph apps, the control plane collects Session snapshots, context, and runtime metrics out of band; the main business path succeeds first, and reporting failures do not affect inference itself.
+The community currently ships a Python SDK. Users can attach through the `agentscope_service.instrument()` wrapper. For LangChain / LangGraph apps, the control plane collects Session snapshots, context, and runtime metrics out of band; the main business path succeeds first, and reporting failures do not affect inference itself.
 
 That way, Agents built with LangChain can still enter AgentScope Service fleet management and Session observability without rewriting the business path.
 
@@ -294,31 +295,17 @@ Personal workspace assistants such as QwenPaw can in principle attach via Sideca
 
 ## Try It Locally
 
-AgentScope Service is iterating quickly. If you want the full product surface first, clone the repository and start it in a local environment.
+Start the published `2.1.0-BETA1` Service with Docker Compose by following
+[Deploy and prepare Service](/v2/en/service/quickstart). No source build is needed.
+The guide covers package download, SHA-256 verification, model configuration and
+startup. Open http://localhost:18080 and sign in as `admin` with the generated
+`CONTROL_PLANE_BOOTSTRAP_PASSWORD` in `.env`, then change the password.
 
-1. Start the control plane, Managed Agents dataplane, and other components (as in the production deployment diagram above):
-
-```shell
-git clone https://github.com/agentscope-ai/agentscope-java.git
-cd agentscope-java
-```
-
-```bash
-export DASHSCOPE_API_KEY=sk-xxx
-cd agentscope-service
-scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
-```
-
-2. Open [http://localhost:8080](http://localhost:8080) and sign in with username / password (`admin` / `admin`).
-
-From there you can try Managed Agents and create an Agent quickly:
-
-    1. Create an Agent under **Managed Agents**;
-    2. Create a `local` Environment;
-    3. Open **Sessions**, bind the Agent and Environment, and send the first message;
-    4. Return to the **Dashboard** to inspect online status, events, and runtime info;
-    5. For collaboration, open **Agent Teams**, create a team, and watch tasks and member state.
-3. To try BYO Agent registration, use the sample at `agentscope-samples/agents/agentscope-paw` in the repository. After it starts, you should see the agent registered successfully in the Dashboard.
+Continue with [your first Managed Agent](/v2/en/service/create-managed-agent).
+To connect an existing Coding Agent, install the CLI and Runtime Host with
+[Go](/v2/en/service/runtime-host), then follow [Hosted Agent onboarding](/v2/en/service/connect-hosted-agent).
+For production Kubernetes deployment, use the published
+[Helm Chart](/v2/en/service/kubernetes).
 
 ## Roadmap & Closing
 

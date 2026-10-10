@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.anthropic;
 
+import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
 import static io.agentscope.core.model.ModelProviderSupport.intOption;
 import static io.agentscope.core.model.ModelProviderSupport.stringOption;
 import static io.agentscope.core.model.ModelProviderSupport.trimToNull;
@@ -79,7 +80,7 @@ public final class AnthropicModelProvider implements ModelProvider {
                         .authToken(authToken)
                         .modelName(modelName)
                         .stream(context.getStream() != null ? context.getStream() : true);
-        String baseUrl = trimToNull(context.getBaseUrl());
+        String baseUrl = firstNonBlank(context.getBaseUrl(), System.getenv("ANTHROPIC_BASE_URL"));
         if (baseUrl != null) {
             builder.baseUrl(baseUrl);
         }

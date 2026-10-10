@@ -1,6 +1,7 @@
 ---
 title: Model
 description: Configure and connect LLM model providers in AgentScope Java
+zh_link: /v2/zh/docs/building-blocks/model
 ---
 
 ## Overview
@@ -30,6 +31,7 @@ Provider-specific model implementations have been moved out of `agentscope-core`
 | Provider | Maven artifact | Main package |
 |----------|----------------|--------------|
 | OpenAI | `agentscope-extensions-model-openai` | `io.agentscope.extensions.model.openai` |
+| OpenAI Official | `agentscope-extensions-model-openai-official` | `io.agentscope.extensions.model.openaiofficial` |
 | DashScope | `agentscope-extensions-model-dashscope` | `io.agentscope.extensions.model.dashscope` |
 | Gemini | `agentscope-extensions-model-gemini` | `io.agentscope.extensions.model.gemini` |
 | Anthropic | `agentscope-extensions-model-anthropic` | `io.agentscope.extensions.model.anthropic` |
@@ -46,7 +48,7 @@ Provider-specific model implementations have been moved out of `agentscope-core`
 </dependency>
 ```
 
-Other provider artifacts follow the same pattern: `agentscope-extensions-model-openai`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-anthropic`, and `agentscope-extensions-model-ollama`.
+Other provider artifacts follow the same pattern: `agentscope-extensions-model-openai`, `agentscope-extensions-model-openai-official`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-anthropic`, and `agentscope-extensions-model-ollama`.
 
 2. Replace provider imports from `io.agentscope.core.model.*` with `io.agentscope.extensions.model.<provider>.*`.
 3. Replace provider formatter imports from `io.agentscope.core.formatter.<provider>.*` with `io.agentscope.extensions.model.<provider>.formatter.*`.
@@ -100,7 +102,7 @@ ReActAgent agent =
 
 ### Spring Boot applications
 
-For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, `agentscope-anthropic-spring-boot-starter`, and `agentscope-ollama-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.
+For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-openai-official-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, `agentscope-anthropic-spring-boot-starter`, and `agentscope-ollama-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.
 
 OpenAI example:
 
@@ -124,6 +126,7 @@ default generation options, proxy/client settings, or provider-specific flags.
 | Starter | Customizer type |
 |---------|-----------------|
 | `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
+| `agentscope-openai-official-spring-boot-starter` | `OpenAIResponsesChatModelBuilderCustomizer` |
 | `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
 | `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
 | `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
@@ -213,12 +216,13 @@ A **Chat Model** is the LLM driving conversation and tool calling, with input an
 | Provider | Class | Notes |
 |----------|-------|-------|
 | OpenAI | `OpenAIChatModel` | Chat Completions API; works with vLLM and OpenAI-compatible endpoints (DeepSeek, Kimi, …) |
+| OpenAI Official | `OpenAIResponsesChatModel` | Responses API via official SDK; reasoning, structured output |
 | Anthropic | `AnthropicChatModel` | Claude models; prompt caching and thinking |
 | DashScope | `DashScopeChatModel` | Qwen models; multi-modal (vision/audio/video), reasoning |
 | Gemini | `GeminiChatModel` | Google Gemini; multi-modal |
 | Ollama | `OllamaChatModel` | Locally hosted LLMs; credential optional |
 
-Provider credential classes live with their model extension modules, for example `OpenAICredential`, `AnthropicCredential`, `DashScopeCredential`, `GeminiCredential`, and `OllamaCredential`. OpenAI-compatible credentials such as `DeepSeekCredential`, `KimiCredential`, and `XAICredential` remain available from core.
+Provider credential classes live with their model extension modules, for example `OpenAICredential`, `OpenAIOfficialCredential`, `AnthropicCredential`, `DashScopeCredential`, `GeminiCredential`, and `OllamaCredential`. OpenAI-compatible credentials such as `DeepSeekCredential`, `KimiCredential`, and `XAICredential` remain available from core.
 
 ### Creating a chat model
 
@@ -367,7 +371,7 @@ Msg msg =
 WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
-How it works: the framework synthesizes a forced structured tool call from the target class, validates and repairs the model output, and writes the result into `Msg.metadata` under the `structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
+How it works: the framework synthesizes a forced structured tool call from the target class, validates and repairs the model output, and writes the result into `Msg.metadata` under the `_structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
 
 #### Structured output path selection
 
@@ -380,11 +384,16 @@ The framework provides two structured output paths:
 
 If the native path fails (e.g. model returns HTTP 400), the framework **automatically falls back** to the synthetic tool path — no user intervention needed.
 
+Native structured output does not force a schema to strict mode. OpenAI and OpenAI Official
+manufacturer can enable it explicitly with `strictJsonSchema(true)`; a schema-level `strict` value
+always takes precedence.
+
 #### Default behavior per provider
 
 | Provider | `supportsNativeStructuredOutput` | Notes |
 |----------|----------------------------------|-------|
 | OpenAI (GPT-4o, etc.) | `true` | Native `json_schema` support |
+| OpenAI Official (Responses API) | `true` | Native `json_schema` support |
 | OpenAI (DeepSeek/GLM formatter) | `false` | Not supported; auto-fallback |
 | DashScope | `false` | Native endpoint only supports `json_object`, not `json_schema`; fallback by default |
 | Anthropic | `false` (default) | — |
@@ -448,6 +457,7 @@ Per-provider formatters now live with their provider extension modules:
 |----------|------|------------|
 | DashScope | `DashScopeChatFormatter` | `DashScopeMultiAgentFormatter` |
 | OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
+| OpenAI Official | — | `ResponsesMultiAgentFormatter` |
 | Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
 | Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
 | Ollama | `OllamaChatFormatter` | `OllamaMultiAgentFormatter` |

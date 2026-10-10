@@ -22,9 +22,10 @@ import java.util.List;
 
 /**
  * Fuzziness ladder for {@code SkillManageTool#patch}. The LLM rarely reproduces whitespace
- * exactly — indentation drift, trailing-space normalisation in editors, and the parser's
- * frontmatter-whitespace eat (see {@code MarkdownSkillParser.FRONTMATTER_PATTERN}) all create
- * mismatches that a strict {@code String.indexOf} would reject.
+ * exactly — indentation drift, trailing-space normalisation in editors, CRLF line endings from
+ * a Windows-authored file, and the parser's frontmatter-whitespace eat (see
+ * {@code MarkdownSkillParser.FRONTMATTER_PATTERN}) all create mismatches that a strict
+ * {@code String.indexOf} would reject.
  *
  * <p>The matcher tries progressively looser comparisons and reports back which level made the
  * match so the caller can surface that to the LLM. Each looser level maintains a per-character
@@ -34,11 +35,31 @@ import java.util.List;
  * <ul>
  *   <li>{@link Level#EXACT} — strict {@code String.indexOf}, preserved for byte-for-byte fidelity
  *   <li>{@link Level#TRAILING_WS_STRIPPED} — same after stripping {@code ' '/'\t'} at the end of
- *       every line on both sides. Catches editor-side trailing-whitespace normalisation.
+ *       every line on both sides, and after treating a CRLF terminator's {@code '\r'} as part of
+ *       the line break rather than line content — a Windows-authored file otherwise matches no
+ *       LF-only needle at any level. Catches editor-side trailing-whitespace normalisation.
  *   <li>{@link Level#WHITESPACE_COLLAPSED} — same after also stripping leading whitespace per
  *       line and collapsing every internal whitespace run to a single {@code ' '}. Catches
  *       indentation drift (tabs ↔ spaces, 2-space ↔ 4-space) and re-wrapped lines.
  * </ul>
+ *
+ * <p>CRLF terminators are folded to {@code '\n'} so a Windows-authored file matches an LF-only
+ * needle. An emitted {@code '\n'} maps back to the {@code '\r'} that starts a CRLF terminator,
+ * and both the leading and the trailing boundary resolve through that same map entry, so at the
+ * normalising levels a span edge always lands on a terminator boundary and never splits one.
+ * {@link Level#EXACT} carries no such guarantee: it is a raw {@code indexOf}, so a needle that
+ * begins with a newline can open on the {@code '\n'} of a CRLF terminator and leave its
+ * {@code '\r'} behind, exactly as it does before this change. Either way only the span itself is
+ * ever replaced, so nothing outside it is rewritten.
+ *
+ * <p>Because the replacement is spliced in verbatim, a needle that opens on a line break hands
+ * that terminator to the caller's own text — a replacement supplying {@code '\n'} leaves it as
+ * {@code '\n'}, so one patch over a CRLF document can leave both styles present. That is the
+ * caller's text taking effect rather than whitespace this class rewrote.
+ *
+ * <p>A lone {@code '\r'} — classic Mac line endings, or a file where only some lines end that way
+ * — is still treated as ordinary content and matches nothing; that is out of scope here, but
+ * stated because the rest of this class advertises newline tolerance.
  */
 final class FuzzyTextMatcher {
 
@@ -142,7 +163,7 @@ final class FuzzyTextMatcher {
             if (needleEndExcl < haystack.originalIndex.length) {
                 origEnd = haystack.originalIndex[needleEndExcl];
             } else {
-                origEnd = haystack.originalLength;
+                origEnd = haystack.originalLength();
             }
             out.add(new MatchRange(origStart, origEnd, level));
             idx = needleEndExcl;
@@ -154,8 +175,34 @@ final class FuzzyTextMatcher {
      * A normalised view of a string plus a per-character map back to the original string. For
      * every {@code i} in {@code [0, text.length())}, {@code originalIndex[i]} is the offset in
      * the original string of the source character that emitted {@code text.charAt(i)}.
+     *
+     * <p>A folded terminator maps to the {@code '\r'} that <em>starts</em> it, never to the
+     * {@code '\n'} that ends it. Both span boundaries read this one map, so a match that opens or
+     * closes on a newline lands on a terminator boundary from either side, and no boundary can
+     * leave a stray {@code '\r'} behind. Resolving a leading newline forward to its {@code '\n'}
+     * instead would split the terminator: the replacement is spliced verbatim, so any patch whose
+     * text does not itself begin with a newline would strand the {@code '\r'} in the document and
+     * downgrade that line's terminator to LF.
      */
-    private record Normalized(String text, int[] originalIndex, int originalLength) {}
+    private record Normalized(String source, String text, int[] originalIndex) {
+        int originalLength() {
+            return source.length();
+        }
+    }
+
+    /**
+     * End (exclusive) of the line body within {@code [lineStart, lineEnd)}. A {@code '\r'} that
+     * immediately precedes the line's {@code '\n'} belongs to a CRLF terminator, not to the line
+     * body. Without this a file authored on Windows can never match an LF-only needle at any level
+     * of the ladder; the same offset doubles as the map target for the emitted newline, which is
+     * what keeps a match ending at a line boundary from swallowing the carriage return.
+     */
+    private static int lineBodyEnd(String s, int lineStart, int lineEnd) {
+        if (lineEnd < s.length() && lineEnd > lineStart && s.charAt(lineEnd - 1) == '\r') {
+            return lineEnd - 1;
+        }
+        return lineEnd;
+    }
 
     /**
      * Drop trailing {@code ' '} and {@code '\t'} from each line. Newlines and inner-line content
@@ -174,8 +221,10 @@ final class FuzzyTextMatcher {
             if (lineEnd < 0) {
                 lineEnd = len;
             }
+            // CRLF: the carriage return is part of the terminator, not the line body.
+            int bodyEnd = lineBodyEnd(s, lineStart, lineEnd);
             // Drop ' ' / '\t' from the tail of this line.
-            int trimEnd = lineEnd;
+            int trimEnd = bodyEnd;
             while (trimEnd > lineStart
                     && (s.charAt(trimEnd - 1) == ' ' || s.charAt(trimEnd - 1) == '\t')) {
                 trimEnd--;
@@ -186,11 +235,11 @@ final class FuzzyTextMatcher {
             }
             if (lineEnd < len) {
                 out.append('\n');
-                map[mapLen++] = lineEnd;
+                map[mapLen++] = bodyEnd;
             }
             i = lineEnd + 1;
         }
-        return new Normalized(out.toString(), Arrays.copyOf(map, mapLen), len);
+        return new Normalized(s, out.toString(), Arrays.copyOf(map, mapLen));
     }
 
     /**
@@ -210,15 +259,17 @@ final class FuzzyTextMatcher {
             if (lineEnd < 0) {
                 lineEnd = len;
             }
+            // CRLF: the carriage return is part of the terminator, not line content.
+            int bodyEnd = lineBodyEnd(s, lineStart, lineEnd);
             // Skip leading whitespace.
             int j = lineStart;
-            while (j < lineEnd && (s.charAt(j) == ' ' || s.charAt(j) == '\t')) {
+            while (j < bodyEnd && (s.charAt(j) == ' ' || s.charAt(j) == '\t')) {
                 j++;
             }
             boolean inRun = false;
             int runOrigStart = -1;
             int contentEmittedAt = mapLen;
-            for (; j < lineEnd; j++) {
+            for (; j < bodyEnd; j++) {
                 char c = s.charAt(j);
                 if (c == ' ' || c == '\t') {
                     if (!inRun) {
@@ -242,10 +293,10 @@ final class FuzzyTextMatcher {
             // less sensitive to inserted blank lines on the LLM side).
             if (lineEnd < len && mapLen > contentEmittedAt) {
                 out.append('\n');
-                map[mapLen++] = lineEnd;
+                map[mapLen++] = bodyEnd;
             }
             i = lineEnd + 1;
         }
-        return new Normalized(out.toString(), Arrays.copyOf(map, mapLen), len);
+        return new Normalized(s, out.toString(), Arrays.copyOf(map, mapLen));
     }
 }
