@@ -165,8 +165,9 @@ public class AgentSpawnTool {
      * <p>When force-sync is on:
      *
      * <ul>
-     *   <li>{@code timeout_seconds=0} is coerced to the default sync timeout (30s), unless {@link
-     *       #CTX_FORCE_SYNC_TIMEOUT_SECONDS} supplies an absolute override
+     *   <li>{@code timeout_seconds=0} is coerced to the default sync timeout (30s) when no
+     *       application timeout applies; see {@link #resolveEffectiveTimeoutMs(Integer,
+     *       RuntimeContext, Optional)} for precedence
      *   <li>If the sync wait exceeds the timeout, the subagent is interrupted and the tool returns
      *       {@code status: timeout} — it is <em>not</em> promoted to an async background task
      * </ul>
@@ -188,8 +189,8 @@ public class AgentSpawnTool {
      * Optional {@link RuntimeContext} override for the sync wait (seconds) when {@link
      * #CTX_FORCE_SYNC} is enabled. Accepts an {@link Integer}/{@link Number} or its string form.
      *
-     * <p>When present (and force-sync is on), this value fully replaces the LLM's {@code
-     * timeout_seconds} for the call. Values {@code <= 0} fall back to the default sync timeout
+     * <p>When present (and force-sync is on), this value takes precedence over the general context
+     * override, declaration and LLM's {@code timeout_seconds}. Values {@code <= 0} use the default sync timeout
      * (30s); values above 600 are clamped.
      *
      * <p>Ignored when force-sync is off.

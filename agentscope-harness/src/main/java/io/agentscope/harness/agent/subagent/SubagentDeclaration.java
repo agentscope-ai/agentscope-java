@@ -307,13 +307,13 @@ public final class SubagentDeclaration {
     /**
      * Optional per-subagent synchronous wait timeout, in seconds.
      *
-     * <p>When set (non-null), this value takes precedence over the {@code timeout_seconds} argument
+     * <p>When positive, this value takes precedence over the {@code timeout_seconds} argument
      * the LLM supplies on {@code agent_spawn} / {@code agent_send}, giving the application operator
      * control over how long the parent waits synchronously for the subagent result before
      * returning. This is useful when the model cannot reliably estimate the wait for deep,
      * long-running work and keeps timing out.
      *
-     * <p>Semantics when set:
+     * <p>Semantics when positive:
      *
      * <ul>
      *   <li>The parent waits synchronously for up to this many seconds, overriding an LLM request
