@@ -158,8 +158,9 @@ env:
 | `disableWorkspaceContext()` | 工作区指令和参考材料加载（`AGENTS.md` / `MEMORY.md` / `knowledge/`） |
 | `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `HARNESS_CONTEXT` 中的 memory 材料（`MEMORY.md`） |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导 |
+| `disableKnowledgeContext()` | `## Domain Knowledge` 引导段、`knowledge/KNOWLEDGE.md` 全文及 `Knowledge files:` 目录。与 `disableWorkspaceContext()` 不同，此开关保留 `AGENTS.md`、`MEMORY.md` 和记忆工具 |
 | `disableSubagents()` | 整个子 agent 子系统 |
-| `disableDynamicSkills()` | 每次 call 重新合并技能；改成 build 时一次 |
+| `disableDynamicSkills()` | 每轮重新合并技能；改成 build 时一次 |
 | `disableToolsConfig()` | 不读 `tools.json` |
 | `disableSessionPersistence()` | 兼容 no-op；不能用它关闭原生 Session Log，模式选择见会话日志指南 |
 
@@ -173,10 +174,10 @@ env:
 
 | 材料 | 模型中的位置 | 预算行为 |
 | --- | --- | --- |
-| AGENTS.md | System / `project_rules` | 不直接淘汰；超过 100 KiB 按 UTF-8 安全方式从头部截断并带截断标记 |
-| 工作原则、环境信息 | System / `working_principles`、`environment` | 计入最终预算。`disableKnowledgeContext()` 时省略 `## Domain Knowledge` 引导段 |
+| AGENTS.md | System / `project_rules` | 不直接淘汰，计入最终预算 |
+| 工作原则、环境信息 | System / `working_principles`、`environment` | 计入最终预算 |
 | MEMORY.md | USER 参考消息 / `HARNESS_CONTEXT`，kind=memory | 准备时可截断，最终预算不足时可省略 |
-| knowledge 入口及路径索引 | USER 参考消息 / `HARNESS_CONTEXT`，kind=knowledge | 可因最终预算省略。`disableKnowledgeContext()` 时整段不注入 |
+| knowledge 入口及路径索引 | USER 参考消息 / `HARNESS_CONTEXT`，kind=knowledge | 可因最终预算省略 |
 | additionalContextFile | USER 参考消息 / `HARNESS_CONTEXT`，kind=additional | 必需材料，不能任意淘汰 |
 
 `maxContextTokens` 默认 8000，用于工作区材料准备，不代表最终模型输入上限。
@@ -184,9 +185,7 @@ env:
 MEMORY.md 在记忆工具和 Hooks 都关闭时不加载。
 知识目录只加载入口和索引，其余文件由模型按需读取。
 
-AGENTS.md 不需要 XML 标签。注入时适用说明位于规则正文首行；超过 100 KiB 的文件
-按 UTF-8 码点边界从头部截断并标记 `[File truncated: AGENTS.md]`。
-同一次 call 内文件变化不自动刷新；
+AGENTS.md 不需要 XML 标签。同一次 call 内文件变化不自动刷新；
 下一次 call 重新加载。消息示例、动态业务来源及预算设置见
 [上下文管理](/v2/zh/docs/harness/context)。
 
@@ -382,7 +381,7 @@ skills/code-reviewer/
 3. `workspace/skills/` —— 工作区共用
 4. `<userId>/skills/` —— 用户隔离（覆盖以上所有）
 
-下层独有的 skill 都保留，重名时上层覆盖。每次 call 前 `HarnessSkillMiddleware` 重新合成 → 渲染成 `<available_skills>` 块（只列 name + description），作为按 call 的 runtime material 放在对话之后，agent 看到觉得相关才会 `load_skill_through_path` 拉详情。完整工作机制见 [技能](/v2/zh/docs/harness/skill)。
+下层独有的 skill 都保留，重名时上层覆盖。每轮推理前 `DynamicSkillMiddleware` 重新合成 → 在 system prompt 里渲染成 `<available_skills>` 块（只列 name + description），agent 看到觉得相关才会 `load_skill_through_path` 拉详情。完整工作机制见 [技能](/v2/zh/docs/harness/skill)。
 
 ### `subagents/`
 
@@ -474,12 +473,10 @@ knowledge/
 
 加载时：
 
-- `KNOWLEDGE.md` 作为 `HARNESS_CONTEXT` 的参考材料收集，是否完整纳入取决于上下文预算；
+- `KNOWLEDGE.md` 全文进 `<domain_knowledge_context>`；
 - 同目录下其它文件（任意深度）只列**路径清单**进 prompt，让 agent 用 `read_file` / `grep_files` / `glob_files` 按需读取。
 
 这种"目录里全是细节，prompt 里只放索引"的模式，避免把整个知识库塞进 token 预算。
-
-知识指导随收集到的材料生成：入口正文和文件清单均为空时，省略 Domain Knowledge 指导；仅有内联正文时不承诺目录存在。收集到文件清单时才给出文件导航，即使参考材料随后因上下文预算被省略，也保留检索入口。单次读取失败不代表已有参考文件。
 
 ## 写入工作区的安全规则
 
