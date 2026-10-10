@@ -369,7 +369,7 @@ Msg msg =
 WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
-实现细节：框架会基于目标 Class 合成强制结构化的工具调用，再校验并修复模型输出，最后把结果挂到 `Msg.metadata` 的 `_structured_output` 字段，供 `getStructuredData(Class)` 直接反序列化。完整示例：`agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`。
+实现细节：框架会基于目标 Class 生成输出 schema，按下文规则选择 Native 或 fallback 路径，解析 native JSON 响应或按 schema 校验 fallback 工具入参，并把结果挂到 `Msg.metadata` 的 `_structured_output` 字段，供 `getStructuredData(Class)` 直接反序列化。完整示例：`agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`。
 
 #### 结构化输出路径选择
 
@@ -384,6 +384,15 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 
 Native structured output 默认不会强制 schema 进入 strict 模式。OpenAI 与 OpenAI Official
 厂商可以通过 `strictJsonSchema(true)` 显式开启；schema 内的 `strict` 值优先。
+
+在 fallback 路径上，AgentScope 会基于输出 schema 创建一个只属于本次调用的 `generate_response` 工具。该工具不会注册到共享 toolkit，因此并发结构化输出调用不会互相干扰。
+同时，每个 fallback 请求都会追加一条只传给模型的 transient `<system-reminder>`：
+如果请求的最后一条消息是 user message，就把 reminder 作为额外 TextBlock 追加到这条消息的请求内副本末尾；否则追加一条新的 user message。hook、middleware、`state.contextMutable()`、
+session 持久化以及后续调用都只会看到调用方真实写入的消息。
+
+第一次 fallback 请求不会设置 named `tool_choice`。如果模型在没有调用 `generate_response` 的情况下直接结束，AgentScope 最多会再触发 3 次 reasoning 重试。在重试中，声明
+`supportsToolChoiceSpecific() = true` 的模型会收到 `tool_choice: generate_response`；
+其他模型继续依赖 reminder。如果工具仍未被调用，Agent 会返回不带结构化数据的响应，而不是无限循环。
 
 #### 各模型提供商默认行为
 
@@ -426,20 +435,18 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 
 `DashScopeChatModel` 同样支持此配置。对于 OpenAI 原生模型（GPT-4o 等）无需设置。
 
-#### 提供商不支持指定 `tool_choice` 的场景
+#### 指定 `tool_choice` 支持
 
-结构化输出降级路径需要强制模型调用 `generate_response` 工具时，支持指定具体函数名 `tool_choice` 的提供商会收到硬约束；不支持的提供商（只接受 `tool_choice: auto` 或完全忽略，如 GLM / MiniMax 类端点）则改用提示词提醒。该能力通过 `supportsToolChoiceSpecific` 选项声明，默认为 `true`。如果将通用 OpenAI 提供商指向一个会静默忽略指定 tool_choice 的网关，请将其设为 `false`——否则 Agent 会反复重试一个网关从未生效的约束，可能一直循环直到放弃并丢失结构化数据：
+结构化输出降级路径因模型跳过 `generate_response` 而需要重试时，支持指定具体函数名 `tool_choice` 的端点可以收到硬约束。该能力通过 `supportsToolChoiceSpecific` 选项声明。未知模型和自定义模型默认为 `false`，不会收到 named `tool_choice` 请求，因此不会被网关要求一个可能不支持的约束。OpenAI、DeepSeek、Anthropic、Gemini、DashScope、Ollama 官方端点会声明支持；GLM、MiniMax 以及启用 thinking 的 Kimi 模型不支持。如果连接一个已知支持指定 tool_choice 的自定义 OpenAI 兼容端点，需要显式开启：
 
 ```java
 OpenAIChatModel model = OpenAIChatModel.builder()
         .apiKey("...")
         .baseUrl("https://your-gateway.example.com/v1")
         .modelName("your-model")
-        .supportsToolChoiceSpecific(false)
+        .supportsToolChoiceSpecific(true)
         .build();
 ```
-
-GLM 和 MiniMax 专用提供商已默认设为 `false`；该选项主要用于自定义的 OpenAI 兼容端点，也可以通过提供商配置的高级选项设置（`.option("supportsToolChoiceSpecific", false)`）。
 
 ### Formatter
 

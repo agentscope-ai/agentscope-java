@@ -459,10 +459,10 @@ public class OpenAIChatModel extends ChatModelBase {
          * Sets whether this model supports forcing a specific tool call via {@code tool_choice}
          * (i.e. {@link io.agentscope.core.model.ToolChoice.Specific}).
          *
-         * <p>Defaults to {@code true}. Set to {@code false} for OpenAI-compatible providers
-         * (e.g. GLM, MiniMax) that only accept {@code tool_choice="auto"}; the agent will fall
-         * back to a prompt-reminder strategy when it needs to force the {@code generate_response}
-         * tool.
+         * <p>Defaults to {@code false} because this builder can target any OpenAI-compatible
+         * endpoint. Set to {@code true} only when the endpoint supports forcing a named function
+         * via {@code tool_choice}; otherwise the agent will use a prompt reminder when it needs to
+         * force the {@code generate_response} tool.
          *
          * @param supportsToolChoiceSpecific false if {@code ToolChoice.Specific} is unsupported
          * @return this builder instance

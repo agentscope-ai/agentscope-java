@@ -79,13 +79,14 @@ public interface Model {
      * that support {@code ToolChoice.Specific} get a hard {@code tool_choice} constraint,
      * while providers that do not fall back to injecting a prompt reminder message instead.
      *
-     * <p>Defaults to {@code true}; providers that only support {@code tool_choice="auto"}
-     * (or none at all) must override this to return {@code false}.
+     * <p>Defaults to {@code false}: unknown and custom models use the prompt-reminder strategy
+     * instead of sending a provider-specific constraint they may not support. Models that do
+     * support a named tool choice must override this to return {@code true}.
      *
      * @return {@code true} if {@code ToolChoice.Specific} is supported
      */
     default boolean supportsToolChoiceSpecific() {
-        return true;
+        return false;
     }
 
     /**

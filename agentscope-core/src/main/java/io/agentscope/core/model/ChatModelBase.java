@@ -67,7 +67,7 @@ public abstract class ChatModelBase implements Model {
 
     @Override
     public boolean supportsToolChoiceSpecific() {
-        return supportsToolChoiceSpecific == null || supportsToolChoiceSpecific;
+        return Boolean.TRUE.equals(supportsToolChoiceSpecific);
     }
 
     protected void setSupportsToolChoiceSpecific(boolean supportsToolChoiceSpecific) {

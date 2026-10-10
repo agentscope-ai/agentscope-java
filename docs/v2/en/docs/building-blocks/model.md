@@ -371,7 +371,7 @@ Msg msg =
 WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
-How it works: the framework synthesizes a forced structured tool call from the target class, validates and repairs the model output, and writes the result into `Msg.metadata` under the `_structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
+How it works: the framework builds the output schema from the target class, routes the request through the native or fallback path below, parses the native JSON response or validates the fallback tool input against the schema, and writes the result into `Msg.metadata` under the `_structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
 
 #### Structured output path selection
 
@@ -387,6 +387,21 @@ If the native path fails (e.g. model returns HTTP 400), the framework **automati
 Native structured output does not force a schema to strict mode. OpenAI and OpenAI Official
 manufacturer can enable it explicitly with `strictJsonSchema(true)`; a schema-level `strict` value
 always takes precedence.
+
+On the fallback path, AgentScope creates a per-call `generate_response` tool from the output schema.
+The tool is not registered in the shared toolkit, so concurrent structured-output calls do not
+collide. Every fallback request also receives a transient `<system-reminder>`: if the final input
+message is a user message, the reminder is appended as an extra text block to a request-local copy
+of that message; otherwise it is appended as a new user message. The reminder is visible only to
+the model — hooks, middleware, `state.contextMutable()`, session persistence, and later calls
+observe only the caller's real messages.
+
+The first fallback request does not set a named `tool_choice`. If the model finishes without
+calling `generate_response`, AgentScope retries reasoning up to 3 more times. On those retries, a
+model that declares `supportsToolChoiceSpecific() = true` receives
+`tool_choice: generate_response`; other models continue to rely on the reminder. If the tool is
+still not called, the agent returns the response without structured data instead of looping
+forever.
 
 #### Default behavior per provider
 
@@ -429,20 +444,18 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 
 `DashScopeChatModel` supports this option as well. For native OpenAI models (GPT-4o, etc.) the default behavior handles both correctly — no configuration needed.
 
-#### Providers without specific `tool_choice` support
+#### Specific `tool_choice` support
 
-When the structured-output fallback path needs to force the `generate_response` tool, providers that honour `tool_choice` with a specific function name get a hard constraint, while providers that do not (only `tool_choice: auto` or nothing — GLM / MiniMax style endpoints) get a prompt reminder instead. This capability is declared via `supportsToolChoiceSpecific`, which defaults to `true`. If you point the generic OpenAI provider at a gateway that silently ignores specific tool choices, set it to `false` — otherwise the agent retries a constraint the gateway never applies and may loop until it gives up without structured data:
+When a fallback structured-output request must retry because the model skipped `generate_response`, endpoints that honour `tool_choice` with a specific function name can receive a hard constraint. This capability is declared via `supportsToolChoiceSpecific`. Unknown and custom models default to `false` and never receive named `tool_choice` requests, so an unsupported gateway is not asked for a constraint it may reject. Official OpenAI, DeepSeek, Anthropic, Gemini, DashScope, and Ollama endpoints declare support; GLM, MiniMax, and thinking-enabled Kimi models do not. If you use a custom OpenAI-compatible endpoint known to support named tool choices, opt in explicitly:
 
 ```java
 OpenAIChatModel model = OpenAIChatModel.builder()
         .apiKey("...")
         .baseUrl("https://your-gateway.example.com/v1")
         .modelName("your-model")
-        .supportsToolChoiceSpecific(false)
+        .supportsToolChoiceSpecific(true)
         .build();
 ```
-
-The dedicated GLM and MiniMax providers already set this to `false`; the option matters for custom OpenAI-compatible endpoints. It is also available as a provider-config advanced option (`.option("supportsToolChoiceSpecific", false)`).
 
 ### Formatter
 
