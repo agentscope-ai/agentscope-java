@@ -45,6 +45,19 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public static final String METADATA_SERVER_TOOL = "serverTool";
 
+    /**
+     * Metadata key listing the {@link MalformedToolCallReason} names detected when the tool call
+     * was assembled. Absent for well-formed calls.
+     */
+    public static final String METADATA_MALFORMED_REASONS = "agentscope_malformed_reasons";
+
+    /**
+     * Metadata key holding the raw arguments of a malformed tool call, so the original fragment
+     * can be echoed back to the model.
+     */
+    public static final String METADATA_MALFORMED_RAW_ARGUMENTS =
+            "agentscope_malformed_raw_arguments";
+
     private final String id;
     private final String name;
     private final Map<String, Object> input;
