@@ -71,6 +71,29 @@ class TaskToolTest {
     }
 
     @Test
+    void failedTaskIsReportedAsError() {
+        CompletableFuture<String> failed = new CompletableFuture<>();
+        failed.completeExceptionally(new IllegalStateException("child failed"));
+        BackgroundTask task = new BackgroundTask("failed", "agent", failed);
+        when(repository.getTask(context, context.getSessionId(), "failed")).thenReturn(task);
+
+        String output =
+                assertText(tool.taskOutput(context, "failed", false, null), ToolResultState.ERROR);
+
+        assertTrue(output.contains("Failed: child failed"));
+    }
+
+    @Test
+    void cancelledTaskIsReportedAsInterrupted() {
+        CompletableFuture<String> cancelled = new CompletableFuture<>();
+        cancelled.cancel(false);
+        BackgroundTask task = new BackgroundTask("cancelled", "agent", cancelled);
+        when(repository.getTask(context, context.getSessionId(), "cancelled")).thenReturn(task);
+
+        assertText(tool.taskOutput(context, "cancelled", false, null), ToolResultState.INTERRUPTED);
+    }
+
+    @Test
     void interruptedWaitPreservesThreadFlagAndReportsInterruptedState() {
         BackgroundTask task = new BackgroundTask("pending", "agent", new CompletableFuture<>());
         when(repository.getTask(context, context.getSessionId(), "pending")).thenReturn(task);

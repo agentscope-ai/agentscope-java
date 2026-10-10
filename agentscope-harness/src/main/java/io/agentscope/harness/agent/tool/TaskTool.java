@@ -140,7 +140,7 @@ public class TaskTool {
                 // Marking is best-effort; failure just risks a redundant push, never wrong data.
             }
         }
-        return ToolResultBlock.success(formatTaskDetail(bgTask));
+        return ToolResultBlock.text(formatTaskDetail(bgTask)).withState(taskResultState(bgTask));
     }
 
     @Tool(
@@ -229,6 +229,14 @@ public class TaskTool {
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    private static ToolResultState taskResultState(BackgroundTask task) {
+        return switch (task.getTaskStatus()) {
+            case FAILED -> ToolResultState.ERROR;
+            case CANCELLED -> ToolResultState.INTERRUPTED;
+            default -> ToolResultState.SUCCESS;
+        };
     }
 
     private static String formatTaskDetail(BackgroundTask task) {

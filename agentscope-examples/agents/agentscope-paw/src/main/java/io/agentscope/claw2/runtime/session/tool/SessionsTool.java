@@ -26,6 +26,8 @@ import io.agentscope.claw2.runtime.session.SessionView;
 import io.agentscope.claw2.runtime.session.SpawnResult;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -121,7 +123,7 @@ public class SessionsTool {
                     sessions_pending_completions. Returns run_id and session_key for follow-up \
                     with sessions_send.\
                     """)
-    public String sessionsSpawn(
+    public ToolResultBlock sessionsSpawn(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agent_id", description = "Subagent identifier to instantiate")
                     String agentId,
@@ -174,7 +176,7 @@ public class SessionsTool {
                     SessionEntry e = existingEntry.get();
                     String resumeInfo = formatExistingSessionInfo(e);
                     if (!hasTask) {
-                        return resumeInfo + "\nstatus: resumed";
+                        return ToolResultBlock.success(resumeInfo + "\nstatus: resumed");
                     }
                     long tMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
                     if (tMs == 0) {
@@ -206,9 +208,10 @@ public class SessionsTool {
                                                         e.sessionKey(),
                                                         value,
                                                         error));
-                        return resumeInfo
-                                + "\n"
-                                + String.format(BG_RESULT_TEMPLATE, taskId, taskId);
+                        return ToolResultBlock.success(
+                                resumeInfo
+                                        + "\n"
+                                        + String.format(BG_RESULT_TEMPLATE, taskId, taskId));
                     }
                     SendResult result =
                             sessionAgentManager.execute(
@@ -219,9 +222,10 @@ public class SessionsTool {
                                     CommandLane.SUBAGENT,
                                     runtimeContext);
                     if ("error".equals(result.status())) {
-                        return resumeInfo + "\nstatus: error\nerror: " + result.error();
+                        return failure(resumeInfo + "\nstatus: error\nerror: " + result.error());
                     }
-                    return resumeInfo + "\nstatus: ok\nreply:\n" + result.reply();
+                    return ToolResultBlock.success(
+                            resumeInfo + "\nstatus: ok\nreply:\n" + result.reply());
                 }
             }
         }
@@ -231,13 +235,13 @@ public class SessionsTool {
                         agentId, canonLabel, requesterKey(runtimeContext), parentSpawnDepth);
 
         if ("error".equals(reg.status())) {
-            return "Error: " + reg.error();
+            return ToolResultBlock.error(reg.error());
         }
 
         String spawnedInfo = formatSpawnInfo(reg);
 
         if (sessionMode || !hasTask) {
-            return spawnedInfo + "\nstatus: accepted";
+            return ToolResultBlock.success(spawnedInfo + "\nstatus: accepted");
         }
 
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
@@ -268,7 +272,8 @@ public class SessionsTool {
                     .whenComplete(
                             (value, error) ->
                                     announce(runtimeContext, spawnedSessionKey, value, error));
-            return spawnedInfo + "\n" + String.format(BG_RESULT_TEMPLATE, taskId, taskId);
+            return ToolResultBlock.success(
+                    spawnedInfo + "\n" + String.format(BG_RESULT_TEMPLATE, taskId, taskId));
         }
 
         SendResult result =
@@ -280,9 +285,9 @@ public class SessionsTool {
                         CommandLane.SUBAGENT,
                         runtimeContext);
         if ("error".equals(result.status())) {
-            return spawnedInfo + "\nstatus: error\nerror: " + result.error();
+            return failure(spawnedInfo + "\nstatus: error\nerror: " + result.error());
         }
-        return spawnedInfo + "\nstatus: ok\nreply:\n" + result.reply();
+        return ToolResultBlock.success(spawnedInfo + "\nstatus: ok\nreply:\n" + result.reply());
     }
 
     // -----------------------------------------------------------------
@@ -296,7 +301,7 @@ public class SessionsTool {
                     Send a message to an existing managed session by session_key or label. \
                     timeout_seconds=0 fires and forgets — returns task_id for task_output.\
                     """)
-    public String sessionsSend(
+    public ToolResultBlock sessionsSend(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "session_key",
@@ -333,13 +338,13 @@ public class SessionsTool {
         boolean hasKey = sessionKey != null && !sessionKey.isBlank();
         boolean hasLabel = label != null && !label.isBlank();
         if (hasKey && hasLabel) {
-            return "Error: Provide either session_key or label, not both.";
+            return ToolResultBlock.error("Provide either session_key or label, not both.");
         }
         if (!hasKey && !hasLabel) {
-            return "Error: Either session_key or label is required.";
+            return ToolResultBlock.error("Either session_key or label is required.");
         }
         if (message == null || message.isBlank()) {
-            return "Error: message is required";
+            return ToolResultBlock.error("message is required");
         }
 
         String target = hasKey ? sessionKey.trim() : label.trim();
@@ -376,7 +381,7 @@ public class SessionsTool {
                     .whenComplete(
                             (value, error) ->
                                     announce(runtimeContext, capturedTarget, value, error));
-            return String.format(BG_RESULT_TEMPLATE, taskId, taskId);
+            return ToolResultBlock.success(String.format(BG_RESULT_TEMPLATE, taskId, taskId));
         }
 
         SendResult result =
@@ -384,12 +389,13 @@ public class SessionsTool {
                         target, message, timeoutMs, false, CommandLane.SUBAGENT, runtimeContext);
         return switch (result.status()) {
             case "ok" ->
-                    "session_key: "
-                            + result.sessionKey()
-                            + "\nstatus: ok\nreply:\n"
-                            + result.reply();
-            case "error" -> "Error: " + result.error();
-            default -> "status: " + result.status();
+                    ToolResultBlock.success(
+                            "session_key: "
+                                    + result.sessionKey()
+                                    + "\nstatus: ok\nreply:\n"
+                                    + result.reply());
+            case "error" -> ToolResultBlock.error(result.error());
+            default -> ToolResultBlock.success("status: " + result.status());
         };
     }
 
@@ -475,7 +481,7 @@ public class SessionsTool {
                     written when messages are offloaded from memory. Returns the \
                     session_file_path and transcript content.\
                     """)
-    public String sessionsHistory(
+    public ToolResultBlock sessionsHistory(
             @ToolParam(
                             name = "session_key",
                             description = "AgentStateStore key or label of the target session")
@@ -487,21 +493,26 @@ public class SessionsTool {
                     Integer limit) {
 
         if (sessionKey == null || sessionKey.isBlank()) {
-            return "Error: session_key is required";
+            return ToolResultBlock.error("session_key is required");
         }
 
         int effectiveLimit = limit != null && limit > 0 ? limit : 0;
         HistoryResult result = sessionAgentManager.history(sessionKey.trim(), effectiveLimit);
 
         if (result.error() != null) {
-            return "Error: " + result.error();
+            return ToolResultBlock.error(result.error());
         }
-        return "session_key: "
-                + result.sessionKey()
-                + "\nsession_file_path: "
-                + result.sessionFilePath()
-                + "\n\n"
-                + result.content();
+        return ToolResultBlock.success(
+                "session_key: "
+                        + result.sessionKey()
+                        + "\nsession_file_path: "
+                        + result.sessionFilePath()
+                        + "\n\n"
+                        + result.content());
+    }
+
+    private static ToolResultBlock failure(String text) {
+        return ToolResultBlock.text(text).withState(ToolResultState.ERROR);
     }
 
     // -----------------------------------------------------------------
@@ -517,7 +528,7 @@ public class SessionsTool {
                     children, or omit for the top-level harness. Each entry includes \
                     announce_text for merging into your next reply.\
                     """)
-    public String sessionsPendingCompletions(
+    public ToolResultBlock sessionsPendingCompletions(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "requester_session_key",
@@ -538,7 +549,7 @@ public class SessionsTool {
         if (requesterSessionKey != null
                 && !requesterSessionKey.isBlank()
                 && !requesterSessionKey.equals(rk)) {
-            throw new IllegalArgumentException(
+            return ToolResultBlock.error(
                     "Completion queries are scoped to the current requester session");
         }
         int lim = limit == null ? 10 : Math.max(1, Math.min(limit, 100));
@@ -550,25 +561,41 @@ public class SessionsTool {
                     repo.listTasks(runtimeContext, sid, null).stream()
                             .filter(t -> !t.getTaskStatus().isTerminal())
                             .count();
-            return "status: no_pending_completions\nrunning_tasks: "
-                    + running
-                    + "\nNo pending completion events for requester_session_key="
-                    + rk
-                    + ". An empty completion queue alone does not mean a task is running.";
+            return ToolResultBlock.success(
+                    "status: no_pending_completions\nrunning_tasks: "
+                            + running
+                            + "\nNo pending completion events for requester_session_key="
+                            + rk
+                            + ". An empty completion queue alone does not mean a task is"
+                            + " running.");
         }
         StringBuilder out = new StringBuilder("status: completed_events\n");
         int count = 0;
+        ToolResultState state = ToolResultState.SUCCESS;
         for (var delivery : deliveries) {
             if (count++ >= lim) break;
-            new io.agentscope.harness.agent.tool.TaskTool(repo)
-                    .taskOutput(runtimeContext, delivery.taskId(), false, 0L).getOutput().stream()
-                            .filter(TextBlock.class::isInstance)
-                            .map(TextBlock.class::cast)
-                            .map(TextBlock::getText)
-                            .forEach(out::append);
+            ToolResultBlock taskResult =
+                    new io.agentscope.harness.agent.tool.TaskTool(repo)
+                            .taskOutput(runtimeContext, delivery.taskId(), false, 0L);
+            state = aggregateState(state, taskResult.getState());
+            taskResult.getOutput().stream()
+                    .filter(TextBlock.class::isInstance)
+                    .map(TextBlock.class::cast)
+                    .map(TextBlock::getText)
+                    .forEach(out::append);
             out.append('\n');
         }
-        return out.toString();
+        return ToolResultBlock.text(out.toString()).withState(state);
+    }
+
+    private static ToolResultState aggregateState(ToolResultState current, ToolResultState next) {
+        if (current == ToolResultState.ERROR || next == ToolResultState.ERROR) {
+            return ToolResultState.ERROR;
+        }
+        if (current == ToolResultState.INTERRUPTED || next == ToolResultState.INTERRUPTED) {
+            return ToolResultState.INTERRUPTED;
+        }
+        return ToolResultState.SUCCESS;
     }
 
     // -----------------------------------------------------------------

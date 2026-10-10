@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.tool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.net.URI;
@@ -91,14 +92,15 @@ public final class WebTools {
                                 .build();
                 HttpResponse<String> response =
                         client.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() >= 400) {
-                    throw new IllegalStateException("HTTP " + response.statusCode());
-                }
                 String body = response.body() == null ? "" : response.body();
                 if (body.length() > limit) {
                     body = body.substring(0, limit) + "\n...[truncated]";
                 }
-                return ToolResultBlock.success("status=" + response.statusCode() + "\n\n" + body);
+                String payload = "status=" + response.statusCode() + "\n\n" + body;
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    return ToolResultBlock.text(payload).withState(ToolResultState.ERROR);
+                }
+                return ToolResultBlock.success(payload);
             } catch (Exception e) {
                 if (e instanceof InterruptedException) {
                     Thread.currentThread().interrupt();

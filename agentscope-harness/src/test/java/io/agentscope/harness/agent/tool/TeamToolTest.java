@@ -48,7 +48,10 @@ class TeamToolTest {
 
     static Stream<Method> aliases() {
         return Arrays.stream(TeamTool.class.getDeclaredMethods())
-                .filter(m -> m.isAnnotationPresent(Tool.class) && !m.getName().equals("team"));
+                .filter(
+                        m ->
+                                m.isAnnotationPresent(Tool.class)
+                                        && !"team".equals(m.getAnnotation(Tool.class).name()));
     }
 
     private static Object[] arguments(Method method) {

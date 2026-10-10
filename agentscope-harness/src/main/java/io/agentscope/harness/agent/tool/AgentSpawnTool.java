@@ -496,22 +496,15 @@ public class AgentSpawnTool {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
-                                    try {
-                                        Msg reply =
-                                                manager.invokeAgent(
-                                                                agent,
-                                                                sessionId,
-                                                                currentUserId,
-                                                                capturedTask,
-                                                                runtimeContext)
-                                                        .block();
-                                        return reply != null ? reply.getTextContent() : "";
-                                    } catch (RuntimeException e) {
-                                        return "Error: "
-                                                + (e.getMessage() != null
-                                                        ? e.getMessage()
-                                                        : e.getClass().getSimpleName());
-                                    }
+                                    Msg reply =
+                                            manager.invokeAgent(
+                                                            agent,
+                                                            sessionId,
+                                                            currentUserId,
+                                                            capturedTask,
+                                                            runtimeContext)
+                                                    .block();
+                                    return reply != null ? reply.getTextContent() : "";
                                 });
             }
             taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
@@ -675,22 +668,15 @@ public class AgentSpawnTool {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
-                                    try {
-                                        Msg reply =
-                                                manager.invokeAgent(
-                                                                spawned.agent(),
-                                                                spawned.sessionId(),
-                                                                currentUserId,
-                                                                capturedMessage,
-                                                                runtimeContext)
-                                                        .block();
-                                        return reply != null ? reply.getTextContent() : "";
-                                    } catch (RuntimeException e) {
-                                        return "Error: "
-                                                + (e.getMessage() != null
-                                                        ? e.getMessage()
-                                                        : e.getClass().getSimpleName());
-                                    }
+                                    Msg reply =
+                                            manager.invokeAgent(
+                                                            spawned.agent(),
+                                                            spawned.sessionId(),
+                                                            currentUserId,
+                                                            capturedMessage,
+                                                            runtimeContext)
+                                                    .block();
+                                    return reply != null ? reply.getTextContent() : "";
                                 });
             }
             taskRepository.putTask(
@@ -1721,22 +1707,15 @@ public class AgentSpawnTool {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
-                                    try {
-                                        Msg reply =
-                                                manager.invokeAgent(
-                                                                spawned.agent(),
-                                                                spawned.sessionId(),
-                                                                currentUserId,
-                                                                capturedTask,
-                                                                runtimeContext)
-                                                        .block();
-                                        return reply != null ? reply.getTextContent() : "";
-                                    } catch (RuntimeException e) {
-                                        return "Error: "
-                                                + (e.getMessage() != null
-                                                        ? e.getMessage()
-                                                        : e.getClass().getSimpleName());
-                                    }
+                                    Msg reply =
+                                            manager.invokeAgent(
+                                                            spawned.agent(),
+                                                            spawned.sessionId(),
+                                                            currentUserId,
+                                                            capturedTask,
+                                                            runtimeContext)
+                                                    .block();
+                                    return reply != null ? reply.getTextContent() : "";
                                 });
             }
             taskRepository.putTask(

@@ -56,16 +56,6 @@ Java tool 是任意满足 `AgentTool` 契约的对象。AgentScope 同时提供�
 | `generateSuggestions(toolInput)` | 可选 | 基于本次工具调用生成建议规则；返回 `List<PermissionRule>` |
 | `callAsync(param)` | 可选 | tool 的执行逻辑；返回 `Mono<ToolResultBlock>`。外部执行 tool 不需要实现。 |
 
-### 显式返回执行状态
-
-工具调用成功时返回 `ToolResultBlock.success(text)`，失败时返回 `ToolResultBlock.error(message)`。两者既可直接返回，也可包装在 `Mono<ToolResultBlock>` 中。显式状态可以避免将以 `[ERROR]` 开头的日志等正常内容误判为工具失败。单独使用 `ToolResultBlock.text(text)` 会保留默认的 `RUNNING` 状态；需要保留既有 JSON 或多行输出格式时，可追加 `withState(...)`。
-
-内置 `TodoTools` 以及 harness 的文件、网络、记忆、会话、任务、团队和子代理工具返回结构化结果。直接调用这些 Java 方法的代码需要使用 `ToolResultBlock`，而 `agentSpawn`、`agentSend`、`agentGenerate` 使用 `Mono<ToolResultBlock>`，替代原来的 `String` / `Mono<String>`。通过 `getState()` 读取执行状态，通过 `getOutput()` 中的文本块读取内容。`Toolkit` 注册方式不变。与普通 `String` 返回值不同，结构化文本传给模型时不会额外添加 JSON 字符串引号。
-
-`TodoTools.write(...)` 是注册的结构化工具方法；兼容入口 `todoWrite(...)` 仍返回 `String` 回执。
-
-子代理任务成功提交到后台或在等待超时后转入后台时，返回 `SUCCESS` 和任务句柄；同步执行异常及强制同步超时返回 `ERROR`；远端等待被取消或中断时返回 `INTERRUPTED`。已完成的子代理回复内容不会用于推断工具状态。
-
 ### 使用内置 Tool
 
 AgentScope 当前提供以下内置 tool：
@@ -131,6 +121,12 @@ toolkit.registerTool(new SimpleTools());
 | `stateInjected` | `boolean` | 是否在调用时注入 `AgentState` 作为额外参数（默认 `false`） |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
 | `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |
+
+#### 显式返回执行状态
+
+工具调用成功时返回 `ToolResultBlock.success(text)`，失败时返回 `ToolResultBlock.error(message)`；两者既可直接返回，也可包装在 `Mono<ToolResultBlock>` 中。不要通过文本前缀判断失败。`ToolResultBlock.text(text)` 默认是 `RUNNING`；如需保留既有 JSON 或多行输出，请用 `withState(...)` 明确终态。
+
+内置工具已改为结构化结果。直接调用时用 `getState()` 判断状态，用 `getOutput()` 读取文本；`Toolkit` 注册方式不变。
 
 ### 自定义 Tool（继承 `ToolBase`）
 

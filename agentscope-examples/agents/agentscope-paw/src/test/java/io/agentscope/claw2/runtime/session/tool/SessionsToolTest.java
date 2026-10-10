@@ -88,7 +88,9 @@ class SessionsToolTest {
         try {
             var tool = new SessionsTool(manager, () -> repo);
             String response =
-                    tool.sessionsSpawn(context, "researcher", "Research EV", null, "run", 0);
+                    taskText(
+                            tool.sessionsSpawn(
+                                    context, "researcher", "Research EV", null, "run", 0));
             String id =
                     response.lines()
                             .filter(l -> l.startsWith("task_id:"))
@@ -105,7 +107,9 @@ class SessionsToolTest {
             release.countDown();
             assertTrue(task.waitForCompletion(5000));
             assertEquals("EV evidence", task.getResult());
-            assertTrue(tool.sessionsPendingCompletions(context, null, 10).contains("EV evidence"));
+            assertTrue(
+                    taskText(tool.sessionsPendingCompletions(context, null, 10))
+                            .contains("EV evidence"));
             assertTrue(
                     taskText(new TaskTool(repo).taskOutput(context, id, false, 0L))
                             .contains("EV evidence"));
@@ -155,5 +159,30 @@ class SessionsToolTest {
         } finally {
             repo.shutdown();
         }
+    }
+
+    @Test
+    void sessionsSpawnRegistrationFailureIsError() {
+        SessionAgentManager manager = mock(SessionAgentManager.class);
+        RuntimeContext context = RuntimeContext.builder().sessionId("chat-session").build();
+        when(manager.requesterKeyForSession("chat-session")).thenReturn("chat-session");
+        when(manager.registerSession("researcher", null, "chat-session", 0))
+                .thenReturn(
+                        new SpawnResult(
+                                "run",
+                                null,
+                                null,
+                                null,
+                                "researcher",
+                                "error",
+                                "registry unavailable"));
+
+        ToolResultBlock result =
+                new SessionsTool(manager, () -> null)
+                        .sessionsSpawn(context, "researcher", null, null, "session", null);
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertTrue(
+                ((TextBlock) result.getOutput().get(0)).getText().contains("registry unavailable"));
     }
 }

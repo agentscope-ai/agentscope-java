@@ -41,10 +41,12 @@ import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.RemoteSubagentTransport;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
+import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -151,6 +153,50 @@ class AgentSpawnToolResultStateTest {
                         .contains("child failed"));
         assertText(
                 tool.agentSpawn(context, null, "worker", "go", "worker", 1, null).block(),
+                ToolResultState.ERROR);
+    }
+
+    @Test
+    void asyncExecutionExceptionMarksTaskFailedAndTaskOutputError() throws Exception {
+        when(agent.call(anyList()))
+                .thenReturn(Mono.error(new IllegalStateException("child failed")));
+        AgentSpawnTool tool = localTool(true);
+        AtomicReference<BackgroundTask> taskRef = new AtomicReference<>();
+
+        when(repository.putTask(
+                        eq(context),
+                        anyString(),
+                        eq("worker"),
+                        eq("parent"),
+                        any(TaskRunSpec.class)))
+                .thenAnswer(
+                        invocation -> {
+                            CompletableFuture<String> future = new CompletableFuture<>();
+                            TaskRunSpec.LocalTaskRunSpec local = invocation.getArgument(4);
+                            CompletableFuture.runAsync(
+                                    () -> {
+                                        try {
+                                            future.complete(local.execution().get());
+                                        } catch (Throwable error) {
+                                            future.completeExceptionally(error);
+                                        }
+                                    });
+                            BackgroundTask task = new BackgroundTask("task", "worker", future);
+                            taskRef.set(task);
+                            return task;
+                        });
+        when(repository.getTask(eq(context), eq("parent"), anyString()))
+                .thenAnswer(invocation -> taskRef.get());
+
+        ToolResultBlock spawned =
+                tool.agentSpawn(context, null, "worker", "go", "worker", 0, null).block();
+        assertText(spawned, ToolResultState.SUCCESS);
+
+        BackgroundTask task = taskRef.get();
+        assertTrue(task.waitForCompletion(5000));
+        assertEquals(TaskStatus.FAILED, task.getTaskStatus());
+        assertText(
+                new TaskTool(repository).taskOutput(context, task.getTaskId(), false, 0L),
                 ToolResultState.ERROR);
     }
 
