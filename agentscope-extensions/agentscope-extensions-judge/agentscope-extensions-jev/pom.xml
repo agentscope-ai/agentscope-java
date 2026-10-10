@@ -35,7 +35,7 @@
         <dependency>
             <groupId>com.microsoft.playwright</groupId>
             <artifactId>playwright</artifactId>
-            <version>1.45.0</version>
+            <version>1.63.0</version>
             <optional>true</optional>
         </dependency>
         <dependency>
