@@ -49,6 +49,10 @@ AgentScope Java 2.0.4 新增 OpenAI Responses API、重新设计的 AgentScope S
 - `Version.VERSION` 改为从 Maven 项目版本生成（[#3087](https://github.com/agentscope-ai/agentscope-java/pull/3087)）。
 - 文档站迁移到 Mintlify，保留旧链接并恢复托管站点的语言切换（[#3081](https://github.com/agentscope-ai/agentscope-java/pull/3081)，[#3082](https://github.com/agentscope-ai/agentscope-java/pull/3082)，[#3276](https://github.com/agentscope-ai/agentscope-java/pull/3276)）。
 
+### 兼容性
+
+- 结构化输出校验改用按失败域区分的异常类型：schema 缺失或无法编译时，首次尝试即快速失败并抛出 `StructuredOutputConfigurationException`（此前为耗尽重试预算后抛 `StructuredOutputValidationException`）；当重试预算因平台/内部故障（而非模型输出问题）耗尽时，调用将抛出 `StructuredOutputUnknownFailureException`，原始故障保留在 cause 中（此前视配置不同：或裸抛原始异常，或返回指向模型侧的校验结论）。按旧异常类型做错误映射的调用方请同步调整（[#2858](https://github.com/agentscope-ai/agentscope-java/pull/2858)）。
+
 ### 修复
 
 **核心 / 状态 / 并发**
