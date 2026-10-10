@@ -26,6 +26,7 @@ import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
@@ -420,27 +421,40 @@ class ReActAgentNewLoopE2ETest {
     }
 
     @Test
-    void toolResultEndEventReportsTheReturnValueWhenTheToolAlsoStreamedProgress() {
+    void progressAndResultTravelOnTheirOwnEventTypes() {
         List<AgentEvent> events = runWithProgressTool(ToolResultBlock.text("fingerprint enrolled"));
 
-        // Without this the test would still pass if the tool never emitted anything, and the field
-        // under test would be trivially correct — the progress chunk is the leak being closed.
+        List<String> progress =
+                events.stream()
+                        .filter(ToolProgressEvent.class::isInstance)
+                        .map(ToolProgressEvent.class::cast)
+                        .map(ToolProgressEvent::getText)
+                        .toList();
         assertTrue(
+                progress.contains("scanning 3 dirs"),
+                "the emitted chunk has to reach the stream as progress");
+
+        List<String> resultDeltas =
                 events.stream()
                         .filter(ToolResultTextDeltaEvent.class::isInstance)
                         .map(e -> ((ToolResultTextDeltaEvent) e).getDelta())
-                        .anyMatch("scanning 3 dirs"::equals),
-                "the progress chunk has to reach the stream");
+                        .toList();
+        assertEquals(
+                List.of("fingerprint enrolled"),
+                resultDeltas,
+                "deltas carry only what the model received, so progress must not appear here");
+
         assertEquals(
                 "fingerprint enrolled",
                 lastToolResultEnd(events).getFinalResultText(),
-                "the model received the return value, so that is what the end event reports");
+                "the end event reports the same return value in one event");
     }
 
     @Test
     void imageOnlyReturnValueIsReportedAsEmptyRatherThanAbsent() {
-        // "" and null mean different things downstream: null tells a consumer to fall back to the
-        // deltas it buffered, which would feed progress text back as the tool result on replay.
+        // "" and null mean different things downstream: null reads as "the producer reported
+        // nothing", so a consumer would keep looking for a value the tool did return. A tool that
+        // returned only an image produced a value, and that value has no text in it.
         List<AgentEvent> events =
                 runWithProgressTool(
                         ToolResultBlock.of(

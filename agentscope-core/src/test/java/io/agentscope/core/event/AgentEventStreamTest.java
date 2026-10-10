@@ -164,6 +164,31 @@ class AgentEventStreamTest {
         }
 
         @Test
+        @DisplayName("ToolProgressEvent round-trips its type, content and metadata")
+        void toolProgressEventRoundTrip() throws Exception {
+            Map<String, Object> metadata = Map.of("chunk", true);
+            ToolProgressEvent original =
+                    new ToolProgressEvent(
+                            "reply-1",
+                            "tc-1",
+                            "search",
+                            TextBlock.builder().text("scanning 3 dirs").build());
+            original.withMetadata(metadata);
+
+            String json = mapper.writeValueAsString(original);
+            assertTrue(json.contains("TOOL_PROGRESS"), json);
+
+            AgentEvent deserialized = mapper.readValue(json, AgentEvent.class);
+            assertTrue(
+                    deserialized instanceof ToolProgressEvent,
+                    "the subtype registry has to resolve progress events");
+            ToolProgressEvent back = (ToolProgressEvent) deserialized;
+            assertEquals("tc-1", back.getToolCallId());
+            assertEquals("scanning 3 dirs", back.getText());
+            assertEquals(metadata, back.getMetadata());
+        }
+
+        @Test
         @DisplayName("ToolResultDataDeltaEvent serializes and deserializes metadata")
         void toolResultDataDeltaEventMetadataRoundTrip() throws Exception {
             Map<String, Object> metadata = Map.of("binary", true);

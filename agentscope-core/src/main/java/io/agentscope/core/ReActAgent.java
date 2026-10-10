@@ -51,6 +51,7 @@ import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
@@ -3736,47 +3737,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                     tool.getName()));
                                                 }
 
-                                                Set<String> chunkedToolIds =
-                                                        ConcurrentHashMap.newKeySet();
-
                                                 BiConsumer<ToolUseBlock, ToolResultBlock>
                                                         internalChunkCallback =
                                                                 (toolUse, chunk) -> {
                                                                     if (chunk.getOutput() != null
                                                                             && !chunk.getOutput()
                                                                                     .isEmpty()) {
-                                                                        chunkedToolIds.add(
-                                                                                toolUse.getId());
                                                                         for (ContentBlock block :
                                                                                 chunk.getOutput()) {
-                                                                            if (block
-                                                                                    instanceof
-                                                                                    TextBlock tb) {
-                                                                                sink.next(
-                                                                                        new ToolResultTextDeltaEvent(
-                                                                                                        replyId,
-                                                                                                        toolUse
-                                                                                                                .getId(),
-                                                                                                        toolUse
-                                                                                                                .getName(),
-                                                                                                        tb
-                                                                                                                .getText())
-                                                                                                .withMetadata(
-                                                                                                        chunk
-                                                                                                                .getMetadata()));
-                                                                            } else {
-                                                                                sink.next(
-                                                                                        new ToolResultDataDeltaEvent(
-                                                                                                        replyId,
-                                                                                                        toolUse
-                                                                                                                .getId(),
-                                                                                                        toolUse
-                                                                                                                .getName(),
-                                                                                                        block)
-                                                                                                .withMetadata(
-                                                                                                        chunk
-                                                                                                                .getMetadata()));
-                                                                            }
+                                                                            sink.next(
+                                                                                    new ToolProgressEvent(
+                                                                                                    replyId,
+                                                                                                    toolUse
+                                                                                                            .getId(),
+                                                                                                    toolUse
+                                                                                                            .getName(),
+                                                                                                    block)
+                                                                                            .withMetadata(
+                                                                                                    chunk
+                                                                                                            .getMetadata()));
                                                                         }
                                                                     }
                                                                     hookDispatcher
@@ -3854,8 +3833,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                 emitToolResultDelta(
                                                                                         sink,
                                                                                         replyId,
-                                                                                        entry,
-                                                                                        chunkedToolIds);
+                                                                                        entry);
                                                                                 ToolResultState
                                                                                         state =
                                                                                                 determineToolResultState(
@@ -3996,21 +3974,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Emit delta events for tool results that were NOT already streamed via the chunk
-         * callback. For non-streaming tools the chunk callback is never invoked, so the
-         * event stream would otherwise contain only START and END with no content.
+         * Emit delta events carrying the tool method's return value.
+         *
+         * <p>Progress published through {@link io.agentscope.core.tool.ToolEmitter} travels as
+         * {@link ToolProgressEvent} rather than as deltas, so every delta here is part of what the
+         * model received. A tool that streams progress and also returns a value therefore reports
+         * both: its progress chunks on their own type, then its result chunks.
          */
         private void emitToolResultDelta(
                 FluxSink<AgentEvent> sink,
                 String replyId,
-                Map.Entry<ToolUseBlock, ToolResultBlock> entry,
-                Set<String> chunkedToolIds) {
+                Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
             String toolId = entry.getKey().getId();
             String toolName = entry.getKey().getName();
             ToolResultBlock toolResult = entry.getValue();
-            if (chunkedToolIds.contains(toolId)) {
-                return;
-            }
             List<ContentBlock> output = toolResult.getOutput();
             if (output == null || output.isEmpty()) {
                 return;
@@ -4032,14 +4009,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Join the text blocks of a tool method's return value, reported on {@link
          * ToolResultEndEvent#getFinalResultText()}.
          *
-         * <p>Progress chunks emitted through {@link io.agentscope.core.tool.ToolEmitter} travel the
-         * event stream as deltas but are deliberately not what the model receives, so a consumer
-         * rebuilding the tool message from deltas needs the return value from this event instead.
+         * <p>The deltas of this lifecycle already carry the same value, and progress published
+         * through {@link io.agentscope.core.tool.ToolEmitter} no longer reaches them; this field is
+         * what a consumer that does not accumulate the stream still gets the result from, in a
+         * single event.
          *
          * <p>An empty join is reported as {@code ""}, not {@code null}: a tool that returns an image
-         * or a blank string did produce a return value, and a consumer that fell back to the delta
-         * buffer for it would persist progress text as the result — the exact leak this field exists
-         * to close. Only a result we know nothing about is left unreported.
+         * or a blank string did produce a return value, and a consumer reading {@code null} as
+         * "nothing was reported" would go on looking for it elsewhere. Only a result we know nothing
+         * about is left unreported.
          *
          * @return joined text (possibly empty), or {@code null} when there are no content blocks to
          *     report from

@@ -58,12 +58,6 @@ public class AguiStreamContext {
     private String currentReasoningMessageId;
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
 
-    /**
-     * Non-text result blocks carried by the delta stream, kept beside {@link #toolResultContent} so
-     * an authoritative return value can replace the progress text without erasing them.
-     */
-    private final Map<String, List<String>> toolResultDataBlocks = new LinkedHashMap<>();
-
     private final Map<String, AguiEvent.Interrupt> pendingInterrupts = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
     private final TokenUsageAccumulator tokenUsageAccumulator = new TokenUsageAccumulator();
@@ -285,11 +279,7 @@ public class AguiStreamContext {
         if (!buffer.isEmpty()) {
             buffer.append("\n");
         }
-        String fragment = serialize(data);
-        buffer.append(fragment);
-        toolResultDataBlocks
-                .computeIfAbsent(toolCallId, ignored -> new ArrayList<>())
-                .add(fragment);
+        buffer.append(serialize(data));
     }
 
     public void endToolResult(String replyId, String toolCallId) {
@@ -299,16 +289,16 @@ public class AguiStreamContext {
     /**
      * Close out a tool call and emit its {@code TOOL_CALL_RESULT}.
      *
-     * <p>{@code finalResultText} is the tool method's return value as reported by {@link
-     * io.agentscope.core.event.ToolResultEndEvent}. It wins over the buffered deltas when present:
-     * a tool that streamed progress through {@code ToolEmitter} has progress text in the buffer, and
-     * per that emitter's contract progress is not what the model received. Persisting the buffer as
-     * the result would feed progress text back to the model on the next history replay, and would
-     * leak anything emitted only for the UI.
+     * <p>The buffered deltas are the result: {@code ToolResult*DeltaEvent} carries the tool method's
+     * return value, while progress published through {@code ToolEmitter} travels as {@code
+     * ToolProgressEvent}, which this context does not buffer at all. {@code finalResultText} as
+     * reported by {@link io.agentscope.core.event.ToolResultEndEvent} is the fallback for a result
+     * that produced no bufferable delta, and that is also what separates a blank return value
+     * ({@code ""}) from a producer that reported none ({@code null}).
      *
      * @param replyId the enclosing reply id
      * @param toolCallId the tool call being closed
-     * @param finalResultText the return value, or {@code null} to fall back to buffered deltas
+     * @param finalResultText the return value, used when nothing was buffered
      */
     public void endToolResult(String replyId, String toolCallId, String finalResultText) {
         if (!hasKnownToolCall(toolCallId, "ToolResultEndEvent")) {
@@ -318,37 +308,11 @@ public class AguiStreamContext {
             emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
         }
         StringBuilder buffered = toolResultContent.remove(toolCallId);
-        List<String> dataBlocks = toolResultDataBlocks.remove(toolCallId);
         String content =
-                finalResultText != null
-                        ? appendDataBlocks(finalResultText, dataBlocks)
-                        : buffered != null && !buffered.isEmpty() ? buffered.toString() : null;
+                buffered != null && !buffered.isEmpty() ? buffered.toString() : finalResultText;
         emit(
                 new AguiEvent.ToolCallResult(
                         threadId, runId, toolCallId, content, "tool", replyId + ":" + toolCallId));
-    }
-
-    /**
-     * Keep the non-text blocks the stream carried while the authoritative return value replaces the
-     * buffered text.
-     *
-     * <p>{@code ToolResultEndEvent#getFinalResultText()} joins text blocks only, so a multimodal
-     * result — an image, a structured part — travels as {@code ToolResultDataDeltaEvent}s. Swapping
-     * the whole buffer for the return value would silently drop those parts and leave a client
-     * rendering result parts with an empty message.
-     */
-    private static String appendDataBlocks(String text, List<String> dataBlocks) {
-        if (dataBlocks == null || dataBlocks.isEmpty()) {
-            return text;
-        }
-        StringBuilder out = new StringBuilder(text);
-        for (String block : dataBlocks) {
-            if (!out.isEmpty()) {
-                out.append("\n");
-            }
-            out.append(block);
-        }
-        return out.toString();
     }
 
     public void markToolCallSuspended(String toolCallId) {
@@ -356,7 +320,6 @@ public class AguiStreamContext {
             return;
         }
         toolResultContent.remove(toolCallId);
-        toolResultDataBlocks.remove(toolCallId);
     }
 
     public void addInterrupt(AguiEvent.Interrupt interrupt) {

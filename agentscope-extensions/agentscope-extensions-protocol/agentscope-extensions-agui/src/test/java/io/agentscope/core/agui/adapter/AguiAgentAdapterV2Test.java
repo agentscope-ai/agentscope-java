@@ -61,6 +61,7 @@ import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
@@ -758,29 +759,36 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testEmittedProgressChunksDoNotBecomeTheToolResult() {
-            // ToolEmitter streams progress as deltas, but per its own contract only the tool
-            // method's return value reaches the model. TOOL_CALL_RESULT is what a client stores as
-            // the tool message, so progress text must not end up in it.
-            ToolResultEndEvent end =
-                    new ToolResultEndEvent(
-                            "reply-emitter", "tool-1", "enroll", null, "fingerprint enrolled");
-
+        void testProgressChunksBecomeNeitherTheResultNorRawEvents() {
+            // ToolEmitter progress travels as ToolProgressEvent now. AG-UI has no channel for it,
+            // so
+            // the converter drops it: TOOL_CALL_RESULT is what a client stores as the tool message,
+            // and a progress event that reached the registry fallback would instead surface as one
+            // RAW event per chunk.
             List<AguiEvent> events =
                     runReActEvents(
                             new ToolCallStartEvent("reply-emitter", "tool-1", "enroll"),
                             new ToolCallEndEvent("reply-emitter", "tool-1", "enroll"),
                             new ToolResultStartEvent("reply-emitter", "tool-1", "enroll"),
+                            progress("reply-emitter", "tool-1", "enroll", "press once"),
+                            progress("reply-emitter", "tool-1", "enroll", "press again"),
                             new ToolResultTextDeltaEvent(
-                                    "reply-emitter", "tool-1", "enroll", "press once"),
-                            new ToolResultTextDeltaEvent(
-                                    "reply-emitter", "tool-1", "enroll", "press again"),
-                            end);
+                                    "reply-emitter", "tool-1", "enroll", "fingerprint enrolled"),
+                            new ToolResultEndEvent(
+                                    "reply-emitter",
+                                    "tool-1",
+                                    "enroll",
+                                    null,
+                                    "fingerprint enrolled"));
 
             assertEquals(
                     "fingerprint enrolled",
                     firstToolCallResult(events).content(),
-                    "the return value replaces the progress buffer, matching what the model saw");
+                    "the result delta is what the client stores as the tool message");
+            assertTrue(
+                    events.stream().noneMatch(AguiEvent.Raw.class::isInstance),
+                    "progress is handled by the converter rather than passed through as a raw"
+                            + " event");
         }
 
         @Test
@@ -806,6 +814,12 @@ class AguiAgentAdapterV2Test {
                     .map(AguiEvent.ToolCallResult.class::cast)
                     .findFirst()
                     .orElseThrow();
+        }
+
+        private static ToolProgressEvent progress(
+                String replyId, String toolCallId, String toolCallName, String text) {
+            return new ToolProgressEvent(
+                    replyId, toolCallId, toolCallName, TextBlock.builder().text(text).build());
         }
 
         @Test
@@ -878,11 +892,9 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testAuthoritativeResultKeepsTheNonTextPartsFromTheStream() {
-            // getFinalResultText() joins text blocks only. An image the tool returned travels as a
-            // data delta, so treating the return value as the whole result would drop it and leave
-            // a
-            // client that renders result parts with less than the model saw.
+        void testMultimodalResultKeepsEveryPartInArrivalOrder() {
+            // A producer emits each block of the return value as its own delta, so the buffer holds
+            // the whole result in the order the parts arrived, ahead of the end event's joined text.
             ImageBlock image =
                     ImageBlock.builder()
                             .source(URLSource.builder().url("https://example.com/cat.png").build())
@@ -893,23 +905,48 @@ class AguiAgentAdapterV2Test {
                             new ToolCallEndEvent("reply-tool", "tool-1", "lookup"),
                             new ToolResultStartEvent("reply-tool", "tool-1", "lookup"),
                             new ToolResultDataDeltaEvent("reply-tool", "tool-1", "lookup", image),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-tool", "tool-1", "lookup", "3 rows found"),
                             new ToolResultEndEvent(
                                     "reply-tool", "tool-1", "lookup", null, "3 rows found"));
 
             String content = firstToolCallResult(events).content();
-            assertTrue(content.startsWith("3 rows found"), content);
+            int imageAt = content.indexOf("https://example.com/cat.png");
+            int textAt = content.indexOf("3 rows found");
+            assertTrue(imageAt >= 0, "the image part is kept: " + content);
+            assertTrue(textAt >= 0, "the text part is kept: " + content);
             assertTrue(
-                    content.contains("https://example.com/cat.png"),
-                    "the image part survives the switch to the return value: " + content);
+                    imageAt < textAt,
+                    "the buffered deltas win, so the parts stay in arrival order: " + content);
+        }
+
+        @Test
+        void testResultTextFallsBackToTheEndEventWhenNothingWasBuffered() {
+            // A producer that reports no deltas still has to surface its return value, and "" would
+            // read as an empty result rather than as nothing reported.
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-empty", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-empty", "tool-1", "lookup"),
+                            new ToolResultStartEvent("reply-empty", "tool-1", "lookup"),
+                            new ToolResultEndEvent(
+                                    "reply-empty",
+                                    "tool-1",
+                                    "lookup",
+                                    null,
+                                    "reported on the end event"));
+
+            assertEquals(
+                    "reported on the end event",
+                    firstToolCallResult(events).content(),
+                    "the end event is the fallback when the delta stream carried nothing");
         }
 
         @Test
         void testImageOnlyResultDoesNotFallBackToProgressText() {
             // A tool that streams progress and returns only an image has no text in its return
-            // value,
-            // so the field is "" — reported, but empty. Reading that as "nothing reported" would
-            // put
-            // the progress chunks back into TOOL_CALL_RESULT, which is the leak this PR exists for.
+            // value, so the field is "" — reported, but empty. Reading that as "nothing reported"
+            // used to put the progress chunks back into TOOL_CALL_RESULT.
             ImageBlock image =
                     ImageBlock.builder()
                             .source(
@@ -922,8 +959,7 @@ class AguiAgentAdapterV2Test {
                             new ToolCallStartEvent("reply-image", "tool-1", "render"),
                             new ToolCallEndEvent("reply-image", "tool-1", "render"),
                             new ToolResultStartEvent("reply-image", "tool-1", "render"),
-                            new ToolResultTextDeltaEvent(
-                                    "reply-image", "tool-1", "render", "drawing axes"),
+                            progress("reply-image", "tool-1", "render", "drawing axes"),
                             new ToolResultDataDeltaEvent("reply-image", "tool-1", "render", image),
                             new ToolResultEndEvent("reply-image", "tool-1", "render", null, ""));
 
@@ -936,20 +972,19 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testBlankReturnValueReplacesProgressTextWithNothing() {
+        void testBlankReturnValueYieldsEmptyResultNotProgressText() {
             List<AguiEvent> events =
                     runReActEvents(
                             new ToolCallStartEvent("reply-blank", "tool-1", "cleanup"),
                             new ToolCallEndEvent("reply-blank", "tool-1", "cleanup"),
                             new ToolResultStartEvent("reply-blank", "tool-1", "cleanup"),
-                            new ToolResultTextDeltaEvent(
-                                    "reply-blank", "tool-1", "cleanup", "removing 3 files"),
+                            progress("reply-blank", "tool-1", "cleanup", "removing 3 files"),
                             new ToolResultEndEvent("reply-blank", "tool-1", "cleanup", null, ""));
 
             assertEquals(
                     "",
                     firstToolCallResult(events).content(),
-                    "an empty return value is reported as empty, not as the progress buffer");
+                    "an empty return value reads as empty, not as what the tool streamed");
         }
 
         @Test

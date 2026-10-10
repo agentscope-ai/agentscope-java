@@ -55,8 +55,10 @@ import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
 import java.time.Duration;
 import java.util.LinkedList;
 import java.util.List;
@@ -427,6 +429,68 @@ class AgentScopeAgentExecutorTest {
                     Boolean.TRUE,
                     toolPart.getMetadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
             assertEquals("trace-1", toolPart.getMetadata().get("traceId"));
+        }
+
+        @Test
+        @DisplayName("Should forward tool progress while inner events are enabled")
+        void testToolProgressReachesClientWhenInnerEventsEnabled() throws JSONRPCError {
+            AgentExecuteProperties properties =
+                    AgentExecuteProperties.builder().requireInnerMessage(true).build();
+            executor = new AgentScopeAgentExecutor(mockAgentRunner, properties);
+            doMockForContext(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.just(
+                                    new ToolProgressEvent(
+                                            "reply-id",
+                                            "tool-call-id",
+                                            "search",
+                                            TextBlock.builder().text("scanning 3 dirs").build())));
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+
+            executor.execute(mockContext, mockEventQueue);
+
+            List<Artifact> artifacts =
+                    messageRef.get().stream()
+                            .filter(TaskArtifactUpdateEvent.class::isInstance)
+                            .map(TaskArtifactUpdateEvent.class::cast)
+                            .map(TaskArtifactUpdateEvent::getArtifact)
+                            .toList();
+            assertEquals(
+                    1,
+                    artifacts.size(),
+                    "progress moved to its own event type but still reaches the client");
+            DataPart part = assertInstanceOf(DataPart.class, artifacts.get(0).parts().get(0));
+            assertEquals(
+                    Boolean.TRUE,
+                    part.getMetadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+        }
+
+        @Test
+        @DisplayName("Should withhold tool progress when inner events are disabled")
+        void testToolProgressIsWithheldWhenInnerEventsDisabled() throws JSONRPCError {
+            doMockForContext(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.just(
+                                    new ToolProgressEvent(
+                                            "reply-id",
+                                            "tool-call-id",
+                                            "search",
+                                            TextBlock.builder().text("scanning 3 dirs").build())));
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+
+            executor.execute(mockContext, mockEventQueue);
+
+            List<Artifact> artifacts =
+                    messageRef.get().stream()
+                            .filter(TaskArtifactUpdateEvent.class::isInstance)
+                            .map(TaskArtifactUpdateEvent.class::cast)
+                            .map(TaskArtifactUpdateEvent::getArtifact)
+                            .toList();
+            assertTrue(
+                    artifacts.isEmpty(),
+                    "the default configuration must not start streaming progress: " + artifacts);
         }
 
         @Test
