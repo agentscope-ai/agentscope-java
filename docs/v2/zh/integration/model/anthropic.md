@@ -40,6 +40,14 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
+## 响应 ID
+
+流式响应的 `ChatResponse.getId()` 以及聚合后 assistant 消息的 `Msg.getId()`，会在文本、
+工具调用和 usage 片段之间保留同一个 Anthropic message ID。如果网关省略 ID 或返回空白值，
+同一次订阅会复用一个生成的 ID；不同订阅使用不同的回退 ID。
+
+这里的 ID 标识响应或消息，不是 HTTP 响应头中的 request-id，也不是 AgentScope 事件的 `replyId`。
+
 ## 服务端工具
 
 Anthropic 内置工具由 Anthropic 在模型服务端执行，不会进入 AgentScope 本地 Toolkit。使用 SDK

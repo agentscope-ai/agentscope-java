@@ -81,7 +81,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     private ChatResponse invokeParseStreamEvent(RawMessageStreamEvent event, Instant startTime)
             throws Exception {
         Class<?> stateClass =
-                Class.forName(AnthropicResponseParser.class.getName() + "$StreamUsageState");
+                Class.forName(AnthropicResponseParser.class.getName() + "$StreamState");
         var constructor = stateClass.getDeclaredConstructor();
         constructor.setAccessible(true);
         Object state = constructor.newInstance();
