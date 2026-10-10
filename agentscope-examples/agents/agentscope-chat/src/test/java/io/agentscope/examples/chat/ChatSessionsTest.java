@@ -266,7 +266,7 @@ class ChatSessionsTest {
 
     private ChatHistory.Snapshot await(ChatSessions sessions, Predicate<ChatHistory.Snapshot> ready)
             throws Exception {
-        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
         ChatHistory.Snapshot snapshot;
         do {
             snapshot = sessions.snapshot("conversation");

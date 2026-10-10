@@ -39,3 +39,5 @@ JEV 判断不授予工具权限，也不证明业务操作已经成功。工具�
 [运行案例](/v2/zh/jev/guides/agent-integration-example)无需密钥，展示检索、审核和有限修订。所有可运行源码位于 `agentscope-examples/jev`，入口包为 `io.agentscope.examples.jev`。
 
 接入真实模型前，先了解 [Noul、Choice、Score 与状态契约](/v2/zh/jev/concepts)，再配置[客户端](/v2/zh/jev/guides/client)和[运行模式](/v2/zh/jev/guides/harness-runtime)。文档中的概率阈值是示例值，应使用自己的业务样本校准。
+
+启用工具选择时，`JevToolSelectionMiddleware` 默认使用 `ContextStrategy.RECENT_WINDOW`：最近 8 条非空文本消息，文本总预算 8000 字符。通过 `maxContextMessages` 和 `maxContextChars` 设置正数预算，选择 `LATEST_USER_MESSAGE` 只发送最新用户文本，或 `FULL_CONVERSATION` 发送完整原始消息列表。这些选项保留默认 OFF 模式和逐工具独立评分。
