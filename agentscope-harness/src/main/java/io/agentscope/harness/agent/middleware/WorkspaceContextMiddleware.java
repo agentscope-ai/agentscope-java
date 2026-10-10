@@ -110,33 +110,6 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private static final String MEMORY_AUTO_EXTRACT_GUIDANCE =
             "Memory is also automatically extracted at conversation end.\n";
 
-    private static final String WORKSPACE_FILES_NOTICE_WITH_MEMORY =
-            """
-            ## Workspace Files (Injected)
-            The following <loaded_context> was loaded in from files in your workspace.
-            These files (for example, `AGENTS.md`, `MEMORY.md`, and `knowledge/KNOWLEDGE.md`) contain memory, facts, preferences, guidelines, and user-specific details learned from prior interactions with user.
-            """;
-
-    private static final String WORKSPACE_FILES_NOTICE_WITHOUT_MEMORY =
-            """
-            ## Workspace Files (Injected)
-            The following <loaded_context> was loaded in from files in your workspace.
-            These files (for example, `AGENTS.md` and `knowledge/KNOWLEDGE.md`) contain guidelines and domain context for this agent.
-            """;
-
-    private static final String WORKSPACE_FILES_NOTICE_NO_KNOWLEDGE_WITH_MEMORY =
-            """
-            ## Workspace Files (Injected)
-            The following <loaded_context> was loaded in from files in your workspace.
-            These files (for example, `AGENTS.md` and `MEMORY.md`) contain memory, facts, preferences, guidelines, and user-specific details learned from prior interactions with user.
-            """;
-
-    private static final String WORKSPACE_FILES_NOTICE_NO_KNOWLEDGE_WITHOUT_MEMORY =
-            """
-            ## Workspace Files (Injected)
-            The following <loaded_context> was loaded in from files in your workspace.
-            These files (for example, `AGENTS.md`) contain guidelines and domain context for this agent.
-            """;
     private static final String TRUNCATION_NOTICE_WITH_SEARCH =
             "\n\n... (memory truncated — use memory_search for older entries) ...\n";
 
@@ -553,47 +526,6 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             parts.add(environmentMemory);
         }
         return parts.isEmpty() ? "" : String.join("\n", parts);
-    }
-
-    private String buildLoadedContextSection(
-            String agentsContent,
-            String memoryContent,
-            String knowledgeBlock,
-            String additionalBlock) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(workspaceFilesNotice());
-        sb.append("\n");
-        sb.append("<loaded_context>\n");
-        sb.append(buildXmlContext("agents_context", agentsContent));
-        if (includeMemoryContext()) {
-            sb.append(buildXmlContext("memory_context", memoryContent));
-        }
-        if (!knowledgeBlock.isBlank()) {
-            sb.append(buildXmlContext("domain_knowledge_context", knowledgeBlock));
-        }
-        if (!additionalBlock.isBlank()) {
-            sb.append(additionalBlock);
-        }
-        sb.append("</loaded_context>\n");
-        return sb.toString();
-    }
-
-    private String workspaceFilesNotice() {
-        if (disableKnowledgeContext) {
-            return includeMemoryContext()
-                    ? WORKSPACE_FILES_NOTICE_NO_KNOWLEDGE_WITH_MEMORY
-                    : WORKSPACE_FILES_NOTICE_NO_KNOWLEDGE_WITHOUT_MEMORY;
-        }
-        return includeMemoryContext()
-                ? WORKSPACE_FILES_NOTICE_WITH_MEMORY
-                : WORKSPACE_FILES_NOTICE_WITHOUT_MEMORY;
-    }
-
-    private static String buildXmlContext(String tagName, String content) {
-        if (content == null || content.isBlank()) {
-            return "  <" + tagName + "></" + tagName + ">\n";
-        }
-        return "  <" + tagName + ">\n" + indentByTwo(content.strip()) + "\n  </" + tagName + ">\n";
     }
 
     private static String indentByTwo(String text) {
