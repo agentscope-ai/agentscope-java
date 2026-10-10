@@ -96,4 +96,14 @@ public abstract class SandboxState {
     public String getWorkspaceRoot() {
         return null;
     }
+
+    /**
+     * Accepts the nullable workspace-root property when restoring a state without a backend root.
+     *
+     * <p>This default is a no-op because the base state does not store a root. Backends with a
+     * workspace-root field override both accessors to preserve their existing serialized value.
+     *
+     * @param workspaceRoot the serialized root, ignored by state types without a backend root
+     */
+    public void setWorkspaceRoot(String workspaceRoot) {}
 }

@@ -283,6 +283,8 @@ spec:
 
 ## 工作区怎么映射进沙箱
 
+系统提示词使用本次调用的沙箱状态中保存的工作区根目录，支持 Docker、E2B、AgentRun、Daytona 和 Kubernetes 配置的非默认路径。并发调用各自使用本次调用绑定的沙箱；状态未提供根目录时，提示词回退到 `/workspace`。
+
 宿主侧 `workspace/` 下的关键文件（`AGENTS.md`、`skills/`、`subagents/`、`knowledge/`）在每次沙箱启动时同步进去；按内容哈希增量，不变就跳过传输。
 
 需要把宿主的某个目录 bind 进沙箱（例如代码仓库），用 `BindMountEntry`（仅 Docker 支持；Kubernetes 后端的挂载在集群侧 `SandboxTemplate` 的 podTemplate 里声明，Daytona / E2B 等托管沙箱在云上跑，自然不能挂宿主目录）。
