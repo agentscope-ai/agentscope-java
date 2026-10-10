@@ -66,6 +66,7 @@ public final class OpenAIModelProvider implements ModelProvider {
                         context.getBaseUrl(), System.getenv("OPENAI_BASE_URL"), DEFAULT_BASE_URL);
         String endpointPath = trimToNull(context.getEndpointPath());
         boolean stream = context.getStream() != null ? context.getStream() : true;
+        boolean officialEndpoint = DEFAULT_BASE_URL.equals(baseUrl);
 
         OpenAIChatModel.Builder builder =
                 OpenAIChatModel.builder().apiKey(apiKey).modelName(modelName).stream(stream)
@@ -73,6 +74,7 @@ public final class OpenAIModelProvider implements ModelProvider {
                         .endpointPath(endpointPath)
                         .formatter(new OpenAIChatFormatter())
                         .nativeStructuredOutput(true)
+                        .supportsToolChoiceSpecific(officialEndpoint)
                         .contextWindowSize(
                                 ModelContextWindows.lookup(modelName, ModelContextWindows.OPENAI));
         applyAdvancedOptions(builder, context);

@@ -4,10 +4,37 @@ en_link: /v2/en/service/operations
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+当前发布版本为 `2.1.0-BETA1`，属于预发布版本。用于生产前请验证实际部署。
 </Note>
 
 一份可恢复的备份包括数据库、Workspace、Artifact 和解密这些数据所需的密钥。
+
+<span id="compose-operations"></span>
+
+## 数据持久化
+
+Compose 使用三个命名卷分别保存 PostgreSQL 数据、共享 Workspace 和 Artifact。可以通过 `docker volume ls` 找到本项目的卷，并将它们纳入备份策略。备份加密数据时，还必须妥善保留 `.env` 中的 Vault master key，因为恢复这些数据时仍需要原来的密钥。
+
+如果工具需要读取宿主机上的业务资料，应显式配置目录挂载，并保证容器用户 `65532:65532` 具有所需权限。只在 Agent 指令中写出宿主路径，并不会使这个路径出现在容器里。准备资料时，应先确认所选 Environment 实际能够访问哪个目录，再将对应位置提供给 Agent。
+
+## 更新配置和版本
+
+修改 `.env` 后，需要重新执行 Compose 启动命令，让服务使用新的配置。随后检查组件状态，确认更新后仍能正常运行。
+
+```bash
+docker compose up -d --wait --wait-timeout 600
+docker compose ps
+```
+
+升级版本时，应先在 `.env` 中修改 `SERVICE_VERSION`，再拉取对应的新镜像并重新启动服务。初始化脚本会保留已有 `.env`，所以重新运行 `init-env.sh` 不会替你完成这次版本修改。如果需要变更密钥，还应协调使用该密钥的各个组件；尤其是 Vault master key，它关系到已有数据的解密，不能像普通登录密码一样直接替换。
+
+完整 Compose 使用 standalone HTTP 运行方式。如果还要接入依赖 ASDP 的 External SDK，应先按[External 接入说明](/v2/zh/service/external-agent)准备对应的运行通道。生产环境的 Kubernetes 安装方式见[生产安装](/v2/zh/service/kubernetes)，无论采用哪种部署方式，都应在升级前完成[备份恢复演练](/v2/zh/service/operations)。
+
+## 停止、继续与排错
+
+需要暂时停止平台时，可以执行 `docker compose down`。这个命令会停止服务并保留数据卷，之后重新运行启动命令即可继续使用已有数据。日常停止时不要附加 `-v`，因为该参数会同时删除数据卷。
+
+如果启动失败，先用 `docker compose ps -a` 确认哪个组件未正常运行，再通过 `docker compose logs --tail=100` 查看对应错误，判断问题是否发生在镜像拉取、数据库连接或组件启动阶段。如果宿主端口已被占用，可以修改 `.env` 中的 `GATEWAY_PORT`；若对外访问地址也随之变化，还需同步更新 `BUILDER_OAUTH_PUBLIC_URL`，然后重建容器。
 
 ## Docker 备份
 

@@ -122,6 +122,12 @@ Common `@Tool` attributes:
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
 
+#### Explicit result states
+
+Return `ToolResultBlock.success(text)` for a successful call and `ToolResultBlock.error(message)` for a failure. Both are supported directly and inside `Mono<ToolResultBlock>`. Do not infer failure from text prefixes. `ToolResultBlock.text(text)` defaults to `RUNNING`; use `withState(...)` to set a terminal state when preserving an existing JSON or multiline output.
+
+Built-in tools now return structured results. Direct callers should inspect `getState()` and read the text blocks from `getOutput()`; `Toolkit` registration is unchanged.
+
 ### Custom tools (extending `ToolBase`)
 
 When you need a custom permission policy, external execution, or a more complex schema, extend `ToolBase`:

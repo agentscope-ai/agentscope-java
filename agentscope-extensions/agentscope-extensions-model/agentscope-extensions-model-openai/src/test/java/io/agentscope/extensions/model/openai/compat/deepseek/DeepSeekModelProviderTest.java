@@ -105,13 +105,31 @@ class DeepSeekModelProviderTest {
     @DisplayName("Uses DeepSeek defaults for context window and structured output")
     void createUsesDeepSeekContextWindowAndStructuredOutputDefaults() {
         ModelCreationContext context =
-                ModelCreationContext.builder().apiKey("test-deepseek-key").build();
+                ModelCreationContext.builder()
+                        .apiKey("test-deepseek-key")
+                        .baseUrl(DeepSeekModelProvider.DEFAULT_BASE_URL)
+                        .build();
 
         Model model = new DeepSeekModelProvider().create("deepseek:deepseek-v4-pro", context);
 
         assertEquals(1_048_576, model.getContextWindowSize());
         assertFalse(model.supportsNativeStructuredOutput());
         assertFalse(model.supportsNativeStructuredOutputWithTools());
+        assertTrue(model.supportsToolChoiceSpecific());
+    }
+
+    @Test
+    @DisplayName("Does not assume specific tool_choice support for a custom base URL")
+    void createDoesNotAssumeSpecificToolChoiceSupportForCustomBaseUrl() {
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-deepseek-key")
+                        .baseUrl("https://deepseek-gateway.example.com")
+                        .build();
+
+        Model model = new DeepSeekModelProvider().create("deepseek:deepseek-v4-pro", context);
+
+        assertFalse(model.supportsToolChoiceSpecific());
     }
 
     @Test

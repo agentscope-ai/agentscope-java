@@ -29,6 +29,7 @@ import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiToolCall;
 import io.agentscope.core.agui.model.AudioInputContent;
+import io.agentscope.core.agui.model.DocumentInputContent;
 import io.agentscope.core.agui.model.ImageInputContent;
 import io.agentscope.core.agui.model.InputContent;
 import io.agentscope.core.agui.model.InputContentDataSource;
@@ -486,12 +487,14 @@ public class AguiMessageConverter {
         if (input instanceof VideoInputContent video) {
             return VideoBlock.builder().source(toSource(video.source())).build();
         }
-        //        if (input instanceof DocumentInputContent doc) {
-        //            // AgentScope currently lacks a native DocumentBlock; falling back to
-        // DataBlock
-        //            return DataBlock.builder().source(toSource(doc.source())).build();
-        //        }
-        throw new IllegalStateException("Unhandled InputContent type: " + input);
+        if (input instanceof DocumentInputContent) {
+            throw new IllegalStateException(
+                    "Unsupported AG-UI input content type 'document': document input is not"
+                            + " supported yet");
+        }
+        throw new IllegalStateException(
+                "Unhandled InputContent type: "
+                        + (input == null ? "null" : input.getClass().getSimpleName()));
     }
 
     /**

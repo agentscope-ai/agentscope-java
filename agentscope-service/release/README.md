@@ -99,7 +99,22 @@ python agentscope-service/release/release.py publish-chart \
 
 Image pushes request SBOM and provenance attestations. Preserve the resulting digest metadata alongside the package manifest. Source-package checksums do not cover subsequently created image metadata; publish that metadata separately. Do not reuse a released image tag.
 
-The manual `AgentScope Service release` workflow verifies and packages before building images. `publish=false` builds a local amd64 candidate. `publish=true` requires a selected Git tag and `SERVICE_REGISTRY_HOST`, `SERVICE_REGISTRY_USER`, `SERVICE_REGISTRY_TOKEN` repository secrets. Registry namespace is an explicit input. This image workflow does not publish Maven, PyPI, npm or GitHub Release assets. The separate tag-triggered `service-dist-release.yml` workflow handles GitHub Release assets and the Go module tag (section 7).
+The manual `AgentScope Service release` workflow verifies and packages before building images. `publish=false` builds a local amd64 candidate. `publish=true` requires a selected Git tag and `SERVICE_REGISTRY_HOST`, `SERVICE_REGISTRY_USER`, `SERVICE_REGISTRY_TOKEN` repository secrets. Registry namespace is an explicit input. This manual workflow remains available for image rehearsals and optional OCI Chart publication. The tag-triggered `service-dist-release.yml` workflow automatically pushes images before publishing GitHub Release assets and the Go module tag (section 7).
+
+### Automatic images on future main tags
+
+Configure these repository secrets in **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `SERVICE_REGISTRY_USER` | ACR registry login username with access to all four repositories |
+| `SERVICE_REGISTRY_TOKEN` | The corresponding ACR registry password (not the Alibaba Cloud console password) |
+
+The automatic workflow derives the login host from `SERVICE_IMAGE_REPOSITORY` (default `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`); it does not need `SERVICE_REGISTRY_HOST`. Local Docker login does not authenticate GitHub-hosted runners. See [ACR access credentials](https://help.aliyun.com/zh/acr/user-guide/configure-access-credentials/).
+
+Once the release version is set in the Java POMs and Go version constant and the source is merged into `main`, pushing `vVERSION` runs packaging, then builds and pushes `as-controlplane`, `as-gateway`, `as-dataplane` and `as-scheduler` as `linux/amd64,linux/arm64` manifest lists with the image tag `VERSION` (without `v`). Buildx requests SBOM and provenance. Existing tags are reused only when both platforms and their version/source-commit labels match; conflicts and authentication/network errors stop the workflow. Missing images are built and checked after pushing. Retry a failed images job to resume a partial release. The current Maven `2.1.0-SNAPSHOT` is a development version; prepare the actual release versions before creating the next main tag.
+
+The GitHub Release publish job waits for all four images. It attaches `images.json` containing the verified references, digests, source commit and platforms and includes its checksum in `SHA256SUMS`. Individual Buildx metadata files are available in the `service-image-metadata` Actions artifact. The public HTTP Helm repository and Homebrew tap keep their independent publication workflows; the automatic image job does not require Helm OCI login.
 
 ## 6. Publish SDK packages
 
@@ -181,9 +196,9 @@ git tag -a "$RELEASE_TAG" origin/main -m "$RELEASE_TAG"
 git push origin "$RELEASE_TAG"
 ```
 
-The workflow checks that the tagged commit is on `main`, that Java/Go versions match the tag, and that the Go module major matches. It tests packaging and the CLI commands, builds all four Linux/macOS amd64/arm64 CLI/Runtime Host archives, the Compose and Kubernetes archives, and the standalone Helm Chart. It attaches these seven archives plus `release-manifest.json` and `SHA256SUMS` to a draft, creates `agentscope-service/service-controlplane/vVERSION` at the exact main-tag commit, then publishes the GitHub Release. Versions containing a prerelease suffix are marked as prereleases. Release notes contain one sentence linking to the official English and Chinese documentation.
+The workflow checks that the tagged commit is on `main`, that Java/Go versions match the tag, and that the Go module major matches. It tests packaging and the CLI commands, builds all four Linux/macOS amd64/arm64 CLI/Runtime Host archives, the Compose and Kubernetes archives, and the standalone Helm Chart. After pushing all four multi-platform images, it attaches these seven archives plus `release-manifest.json`, `images.json` and `SHA256SUMS` to a draft, creates `agentscope-service/service-controlplane/vVERSION` at the exact main-tag commit, then publishes the GitHub Release. Versions containing a prerelease suffix are marked as prereleases. Release notes contain one sentence linking to the official English and Chinese documentation.
 
-Only the publish job needs `contents: write`, using the built-in `GITHUB_TOKEN`; no new secret is required. `SERVICE_IMAGE_REPOSITORY` is an optional repository variable for image references in the packages; it defaults to `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`. This workflow does not build/push images, publish Maven/npm/PyPI packages, or update the separate HTTP Helm repository or Homebrew tap. Those channels retain their existing workflows and configuration. The SDK tag workflows also run independently on the main tag.
+Only the GitHub Release publish job needs `contents: write`, using the built-in `GITHUB_TOKEN`; the images job uses the two ACR secrets described in section 5. `SERVICE_IMAGE_REPOSITORY` is an optional repository variable for image references in the packages; it defaults to `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`. This workflow builds and pushes the four images; it does not publish Maven/npm/PyPI packages or update the separate HTTP Helm repository or Homebrew tap. Those channels retain their existing workflows and configuration. The SDK tag workflows also run independently on the main tag.
 
 For an existing tag containing this workflow, rerun it without creating another tag:
 

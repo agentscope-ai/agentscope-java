@@ -26,6 +26,7 @@ import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.extensions.controlplane.model.AgentTaskAssignment;
 import io.agentscope.extensions.controlplane.transport.CollaborationClient;
@@ -345,8 +346,14 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                                     + " against the original objective before submitting your"
                                     + " outcome.\n");
             var taskTool = new io.agentscope.harness.agent.tool.TaskTool(repo);
-            for (String id : outcome.pendingTaskIds())
-                results.append(taskTool.taskOutput(context, id, false, 0L)).append('\n');
+            for (String id : outcome.pendingTaskIds()) {
+                taskTool.taskOutput(context, id, false, 0L).getOutput().stream()
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .map(TextBlock::getText)
+                        .forEach(results::append);
+                results.append('\n');
+            }
             next = message(results.toString());
         }
         return new AgentTaskOutcome(

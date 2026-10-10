@@ -122,6 +122,12 @@ toolkit.registerTool(new SimpleTools());
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
 | `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |
 
+#### 显式返回执行状态
+
+工具调用成功时返回 `ToolResultBlock.success(text)`，失败时返回 `ToolResultBlock.error(message)`；两者既可直接返回，也可包装在 `Mono<ToolResultBlock>` 中。不要通过文本前缀判断失败。`ToolResultBlock.text(text)` 默认是 `RUNNING`；如需保留既有 JSON 或多行输出，请用 `withState(...)` 明确终态。
+
+内置工具已改为结构化结果。直接调用时用 `getState()` 判断状态，用 `getOutput()` 读取文本；`Toolkit` 注册方式不变。
+
 ### 自定义 Tool（继承 `ToolBase`）
 
 需要自定义权限策略、外部执行或更复杂的 schema 时，继承 `ToolBase`：

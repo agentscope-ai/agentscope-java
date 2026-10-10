@@ -171,4 +171,124 @@ class FuzzyTextMatcherTest {
         assertTrue(patched.endsWith("SUFFIX_KEEP"), "suffix bytes must survive verbatim");
         assertTrue(patched.contains("REPLACED"));
     }
+
+    // ---------------------------------------------------------------------
+    //  CRLF coverage. A skill file authored on Windows ends every line with CRLF, while the
+    //  LLM almost always hands back LF. Before the fix, '\r' was carried through both
+    //  normalisers as ordinary content, so a CRLF 'existing' matched an LF needle at NO rung
+    //  of the ladder — including the most lenient one, whose whole purpose is to absorb
+    //  exactly this kind of whitespace difference.
+    // ---------------------------------------------------------------------
+
+    @Test
+    @DisplayName("CRLF file matches an LF needle at the trailing-whitespace level")
+    void crlfExistingMatchesLfNeedle() {
+        String existing = "alpha   \r\nbeta\r\ngamma\r\n";
+        String needle = "alpha\nbeta\ngamma";
+        SearchResult r = FuzzyTextMatcher.search(existing, needle);
+        assertEquals(Level.TRAILING_WS_STRIPPED, r.level());
+        assertEquals(1, r.matches().size());
+    }
+
+    @Test
+    @DisplayName("CRLF match range maps back without eating the line terminator")
+    void crlfMatchRangePreservesTerminators() {
+        String existing = "PREFIX_KEEP\r\nalpha   \r\nbeta\r\nSUFFIX_KEEP\r\n";
+        String needle = "alpha\nbeta";
+        SearchResult r = FuzzyTextMatcher.search(existing, needle);
+        assertEquals(Level.TRAILING_WS_STRIPPED, r.level());
+        assertEquals(1, r.matches().size());
+        MatchRange m = r.matches().get(0);
+        // The range covers exactly the needle's bytes in the original — CRLF included — and
+        // stops before the '\r' that terminates the last matched line. Mapping the emitted
+        // newline back to the '\n' instead would swallow that '\r' and silently rewrite the
+        // file's line ending at the patch boundary.
+        assertEquals("alpha   \r\nbeta", existing.substring(m.start(), m.end()));
+        String patched = existing.substring(0, m.start()) + "ALPHA" + existing.substring(m.end());
+        assertEquals("PREFIX_KEEP\r\nALPHA\r\nSUFFIX_KEEP\r\n", patched);
+    }
+
+    @Test
+    @DisplayName("CRLF file still reaches the collapsed level when indentation drifts")
+    void crlfCollapseLevelHandlesIndentDrift() {
+        String existing = "if cond:\r\n    return 1\r\n    return 2\r\n";
+        String needle = "if cond:\n\treturn 1\n\treturn 2";
+        SearchResult r = FuzzyTextMatcher.search(existing, needle);
+        assertEquals(Level.WHITESPACE_COLLAPSED, r.level());
+        assertEquals(1, r.matches().size());
+    }
+
+    @Test
+    @DisplayName("A CRLF document behaves exactly like its LF twin")
+    void crlfBehavesLikeLfTwin() {
+        String lf = "header\n\nalpha   \n   beta\nfooter\n";
+        String crlf = lf.replace("\n", "\r\n");
+        for (String needle :
+                new String[] {
+                    "alpha\nbeta", "header\nalpha\nbeta\nfooter", "\nalpha\nbeta", "\n\nalpha\nbeta"
+                }) {
+            SearchResult onLf = FuzzyTextMatcher.search(lf, needle);
+            SearchResult onCrlf = FuzzyTextMatcher.search(crlf, needle);
+            assertEquals(onLf.isEmpty(), onCrlf.isEmpty(), "emptiness differs for: " + needle);
+            assertEquals(onLf.level(), onCrlf.level(), "level differs for: " + needle);
+            assertEquals(
+                    onLf.matches().size(),
+                    onCrlf.matches().size(),
+                    "match count differs for: " + needle);
+            for (int i = 0; i < onLf.matches().size(); i++) {
+                MatchRange lfRange = onLf.matches().get(i);
+                MatchRange crlfRange = onCrlf.matches().get(i);
+                assertEquals(
+                        lf.substring(lfRange.start(), lfRange.end()),
+                        crlf.substring(crlfRange.start(), crlfRange.end()).replace("\r", ""),
+                        "mapped range differs for: " + needle);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("A newline-leading needle patches a CRLF document exactly as its LF twin")
+    void crlfLeadingNewlinePatchMatchesLfTwin() {
+        // Each case is {CRLF document, needle, replacement}; the LF twin is the same document with
+        // its terminators folded, so anything the patch leaves behind shows up as a difference
+        // instead of being absorbed by the comparison.
+        String[][] cases = {
+            // A needle whose first line is blank: the span opens on a terminator, not on content.
+            {"alpha\r\nbeta   \r\ngamma\r\n", "\nbeta\ngamma", "\nBETA"},
+            // Two leading newlines. The span opens on the second terminator, and an edge rule that
+            // steps over a single '\r' strands the first one as an orphan CR in the output.
+            {"one\r\n\r\nalpha beta\r\n", "\n\nalpha beta", "REPL"},
+            // Same shape, with a replacement that re-supplies both line breaks itself.
+            {"alpha\r\nbeta   \r\ngamma\r\n", "\nbeta\ngamma", "\nBETA\nGAMMA"},
+            // No leading newline at all: the span opens on ordinary content.
+            {"alpha\r\nbeta\r\ngamma\r\n", "beta\ngamma", "BETA"},
+        };
+        for (String[] c : cases) {
+            String onCrlf = patchOnce(c[0], c[1], c[2]);
+            String onLf = patchOnce(c[0].replace("\r\n", "\n"), c[1], c[2]);
+            // Folding only well-formed CRLF pairs keeps a stray '\r' visible: an orphan carriage
+            // return survives this normalisation and fails the comparison rather than hiding in it.
+            assertEquals(onLf, onCrlf.replace("\r\n", "\n"), "patched output differs for: " + c[1]);
+        }
+        // Pin the bytes, not just the parity. A leading newline is part of the span, so the
+        // replacement's own '\n' lands on that terminator while the untouched one after it stays
+        // CRLF — the mixed result is the replacement taking effect, not the matcher rewriting
+        // whitespace. Anchoring the start on the '\r' instead keeps this case uniformly CRLF but
+        // strands a '\r' in the two-newline case above, so both shapes are frozen together here.
+        assertEquals("alpha\nBETA\r\n", patchOnce(cases[0][0], cases[0][1], cases[0][2]));
+        // The blank-line case is carried by the trailing-whitespace level, not by the collapse
+        // level: a needle's own newlines match a CRLF document's folded terminators directly, so
+        // no more whitespace than necessary is ignored.
+        assertEquals(
+                Level.TRAILING_WS_STRIPPED,
+                FuzzyTextMatcher.search(cases[1][0], cases[1][1]).level());
+    }
+
+    /** Applies the first match the way {@code SkillManageTool#patch} does, splicing verbatim. */
+    private static String patchOnce(String document, String needle, String replacement) {
+        SearchResult r = FuzzyTextMatcher.search(document, needle);
+        assertEquals(1, r.matches().size(), "expected exactly one match for: " + needle);
+        MatchRange m = r.matches().get(0);
+        return document.substring(0, m.start()) + replacement + document.substring(m.end());
+    }
 }

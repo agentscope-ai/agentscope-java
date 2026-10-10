@@ -120,10 +120,12 @@ class ChatSessionsTest {
                         new DemoChatModel(Duration.ofMillis(2), Duration.ofMillis(10)))) {
             var session = sessions.session("conversation");
             session.resume(firstTurn);
+            // Two durable turns with streamed output can exceed 15 seconds on Windows runners.
             var done =
                     await(
                             sessions,
-                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"));
+                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"),
+                            Duration.ofSeconds(60));
             assertEquals(
                     List.of(firstTurn, secondTurn),
                     done.turns().stream().map(ChatHistory.Turn::turnId).toList());
@@ -266,7 +268,13 @@ class ChatSessionsTest {
 
     private ChatHistory.Snapshot await(ChatSessions sessions, Predicate<ChatHistory.Snapshot> ready)
             throws Exception {
-        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        return await(sessions, ready, Duration.ofSeconds(15));
+    }
+
+    private ChatHistory.Snapshot await(
+            ChatSessions sessions, Predicate<ChatHistory.Snapshot> ready, Duration timeout)
+            throws Exception {
+        long deadline = System.nanoTime() + timeout.toNanos();
         ChatHistory.Snapshot snapshot;
         do {
             snapshot = sessions.snapshot("conversation");

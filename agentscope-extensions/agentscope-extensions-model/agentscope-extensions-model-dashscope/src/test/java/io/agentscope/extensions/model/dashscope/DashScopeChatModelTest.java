@@ -106,6 +106,7 @@ class DashScopeChatModelTest {
     @DisplayName("Should create model with valid configuration")
     void testBasicModelCreation() {
         assertNotNull(model, "Model should be created");
+        assertTrue(model.supportsToolChoiceSpecific());
 
         // Test builder pattern
         DashScopeChatModel customModel =

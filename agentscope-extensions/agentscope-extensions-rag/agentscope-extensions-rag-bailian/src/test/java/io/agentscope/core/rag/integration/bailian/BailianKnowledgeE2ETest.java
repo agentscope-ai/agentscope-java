@@ -15,11 +15,15 @@
  */
 package io.agentscope.core.rag.integration.bailian;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.rag.KnowledgeRetrievalTools;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
@@ -153,16 +157,27 @@ class BailianKnowledgeE2ETest {
         assertTrue(toolkit.getToolNames().size() > 0);
 
         // Call the tool directly (pass null for agent/ctx since we're calling directly)
-        String result = tools.retrieveKnowledge("测试查询", 3, null, null);
+        ToolResultBlock result = tools.retrieveKnowledge("测试查询", 3, null, null).block();
+        String resultText = text(result);
 
         assertNotNull(result);
-        log.info("Tool result: {}", result);
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        log.info("Tool result: {}", resultText);
 
         // The result should contain information about retrieved documents
         assertTrue(
-                result.contains("document")
-                        || result.contains("Document")
-                        || result.contains("文档"));
+                resultText.contains("document")
+                        || resultText.contains("Document")
+                        || resultText.contains("文档"));
+    }
+
+    private static String text(ToolResultBlock result) {
+        return result.getOutput().stream()
+                .filter(TextBlock.class::isInstance)
+                .map(TextBlock.class::cast)
+                .map(TextBlock::getText)
+                .findFirst()
+                .orElse("");
     }
 
     @Test
