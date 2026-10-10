@@ -1,4 +1,7 @@
-# Plan
+---
+title: 计划
+en_link: /v1/en/docs/task/plan
+---
 
 PlanNotebook 为智能体提供计划管理能力，帮助智能体将复杂任务分解为结构化的子任务并逐步执行。
 

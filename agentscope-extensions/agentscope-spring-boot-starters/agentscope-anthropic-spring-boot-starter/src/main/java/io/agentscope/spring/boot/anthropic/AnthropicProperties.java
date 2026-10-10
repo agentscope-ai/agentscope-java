@@ -48,6 +48,12 @@ public class AnthropicProperties {
     private String apiKey;
 
     /**
+     * Bearer token for an Anthropic-compatible gateway, without the {@code Bearer } prefix.
+     * Mutually exclusive with the API key; configuring both causes model construction to fail.
+     */
+    private String authToken;
+
+    /**
      * Anthropic API base URL (optional).
      */
     private String baseUrl;
@@ -76,6 +82,24 @@ public class AnthropicProperties {
 
     public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
+    }
+
+    /**
+     * Returns the bearer token for gateway authentication.
+     *
+     * @return the token without the {@code Bearer } prefix, or null if unset
+     */
+    public String getAuthToken() {
+        return authToken;
+    }
+
+    /**
+     * Sets the bearer token for gateway authentication.
+     *
+     * @param authToken the token without the {@code Bearer } prefix
+     */
+    public void setAuthToken(String authToken) {
+        this.authToken = authToken;
     }
 
     public String getBaseUrl() {

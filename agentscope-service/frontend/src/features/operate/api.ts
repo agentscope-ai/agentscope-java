@@ -14,14 +14,22 @@
  * limitations under the License.
  */
 
-import { api, ApiError } from '@/lib/apiClient';
+import { api, apiResponse, ApiError } from '@/lib/apiClient';
 
 export interface RuntimeSession {
   id: string;
   sessionId: string;
   agentName: string;
+  agentId?: string;
+  bindingId?: string;
+  agentInstanceId?: string;
+  instanceGeneration?: number;
+  originType?: 'endpoint' | 'channel' | 'agent-task' | 'runtime' | string;
+  originRef?: string;
   namespace: string;
   framework?: string;
+  frameworkVersion?: string;
+  runtime?: { kind?: 'managed' | 'hosted-runtime' | 'external-application'; source: string; provider?: string; profile?: string; pool?: string; hostId?: string; attemptId?: string; framework?: string; frameworkVersion?: string };
   phase: string;
   busy?: boolean | null;
   instanceRef?: string;
@@ -34,6 +42,9 @@ export interface RuntimeSession {
   contractLevel?: number;
   model?: string;
   snapshot?: {
+    tokenUsageReported?: boolean;
+    contextPressureReported?: boolean;
+    capturedAt?: string;
     messageCount?: number;
     promptTokens?: number;
     completionTokens?: number;
@@ -46,6 +57,7 @@ export interface RuntimeSession {
 }
 
 export interface AgentUsage {
+  agentId?: string;
   agentName: string;
   namespace: string;
   totalTokens: number;
@@ -57,6 +69,7 @@ export interface AgentUsage {
 export interface SessionUsage {
   sessionFk: string;
   sessionId: string;
+  agentId?: string;
   agentName: string;
   namespace: string;
   phase?: string;
@@ -66,6 +79,7 @@ export interface SessionUsage {
 export interface SessionDurationRank {
   sessionFk: string;
   sessionId: string;
+  agentId?: string;
   agentName: string;
   namespace: string;
   phase?: string;
@@ -180,6 +194,7 @@ export interface OverviewTimeseries {
 export interface AgentMetric {
   id: number;
   agentName: string;
+  agentId?: string;
   namespace: string;
   recordedAt: string;
   activeSessions: number;
@@ -245,8 +260,9 @@ export function fetchOverviewTimeseries(params?: { metric?: string; bucket?: str
   return api.get<OverviewTimeseries>(`/api/v1/overview/timeseries?${q}`);
 }
 
-export function fetchAgentMetrics(params?: { agent?: string; namespace?: string; since?: string }) {
+export function fetchAgentMetrics(params?: { agentId?: string; agent?: string; namespace?: string; since?: string }) {
   const q = new URLSearchParams();
+  if (params?.agentId) q.set('agentId', params.agentId);
   if (params?.agent) q.set('agent', params.agent);
   if (params?.namespace) q.set('namespace', params.namespace);
   if (params?.since) q.set('since', params.since);
@@ -255,6 +271,7 @@ export function fetchAgentMetrics(params?: { agent?: string; namespace?: string;
 }
 
 export function fetchRuntimeSessions(params?: {
+  agentId?: string;
   agent?: string;
   phase?: string;
   namespace?: string;
@@ -262,6 +279,7 @@ export function fetchRuntimeSessions(params?: {
   offset?: number;
 }) {
   const q = new URLSearchParams();
+  if (params?.agentId) q.set('agentId', params.agentId);
   if (params?.agent) q.set('agent', params.agent);
   if (params?.phase) q.set('phase', params.phase);
   if (params?.namespace) q.set('namespace', params.namespace);
@@ -279,21 +297,26 @@ export function sessionDetailPath(s: {
   namespace?: string;
 }): string {
   if (s.id) {
-    return `/operate/sessions/${encodeURIComponent(s.id)}`;
+    return `/work/sessions/${encodeURIComponent(s.id)}`;
   }
   const q = new URLSearchParams();
   if (s.agentName) q.set('agent', s.agentName);
   if (s.namespace) q.set('namespace', s.namespace);
   const qs = q.toString();
-  return `/operate/sessions/${encodeURIComponent(s.sessionId)}${qs ? `?${qs}` : ''}`;
+  return `/work/sessions/${encodeURIComponent(s.sessionId)}${qs ? `?${qs}` : ''}`;
+}
+
+export function agentSessionDetailPath(agentId: string, session: { id: string }): string {
+  return `/agent-center/agents/${encodeURIComponent(agentId)}/sessions/${encodeURIComponent(session.id)}`;
 }
 
 export function fetchRuntimeSession(
   id: string,
-  opts?: { agent?: string; namespace?: string },
+  opts?: { agent?: string; agentId?: string; namespace?: string },
 ) {
   const q = new URLSearchParams();
   if (opts?.agent) q.set('agent', opts.agent);
+  if (opts?.agentId) q.set('agentId', opts.agentId);
   if (opts?.namespace) q.set('namespace', opts.namespace);
   const qs = q.toString();
   return api.get<RuntimeSession>(
@@ -320,7 +343,7 @@ export type SessionMessagePage = {
   limit: number;
   total: number;
   messages: SessionMessageItem[];
-  /** "transcript" | "dataplane" when provided by control plane */
+  /** "transcript" | "events" | "dataplane" when provided by control plane */
   source?: string;
 };
 
@@ -342,20 +365,111 @@ export type SessionEventItem = {
 
 export function fetchSessionEvents(
   id: string,
-  opts?: { limit?: number; before?: string | number; eventType?: string },
+  opts?: { limit?: number; before?: string | number; after?: number; eventType?: string; agentId?: string; chatId?: string },
 ) {
   const q = new URLSearchParams();
   if (opts?.limit != null) q.set('limit', String(opts.limit));
   if (opts?.before != null && opts.before !== '') q.set('before', String(opts.before));
+  if (opts?.after != null) q.set('after', String(opts.after));
   if (opts?.eventType) q.set('eventType', opts.eventType);
+  if (opts?.agentId) q.set('agentId', opts.agentId);
+  if (opts?.chatId) q.set('chatId', opts.chatId);
   const qs = q.toString();
   return api.get<{ events: SessionEventItem[] }>(
     `/api/v1/sessions/${encodeURIComponent(id)}/events${qs ? `?${qs}` : ''}`,
   );
 }
 
-export function fetchSessionContext(id: string) {
-  return api.get<Record<string, unknown>>(`/api/v1/sessions/${encodeURIComponent(id)}/context`);
+export interface SessionEventStreamHandle {
+  close: () => void;
+}
+
+/** Subscribe to the durable event log and resume by exclusive sequence cursor. */
+export function streamSessionEvents(
+  id: string,
+  onEvent: (event: SessionEventItem) => void,
+  onError?: (error: Error) => void,
+  options?: { agentId?: string; chatId?: string; getAfter?: () => number; retryMs?: number; maxRetryMs?: number; onOpen?: () => void },
+): SessionEventStreamHandle {
+  const controller = new AbortController();
+  let closed = false;
+  let backoffMs = Math.max(500, options?.retryMs ?? 1_000);
+  const maxRetryMs = options?.maxRetryMs ?? 30_000;
+
+  async function connect() {
+    const query = new URLSearchParams();
+    const after = options?.getAfter?.() ?? 0;
+    if (after > 0) query.set('after', String(after));
+    if (options?.agentId) query.set('agentId', options.agentId);
+    if (options?.chatId) query.set('chatId', options.chatId);
+    const suffix = query.size ? `?${query}` : '';
+    const response = await apiResponse(
+      `/api/v1/sessions/${encodeURIComponent(id)}/events/stream${suffix}`,
+      {
+        headers: {
+          Accept: 'text/event-stream',
+          ...(after > 0 ? { 'Last-Event-ID': String(after) } : {}),
+        },
+        signal: controller.signal,
+      },
+    );
+    if (!response.body) throw new Error('Session event stream has no response body');
+    backoffMs = Math.max(500, options?.retryMs ?? 1_000);
+    options?.onOpen?.();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (!closed) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const data = frame.split('\n')
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n');
+        if (data) {
+          try {
+            onEvent(JSON.parse(data) as SessionEventItem);
+            backoffMs = Math.max(500, options?.retryMs ?? 1_000);
+          } catch {
+            // Ignore malformed frames without advancing the caller's cursor.
+          }
+        }
+        boundary = buffer.indexOf('\n\n');
+      }
+    }
+  }
+
+  void (async () => {
+    while (!closed) {
+      try {
+        await connect();
+      } catch (cause) {
+        if (closed || (cause instanceof Error && cause.name === 'AbortError')) return;
+        onError?.(cause instanceof Error ? cause : new Error(String(cause)));
+      }
+      if (closed) return;
+      const delay = backoffMs;
+      backoffMs = Math.min(maxRetryMs, backoffMs * 2);
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+    }
+  })();
+
+  return {
+    close: () => {
+      closed = true;
+      controller.abort();
+    },
+  };
+}
+
+export function fetchSessionContext(id: string, agentId?: string) {
+  const q = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+  return api.get<Record<string, unknown>>(`/api/v1/sessions/${encodeURIComponent(id)}/context${q}`);
 }
 
 export function fetchSessionMessages(
@@ -365,6 +479,7 @@ export function fetchSessionMessages(
     limit?: number;
     fromEnd?: boolean;
     agent?: string;
+    agentId?: string;
     namespace?: string;
   },
 ) {
@@ -373,6 +488,7 @@ export function fetchSessionMessages(
   if (opts?.limit != null) q.set('limit', String(opts.limit));
   if (opts?.fromEnd) q.set('fromEnd', 'true');
   if (opts?.agent) q.set('agent', opts.agent);
+  if (opts?.agentId) q.set('agentId', opts.agentId);
   if (opts?.namespace) q.set('namespace', opts.namespace);
   const qs = q.toString();
   return api.get<SessionMessagePage>(
@@ -380,12 +496,21 @@ export function fetchSessionMessages(
   );
 }
 
-export function fetchSessionTasks(id: string) {
-  return api.get<{ tasks?: SessionTask[] } | SessionTask[]>(`/api/v1/sessions/${encodeURIComponent(id)}/tasks`);
+export function sendSessionUserMessage(id: string, content: string) {
+  return api.post<{ accepted?: boolean; phase?: string }>(
+    `/api/v1/sessions/${encodeURIComponent(id)}/user-message`,
+    { content },
+  );
 }
 
-export function fetchSessionSubagentTasks(id: string) {
-  return api.get<{ tasks?: SessionTask[] }>(`/api/v1/sessions/${encodeURIComponent(id)}/subagent-tasks`);
+export function fetchSessionTasks(id: string, agentId?: string) {
+  const q = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+  return api.get<{ tasks?: SessionTask[] } | SessionTask[]>(`/api/v1/sessions/${encodeURIComponent(id)}/tasks${q}`);
+}
+
+export function fetchSessionSubagentTasks(id: string, agentId?: string) {
+  const q = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+  return api.get<{ tasks?: SessionTask[] }>(`/api/v1/sessions/${encodeURIComponent(id)}/subagent-tasks${q}`);
 }
 
 export function setSessionPlanMode(id: string, active: boolean) {
@@ -395,12 +520,14 @@ export function setSessionPlanMode(id: string, active: boolean) {
   );
 }
 
-export function fetchSessionCommands(id: string) {
-  return api.get<{ commands: SessionCommand[] }>(`/api/v1/sessions/${encodeURIComponent(id)}/commands`);
+export function fetchSessionCommands(id: string, agentId?: string) {
+  const q = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+  return api.get<{ commands: SessionCommand[] }>(`/api/v1/sessions/${encodeURIComponent(id)}/commands${q}`);
 }
 
-export function fetchSessionTurns(id: string) {
-  return api.get<{ turns: SessionTurn[] }>(`/api/v1/sessions/${encodeURIComponent(id)}/turns`);
+export function fetchSessionTurns(id: string, agentId?: string) {
+  const q = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+  return api.get<{ turns: SessionTurn[] }>(`/api/v1/sessions/${encodeURIComponent(id)}/turns${q}`);
 }
 
 export function compressSession(id: string, opts?: { force?: boolean; queue?: boolean }) {
@@ -475,9 +602,10 @@ export function phaseHint(phase?: string): string {
 
 export type AgentPresence = 'live' | 'offline' | 'historical' | 'all';
 
-export function fetchManagedAgents(opts?: { presence?: AgentPresence }) {
+export function fetchManagedAgents(opts?: { presence?: AgentPresence; namespace?: string }) {
   const presence = opts?.presence ?? 'live';
   const qs = new URLSearchParams({ presence });
+  if (opts?.namespace) qs.set('namespace', opts.namespace);
   return api.get<{ items: ManagedAgentSummary[] }>(`/api/v1/agents?${qs}`);
 }
 

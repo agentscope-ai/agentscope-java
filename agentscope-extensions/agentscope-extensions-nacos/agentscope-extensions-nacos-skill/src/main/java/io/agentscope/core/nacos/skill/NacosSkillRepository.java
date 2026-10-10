@@ -144,7 +144,7 @@ public class NacosSkillRepository implements AgentSkillRepository {
         this.aiService = aiService;
 
         this.namespaceId = StringUtils.isBlank(namespaceId) ? "public" : namespaceId.trim();
-        this.source = REPO_TYPE + ":" + this.namespaceId;
+        this.source = REPO_TYPE + "@" + this.namespaceId;
         this.location = LOCATION_PREFIX + this.namespaceId;
         this.skillVersion =
                 firstNonBlank(

@@ -22,23 +22,23 @@ import static io.agentscope.harness.agent.workspace.WorkspaceConstants.KNOWLEDGE
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.MEMORY_DIR;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.MEMORY_MD;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SESSIONS_DIR;
-import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SESSIONS_STORE;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SKILLS_DIR;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.TASKS_DIR;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -91,13 +91,12 @@ import org.slf4j.LoggerFactory;
  * ├── subagents/&lt;id&gt;.md                     (subagent declarations)
  * ├── agents/&lt;agentId&gt;/workspace/           (isolated subagent runtime root, auto-created)
  * ├── agents/&lt;agentId&gt;/sessions/sessions.json
- * └── agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.log.jsonl
+ * └── .agentscope-runtime/ — private native session journal (local backend)
  * </pre>
  */
 public class WorkspaceManager implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
-    private static final ObjectMapper SESSION_STORE_JSON = new ObjectMapper();
     private static final ObjectMapper TASK_RECORD_JSON =
             new ObjectMapper()
                     .registerModule(new JavaTimeModule())
@@ -338,23 +337,12 @@ public class WorkspaceManager implements AutoCloseable {
     /**
      * Returns the legacy session file path (.json) without creating directories.
      *
-     * @deprecated Use {@link #resolveSessionContextFile(RuntimeContext, String, String)} for the
-     *     JSONL format.
+     * @deprecated Native session history is stored through SessionLogStore; use explicit migration
+     *     when importing old state files.
      */
     @Deprecated
     public Path resolveSessionFile(RuntimeContext rc, String agentId, String sessionId) {
         return getSessionDir(rc, agentId).resolve(sessionId + ".json");
-    }
-
-    /** Returns the JSONL session context file path (LLM-facing, compacted). */
-    public Path resolveSessionContextFile(RuntimeContext rc, String agentId, String sessionId) {
-        return getSessionDir(rc, agentId)
-                .resolve(sessionId + WorkspaceConstants.SESSION_CONTEXT_EXT);
-    }
-
-    /** Returns the JSONL session log file path (full history, append-only). */
-    public Path resolveSessionLogFile(RuntimeContext rc, String agentId, String sessionId) {
-        return getSessionDir(rc, agentId).resolve(sessionId + WorkspaceConstants.SESSION_LOG_EXT);
     }
 
     /**
@@ -394,47 +382,25 @@ public class WorkspaceManager implements AutoCloseable {
         }
     }
 
-    /**
-     * Upserts metadata for a session in {@code agents/&lt;agentId&gt;/sessions/sessions.json}
-     * (small mutable JSON, keyed by {@code sessionId}).
-     *
-     * <p>A per-path {@link ReentrantLock} serialises concurrent callers so that the
-     * read→merge→write cycle is atomic within this process.
-     */
-    public void updateSessionIndex(
-            RuntimeContext rc, String agentId, String sessionId, String summary) {
-        if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
-            return;
-        }
-        String rel = AGENTS_DIR + "/" + agentId + "/" + SESSIONS_DIR + "/" + SESSIONS_STORE;
-        ReentrantLock lock = pathLocks.computeIfAbsent(rel, k -> new ReentrantLock());
-        lock.lock();
-        try {
-            String existing = readWritableWorkspaceRelativeUtf8(rc, rel);
-            ObjectNode root = parseSessionStoreOrEmpty(existing);
-            ObjectNode sessions = ensureSessionsObject(root);
-            ObjectNode entry = SESSION_STORE_JSON.createObjectNode();
-            entry.put("summary", summary != null ? summary : "");
-            entry.put("updatedAt", java.time.Instant.now().toString());
-            sessions.set(sessionId, entry);
-            if (!root.has("version")) {
-                root.put("version", 1);
-            }
-            try {
-                String serialized =
-                        SESSION_STORE_JSON
-                                .writerWithDefaultPrettyPrinter()
-                                .writeValueAsString(root);
-                writeUtf8WorkspaceRelative(rc, rel, serialized);
-            } catch (IOException e) {
-                log.warn("Failed to write session store {}: {}", rel, e.getMessage());
-            }
-        } finally {
-            lock.unlock();
-        }
-    }
-
     // ==================== Task record methods ====================
+
+    /**
+     * {@code true} when the filesystem layer serving task-record paths is the per-call sandbox
+     * proxy. Task records are cross-call orchestration metadata: the heartbeat and orphan
+     * sweeper of {@code WorkspaceTaskRepository} maintain them from scheduler threads that run
+     * outside any agent call, where {@code SandboxBackedFilesystem} holds no live sandbox and
+     * every operation throws. In that case task-record IO is routed to the host workspace
+     * directly — the same location used when no filesystem layer is configured — so task
+     * liveness bookkeeping keeps working between calls. Explicit prefix routes (e.g. a
+     * persistent store mounted for {@code agents/}) are respected and still take over.
+     */
+    private boolean taskRecordsRouteToLiveSandbox(String relPath) {
+        AbstractFilesystem fs = this.filesystem;
+        if (fs instanceof RoutedSandboxFilesystem routed) {
+            fs = routed.backendFor(relPath);
+        }
+        return fs instanceof SandboxBackedFilesystem;
+    }
 
     /**
      * Upserts a {@link TaskRecord} in {@code agents/<agentId>/tasks/<sessionId>.json}.
@@ -534,7 +500,7 @@ public class WorkspaceManager implements AutoCloseable {
         // workspace-relative path → Optional<Instant> last-modified (empty = mtime unknown)
         Map<String, Optional<Instant>> relPaths = new LinkedHashMap<>();
 
-        if (filesystem != null) {
+        if (filesystem != null && !taskRecordsRouteToLiveSandbox(tasksRelDir)) {
             GlobResult glob = filesystem.glob(rc, "*.json", tasksRelDir);
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
@@ -601,7 +567,8 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     /**
-     * Acquires the per-file lock before delegating to {@link #readTaskMap(String)}, so that reads
+     * Acquires the per-file lock before delegating to {@link #readTaskMap(RuntimeContext, String)},
+     * so that reads
      * are mutually exclusive with the read-modify-write cycle in {@link #writeTaskRecord}. This
      * prevents a concurrent writer's non-atomic file update (truncate → write) from being observed
      * as a partial JSON read.
@@ -626,7 +593,12 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     private Map<String, TaskRecord> readTaskMap(RuntimeContext rc, String rel) throws IOException {
-        String json = readWritableWorkspaceRelativeUtf8(rc, rel);
+        String json =
+                taskRecordsRouteToLiveSandbox(rel)
+                        // Same normalization/validation as the non-routed branch, so a poisoned
+                        // sessionId cannot read outside the workspace via the host-disk path.
+                        ? readFileQuietly(workspace.resolve(requireSafeRelativePath(rel)))
+                        : readWritableWorkspaceRelativeUtf8(rc, rel);
         if (json == null || json.isBlank()) {
             return new LinkedHashMap<>();
         }
@@ -638,42 +610,19 @@ public class WorkspaceManager implements AutoCloseable {
         try {
             String serialized =
                     TASK_RECORD_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+            if (taskRecordsRouteToLiveSandbox(rel)) {
+                writeLocalFile(rel, serialized);
+                return;
+            }
             writeUtf8WorkspaceRelative(rc, rel, serialized);
         } catch (IOException e) {
             log.warn("Failed to write task record store {}: {}", rel, e.getMessage());
         }
     }
 
-    private ObjectNode parseSessionStoreOrEmpty(String json) {
-        if (json == null || json.isBlank()) {
-            return SESSION_STORE_JSON.createObjectNode();
-        }
-        try {
-            var node = SESSION_STORE_JSON.readTree(json);
-            if (node instanceof ObjectNode on) {
-                return on;
-            }
-        } catch (IOException e) {
-            log.warn("Corrupt or unreadable session store, reinitializing: {}", e.getMessage());
-        }
-        return SESSION_STORE_JSON.createObjectNode();
-    }
-
-    private ObjectNode ensureSessionsObject(ObjectNode root) {
-        var n = root.get("sessions");
-        if (n instanceof ObjectNode on) {
-            return on;
-        }
-        ObjectNode fresh = SESSION_STORE_JSON.createObjectNode();
-        root.set("sessions", fresh);
-        return fresh;
-    }
-
     private String readWritableWorkspaceRelativeUtf8(RuntimeContext rc, String relativePath) {
         String normalized = requireSafeRelativePath(relativePath);
-        if (normalized.isEmpty()) {
-            return "";
-        }
+        if (normalized.isEmpty()) return "";
         return readWithOverride(rc, normalized);
     }
 
@@ -938,49 +887,6 @@ public class WorkspaceManager implements AutoCloseable {
                         .forEach(p -> paths.add(MEMORY_DIR + "/" + p.getFileName()));
             } catch (IOException e) {
                 log.warn("Failed to list memory dir: {}", e.getMessage());
-            }
-        }
-        return new ArrayList<>(paths);
-    }
-
-    /**
-     * Lists workspace-relative paths of all session log files ({@code *.log.jsonl}).
-     * Unions results from the {@link AbstractFilesystem} layer and the local disk.
-     */
-    public List<String> listSessionLogFiles(RuntimeContext rc) {
-        Set<String> paths = new LinkedHashSet<>();
-
-        if (filesystem != null) {
-            GlobResult glob = filesystem.glob(rc, "*.log.jsonl", AGENTS_DIR);
-            if (glob.isSuccess() && glob.matches() != null) {
-                for (FileInfo fi : glob.matches()) {
-                    if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
-                        if (!rel.isEmpty()) {
-                            paths.add(rel);
-                        }
-                    }
-                }
-            }
-        }
-
-        Path agentsDir = resolveRuntimeDataPath(rc, AGENTS_DIR);
-        if (Files.isDirectory(agentsDir)) {
-            try (Stream<Path> walk = Files.walk(agentsDir)) {
-                walk.filter(Files::isRegularFile)
-                        .filter(p -> p.toString().endsWith(WorkspaceConstants.SESSION_LOG_EXT))
-                        .forEach(
-                                p -> {
-                                    String rel =
-                                            agentsDir
-                                                    .getParent()
-                                                    .relativize(p.normalize())
-                                                    .toString()
-                                                    .replace('\\', '/');
-                                    paths.add(rel);
-                                });
-            } catch (IOException e) {
-                log.warn("Failed to list session log files: {}", e.getMessage());
             }
         }
         return new ArrayList<>(paths);

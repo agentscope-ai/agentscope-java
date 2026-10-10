@@ -160,6 +160,7 @@ public final class HarnessGateway implements Gateway {
                 new HarnessGateway(sessionAgentManager, channelManager, userSandboxRegistry);
         sessionAgentManager.setAnnounceDispatcher(gateway::tryDispatchAnnounce);
         sessionAgentManager.setSpawnInterceptor(gateway::onSpawn);
+        sessionAgentManager.setMainHistoryAgentResolver(gateway::resolveMainHistoryAgent);
         gateway.restorePersistedMainSessions();
         return gateway;
     }
@@ -235,7 +236,7 @@ public final class HarnessGateway implements Gateway {
 
     /**
      * Binds the primary harness agent. Also registers it under its {@link
-     * HarnessAgent#getAgentId()} for routing.
+     * HarnessAgent#sessionKey(RuntimeContext)} stable agent identity for routing.
      */
     @Override
     public void bindMainAgent(HarnessAgent agent) {
@@ -293,7 +294,7 @@ public final class HarnessGateway implements Gateway {
                             "HarnessGateway.bindMainAgent must be called before run(...)"));
         }
 
-        String sessionKey = resolveOrCreateMainSession(gateKey, ha, ctx.userId());
+        String sessionKey = resolveOrCreateMainSession(gateKey, ha, ctx.userId(), requestedAgentId);
         String sessionId =
                 sessionAgentManager
                         .viewSession(sessionKey)
@@ -312,7 +313,8 @@ public final class HarnessGateway implements Gateway {
         if (ctx.userId() != null) {
             rtcBuilder.userId(ctx.userId());
         }
-        attachUserSandboxContext(rtcBuilder, ctx.userId(), resolveAgentId(ha));
+        attachUserSandboxContext(
+                rtcBuilder, ctx.userId(), resolveSandboxAgentId(requestedAgentId, ha));
         RuntimeContext runtimeContext = rtcBuilder.build();
         return withGatedTurn(gateKey, () -> ha.call(messages, runtimeContext));
     }
@@ -376,7 +378,8 @@ public final class HarnessGateway implements Gateway {
         String sessionUserId =
                 sessionAgentManager.getSession(requesterKey).map(SessionEntry::userId).orElse(null);
 
-        String sessionKey = resolveOrCreateMainSession(gateKey, ha, sessionUserId);
+        String sessionKey =
+                resolveOrCreateMainSession(gateKey, ha, sessionUserId, requesterAgentId);
         String sessionId =
                 sessionAgentManager
                         .viewSession(sessionKey)
@@ -392,7 +395,8 @@ public final class HarnessGateway implements Gateway {
         if (sessionUserId != null) {
             ctxBuilder.userId(sessionUserId);
         }
-        attachUserSandboxContext(ctxBuilder, sessionUserId, resolveAgentId(ha));
+        attachUserSandboxContext(
+                ctxBuilder, sessionUserId, resolveSandboxAgentId(requesterAgentId, ha));
         RuntimeContext ctx = ctxBuilder.build();
 
         OutboundAddress lastRoute = lastRouteBySessionKey.get(requesterKey);
@@ -451,7 +455,8 @@ public final class HarnessGateway implements Gateway {
         return defaultAgentId != null ? agentRegistry.get(defaultAgentId) : null;
     }
 
-    private String resolveOrCreateMainSession(String gateKey, HarnessAgent ha, String userId) {
+    private String resolveOrCreateMainSession(
+            String gateKey, HarnessAgent ha, String userId, String routingAgentId) {
         return contextKeyToSessionKey.compute(
                 gateKey,
                 (k, existingSessionKey) -> {
@@ -464,24 +469,31 @@ public final class HarnessGateway implements Gateway {
                                 gateKey,
                                 existingSessionKey);
                     }
-                    String aid = resolveAgentId(ha);
+                    String harnessAgentId = resolveAgentId(ha);
+                    String sandboxAgentId = resolveSandboxAgentId(routingAgentId, ha);
                     SpawnResult r =
-                            sessionAgentManager.registerMainSession(aid, null, gateKey, userId);
+                            sessionAgentManager.registerMainSession(
+                                    harnessAgentId, null, gateKey, userId);
                     sessionKeyToGateKey.put(r.sessionKey(), gateKey);
-                    sessionKeyToAgentId.put(r.sessionKey(), aid);
+                    // Prefer gateway/catalog id so announce turns borrow the same sandbox as
+                    // chat/UI.
+                    sessionKeyToAgentId.put(r.sessionKey(), sandboxAgentId);
                     return r.sessionKey();
                 });
     }
 
     private boolean isSessionFresh(String sessionKey) {
-        SessionResetPolicy policy = sessionAgentManager.getConfig().sessionResetPolicy();
-        if (policy.mode() == SessionResetPolicy.ResetMode.NEVER) {
-            return true;
-        }
+        // Deleted sessions must not keep the gateKey → sessionKey mapping alive. NEVER mode
+        // skips idle/daily checks but still requires the session to exist in the manager.
         return sessionAgentManager
                 .getSession(sessionKey)
                 .map(
                         entry -> {
+                            SessionResetPolicy policy =
+                                    sessionAgentManager.getConfig().sessionResetPolicy();
+                            if (policy.mode() == SessionResetPolicy.ResetMode.NEVER) {
+                                return true;
+                            }
                             SessionFreshness f =
                                     SessionFreshnessEvaluator.evaluate(
                                             entry.lastActivityMs(),
@@ -492,9 +504,69 @@ public final class HarnessGateway implements Gateway {
                 .orElse(false);
     }
 
+    /** Resolves persisted MAIN metadata without dispatching work or creating a subagent. */
+    private HarnessAgent resolveMainHistoryAgent(SessionEntry entry) {
+        // Prefer the precise catalog/tenant routing id. Display names can repeat across workspaces.
+        String gate = entry.gateKey();
+        String marker = "|x:agentId=";
+        int start = gate == null ? -1 : gate.indexOf(marker);
+        if (start >= 0) {
+            start += marker.length();
+            int end = gate.indexOf('|', start);
+            return agentRegistry.get(end < 0 ? gate.substring(start) : gate.substring(start, end));
+        }
+        HarnessAgent direct = agentRegistry.get(entry.agentId());
+        if (direct != null) return direct;
+        HarnessAgent match = null;
+        for (HarnessAgent candidate : agentRegistry.values()) {
+            if (entry.agentId().equals(candidate.getAgentId())
+                    || entry.agentId().equals(resolveAgentId(candidate))) {
+                if (match != null && match != candidate) return null;
+                match = candidate;
+            }
+        }
+        return match;
+    }
+
     private static String resolveAgentId(HarnessAgent ha) {
-        String id = ha != null ? ha.getAgentId() : null;
+        String id = ha != null ? ha.sessionKey(RuntimeContext.empty()).agentId() : null;
         return (id != null && !id.isBlank()) ? id : "main";
+    }
+
+    /**
+     * Sandbox registry key shared with workspace/history HTTP readers.
+     *
+     * <p>Prefer the gateway/catalog id from routing ({@code MsgContext} {@code agentId}, e.g.
+     * {@code data-agent} or {@code uca-...}). Falling back to {@link HarnessAgent#getAgentId()}
+     * (internal UUID) would open a different container than UI reads, so history looks empty.
+     */
+    private String resolveSandboxAgentId(String preferredGatewayId, HarnessAgent ha) {
+        if (preferredGatewayId != null && !preferredGatewayId.isBlank()) {
+            // Ignore internal UUID masquerading as a routing id (legacy sessionKeyToAgentId).
+            if (ha == null || !preferredGatewayId.equals(ha.getAgentId())) {
+                return preferredGatewayId;
+            }
+        }
+        if (ha == null) {
+            return "main";
+        }
+        String uuid = ha.getAgentId();
+        String uuidKey = null;
+        for (var e : agentRegistry.entrySet()) {
+            if (e.getValue() != ha) {
+                continue;
+            }
+            String key = e.getKey();
+            if (uuid != null && uuid.equals(key)) {
+                uuidKey = key;
+                continue;
+            }
+            return key;
+        }
+        if (uuidKey != null) {
+            return uuidKey;
+        }
+        return resolveAgentId(ha);
     }
 
     /**

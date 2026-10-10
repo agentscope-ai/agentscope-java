@@ -24,6 +24,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Objects;
 
 /**
  * Builtin web tools ({@code web_fetch}, {@code web_search}) for Managed Agents / Harness.
@@ -35,9 +36,29 @@ public final class WebTools {
 
     private WebTools() {}
 
+    /**
+     * Default client for the built-in web tools. Uses the JDK's default version negotiation
+     * (HTTP/2 preferred, transparently falling back to HTTP/1.1 when the server does not support
+     * it). If a target server misbehaves under HTTP/2 negotiation and returns empty responses
+     * (e.g. {@code HTTP/1.1 header parser received no bytes}, see issue #3101), inject an
+     * HTTP/1.1-only client via the {@code WebFetchTool(HttpClient)} / {@code WebSearchTool(HttpClient)}
+     * constructors or {@code HarnessAgent.Builder#webHttpClient(HttpClient)}.
+     */
+    static HttpClient createDefaultHttpClient() {
+        return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+    }
+
     public static final class WebFetchTool {
-        private final HttpClient client =
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+        private final HttpClient client;
+
+        public WebFetchTool() {
+            this(createDefaultHttpClient());
+        }
+
+        /** Creates a tool that uses a caller-supplied client (custom proxy, SSL, HTTP version, ...). */
+        public WebFetchTool(HttpClient client) {
+            this.client = Objects.requireNonNull(client, "client");
+        }
 
         @Tool(
                 name = "web_fetch",
@@ -52,11 +73,11 @@ public final class WebTools {
                                 required = false)
                         Integer maxChars) {
             if (url == null || url.isBlank()) {
-                return "Error: url is required";
+                throw new IllegalArgumentException("url is required");
             }
             String trimmed = url.strip();
             if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-                return "Error: only http/https URLs are allowed";
+                throw new IllegalArgumentException("only http/https URLs are allowed");
             }
             int limit = maxChars != null && maxChars > 0 ? Math.min(maxChars, 100_000) : 20_000;
             try {
@@ -69,13 +90,19 @@ public final class WebTools {
                                 .build();
                 HttpResponse<String> response =
                         client.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() >= 400) {
+                    throw new IllegalStateException("HTTP " + response.statusCode());
+                }
                 String body = response.body() == null ? "" : response.body();
                 if (body.length() > limit) {
                     body = body.substring(0, limit) + "\n...[truncated]";
                 }
                 return "status=" + response.statusCode() + "\n\n" + body;
             } catch (Exception e) {
-                return "Error: web_fetch failed: " + e.getMessage();
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                throw new IllegalStateException("web_fetch failed: " + e.getMessage(), e);
             }
         }
     }
@@ -83,8 +110,16 @@ public final class WebTools {
     public static final class WebSearchTool {
         private static final String TAVILY_API = "https://api.tavily.com/search";
         private final ObjectMapper mapper = new ObjectMapper();
-        private final HttpClient client =
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+        private final HttpClient client;
+
+        public WebSearchTool() {
+            this(createDefaultHttpClient());
+        }
+
+        /** Creates a tool that uses a caller-supplied client (custom proxy, SSL, HTTP version, ...). */
+        public WebSearchTool(HttpClient client) {
+            this.client = Objects.requireNonNull(client, "client");
+        }
 
         @Tool(
                 name = "web_search",
@@ -100,12 +135,13 @@ public final class WebTools {
                                 required = false)
                         Integer maxResults) {
             if (query == null || query.isBlank()) {
-                return "Error: query is required";
+                throw new IllegalArgumentException("query is required");
             }
             String apiKey = System.getenv("TAVILY_API_KEY");
             if (apiKey == null || apiKey.isBlank()) {
-                return "Error: TAVILY_API_KEY is not set. Configure the key via Environment vault"
-                        + " credentials or process env to enable web_search.";
+                throw new IllegalStateException(
+                        "TAVILY_API_KEY is not set. Configure the key via Environment vault"
+                                + " credentials or process env to enable web_search.");
             }
             int limit = maxResults != null && maxResults > 0 ? Math.min(maxResults, 10) : 5;
             String body =
@@ -126,7 +162,7 @@ public final class WebTools {
                 HttpResponse<String> response =
                         client.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() != 200) {
-                    return "Error: Tavily API returned " + response.statusCode();
+                    throw new IllegalStateException("Tavily API returned " + response.statusCode());
                 }
                 JsonNode root = mapper.readTree(response.body());
                 JsonNode results = root.path("results");
@@ -147,7 +183,10 @@ public final class WebTools {
                 }
                 return sb.toString().strip();
             } catch (Exception e) {
-                return "Error: web_search failed: " + e.getMessage();
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                throw new IllegalStateException("web_search failed: " + e.getMessage(), e);
             }
         }
     }

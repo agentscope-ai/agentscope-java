@@ -1,6 +1,7 @@
 ---
-title: "Quickstart"
-description: "Get started with AgentScope Java 2.0 — bring up your first long-running agent with HarnessAgent"
+title: Quickstart
+description: Start with replies, live output and conversation history; add background tasks and recovery when needed.
+zh_link: /v2/zh/docs/quickstart
 ---
 
 ## Installation
@@ -19,11 +20,15 @@ AgentScope Java requires JDK 17 or newer. Maven 3.9+ is recommended.
 </dependency>
 ```
 
-:::{note}
-Substitute `${agentscope.version}` with the latest version. See [Release Notes](others/release-notes.md) for the latest version and full release details.
-:::
 
-If you only need the bare `ReActAgent` APIs (no workspace / persistence / subagents / sandbox), `agentscope-core` is enough for the agent framework itself. Concrete model providers are separate: provider-specific chat models and formatters live in independent `agentscope-extensions-model-*` modules. The difference between `ReActAgent` and `HarnessAgent` is covered in [Harness Architecture](./harness/architecture.md).
+<Note>
+
+Substitute `${agentscope.version}` with the latest version. See [Release Notes](/v2/en/docs/others/release-notes) for the latest version and full release details.
+
+</Note>
+
+
+If you only need the `ReActAgent` reasoning, tool and context APIs and want to compose the application capabilities yourself, `agentscope-core` is enough for the agent framework itself. Concrete model providers are separate: provider-specific chat models and formatters live in independent `agentscope-extensions-model-*` modules. The difference between `ReActAgent` and `HarnessAgent` is covered in [Harness Architecture](/v2/en/docs/harness/architecture).
 
 The quickstart below uses DashScope through `.model("dashscope:qwen-plus")`, so add the matching model extension as well:
 
@@ -39,129 +44,111 @@ MCP integration requires the official MCP SDK — see `agentscope-examples/docum
 
 ## Your first agent
 
-The example below uses `HarnessAgent` to demonstrate three things at once: **workspace-driven persona** (`AGENTS.md`), **automatic session persistence** (the second turn with the same `sessionId` remembers the first), and **conversation compaction** (over-threshold compaction + long-term facts distilled into `MEMORY.md`). The model id is passed as a string to `.model(...)` — `ModelRegistry` resolves it and reads the matching API-key env var automatically.
+Configure a shared Builder at application startup, call `builder.build()` for each request, and close that Agent when execution finishes. Keep common configuration in the Builder and request identity in a fresh `RuntimeContext`. A new instance does not mean a new conversation. This example uses two instances for two turns in the same conversation. Set the model credential before running:
+
+```bash
+export DASHSCOPE_API_KEY=your_api_key
+```
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import java.nio.file.Paths;
+import java.nio.file.Path;
 
 public class FirstAgent {
+    // Configure once at startup; only call build() after sharing.
+    private static final HarnessAgent.Builder AGENT_BUILDER = HarnessAgent.builder()
+            .name("note-taker")
+            .agentId("note-taker")
+            .sysPrompt("You are a note-taking assistant.")
+            .model("dashscope:qwen-plus")
+            .workspace(Path.of(".agentscope/workspace"));
+
     public static void main(String[] args) {
-        HarnessAgent agent = HarnessAgent.builder()
-                .name("note-taker")
-                .sysPrompt("You are a note-taking assistant.")
-                // String form resolved via ModelRegistry — picks up DASHSCOPE_API_KEY
-                // from the environment. Use "openai:gpt-5.5", "anthropic:claude-sonnet-4-5",
-                // "gemini:gemini-2.0-flash", or "ollama:llama3" to switch providers.
-                .model("dashscope:qwen-plus")
-                .workspace(Paths.get(".agentscope/workspace"))
-                .compaction(CompactionConfig.builder()
-                        .triggerMessages(30)
-                        .keepMessages(10)
-                        .build())
-                .build();
+        try (HarnessAgent agent = AGENT_BUILDER.build()) {
+            RuntimeContext ctx = RuntimeContext.builder()
+                    .userId("alice").sessionId("demo-session").build();
+            agent.call(new UserMessage("My name is Alice. I am preparing a tech talk today."), ctx).block();
+        }
 
-        RuntimeContext ctx = RuntimeContext.builder()
-                .sessionId("demo-session")
-                .userId("alice")
-                .build();
-
-        // Turn 1: introduce yourself + state today's task
-        agent.call(new UserMessage("My name is Alice, and I'm preparing a tech talk on ReAct today."), ctx).block();
-
-        // Turn 2: same sessionId — state from turn 1 is restored automatically
-        agent.call(new UserMessage("What is my name? What am I doing today?"), ctx).block();
+        // A new instance restores the same conversation from its persisted history.
+        try (HarnessAgent agent = AGENT_BUILDER.build()) {
+            RuntimeContext ctx = RuntimeContext.builder()
+                    .userId("alice").sessionId("demo-session").build();
+            Msg reply = agent.call(new UserMessage("What is my name? What am I doing today?"), ctx).block();
+            System.out.println(reply.getTextContent());
+        }
     }
 }
 ```
 
-After this run you get two directory trees — the **workspace** and the **state store**:
+`call` returns a `Mono<Msg>`. This CLI example uses `block()` to start execution and wait for the reply. One call can include multiple reasoning steps and tool calls. The next call with the same `userId` and `sessionId` uses the conversation's context.
 
-```
-.agentscope/workspace/                          ← workspace (agent content)
-├── AGENTS.md                                   ← write one to give the agent its persona (optional)
-└── agents/note-taker/
-    └── sessions/                               ← never-compacted raw conversation log
+By default, Harness saves execution history and working-state snapshots (checkpoints). Keep the same `agentId`, user, session identity and storage configuration across restarts to continue the conversation. You do not need to create an `AgentSession` for this persistence.
 
-~/.agentscope/state/note-taker/                 ← state store (outside workspace)
-└── alice/demo-session/                         ← AgentState auto-saved / auto-loaded
-    └── agent_state.json
-```
-
-`AgentState` lives **outside the workspace** at `~/.agentscope/state/<agentId>/` by default — because state is a prerequisite for restoring the workspace itself (e.g. after a sandbox wipe), so it must not be entangled with workspace data. Restart the process with the same `sessionId` and the second turn still remembers the first.
-
-:::{warning}
-The default `JsonFileAgentStateStore` is a local-file backend suitable for development and single-node deployment. For production clusters, use a distributed implementation such as `RedisAgentStateStore` (provided by `agentscope-extensions-redis`) or implement your own `AgentStateStore`. See [Going to Production](./others/going-to-production.md).
-:::
-
-After enough turns trip compaction, distilled facts first land in `workspace/memory/YYYY-MM-DD.md`, then a throttled background job merges them into `MEMORY.md`, which is injected into the system prompt on the next reasoning step.
+In this local example, native history lives under `.agentscope-runtime/` at the Workspace Filesystem root resolved for the current identity. With filesystem isolation or distributed storage, the location follows the selected root or namespace. See the [storage reference](/v2/en/docs/harness/session-log#storage-and-backend-configuration) when you need to inspect records or change backends.
 
 ### Streaming reasoning and tool calls
 
-Swap `call(...)` for `streamEvents(...)` to receive incremental events — text deltas, tool calls, etc. — suitable for Web / TUI rendering:
+Use `streamEvents` to display output as it is generated. Add these imports at the top of the file and create a fresh instance for this request in `main`:
 
 ```java
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 
-agent.streamEvents(new UserMessage("Summarize today in three bullets."))
-        .doOnNext(event -> {
-            if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
-                // Streaming text fragment — append to UI or stdout
-                System.out.print(((TextBlockDeltaEvent) event).getDelta());
-            } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
-                // The agent is about to call a tool — surface the call info
-                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
-            }
-            // Other events: thinking blocks, tool results, reply end, etc.
-        })
-        .blockLast();
+try (HarnessAgent agent = AGENT_BUILDER.build()) {
+    RuntimeContext ctx = RuntimeContext.builder()
+            .userId("alice").sessionId("demo-session").build();
+    agent.streamEvents(new UserMessage("List three steps to prepare for the talk."), ctx)
+            .doOnNext(event -> {
+                if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
+                    System.out.print(((TextBlockDeltaEvent) event).getDelta());
+                } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
+                    System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
+                }
+            })
+            .blockLast();
+}
 ```
 
-:::{tip}
-Set `DASHSCOPE_API_KEY` in the environment before running. To switch providers, add the matching `agentscope-extensions-model-*` module, change the string passed to `.model(...)`, and export the matching API key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). When you need explicit control over timeouts or custom endpoints, build the model with the provider builder such as `DashScopeChatModel.builder()...build()` and pass it to `.model(Model)` instead.
-:::
+`streamEvents` returns a `Flux<AgentEvent>` that starts execution on subscription; `blockLast()` waits for that stream to finish here. It uses the same Agent capabilities and persistence configuration as `call`.
 
-### Multi-user concurrency
+Choose `call` or `streamEvents` for each request according to the output you need. Calling `call` and then `streamEvents` with the same input executes that request again.
 
-The agent is **stateless between calls** — a single instance can handle requests from different users and sessions. Pass `userId` / `sessionId` via `RuntimeContext` and the agent automatically loads and isolates the corresponding conversation state:
+### Use it in a web request
+
+In WebFlux, `Mono.using` builds an Agent from the shared Builder on subscription and closes it on completion, error or cancellation. Do not return an unsubscribed `Mono` from a try-with-resources block: that closes the Agent too early. This expression belongs in the handler:
 
 ```java
-import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.message.UserMessage;
-import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import reactor.core.publisher.Mono;
 
-// Create one agent instance at startup (singleton is fine)
-HarnessAgent agent = HarnessAgent.builder()
-        .name("note-taker")
-        .sysPrompt("You are a note-taking assistant.")
-        .model("dashscope:qwen-plus")
-        .workspace(Paths.get(".agentscope/workspace"))
-        .compaction(CompactionConfig.builder()
-                .triggerMessages(30)
-                .keepMessages(10)
-                .build())
-        .build();
-
-// In your HTTP handler — different requests pass different RuntimeContexts
-agent.call(new UserMessage(userInput), RuntimeContext.builder()
-        .sessionId(sessionId)
-        .userId(userId)
-        .build()).block();
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId(userId).sessionId(sessionId).build();
+return Mono.using(
+        AGENT_BUILDER::build,
+        agent -> agent.call(new UserMessage(userInput), ctx),
+        HarnessAgent::close);
 ```
 
-Calls targeting the same `(userId, sessionId)` are automatically serialized (no concurrent writes to one session); calls to different sessions run in parallel. For full production patterns (Redis session, sandbox, skill repositories), see [Going to Production](./others/going-to-production.md).
+Take `userId` from the authenticated identity and authorize access to `sessionId`. Do not call setters on the shared Builder from request handlers. Shared models, tools and middleware must support concurrent use. Different sessions can execute in parallel; the application should order requests to the same session across instances. Journal writer fencing is not an automatic queue. See [Agent lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle).
+
+### When to use AgentSession
+
+Use `call` / `streamEvents` for ordinary conversations, workflow steps and streaming interfaces whose execution belongs to the current request. Returning the execution stream directly as an HTTP response can allow a client disconnect to cancel that execution.
+
+Use `agent.session(ctx)` when your product needs work to continue after the page closes, durable queueing while busy, guidance during execution, or continuation of an interrupted task. Its `AgentSession` accepts tasks and schedules background execution; the frontend independently reads snapshots and durable events.
+
+For background work, the application session manager or task worker owns the Agent until its work stops or the application shuts down. Do not close it when the submission HTTP request returns: its lifetime covers background execution, not just admission.
+
+Continue with [Session operations, events and recovery](/v2/en/docs/harness/session-log), or run the [recoverable chat example](/v2/en/blogs/best-practices/session-chat). Applications using hosted agents over HTTP should read the [Service Agent API](/v2/en/service/session-event-log).
 
 ## Next steps
 
-- [Agent](./building-blocks/agent.md) — full `ReActAgent` API, builder fields, `call` / `streamEvents` / `observe`, human-in-the-loop, `AgentStateStore` configuration
-- [Harness Architecture](./harness/architecture.md) — how `HarnessAgent`'s capabilities cooperate, how state flows
-- [Workspace](./harness/workspace.md) — `AGENTS.md` / `MEMORY.md` / `skills/` / `subagents/` / `tools.json` directory layout and loading model
-- [Filesystem](./harness/filesystem.md) — local + shell / shared store / sandbox deployment modes
+- [Agent](/v2/en/docs/building-blocks/agent) — direct calls, live events, structured output and tool interactions
+- [Harness Architecture](/v2/en/docs/harness/architecture) — choose an invocation style and combine capabilities for your application
+- [Workspace](/v2/en/docs/harness/workspace) — configure `AGENTS.md`, skills, subagents and tools
+- [Context management](/v2/en/docs/harness/context) and [Memory](/v2/en/docs/harness/memory) — manage long conversations and information across sessions
+- [Session operations, events and recovery](/v2/en/docs/harness/session-log) — build applications with background tasks, queueing and recovery

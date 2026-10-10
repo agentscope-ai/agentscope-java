@@ -105,6 +105,47 @@ class BuilderBootstrapSmokeTest {
         }
     }
 
+    @Test
+    void spawnedWorkUsesTheOwningHarnessRepository() throws Exception {
+        try (ClawBootstrap bootstrap =
+                ClawBootstrap.builder()
+                        .skipConfigFile(true)
+                        .cwd(tempDir)
+                        .model(stubModel("EV research evidence"))
+                        .configureAgent("main", b -> b.name("main"))
+                        .mainAgent("main")
+                        .build()) {
+            var agent = bootstrap.mainAgent();
+            var context =
+                    io.agentscope.core.agent.RuntimeContext.builder()
+                            .sessionId("assigned-issue-session")
+                            .put("agentTaskManaged", true)
+                            .build();
+            var output =
+                    agent.getToolkit()
+                            .getTool("sessions_spawn")
+                            .callAsync(
+                                    io.agentscope.core.tool.ToolCallParam.builder()
+                                            .runtimeContext(context)
+                                            .input(
+                                                    Map.of(
+                                                            "agent_id",
+                                                            "general-purpose",
+                                                            "task",
+                                                            "Research EV",
+                                                            "timeout_seconds",
+                                                            0))
+                                            .build())
+                            .block();
+            assertTrue(output != null);
+            var tasks = agent.getTaskRepository().listTasks(context, context.getSessionId(), null);
+            assertTrue(tasks.size() == 1, "spawn must share the Harness task repository");
+            var task = tasks.iterator().next();
+            assertTrue(task.waitForCompletion(5000));
+            assertTrue(task.getResult().contains("EV research evidence"));
+        }
+    }
+
     private static Model stubModel(String assistantText) {
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("stub-model");

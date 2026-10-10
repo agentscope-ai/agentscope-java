@@ -43,8 +43,10 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -248,6 +250,12 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.factoryBuilder = null;
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_REASONING);
+    }
+
     /**
      * Enables the {@code agent_generate} tool, which lets the LLM author new subagent specs from
      * a description. Off by default — the generator needs a {@link io.agentscope.core.model.Model}
@@ -408,9 +416,6 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             Function<ReasoningInput, Flux<AgentEvent>> next) {
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         List<SubagentEntry> currentEntries = snapshotFor(rc).entries();
-        if (currentEntries.isEmpty()) {
-            return next.apply(input);
-        }
         String sessionId = rc != null ? rc.getSessionId() : null;
 
         // ---- Phase B-3 push delivery -------------------------------------------------------
@@ -419,8 +424,10 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         // the legacy pull-only flow unchanged.
         List<TaskDelivery> pending = this.taskRepository.findPendingDeliveries(rc, sessionId);
         Msg deliveryMsg = null;
-        if (!pending.isEmpty() && agent instanceof ReActAgent reAct) {
+        if (!pending.isEmpty()) {
             deliveryMsg = buildDeliveryReminder(pending);
+        }
+        if (deliveryMsg != null && agent instanceof ReActAgent reAct) {
             try {
                 RuntimeContext.resolveAgentState(rc, reAct).contextMutable().add(deliveryMsg);
             } catch (RuntimeException e) {
@@ -460,7 +467,12 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             downstream =
                     downstream.doOnComplete(
                             () -> {
-                                for (TaskDelivery d : pending) {
+                                for (TaskDelivery d :
+                                        pending.subList(
+                                                0,
+                                                Math.min(
+                                                        pending.size(),
+                                                        MAX_DELIVERIES_PER_REMINDER))) {
                                     try {
                                         repoRef.markDelivered(rcRef, sidRef, d.taskId());
                                     } catch (RuntimeException e) {

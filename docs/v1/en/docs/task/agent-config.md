@@ -1,4 +1,7 @@
-# Agent Configuration
+---
+title: Agent Configuration
+zh_link: /v1/zh/docs/task/agent-config
+---
 
 ## Overview
 
@@ -773,4 +776,3 @@ public class ComprehensiveAgentExample {
 ---
 
 For detailed parameter configuration, please refer to the corresponding documentation.
-

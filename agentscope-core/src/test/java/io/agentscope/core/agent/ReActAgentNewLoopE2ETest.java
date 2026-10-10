@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
@@ -215,6 +216,21 @@ class ReActAgentNewLoopE2ETest {
         }
     }
 
+    private static final class StripToolEventContextMiddleware implements MiddlewareBase {
+        @Override
+        public Flux<AgentEvent> onActing(
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
+            return next.apply(input)
+                    .contextWrite(
+                            context ->
+                                    context.delete(SubagentEventBus.CONTEXT_KEY)
+                                            .delete(AgentEventEmitter.CONTEXT_KEY));
+        }
+    }
+
     @Test
     void twoToolReactLoopProducesOrderedEventsAndFinalText() {
         ScriptedModel model =
@@ -364,5 +380,40 @@ class ReActAgentNewLoopE2ETest {
                 .filter(ToolResultTextDeltaEvent.class::isInstance)
                 .map(ToolResultTextDeltaEvent.class::cast)
                 .forEach(e -> assertEquals(expected, e.getMetadata()));
+    }
+
+    @Test
+    void streamEventsRestoresEmitterWhenActingContextLosesEventKeys() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "search", "alpha")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new AlwaysAllowTool("search"));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .middleware(new StripToolEventContextMiddleware())
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("find alpha")
+                                                .build()))
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(1L, events.stream().filter(ToolResultEndEvent.class::isInstance).count());
+        assertTrue(events.get(0) instanceof AgentStartEvent);
+        assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
     }
 }

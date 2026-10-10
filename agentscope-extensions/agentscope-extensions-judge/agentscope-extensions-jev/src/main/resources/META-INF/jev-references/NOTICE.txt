@@ -1,0 +1,24 @@
+JevTraceMetrics adapts metric definitions and JevTextBackend adapts the typed chat-backend protocol from openlayer-ai/jevals at e9fb26aff4a4410580776fb35deec85b4ad9c308 (MIT).
+The trace evaluator follows its state/questions/reduce and compatible-state packing design.
+AgentScope adaptations and behavioral differences are documented in docs/jev/guides/trace-evaluation-api.md.
+JevContextCompactor and CompactionTranscript adapt pairing, dual call/result questions,
+state input fitting, token estimation, batching and selective rebuilding from
+fast-jev-compaction at e3f262a7f4d42bd8dd32ced30d26176f7cb545b0 (MIT).
+Persistent scoped recovery, conservative thresholds and Harness integration are AgentScope adaptations.
+JevTaskSupervisor adapts responsibility checks, proposal arbitration and deterministic tie-breaking
+from thruwire/foreman at ba91849e7088f072db491c739e4c81fd9a4c8154 (MIT).
+JevSupervisionMiddleware adapts bounded observation, minimum/periodic assessment intervals,
+terminal debounce bypass and consecutive assessment-failure accounting from that project.
+Advice-only execution, revision/scoped verification and Reactor lifecycle integration are AgentScope adaptations.
+JevCodeReviewer and ReviewRegions adapt staged screening, profiles, bounded evidence selection,
+mechanism/severity/owner rubrics and source-region parsing from devagrawal09/jev-review
+at 31f89602797fb7bea007f8a480bf368bf564954e (MIT).
+Strict diff validation, supplied snapshots, explicit abstention/coverage and AgentScope integration are adaptations.
+JevEvidenceProcessor adapts per-passage classification and independent reranking from spring-ai-community/spring-ai-typesafe at 5c469ce10ee45175f56a8f5882cc93d29f72f591 (Apache-2.0).
+Original JevDocumentFilter/JevDocumentReranker author: Christian Tzolov, Copyright 2026 the original author or authors.
+Explicit abstention, ACL, bounded reactive execution and AgentScope integration are adaptations.
+JevBrowserNavigator/JevBrowserSession/JevPlaywrightSession independently implement visible candidate selection,
+shared-state operation/target questions, single-use decisions, freshness guards, bounded progress and
+independent completion verification studied in browser-use/jev-ultrafast at
+1231850a0bf1a0c0341fe408ef1668dbbfdfac46 (MIT).
+Read-only allowlists, isolated sessions, reactive lifecycle and AgentScope/Service integration are adaptations.

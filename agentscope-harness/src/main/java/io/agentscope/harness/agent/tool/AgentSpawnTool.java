@@ -426,6 +426,26 @@ public class AgentSpawnTool {
 
         SpawnedAgent spawned =
                 new SpawnedAgent(key, agentId, sessionId, canonLabel, agent, nextDepth);
+        var recorder = io.agentscope.core.session.SessionRecorder.from(runtimeContext);
+        if (recorder != null)
+            recorder.recordNow(
+                    "subagent/spawned",
+                    Map.of(
+                            "childSessionId",
+                            sessionId,
+                            "childAgentId",
+                            agentId,
+                            "agentKey",
+                            key,
+                            "childLogAgentId",
+                            agent instanceof HarnessAgent child
+                                    ? child.sessionKey(
+                                                    RuntimeContext.builder()
+                                                            .userId(currentUserId)
+                                                            .sessionId(sessionId)
+                                                            .build())
+                                            .agentId()
+                                    : agentId));
         agentsByKey.put(key, spawned);
         if (canonLabel != null) {
             labelToKey.put(canonLabel.toLowerCase(), key);
@@ -794,86 +814,116 @@ public class AgentSpawnTool {
             SpawnedAgent spawned,
             RuntimeContext parentCtx) {
         return Mono.deferContextual(
-                ctxView -> {
-                    DefaultAgentManager manager = managerFor(parentCtx);
-                    // ── Path 1: streamEvents() — AgentEvent forwarding ──
-                    Optional<AgentEventEmitter> emitterOpt = AgentEventEmitter.fromContext(ctxView);
-                    if (emitterOpt.isPresent()) {
-                        AgentEventEmitter parentEmitter = emitterOpt.get();
-                        String sourcePath = buildSourcePath(spawned, parentCtx);
-                        AgentEventEmitter taggedEmitter =
-                                event -> parentEmitter.emit(event.withSource(sourcePath));
+                        ctxView -> {
+                            DefaultAgentManager manager = managerFor(parentCtx);
+                            // ── Path 1: streamEvents() — AgentEvent forwarding ──
+                            Optional<AgentEventEmitter> emitterOpt =
+                                    AgentEventEmitter.fromContext(ctxView);
+                            if (emitterOpt.isPresent()) {
+                                AgentEventEmitter parentEmitter = emitterOpt.get();
+                                String sourcePath = buildSourcePath(spawned, parentCtx);
+                                String replyId = UUID.randomUUID().toString().replace("-", "");
+                                AgentEventEmitter taggedEmitter =
+                                        event -> parentEmitter.emit(event.withSource(sourcePath));
 
-                        parentEmitter.emit(
-                                new AgentStartEvent(spawned.sessionId(), null, spawned.agentId())
-                                        .withSource(sourcePath));
+                                parentEmitter.emit(
+                                        new AgentStartEvent(
+                                                        spawned.sessionId(),
+                                                        replyId,
+                                                        spawned.agentId())
+                                                .withSource(sourcePath));
 
-                        AtomicBoolean endEmitted = new AtomicBoolean();
-                        Runnable emitEnd =
-                                () -> {
-                                    if (endEmitted.compareAndSet(false, true)) {
-                                        parentEmitter.emit(
-                                                new AgentEndEvent(null).withSource(sourcePath));
-                                    }
-                                };
-
-                        return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx)
-                                .contextWrite(
-                                        c ->
-                                                c.put(
-                                                        AgentEventEmitter.FORWARDING_CONTEXT_KEY,
-                                                        taggedEmitter))
-                                // Emit before success or error reaches the parent, which may
-                                // otherwise complete its event sink before doFinally runs.
-                                .doOnSuccess(ignored -> emitEnd.run())
-                                .doOnError(ignored -> emitEnd.run())
-                                // Preserve best-effort cancellation signaling without emitting a
-                                // duplicate if cancellation races with normal termination.
-                                .doFinally(
-                                        signal -> {
-                                            if (signal == SignalType.CANCEL) {
-                                                emitEnd.run();
+                                AtomicBoolean endEmitted = new AtomicBoolean();
+                                Runnable emitEnd =
+                                        () -> {
+                                            if (endEmitted.compareAndSet(false, true)) {
+                                                parentEmitter.emit(
+                                                        new AgentEndEvent(replyId)
+                                                                .withSource(sourcePath));
                                             }
-                                        });
-                    }
+                                        };
 
-                    // ── Path 2: stream() (deprecated) — SubagentEventBus forwarding ──
-                    if (ctxView.hasKey(SubagentEventBus.CONTEXT_KEY)) {
-                        SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
-                        EventSource childSource = buildChildSource(spawned, parentCtx);
+                                return manager.invokeAgent(
+                                                agent, sessionId, userId, prompt, parentCtx)
+                                        .contextWrite(
+                                                c ->
+                                                        c.put(
+                                                                AgentEventEmitter
+                                                                        .FORWARDING_CONTEXT_KEY,
+                                                                taggedEmitter))
+                                        // Emit before success or error reaches the parent, which
+                                        // may
+                                        // otherwise complete its event sink before doFinally runs.
+                                        .doOnSuccess(ignored -> emitEnd.run())
+                                        .doOnError(ignored -> emitEnd.run())
+                                        // Preserve best-effort cancellation signaling without
+                                        // emitting a
+                                        // duplicate if cancellation races with normal termination.
+                                        .doFinally(
+                                                signal -> {
+                                                    if (signal == SignalType.CANCEL) {
+                                                        emitEnd.run();
+                                                    }
+                                                });
+                            }
 
-                        return manager.invokeAgentStream(
-                                        agent,
-                                        sessionId,
-                                        userId,
-                                        prompt,
-                                        childSource,
-                                        StreamOptions.defaults(),
-                                        parentCtx)
-                                .doOnNext(
-                                        e -> {
-                                            log.debug(
-                                                    "[execLocalSync] forwarding child event to"
-                                                            + " bus: type={} msgId={} isLast={}",
-                                                    e.getType(),
-                                                    e.getMessage().getId(),
-                                                    e.isLast());
-                                            bus.emit(e);
-                                        })
-                                .filter(e -> e.isLast() && e.getType() == EventType.AGENT_RESULT)
-                                .last()
-                                .map(e -> e.getMessage())
-                                .switchIfEmpty(
-                                        Mono.defer(
-                                                () ->
-                                                        manager.invokeAgent(
-                                                                agent, sessionId, userId, prompt,
-                                                                parentCtx)));
-                    }
+                            // ── Path 2: stream() (deprecated) — SubagentEventBus forwarding ──
+                            if (ctxView.hasKey(SubagentEventBus.CONTEXT_KEY)) {
+                                SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
+                                EventSource childSource = buildChildSource(spawned, parentCtx);
 
-                    // ── Path 3: non-streaming ──
-                    return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
-                });
+                                return manager.invokeAgentStream(
+                                                agent,
+                                                sessionId,
+                                                userId,
+                                                prompt,
+                                                childSource,
+                                                StreamOptions.defaults(),
+                                                parentCtx)
+                                        .doOnNext(
+                                                e -> {
+                                                    log.debug(
+                                                            "[execLocalSync] forwarding child event"
+                                                                    + " to bus: type={} msgId={}"
+                                                                    + " isLast={}",
+                                                            e.getType(),
+                                                            e.getMessage().getId(),
+                                                            e.isLast());
+                                                    bus.emit(e);
+                                                })
+                                        .filter(
+                                                e ->
+                                                        e.isLast()
+                                                                && e.getType()
+                                                                        == EventType.AGENT_RESULT)
+                                        .last()
+                                        .map(e -> e.getMessage())
+                                        .switchIfEmpty(
+                                                Mono.defer(
+                                                        () ->
+                                                                manager.invokeAgent(
+                                                                        agent, sessionId, userId,
+                                                                        prompt, parentCtx)));
+                            }
+
+                            // ── Path 3: non-streaming ──
+                            return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
+                        })
+                .doOnSuccess(
+                        reply -> {
+                            var recorder =
+                                    io.agentscope.core.session.SessionRecorder.from(parentCtx);
+                            if (recorder != null)
+                                recorder.recordIfOpen(
+                                        "subagent/completed",
+                                        Map.of(
+                                                "childSessionId",
+                                                sessionId,
+                                                "childAgentId",
+                                                spawned.agentId(),
+                                                "status",
+                                                "completed"));
+                        });
     }
 
     /**

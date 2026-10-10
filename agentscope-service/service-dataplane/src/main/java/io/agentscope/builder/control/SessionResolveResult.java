@@ -23,7 +23,7 @@ import java.util.Map;
 
 /**
  * One-shot session materialization returned by {@code GET /api/internal/sessions/{id}/resolve} on
- * the control plane (aistiod).
+ * the control plane (service-controlplane).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record SessionResolveResult(
@@ -36,4 +36,5 @@ public record SessionResolveResult(
         EnvironmentDto environment,
         List<Map<String, Object>> vaultCredentials,
         List<Map<String, Object>> memoryMounts,
-        Map<String, Object> teamContext) {}
+        Map<String, Object> teamContext,
+        Map<String, Object> executionContext) {}

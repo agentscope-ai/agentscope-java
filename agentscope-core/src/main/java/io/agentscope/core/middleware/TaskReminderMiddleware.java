@@ -15,43 +15,43 @@
  */
 package io.agentscope.core.middleware;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.state.AgentState;
-import io.agentscope.core.state.Task;
-import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Keeps the agent's todo list in front of the model so long-running tasks don't drift.
- *
- * <p>Two hooks:
- * <ul>
- *   <li>{@link #onSystemPrompt} appends a one-time, static explanation of how to use the
- *       {@code todo_write} tool (grounding).
- *   <li>{@link #onReasoning} appends a fresh {@code <system-reminder>} rendering the current
- *       {@code AgentState.tasksContext} <i>before every reasoning step</i>, so the model always
- *       sees the latest state regardless of how many tool calls happened since.
- * </ul>
- *
- * <p>The reminder is appended <i>transiently</i> to the reasoning input only; it is never written
- * into {@code AgentState.context}, so it is never
- * persisted, compacted, or recalled. It is additionally tagged with
- * {@link Msg#METADATA_SYNTHETIC} so any consumer that does observe it can skip it.
- *
- * <p>Unlike opencode (which leaves the latest list in the most recent tool output), agentscope
- * re-injects the list every turn: after conversation compaction the tool output may be gone, but
- * {@code tasksContext} survives, so this middleware guarantees the list is always visible.
+ * Explains todo usage and projects state for standalone ReActAgent. A final request preparer
+ * that owns task projection suppresses this early pass. Synthetic reminders never enter history.
  */
 public class TaskReminderMiddleware implements MiddlewareBase {
+    private final boolean todo;
+    private final boolean requirements;
+
+    public TaskReminderMiddleware() {
+        this(true, false);
+    }
+
+    public TaskReminderMiddleware(boolean todo, boolean requirements) {
+        this.todo = todo;
+        this.requirements = requirements;
+    }
+
+    public boolean todoEnabled() {
+        return todo;
+    }
+
+    public boolean requirementsEnabled() {
+        return requirements;
+    }
 
     private static final String GROUNDING =
             """
@@ -60,14 +60,33 @@ public class TaskReminderMiddleware implements MiddlewareBase {
             You have a `todo_write` tool that maintains a structured task list for this session.
             Use it for multi-step work: capture the plan as todos, keep exactly one task
             `in_progress`, and update the whole list as you make progress. Your current list (if
-            any) is shown to you before each step inside a `<system-reminder>` block — treat that
-            block as the source of truth for task status.\
+            any) is available as the latest complete tool receipt or a `<TASK_STATE>` projection.
+            Use the latest state, not older statuses. These are agent-maintained progress records,
+            not independent evidence of successful verification.
+            Never infer task acceptance from all todos being completed.\
             """;
+
+    private static final String REQUIREMENTS_GROUNDING =
+            """
+
+            ## Candidate requirements
+            Use task_requirement_propose to capture candidate constraints or acceptance criteria.
+            A user-message or PLAN.md reference does not itself confirm a proposal. Only explicit
+            caller/user decisions can confirm it. CONFIRMED means authorized, not verified or satisfied.
+            Never infer task acceptance from all todos being completed.\
+            """;
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT, ExtensionPoint.ON_REASONING);
+    }
 
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         String base = currentPrompt != null ? currentPrompt : "";
-        return Mono.just(base + GROUNDING);
+        return Mono.just(
+                base + (todo ? GROUNDING : "") + (requirements ? REQUIREMENTS_GROUNDING : ""));
     }
 
     @Override
@@ -76,53 +95,20 @@ public class TaskReminderMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
-        AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
-        List<Task> tasks = state == null ? List.of() : state.getTasksContext().getTasks();
-        if (tasks.isEmpty()) {
+        if (agent instanceof ReActAgent react
+                && react.getModelRequestPreparer() != null
+                && react.getModelRequestPreparer().handlesTaskProjection()) {
             return next.apply(input);
         }
-        Msg reminder =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .name("system")
-                        .content(TextBlock.builder().text(render(tasks)).build())
-                        .metadata(
-                                Map.of(
-                                        Msg.METADATA_SYNTHETIC,
-                                        true,
-                                        Msg.METADATA_REMINDER_KIND,
-                                        "todo_state"))
-                        .build();
-        List<Msg> messages =
-                input.messages() != null ? new ArrayList<>(input.messages()) : new ArrayList<>();
-        messages.add(reminder);
-        return next.apply(new ReasoningInput(messages, input.tools(), input.options()));
-    }
-
-    private static String render(List<Task> tasks) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("<system-reminder>\n");
-        sb.append(
-                "Your current todo list is shown below. This is the source of truth — do not"
-                        + " assume earlier statuses still hold. Keep exactly one task in_progress."
-                        + " Update the whole list with todo_write as you progress.\n\n");
-        for (Task t : tasks) {
-            sb.append(marker(t.getState())).append(' ').append(t.getSubject());
-            Object priority = t.getMetadata() == null ? null : t.getMetadata().get("priority");
-            if (priority != null) {
-                sb.append(" (priority: ").append(priority).append(')');
-            }
-            sb.append('\n');
+        AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
+        if (state == null) {
+            return next.apply(input);
         }
-        sb.append("</system-reminder>");
-        return sb.toString();
-    }
-
-    private static String marker(Task.State state) {
-        return switch (state) {
-            case COMPLETED -> "- [x]";
-            case IN_PROGRESS -> "- [~]";
-            case PENDING -> "- [ ]";
-        };
+        List<Msg> messages =
+                TaskContextProjection.project(
+                        input.messages() == null ? List.of() : input.messages(),
+                        state.getTasksContext(),
+                        requirements);
+        return next.apply(new ReasoningInput(messages, input.tools(), input.options()));
     }
 }

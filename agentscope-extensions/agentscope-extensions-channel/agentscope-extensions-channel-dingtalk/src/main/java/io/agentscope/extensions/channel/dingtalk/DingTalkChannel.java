@@ -17,8 +17,11 @@ package io.agentscope.extensions.channel.dingtalk;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.Msg;
+import io.agentscope.extensions.channel.common.AccessTokenStore;
 import io.agentscope.extensions.channel.common.BotLoopGuard;
 import io.agentscope.extensions.channel.common.IdempotencyStore;
+import io.agentscope.extensions.channel.common.InMemoryAccessTokenStore;
+import io.agentscope.extensions.channel.common.InboundEventDeduplicator;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
@@ -35,10 +38,13 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
- * DingTalk (钉钉) channel adapter using the Stream protocol (persistent WebSocket).
+ * DingTalk (钉钉) channel adapter.
  *
- * <p>Inbound: {@link DingTalkStreamClient} dispatches each bot message payload here, where it is
- * mapped through {@link DingTalkInboundMapper}, deduplicated by {@code msgId}, throttled by the
+ * <p>Reception mode is selected by {@link DingTalkChannelProperties#mode()}: in {@code stream}
+ * mode (default), {@link DingTalkStreamClient} holds a persistent WebSocket and dispatches each
+ * bot message payload here; in {@code http} mode, {@link DingTalkCallbackController} receives
+ * signed HTTP callbacks and hands the verified payload to the same intake. Either way the payload
+ * is mapped through {@link DingTalkInboundMapper}, deduplicated by {@code msgId}, throttled by the
  * bot-loop guard, then routed via {@link ChannelRouter} and executed through the {@link Gateway}.
  *
  * <p>Outbound: {@link DingTalkOutboundClient} sends replies through the OpenAPI batchSend
@@ -57,10 +63,17 @@ public final class DingTalkChannel implements Channel {
     private final DingTalkAccessTokenProvider tokenProvider;
     private final DingTalkOutboundClient outboundClient;
     private final DingTalkInboundMapper mapper;
-    private final IdempotencyStore idempotency;
+    private final InboundEventDeduplicator idempotency;
     private final BotLoopGuard botLoopGuard;
     private final ChannelRouter router;
+
+    /** Present only in {@code stream} mode; {@code null} in {@code http} mode. */
     private final DingTalkStreamClient streamClient;
+
+    /** Present only in {@code http} mode; {@code null} in {@code stream} mode. */
+    private final DingTalkCallbackCrypto crypto;
+
+    private final DingTalkChannelRegistry registry;
 
     private volatile Gateway gateway;
 
@@ -71,9 +84,10 @@ public final class DingTalkChannel implements Channel {
             DingTalkAccessTokenProvider tokenProvider,
             DingTalkOutboundClient outboundClient,
             DingTalkInboundMapper mapper,
-            IdempotencyStore idempotency,
+            InboundEventDeduplicator idempotency,
             BotLoopGuard botLoopGuard,
-            ChannelRouter router) {
+            ChannelRouter router,
+            DingTalkChannelRegistry registry) {
         this.channelId = Objects.requireNonNull(channelId, "channelId");
         this.config = Objects.requireNonNull(config, "config");
         this.properties = Objects.requireNonNull(properties, "properties");
@@ -83,15 +97,73 @@ public final class DingTalkChannel implements Channel {
         this.idempotency = Objects.requireNonNull(idempotency, "idempotency");
         this.botLoopGuard = Objects.requireNonNull(botLoopGuard, "botLoopGuard");
         this.router = Objects.requireNonNull(router, "router");
-        this.streamClient = new DingTalkStreamClient(properties, this::onInboundPayload);
+        this.registry = Objects.requireNonNull(registry, "registry");
+        if (DingTalkChannelProperties.MODE_HTTP.equals(properties.mode())) {
+            this.streamClient = null;
+            this.crypto = new DingTalkCallbackCrypto(properties.appSecret(), properties.aesKey());
+        } else {
+            this.streamClient = new DingTalkStreamClient(properties, this::onInboundPayload);
+            this.crypto = null;
+        }
     }
 
-    /** Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. */
+    /**
+     * Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. Uses a
+     * process-local {@link IdempotencyStore} and {@link InMemoryAccessTokenStore}; use the
+     * overloads taking {@link InboundEventDeduplicator} and {@link AccessTokenStore} to supply
+     * shared-storage implementations.
+     */
     public static DingTalkChannel fromProperties(
             String channelId, ChannelConfig routing, Map<String, Object> rawProperties) {
+        return fromProperties(
+                channelId,
+                routing,
+                rawProperties,
+                new IdempotencyStore(),
+                new InMemoryAccessTokenStore());
+    }
+
+    /**
+     * Factory variant that lets the application supply the {@link InboundEventDeduplicator} used
+     * to drop platform redeliveries — for example a shared-storage implementation so duplicates
+     * are recognized across instances. The process-local {@link IdempotencyStore} is used
+     * otherwise.
+     *
+     * @param idempotency deduplicator for inbound events; must be thread-safe
+     */
+    public static DingTalkChannel fromProperties(
+            String channelId,
+            ChannelConfig routing,
+            Map<String, Object> rawProperties,
+            InboundEventDeduplicator idempotency) {
+        return fromProperties(
+                channelId, routing, rawProperties, idempotency, new InMemoryAccessTokenStore());
+    }
+
+    /**
+     * Factory variant that additionally lets the application supply the {@link AccessTokenStore}
+     * caching the outbound access token — for example a shared-storage implementation so one
+     * instance's refresh or invalidation serves the whole deployment. The process-local {@link
+     * InMemoryAccessTokenStore} is used otherwise.
+     *
+     * @param channelId the channel id (key in {@code agentscope.json#channels})
+     * @param routing the {@link ChannelConfig} parsed from the file entry's routing block
+     * @param rawProperties provider-specific properties (appKey, appSecret, robotCode, mode,
+     *     aesKey, ...)
+     * @param idempotency deduplicator for inbound events; must be thread-safe
+     * @param tokenStore cache for this channel's access token — one instance per credential, not
+     *     to be shared across channels with different credentials; must be thread-safe
+     */
+    public static DingTalkChannel fromProperties(
+            String channelId,
+            ChannelConfig routing,
+            Map<String, Object> rawProperties,
+            InboundEventDeduplicator idempotency,
+            AccessTokenStore tokenStore) {
         DingTalkChannelProperties props = DingTalkChannelProperties.from(channelId, rawProperties);
         DingTalkAccessTokenProvider tokenProvider =
-                new DingTalkAccessTokenProvider(props.apiBase(), props.appKey(), props.appSecret());
+                new DingTalkAccessTokenProvider(
+                        props.apiBase(), props.appKey(), props.appSecret(), tokenStore);
         DingTalkOutboundClient outbound =
                 new DingTalkOutboundClient(props.apiBase(), tokenProvider, props.robotCode());
         DingTalkInboundMapper mapper = new DingTalkInboundMapper(channelId, props.appKey());
@@ -102,9 +174,10 @@ public final class DingTalkChannel implements Channel {
                 tokenProvider,
                 outbound,
                 mapper,
-                new IdempotencyStore(),
+                idempotency,
                 new BotLoopGuard(),
-                new ChannelRouter(routing.defaultAgentId()));
+                new ChannelRouter(routing.defaultAgentId()),
+                DingTalkChannelRegistry.instance());
     }
 
     // -----------------------------------------------------------------
@@ -130,17 +203,26 @@ public final class DingTalkChannel implements Channel {
 
     @Override
     public void start() {
-        streamClient.start();
+        if (crypto != null) {
+            registry.register(this);
+        } else {
+            streamClient.start();
+        }
         log.info(
-                "DingTalk channel '{}' started: appKey={}, robotCode={}",
+                "DingTalk channel '{}' started in {} mode: appKey={}, robotCode={}",
                 channelId,
+                properties.mode(),
                 properties.appKey(),
                 properties.robotCode());
     }
 
     @Override
     public void stop() {
-        streamClient.stop();
+        if (crypto != null) {
+            registry.unregister(channelId, this);
+        } else {
+            streamClient.stop();
+        }
         log.info("DingTalk channel '{}' stopped", channelId);
     }
 
@@ -180,10 +262,15 @@ public final class DingTalkChannel implements Channel {
     }
 
     // -----------------------------------------------------------------
-    //  Stream callback
+    //  Inbound intake (shared by both reception modes)
     // -----------------------------------------------------------------
 
-    private void onInboundPayload(JsonNode payload) {
+    /**
+     * Handles a bot-message payload delivered by either reception mode ({@link
+     * DingTalkStreamClient} in stream mode, {@link DingTalkCallbackController} in http mode):
+     * deduplicates by {@code msgId}, maps, applies the bot-loop guard, then dispatches.
+     */
+    void onInboundPayload(JsonNode payload) {
         Optional<String> msgId = DingTalkInboundMapper.extractMsgId(payload);
         if (msgId.isPresent() && !idempotency.firstSeen(channelId + "|" + msgId.get())) {
             log.debug(
@@ -222,7 +309,12 @@ public final class DingTalkChannel implements Channel {
         return mapper;
     }
 
-    IdempotencyStore idempotency() {
+    /** Callback verification/decryption helper; {@code null} unless running in http mode. */
+    DingTalkCallbackCrypto crypto() {
+        return crypto;
+    }
+
+    InboundEventDeduplicator idempotency() {
         return idempotency;
     }
 

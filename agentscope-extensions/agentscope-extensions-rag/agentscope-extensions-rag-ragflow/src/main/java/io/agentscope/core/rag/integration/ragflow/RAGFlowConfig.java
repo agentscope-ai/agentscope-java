@@ -73,7 +73,7 @@ public class RAGFlowConfig {
 
     private final Boolean tocEnhance;
 
-    private final Integer rerankId;
+    private final String rerankId;
 
     private final Boolean keyword;
 
@@ -229,9 +229,12 @@ public class RAGFlowConfig {
     /**
      * Gets the rerank model ID.
      *
+     * <p>RAGFlow identifies rerank models by name, e.g. {@code "BAAI/bge-reranker-v2-m3@BAAI"}
+     * or a hex UUID, so this is a {@link String} rather than a numeric id.
+     *
      * @return the rerank model ID, or null if not set
      */
-    public Integer getRerankId() {
+    public String getRerankId() {
         return rerankId;
     }
 
@@ -320,7 +323,7 @@ public class RAGFlowConfig {
 
         private Boolean tocEnhance;
 
-        private Integer rerankId;
+        private String rerankId;
 
         private Boolean keyword;
 
@@ -536,11 +539,31 @@ public class RAGFlowConfig {
         /**
          * Sets the rerank model ID.
          *
+         * <p>RAGFlow's {@code /api/v1/retrieval} endpoint expects {@code rerank_id} to be the
+         * rerank model's name, e.g. {@code "BAAI/bge-reranker-v2-m3@BAAI"} or a hex UUID such as
+         * {@code "b2a62730759d11ef987d0242ac120004"}.
+         *
          * @param rerankId the rerank model ID
          * @return this builder
          */
-        public Builder rerankId(Integer rerankId) {
+        public Builder rerankId(String rerankId) {
             this.rerankId = rerankId;
+            return this;
+        }
+
+        /**
+         * Sets the rerank model ID from a numeric value.
+         *
+         * @param rerankId the rerank model ID
+         * @return this builder
+         * @deprecated RAGFlow identifies rerank models by name, not by a numeric id, so no
+         *     {@code Integer} maps to a real model and the retrieval request is rejected. Use
+         *     {@link #rerankId(String)} instead. This overload only keeps existing call sites
+         *     compiling and stringifies the value.
+         */
+        @Deprecated(forRemoval = true)
+        public Builder rerankId(Integer rerankId) {
+            this.rerankId = rerankId != null ? String.valueOf(rerankId) : null;
             return this;
         }
 
