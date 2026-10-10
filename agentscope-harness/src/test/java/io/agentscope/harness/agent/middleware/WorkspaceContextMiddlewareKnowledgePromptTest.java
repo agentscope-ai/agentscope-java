@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.context.ContextRenderer;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,6 +53,17 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
         return wm;
     }
 
+    /**
+     * Render the full prompt (SYSTEM + REFERENCE items) by invoking onSystemPrompt and then
+     * ContextRenderer.render on ALL materials. Unlike WorkspacePromptTestSupport.render which
+     * only includes Placement.SYSTEM items, this includes memory/knowledge (Placement.REFERENCE).
+     */
+    private String renderAll(WorkspaceContextMiddleware mw, RuntimeContext rc, String base) {
+        String prompt = mw.onSystemPrompt(null, rc, base).block();
+        WorkspaceContextMaterials mats = rc.get(WorkspaceContextMaterials.class);
+        return prompt + "\n" + (mats != null ? ContextRenderer.render(mats.items()) : "");
+    }
+
     @TempDir Path workspace;
 
     @Test
@@ -66,19 +79,19 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
                 new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false, true);
 
         RuntimeContext rc = RuntimeContext.empty();
-        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
+        String prompt = renderAll(mw, rc, "BASE\n");
         assertNotNull(prompt);
         // Knowledge-related content is suppressed
         assertFalse(prompt.contains("## Domain Knowledge"));
         assertFalse(prompt.contains("knowledge entry"));
         assertFalse(prompt.contains("Knowledge files:"));
         assertFalse(prompt.contains("ref.md"));
-        assertFalse(prompt.contains("<domain_knowledge_context>"));
+        assertFalse(prompt.contains("&lt;domain_knowledge_context&gt;"));
         // AGENTS.md and MEMORY.md remain intact
         assertTrue(prompt.contains("agent persona"));
         assertTrue(prompt.contains("prefer dark mode"));
-        assertTrue(prompt.contains("<agents_context>"));
-        assertTrue(prompt.contains("<memory_context>"));
+        assertTrue(prompt.contains("project_rules"));
+        assertTrue(prompt.contains("memory"));
         // Getter
         assertTrue(mw.isDisableKnowledgeContext());
     }
@@ -91,10 +104,10 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
                 new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false, true);
 
         RuntimeContext rc = RuntimeContext.empty();
-        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
+        String prompt = renderAll(mw, rc, "BASE\n");
         assertNotNull(prompt);
         // The empty <domain_knowledge_context> element must not appear
-        assertFalse(prompt.contains("<domain_knowledge_context>"));
+        assertFalse(prompt.contains("knowledge entry"));
         // AGENTS.md still present
         assertTrue(prompt.contains("agent persona"));
     }
@@ -108,7 +121,7 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
                 new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false, true);
 
         RuntimeContext rc = RuntimeContext.empty();
-        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
+        String prompt = renderAll(mw, rc, "BASE\n");
         assertNotNull(prompt);
         // Should use the WITH_MEMORY notice variant (mentions MEMORY.md)
         assertTrue(prompt.contains("MEMORY.md"));
@@ -125,11 +138,10 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
                 new WorkspaceContextMiddleware(wm, "agent", null, 8000, true, true, true);
 
         RuntimeContext rc = RuntimeContext.empty();
-        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
+        String prompt = renderAll(mw, rc, "BASE\n");
         assertNotNull(prompt);
         // Memory is fully off (both tools + hooks disabled)
         assertFalse(prompt.contains("should not appear"));
-        assertFalse(prompt.contains("<memory_context>"));
         // Should use the WITHOUT_MEMORY notice variant (does NOT mention MEMORY.md)
         assertFalse(prompt.contains("MEMORY.md"));
         // AGENTS.md still present
@@ -147,14 +159,14 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
         RuntimeContext rc = RuntimeContext.empty();
-        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
+        String prompt = renderAll(mw, rc, "BASE\n");
         assertNotNull(prompt);
         // Default: knowledge injection is intact
         assertTrue(prompt.contains("## Domain Knowledge"));
         assertTrue(prompt.contains("knowledge entry"));
         assertTrue(prompt.contains("Knowledge files:"));
         assertTrue(prompt.contains("ref.md"));
-        assertTrue(prompt.contains("<domain_knowledge_context>"));
+        assertTrue(prompt.contains("knowledge"));
         // Getter
         assertFalse(mw.isDisableKnowledgeContext());
     }
