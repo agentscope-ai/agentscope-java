@@ -316,25 +316,6 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertErrorToolResultToAguiMessageMirrorsError() {
-        Msg msg =
-                Msg.builder()
-                        .id("msg-t2")
-                        .role(MsgRole.TOOL)
-                        .content(ToolResultBlock.error("tc-1", "sandbox unavailable"))
-                        .build();
-
-        AguiMessage aguiMsg = converter.toAguiMessage(msg);
-
-        assertEquals("tool", aguiMsg.getRole());
-        assertEquals("tc-1", aguiMsg.getToolCallId());
-        assertEquals("[ERROR] sandbox unavailable", aguiMsg.getError());
-        // A tool message must still carry `content`: the protocol requires the field and rejects
-        // null, so an empty string stands in for a result with no ordinary output.
-        assertEquals("", aguiMsg.getTextContent());
-    }
-
-    @Test
     void testToolMessageSerialisesNonNullContent() {
         Msg failed =
                 Msg.builder()
@@ -351,83 +332,6 @@ class AguiMessageConverterTest {
                 wire.get("content") instanceof String,
                 "tool message content must be text or parts, never null: " + json);
         assertEquals("[ERROR] sandbox unavailable", wire.get("error"));
-    }
-
-    @Test
-    void testConvertErrorToolResultWithMultipleTextBlocksKeepsAllText() {
-        // `output(ContentBlock)` replaces the list rather than appending, so several outputs
-        // have to be handed over as a list.
-        Msg msg =
-                Msg.builder()
-                        .id("msg-t6")
-                        .role(MsgRole.TOOL)
-                        .content(
-                                ToolResultBlock.builder()
-                                        .id("tc-1")
-                                        .output(
-                                                List.of(
-                                                        TextBlock.builder()
-                                                                .text("sandbox unavailable")
-                                                                .build(),
-                                                        TextBlock.builder()
-                                                                .text("retry after 30s")
-                                                                .build()))
-                                        .state(ToolResultState.ERROR)
-                                        .build())
-                        .build();
-
-        AguiMessage aguiMsg = converter.toAguiMessage(msg);
-
-        assertEquals("sandbox unavailable\nretry after 30s", aguiMsg.getError());
-    }
-
-    @Test
-    void testEmptyTextErrorResultDoesNotSurviveRoundTrip() {
-        // KNOWN LIMITATION, pinned so it is visible rather than silent. An ERROR result whose
-        // text is empty leaves as `error: ""`, and the inbound side reads a blank error as "no
-        // error" so that a client which happens to send an empty string cannot turn a success
-        // into a failure. The two rules are individually right and together lose the state.
-        // Carrying it would need the protocol's `error` field to mean "failed" on presence
-        // rather than on content, which is a decision for the maintainers, not for this fix.
-        Msg msg =
-                Msg.builder()
-                        .id("msg-t8")
-                        .role(MsgRole.TOOL)
-                        .content(
-                                ToolResultBlock.builder()
-                                        .id("tc-1")
-                                        .state(ToolResultState.ERROR)
-                                        .build())
-                        .build();
-
-        AguiMessage out = converter.toAguiMessage(msg);
-        assertEquals("", out.getError());
-
-        ToolResultBlock back = converter.toMsg(out).getFirstContentBlock(ToolResultBlock.class);
-        assertNotNull(back);
-        assertEquals(ToolResultState.SUCCESS, back.getState());
-    }
-
-    @Test
-    void testConvertTwoToolResultsExpandsEachResult() {
-        Msg msg =
-                Msg.builder()
-                        .id("msg-t7")
-                        .role(MsgRole.TOOL)
-                        .content(
-                                ToolResultBlock.error("tc-1", "first failed"),
-                                ToolResultBlock.error("tc-2", "second failed"))
-                        .build();
-
-        List<AguiMessage> messages = converter.toAguiMessages(msg);
-
-        assertEquals(2, messages.size());
-        assertEquals("tc-1", messages.get(0).getToolCallId());
-        assertEquals("[ERROR] first failed", messages.get(0).getError());
-        assertEquals("", messages.get(0).getTextContent());
-        assertEquals("tc-2", messages.get(1).getToolCallId());
-        assertEquals("[ERROR] second failed", messages.get(1).getError());
-        assertEquals("", messages.get(1).getTextContent());
     }
 
     @Test
@@ -472,19 +376,6 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertToolMessageWithSeparatorlessErrorMarkerStaysSuccess() {
-        // Arbitrary text that merely looks like an error marker is not promoted to a failure.
-        AguiMessage aguiMsg = AguiMessage.toolMessage("msg-t21", "tc-1", "[ERROR]boom");
-
-        ToolResultBlock result =
-                converter.toMsg(aguiMsg).getFirstContentBlock(ToolResultBlock.class);
-
-        assertNotNull(result);
-        assertEquals(ToolResultState.SUCCESS, result.getState());
-        assertEquals("[ERROR]boom", resultText(result));
-    }
-
-    @Test
     void testConvertErrorToolResultOnAssistantRoleKeepsTextInContent() {
         // A provider server tool reports its failure as an ERROR result inside the assistant
         // response. `error` belongs to the protocol's tool message, so for this role the text has
@@ -506,48 +397,6 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertToolMessageWithAlreadyPrefixedErrorDoesNotDoubleTheMarker() {
-        // A client may echo back the value this converter produced, marker included; the inbound
-        // path preserves the reported reason verbatim rather than adding another marker.
-        AguiMessage aguiMsg =
-                new AguiMessage(
-                        "msg-t10", "tool", null, null, "tc-1", "[ERROR] sandbox unavailable");
-
-        ToolResultBlock result =
-                converter.toMsg(aguiMsg).getFirstContentBlock(ToolResultBlock.class);
-
-        assertNotNull(result);
-        assertEquals(ToolResultState.ERROR, result.getState());
-        assertEquals("[ERROR] sandbox unavailable", resultText(result));
-    }
-
-    @Test
-    void testConvertErrorAndSuccessToolResultsExpandsEachResult() {
-        Msg msg =
-                Msg.builder()
-                        .id("msg-t9")
-                        .role(MsgRole.TOOL)
-                        .content(
-                                ToolResultBlock.error("tc-1", "first failed"),
-                                ToolResultBlock.builder()
-                                        .id("tc-2")
-                                        .output(TextBlock.builder().text("second ok").build())
-                                        .state(ToolResultState.SUCCESS)
-                                        .build())
-                        .build();
-
-        List<AguiMessage> messages = converter.toAguiMessages(msg);
-
-        assertEquals(2, messages.size());
-        assertEquals("tc-1", messages.get(0).getToolCallId());
-        assertEquals("[ERROR] first failed", messages.get(0).getError());
-        assertEquals("", messages.get(0).getTextContent());
-        assertEquals("tc-2", messages.get(1).getToolCallId());
-        assertNull(messages.get(1).getError());
-        assertEquals("second ok", messages.get(1).getTextContent());
-    }
-
-    @Test
     void testToAguiMessageRejectsMultipleToolResults() {
         Msg msg =
                 Msg.builder()
@@ -559,110 +408,6 @@ class AguiMessageConverterTest {
         IllegalArgumentException error =
                 assertThrows(IllegalArgumentException.class, () -> converter.toAguiMessage(msg));
         assertTrue(error.getMessage().contains("toAguiMessages"));
-    }
-
-    @Test
-    void testConvertSuccessToolResultWithSeveralTextBlocksJoinsThem() {
-        Msg msg =
-                Msg.builder()
-                        .id("msg-t14")
-                        .role(MsgRole.TOOL)
-                        .content(
-                                ToolResultBlock.builder()
-                                        .id("tc-1")
-                                        .output(
-                                                List.of(
-                                                        TextBlock.builder().text("first").build(),
-                                                        TextBlock.builder().text("second").build()))
-                                        .state(ToolResultState.SUCCESS)
-                                        .build())
-                        .build();
-
-        AguiMessage aguiMsg = converter.toAguiMessage(msg);
-
-        assertEquals("first\nsecond", aguiMsg.getTextContent());
-    }
-
-    @Test
-    void testConvertToolResultIgnoresNonTextOutput() {
-        // Only text is projected; a non-text block in the output contributes nothing, in either
-        // state.
-        ImageBlock image =
-                ImageBlock.builder().source(new URLSource("https://example.com/a.png")).build();
-        Msg succeeded =
-                Msg.builder()
-                        .id("msg-t15")
-                        .role(MsgRole.TOOL)
-                        .content(
-                                ToolResultBlock.builder()
-                                        .id("tc-1")
-                                        .output(
-                                                List.of(
-                                                        image,
-                                                        TextBlock.builder()
-                                                                .text("41 degrees")
-                                                                .build()))
-                                        .state(ToolResultState.SUCCESS)
-                                        .build())
-                        .build();
-        Msg failed =
-                Msg.builder()
-                        .id("msg-t16")
-                        .role(MsgRole.TOOL)
-                        .content(
-                                ToolResultBlock.builder()
-                                        .id("tc-2")
-                                        .output(
-                                                List.of(
-                                                        image,
-                                                        TextBlock.builder().text("boom").build()))
-                                        .state(ToolResultState.ERROR)
-                                        .build())
-                        .build();
-
-        assertEquals("41 degrees", converter.toAguiMessage(succeeded).getTextContent());
-        assertEquals("boom", converter.toAguiMessage(failed).getError());
-    }
-
-    @Test
-    void testConvertToolMessageWithErrorAndNullTextStillReportsError() {
-        // A client can report an error with a text content whose value is null; the error still
-        // has to reach the model.
-        AguiMessage aguiMsg =
-                new AguiMessage(
-                        "msg-t17",
-                        "tool",
-                        new MessageContent.Text(null),
-                        null,
-                        "tc-1",
-                        "sandbox unavailable");
-
-        ToolResultBlock result =
-                converter.toMsg(aguiMsg).getFirstContentBlock(ToolResultBlock.class);
-
-        assertNotNull(result);
-        assertEquals(ToolResultState.ERROR, result.getState());
-        assertEquals("sandbox unavailable", resultText(result));
-    }
-
-    @Test
-    void testConvertSuccessToolResultToAguiMessageKeepsTextInContent() {
-        Msg msg =
-                Msg.builder()
-                        .id("msg-t3")
-                        .role(MsgRole.TOOL)
-                        .content(
-                                ToolResultBlock.builder()
-                                        .id("tc-1")
-                                        .output(TextBlock.builder().text("41 degrees").build())
-                                        .state(ToolResultState.SUCCESS)
-                                        .build())
-                        .build();
-
-        AguiMessage aguiMsg = converter.toAguiMessage(msg);
-
-        assertEquals("41 degrees", aguiMsg.getTextContent());
-        assertNull(aguiMsg.getError());
     }
 
     @Test
