@@ -50,7 +50,7 @@ public abstract class AbstractBaseSandbox implements Sandbox {
     private static final Logger log = LoggerFactory.getLogger(AbstractBaseSandbox.class);
 
     /** Default timeout in seconds for workspace probing commands. */
-    private static final int PROBE_TIMEOUT_SECONDS = 10;
+    protected static final int PROBE_TIMEOUT_SECONDS = 10;
 
     private final SandboxState state;
     private final WorkspaceSpecApplier workspaceSpecApplier;

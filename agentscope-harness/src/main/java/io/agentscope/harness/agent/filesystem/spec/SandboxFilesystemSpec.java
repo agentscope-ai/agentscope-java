@@ -20,6 +20,7 @@ import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
+import io.agentscope.harness.agent.sandbox.SandboxReleasePolicy;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceProjectionEntry;
@@ -42,6 +43,7 @@ public abstract class SandboxFilesystemSpec {
             List.of("AGENTS.md", "skills", "subagents", "knowledge", ".skills-cache");
 
     private IsolationScope isolationScope;
+    private SandboxReleasePolicy releasePolicy = SandboxReleasePolicy.DELETE;
     private SandboxSnapshotSpec snapshotSpecOverride;
     private SandboxExecutionGuard executionGuard;
     private boolean workspaceProjectionEnabled = true;
@@ -54,6 +56,21 @@ public abstract class SandboxFilesystemSpec {
     protected abstract SandboxSnapshotSpec snapshotSpec();
 
     protected abstract WorkspaceSpec workspaceSpec();
+
+    /**
+     * Sets the per-call release policy. RETAIN currently requires E2B and a stable isolation key.
+     * Callers must serialize writes to that key, using an execution guard where appropriate.
+     * Explicit sandbox close/delete still destroys resources regardless of this setting.
+     */
+    public SandboxFilesystemSpec releasePolicy(SandboxReleasePolicy policy) {
+        this.releasePolicy = Objects.requireNonNull(policy, "releasePolicy must not be null");
+        return this;
+    }
+
+    /** Returns the release policy for SDK-managed sandboxes. */
+    public SandboxReleasePolicy getReleasePolicy() {
+        return releasePolicy;
+    }
 
     public SandboxFilesystemSpec isolationScope(IsolationScope scope) {
         this.isolationScope = scope;
@@ -117,6 +134,7 @@ public abstract class SandboxFilesystemSpec {
                 .snapshotSpec(snapshotSpecOverride != null ? snapshotSpecOverride : snapshotSpec())
                 .workspaceSpec(withProjection)
                 .isolationScope(isolationScope)
+                .releasePolicy(releasePolicy)
                 .build();
     }
 

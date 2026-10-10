@@ -53,9 +53,18 @@ All sandbox configuration lives on the `SandboxFilesystemSpec` (e.g. `DockerFile
     .isolationScope(IsolationScope.SESSION))
 ```
 
-`SESSION` is naturally concurrency-safe (each session has its own slot). `USER` / `AGENT` / `GLOBAL` in multi-replica deployments should pair with a mutex (see "Concurrency control" below).
+Distinct `SESSION` keys use separate slots, but concurrent calls with the same key still need serialization. This applies to all isolation scopes, especially when retaining a live sandbox; use an execution guard or external coordination (see "Concurrency control" below).
 
 **USER-scope fallback:** when `IsolationScope.USER` is active (either explicitly or by default) but `RuntimeContext.userId` is absent, the framework automatically falls back to `SESSION` scope using `sessionId`. This means you don't need to guard against missing userId — the sandbox degrades gracefully.
+
+E2B supports an opt-in `releasePolicy(SandboxReleasePolicy.RETAIN)` to keep the live sandbox between calls. The default remains `DELETE`. See [E2B retention and cleanup](/v2/en/docs/harness/filesystem#retaining-an-e2b-sandbox-between-calls) for configuration, concurrency, expiry, and explicit deletion.
+
+Retained E2B instances need durable state records and a finite provider timeout. If a worker dies
+before saving an instance ID, the state record is evicted, or the isolation key changes, the SDK
+cannot discover that instance automatically; it can remain running and billed until provider
+expiry. Delete abandoned instances before removing their state records. With explicit state and
+no isolation key, the caller must persist the updated state and coordinate access itself.
+
 
 ## Cross-call recovery = snapshots
 
@@ -151,7 +160,7 @@ mySandbox.start();
 
 SandboxContext callCtx = SandboxContext.builder()
     .client(dockerClient)
-    .externalSandbox(mySandbox)       // framework only stops() at end of call, doesn't shutdown()
+    .externalSandbox(mySandbox)       // caller owns stop/snapshot and shutdown
     .build();
 
 agent.call(msgs, RuntimeContext.builder()
