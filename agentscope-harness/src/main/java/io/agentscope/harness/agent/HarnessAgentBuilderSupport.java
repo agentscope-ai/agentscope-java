@@ -49,6 +49,7 @@ import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
+import io.agentscope.harness.agent.workspace.WorkspaceDefinitionAuthority;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
@@ -828,7 +829,14 @@ final class HarnessAgentBuilderSupport {
                 decl -> buildDeclaredFactory(b, decl, workspace, sandboxFs);
         DefaultAgentManager manager = new DefaultAgentManager(staticEntries, wsManager);
         return new DynamicSubagentsMiddleware(
-                staticEntries, fs, workspace, factoryFn, manager, b.externalSubagentTool, repo);
+                        staticEntries,
+                        fs,
+                        workspace,
+                        factoryFn,
+                        manager,
+                        b.externalSubagentTool,
+                        repo)
+                .setDefinitionAuthority(wsManager.getDefinitionAuthority());
     }
 
     private static TaskRepository resolveTaskRepository(
@@ -879,6 +887,12 @@ final class HarnessAgentBuilderSupport {
     //  Skills
     // -----------------------------------------------------------------
 
+    /** Adds host user overrides to skill reads without changing shared workspace context. */
+    static WorkspaceDefinitionAuthority skillDefinitionAuthority(WorkspaceManager manager) {
+        var authority = manager.getDefinitionAuthority();
+        return authority == null ? null : authority.withNamespace(manager.getNamespaceFactory());
+    }
+
     /**
      * Assembles the ordered list of skill repositories used by this build (low-to-high priority).
      */
@@ -918,9 +932,11 @@ final class HarnessAgentBuilderSupport {
         // WorkspaceSkillRepository (replaces legacy FilesystemBackedSkillRepository).
         // Skipped when the user opts out with disableDefaultWorkspaceSkills().
         if (filesystem != null && !b.disableDefaultWorkspaceSkills) {
-            ordered.add(
+            var repository =
                     new io.agentscope.harness.agent.skill.WorkspaceSkillRepository(
-                            filesystem, "skills", "workspace-namespaced", false));
+                            filesystem, "skills", "workspace-namespaced", false);
+            repository.setDefinitionAuthority(skillDefinitionAuthority(wsManager));
+            ordered.add(repository);
         }
 
         return ordered;

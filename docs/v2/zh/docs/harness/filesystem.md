@@ -386,6 +386,29 @@ agent 可以读写 `/Users/alice/my-project` 和 `/Users/alice/.config` 下的�
 
 ---
 
+### Host-authoritative projected definitions
+
+沙箱模式默认启用 `hostAuthoritativeDefinitions(true)`。对于 `workspaceProjectionRoots(...)` 配置的路径，Agent 上下文、工作区 skill catalog 和延迟加载的 skill 资源均以 host 为权威来源；沙箱改写或在这些目录中新增 skill 不会覆盖受信任定义。显式 `.filesystem(prefix, backend)` 路由仍优先。
+
+默认 projection roots 仍是 `AGENTS.md`、`skills`、`subagents`、`knowledge` 和 `.skills-cache`，不会额外加入 `MEMORY.md`；默认长期记忆的读取、写入和持久化保持不变。显式 projection `MEMORY.md` 后，它的上下文读取也以 host 为权威，但正常 memory API 仍写入 runtime filesystem。
+
+每次启动沙箱时，即使 host payload 未变化，也必须验证当前 projected files 的内容后才可跳过 hydration。内容不一致或验证失败会重新从 host hydrate。额外的沙箱文件保留，但 projected roots 下的这些文件不会进入受信任 catalog。普通未 projection 的文件和 shell 执行仍可写。
+
+**迁移说明：** 升级后的新默认值会改变受信任定义的读取来源。Host 用户 skills 仍按配置的隔离命名空间覆盖共享 host skills，但 owned roots 下仅存在于沙箱的覆盖版本不再生效。可信变更应提升到 host；也可缩小 projection roots，或使用下方 legacy opt-out。
+
+Live verification 需要 `sha256sum` 和 shell `test` 命令。工具不可用时，沙箱记录一次警告，在当前沙箱实例中记住 verification 不受支持，并在每次启动时重新 hydrate。其他验证失败也会强制 hydration；DEBUG 日志指出对应文件或批次。该回退保持安全默认值，但恢复调用会增加传输开销。
+
+显式 projection `MEMORY.md` 会发出配置警告：正常 memory API 仍写 runtime filesystem，不会更新 host-authoritative 记忆上下文。需要正常可写记忆时，不要把它加入 projection roots；默认行为保持不变。
+
+若应用有意依赖沙箱定义覆盖，可恢复旧行为：
+
+```java
+.filesystem(new DockerFilesystemSpec()
+    .hostAuthoritativeDefinitions(false))
+```
+
+关闭后恢复 filesystem-first 定义读取、sandbox skill overrides 和只检查 host hash 的 projection。也可缩小 `workspaceProjectionRoots(...)`，让指定路径继续归 runtime 所有。关闭 projection 时仍保留现有 runtime 语义。
+
 ## IsolationScope —— 多用户与多副本怎么分桶
 
 模式 1（共享存储）和模式 2（沙箱）都用同一个 `IsolationScope` 概念，决定**谁和谁共享同一份状态**：

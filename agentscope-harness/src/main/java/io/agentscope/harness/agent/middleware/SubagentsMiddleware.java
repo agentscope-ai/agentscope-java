@@ -624,7 +624,13 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         }
         try {
             List<SubagentDeclaration> decls =
-                    AgentSpecLoader.loadFromFilesystem(filesystem, runtimeContext, mainWorkspace);
+                    AgentSpecLoader.loadFromFilesystem(
+                            filesystem,
+                            runtimeContext,
+                            mainWorkspace,
+                            workspaceManager != null
+                                    ? workspaceManager.getDefinitionAuthority()
+                                    : null);
 
             List<SubagentEntry> newEntries = new ArrayList<>(baseEntries);
             for (SubagentDeclaration decl : decls) {

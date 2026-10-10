@@ -177,11 +177,13 @@ This requires the caller to pass `userId="alice"` in `RuntimeContext`.
 
 - **Local + shell** — literally `workspace/alice/skills/...` on the host disk.
 - **Shared store (remote filesystem)** — the `skills/` prefix is routed to the KV store; per-user isolation shows up as the namespace key `agents/<agentId>/users/alice/skills/...`, consistent across replicas, and edits from an admin console take effect on the next reasoning step.
-- **Sandbox (sandbox filesystem)** — the host-side user directory is hydrated into the container's `/workspace` via workspace projection at sandbox start, so the agent reads the same copy inside the sandbox.
+- **Sandbox (sandbox filesystem)** — under host-authoritative projection roots, the catalog and lazy resources read host-authored user definitions using the configured isolation namespace, with shared host definitions as the fallback. The sandbox remains a writable execution copy.
 
-Whichever mode you run, `<userId>/skills/` overrides the shared version at the same priority. For the per-mode isolation keys, physical representation, and the role of `userId`, see [Filesystem](/v2/en/docs/harness/filesystem#how-multi-user-isolation-works).
+Host-authored `<userId>/skills/` overrides the shared version at the same priority. In sandbox mode, sandbox-created overrides beneath host-authoritative projection roots are excluded; unprojected skills and legacy opt-out retain runtime overrides. For the per-mode isolation keys, physical representation, and the role of `userId`, see [Filesystem](/v2/en/docs/harness/filesystem#how-multi-user-isolation-works).
 
 ## Conflict resolution
+
+In sandbox mode, workspace skills under configured projection roots are host-authoritative by default, including catalog entries and lazy resources. Editing a projected skill or creating `skills/evil/SKILL.md` inside the sandbox does not change the trusted catalog. To promote a skill beneath a projected root, update the host definition. Applications relying on sandbox self-learning can narrow projection roots or use `hostAuthoritativeDefinitions(false)`; unprojected skills and explicit filesystem routes retain their existing behavior. See [Filesystem](/v2/en/docs/harness/filesystem#host-authoritative-projected-definitions).
 
 All four sources can yield a same-named skill. Priority from low to high:
 
@@ -190,7 +192,7 @@ All four sources can yield a same-named skill. Priority from low to high:
 | 1 (lowest) | Project-global dir | `projectGlobalSkillsDir(Path)`, e.g. `~/.agentscope/skills/` |
 | 2 | Marketplaces | `skillRepository(...)`; later registrations win |
 | 3 | Workspace shared | `workspace/skills/` |
-| 4 (highest) | Per-user | `<userId>/skills/` |
+| 4 (highest) | Per-user | `<userId>/skills/`; host-authored for owned sandbox projection roots |
 
 Non-conflicting skills from lower layers still show up; they're only shadowed on name collision.
 
@@ -363,13 +365,14 @@ At sandbox `start()`, harness tars the workspace's "static assets" and hydrates 
 AGENTS.md  skills/  subagents/  knowledge/  .skills-cache/
 ```
 
-So `workspace/skills/` (including `<userId>/skills/`) and the `.skills-cache/` produced by step 1 are hydrated together. The projection computes one overall SHA-256 over all included files; if it matches the previous run, hydration is skipped — so repeated `call()`s don't re-transfer identical files, and content only re-enters on change.
+So `workspace/skills/` (including `<userId>/skills/`) and the `.skills-cache/` produced by step 1 are hydrated together. The projection computes one overall SHA-256 over all included files. By default, hydration is skipped only when both the host payload hash and the current projected sandbox files match; tampering or failed verification causes rehydration from the host.
 
 Tunables (on `DockerFilesystemSpec` / `KubernetesFilesystemSpec` / other sandbox specs):
 
 | Method | Effect |
 |--------|--------|
 | `workspaceProjectionRoots(List)` | customize which roots are projected (default includes `skills`, `.skills-cache`) |
+| `hostAuthoritativeDefinitions(false)` | restore legacy sandbox definition overrides and host-hash-only projection checks |
 | `workspaceProjectionEnabled(false)` | disable projection entirely — with it off there are no skill files in the sandbox, so scripts can't run |
 
 ### Step 3: execute scripts inside the container
