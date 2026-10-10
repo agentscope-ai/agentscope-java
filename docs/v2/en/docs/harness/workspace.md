@@ -163,7 +163,7 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 | `disableWorkspaceContext()` | workspace instruction and reference loading (`AGENTS.md` / `MEMORY.md` / `knowledge/`) |
 | `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips memory material in `HARNESS_CONTEXT` (`MEMORY.md`) injection |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt |
-| `disableKnowledgeContext()` | `## Domain Knowledge` guidance, `knowledge/KNOWLEDGE.md` content and the `Knowledge files:` catalog; also omits the empty `<domain_knowledge_context>` element. Unlike `disableWorkspaceContext()`, this leaves `AGENTS.md`, `MEMORY.md` and memory tools intact |
+| `disableKnowledgeContext()` | `## Domain Knowledge` guidance, `knowledge/KNOWLEDGE.md` content and the `Knowledge files:` catalog. Unlike `disableWorkspaceContext()`, this leaves `AGENTS.md`, `MEMORY.md` and memory tools intact |
 | `disableSubagents()` | the entire subagent subsystem |
 | `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
 | `disableToolsConfig()` | reading `tools.json` |
@@ -181,9 +181,9 @@ and reference data separately rather than appending all files to System.
 | Material | Model placement | Budget behavior |
 | --- | --- | --- |
 | AGENTS.md | System / `project_rules` | Not directly evicted; included in final budget |
-| Guidance and environment | System / `working_principles`, `environment` | Included in final budget. `## Domain Knowledge` guidance is omitted when `disableKnowledgeContext()` is set |
+| Guidance and environment | System / `working_principles`, `environment` | Included in final budget |
 | MEMORY.md | USER reference / `HARNESS_CONTEXT`, kind=memory | May be truncated during preparation or omitted for final budget |
-| Knowledge entry and path index | USER reference / `HARNESS_CONTEXT`, kind=knowledge | May be omitted for final budget. Omitted entirely when `disableKnowledgeContext()` is set |
+| Knowledge entry and path index | USER reference / `HARNESS_CONTEXT`, kind=knowledge | May be omitted for final budget |
 | additionalContextFile | USER reference / `HARNESS_CONTEXT`, kind=additional | Required, not arbitrarily evicted |
 
 maxContextTokens defaults to 8000 for workspace material preparation, not the final input cap.

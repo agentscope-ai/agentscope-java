@@ -158,7 +158,7 @@ env:
 | `disableWorkspaceContext()` | 工作区指令和参考材料加载（`AGENTS.md` / `MEMORY.md` / `knowledge/`） |
 | `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `HARNESS_CONTEXT` 中的 memory 材料（`MEMORY.md`） |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导 |
-| `disableKnowledgeContext()` | `## Domain Knowledge` 引导段、`knowledge/KNOWLEDGE.md` 全文及 `Knowledge files:` 目录；同时省略空的 `<domain_knowledge_context>` 元素。与 `disableWorkspaceContext()` 不同，此开关保留 `AGENTS.md`、`MEMORY.md` 和记忆工具 |
+| `disableKnowledgeContext()` | `## Domain Knowledge` 引导段、`knowledge/KNOWLEDGE.md` 全文及 `Knowledge files:` 目录。与 `disableWorkspaceContext()` 不同，此开关保留 `AGENTS.md`、`MEMORY.md` 和记忆工具 |
 | `disableSubagents()` | 整个子 agent 子系统 |
 | `disableDynamicSkills()` | 每轮重新合并技能；改成 build 时一次 |
 | `disableToolsConfig()` | 不读 `tools.json` |
@@ -175,9 +175,9 @@ env:
 | 材料 | 模型中的位置 | 预算行为 |
 | --- | --- | --- |
 | AGENTS.md | System / `project_rules` | 不直接淘汰，计入最终预算 |
-| 工作原则、环境信息 | System / `working_principles`、`environment` | 计入最终预算。`disableKnowledgeContext()` 时省略 `## Domain Knowledge` 引导段 |
+| 工作原则、环境信息 | System / `working_principles`、`environment` | 计入最终预算 |
 | MEMORY.md | USER 参考消息 / `HARNESS_CONTEXT`，kind=memory | 准备时可截断，最终预算不足时可省略 |
-| knowledge 入口及路径索引 | USER 参考消息 / `HARNESS_CONTEXT`，kind=knowledge | 可因最终预算省略。`disableKnowledgeContext()` 时整段不注入 |
+| knowledge 入口及路径索引 | USER 参考消息 / `HARNESS_CONTEXT`，kind=knowledge | 可因最终预算省略 |
 | additionalContextFile | USER 参考消息 / `HARNESS_CONTEXT`，kind=additional | 必需材料，不能任意淘汰 |
 
 `maxContextTokens` 默认 8000，用于工作区材料准备，不代表最终模型输入上限。
