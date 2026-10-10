@@ -120,6 +120,7 @@ import io.agentscope.harness.agent.skill.curator.SkillUsageStore;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.ArtifactDeliveryTool;
 import io.agentscope.harness.agent.tool.FilesystemTool;
@@ -1518,7 +1519,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *       {@link #abstractFilesystem(AbstractFilesystem)},
          *       {@link #environmentMemory(String)}</li>
          *   <li>Subagents: {@link #subagent(SubagentDeclaration)}, {@link #subagents(List)},
-         *       {@link #subagentFactory(String, Function)}, {@link #externalSubagentTool(Object)},
+         *       {@link #subagentFactory(String, Function)},
+         *       {@link #subagentFactory(SubagentDeclaration, SubagentFactory)},
+         *       {@link #externalSubagentTool(Object)},
          *       {@link #taskRepository(TaskRepository)}, {@link #modelResolver(Function)}</li>
          *   <li>Skill governance: {@link #skillRepository(AgentSkillRepository)},
          *       {@link #projectGlobalSkillsDir(Path)},
@@ -2126,12 +2129,50 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Adds a fully custom subagent factory for a given agent id, with a description shown to
          * the orchestrator. When {@code description} is null or blank, the name is used.
+         *
+         * <p>Use {@link #subagentFactory(SubagentDeclaration, SubagentFactory)} when the factory
+         * needs the parent's {@link RuntimeContext} or declaration options such as
+         * {@code persistSession}.
          */
         public Builder subagentFactory(
                 String name, String description, Function<String, Agent> factory) {
             this.customSubagentFactories.add(
                     new HarnessAgentBuilderSupport.SubagentFactoryEntry(
-                            name, description, factory));
+                            name, description, rc -> factory.apply(name), null));
+            return this;
+        }
+
+        /**
+         * Adds a subagent whose instances are built by {@code factory} and whose spawn-time
+         * behavior comes from {@code declaration}. Use this when a subagent needs a fully custom
+         * instance (for example a {@link HarnessAgent} with its own middleware, tools, or model)
+         * together with declaration options such as {@code persistSession}.
+         *
+         * <p>The subagent is registered under the declaration's name and description. Only the
+         * spawn-time options are honored: {@code persistSession}, {@code mode}, {@code hidden},
+         * {@code exposeToUser}, and {@code inheritParentPermissions}. Options that describe how to
+         * build the instance ({@code model}, {@code tools}, {@code skills}, {@code workspace},
+         * {@code steps}, ...) are ignored; configure those inside the factory, which receives the
+         * parent's {@link RuntimeContext} on every spawn.
+         *
+         * @throws IllegalArgumentException if {@code declaration} is a remote subagent ({@code
+         *     url} set), which is invoked over HTTP and cannot use a local factory
+         */
+        public Builder subagentFactory(SubagentDeclaration declaration, SubagentFactory factory) {
+            java.util.Objects.requireNonNull(declaration, "declaration");
+            java.util.Objects.requireNonNull(factory, "factory");
+            if (declaration.isRemote()) {
+                throw new IllegalArgumentException(
+                        "Remote subagent '"
+                                + declaration.getName()
+                                + "' cannot be combined with a custom factory");
+            }
+            this.customSubagentFactories.add(
+                    new HarnessAgentBuilderSupport.SubagentFactoryEntry(
+                            declaration.getName(),
+                            declaration.getDescription(),
+                            factory,
+                            declaration));
             return this;
         }
 
