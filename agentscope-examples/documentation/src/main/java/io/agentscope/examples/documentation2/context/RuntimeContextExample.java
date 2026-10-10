@@ -13,6 +13,59 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】运行时上下文 - RuntimeContextExample
+ * ============================================================================
+ *
+ * 演示 RuntimeContext 与 AgentStateStore 的配合使用。
+ *
+ * 1. RuntimeContext vs AgentState
+ *    ┌────────────────────┬─────────────────────┬────────────────────┐
+ *    │       维度         │   RuntimeContext    │     AgentState     │
+ *    ├────────────────────┼─────────────────────┼────────────────────┤
+ *    │ 生命周期           │ 单次 call()         │ 跨多次 call()      │
+ *    │ 持久化             │ 否                  │ 是                 │
+ *    │ 内容               │ 请求元数据、临时属性 │ 对话历史、权限状态 │
+ *    │ 创建方式           │ 每次调用新建        │ 从 StateStore 加载 │
+ *    └────────────────────┴─────────────────────┴────────────────────┘
+ *
+ * 2. RuntimeContext 构建
+ *    RuntimeContext ctx = RuntimeContext.builder()
+ *        .userId("alice")                   // 用户标识
+ *        .sessionId("session-123")          // 会话标识
+ *        .put("request_id", "req-001")      // 临时属性
+ *        .put(MyService.class, myService)   // 类型化属性（DI）
+ *        .build();
+ *
+ * 3. 在工具中使用
+ *    @Tool
+ *    public String myTool(RuntimeContext ctx) {
+ *        String userId = ctx.getUserId();
+ *        String reqId = ctx.get("request_id");
+ *        MyService svc = ctx.get(MyService.class);
+ *        // ...
+ *    }
+ *
+ * 4. 多租户隔离
+ *    // 同一代理，不同用户/会话 → 独立的 AgentState
+ *    RuntimeContext ctxAlice = RuntimeContext.builder()
+ *        .userId("alice").sessionId("s1").build();
+ *    RuntimeContext ctxBob = RuntimeContext.builder()
+ *        .userId("bob").sessionId("s2").build();
+ *
+ *    agent.call(msg, ctxAlice);  // Alice 的对话历史
+ *    agent.call(msg, ctxBob);    // Bob 的对话历史（独立）
+ *
+ * 5. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.context.RuntimeContextExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.context;
 
 import io.agentscope.core.ReActAgent;

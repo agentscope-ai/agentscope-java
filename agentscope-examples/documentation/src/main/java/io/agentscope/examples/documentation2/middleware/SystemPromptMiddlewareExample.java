@@ -13,6 +13,55 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】系统提示词中间件 - SystemPromptMiddlewareExample
+ * ============================================================================
+ *
+ * 演示如何通过 onSystemPrompt() 动态注入系统提示词内容。
+ *
+ * 1. onSystemPrompt 特点
+ *    - 每次 call() 调用时执行
+ *    - 管道模式（非洋葱），前一个的输出是后一个的输入
+ *    - 适合注入动态上下文信息
+ *
+ * 2. 实现方式
+ *    public class TimestampMiddleware implements MiddlewareBase {
+ *        @Override
+ *        public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx,
+ *                                            String currentPrompt) {
+ *            String timestamp = Instant.now().toString();
+ *            return Mono.just(currentPrompt +
+ *                "\n\n[Context] Current UTC time: " + timestamp);
+ *        }
+ *    }
+ *
+ * 3. 典型用途
+ *    - 注入当前时间（时间感知推理）
+ *    - 添加用户偏好设置（语言、角色）
+ *    - 环境标识（staging vs production）
+ *    - 权限级别说明
+ *
+ * 4. 中间件链
+ *    .middleware(new TimestampMiddleware())        // 先执行
+ *    .middleware(new EnvironmentMiddleware(...))   // 后执行
+ *
+ *    最终 prompt = 原始 + Timestamp注入 + Environment注入
+ *
+ * 5. 注意事项
+ *    - onSystemPrompt 是管道模式，必须返回 Mono<String>
+ *    - 其他钩子（onAgent/onReasoning/onActing）是洋葱模式
+ *    - 不要在 onSystemPrompt 中执行耗时操作
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.middleware.SystemPromptMiddlewareExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.middleware;
 
 import io.agentscope.core.ReActAgent;

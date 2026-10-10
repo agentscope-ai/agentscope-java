@@ -13,6 +13,57 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习笔记】AgentScope 中间件机制 - MiddlewareBase
+ * ============================================================================
+ *
+ * 一、设计模式
+ * -----------
+ * 采用「洋葱模型」(Onion Pattern)，类似 Express/Koa 中间件：
+ *
+ *   请求 → [MW1 before] → [MW2 before] → [Core] → [MW2 after] → [MW1 after] → 响应
+ *
+ * 二、5个拦截点
+ * ------------
+ *   拦截点          │ 触发时机                    │ 典型用途
+ *   ────────────────┼────────────────────────────┼─────────────────────
+ *   onAgent         │ 整个代理调用入口/出口        │ 请求日志、鉴权、限流
+ *   onReasoning     │ LLM推理阶段                 │ 提示词注入、结果过滤
+ *   onActing        │ 工具执行阶段                │ 工具权限检查、执行追踪
+ *   onModelCall     │ 原始模型API调用              │ Token计量、缓存、重试
+ *   onSystemPrompt  │ 系统提示词构建              │ 上下文注入（非洋葱模式）
+ *
+ * 三、执行顺序
+ * -----------
+ *   order() 返回值越大，越靠外层（越先执行 before，越后执行 after）
+ *   相同 order 保持注册顺序
+ *
+ * 四、实现示例
+ * -----------
+ *   public class LoggingMiddleware extends MiddlewareBase {
+ *       @Override
+ *       public Flux<AgentEvent> onReasoning(
+ *               Agent agent, RuntimeContext ctx, ReasoningInput input,
+ *               Function<ReasoningInput, Flux<AgentEvent>> next) {
+ *           log.info("推理开始: session={}", ctx.getSessionId());
+ *           return next.apply(input)
+ *               .doOnComplete(() -> log.info("推理完成"));
+ *       }
+ *   }
+ *
+ * 五、内置中间件示例
+ * ----------------
+ *   - AgentTraceMiddleware:        执行追踪日志
+ *   - CompactionMiddleware:        上下文压缩
+ *   - WorkspaceContextMiddleware:  工作空间上下文加载
+ *   - SubagentsMiddleware:         子代理工具注入
+ *   - PlanModeMiddleware:          计划模式工具过滤
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.core.middleware;
 
 import io.agentscope.core.agent.Agent;

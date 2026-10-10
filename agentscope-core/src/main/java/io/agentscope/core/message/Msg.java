@@ -13,6 +13,70 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习笔记】AgentScope 消息模型 - Msg
+ * ============================================================================
+ *
+ * 一、职责定位
+ * -----------
+ * Msg 是框架的「通信单元」，所有代理、用户、工具之间的交互都通过消息传递。
+ *
+ * 二、消息角色
+ * -----------
+ *   角色        │ 类                    │ 说明
+ *   ────────────┼───────────────────────┼──────────────────────
+ *   USER        │ UserMessage           │ 用户输入
+ *   ASSISTANT   │ AssistantMessage      │ 代理回复（含工具调用）
+ *   SYSTEM      │ SystemMessage         │ 系统提示词
+ *   TOOL        │ ToolResultMessage     │ 工具执行结果
+ *
+ * 三、内容块类型 (ContentBlock)
+ * ---------------------------
+ *   类型             │ 说明
+ *   ─────────────────┼─────────────────────
+ *   TextBlock        │ 纯文本
+ *   ImageBlock       │ 图片（base64/URL）
+ *   AudioBlock       │ 音频
+ *   VideoBlock       │ 视频
+ *   FileBlock        │ 文件
+ *   ThinkingBlock    │ 思考过程（Claude extended thinking）
+ *   ToolUseBlock     │ 工具调用请求
+ *   ToolResultBlock  │ 工具执行结果
+ *
+ * 四、消息结构
+ * -----------
+ *   Msg
+ *       ├── id         (唯一标识)
+ *       ├── name       (发送者名称)
+ *       ├── role       (角色: USER/ASSISTANT/SYSTEM/TOOL)
+ *       ├── content    (内容块列表 List<ContentBlock>)
+ *       ├── metadata   (元数据 Map<String, Object>)
+ *       └── timestamp  (时间戳)
+ *
+ * 五、典型用法
+ * -----------
+ *   // 创建用户消息
+ *   Msg userMsg = new UserMessage("你好");
+ *
+ *   // 创建带图片的消息
+ *   Msg imgMsg = UserMessage.builder()
+ *       .content(TextBlock.of("请分析这张图片"),
+ *                ImageBlock.fromUrl("https://..."))
+ *       .build();
+ *
+ *   // 从助手消息提取工具调用
+ *   List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
+ *
+ * 六、线程安全
+ * -----------
+ *   content 列表是不可变的 (ImmutableList)
+ *   消息本身设计为不可变对象
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;

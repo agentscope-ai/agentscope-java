@@ -13,6 +13,67 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】模型调用中间件 - ModelCallMiddlewareExample
+ * ============================================================================
+ *
+ * 演示 onModelCall 钩子：拦截所有发往 LLM 的 API 请求。
+ *
+ * 1. 中间件 5 个钩子（按调用顺序）
+ *    ┌──────────────────────────────────────────────────────────┐
+ *    │  1. onAgent           — 代理 call() 入口               │
+ *    │  2. onSystemPrompt    — 系统提示构建                   │
+ *    │  3. onReasoning       — 推理循环开始                   │
+ *    │  4. onModelCall       — 模型 API 调用 (本示例)         │
+ *    │  5. onActing          — 工具执行                       │
+ *    └──────────────────────────────────────────────────────────┘
+ *
+ * 2. ModelCallInput 结构
+ *    input.messages()  — 发送给模型的完整对话历史
+ *    input.tools()     — 当前可见的工具 schema 列表
+ *    input.options()   — 生成选项（temperature、max_tokens 等）
+ *    input.model()     — Model 实例
+ *
+ * 3. onModelCall 签名
+ *    @Override
+ *    public Flux<AgentEvent> onModelCall(
+ *        Agent agent,
+ *        RuntimeContext ctx,
+ *        ModelCallInput input,
+ *        Function<ModelCallInput, Flux<AgentEvent>> next) {
+ *
+ *        // 前置：记录请求元数据
+ *        System.out.printf("model=%s | messages=%d | tools=%d%n",
+ *            input.model().getClass().getSimpleName(),
+ *            input.messages().size(),
+ *            input.tools().size());
+ *
+ *        // 必须调用 next.apply(input) 继续
+ *        return next.apply(input)
+ *            .doOnNext(event -> ...)      // 后置：计数事件
+ *            .doOnComplete(() -> ...);    // 完成：计算延迟
+ *    }
+ *
+ * 4. 典型用途
+ *    - 请求日志（模型、消息数、工具数）
+ *    - 延迟/吞吐量监控
+ *    - 消息注入/变换
+ *    - 响应缓存/拦截
+ *
+ * 5. 注意事项
+ *    - next 必须调用，否则请求被丢弃
+ *    - 返回不同的 Flux 可完全替换模型响应
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.middleware.ModelCallMiddlewareExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.middleware;
 
 import io.agentscope.core.ReActAgent;

@@ -13,6 +13,79 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】异步等待模式 - AsyncWaitModeExample
+ * ============================================================================
+ *
+ * 演示模式 C：代理调用 wait_async_results 在单次 call() 内等待后台结果。
+ *
+ * 1. 三种异步结果交付模式回顾
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  Mode A: 自动注入                                       │
+ *    │    - 后台完成 → inbox → 下次推理时注入                  │
+ *    │    - 需要多次 call()                                    │
+ *    ├─────────────────────────────────────────────────────────┤
+ *    │  Mode B: 唤醒驱动                                       │
+ *    │    - 后台完成 → wakeup → 触发新 call()                  │
+ *    │    - 需要 WakeupDispatcher                              │
+ *    ├─────────────────────────────────────────────────────────┤
+ *    │  Mode C: 主动等待 (本示例)                              │
+ *    │    - 代理调用 wait_async_results → 阻塞等待             │
+ *    │    - 单次 call() 完成                                   │
+ *    │    - 无需额外基础设施                                   │
+ *    └─────────────────────────────────────────────────────────┘
+ *
+ * 2. 流程
+ *    slow_analysis 工具 (5秒) > 超时 (2秒)
+ *       ↓
+ *    工具卸载到后台
+ *       ↓
+ *    代理调用 wait_async_results(timeout_seconds=30)
+ *       ↓
+ *    工具轮询 inbox
+ *       ↓ 5秒后
+ *    后台工具完成 → 结果推送到 inbox
+ *       ↓
+ *    wait_async_results 检测到结果 → 返回
+ *       ↓
+ *    InboxMiddleware 排空 inbox → 结果进入上下文
+ *       ↓
+ *    代理生成最终响应
+ *
+ * 3. 系统提示配置
+ *    .sysPrompt(
+ *        "When a tool is offloaded to background, ALWAYS call "
+ *        + "wait_async_results to wait for the result before "
+ *        + "responding to the user.")
+ *
+ * 4. 配置（极简）
+ *    HarnessAgent agent = HarnessAgent.builder()
+ *        .asyncToolTimeout(Duration.ofSeconds(2))  // 只需这一行
+ *        .build();
+ *
+ *    // MessageBus、AsyncToolRegistry 自动从 workspace 创建
+ *
+ * 5. 与 Mode B 的区别
+ *    Mode B (Wakeup):
+ *    - 多次 call()
+ *    - 需要 WakeupDispatcher
+ *    - 适合用户不愿等待的场景
+ *
+ *    Mode C (Wait):
+ *    - 单次 call()
+ *    - 零额外配置
+ *    - 适合需要完整结果的场景
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.async.AsyncWaitModeExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.async;
 
 import io.agentscope.core.event.AgentEvent;

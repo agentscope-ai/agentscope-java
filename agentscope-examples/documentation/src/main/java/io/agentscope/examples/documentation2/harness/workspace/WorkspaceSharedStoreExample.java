@@ -13,6 +13,72 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】分布式共享存储 - WorkspaceSharedStoreExample
+ * ============================================================================
+ *
+ * 演示一行代码配置 Redis 分布式存储，实现多副本状态共享。
+ *
+ * 1. DistributedStore 概念
+ *    一个接口统一配置 4 个组件的分布式后端：
+ *
+ *    ┌────────────────────────────────────────────────────────┐
+ *    │  AgentStateStore   — 代理状态持久化                   │
+ *    │  BaseStore         — KV 通用存储                      │
+ *    │  SandboxSnapshot   — 沙箱快照                         │
+ *    │  ExecutionGuard    — 幂等执行守卫                     │
+ *    └────────────────────────────────────────────────────────┘
+ *
+ * 2. RedisDistributedStore 配置（一行搞定）
+ *    JedisPooled jedis = new JedisPooled(URI.create(redisUrl));
+ *    DistributedStore store = RedisDistributedStore.fromJedis(
+ *        jedis,
+ *        "agentscope:example:"  // key 前缀
+ *    );
+ *
+ *    HarnessAgent agent = HarnessAgent.builder()
+ *        .distributedStore(store)   // 一行配置所有分布式组件
+ *        .build();
+ *
+ * 3. 多副本状态共享
+ *    replica1 和 replica2 共享同一 Redis 后端：
+ *
+ *    replica1 (Alice): "My favorite color is blue"
+ *       ↓
+ *    Redis: alice:session → 会话历史
+ *       ↓
+ *    replica2 (Alice): "What is my favorite color?"
+ *       ↓
+ *    回答: "blue" (从 Redis 恢复)
+ *
+ * 4. 用户隔离
+ *    不同 userId 的数据存储在独立 Redis 命名空间：
+ *
+ *    agentscope:example:alice:...
+ *    agentscope:example:bob:...
+ *
+ * 5. IsolationScope
+ *    .filesystem(new RemoteFilesystemSpec()
+ *        .isolationScope(IsolationScope.USER))
+ *
+ *    USER   — 按 userId 隔离文件
+ *    SESSION — 按 sessionId 隔离
+ *    AGENT   — 按代理实例隔离
+ *
+ * 6. 前置条件
+ *    docker run -d --name redis -p 6379:6379 redis:7
+ *    export REDIS_URL=redis://localhost:6379
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.workspace.WorkspaceSharedStoreExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.workspace;
 
 import io.agentscope.core.agent.RuntimeContext;

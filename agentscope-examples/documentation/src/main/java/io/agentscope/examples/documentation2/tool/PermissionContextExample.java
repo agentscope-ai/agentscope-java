@@ -13,6 +13,70 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】权限上下文 - PermissionContextExample
+ * ============================================================================
+ *
+ * 演示 PermissionContextState 权限引擎的工具访问控制。
+ *
+ * 1. 权限引擎层次
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  1. 显式 DENY 规则                                      │
+ *    │  2. 显式 ASK 规则                                       │
+ *    │  3. 工具自检 (ToolBase.checkPermissions)               │
+ *    │  4. 显式 ALLOW 规则                                     │
+ *    │  5. BYPASS 模式兜底                                     │
+ *    │  6. 默认 ASK (或 DONT_ASK 模式下 DENY)                  │
+ *    └─────────────────────────────────────────────────────────┘
+ *    首次匹配生效
+ *
+ * 2. PermissionMode 模式
+ *    DEFAULT:      默认询问，除非有显式规则
+ *    ACCEPT_EDITS: 自动允许写入工具，询问破坏性工具
+ *    EXPLORE:      自动允许只读工具，询问写入工具
+ *    BYPASS:       跳过所有权限检查
+ *    DONT_ASK:     会触发询问的工具自动拒绝
+ *
+ * 3. 构建权限上下文
+ *    PermissionContextState permCtx = PermissionContextState.builder()
+ *        .mode(PermissionMode.DEFAULT)
+ *        .addAllowRule("read_file", new PermissionRule(...))
+ *        .addAskRule("write_file", new PermissionRule(...))
+ *        .addDenyRule("delete_file", new PermissionRule(...))
+ *        .build();
+ *
+ * 4. PermissionRule 结构
+ *    new PermissionRule(
+ *        "tool_name",           // 工具名
+ *        null,                  // 模式匹配（可选）
+ *        PermissionBehavior.ALLOW,  // ALLOW/ASK/DENY
+ *        "userSettings"         // 规则来源
+ *    )
+ *
+ * 5. 绑定到代理
+ *    ReActAgent agent = ReActAgent.builder()
+ *        .permissionContext(permCtx)
+ *        .build();
+ *
+ * 6. 权限决策结果
+ *    - read_file  → 显式 ALLOW → 自动执行
+ *    - write_file → 显式 ASK   → 暂停等待确认
+ *    - delete_file → 显式 DENY → 永久拒绝
+ *
+ * 7. @Tool 的 readOnly 标志
+ *    @Tool(name = "read_file", readOnly = true)
+ *    // EXPLORE 模式下自动允许 readOnly=true 的工具
+ *
+ * 8. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.tool.PermissionContextExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.tool;
 
 import io.agentscope.core.ReActAgent;

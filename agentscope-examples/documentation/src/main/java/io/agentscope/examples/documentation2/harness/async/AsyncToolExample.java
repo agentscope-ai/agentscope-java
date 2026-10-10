@@ -13,6 +13,71 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】异步工具卸载 - AsyncToolExample
+ * ============================================================================
+ *
+ * 演示工具超时自动卸载到后台执行的机制。
+ *
+ * 1. 异步工具核心概念
+ *    工具执行超过 asyncToolTimeout 时，自动卸载到后台：
+ *
+ *    HarnessAgent.builder()
+ *        .asyncToolTimeout(Duration.ofSeconds(2))  // 2秒超时
+ *        .build();
+ *
+ *    // 工具执行 5 秒 > 2 秒超时 → 自动卸载
+ *
+ * 2. 三种结果交付模式
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  Mode A: 自动注入 (InboxMiddleware)                     │
+ *    │     后台工具完成 → inbox → 下次 reasoning 时自动注入    │
+ *    ├─────────────────────────────────────────────────────────┤
+ *    │  Mode B: 唤醒驱动 (WakeupDispatcher)                    │
+ *    │     后台工具完成 → wakeup → 触发新的 call()             │
+ *    ├─────────────────────────────────────────────────────────┤
+ *    │  Mode C: 主动等待 (wait_async_results 工具)             │
+ *    │     代理调用 wait_async_results → 阻塞等待结果          │
+ *    └─────────────────────────────────────────────────────────┘
+ *
+ * 3. 自动卸载流程
+ *    用户请求
+ *       ↓
+ *    代理调用 slow_analysis (需5秒)
+ *       ↓ 2秒后超时
+ *    工具卸载到后台线程
+ *       ↓
+ *    代理立即收到 "工具在后台运行" 提示
+ *       ↓
+ *    代理继续响应用户
+ *       ↓ 5秒后
+ *    后台工具完成 → inbox 送达
+ *
+ * 4. 无需显式配置
+ *    HarnessAgent 自动创建：
+ *    - MessageBus (workspace-backed)
+ *    - AsyncToolRegistry
+ *    只需设置 asyncToolTimeout() 即可启用
+ *
+ * 5. 自动注册的工具
+ *    - wait_async_results: 代理可主动调用等待后台结果
+ *
+ * 6. 适用场景
+ *    - 大数据分析（分钟级）
+ *    - 外部API调用（网络延迟）
+ *    - 文件处理（大文件）
+ *    - 模型推理（GPU计算）
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.async.AsyncToolExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.async;
 
 import io.agentscope.core.event.AgentEvent;

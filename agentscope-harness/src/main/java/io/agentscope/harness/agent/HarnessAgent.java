@@ -13,6 +13,89 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习笔记】AgentScope Java 2.0 生产级封装 - HarnessAgent
+ * ============================================================================
+ *
+ * 一、架构定位
+ * ------------
+ * HarnessAgent 是面向生产环境的「完整代理」，包装 ReActAgent 并增加企业级能力：
+ *
+ *   ┌─────────────────────────────────────────────────────────────────┐
+ *   │                      HarnessAgent (生产级封装)                   │
+ *   │  ┌─────────────────────────────────────────────────────────┐   │
+ *   │  │                 ReActAgent (核心推理引擎)                 │   │
+ *   │  └─────────────────────────────────────────────────────────┘   │
+ *   │                                                                 │
+ *   │  + WorkspaceManager    (工作空间管理)                          │
+ *   │  + AbstractFilesystem  (抽象文件系统 - 本地/沙箱/远程)          │
+ *   │  + SubagentMiddleware  (子代理编排)                            │
+ *   │  + SkillRepository     (技能仓库)                              │
+ *   │  + PlanModeManager     (计划模式)                              │
+ *   │  + CompactionMiddleware(上下文压缩)                            │
+ *   │  + MemoryFlushManager  (记忆持久化)                            │
+ *   └─────────────────────────────────────────────────────────────────┘
+ *
+ * 二、核心能力矩阵
+ * ----------------
+ *   能力              │ 说明
+ *   ─────────────────┼────────────────────────────────────
+ *   工作空间          │ 加载 AGENTS.md/MEMORY.md/KNOWLEDGE.md 到系统提示
+ *   文件系统          │ 3种模式: 本地/沙箱(Docker/K8s)/远程(OSS/COS)
+ *   子代理编排        │ agent_spawn/agent_send 同步+后台任务
+ *   技能自学习        │ skill_manage 工具 + SkillCurator 自动晋升
+ *   记忆管理          │ 自动flush到MEMORY.md + 上下文压缩
+ *   计划模式          │ 只读设计阶段，plan_enter/plan_write/plan_exit
+ *   MCP集成          │ tools.json 配置MCP服务器
+ *
+ * 三、文件系统三种模式
+ * -------------------
+ *   Mode 1 - RemoteFilesystemSpec:  远程存储(OSS/COS) + 可选沙箱
+ *   Mode 2 - SandboxFilesystemSpec: 沙箱优先(Docker/K8s/E2B)
+ *   Mode 3 - LocalFilesystemSpec:   本地文件系统 + Shell
+ *
+ * 四、中间件栈 (按顺序)
+ * ---------------------
+ *   1. AgentTraceMiddleware        - 执行追踪日志
+ *   2. HarnessRuntimeMiddleware    - 运行时上下文注入
+ *   3. WorkspaceContextMiddleware  - 工作空间上下文加载
+ *   4. AtPathExpansionMiddleware   - @path 路径扩展
+ *   5. SubagentsMiddleware         - 子代理工具注入
+ *   6. HarnessSkillMiddleware      - 技能动态加载
+ *   7. CompactionMiddleware        - 上下文压缩
+ *   8. MemoryFlushMiddleware       - 记忆flush
+ *   9. TranscriptMiddleware        - 会话记录
+ *  10. SandboxLifecycleMiddleware  - 沙箱生命周期
+ *
+ * 五、线程安全
+ * -----------
+ * HarnessAgent 设计为无状态单例，可安全服务多用户/多会话：
+ *   - 每个 call() 通过 RuntimeContext 的 (userId, sessionId) 隔离
+ *   - 同一会话的调用自动串行化
+ *   - 不同会话的调用并行执行
+ *
+ * 六、典型使用
+ * -----------
+ *   HarnessAgent agent = HarnessAgent.builder()
+ *       .name("assistant")
+ *       .model("dashscope:qwen-plus")
+ *       .workspace(Paths.get(".agentscope/workspace"))
+ *       .enablePlanMode()
+ *       .enableSkillManageTool(true)
+ *       .build();
+ *
+ *   RuntimeContext ctx = RuntimeContext.builder()
+ *       .sessionId("demo").userId("alice").build();
+ *
+ *   agent.streamEvents("Hello!", ctx)
+ *       .doOnNext(event -> { ... })
+ *       .blockLast();
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.harness.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;

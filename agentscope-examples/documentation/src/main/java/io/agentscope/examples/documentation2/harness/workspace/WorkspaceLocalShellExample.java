@@ -13,6 +13,81 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】本地Shell工作空间 - WorkspaceLocalShellExample
+ * ============================================================================
+ *
+ * 演示文件系统模式 3：本地文件系统 + 主机 Shell 执行。
+ *
+ * 1. 文件系统模式对比
+ *    ┌──────────────────────────────────────────────────────────┐
+ *    │  模式 1: InMemoryFilesystemSpec                          │
+ *    │    - 文件在内存中                                        │
+ *    │    - 无 Shell 执行                                       │
+ *    │    - 适合测试                                            │
+ *    ├──────────────────────────────────────────────────────────┤
+ *    │  模式 2: DockerFilesystemSpec                            │
+ *    │    - 文件在 Docker 容器中                                │
+ *    │    - 沙箱隔离 Shell                                      │
+ *    │    - 适合生产环境                                        │
+ *    ├──────────────────────────────────────────────────────────┤
+ *    │  模式 3: LocalFilesystemSpec (本示例)                    │
+ *    │    - 文件在本地磁盘                                      │
+ *    │    - 主机 Shell 直接执行                                 │
+ *    │    - 适合开发/受信任环境                                 │
+ *    └──────────────────────────────────────────────────────────┘
+ *
+ * 2. LocalFilesystemSpec 配置
+ *    HarnessAgent agent = HarnessAgent.builder()
+ *        .workspace(workspace)
+ *        .filesystem(new LocalFilesystemSpec()
+ *            .executeTimeoutSeconds(30)               // 命令超时
+ *            .env("EXAMPLE_VAR", "hello")             // 环境变量
+ *            .inheritEnv(true))                       // 继承主机环境
+ *        .build();
+ *
+ * 3. 多用户路径隔离
+ *    不同 userId 的运行时数据存储在独立子目录：
+ *
+ *    workspace/
+ *    ├── alice/         (userId="alice" 的数据)
+ *    │   └── note.txt
+ *    └── bob/           (userId="bob" 的数据)
+ *        └── note.txt
+ *
+ * 4. RuntimeContext 用户隔离
+ *    RuntimeContext aliceCtx = RuntimeContext.builder()
+ *        .userId("alice")
+ *        .sessionId("alice-s1")
+ *        .build();
+ *
+ *    RuntimeContext bobCtx = RuntimeContext.builder()
+ *        .userId("bob")
+ *        .sessionId("bob-s1")
+ *        .build();
+ *
+ * 5. Shell 执行
+ *    代理可使用 execute 工具运行主机命令：
+ *    - 命令在工作空间目录下执行
+ *    - 继承配置的环境变量
+ *    - 受 executeTimeoutSeconds 限制
+ *
+ * 6. 安全注意
+ *    LocalFilesystemSpec 直接执行主机命令，仅用于：
+ *    - 本地开发
+ *    - 受信任的内部环境
+ *    生产环境应使用 DockerFilesystemSpec
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.workspace.WorkspaceLocalShellExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.workspace;
 
 import io.agentscope.core.agent.RuntimeContext;

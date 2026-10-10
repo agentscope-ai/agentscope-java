@@ -13,6 +13,70 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】自动计划模式 - PlanModeAutoExample
+ * ============================================================================
+ *
+ * 演示模型自主决定进入计划模式的完整生命周期。
+ *
+ * 1. 计划模式概念
+ *    复杂任务时，先规划再执行：
+ *    plan_enter → plan_write → plan_exit(审批) → build模式(执行)
+ *
+ * 2. 启用计划模式
+ *    HarnessAgent.builder()
+ *        .enablePlanMode()          // 启用计划模式工具
+ *        .allowShellInPlanMode()    // 计划模式下允许只读shell
+ *        .enableTaskList()          // 启用任务列表
+ *        .build();
+ *
+ * 3. 计划模式生命周期
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  Build Mode (构建模式)                                   │
+ *    │  ├── 完整写入权限                                        │
+ *    │  └── 可执行所有工具                                       │
+ *    └─────────────────────────────────────────────────────────┘
+ *           ↓ plan_enter
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  Plan Mode (计划模式)                                    │
+ *    │  ├── 只读访问（调研阶段）                                  │
+ *    │  ├── plan_write: 写入 plans/PLAN.md                     │
+ *    │  └── plan_exit:  请求审批 → HITL确认                      │
+ *    └─────────────────────────────────────────────────────────┘
+ *           ↓ plan_exit + 用户批准
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  Build Mode (构建模式)                                   │
+ *    │  └── 按计划执行                                          │
+ *    └─────────────────────────────────────────────────────────┘
+ *
+ * 4. HITL 审批流程
+ *    // 监听 RequireUserConfirmEvent
+ *    .doOnNext(event -> {
+ *        if (event instanceof RequireUserConfirmEvent confirm) {
+ *            // 展示待审批的计划
+ *            // 用户决策后发送 ConfirmResult
+ *        }
+ *    })
+ *
+ * 5. 审批消息构造
+ *    List<ConfirmResult> results = toolCalls.stream()
+ *        .map(t -> new ConfirmResult(true, t))  // true=批准
+ *        .toList();
+ *    Msg resumeMsg = UserMessage.builder()
+ *        .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, results))
+ *        .build();
+ *    agent.call(resumeMsg, ctx);
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.planmode.PlanModeAutoExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.planmode;
 
 import io.agentscope.core.agent.RuntimeContext;

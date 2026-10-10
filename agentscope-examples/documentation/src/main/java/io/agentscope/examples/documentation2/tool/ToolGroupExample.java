@@ -13,6 +13,66 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】工具组 - ToolGroupExample
+ * ============================================================================
+ *
+ * 演示代理自主管理工具组的能力（元工具）。
+ *
+ * 1. 工具组概念
+ *    将相关工具分组，按需激活，减少 token 消耗：
+ *    - file_ops:    文件操作（read/write/list）
+ *    - math_ops:    数学计算（factorial/is_prime）
+ *    - network_ops: 网络操作（ping/dns_lookup）
+ *
+ * 2. 创建工具组
+ *    Toolkit toolkit = new Toolkit();
+ *
+ *    // 创建组（默认不激活）
+ *    toolkit.createToolGroup("file_ops", "文件系统操作", false);
+ *
+ *    // 注册工具到组
+ *    toolkit.registration()
+ *        .tool(new FileTools())
+ *        .group("file_ops")
+ *        .apply();
+ *
+ * 3. 元工具 (reset_equipped_tools)
+ *    启用后，代理可自主激活工具组：
+ *
+ *    ReActAgent.builder()
+ *        .toolkit(toolkit)
+ *        .enableMetaTool(true)  // 启用元工具
+ *        .build();
+ *
+ * 4. 自动激活流程
+ *    用户: "计算5的阶乘"
+ *       ↓
+ *    代理调用 reset_equipped_tools(["math_ops"])
+ *       ↓
+ *    math_ops 组激活，factorial 工具可用
+ *       ↓
+ *    代理调用 factorial(5)
+ *       ↓
+ *    返回结果: 120
+ *
+ * 5. 多组激活
+ *    用户: "计算7的阶乘，然后ping github.com"
+ *       ↓
+ *    代理调用 reset_equipped_tools(["math_ops", "network_ops"])
+ *       ↓
+ *    两个组同时激活
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.tool.ToolGroupExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.tool;
 
 import io.agentscope.core.ReActAgent;

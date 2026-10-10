@@ -13,6 +13,50 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】状态持久化 - StateExample
+ * ============================================================================
+ *
+ * 演示如何使用 AgentStateStore 实现会话状态持久化。
+ *
+ * 1. 核心概念
+ *    - AgentState:      会话状态容器（对话历史、权限、工具组等）
+ *    - AgentStateStore: 状态存储后端（文件/Redis/MySQL/PostgreSQL）
+ *    - sessionId:       会话标识，用于路由到正确的状态
+ *
+ * 2. 状态存储实现
+ *    - JsonFileAgentStateStore:  文件存储（开发/测试）
+ *    - RedisAgentStateStore:     Redis 存储（分布式）
+ *    - JdbcAgentStateStore:      数据库存储（MySQL/PostgreSQL）
+ *    - InMemoryAgentStateStore:  内存存储（单次运行）
+ *
+ * 3. 配置方式
+ *    Path sessionPath = Paths.get("~/.agentscope/sessions");
+ *    AgentStateStore stateStore = new JsonFileAgentStateStore(sessionPath);
+ *
+ *    ReActAgent agent = ReActAgent.builder()
+ *        .stateStore(stateStore)      // 设置存储后端
+ *        .defaultSessionId("demo")    // 默认会话ID
+ *        .build();
+ *
+ * 4. 自动保存机制
+ *    - 每次 call() 结束后自动保存状态
+ *    - 下次启动时自动恢复对话历史
+ *    - 无需手动调用 load/save
+ *
+ * 5. 访问历史记录
+ *    List<Msg> messages = agent.getAgentState().getContext();
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.state.StateExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.state;
 
 import io.agentscope.core.ReActAgent;

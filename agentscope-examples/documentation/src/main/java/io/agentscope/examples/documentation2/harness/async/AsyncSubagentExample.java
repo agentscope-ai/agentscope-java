@@ -13,6 +13,59 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】异步子代理 - AsyncSubagentExample
+ * ============================================================================
+ *
+ * 演示异步子代理执行与唤醒驱动结果传递（模式B）。
+ *
+ * 1. 异步子代理 vs 同步子代理
+ *    同步: agent_spawn(timeout_seconds=30) → 等待结果 → 返回
+ *    异步: agent_spawn(timeout_seconds=0)  → 立即返回 → 后台执行
+ *                                                    ↓
+ *                                          完成后通过 inbox 送达
+ *
+ * 2. 异步执行架构
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  HarnessAgent                                           │
+ *    │     ↓ agent_spawn(timeout=0)                           │
+ *    │  SubagentsMiddleware (后台执行)                         │
+ *    │     ↓ 完成                                              │
+ *    │  TaskCompletionCallback → inbox + wakeup                │
+ *    └─────────────────────────────────────────────────────────┘
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  WakeupDispatcher (轮询 wakeup 队列)                    │
+ *    │     ↓ 检测到 wakeup                                     │
+ *    │  gateway.runWakeup(sessionId)                          │
+ *    │     ↓                                                   │
+ *    │  InboxMiddleware 排空 inbox → LLM 看到结果              │
+ *    └─────────────────────────────────────────────────────────┘
+ *
+ * 3. 关键组件
+ *    - MessageBus:      消息总线（inbox/wakeup 队列）
+ *    - HarnessGateway:  网关（绑定代理）
+ *    - WakeupDispatcher: 唤醒调度器（轮询 wakeup）
+ *
+ * 4. 配置示例
+ *    MessageBus bus = new WorkspaceMessageBus(...);
+ *    HarnessAgent agent = HarnessAgent.builder()
+ *        .messageBus(bus)
+ *        .build();
+ *    HarnessGateway gateway = HarnessGateway.create();
+ *    gateway.bindMainAgent(agent);
+ *    WakeupDispatcher dispatcher = new WakeupDispatcher(bus, gateway);
+ *    dispatcher.start();
+ *
+ * 5. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.async.AsyncSubagentExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.async;
 
 import io.agentscope.core.event.AgentEvent;

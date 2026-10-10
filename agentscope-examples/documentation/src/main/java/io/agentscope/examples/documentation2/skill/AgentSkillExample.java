@@ -13,6 +13,57 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】技能仓库 - AgentSkillExample
+ * ============================================================================
+ *
+ * 演示如何使用 FileSystemSkillRepository 加载和管理代理技能。
+ *
+ * 1. 技能概念
+ *    技能 = 可复用的提示词模板 + 工具组合
+ *    存储在文件系统中，可跨代理共享
+ *
+ * 2. 技能目录结构
+ *    skills/
+ *    ├── code-review/
+ *    │   └── SKILL.md       (技能定义文件)
+ *    ├── data-analysis/
+ *    │   └── SKILL.md
+ *    └── skill-creator/
+ *        └── SKILL.md
+ *
+ * 3. SKILL.md 格式
+ *    ---
+ *    name: code-review
+ *    description: 代码审查技能
+ *    ---
+ *    # 代码审查指南
+ *    你是一个代码审查专家...
+ *
+ * 4. 配置技能仓库
+ *    FileSystemSkillRepository skillRepo =
+ *        new FileSystemSkillRepository(skillsDir, false);
+ *
+ *    ReActAgent agent = ReActAgent.builder()
+ *        .skillRepository(skillRepo)
+ *        .build();
+ *
+ * 5. 技能与工具组合
+ *    技能可以激活特定工具组：
+ *    - ReadFileTool  读取文件
+ *    - WriteFileTool 写入文件
+ *    - 自定义工具...
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.skill.AgentSkillExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.skill;
 
 import io.agentscope.core.ReActAgent;

@@ -13,6 +13,54 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】子代理流式事件 - SubagentStreamingExample
+ * ============================================================================
+ *
+ * 演示父代理调用子代理时的事件流转发机制。
+ *
+ * 1. 子代理声明
+ *    HarnessAgent.builder()
+ *        .subagent(SubagentDeclaration.builder()
+ *            .name("researcher")
+ *            .description("研究专家")
+ *            .inlineAgentsBody("你是研究助手...")
+ *            .persistSession(true)  // 子代理会话持久化
+ *            .build())
+ *        .build();
+ *
+ * 2. 事件流转发
+ *    父代理调用 agent_spawn 时，子代理的事件会实时转发到父流：
+ *
+ *    AGENT_START                           ← 父代理开始
+ *      TEXT_BLOCK_DELTA                    ← 父代理推理
+ *      TOOL_CALL_START "agent_spawn"       ← 父调用子代理
+ *      AGENT_START (source="main/researcher")   ← 子代理开始
+ *        TEXT_BLOCK_DELTA (source="...")        ← 子代理推理
+ *      AGENT_END (source="main/researcher")     ← 子代理结束
+ *      TOOL_RESULT_END                     ← 父收到结果
+ *      TEXT_BLOCK_DELTA                    ← 父代理总结
+ *    AGENT_END                             ← 父代理结束
+ *
+ * 3. 区分父子事件
+ *    event.getSource() == null      → 父代理事件
+ *    event.getSource() == "main/researcher" → 子代理事件
+ *
+ * 4. 使用场景
+ *    - 任务分解与委托
+ *    - 专家系统（不同子代理处理不同领域）
+ *    - 多轮对话中的子任务执行
+ *
+ * 5. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.subagent.SubagentStreamingExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.subagent;
 
 import io.agentscope.core.agent.RuntimeContext;

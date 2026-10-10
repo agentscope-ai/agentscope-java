@@ -13,6 +13,71 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】Web 流式输出 - StreamingWebExample
+ * ============================================================================
+ *
+ * 演示 Spring Boot + SSE 的 Web 流式代理响应。
+ *
+ * 1. SSE (Server-Sent Events)
+ *    浏览器/curl 通过 HTTP 长连接接收服务器推送的流式数据：
+ *
+ *    GET /chat?message=Hello
+ *    Accept: text/event-stream
+ *
+ *    响应:
+ *    data: Hello
+ *    data: , how
+ *    data:  can
+ *    data:  I help?
+ *
+ * 2. Spring Boot 集成
+ *    @GetMapping(path = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+ *    public Flux<String> chat(@RequestParam String message) {
+ *        return agent.streamEvents(new UserMessage(message))
+ *            .filter(e -> e instanceof TextBlockDeltaEvent)
+ *            .map(e -> ((TextBlockDeltaEvent) e).getDelta());
+ *    }
+ *
+ * 3. ReActAgent 线程安全
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  重要：ReActAgent 不是线程安全的！                       │
+ *    │                                                         │
+ *    │  单实例拒绝并发 call()                                   │
+ *    │  正确做法：每个请求创建新的 agent 实例                   │
+ *    │                                                         │
+ *    │  可共享：Model、AgentStateStore、Toolkit                 │
+ *    │  不可共享：ReActAgent 实例                               │
+ *    └─────────────────────────────────────────────────────────┘
+ *
+ * 4. 会话持久化
+ *    AgentStateStore stateStore = new JsonFileAgentStateStore(path);
+ *
+ *    ReActAgent agent = ReActAgent.builder()
+ *        .stateStore(stateStore)
+ *        .defaultSessionId(sessionId)  // URL 参数传入
+ *        .build();
+ *
+ * 5. 异步调度
+ *    return agent.streamEvents(userMsg)
+ *        .subscribeOn(Schedulers.boundedElastic())  // 不阻塞 Netty 线程
+ *        .filter(event -> event instanceof TextBlockDeltaEvent)
+ *        .map(event -> ((TextBlockDeltaEvent) event).getDelta());
+ *
+ * 6. 测试方式
+ *    curl -N "http://localhost:8080/chat?message=Hello"
+ *    curl -N "http://localhost:8080/chat?message=What+is+AI&sessionId=my-session"
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn spring-boot:run -pl agentscope-examples/documentation \
+ *        -Dspring-boot.run.mainClass=io.agentscope.examples.documentation2.streaming.StreamingWebExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.streaming;
 
 import io.agentscope.core.ReActAgent;

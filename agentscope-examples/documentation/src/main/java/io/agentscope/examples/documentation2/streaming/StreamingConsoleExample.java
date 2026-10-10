@@ -13,6 +13,68 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】控制台流式输出 - StreamingConsoleExample
+ * ============================================================================
+ *
+ * 演示 agent.stream() 的控制台实时输出效果。
+ *
+ * 1. stream() vs call()
+ *    ┌──────────────────────────────────────────────────────────┐
+ *    │  agent.call(msg)                                         │
+ *    │    - 阻塞等待完整响应                                     │
+ *    │    - 简单，但延迟感知高                                   │
+ *    │    - 返回 Mono<Msg>                                       │
+ *    ├──────────────────────────────────────────────────────────┤
+ *    │  agent.stream(msgs, options, ctx)                        │
+ *    │    - 增量交付 token                                       │
+ *    │    - 实时打字机效果                                       │
+ *    │    - 返回 Flux<Event>                                     │
+ *    └──────────────────────────────────────────────────────────┘
+ *
+ * 2. Event 类型
+ *    - REASONING:    推理文本/思考块（流式 chunk + 最终消息）
+ *    - TOOL_RESULT:  工具调用结果
+ *    - HINT:         注入上下文（记忆、RAG、计划器）
+ *
+ * 3. StreamOptions 配置
+ *    StreamOptions options = StreamOptions.builder()
+ *        .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
+ *        .incremental(true)           // true=增量delta, false=累积
+ *        .includeReasoningChunk(true) // 包含推理过程的 chunk
+ *        .build();
+ *
+ * 4. 事件处理
+ *    agent.stream(List.of(userMsg), options, ctx)
+ *        .doOnNext(event -> {
+ *            if (event.getType() == EventType.REASONING) {
+ *                if (!event.isLast()) {
+ *                    // 增量 chunk → 不换行打印
+ *                    System.out.print(event.getMessage().getTextContent());
+ *                }
+ *            } else if (event.getType() == EventType.TOOL_RESULT) {
+ *                if (event.isLast()) {
+ *                    // 工具完成
+ *                    System.out.println("[tool result] " + ...);
+ *                }
+ *            }
+ *        })
+ *        .blockLast();
+ *
+ * 5. isLast() 标志
+ *    - false: 增量 chunk（部分文本）
+ *    - true:  该阶段的最终消息
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.streaming.StreamingConsoleExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.streaming;
 
 import io.agentscope.core.ReActAgent;

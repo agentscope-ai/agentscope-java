@@ -13,6 +13,43 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】基础对话 - BasicChatExample
+ * ============================================================================
+ *
+ * 这是最简单的 AgentScope 入门示例，演示：
+ *
+ * 1. 创建代理的最简方式
+ *    ReActAgent.builder()
+ *        .name("Assistant")
+ *        .sysPrompt("...")
+ *        .model("dashscope:qwen-plus")  // ModelRegistry 自动解析
+ *        .build();
+ *
+ * 2. 流式对话
+ *    agent.streamEvents(userMsg)
+ *        .doOnNext(event -> {
+ *            if (event instanceof TextBlockDeltaEvent e) {
+ *                System.out.print(e.getDelta());  // 逐字输出
+ *            }
+ *        })
+ *        .blockLast();
+ *
+ * 3. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.quickstart.BasicChatExample
+ *
+ * 4. 关键概念
+ *    - ModelRegistry: 通过 "provider:model" 字符串自动解析模型
+ *    - streamEvents(): 返回 Flux<AgentEvent> 事件流
+ *    - TextBlockDeltaEvent: 流式文本增量事件
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.quickstart;
 
 import io.agentscope.core.ReActAgent;

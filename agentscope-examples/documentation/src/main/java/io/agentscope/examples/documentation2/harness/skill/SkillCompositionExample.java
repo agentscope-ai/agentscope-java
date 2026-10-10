@@ -13,6 +13,70 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】技能组合 - SkillCompositionExample
+ * ============================================================================
+ *
+ * 演示四层技能组合模型：工作空间技能 + 类路径市场技能合并。
+ *
+ * 1. 技能层次（优先级从高到低）
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  Layer 4: 运行时技能 (代理动态加载)                     │
+ *    │  Layer 3: 工作空间技能 (workspace/skills/)              │
+ *    │  Layer 2: 类路径市场 (resources/skills/)               │
+ *    │  Layer 1: 内置技能 (框架默认)                          │
+ *    └─────────────────────────────────────────────────────────┘
+ *    同名技能：高层覆盖低层
+ *
+ * 2. 工作空间技能目录结构
+ *    workspace/
+ *    └── skills/
+ *        ├── code-reviewer/
+ *        │   └── SKILL.md
+ *        └── translator/
+ *            └── SKILL.md
+ *
+ * 3. SKILL.md 文件格式
+ *    ---
+ *    name: code-reviewer
+ *    description: 代码审查技能
+ *    ---
+ *
+ *    # Code Reviewer
+ *    Review the given code for:
+ *    1. Correctness
+ *    2. Style
+ *    ...
+ *
+ * 4. ClasspathSkillRepository
+ *    // 从 JAR 内 resources/skills/ 加载
+ *    ClasspathSkillRepository repo = new ClasspathSkillRepository("skills");
+ *    List<String> names = repo.getAllSkillNames();
+ *
+ * 5. 多源合并
+ *    HarnessAgent agent = HarnessAgent.builder()
+ *        .workspace(workspace)              // 层3: 工作空间技能
+ *        .skillRepository(classpathRepo)    // 层2: 类路径市场
+ *        .build();
+ *
+ *    // 代理系统提示中看到 <available_skills> 块
+ *    // 调用 load_skill_through_path 加载技能详情
+ *
+ * 6. 技能加载工具
+ *    代理可调用:
+ *    - load_skill_through_path: 读取技能 SKILL.md 内容
+ *    - list_available_skills: 列出所有可用技能
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.skill.SkillCompositionExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.skill;
 
 import io.agentscope.core.agent.RuntimeContext;

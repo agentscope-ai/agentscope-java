@@ -13,6 +13,102 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】用户中断 - InterruptionExample
+ * ============================================================================
+ *
+ * 演示用户发起的代理执行中断机制。
+ *
+ * 1. 中断机制概述
+ *    用户可在代理执行过程中发送中断请求：
+ *
+ *    agent.interrupt(interruptMsg);
+ *
+ *    代理会：
+ *    - 立即停止当前工具执行
+ *    - 生成伪造的工具结果（fake results）
+ *    - 返回用户友好的恢复消息
+ *
+ * 2. 中断流程
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  代理执行长时间工具 (process_large_dataset, 5秒)        │
+ *    │     ↓ 2秒后                                            │
+ *    │  用户调用 agent.interrupt(msg)                         │
+ *    │     ↓                                                   │
+ *    │  工具线程被中断 (InterruptedException)                  │
+ *    │     ↓                                                   │
+ *    │  框架生成 fake tool results                            │
+ *    │     ↓                                                   │
+ *    │  代理收到中断消息 + fake results                       │
+ *    │     ↓                                                   │
+ *    │  代理生成恢复响应                                       │
+ *    └─────────────────────────────────────────────────────────┘
+ *
+ * 3. 监控中间件实现
+ *    class MonitoringMiddleware implements MiddlewareBase {
+ *
+ *        @Override
+ *        public Flux<AgentEvent> onAgent(...) {
+ *            // agent 级别的前后回调
+ *            return next.apply(input)
+ *                .doOnComplete(() -> { ... })
+ *                .doOnError(e -> { ... });
+ *        }
+ *
+ *        @Override
+ *        public Flux<AgentEvent> onActing(...) {
+ *            // 工具调用级别的监控
+ *            input.toolCalls().forEach(tc -> { ... });
+ *            return next.apply(input)
+ *                .doOnNext(event -> {
+ *                    if (event instanceof ToolResultTextDeltaEvent delta) {
+ *                        // 工具执行进度
+ *                    }
+ *                });
+ *        }
+ *    }
+ *
+ * 4. ToolEmitter 进度流
+ *    工具方法可使用 ToolEmitter 发送进度更新：
+ *
+ *    @Tool(name = "process_large_dataset")
+ *    public String process(String dataset, ToolEmitter emitter) {
+ *        for (int i = 1; i <= 10; i++) {
+ *            Thread.sleep(500);
+ *            emitter.emit(ToolResultBlock.text("Processed " + (i*10) + "%"));
+ *        }
+ *        return "Done";
+ *    }
+ *
+ * 5. 中断后的状态
+ *    - agent.getAgentState().getContext() 包含：
+ *      - 原始消息
+ *      - fake tool results（被中断的工具）
+ *      - 恢复消息
+ *
+ * 6. 与旧版 hook 系统的对比（迁移指南）
+ *    旧版 (legacy.hook.*):
+ *    - PreCallEvent / PostCallEvent
+ *    - PreActingEvent / PostActingEvent
+ *    - ActingChunkEvent
+ *    - ErrorEvent
+ *
+ *    新版 (MiddlewareBase):
+ *    - onAgent() 的 before/after next.apply()
+ *    - onActing() 的 before/after next.apply()
+ *    - doOnNext(ToolResultTextDeltaEvent)
+ *    - doOnError()
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.hitl.InterruptionExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.hitl;
 
 import io.agentscope.core.ReActAgent;

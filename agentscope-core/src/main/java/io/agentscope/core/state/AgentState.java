@@ -13,6 +13,58 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习笔记】AgentScope 会话状态 - AgentState
+ * ============================================================================
+ *
+ * 一、职责定位
+ * -----------
+ * AgentState 是代理的「记忆中枢」，承载单个会话的所有运行时状态：
+ *   - 对话历史 (context)
+ *   - 会话摘要 (summary)
+ *   - 权限上下文 (permissionContext)
+ *   - 工具上下文 (toolContext)
+ *   - 任务上下文 (tasksContext)
+ *   - 计划模式上下文 (planModeContext)
+ *
+ * 二、状态组成
+ * -----------
+ *   AgentState
+ *       ├── sessionId         (会话标识)
+ *       ├── userId            (用户标识，支持多租户)
+ *       ├── context           (对话历史 List<Msg>)
+ *       ├── summary           (滚动摘要，用于上下文压缩)
+ *       ├── replyId           (当前回复标识)
+ *       ├── curIter           (当前推理迭代次数)
+ *       ├── permissionContext (权限规则状态)
+ *       ├── toolContext       (激活的工具组)
+ *       ├── tasksContext      (任务列表状态)
+ *       └── planModeContext   (计划模式状态)
+ *
+ * 三、持久化
+ * ---------
+ *   AgentState 通过 AgentStateStore 接口持久化：
+ *   - InMemoryAgentStateStore:  内存存储（测试用）
+ *   - JsonFileAgentStateStore:  JSON文件存储（单机）
+ *   - MySqlAgentStateStore:     MySQL存储（分布式）
+ *   - RedisAgentStateStore:     Redis存储（分布式）
+ *
+ * 四、并发安全
+ * -----------
+ *   - context 通过 contextMutable() 暴露可变引用
+ *   - interruptControl 是 transient 的，不参与序列化
+ *   - 同一 (userId, sessionId) 的调用会自动串行化
+ *
+ * 五、与 RuntimeContext 的区别
+ * ---------------------------
+ *   AgentState:     持久化的会话状态，跨请求保持
+ *   RuntimeContext: 单次请求的上下文，不持久化
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.core.state;
 
 import com.fasterxml.jackson.annotation.JsonCreator;

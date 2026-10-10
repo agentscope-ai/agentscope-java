@@ -13,6 +13,78 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】结构化输出降级 - StructuredOutputFallbackExample
+ * ============================================================================
+ *
+ * 演示当模型不支持原生结构化输出时的 generate_response 工具降级路径。
+ *
+ * 1. 两种结构化输出模式
+ *    ┌──────────────────────────────────────────────────────────┐
+ *    │  原生模式 (supportsNativeStructuredOutput = true)        │
+ *    │    - 使用 response_format + json_schema                 │
+ *    │    - 模型直接输出符合 schema 的 JSON                     │
+ *    │    - 效率高，无额外工具调用                              │
+ *    ├──────────────────────────────────────────────────────────┤
+ *    │  降级模式 (supportsNativeStructuredOutput = false)       │
+ *    │    - 注入合成工具 generate_response                     │
+ *    │    - 模型调用该工具返回结构化数据                        │
+ *    │    - 兼容所有模型                                        │
+ *    └──────────────────────────────────────────────────────────┘
+ *
+ * 2. generate_response 工具
+ *    当模型不支持原生结构化输出时，框架自动注入：
+ *
+ *    {
+ *      "name": "generate_response",
+ *      "description": "Generate structured output matching the schema",
+ *      "input_schema": { ... 来自目标类 ... }
+ *    }
+ *
+ *    模型调用此工具 → 框架解析结果 → 代理循环正常终止
+ *
+ * 3. 强制降级（测试用）
+ *    class FallbackModel implements Model {
+ *        private final Model delegate;
+ *
+ *        @Override
+ *        public boolean supportsNativeStructuredOutput() {
+ *            return false;  // 强制走降级路径
+ *        }
+ *
+ *        @Override
+ *        public Flux<ChatResponse> stream(...) {
+ *            return delegate.stream(...);
+ *        }
+ *    }
+ *
+ * 4. 使用方式
+ *    Msg msg = agent.call(userMsg, ProductRequirements.class).block();
+ *    ProductRequirements result = msg.getStructuredData(ProductRequirements.class);
+ *
+ * 5. 降级流程
+ *    agent.call(msg, TargetClass.class)
+ *       ↓
+ *    检查 model.supportsNativeStructuredOutput()
+ *       ↓ false
+ *    注入 generate_response 工具
+ *       ↓
+ *    模型调用 generate_response(json)
+ *       ↓
+ *    框架解析 JSON → TargetClass
+ *       ↓
+ *    返回 Msg，可通过 getStructuredData() 获取
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.structuredoutput.StructuredOutputFallbackExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.structuredoutput;
 
 import io.agentscope.core.ReActAgent;

@@ -13,6 +13,73 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习笔记】AgentScope 运行时上下文 - RuntimeContext
+ * ============================================================================
+ *
+ * 一、职责定位
+ * -----------
+ * RuntimeContext 是「单次调用的上下文容器」，区别于持久化的 AgentState：
+ *   - 携带本次请求的会话/用户标识
+ *   - 传递调用链上的临时属性
+ *   - 不持久化，调用结束即销毁
+ *
+ * 二、核心字段
+ * -----------
+ *   RuntimeContext
+ *       ├── sessionId            (会话ID，用于路由到正确的AgentState)
+ *       ├── userId               (用户ID，支持多租户)
+ *       ├── agentState           (当前调用绑定的AgentState引用)
+ *       ├── stringAttributes     (字符串键值属性，通用扩展)
+ *       ├── typedAttributes      (类型化属性，类型安全的扩展)
+ *       └── toolExecutionContext (工具执行上下文，DI/POJO注入)
+ *
+ * 三、与 AgentState 的区别
+ * -----------------------
+ *   维度        │ RuntimeContext          │ AgentState
+ *   ────────────┼─────────────────────────┼────────────────────
+ *   生命周期    │ 单次 call()             │ 跨多次 call()
+ *   持久化      │ 否                      │ 是（通过AgentStateStore）
+ *   内容        │ 请求元数据、临时属性     │ 对话历史、权限状态
+ *   并发        │ 每次调用独立实例        │ 同session共享
+ *
+ * 四、使用示例
+ * -----------
+ *   // 构建上下文
+ *   RuntimeContext ctx = RuntimeContext.builder()
+ *       .sessionId("session-123")
+ *       .userId("user-456")
+ *       .put(MyService.class, myService)  // 注入服务
+ *       .build();
+ *
+ *   // 在工具中获取
+ *   @Tool
+ *   public String myTool(RuntimeContext ctx) {
+ *       MyService svc = ctx.get(MyService.class);
+ *       String session = ctx.getSessionId();
+ *       ...
+ *   }
+ *
+ * 五、属性传递
+ * -----------
+ *   // 字符串键值（通用）
+ *   ctx.put("requestId", "req-123");
+ *   String reqId = ctx.get("requestId");
+ *
+ *   // 类型化（推荐，类型安全）
+ *   ctx.put(HttpServletRequest.class, request);
+ *   HttpServletRequest req = ctx.get(HttpServletRequest.class);
+ *
+ * 六、线程安全
+ * -----------
+ *   使用 ConcurrentHashMap 存储属性
+ *   同一 RuntimeContext 可在中间件/工具间安全传递
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.core.agent;
 
 import io.agentscope.core.state.AgentState;

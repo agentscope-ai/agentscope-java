@@ -13,6 +13,60 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】直接对话子代理 - SubagentSendDirectlyExample
+ * ============================================================================
+ *
+ * 演示通过 SubagentExposedEvent 直接与暴露的子代理通信。
+ *
+ * 1. 暴露子代理
+ *    父代理调用 agent_spawn(expose_to_user=true)
+ *       ↓
+ *    触发 SubagentExposedEvent
+ *       ↓
+ *    客户端获取 subagentId
+ *       ↓
+ *    可直接与子代理对话（绕过父代理）
+ *
+ * 2. ChatUiChannel 流式API
+ *    ChatUiChannel chat = agent.channel(ChatUiChannel.create());
+ *
+ *    // 发送到主代理（流式）
+ *    chat.sendStream(SendOptions.userId("user-1"), "...")
+ *        .doOnNext(event -> { ... })
+ *        .blockLast();
+ *
+ *    // 直接发送到子代理
+ *    chat.sendToSubagentStream(subagentId, "...")
+ *        .doOnNext(event -> { ... })
+ *        .blockLast();
+ *
+ * 3. 事件序列
+ *    [AGENT_START] orchestrator
+ *    "正在为您调研..."
+ *    [TOOL_CALL] agent_spawn
+ *    [SUBAGENT_EXPOSED] subagentId=xxx
+ *    [AGENT_END]
+ *
+ *    // 直接与子代理对话
+ *    chat.sendToSubagentStream(subagentId, "聚焦LLM代理")
+ *    → 子代理响应（绕过父代理）
+ *
+ * 4. 使用场景
+ *    - 专家子代理直接交互
+ *    - 多轮深入对话
+ *    - 避免父代理中转开销
+ *
+ * 5. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.subagent.SubagentSendDirectlyExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.subagent;
 
 import io.agentscope.core.event.AgentEndEvent;

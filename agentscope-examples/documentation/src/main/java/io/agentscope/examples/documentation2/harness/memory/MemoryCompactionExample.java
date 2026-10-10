@@ -13,6 +13,64 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】上下文压缩与长期记忆 - MemoryCompactionExample
+ * ============================================================================
+ *
+ * 演示两层记忆系统：上下文压缩 + 长期记忆刷写。
+ *
+ * 1. 上下文压缩 (Compaction)
+ *    防止对话历史超出 token 限制：
+ *
+ *    CompactionConfig.builder()
+ *        .triggerMessages(30)   // 达到30条消息时触发
+ *        .keepMessages(10)      // 压缩后保留10条
+ *        .keepTokens(8000)      // 或按 token 数保留
+ *        .build();
+ *
+ * 2. 压缩流程
+ *    ┌────────────────────────────────────────────┐
+ *    │  30条消息 → 触发压缩                         │
+ *    │     ↓                                      │
+ *    │  LLM 生成摘要                               │
+ *    │     ↓                                      │
+ *    │  保留最近10条 + 摘要 → 新上下文               │
+ *    └────────────────────────────────────────────┘
+ *
+ * 3. 长期记忆 (Memory)
+ *    将关键事实写入文件，跨会话保留：
+ *
+ *    MemoryConfig.builder()
+ *        .flushTrigger(FlushTrigger.always())     // 每次调用后刷写
+ *        .consolidationMinGap(Duration.ofHours(1)) // 合并最小间隔
+ *        .build();
+ *
+ * 4. 记忆文件结构
+ *    workspace/
+ *    └── {sessionId}/
+ *        └── memory/
+ *            ├── 2026-10-10.md    (每日记忆)
+ *            ├── 2026-10-11.md
+ *            └── ...
+ *        └── MEMORY.md            (合并后的长期记忆)
+ *
+ * 5. 观察压缩效果
+ *    AgentState stateBefore = agent.getAgentState(ctx);
+ *    int sizeBefore = stateBefore.getContext().size();
+ *    agent.call(msg, ctx);
+ *    int sizeAfter = agent.getAgentState(ctx).getContext().size();
+ *    // sizeAfter < sizeBefore → 压缩生效
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.memory.MemoryCompactionExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.memory;
 
 import io.agentscope.core.agent.RuntimeContext;

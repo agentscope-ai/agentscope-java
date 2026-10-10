@@ -13,6 +13,54 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】结构化输出 - StructuredOutputExample
+ * ============================================================================
+ *
+ * 演示如何让代理返回结构化的 JSON 数据而非纯文本。
+ *
+ * 1. 定义 Schema 类
+ *    public class ProductRequirements {
+ *        public String productType;
+ *        public String brand;
+ *        public Integer minRam;
+ *        public Double maxBudget;
+ *        public List<String> features;
+ *    }
+ *
+ * 2. 调用方式
+ *    // 阻塞调用
+ *    Msg msg = agent.call(userMsg, ProductRequirements.class).block();
+ *    ProductRequirements result = msg.getStructuredData(ProductRequirements.class);
+ *
+ *    // 流式调用
+ *    Flux<Event> events = agent.stream(userMsg, StreamOptions.defaults(),
+ *                                       ProductRequirements.class);
+ *    ProductRequirements result = events.blockLast()
+ *        .getMessage().getStructuredData(ProductRequirements.class);
+ *
+ * 3. 应用场景
+ *    - 信息提取（联系人、产品需求）
+ *    - 情感分析（评分、标签）
+ *    - 数据转换（表格、报告）
+ *    - API 响应格式化
+ *
+ * 4. Schema 设计建议
+ *    - 字段使用 public 修饰符
+ *    - 提供无参构造函数
+ *    - 使用简单类型（String, Integer, Double, List）
+ *    - 字段名具有明确语义
+ *
+ * 5. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.structuredoutput.StructuredOutputExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.structuredoutput;
 
 import io.agentscope.core.ReActAgent;

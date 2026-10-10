@@ -13,6 +13,75 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习笔记】AgentScope Java 2.0 核心模块 - ReActAgent
+ * ============================================================================
+ *
+ * 一、架构定位
+ * ------------
+ * ReActAgent 是整个框架的「推理引擎」，实现 ReAct (Reasoning + Acting) 模式：
+ *   ┌─────────────────────────────────────────────────────────────────┐
+ *   │  用户输入 → Reasoning(LLM推理) ⇄ Acting(工具执行) → 输出结果    │
+ *   └─────────────────────────────────────────────────────────────────┘
+ *
+ * 二、核心组件关系
+ * ----------------
+ *   ReActAgent
+ *       ├── Model (LLM抽象层 - 支持OpenAI/Anthropic/DashScope等)
+ *       ├── Toolkit (工具注册中心 - 管理所有可调用的Tool)
+ *       ├── AgentState (会话状态 - 含对话历史context)
+ *       ├── PermissionEngine (权限引擎 - HITL人机交互审批)
+ *       └── MiddlewareChain (中间件链 - AOP风格拦截扩展)
+ *
+ * 三、执行流程
+ * -----------
+ *   call()
+ *     ↓
+ *   beforeAgentExecution()  ─→ 激活会话slot，加载AgentState
+ *     ↓
+ *   doCall()
+ *     ↓
+ *   ┌──→ reasoning()  ─→ 调用LLM，流式输出，判断是否需要工具
+ *   │       ↓
+ *   │   acting()      ─→ 执行工具调用，权限检查，收集结果
+ *   │       ↓
+ *   └── (循环直到完成或达到maxIters)
+ *     ↓
+ *   afterAgentExecution()  ─→ 清理状态
+ *
+ * 四、关键设计模式
+ * ---------------
+ * 1. 响应式编程: Mono<Msg>/Flux<AgentEvent> 实现非阻塞
+ * 2. 中间件链: MiddlewareChain 支持5个拦截点(onAgent/onReasoning/onActing/onModelCall/onSystemPrompt)
+ * 3. 事件流: 28种AgentEvent类型，支持实时UI渲染
+ * 4. 多租户: (userId, sessionId) 实现会话级隔离，支持分布式部署
+ *
+ * 五、线程安全
+ * -----------
+ * - 单实例同一时刻只处理一个call()
+ * - 不同(userId, sessionId)的会话可并行执行
+ * - Model/Toolkit/AgentStateStore 可跨实例安全共享
+ *
+ * 六、扩展机制
+ * -----------
+ * - MiddlewareBase: 推荐的扩展方式，覆盖onXxx方法即可
+ * - Hook: 旧版扩展(已废弃)，建议迁移到Middleware
+ * - AgentSkillRepository: 动态技能加载
+ *
+ * 七、与HarnessAgent的关系
+ * -----------------------
+ * HarnessAgent 包装 ReActAgent，增加生产级能力：
+ *   - 工作空间管理 (Workspace)
+ *   - 沙箱隔离 (Sandbox)
+ *   - 子代理编排 (Subagents)
+ *   - 技能管理 (Skills)
+ *   - 计划模式 (PlanMode)
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.core;
 
 import com.fasterxml.jackson.databind.JsonNode;

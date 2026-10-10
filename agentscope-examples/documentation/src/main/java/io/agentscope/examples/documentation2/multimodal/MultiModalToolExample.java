@@ -13,6 +13,75 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】多模态工具 - MultiModalToolExample
+ * ============================================================================
+ *
+ * 演示多模态工具（图片、音频、视频）的集成与调用日志中间件。
+ *
+ * 1. DashScope 多模态工具集
+ *    - dashscope_text_to_image:    文生图
+ *    - dashscope_image_to_text:    图片描述
+ *    - dashscope_text_to_audio:    文生音频
+ *    - dashscope_audio_to_text:    语音识别
+ *    - dashscope_text_to_video:    文生视频
+ *    - dashscope_image_to_video:   图生视频
+ *    - dashscope_video_to_text:    视频理解
+ *
+ * 2. 注册多模态工具
+ *    Toolkit toolkit = new Toolkit();
+ *    toolkit.registerTool(new DashScopeMultiModalTool(apiKey));
+ *
+ * 3. 工具调用日志中间件
+ *    class ToolCallLoggingMiddleware implements MiddlewareBase {
+ *
+ *        @Override
+ *        public Flux<AgentEvent> onActing(...) {
+ *            // 执行前：记录工具名和输入
+ *            for (ToolUseBlock tc : input.toolCalls()) {
+ *                log("Tool call START: " + tc.getName());
+ *            }
+ *
+ *            return next.apply(input)
+ *                .doOnNext(event -> {
+ *                    // 执行中：记录流式结果
+ *                    if (event instanceof ToolResultTextDeltaEvent delta) {
+ *                        log("Tool result delta: " + delta.getDelta());
+ *                    }
+ *                    // 执行后：记录最终状态
+ *                    else if (event instanceof ToolResultEndEvent end) {
+ *                        log("Tool result END: " + end.getState());
+ *                    }
+ *                })
+ *                .doOnComplete(() -> log("Tool call COMPLETE"));
+ *        }
+ *    }
+ *
+ * 4. 示例提示词
+ *    [文生图]
+ *    Generate a black dog image url.
+ *
+ *    [图片描述]
+ *    Describe the image url of 'https://...tiger.png'.
+ *
+ *    [文生视频]
+ *    Generate a smart cat is running in the moonlight video.
+ *
+ * 5. 迁移指南（旧版 hook → 新版 middleware）
+ *    PreActingEvent  → onActing() 执行前
+ *    PostActingEvent → doOnNext(ToolResultEndEvent)
+ *    .hook(...)      → .middleware(...)
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.multimodal.MultiModalToolExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.multimodal;
 
 import io.agentscope.core.ReActAgent;

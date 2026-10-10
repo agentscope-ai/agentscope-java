@@ -13,6 +13,66 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】事件流 - AgentEventStreamExample
+ * ============================================================================
+ *
+ * 演示 streamEvents() 返回的 28 种 AgentEvent 事件类型。
+ *
+ * 1. 事件流的价值
+ *    - 实时 UI 渲染（逐字输出）
+ *    - 工具调用追踪（展示执行过程）
+ *    - Token 用量统计
+ *    - 调试和审计日志
+ *
+ * 2. 无工具调用时的事件序列
+ *    AGENT_START
+ *      MODEL_CALL_START
+ *        TEXT_BLOCK_START
+ *          TEXT_BLOCK_DELTA  (重复多次，每次一个token块)
+ *        TEXT_BLOCK_END
+ *      MODEL_CALL_END        (携带token用量)
+ *    AGENT_END
+ *
+ * 3. 有工具调用时的额外事件
+ *      TOOL_CALL_START       (工具名 + 调用ID)
+ *        TOOL_CALL_DELTA     (流式工具参数)
+ *      TOOL_CALL_END
+ *      TOOL_RESULT_START
+ *        TOOL_RESULT_TEXT_DELTA / TOOL_RESULT_DATA_DELTA
+ *      TOOL_RESULT_END       (状态: SUCCESS/ERROR)
+ *
+ * 4. 处理事件的方式
+ *    agent.streamEvents(userMsg)
+ *        .doOnNext(event -> {
+ *            if (event instanceof TextBlockDeltaEvent e) {
+ *                System.out.print(e.getDelta());
+ *            } else if (event instanceof ToolCallStartEvent e) {
+ *                System.out.println("调用工具: " + e.getToolCallName());
+ *            }
+ *            // ... 其他事件类型
+ *        })
+ *        .blockLast();
+ *
+ * 5. 关键事件类型
+ *    AgentStartEvent      - 代理调用开始
+ *    AgentEndEvent        - 代理调用结束
+ *    ModelCallStartEvent  - LLM API 调用开始
+ *    ModelCallEndEvent    - LLM API 调用结束（含token用量）
+ *    TextBlockDeltaEvent  - 流式文本增量
+ *    ToolCallStartEvent   - 工具调用开始
+ *    ToolResultEndEvent   - 工具结果完成
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.streaming.AgentEventStreamExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.streaming;
 
 import io.agentscope.core.ReActAgent;

@@ -13,6 +13,58 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】模型注册表 - ModelRegistryExample
+ * ============================================================================
+ *
+ * 演示如何通过字符串 ID 快速创建模型，无需手动构建。
+ *
+ * 1. 模型字符串格式
+ *    "provider:model-name"
+ *
+ *    支持的提供商:
+ *    - openai:gpt-4o             需要 OPENAI_API_KEY
+ *    - dashscope:qwen-max        需要 DASHSCOPE_API_KEY
+ *    - qwen-plus                 简写（自动识别为 DashScope）
+ *    - anthropic:claude-opus-4-5 需要 ANTHROPIC_API_KEY
+ *    - gemini:gemini-2.0-flash   需要 GEMINI_API_KEY
+ *    - ollama:llama3             需要 OLLAMA_BASE_URL（默认 localhost:11434）
+ *
+ * 2. 使用方式
+ *    // 最简方式 - 只需一行
+ *    ReActAgent agent = ReActAgent.builder()
+ *        .model("dashscope:qwen-plus")  // 自动解析和配置
+ *        .build();
+ *
+ * 3. 检查可用性
+ *    // 启动时检查模型是否可用
+ *    if (ModelRegistry.canResolve("openai:gpt-4o")) {
+ *        // 可以使用 OpenAI
+ *    }
+ *
+ * 4. 切换提供商
+ *    // 只需修改字符串，无需改其他代码
+ *    .model("openai:gpt-4o")        // OpenAI
+ *    .model("anthropic:claude-3")   // Anthropic
+ *    .model("ollama:llama3")        // 本地 Ollama
+ *
+ * 5. 环境变量
+ *    OPENAI_API_KEY      - OpenAI
+ *    DASHSCOPE_API_KEY   - 阿里云 DashScope
+ *    ANTHROPIC_API_KEY   - Anthropic
+ *    GEMINI_API_KEY      - Google Gemini
+ *    OLLAMA_BASE_URL     - Ollama（可选，默认 localhost:11434）
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.model.ModelRegistryExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.model;
 
 import io.agentscope.core.ReActAgent;

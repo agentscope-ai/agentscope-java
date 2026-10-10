@@ -13,6 +13,65 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习笔记】AgentScope 工具管理 - Toolkit
+ * ============================================================================
+ *
+ * 一、职责定位
+ * -----------
+ * Toolkit 是代理的「工具箱」，管理所有可调用的工具：
+ *   - 工具注册与查找
+ *   - 工具分组与激活
+ *   - 工具Schema生成
+ *   - 工具执行调度
+ *   - MCP客户端管理
+ *
+ * 二、核心组件
+ * -----------
+ *   Toolkit
+ *       ├── ToolRegistry       (工具注册表，存储所有已注册工具)
+ *       ├── ToolGroupManager   (工具分组管理，支持动态激活/停用)
+ *       ├── ToolSchemaProvider (Schema生成器，为LLM提供工具描述)
+ *       ├── ToolExecutor       (执行器，支持并行/串行执行)
+ *       ├── McpClientManager   (MCP客户端，连接外部工具服务)
+ *       └── MetaToolFactory    (元工具，运行时工具组控制)
+ *
+ * 三、工具注册方式
+ * ---------------
+ *   // 1. 注册对象的所有 @Tool 方法
+ *   toolkit.registerObject(new MyTools());
+ *
+ *   // 2. 注册实现 AgentTool 接口的工具
+ *   toolkit.registerTool(new CustomTool());
+ *
+ *   // 3. 注册MCP服务器
+ *   toolkit.registerMcpServer("server-name", mcpClient);
+ *
+ *   // 4. 注册子代理工具
+ *   toolkit.registerSubAgent(SubAgentConfig.builder()...build());
+ *
+ * 四、工具分组
+ * -----------
+ *   toolkit.createGroup("search", "搜索工具组");
+ *   toolkit.addToolToGroup("web_search", "search");
+ *   toolkit.activateGroup("search");  // 激活后LLM可见
+ *
+ * 五、工具执行
+ * -----------
+ *   默认并行执行（ToolkitConfig.parallel(true)）
+ *   支持 Reactor 异步调度
+ *   自动参数转换和结果序列化
+ *
+ * 六、线程安全
+ * -----------
+ *   Toolkit 实例可跨多个 ReActAgent 共享
+ *   build() 时会 copy() 一份隔离的实例
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;

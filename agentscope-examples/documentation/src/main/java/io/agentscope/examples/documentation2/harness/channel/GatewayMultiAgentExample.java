@@ -13,6 +13,69 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】多代理网关 - GatewayMultiAgentExample
+ * ============================================================================
+ *
+ * 演示使用 GatewayBootstrap 管理多个代理并按名称路由消息。
+ *
+ * 1. GatewayBootstrap 多代理管理
+ *    GatewayBootstrap gw = GatewayBootstrap.builder()
+ *        .agent("sales", salesAgent)       // 注册销售代理
+ *        .agent("support", supportAgent)   // 注册客服代理
+ *        .mainAgent("sales")               // 设置默认代理
+ *        .build();
+ *
+ * 2. 代理路由
+ *    ChatUiChannel chat = gw.chatUiChannel();
+ *
+ *    // 路由到默认代理（sales）
+ *    chat.send(SendOptions.userId("user-1"), "What products?");
+ *
+ *    // 显式路由到 support 代理
+ *    chat.send(
+ *        SendOptions.userId("user-1").withAgentId("support"),
+ *        "I have a billing issue"
+ *    );
+ *
+ * 3. 架构图
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  GatewayBootstrap                                       │
+ *    │     ├── "sales"   → HarnessAgent (默认)                │
+ *    │     └── "support" → HarnessAgent                       │
+ *    │                                                         │
+ *    │  ChatUiChannel                                          │
+ *    │     │                                                   │
+ *    │     ├── SendOptions.userId("u1")                       │
+ *    │     │      → 路由到 mainAgent (sales)                  │
+ *    │     │                                                   │
+ *    │     └── SendOptions.userId("u1").withAgentId("support")│
+ *    │            → 显式路由到 support                        │
+ *    └─────────────────────────────────────────────────────────┘
+ *
+ * 4. 与单代理 Channel 的区别
+ *    单代理:
+ *      ChatUiChannel chat = agent.channel(ChatUiChannel.create());
+ *
+ *    多代理:
+ *      GatewayBootstrap gw = GatewayBootstrap.builder()...build();
+ *      ChatUiChannel chat = gw.chatUiChannel();
+ *
+ * 5. 应用场景
+ *    - 部门分流（销售/客服/技术）
+ *    - 技能路由（代码/文档/分析）
+ *    - A/B 测试（不同模型/策略）
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.channel.GatewayMultiAgentExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.channel;
 
 import io.agentscope.core.message.Msg;

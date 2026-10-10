@@ -13,6 +13,66 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习笔记】AgentScope 模型抽象 - Model
+ * ============================================================================
+ *
+ * 一、职责定位
+ * -----------
+ * Model 是框架的「LLM 抽象层」，屏蔽不同模型提供商的 API 差异：
+ *   - 统一的流式调用接口
+ *   - 统一的消息格式转换
+ *   - 统一的工具调用协议
+ *
+ * 二、支持的模型提供商（通过扩展模块）
+ * -----------------------------------
+ *   模块                                    │ 提供商
+ *   ────────────────────────────────────────┼─────────────
+ *   agentscope-extensions-model-openai      │ OpenAI (GPT-4, o3)
+ *   agentscope-extensions-model-anthropic   │ Anthropic (Claude)
+ *   agentscope-extensions-model-dashscope   │ 阿里云 DashScope (Qwen)
+ *   agentscope-extensions-model-gemini      │ Google Gemini
+ *   agentscope-extensions-model-ollama      │ Ollama (本地模型)
+ *
+ * 三、核心方法
+ * -----------
+ *   stream()  - 流式生成，返回 Flux<ChatResponse>
+ *
+ * 四、能力探测
+ * -----------
+ *   supportsNativeStructuredOutput()           - 是否支持原生 JSON Schema 输出
+ *   supportsNativeStructuredOutputWithTools()  - 是否支持工具+结构化输出共存
+ *   getContextWindowSize()                     - 上下文窗口大小（用于压缩计算）
+ *
+ * 五、使用方式
+ * -----------
+ *   // 方式1: 通过 ModelRegistry 字符串解析
+ *   Model model = ModelRegistry.resolve("openai:gpt-4.1");
+ *
+ *   // 方式2: 直接构建
+ *   Model model = OpenAIChatModel.builder()
+ *       .apiKey("sk-xxx")
+ *       .model("gpt-4.1")
+ *       .build();
+ *
+ * 六、ModelRegistry 字符串格式
+ * ---------------------------
+ *   "provider:model-name"
+ *   例如:
+ *     "openai:gpt-4.1"
+ *     "anthropic:claude-sonnet-4-7"
+ *     "dashscope:qwen-plus"
+ *     "ollama:llama3"
+ *
+ * 七、线程安全
+ * -----------
+ *   Model 实例可跨多个 Agent 安全共享
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.core.model;
 
 import io.agentscope.core.message.Msg;

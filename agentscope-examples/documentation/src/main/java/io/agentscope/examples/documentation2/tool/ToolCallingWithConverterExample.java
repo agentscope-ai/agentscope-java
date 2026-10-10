@@ -13,6 +13,77 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】工具结果转换器 - ToolCallingWithConverterExample
+ * ============================================================================
+ *
+ * 演示自定义 ToolResultConverter 处理工具返回值。
+ *
+ * 1. ToolResultConverter 概念
+ *    工具返回值 → 转换器 → ToolResultBlock → 发送给 LLM
+ *
+ *    默认使用 DefaultToolResultConverter（直接序列化为 JSON）
+ *    可通过 @Tool(converter = ...) 指定自定义转换器
+ *
+ * 2. 敏感数据脱敏转换器
+ *    @Tool(name = "get_user_info", converter = SensitiveDataMaskingConverter.class)
+ *    public UserInfo getUserInfo(String userId) { ... }
+ *
+ *    class SensitiveDataMaskingConverter extends DefaultToolResultConverter {
+ *        private static final Set<String> SENSITIVE_FIELDS =
+ *            Set.of("password", "apikey", "token", "creditcard");
+ *
+ *        @Override
+ *        protected ToolResultBlock serialize(Object result, Type returnType) {
+ *            // 遍历 JSON 节点，脱敏敏感字段
+ *            JsonNode masked = maskSensitiveData(node);
+ *            return ToolResultBlock.of(TextBlock.text("Masked: " + json));
+ *        }
+ *    }
+ *
+ * 3. Schema 增强转换器
+ *    @Tool(name = "list_orders", converter = SchemaEnhancementConverter.class)
+ *    public List<Order> listOrders(String userId) { ... }
+ *
+ *    class SchemaEnhancementConverter extends DefaultToolResultConverter {
+ *        @Override
+ *        protected ToolResultBlock serialize(Object result, Type returnType) {
+ *            String json = JsonUtils.toJson(result);
+ *            Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromType(returnType);
+ *            // 同时返回数据和 schema
+ *            return ToolResultBlock.of(List.of(
+ *                TextBlock.text("Data: " + json),
+ *                TextBlock.text("Schema: " + schemaJson)
+ *            ));
+ *        }
+ *    }
+ *
+ * 4. 脱敏示例输出
+ *    原始: {"password": "secret123", "apiKey": "sk-xxx"}
+ *    脱敏: {"password": "***MASKED***", "apiKey": "***MASKED***"}
+ *
+ * 5. @JsonPropertyDescription 注解
+ *    用于生成 JSON Schema 时的字段描述：
+ *
+ *    @JsonPropertyDescription("User ID")
+ *    private String userId;
+ *
+ * 6. 应用场景
+ *    - 敏感数据脱敏（密码、API Key、信用卡）
+ *    - 添加元数据（Schema、来源、时间戳）
+ *    - 格式转换（Markdown、HTML）
+ *    - 数据裁剪（大结果摘要）
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.tool.ToolCallingWithConverterExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.tool;
 
 import com.fasterxml.jackson.annotation.JsonFormat;

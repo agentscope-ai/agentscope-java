@@ -13,6 +13,52 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】工具调用 - ToolCallingExample
+ * ============================================================================
+ *
+ * 演示如何为代理添加自定义工具（Function Calling）。
+ *
+ * 1. 定义工具类
+ *    public class SimpleTools {
+ *        @Tool(name = "get_current_time", description = "获取当前时间")
+ *        public String getCurrentTime(
+ *            @ToolParam(name = "timezone", description = "时区") String timezone) {
+ *            // 实现...
+ *        }
+ *    }
+ *
+ * 2. 注册工具
+ *    Toolkit toolkit = new Toolkit();
+ *    toolkit.registerTool(new SimpleTools());  // 注册工具对象
+ *
+ * 3. 构建代理
+ *    ReActAgent agent = ReActAgent.builder()
+ *        .toolkit(toolkit)  // 配置工具箱
+ *        .build();
+ *
+ * 4. 关键注解
+ *    @Tool:      标记方法为工具，指定名称和描述
+ *    @ToolParam: 标记参数，指定名称和描述（生成JSON Schema）
+ *
+ * 5. 工具调用流程
+ *    用户输入 → LLM推理 → 决定调用工具 → 执行工具 → 返回结果 → LLM生成回复
+ *
+ * 6. 本示例包含的工具
+ *    - get_current_time: 获取指定时区的当前时间
+ *    - calculate:        计算简单数学表达式
+ *    - search:           模拟搜索功能
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.tool.ToolCallingExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.tool;
 
 import io.agentscope.core.ReActAgent;

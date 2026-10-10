@@ -13,6 +13,70 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】Channel 发送消息 - ChannelSendExample
+ * ============================================================================
+ *
+ * 演示 ChatUiChannel 的基础用法：发送消息与会话管理。
+ *
+ * 1. Channel 概念
+ *    Channel 是代理与外部系统（Web UI、移动端等）的通信桥梁：
+ *
+ *    HarnessAgent agent = HarnessAgent.builder()...build();
+ *    ChatUiChannel chat = agent.channel(ChatUiChannel.create());
+ *
+ * 2. SendOptions 用户身份与会话
+ *    ┌────────────────────────────────────────────────────────┐
+ *    │  SendOptions.userId("user-1")                         │
+ *    │    - 按 userId 自动创建/复用会话                       │
+ *    │    - 同一 userId 的后续消息在同一对话中                │
+ *    ├────────────────────────────────────────────────────────┤
+ *    │  SendOptions.of("user-1", "session-a")                │
+ *    │    - 显式指定 sessionId                               │
+ *    │    - 同一用户可有多个独立会话                          │
+ *    ├────────────────────────────────────────────────────────┤
+ *    │  SendOptions.userId("user-1").withAttribute(k, v)     │
+ *    │    - 附加应用上下文（租户、偏好等）                    │
+ *    └────────────────────────────────────────────────────────┘
+ *
+ * 3. 发送消息
+ *    // 简单文本
+ *    Msg reply = chat.send(SendOptions.userId("user-1"), "Hello").block();
+ *
+ *    // 多模态消息（图片+文本）
+ *    Msg multimodal = Msg.builder()
+ *        .role(MsgRole.USER)
+ *        .content(
+ *            TextBlock.builder().text("What is in this image?").build(),
+ *            ImageBlock.builder()
+ *                .source(URLSource.builder().url("https://...").build())
+ *                .build()
+ *        )
+ *        .build();
+ *    chat.send(SendOptions.userId("user-1"), multimodal).block();
+ *
+ * 4. 会话隔离
+ *    user-1  ──> session-default-user1 (对话A)
+ *    user-2  ──> session-default-user2 (对话B)
+ *    user-1 + session-a ──> session-a (对话C)
+ *    user-1 + session-b ──> session-b (对话D)
+ *
+ * 5. StateStore 会话持久化
+ *    InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
+ *    HarnessAgent.builder()
+ *        .stateStore(stateStore)  // 启用会话状态存储
+ *        .build();
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.channel.ChannelSendExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.channel;
 
 import io.agentscope.core.message.ImageBlock;

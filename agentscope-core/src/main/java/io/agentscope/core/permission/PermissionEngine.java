@@ -13,6 +13,68 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习笔记】AgentScope 权限系统 - PermissionEngine
+ * ============================================================================
+ *
+ * 一、职责定位
+ * -----------
+ * PermissionEngine 是框架的「权限网关」，实现工具调用的 HITL（Human-in-the-Loop）审批：
+ *   - 决定工具调用是否允许、拒绝或需要用户确认
+ *   - 支持规则动态添加和持久化
+ *   - 与 PermissionMode 配合实现不同审批策略
+ *
+ * 二、权限行为 (PermissionBehavior)
+ * ---------------------------------
+ *   行为    │ 说明
+ *   ────────┼────────────────────────────────────
+ *   ALLOW   │ 允许执行，无需确认
+ *   DENY    │ 拒绝执行
+ *   ASK     │ 暂停执行，等待用户确认（HITL）
+ *
+ * 三、权限模式 (PermissionMode)
+ * -----------------------------
+ *   模式         │ 说明
+ *   ─────────────┼────────────────────────────────
+ *   DEFAULT      │ 默认模式，未匹配规则时 ASK
+ *   BYPASS       │ 绕过模式，未匹配规则时 ALLOW
+ *   DONT_ASK     │ 静默模式，ASK 转为 DENY
+ *   EXPLORE      │ 探索模式，只允许只读工具
+ *   ACCEPT_EDITS │ 接受编辑模式，自动确认文件编辑
+ *
+ * 四、规则评估顺序（优先级从高到低）
+ * ---------------------------------
+ *   1. 工具级 DENY 规则
+ *   2. 工具级 ASK 规则
+ *   3. 工具自身的 checkPermissions() 检查
+ *   4. 工具级 ALLOW 规则
+ *   5. BYPASS 模式回退
+ *   6. 默认 ASK
+ *
+ * 五、规则匹配
+ * -----------
+ *   PermissionRule 支持：
+ *   - 工具名匹配 (toolName)
+ *   - 参数匹配 (arguments 正则)
+ *   - 路径匹配 (workingDirs 前缀)
+ *
+ * 六、HITL 流程
+ * -------------
+ *   1. 工具调用触发 ASK
+ *   2. 代理暂停，发出 RequireUserConfirmEvent
+ *   3. 用户提供 ConfirmResult (approve/deny + 可选规则)
+ *   4. 下次 call() 携带 ConfirmResult 恢复执行
+ *
+ * 七、线程安全
+ * -----------
+ *   每个 (userId, sessionId) 会话有独立的 PermissionEngine 实例
+ *   规则在会话粒度隔离
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.core.permission;
 
 import io.agentscope.core.tool.ToolBase;

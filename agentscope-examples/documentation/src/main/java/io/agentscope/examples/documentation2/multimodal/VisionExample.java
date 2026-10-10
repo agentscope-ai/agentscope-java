@@ -13,6 +13,60 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】多模态视觉 - VisionExample
+ * ============================================================================
+ *
+ * 演示如何使用多模态模型进行图像理解。
+ *
+ * 1. 视觉模型
+ *    使用支持视觉的模型：
+ *    - qwen-vl-max (DashScope)
+ *    - gpt-4-vision (OpenAI)
+ *    - claude-3-opus (Anthropic)
+ *
+ * 2. 图像输入方式
+ *    // Base64 编码（推荐，兼容性最好）
+ *    ImageBlock.builder()
+ *        .source(Base64Source.builder()
+ *            .data(base64String)
+ *            .mediaType("image/png")
+ *            .build())
+ *        .build()
+ *
+ *    // URL 方式
+ *    ImageBlock.builder()
+ *        .source(UrlSource.builder()
+ *            .url("https://example.com/image.jpg")
+ *            .build())
+ *        .build()
+ *
+ * 3. 构建多模态消息
+ *    Msg userMsg = new UserMessage(
+ *        TextBlock.builder().text("描述这张图片").build(),
+ *        ImageBlock.builder().source(...).build()
+ *    );
+ *
+ * 4. 调用方式
+ *    Msg response = agent.call(userMsg).block();
+ *    String description = response.getTextContent();
+ *
+ * 5. 应用场景
+ *    - 图像描述和分析
+ *    - OCR 文字识别
+ *    - 图表数据提取
+ *    - 视觉问答
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.multimodal.VisionExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.multimodal;
 
 import io.agentscope.core.ReActAgent;

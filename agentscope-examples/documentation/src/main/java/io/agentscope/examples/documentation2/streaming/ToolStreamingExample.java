@@ -13,6 +13,100 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】工具流式输出 - ToolStreamingExample
+ * ============================================================================
+ *
+ * 演示工具通过 ToolEmitter 发送流式进度更新。
+ *
+ * 1. 工具流式输出概念
+ *    - 工具可以在执行过程中发送中间状态
+ *    - 这些状态仅用于 UI 展示，不会发送给 LLM
+ *    - 最终 return 值才是 LLM 看到的工具结果
+ *
+ * 2. ToolEmitter 声明
+ *    工具方法声明 ToolEmitter 参数，框架自动注入：
+ *
+ *    @Tool(description = "Research a topic")
+ *    public String research_topic(
+ *        @ToolParam(name = "topic") String topic,
+ *        ToolEmitter emitter) {  // 自动注入，无需 @ToolParam
+ *
+ *        emitter.emit(ToolResultBlock.text("Step 1..."));
+ *        // ... 执行
+ *        emitter.emit(ToolResultBlock.text("Step 2..."));
+ *        // ...
+ *        return "Final result for LLM";
+ *    }
+ *
+ * 3. 事件序列
+ *    ┌────────────────────────────────────────────┐
+ *    │  TOOL_RESULT_START                         │
+ *    │     (工具开始执行)                          │
+ *    │                                            │
+ *    │  TOOL_RESULT_TEXT_DELTA                    │
+ *    │     ("Searching for information...")       │
+ *    │                                            │
+ *    │  TOOL_RESULT_TEXT_DELTA                    │
+ *    │     ("Found 12 sources. Analyzing...")     │
+ *    │                                            │
+ *    │  TOOL_RESULT_TEXT_DELTA                    │
+ *    │     ("Cross-referencing findings...")      │
+ *    │                                            │
+ *    │  TOOL_RESULT_END                           │
+ *    │     (state=SUCCESS, final result → LLM)    │
+ *    └────────────────────────────────────────────┘
+ *
+ * 4. 事件处理
+ *    agent.streamEvents(msg)
+ *        .doOnNext(event -> {
+ *            if (event instanceof ToolResultStartEvent e) {
+ *                // 工具开始
+ *            } else if (event instanceof ToolResultTextDeltaEvent e) {
+ *                // 流式文本进度（来自 emitter.emit()）
+ *                System.out.print(e.getDelta());
+ *            } else if (event instanceof ToolResultDataDeltaEvent e) {
+ *                // 非文本数据块（图片、二进制等）
+ *            } else if (event instanceof ToolResultEndEvent e) {
+ *                // 工具完成，state=SUCCESS/ERROR
+ *            }
+ *        })
+ *        .blockLast();
+ *
+ * 5. emit() vs return 的区别
+ *    ┌──────────────────────────────────────────┐
+ *    │  emitter.emit(...)                       │
+ *    │    - 发送到事件流                         │
+ *    │    - UI 可见                             │
+ *    │    - LLM 不可见                          │
+ *    ├──────────────────────────────────────────┤
+ *    │  return "..."                            │
+ *    │    - 工具最终结果                         │
+ *    │    - 发送给 LLM                          │
+ *    │    - 也可能显示在 UI                     │
+ *    └──────────────────────────────────────────┘
+ *
+ * 6. 数据类型支持
+ *    emitter.emit(ToolResultBlock.text("..."));     // 文本
+ *    emitter.emit(ToolResultBlock.image(bytes));    // 图片
+ *    emitter.emit(ToolResultBlock.data(object));    // 结构化数据
+ *
+ * 7. 适用场景
+ *    - 长时间操作的进度展示
+ *    - 多步骤处理的阶段反馈
+ *    - 数据处理的中间结果
+ *    - 搜索过程的实时状态
+ *
+ * 8. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.streaming.ToolStreamingExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.streaming;
 
 import io.agentscope.core.ReActAgent;

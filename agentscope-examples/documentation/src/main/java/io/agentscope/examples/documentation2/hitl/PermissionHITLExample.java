@@ -13,6 +13,75 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】权限 HITL - PermissionHITLExample
+ * ============================================================================
+ *
+ * 演示 Human-in-the-Loop（人机交互）权限确认机制。
+ *
+ * 1. 权限行为类型
+ *    - ALLOW: 自动允许执行
+ *    - DENY:  自动拒绝执行
+ *    - ASK:   暂停执行，等待用户确认
+ *
+ * 2. 权限规则配置
+ *    PermissionContextState permCtx = PermissionContextState.builder()
+ *        .mode(PermissionMode.DEFAULT)
+ *        .addAllowRule("safe_read", new PermissionRule(..., ALLOW, ...))
+ *        .addAskRule("dangerous_delete", new PermissionRule(..., ASK, ...))
+ *        .build();
+ *
+ * 3. HITL 流程
+ *    用户消息 → 代理调用工具 → 命中ASK规则
+ *                              ↓
+ *              返回 GenerateReason.PERMISSION_ASKING
+ *                              ↓
+ *              应用层展示待确认操作 → 用户决策
+ *                              ↓
+ *              发送 ConfirmResult → 继续或取消
+ *
+ * 4. 检测需要确认的响应
+ *    Msg result = agent.call(userMsg).block();
+ *    if (result.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+ *        // 提取待确认的工具调用
+ *        List<ToolUseBlock> askingTools = result.getContent().stream()
+ *            .filter(b -> b instanceof ToolUseBlock)
+ *            .map(ToolUseBlock.class::cast)
+ *            .filter(t -> t.getState() == ToolCallState.ASKING)
+ *            .toList();
+ *        // 展示给用户...
+ *    }
+ *
+ * 5. 恢复执行
+ *    List<ConfirmResult> confirmResults = askingTools.stream()
+ *        .map(t -> new ConfirmResult(approved, t))
+ *        .toList();
+ *    Map<String, Object> meta = Map.of(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
+ *    Msg resumeMsg = Msg.builder()
+ *        .role(MsgRole.USER)
+ *        .textContent(approved ? "approved" : "denied")
+ *        .metadata(meta)
+ *        .build();
+ *    agent.call(List.of(resumeMsg)).block();
+ *
+ * 6. 无头模式 (DONT_ASK)
+ *    PermissionMode.DONT_ASK: ASK 自动降级为 DENY
+ *    适用于 CI/CD、自动化测试等无人值守场景
+ *
+ * 7. 运行方式
+ *    # 交互模式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.hitl.PermissionHITLExample
+ *
+ *    # 无头模式
+ *    mvn exec:java ... -Dexec.args="--headless"
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.hitl;
 
 import io.agentscope.core.ReActAgent;

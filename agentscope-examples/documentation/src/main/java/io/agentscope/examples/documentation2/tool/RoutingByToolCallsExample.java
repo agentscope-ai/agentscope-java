@@ -13,6 +13,70 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】工具调用路由 - RoutingByToolCallsExample
+ * ============================================================================
+ *
+ * 演示通过工具调用将用户请求路由到专业子代理。
+ *
+ * 1. 路由器模式
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  用户: "帮我写一个快速排序"                              │
+ *    │     ↓                                                   │
+ *    │  RouterAgent (路由代理)                                 │
+ *    │     ↓ 调用 generate_Python_code 工具                   │
+ *    │  PythonAgent (专业子代理)                               │
+ *    │     ↓                                                   │
+ *    │  返回 Python 代码                                       │
+ *    └─────────────────────────────────────────────────────────┘
+ *
+ * 2. 路由工具实现
+ *    @Tool(name = "generate_Python_code")
+ *    public Msg generatePython(String demand) {
+ *        // 创建专业子代理
+ *        ReActAgent agent = ReActAgent.builder()
+ *            .name("PythonAgent")
+ *            .sysPrompt("You're a Python expert...")
+ *            .build();
+ *
+ *        // 调用并返回结果
+ *        return agent.call(new UserMessage(demand)).block();
+ *    }
+ *
+ * 3. 工具返回 Msg
+ *    工具可以返回 Msg 对象，框架自动处理：
+ *    - 提取文本内容作为工具结果
+ *    - 保持消息元数据
+ *
+ * 4. 路由代理配置
+ *    ReActAgent routerAgent = ReActAgent.builder()
+ *        .name("RouterImplicit")
+ *        .sysPrompt("You're a routing agent...")
+ *        .toolkit(toolkit)  // 包含路由工具
+ *        .build();
+ *
+ * 5. 与 HarnessAgent 子代理的区别
+ *    工具调用路由:
+ *    - 同步执行
+ *    - 工具方法内创建临时代理
+ *    - 简单场景适用
+ *
+ *    HarnessAgent 子代理:
+ *    - 支持异步 (timeout_seconds=0)
+ *    - 支持暴露给用户 (expose_to_user=true)
+ *    - 支持事件转发
+ *    - 复杂编排场景适用
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.tool.RoutingByToolCallsExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.tool;
 
 import io.agentscope.core.ReActAgent;

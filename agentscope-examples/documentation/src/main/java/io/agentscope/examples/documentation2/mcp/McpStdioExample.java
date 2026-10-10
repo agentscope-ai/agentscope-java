@@ -13,6 +13,53 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】MCP Stdio - McpStdioExample
+ * ============================================================================
+ *
+ * 演示如何通过 MCP (Model Context Protocol) 集成外部工具服务器。
+ *
+ * 1. MCP 简介
+ *    MCP 是 Anthropic 发布的模型上下文协议，用于标准化代理与工具的通信。
+ *    支持三种传输方式：
+ *    - stdio:  子进程标准输入输出（本地工具）
+ *    - SSE:    Server-Sent Events（HTTP 长连接）
+ *    - HTTP:   可流式 HTTP（WebSocket 风格）
+ *
+ * 2. Stdio 传输
+ *    启动本地进程，通过 stdin/stdout 通信。
+ *    适用于官方 MCP 服务器：
+ *    - @modelcontextprotocol/server-filesystem  文件系统
+ *    - @modelcontextprotocol/server-git         Git 操作
+ *    - @modelcontextprotocol/server-puppeteer   浏览器自动化
+ *
+ * 3. 构建 MCP 客户端
+ *    McpClientWrapper mcpClient = McpClientBuilder.create("filesystem")
+ *        .stdioTransport("npx", "-y",
+ *            "@modelcontextprotocol/server-filesystem", "/tmp")
+ *        .buildAsync()
+ *        .block();
+ *
+ * 4. 注册到 Toolkit
+ *    Toolkit toolkit = new Toolkit();
+ *    toolkit.registerMcpClient(mcpClient).block();
+ *
+ *    // 查看注册的工具
+ *    System.out.println(toolkit.getToolNames());
+ *
+ * 5. 前置条件
+ *    npm install -g @modelcontextprotocol/server-filesystem
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.mcp.McpStdioExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.mcp;
 
 import io.agentscope.core.ReActAgent;

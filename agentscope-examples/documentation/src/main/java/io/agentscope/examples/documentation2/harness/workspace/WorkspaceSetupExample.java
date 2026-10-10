@@ -13,6 +13,58 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】工作空间配置 - WorkspaceSetupExample
+ * ============================================================================
+ *
+ * 演示工作空间目录结构及内容注入机制。
+ *
+ * 1. 工作空间目录结构
+ *    workspace/
+ *    ├── AGENTS.md            (代理人设，必需)
+ *    ├── PREFERENCES.md       (响应偏好，可选)
+ *    ├── knowledge/           (知识库目录)
+ *    │   ├── KNOWLEDGE.md     (主知识文件，全量注入)
+ *    │   └── api-conventions.md (参考文件，按需读取)
+ *    └── subagents/           (子代理定义目录)
+ *        └── researcher.md    (子代理声明)
+ *
+ * 2. AGENTS.md - 代理人设（核心）
+ *    # Project Assistant
+ *    You are a project assistant for the "Phoenix" project.
+ *    ## Behavior
+ *    - Always greet the user...
+ *
+ * 3. knowledge/KNOWLEDGE.md - 知识库入口
+ *    全量注入到系统提示词。
+ *    其他文件以路径列出，按需读取。
+ *
+ * 4. subagents/*.md - 子代理声明
+ *    ---
+ *    description: Research specialist
+ *    ---
+ *    You are a research subagent...
+ *
+ * 5. 额外上下文文件
+ *    HarnessAgent.builder()
+ *        .workspace(workspace)
+ *        .additionalContextFile("PREFERENCES.md")  // 额外注入
+ *        .build();
+ *
+ * 6. 内容注入顺序
+ *    系统提示词 → AGENTS.md → KNOWLEDGE.md
+ *                → 额外文件 → 知识文件列表
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.workspace.WorkspaceSetupExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.workspace;
 
 import io.agentscope.core.agent.RuntimeContext;

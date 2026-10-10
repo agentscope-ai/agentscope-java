@@ -13,6 +13,56 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】Docker沙箱 - WorkspaceSandboxExample
+ * ============================================================================
+ *
+ * 演示文件系统模式2：Docker 容器隔离执行。
+ *
+ * 1. 三种文件系统模式
+ *    Mode 1: LocalFilesystemSpec    本地直接执行
+ *    Mode 2: DockerFilesystemSpec   Docker 容器隔离 ← 本示例
+ *    Mode 3: E2BFilesystemSpec      云端沙箱（E2B）
+ *
+ * 2. Docker 沙箱配置
+ *    HarnessAgent.builder()
+ *        .filesystem(new DockerFilesystemSpec()
+ *            .image("ubuntu:24.04")
+ *            .isolationScope(IsolationScope.USER))  // 用户级隔离
+ *        .build();
+ *
+ * 3. 隔离级别 (IsolationScope)
+ *    - GLOBAL:  所有用户共享一个沙箱
+ *    - USER:    每个用户独立沙箱（推荐）
+ *    - SESSION: 每个会话独立沙箱
+ *
+ * 4. 沙箱特性
+ *    - 所有文件操作在容器内执行
+ *    - 宿主机完全不受影响
+ *    - 跨调用状态保持（同用户）
+ *    - 工作空间文件自动同步到容器
+ *
+ * 5. 分布式部署
+ *    DistributedStore store = RedisDistributedStore.fromJedis(jedis);
+ *    HarnessAgent.builder()
+ *        .distributedStore(store)  // 跨副本共享沙箱状态
+ *        .filesystem(new DockerFilesystemSpec()...)
+ *        .build();
+ *
+ * 6. 前置条件
+ *    - Docker 守护进程运行中
+ *    - ubuntu:24.04 镜像可拉取
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.workspace.WorkspaceSandboxExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.workspace;
 
 import io.agentscope.core.agent.RuntimeContext;

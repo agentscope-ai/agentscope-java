@@ -13,6 +13,68 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习笔记】AgentScope 事件系统 - AgentEvent
+ * ============================================================================
+ *
+ * 一、职责定位
+ * -----------
+ * AgentEvent 是框架的「事件基类」，支持 28 种细粒度事件，用于：
+ *   - 实时 UI 渲染（流式输出）
+ *   - 人机交互（HITL 权限确认）
+ *   - 执行监控与调试
+ *
+ * 二、事件分类
+ * -----------
+ *   类别              │ 事件类型                  │ 说明
+ *   ──────────────────┼───────────────────────────┼─────────────────────
+ *   代理生命周期      │ AGENT_START/END/RESULT    │ 代理调用开始/结束
+ *   模型调用          │ MODEL_CALL_START/END      │ LLM API 调用
+ *   文本流            │ TEXT_BLOCK_START/DELTA/END │ 流式文本输出
+ *   思考流            │ THINKING_BLOCK_*          │ Claude 思考过程
+ *   数据流            │ DATA_BLOCK_*              │ 结构化数据输出
+ *   工具调用          │ TOOL_CALL_START/DELTA/END │ 工具调用请求
+ *   工具结果          │ TOOL_RESULT_*             │ 工具执行结果
+ *   HITL 交互         │ REQUIRE_USER_CONFIRM      │ 需要用户确认
+ *   外部执行          │ REQUIRE_EXTERNAL_EXECUTION│ 需要外部执行
+ *   控制事件          │ REQUEST_STOP              │ 请求停止
+ *   子代理            │ SUBAGENT_EXPOSED          │ 子代理暴露
+ *   自定义            │ CUSTOM                    │ 自定义事件
+ *
+ * 三、事件结构
+ * -----------
+ *   AgentEvent
+ *       ├── id         (事件唯一ID)
+ *       ├── type       (事件类型)
+ *       ├── timestamp  (创建时间)
+ *       ├── source     (来源代理路径，子代理事件用)
+ *       └── metadata   (扩展元数据)
+ *
+ * 四、使用示例
+ * -----------
+ *   agent.streamEvents("Hello", ctx)
+ *       .doOnNext(event -> {
+ *           switch (event.getType()) {
+ *               case TEXT_BLOCK_DELTA ->
+ *                   System.out.print(((TextBlockDeltaEvent) event).getDelta());
+ *               case TOOL_CALL_START ->
+ *                   System.out.println("调用工具: " + ((ToolCallStartEvent) event).getToolCallName());
+ *               case REQUIRE_USER_CONFIRM ->
+ *                   // 处理权限确认请求
+ *           }
+ *       })
+ *       .blockLast();
+ *
+ * 五、与 Python 对应
+ * -----------------
+ *   Java streamEvents() ≈ Python agent.reply_stream()
+ *   事件类型名称一致，可跨语言对接
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.core.event;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;

@@ -13,6 +13,68 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】MCP Streamable HTTP - McpStreamableHttpExample
+ * ============================================================================
+ *
+ * 演示通过 Streamable HTTP 传输连接 MCP 服务器。
+ *
+ * 1. MCP 三种传输方式对比
+ *    ┌──────────────────────────────────────────────────────────┐
+ *    │  stdio (本地进程)                                        │
+ *    │    - 启动子进程，stdin/stdout 通信                       │
+ *    │    - 最低延迟                                            │
+ *    │    - 仅限本地                                            │
+ *    ├──────────────────────────────────────────────────────────┤
+ *    │  SSE (Server-Sent Events)                                │
+ *    │    - HTTP 长连接                                         │
+ *    │    - 需要持久连接                                        │
+ *    │    - 某些代理/负载均衡不兼容                             │
+ *    ├──────────────────────────────────────────────────────────┤
+ *    │  Streamable HTTP (本示例)                                │
+ *    │    - 单个 HTTP 端点 + 流式响应                          │
+ *    │    - 无需持久连接                                        │
+ *    │    - 兼容标准 HTTP 基础设施（代理、LB、API 网关）       │
+ *    └──────────────────────────────────────────────────────────┘
+ *
+ * 2. Streamable HTTP 客户端构建
+ *    McpClientWrapper client = McpClientBuilder.create("server-name")
+ *        .streamableHttpTransport("http://localhost:3000/mcp")
+ *        .header("X-API-Key", apiKey)   // 可选认证头
+ *        .buildAsync()
+ *        .block();
+ *
+ * 3. 与 SSE 的区别
+ *    SSE:
+ *    - sseTransport(url)
+ *    - 持久连接，服务器推送
+ *    - 需要支持 SSE 的基础设施
+ *
+ *    Streamable HTTP:
+ *    - streamableHttpTransport(url)
+ *    - 请求-响应模式，流式返回
+ *    - 标准 HTTP，更广泛兼容
+ *
+ * 4. 环境变量配置
+ *    export MCP_HTTP_URL=http://localhost:3000/mcp
+ *    export MCP_HTTP_API_KEY=your_api_key  # 可选
+ *
+ * 5. 工具注册
+ *    Toolkit toolkit = new Toolkit();
+ *    toolkit.registerMcpClient(client).block();
+ *    // 远程工具现在可用
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    export MCP_HTTP_URL=http://localhost:3000/mcp
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.mcp.McpStreamableHttpExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.mcp;
 
 import io.agentscope.core.ReActAgent;

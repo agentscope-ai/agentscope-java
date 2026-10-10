@@ -13,6 +13,72 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】Git 技能仓库 - GitSkillRepositoryExample
+ * ============================================================================
+ *
+ * 演示从远程 Git 仓库加载技能（Skills）。
+ *
+ * 1. 技能仓库概念
+ *    技能是可复用的代理能力模块，可以：
+ *    - 本地文件系统加载 (LocalSkillRepository)
+ *    - 远程 Git 仓库加载 (GitSkillRepository)
+ *
+ * 2. GitSkillRepository 工作原理
+ *    ┌────────────────────────────────────────────────────────┐
+ *    │  GitSkillRepository(repoUrl)                          │
+ *    │     ↓ 首次调用                                        │
+ *    │  clone 到临时目录                                     │
+ *    │     ↓ 后续调用                                        │
+ *    │  检查远程 HEAD → 变化则 pull                          │
+ *    │     ↓                                                 │
+ *    │  扫描 子目录/SKILL.md → AgentSkill 列表               │
+ *    └────────────────────────────────────────────────────────┘
+ *
+ * 3. 技能目录结构
+ *    skills-repo/
+ *    ├── code-review/
+ *    │   └── SKILL.md      (技能入口文件)
+ *    ├── documentation/
+ *    │   └── SKILL.md
+ *    └── testing/
+ *        └── SKILL.md
+ *
+ * 4. 使用方式
+ *    try (GitSkillRepository skillRepo =
+ *            new GitSkillRepository("https://github.com/org/skills")) {
+ *
+ *        // 列出所有技能
+ *        List<String> names = skillRepo.getAllSkillNames();
+ *
+ *        // 获取单个技能
+ *        AgentSkill skill = skillRepo.getSkill("code-review");
+ *
+ *        // 绑定到代理
+ *        ReActAgent.builder()
+ *            .skillRepository(skillRepo)
+ *            .build();
+ *    }
+ *
+ * 5. 自动同步
+ *    - 每次 getSkill() 都检查远程引用
+ *    - 仅当 HEAD 变化时执行 git pull
+ *    - 轻量级检查，不影响性能
+ *
+ * 6. 清理机制
+ *    - try-with-resources 自动清理
+ *    - 或 JVM 关闭时清理临时目录
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.skill.GitSkillRepositoryExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.skill;
 
 import io.agentscope.core.ReActAgent;

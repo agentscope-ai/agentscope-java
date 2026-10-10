@@ -13,6 +13,89 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】中间件停止代理 - HookStopAgentExample
+ * ============================================================================
+ *
+ * 演示通过中间件实现敏感工具的 HITL（Human-in-the-Loop）确认。
+ *
+ * 1. 核心机制
+ *    危险工具调用 → 中间件拦截 → 暂停代理 → 用户确认 → 继续/取消
+ *
+ * 2. 危险工具定义
+ *    Set<String> DANGEROUS_TOOLS = Set.of("delete_file", "send_email");
+ *    // search_web 安全，无需确认
+ *
+ * 3. 中间件实现
+ *    class ToolConfirmationMiddleware implements MiddlewareBase {
+ *
+ *        @Override
+ *        public Flux<AgentEvent> onActing(...) {
+ *            // 检测危险工具
+ *            List<ToolUseBlock> dangerousCalls = input.toolCalls()
+ *                .filter(tc -> dangerousTools.contains(tc.getName()))
+ *                .filter(tc -> tc.getState() != ToolCallState.ALLOWED)
+ *                .toList();
+ *
+ *            if (!dangerousCalls.isEmpty()) {
+ *                // 标记为 ASKING 状态
+ *                markToolCallsAsking(ctx, dangerousCalls);
+ *
+ *                // 发出停止事件
+ *                return Flux.just(
+ *                    new RequireUserConfirmEvent(null, dangerousCalls),
+ *                    new RequestStopEvent("需要确认", GenerateReason.PERMISSION_ASKING)
+ *                );
+ *            }
+ *            return next.apply(input);
+ *        }
+ *    }
+ *
+ * 4. 工具状态机
+ *    PENDING → ASKING → ALLOWED/DENIED
+ *
+ *    ToolCallState.ASKING:  等待用户确认
+ *    ToolCallState.ALLOWED: 用户已批准
+ *    ToolCallState.DENIED:  用户已拒绝
+ *
+ * 5. 用户确认流程
+ *    response = agent.call(userMsg);
+ *
+ *    while (response.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+ *        // 显示待确认的工具
+ *        displayPendingTools(response);
+ *
+ *        // 获取用户确认
+ *        boolean confirmed = askUser();
+ *
+ *        // 构造确认消息
+ *        Msg confirmMsg = UserMessage.builder()
+ *            .metadata(Map.of(
+ *                Msg.METADATA_CONFIRM_RESULTS,
+ *                extractAskingToolCalls(response).stream()
+ *                    .map(tc -> new ConfirmResult(confirmed, tc))
+ *                    .toList()
+ *            ))
+ *            .build();
+ *
+ *        // 继续执行
+ *        response = agent.call(confirmMsg);
+ *    }
+ *
+ * 6. 与旧版 hook 系统的对比
+ *    旧版: PostReasoningEvent.stopAgent()
+ *    新版: 在 onActing() 中发出 RequestStopEvent
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.hitl.HookStopAgentExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.hitl;
 
 import io.agentscope.core.ReActAgent;

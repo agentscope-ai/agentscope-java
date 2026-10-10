@@ -13,6 +13,69 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】状态自动保存 - StateAutoSaveExample
+ * ============================================================================
+ *
+ * 演示 AgentStateStore 的自动保存/恢复生命周期。
+ *
+ * 1. 自动保存机制
+ *    ┌────────────────────────────────────────────────────────┐
+ *    │  构建代理                                              │
+ *    │    ↓ stateStore.get(userId, sessionId, ...)           │
+ *    │  恢复之前的对话历史                                    │
+ *    │    ↓                                                   │
+ *    │  agent.call() / stream()                              │
+ *    │    ↓ 自动调用 stateStore.save(...)                    │
+ *    │  持久化更新后的状态                                    │
+ *    │    ↓                                                   │
+ *    │  JVM 关闭时 (GracefulShutdownManager)                 │
+ *    │    ↓ 刷新状态                                         │
+ *    └────────────────────────────────────────────────────────┘
+ *
+ * 2. JsonFileAgentStateStore
+ *    文件存储实现，适合本地开发：
+ *
+ *    AgentStateStore store = new JsonFileAgentStateStore(
+ *        Paths.get("/tmp/agentscope-sessions")
+ *    );
+ *
+ *    // 文件结构：
+ *    // /tmp/agentscope-sessions/
+ *    //   └── auto-save-demo-alice_agent_state.json
+ *
+ * 3. 配置自动保存
+ *    ReActAgent agent = ReActAgent.builder()
+ *        .stateStore(stateStore)             // 状态存储
+ *        .defaultSessionId("session-123")    // 会话ID
+ *        .build();
+ *
+ * 4. 跨实例恢复
+ *    // 实例 1：建立对话
+ *    ReActAgent agent1 = buildAgent(store);
+ *    agent1.call(new UserMessage("My favorite color is blue"));
+ *    agent1.close();
+ *
+ *    // 实例 2：恢复对话
+ *    ReActAgent agent2 = buildAgent(store);  // 自动加载历史
+ *    agent2.call(new UserMessage("What is my favorite color?"));
+ *    // → "Your favorite color is blue."
+ *
+ * 5. 生产环境建议
+ *    - 使用 Redis/数据库实现 AgentStateStore
+ *    - 配置合适的 TTL 策略
+ *    - 考虑分布式锁（多实例场景）
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.state.StateAutoSaveExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.state;
 
 import io.agentscope.core.ReActAgent;

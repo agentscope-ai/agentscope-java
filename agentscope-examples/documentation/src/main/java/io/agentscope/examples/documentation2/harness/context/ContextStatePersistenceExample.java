@@ -13,6 +13,76 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】上下文状态持久化 - ContextStatePersistenceExample
+ * ============================================================================
+ *
+ * 演示无状态引擎模型：单代理实例并发服务多用户，状态隔离持久化。
+ *
+ * 1. 无状态引擎模型
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │  HarnessAgent (单实例)                                  │
+ *    │     │                                                   │
+ *    │     ├── alice + session-1 → AgentState (独立)          │
+ *    │     ├── bob   + session-1 → AgentState (独立)          │
+ *    │     └── alice + session-2 → AgentState (独立)          │
+ *    │                                                         │
+ *    │  AgentStateStore (共享)                                 │
+ *    │     ↓ 持久化                                           │
+ *    │  /tmp/states/alice_session-1_agent_state.json          │
+ *    │  /tmp/states/bob_session-1_agent_state.json            │
+ *    │  /tmp/states/alice_session-2_agent_state.json          │
+ *    └─────────────────────────────────────────────────────────┘
+ *
+ * 2. RuntimeContext 隔离键
+ *    RuntimeContext ctx = RuntimeContext.builder()
+ *        .userId("alice")           // 用户ID
+ *        .sessionId("session-1")    // 会话ID
+ *        .build();
+ *
+ *    // (userId, sessionId) 唯一确定一个对话状态
+ *
+ * 3. 并发调用
+ *    Mono<Msg> aliceCall = agent.call(msg, aliceCtx);
+ *    Mono<Msg> bobCall = agent.call(msg, bobCtx);
+ *
+ *    // 并行执行
+ *    var results = Mono.zip(aliceCall, bobCall).block();
+ *
+ * 4. 跨实例恢复
+ *    // 实例 1：建立对话
+ *    HarnessAgent agent1 = HarnessAgent.builder()
+ *        .stateStore(stateStore)
+ *        .build();
+ *    agent1.call(msg, aliceCtx);
+ *
+ *    // 实例 2：自动恢复
+ *    HarnessAgent agent2 = HarnessAgent.builder()
+ *        .stateStore(stateStore)
+ *        .build();
+ *    agent2.call(new UserMessage("What is my name?"), aliceCtx);
+ *    // → "Your name is Alice."
+ *
+ * 5. 状态存储读取
+ *    Optional<AgentState> state = stateStore.get(
+ *        "alice", "session-1", "agent_state", AgentState.class
+ *    );
+ *    int contextSize = state.map(s -> s.getContext().size()).orElse(0);
+ *
+ * 6. 单用户多会话
+ *    alice + session-1  →  对话 A（包含名字）
+ *    alice + session-2  →  对话 B（独立，不知道名字）
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.context.ContextStatePersistenceExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.context;
 
 import io.agentscope.core.agent.RuntimeContext;

@@ -13,6 +13,71 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】工具执行上下文 - ToolExecutionContextExample
+ * ============================================================================
+ *
+ * 演示如何通过 RuntimeContext 向工具注入依赖（POJO 注入）。
+ *
+ * 1. POJO 注入机制
+ *    工具方法中，未标注 @ToolParam 的参数会自动从 RuntimeContext 注入
+ *
+ *    @Tool
+ *    public String greet(
+ *        @ToolParam(...) String greeting,  // LLM 提供
+ *        UserContext userCtx               // 自动注入（无 @ToolParam）
+ *    ) {
+ *        return greeting + ", " + userCtx.username();
+ *    }
+ *
+ * 2. 注册依赖
+ *    RuntimeContext ctx = RuntimeContext.builder()
+ *        .put(UserContext.class, userCtx)  // 类型化注册
+ *        .put("request_id", "req-123")     // 字符串键注册
+ *        .build();
+ *
+ *    agent.call(msg, ctx);
+ *
+ * 3. 在工具中获取
+ *    // 方式1：参数注入（推荐）
+ *    public String myTool(UserContext ctx) { ... }
+ *
+ *    // 方式2：显式获取
+ *    public String myTool(RuntimeContext ctx) {
+ *        UserContext user = ctx.get(UserContext.class);
+ *    }
+ *
+ * 4. 多租户场景
+ *    // Alice 的调用
+ *    RuntimeContext aliceCtx = RuntimeContext.builder()
+ *        .put(UserContext.class, aliceContext)
+ *        .userId("alice")
+ *        .build();
+ *    agent.call(msg, aliceCtx);
+ *
+ *    // Bob 的调用（完全隔离）
+ *    RuntimeContext bobCtx = RuntimeContext.builder()
+ *        .put(UserContext.class, bobContext)
+ *        .userId("bob")
+ *        .build();
+ *    agent.call(msg, bobCtx);
+ *
+ * 5. 典型用途
+ *    - 用户身份信息
+ *    - 数据库连接
+ *    - 审计日志器
+ *    - 租户配置
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.tool.ToolExecutionContextExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.tool;
 
 import io.agentscope.core.ReActAgent;

@@ -13,6 +13,75 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】技能绑定工具组 - SkillWithToolGroupExample
+ * ============================================================================
+ *
+ * 演示 SkillToolGroup：加载技能时自动激活关联的工具组。
+ *
+ * 1. SkillToolGroup 概念
+ *    工具组与技能绑定，加载技能时自动激活：
+ *
+ *    toolkit.createSkillToolGroup(
+ *        "data-analysis-tools",      // 组名
+ *        "Data analysis tools",      // 描述
+ *        false,                      // 默认不激活
+ *        "data-analysis"             // 绑定的技能名
+ *    );
+ *
+ *    // 当代理加载 "data-analysis" 技能时
+ *    // "data-analysis-tools" 组自动激活
+ *
+ * 2. 与普通 ToolGroup 的区别
+ *    ┌───────────────────────────────────────────────────────┐
+ *    │  普通 ToolGroup (createToolGroup)                     │
+ *    │    - 代理通过 reset_equipped_tools 手动激活          │
+ *    │    - 适合用户明确请求的场景                          │
+ *    ├───────────────────────────────────────────────────────┤
+ *    │  SkillToolGroup (createSkillToolGroup)               │
+ *    │    - 加载绑定技能时自动激活                          │
+ *    │    - 适合技能-工具配套场景                           │
+ *    └───────────────────────────────────────────────────────┘
+ *
+ * 3. SKILL.md 技能文件
+ *    SKILLS_DIR/data-analysis/SKILL.md:
+ *    ---
+ *    name: data-analysis
+ *    description: Statistical data analysis skill
+ *    ---
+ *    Use analyze_data and summarize tools when processing datasets.
+ *
+ * 4. 工具注册到技能组
+ *    toolkit.registration()
+ *        .tool(new DataTools())           // 工具类
+ *        .group("data-analysis-tools")    // 绑定到技能组
+ *        .apply();
+ *
+ * 5. 激活流程
+ *    用户: "分析这组数据"
+ *       ↓
+ *    DynamicSkillMiddleware 识别匹配技能
+ *       ↓
+ *    加载 "data-analysis" SKILL.md
+ *       ↓
+ *    自动激活 "data-analysis-tools" 组
+ *       ↓
+ *    analyze_data、write_summary 工具可用
+ *
+ * 6. 总是可见的工具
+ *    // 不绑定到任何组的工具，始终可见
+ *    toolkit.registerTool(new InfoTool());
+ *
+ * 7. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.skill.SkillWithToolGroupExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.skill;
 
 import io.agentscope.core.ReActAgent;

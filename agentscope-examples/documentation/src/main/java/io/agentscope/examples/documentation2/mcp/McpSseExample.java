@@ -13,6 +13,61 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】MCP SSE 传输 - McpSseExample
+ * ============================================================================
+ *
+ * 演示通过 SSE (Server-Sent Events) 连接远程 MCP 服务器。
+ *
+ * 1. MCP 三种传输方式对比
+ *    ┌──────────────────────────────────────────────────────────┐
+ *    │  stdio (本地进程)                                        │
+ *    │    - McpStdioExample                                     │
+ *    │    - 启动本地子进程，通过 stdin/stdout 通信              │
+ *    │    - 适合本地工具服务器                                  │
+ *    ├──────────────────────────────────────────────────────────┤
+ *    │  SSE (本示例)                                            │
+ *    │    - HTTP 长连接，服务器推送事件                         │
+ *    │    - 适合远程/共享 MCP 服务器                            │
+ *    │    - 支持 Bearer Token 认证                              │
+ *    ├──────────────────────────────────────────────────────────┤
+ *    │  Streamable HTTP                                         │
+ *    │    - HTTP/2 流式传输                                     │
+ *    │    - 适合高吞吐场景                                      │
+ *    └──────────────────────────────────────────────────────────┘
+ *
+ * 2. SSE 客户端构建
+ *    McpClientWrapper client = McpClientBuilder.create("server-name")
+ *        .sseTransport("http://localhost:3000/sse")  // SSE 端点
+ *        .header("Authorization", "Bearer " + token) // 认证头
+ *        .buildAsync()
+ *        .block();
+ *
+ * 3. 工具注册
+ *    Toolkit toolkit = new Toolkit();
+ *    toolkit.registerMcpClient(client).block();
+ *    // 远程工具现在可用
+ *
+ * 4. 环境变量配置
+ *    export MCP_SSE_URL=http://localhost:3000/sse
+ *    export MCP_SSE_TOKEN=your_bearer_token  # 可选
+ *
+ * 5. SSE vs WebSocket
+ *    - SSE: 单向（服务器→客户端），基于 HTTP/1.1
+ *    - WebSocket: 双向，独立协议
+ *    - MCP over SSE: 适合工具调用场景（请求→响应）
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    export MCP_SSE_URL=http://localhost:3000/sse
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.mcp.McpSseExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.mcp;
 
 import io.agentscope.core.ReActAgent;

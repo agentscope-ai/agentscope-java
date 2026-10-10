@@ -13,6 +13,90 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】手动计划模式 - PlanModeManualExample
+ * ============================================================================
+ *
+ * 演示应用程序驱动的计划模式，含交互式终端审批流程。
+ *
+ * 1. 手动 vs 自动计划模式
+ *    ┌──────────────────────────────────────────────────────────┐
+ *    │  自动模式 (PlanModeAutoExample)                          │
+ *    │    - 模型自主决定何时进入/退出计划模式                    │
+ *    │    - 适合简单场景                                        │
+ *    ├──────────────────────────────────────────────────────────┤
+ *    │  手动模式 (本示例)                                        │
+ *    │    - 应用程序调用 enterPlanMode(ctx) 强制进入             │
+ *    │    - 用户交互式审批 plan_exit                            │
+ *    │    - 适合需要人工审核的场景                               │
+ *    └──────────────────────────────────────────────────────────┘
+ *
+ * 2. 编程式进入计划模式
+ *    // 在代理看到任务前强制进入只读计划模式
+ *    agent.enterPlanMode(ctx);
+ *
+ *    // 检查当前状态
+ *    boolean active = agent.isPlanModeActive(ctx);
+ *
+ *    // 编程式退出（无需HITL）
+ *    agent.exitPlanMode(ctx);
+ *
+ * 3. 只读限制
+ *    计划模式下只允许：
+ *    - 只读工具（Read、grep等）
+ *    - 计划工具（plan_write、plan_exit）
+ *    禁止：
+ *    - 写入工具（Edit、Write、Bash执行等）
+ *
+ * 4. HITL 审批门
+ *    代理调用 plan_exit
+ *       ↓
+ *    触发 RequireUserConfirmEvent
+ *       ↓
+ *    应用展示计划内容
+ *       ↓
+ *    用户输入 y/n
+ *       ↓
+ *    构造 ConfirmResult 恢复代理
+ *
+ * 5. 交互式确认实现
+ *    // 捕获确认请求
+ *    AtomicReference<RequireUserConfirmEvent> pending = new AtomicReference<>();
+ *    agent.streamEvents(msg, ctx)
+ *        .doOnNext(event -> {
+ *            if (event instanceof RequireUserConfirmEvent confirm) {
+ *                pending.set(confirm);
+ *            }
+ *        })
+ *        .blockLast();
+ *
+ *    // 处理确认
+ *    RequireUserConfirmEvent confirm = pending.get();
+ *    List<ConfirmResult> results = new ArrayList<>();
+ *    for (ToolUseBlock call : confirm.getToolCalls()) {
+ *        boolean approved = askUser(call.getName());
+ *        results.add(new ConfirmResult(approved, call));
+ *    }
+ *
+ *    // 发送确认结果
+ *    Msg resume = UserMessage.builder()
+ *        .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, results))
+ *        .build();
+ *    agent.call(resume, ctx);
+ *
+ * 6. 计划文件位置
+ *    workspace/plans/PLAN.md
+ *
+ * 7. 运行方式（交互式终端）
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.harness.planmode.PlanModeManualExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.harness.planmode;
 
 import io.agentscope.core.agent.RuntimeContext;

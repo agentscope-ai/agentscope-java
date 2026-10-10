@@ -13,6 +13,89 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】ToolBase 自定义工具 - ToolBaseExample
+ * ============================================================================
+ *
+ * 演示通过继承 ToolBase 实现带权限检查的自定义工具。
+ *
+ * 1. @Tool 注解 vs ToolBase 继承
+ *    ┌────────────────────────────────────────────────────────┐
+ *    │  @Tool 注解方式                                        │
+ *    │    - 简单、快速                                        │
+ *    │    - 适合同步、无权限检查的工具                        │
+ *    │    - 自动生成 JSON Schema                             │
+ *    ├────────────────────────────────────────────────────────┤
+ *    │  ToolBase 继承方式 (本示例)                            │
+ *    │    - 完整控制                                          │
+ *    │    - 支持权限检查 (checkPermissions)                   │
+ *    │    - 支持异步执行 (callAsync)                          │
+ *    │    - 支持规则建议 (generateSuggestions)                │
+ *    │    - 需要手动定义 inputSchema                          │
+ *    └────────────────────────────────────────────────────────┘
+ *
+ * 2. ToolBase 核心方法
+ *    class MyTool extends ToolBase {
+ *
+ *        public MyTool() {
+ *            super(ToolBase.builder()
+ *                .name("my_tool")
+ *                .description("...")
+ *                .inputSchema(Map.of(...))   // JSON Schema
+ *                .readOnly(true)             // 是否只读
+ *                .concurrencySafe(true));    // 是否并发安全
+ *        }
+ *
+ *        @Override
+ *        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+ *            // 实际执行逻辑
+ *        }
+ *
+ *        @Override
+ *        public Mono<PermissionDecision> checkPermissions(
+ *                Map<String, Object> input, PermissionContextState ctx) {
+ *            // 权限检查
+ *        }
+ *
+ *        @Override
+ *        public List<PermissionRule> generateSuggestions(
+ *                Map<String, Object> input) {
+ *            // 用户批准后的规则建议
+ *        }
+ *    }
+ *
+ * 3. 权限检查返回值
+ *    - PermissionDecision.allow()       → 允许执行
+ *    - PermissionDecision.deny(reason)  → 拒绝执行
+ *    - PermissionDecision.passthrough() → 交给引擎默认规则
+ *
+ * 4. inputSchema 手动定义
+ *    Map.of(
+ *        "type", "object",
+ *        "properties", Map.of(
+ *            "location", Map.of(
+ *                "type", "string",
+ *                "description", "City name"
+ *            )
+ *        ),
+ *        "required", List.of("location")
+ *    )
+ *
+ * 5. 注册方式
+ *    Toolkit toolkit = new Toolkit();
+ *    toolkit.registerAgentTool(new TemperatureTool());  // ToolBase 子类
+ *    toolkit.registerTool(new SimpleTool());            // @Tool POJO
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.tool.ToolBaseExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.tool;
 
 import io.agentscope.core.ReActAgent;

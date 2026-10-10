@@ -13,6 +13,66 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/*
+ * ============================================================================
+ * 【学习示例】自定义中间件 - CustomizedMiddlewareExample
+ * ============================================================================
+ *
+ * 演示如何使用 MiddlewareBase 实现代理生命周期监控。
+ *
+ * 1. 中间件的洋葱模型
+ *    请求 → [MW before] → [Core] → [MW after] → 响应
+ *
+ *    @Override
+ *    public Flux<AgentEvent> onAgent(..., Function<AgentInput, Flux<AgentEvent>> next) {
+ *        System.out.println("开始");       // before
+ *        return next.apply(input)
+ *            .doOnComplete(() -> System.out.println("结束"));  // after
+ *    }
+ *
+ * 2. 可覆盖的拦截点
+ *    - onAgent():      整个代理调用
+ *    - onReasoning():  LLM 推理阶段
+ *    - onActing():     工具执行阶段
+ *    - onModelCall():  原始 API 调用
+ *    - onSystemPrompt(): 系统提示词（管道模式，非洋葱）
+ *
+ * 3. 监控中间件示例
+ *    class MonitoringMiddleware implements MiddlewareBase {
+ *        @Override
+ *        public Flux<AgentEvent> onActing(...) {
+ *            System.out.println("工具调用: " + toolNames);
+ *            return next.apply(input)
+ *                .doOnNext(event -> {
+ *                    if (event instanceof ToolResultTextDeltaEvent delta) {
+ *                        System.out.println("进度: " + delta.getDelta());
+ *                    }
+ *                })
+ *                .doOnComplete(() -> System.out.println("工具完成"));
+ *        }
+ *    }
+ *
+ * 4. 注册中间件
+ *    ReActAgent.builder()
+ *        .middleware(new MonitoringMiddleware())
+ *        .build();
+ *
+ * 5. ToolEmitter - 工具流式输出
+ *    @Tool
+ *    public String processData(String name, ToolEmitter emitter) {
+ *        emitter.emit(ToolResultBlock.text("进度 20%"));
+ *        // ...
+ *    }
+ *
+ * 6. 运行方式
+ *    export DASHSCOPE_API_KEY=your_key
+ *    mvn exec:java -pl agentscope-examples/documentation \
+ *        -Dexec.mainClass=io.agentscope.examples.documentation2.middleware.CustomizedMiddlewareExample
+ *
+ * ============================================================================
+ */
+
 package io.agentscope.examples.documentation2.middleware;
 
 import io.agentscope.core.ReActAgent;
