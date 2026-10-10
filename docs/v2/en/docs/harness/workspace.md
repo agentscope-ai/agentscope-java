@@ -163,6 +163,7 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 | `disableWorkspaceContext()` | workspace instruction and reference loading (`AGENTS.md` / `MEMORY.md` / `knowledge/`) |
 | `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips memory material in `HARNESS_CONTEXT` (`MEMORY.md`) injection |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt |
+| `disableKnowledgeContext()` | `## Domain Knowledge` guidance, `knowledge/KNOWLEDGE.md` content and the `Knowledge files:` catalog. Unlike `disableWorkspaceContext()`, this leaves `AGENTS.md`, `MEMORY.md` and memory tools intact |
 | `disableSubagents()` | the entire subagent subsystem |
 | `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
 | `disableToolsConfig()` | reading `tools.json` |

@@ -1377,6 +1377,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         boolean disableMemoryTools = false;
         boolean disableMemoryHooks = false;
+        boolean disableKnowledgeContext = false;
         boolean disableSessionPersistence = false;
         boolean disableWorkspaceContext = false;
         boolean disableAtPathExpansion = false;
@@ -2422,6 +2423,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Disables knowledge-related system prompt injection: the
+         * {@code ## Domain Knowledge} guidance, the {@code knowledge/KNOWLEDGE.md}
+         * content, and the knowledge file catalog. Unlike {@code disableWorkspaceContext()} this
+         * leaves {@code AGENTS.md}, {@code MEMORY.md}, and memory tools intact. Use for agents
+         * that source knowledge from a custom enterprise tool instead of the local
+         * {@code knowledge/} directory.
+         */
+        public Builder disableKnowledgeContext() {
+            this.disableKnowledgeContext = true;
+            return this;
+        }
+
         /** The duplicate transcript writer has been removed; native session logging stays enabled.
          * @deprecated No configuration is required to disable duplicate transcript files.
          */
@@ -2727,6 +2741,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 disableMemoryTools,
                                 disableMemoryHooks);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
+                markdownMw.setDisableKnowledgeContext(disableKnowledgeContext);
                 markdownMw.setArtifactDeliveryEnabled(artifactDeliveryEnabled);
                 inner.middleware(markdownMw);
             }
