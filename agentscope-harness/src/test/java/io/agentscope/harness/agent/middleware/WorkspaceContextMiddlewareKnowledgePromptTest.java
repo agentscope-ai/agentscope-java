@@ -76,7 +76,8 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
 
         WorkspaceManager wm = track(new WorkspaceManager(workspace));
         WorkspaceContextMiddleware mw =
-                new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false, true);
+                new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false);
+        mw.setDisableKnowledgeContext(true);
 
         RuntimeContext rc = RuntimeContext.empty();
         String prompt = renderAll(mw, rc, "BASE\n");
@@ -101,7 +102,8 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "agent persona");
         WorkspaceManager wm = track(new WorkspaceManager(workspace));
         WorkspaceContextMiddleware mw =
-                new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false, true);
+                new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false);
+        mw.setDisableKnowledgeContext(true);
 
         RuntimeContext rc = RuntimeContext.empty();
         String prompt = renderAll(mw, rc, "BASE\n");
@@ -118,7 +120,8 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
         Files.writeString(workspace.resolve("MEMORY.md"), "prefer dark mode");
         WorkspaceManager wm = track(new WorkspaceManager(workspace));
         WorkspaceContextMiddleware mw =
-                new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false, true);
+                new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false);
+        mw.setDisableKnowledgeContext(true);
 
         RuntimeContext rc = RuntimeContext.empty();
         String prompt = renderAll(mw, rc, "BASE\n");
@@ -135,7 +138,8 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
         Files.writeString(workspace.resolve("MEMORY.md"), "should not appear");
         WorkspaceManager wm = track(new WorkspaceManager(workspace));
         WorkspaceContextMiddleware mw =
-                new WorkspaceContextMiddleware(wm, "agent", null, 8000, true, true, true);
+                new WorkspaceContextMiddleware(wm, "agent", null, 8000, true, true);
+        mw.setDisableKnowledgeContext(true);
 
         RuntimeContext rc = RuntimeContext.empty();
         String prompt = renderAll(mw, rc, "BASE\n");
