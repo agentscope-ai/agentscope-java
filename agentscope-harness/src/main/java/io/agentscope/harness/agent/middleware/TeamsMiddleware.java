@@ -63,11 +63,13 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
             new ConcurrentHashMap<>();
 
     /**
-     * "team|role" → middleware, so a TeamEvent that only names the member can reach the session
+     * (namespace, team, member) → middleware, so a scoped TeamEvent can reach the member
      * before (or without) a session id being bound.
      */
-    private static final ConcurrentHashMap<String, TeamsMiddleware> BY_MEMBER =
+    private static final ConcurrentHashMap<MemberKey, TeamsMiddleware> BY_MEMBER =
             new ConcurrentHashMap<>();
+
+    private record MemberKey(String namespace, String teamName, String memberName) {}
 
     private final TeamClient teamClient;
     private final TeamContext teamContext;
@@ -97,14 +99,30 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
     static {
         // Lets TeamClient implementations wake a member by name; they cannot
         // resolve runtime session ids on their own.
-        TeamWakeups.register(TeamsMiddleware::wakeupTeamMember);
+        TeamWakeups.register(
+                new TeamWakeups.Hook() {
+                    @Override
+                    public boolean wake(String teamName, String memberName, String notice) {
+                        return wakeupTeamMember(teamName, memberName, notice);
+                    }
+
+                    @Override
+                    public boolean wake(
+                            String namespace, String teamName, String memberName, String notice) {
+                        return wakeupTeamMember(namespace, teamName, memberName, notice);
+                    }
+                });
     }
 
     public TeamsMiddleware(TeamClient teamClient, TeamContext teamContext) {
         this.teamClient = Objects.requireNonNull(teamClient, "teamClient");
         this.teamContext = Objects.requireNonNull(teamContext, "teamContext");
         this.teamTool = new TeamTool(teamClient, teamContext);
-        String memberKey = memberKey(teamContext.teamName(), teamContext.myRole());
+        MemberKey memberKey =
+                memberKey(
+                        teamContext.resolvedNamespace(),
+                        teamContext.teamName(),
+                        teamContext.myRole());
         if (memberKey != null) {
             BY_MEMBER.put(memberKey, this);
         }
@@ -155,7 +173,11 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
         if (sessionId.equals(mw.boundSessionId)) {
             mw.boundSessionId = null;
         }
-        String memberKey = memberKey(mw.teamContext.teamName(), mw.teamContext.myRole());
+        MemberKey memberKey =
+                memberKey(
+                        mw.teamContext.resolvedNamespace(),
+                        mw.teamContext.teamName(),
+                        mw.teamContext.myRole());
         if (memberKey != null) {
             BY_MEMBER.remove(memberKey, mw);
         }
@@ -176,14 +198,44 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
         return true;
     }
 
-    /** Wakes a teammate identified by team + member name. Returns false when unknown. */
+    /** Wakes a teammate by team + member name. Returns false when unknown or ambiguous. */
     public static boolean wakeupTeamMember(String teamName, String memberName) {
         return wakeupTeamMember(teamName, memberName, null);
     }
 
-    /** Wakes a teammate by team + member name, injecting {@code notice} into its next turn. */
+    /**
+     * Wakes a teammate by team + member name, injecting {@code notice} into its next turn.
+     * Returns false when zero or multiple namespaces match; use the scoped overload in that case.
+     */
     public static boolean wakeupTeamMember(String teamName, String memberName, String notice) {
-        String key = memberKey(teamName, memberName);
+        MemberKey key = memberKey(null, teamName, memberName);
+        if (key == null) {
+            return false;
+        }
+        TeamsMiddleware match = null;
+        for (Map.Entry<MemberKey, TeamsMiddleware> entry : BY_MEMBER.entrySet()) {
+            if (teamName.equals(entry.getKey().teamName())
+                    && memberName.equals(entry.getKey().memberName())) {
+                if (match != null) {
+                    return false;
+                }
+                match = entry.getValue();
+            }
+        }
+        if (match == null) {
+            return false;
+        }
+        match.notifyWakeup(match.boundSessionId, notice);
+        return true;
+    }
+
+    /**
+     * Wakes a teammate in the given namespace, injecting {@code notice} into its next turn.
+     * Null or blank namespace resolves to default. Returns false when the exact target is unknown.
+     */
+    public static boolean wakeupTeamMember(
+            String namespace, String teamName, String memberName, String notice) {
+        MemberKey key = memberKey(namespace, teamName, memberName);
         TeamsMiddleware mw = key == null ? null : BY_MEMBER.get(key);
         if (mw == null) {
             return false;
@@ -192,11 +244,14 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
         return true;
     }
 
-    private static String memberKey(String teamName, String memberName) {
+    private static MemberKey memberKey(String namespace, String teamName, String memberName) {
         if (teamName == null || teamName.isBlank() || memberName == null || memberName.isBlank()) {
             return null;
         }
-        return teamName + "|" + memberName;
+        return new MemberKey(
+                namespace == null || namespace.isBlank() ? "default" : namespace,
+                teamName,
+                memberName);
     }
 
     /** Tools to register on the agent toolkit at build time. */
