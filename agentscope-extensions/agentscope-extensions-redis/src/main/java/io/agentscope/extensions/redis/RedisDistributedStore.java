@@ -19,6 +19,7 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.extensions.redis.sandbox.RedisSandboxExecutionGuard;
 import io.agentscope.extensions.redis.snapshot.RedisSnapshotSpec;
 import io.agentscope.extensions.redis.state.RedisAgentStateStore;
+import io.agentscope.extensions.redis.state.RedisAgentStateStore.KeyLayoutVersion;
 import io.agentscope.extensions.redis.store.RedisStore;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
@@ -57,10 +58,13 @@ public class RedisDistributedStore implements DistributedStore {
 
     private final UnifiedJedis jedis;
     private final String keyPrefix;
+    private final KeyLayoutVersion keyLayoutVersion;
 
-    private RedisDistributedStore(UnifiedJedis jedis, String keyPrefix) {
+    private RedisDistributedStore(
+            UnifiedJedis jedis, String keyPrefix, KeyLayoutVersion keyLayoutVersion) {
         this.jedis = Objects.requireNonNull(jedis, "jedis");
         this.keyPrefix = keyPrefix != null ? keyPrefix : "agentscope:";
+        this.keyLayoutVersion = Objects.requireNonNull(keyLayoutVersion, "keyLayoutVersion");
     }
 
     /**
@@ -70,7 +74,7 @@ public class RedisDistributedStore implements DistributedStore {
      * @return a new Redis distributed store
      */
     public static RedisDistributedStore fromJedis(UnifiedJedis jedis) {
-        return new RedisDistributedStore(jedis, null);
+        return new RedisDistributedStore(jedis, null, KeyLayoutVersion.V0);
     }
 
     /**
@@ -81,7 +85,20 @@ public class RedisDistributedStore implements DistributedStore {
      * @return a new Redis distributed store
      */
     public static RedisDistributedStore fromJedis(UnifiedJedis jedis, String keyPrefix) {
-        return new RedisDistributedStore(jedis, keyPrefix);
+        return new RedisDistributedStore(jedis, keyPrefix, KeyLayoutVersion.V0);
+    }
+
+    /**
+     * Creates a Redis distributed store with a custom key prefix and agent-state key layout.
+     *
+     * @param jedis initialized Jedis client
+     * @param keyPrefix prefix for all Redis keys (e.g. {@code "myapp:"})
+     * @param keyLayoutVersion key layout used by the agent-state store
+     * @return a new Redis distributed store
+     */
+    public static RedisDistributedStore fromJedis(
+            UnifiedJedis jedis, String keyPrefix, KeyLayoutVersion keyLayoutVersion) {
+        return new RedisDistributedStore(jedis, keyPrefix, keyLayoutVersion);
     }
 
     @Override
@@ -89,6 +106,7 @@ public class RedisDistributedStore implements DistributedStore {
         return RedisAgentStateStore.builder()
                 .jedisClient(jedis)
                 .keyPrefix(keyPrefix + "session:")
+                .keyLayoutVersion(keyLayoutVersion)
                 .build();
     }
 
