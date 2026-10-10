@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.filesystem;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -92,5 +93,43 @@ class LocalFilesystemSpecSharedWorkspaceTest {
         assertTrue(fs.write(RT, "MEMORY.md", "mem").isSuccess());
         assertTrue(Files.isRegularFile(workspace.resolve("MEMORY.md")));
         assertFalse(Files.exists(workspace.resolve("local-user")));
+    }
+
+    @Test
+    void defaultBoundaryBlocksAbsoluteWorkspaceRootAccess() throws Exception {
+        Path shared = workspace.resolve("shared.txt");
+        Files.writeString(shared, "shared content");
+
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec()
+                        .project(project)
+                        .toFilesystem(workspace, rc -> List.of("local-user"));
+
+        // Absolute keys under the workspace root must not reach outside the caller's
+        // namespace (the #3261 boundary, enabled by default for ROOTED workspaces). Assert on
+        // the upper layer: the overlay's exists() check swallows the SecurityException and
+        // falls through to the lower layer, so the rejection surfaces only there.
+        AbstractFilesystem upper = ((OverlayFilesystem) fs).upper();
+        assertThrows(
+                SecurityException.class,
+                () -> upper.read(RT, shared.toAbsolutePath().toString(), 0, 0));
+    }
+
+    @Test
+    void namespaceBoundaryEscapeHatchRestoresLegacyAbsoluteAccess() throws Exception {
+        Path shared = workspace.resolve("shared.txt");
+        Files.writeString(shared, "shared content");
+
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec()
+                        .project(project)
+                        .namespaceBoundary(false)
+                        .toFilesystem(workspace, rc -> List.of("local-user"));
+
+        ReadResult read = fs.read(RT, shared.toAbsolutePath().toString(), 0, 0);
+        assertTrue(
+                read.isSuccess(),
+                () -> "escape hatch should keep legacy absolute access: " + read.error());
+        assertTrue(read.fileData().content().contains("shared content"));
     }
 }

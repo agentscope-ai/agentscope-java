@@ -330,6 +330,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addRoot(Path)` | Extra host directory the agent may access | none |
 | `additionalRoots(Collection)` | Batch-set extra directories | none |
 | `projectWritable(boolean)` | Route non-workspace writes to the project directory instead of workspace | `false` |
+| `namespaceBoundary(Boolean)` | Override the namespace boundary (absolute paths confined to the caller's own namespace under the workspace root, [isolation scopes](#isolationscope--bucketing-across-users-and-replicas)); `true`/`false` force, omit for the default | on for `ROOTED` |
+
+> **Upgrading — absolute paths under the workspace root:** the namespace boundary is on by default for `ROOTED` workspaces, so an absolute key such as `<workspace>/skills/tool.md` no longer reaches shared content at the workspace root (previously any session could address another session's directory that way). Shared content stays reachable through workspace-relative paths, which the overlay resolves against the read-only project layer; on a vetted single-tenant workspace that needs the old behaviour, pass `.namespaceBoundary(false)`.
 
 #### Path resolution policy (`LocalFsMode`)
 
