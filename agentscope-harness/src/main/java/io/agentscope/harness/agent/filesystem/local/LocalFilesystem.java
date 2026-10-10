@@ -593,7 +593,17 @@ public class LocalFilesystem implements AbstractFilesystem {
         return namespaceFactory;
     }
 
+    @Override
+    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
+        return new io.agentscope.harness.agent.session.LocalSessionStorage(
+                resolvePath(rc, ".").resolve(".agentscope-runtime"));
+    }
+
     protected Path resolvePath(RuntimeContext rc, String key) {
+        if (key != null
+                && java.util.Arrays.stream(key.replace('\\', '/').split("/"))
+                        .anyMatch(".agentscope-runtime"::equalsIgnoreCase))
+            throw new SecurityException("Session journal is reserved for the runtime");
         String effectiveKey = applyNamespacePrefix(rc, key);
         if (effectiveKey == null || effectiveKey.isBlank()) {
             return cwd;

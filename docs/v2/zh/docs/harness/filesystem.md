@@ -101,7 +101,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | 实现 | 说明 |
 |------|------|
 | `RedisStore` | 基于 Jedis，适合低延迟高并发 | `agentscope-extensions-redis` |
-| `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 | `agentscope-extensions-mysql` |
+| `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
 | `InMemoryStore` | 内存实现，适合测试 | `agentscope-harness` |
 
 ---
@@ -134,7 +134,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | 方法 | 说明 | 默认值 |
 |------|------|-------|
 | `image(String)` | Docker 镜像 | 必填 |
-| `isolationScope(IsolationScope)` | 隔离维度 | `SESSION` |
+| `isolationScope(IsolationScope)` | 隔离维度 | `USER` |
 | `memorySizeBytes(Long)` | 容器内存限制 | Docker 默认 |
 | `cpuCount(Long)` | CPU 限制 | Docker 默认 |
 | `network(String)` | Docker network | Docker 默认 |
@@ -234,7 +234,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | 方法 | 说明 | 默认值 |
 |------|------|-------|
-| `isolationScope(IsolationScope)` | 隔离维度 | 后端默认（通常 `SESSION`） |
+| `isolationScope(IsolationScope)` | 隔离维度 | 后端默认（默认 `USER`） |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec` |
 | `executionGuard(SandboxExecutionGuard)` | AGENT/GLOBAL scope 下的并发串行化守卫 | 无 |
 | `workspaceProjectionEnabled(boolean)` | 是否从宿主投影静态资产到沙箱 | `true` |

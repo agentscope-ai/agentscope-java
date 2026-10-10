@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.agentscope</groupId><artifactId>agentscope-examples</artifactId>
+        <version>${revision}</version><relativePath>../../pom.xml</relativePath>
+    </parent>
+    <groupId>io.agentscope.examples</groupId><artifactId>agentscope-chat</artifactId>
+    <name>AgentScope Java - Session Chat</name>
+    <description>Runnable chat example for durable events, SSE replay and execution recovery</description>
+    <dependencyManagement><dependencies><dependency>
+        <groupId>org.springframework.boot</groupId><artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring.boot.version}</version><type>pom</type><scope>import</scope>
+    </dependency></dependencies></dependencyManagement>
+    <dependencies>
+        <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-harness</artifactId></dependency>
+        <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-extensions-model-dashscope</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webflux</artifactId></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+    </dependencies>
+    <build><finalName>agentscope-chat</finalName><plugins><plugin>
+        <groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId>
+        <version>${spring.boot.version}</version>
+        <configuration><mainClass>io.agentscope.examples.chat.ChatApplication</mainClass></configuration>
+        <executions><execution><goals><goal>repackage</goal></goals></execution></executions>
+    </plugin></plugins></build>
+</project>

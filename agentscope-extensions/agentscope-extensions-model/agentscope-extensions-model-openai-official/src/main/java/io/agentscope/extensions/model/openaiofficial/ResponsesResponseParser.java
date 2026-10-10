@@ -26,7 +26,9 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.model.openaiofficial.tool.ResponsesServerToolHelper;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -56,7 +58,9 @@ final class ResponsesResponseParser {
         String encryptedContent = null;
         StringBuilder reasoningTextBuilder = new StringBuilder();
         StringBuilder textBuilder = new StringBuilder();
-        List<ToolUseBlock> toolUseBlocks = new ArrayList<>();
+        List<ContentBlock> toolBlocks = new ArrayList<>();
+        ResponsesServerToolHelper.HostedToolSearchPairing toolSearchPairing =
+                new ResponsesServerToolHelper.HostedToolSearchPairing();
 
         List<ResponseOutputItem> output = response.output();
         for (ResponseOutputItem item : output) {
@@ -72,7 +76,14 @@ final class ResponsesResponseParser {
             } else if (item.isMessage()) {
                 extractMessage(item.asMessage(), textBuilder, modelName);
             } else if (item.isFunctionCall()) {
-                toolUseBlocks.add(extractFunctionCall(item.asFunctionCall()));
+                ToolUseBlock toolUse = extractFunctionCall(item.asFunctionCall());
+                if (toolUse != null) {
+                    toolBlocks.add(toolUse);
+                }
+            } else if (ResponsesServerToolHelper.isSupportedServerToolItem(item)) {
+                toolBlocks.addAll(
+                        ResponsesServerToolHelper.decodeBlocks(
+                                item, toolSearchPairing.companionCallId(item)));
             }
             // Unknown output item types are silently ignored (forward compatibility)
         }
@@ -108,8 +119,8 @@ final class ResponsesResponseParser {
             contentBlocks.add(TextBlock.builder().text(text).build());
         }
 
-        // ToolUseBlocks
-        contentBlocks.addAll(toolUseBlocks);
+        // Tool blocks preserve the output-item order.
+        contentBlocks.addAll(toolBlocks);
 
         // ── Metadata + usage + finishReason ──
         String responseId = response.id();
@@ -162,6 +173,9 @@ final class ResponsesResponseParser {
         String callId = call.callId();
         String name = call.name();
         String arguments = call.arguments();
+        if (!ToolValidator.requireNonBlank("OpenAI official", name, callId)) {
+            return null;
+        }
 
         Map<String, Object> input;
         try {
@@ -178,6 +192,20 @@ final class ResponsesResponseParser {
             input = new HashMap<>();
         }
 
-        return ToolUseBlock.builder().id(callId).name(name).input(input).content(arguments).build();
+        Map<String, Object> metadata = new HashMap<>();
+        call.namespace()
+                .ifPresent(
+                        namespace ->
+                                metadata.put(
+                                        OpenAIOfficialConstants.MD_FUNCTION_CALL_NAMESPACE,
+                                        namespace));
+
+        return ToolUseBlock.builder()
+                .id(callId)
+                .name(name)
+                .input(input)
+                .content(arguments)
+                .metadata(metadata.isEmpty() ? null : metadata)
+                .build();
     }
 }

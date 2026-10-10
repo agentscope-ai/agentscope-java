@@ -19,7 +19,6 @@ import static io.agentscope.core.model.ModelProviderSupport.booleanOption;
 import static io.agentscope.core.model.ModelProviderSupport.findAssignableComponent;
 import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
 import static io.agentscope.core.model.ModelProviderSupport.intOption;
-import static io.agentscope.core.model.ModelProviderSupport.trimToNull;
 
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.GenerateOptions;
@@ -83,7 +82,7 @@ public final class DashScopeModelProvider implements ModelProvider {
         DashScopeChatModel.Builder builder =
                 DashScopeChatModel.builder().apiKey(apiKey).modelName(modelName).stream(
                         context.getStream() != null ? context.getStream() : true);
-        String baseUrl = trimToNull(context.getBaseUrl());
+        String baseUrl = firstNonBlank(context.getBaseUrl(), System.getenv("DASHSCOPE_BASE_URL"));
         if (baseUrl != null) {
             builder.baseUrl(baseUrl);
         }

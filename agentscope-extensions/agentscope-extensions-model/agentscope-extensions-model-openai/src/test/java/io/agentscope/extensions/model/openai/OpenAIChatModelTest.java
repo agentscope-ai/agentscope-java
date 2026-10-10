@@ -21,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -31,10 +34,12 @@ import io.agentscope.core.model.transport.HttpTransportConfig;
 import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -99,6 +104,14 @@ class OpenAIChatModelTest {
     void testNativeStructuredOutputDefaultTrue() {
         OpenAIChatModel m = OpenAIChatModel.builder().apiKey("k").modelName("gpt-4").build();
         assertTrue(m.supportsNativeStructuredOutput());
+    }
+
+    @Test
+    @DisplayName("Generic OpenAI builder does not assume specific tool_choice support")
+    void testSupportsToolChoiceSpecificDefaultFalse() {
+        OpenAIChatModel m = OpenAIChatModel.builder().apiKey("k").modelName("gpt-4").build();
+
+        assertFalse(m.supportsToolChoiceSpecific());
     }
 
     @Test
@@ -273,6 +286,94 @@ class OpenAIChatModelTest {
         assertTrue(body.contains("\"temperature\":0.7"));
         assertTrue(body.contains("\"max_tokens\":1000"));
         assertTrue(body.contains("\"parallel_tool_calls\":true"));
+    }
+
+    @Test
+    @DisplayName("Model-level strict JSON schema default respects request-scoped strict")
+    void testStrictJsonSchemaDefault() throws Exception {
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text("Hello").build()))
+                                .build());
+
+        ResponseFormat unsetStrict = responseFormat(null);
+        GenerateOptions options = GenerateOptions.builder().responseFormat(unsetStrict).build();
+
+        enqueueCompletionResponse();
+        StepVerifier.create(model.stream(messages, null, options))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+        JsonNode defaultStrict = responseFormatStrict(mockServer.takeRequest());
+        assertTrue(defaultStrict.isMissingNode(), "Default model should omit strict");
+
+        OpenAIChatModel strictModel = modelWithStrictJsonSchema(true);
+        enqueueCompletionResponse();
+        StepVerifier.create(strictModel.stream(messages, null, options))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+        JsonNode modelDefaultStrict = responseFormatStrict(mockServer.takeRequest());
+        assertTrue(modelDefaultStrict.isBoolean());
+        assertTrue(modelDefaultStrict.asBoolean());
+
+        GenerateOptions requestOverride =
+                GenerateOptions.builder().responseFormat(responseFormat(false)).build();
+        enqueueCompletionResponse();
+        StepVerifier.create(strictModel.stream(messages, null, requestOverride))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+        JsonNode overriddenStrict = responseFormatStrict(mockServer.takeRequest());
+        assertTrue(overriddenStrict.isBoolean());
+        assertFalse(overriddenStrict.asBoolean());
+    }
+
+    private static ResponseFormat responseFormat(Boolean strict) {
+        return ResponseFormat.jsonSchema(
+                JsonSchema.builder()
+                        .name("test_response")
+                        .schema(Map.of("type", "object", "properties", Map.of()))
+                        .strict(strict)
+                        .build());
+    }
+
+    private OpenAIChatModel modelWithStrictJsonSchema(Boolean strictJsonSchema) {
+        return OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").stream(false)
+                .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                .formatter(new OpenAIChatFormatter())
+                .httpTransport(transport)
+                .strictJsonSchema(strictJsonSchema)
+                .build();
+    }
+
+    private void enqueueCompletionResponse() {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(
+                                """
+                                {
+                                    "id": "chatcmpl-123",
+                                    "object": "chat.completion",
+                                    "created": 1677652280,
+                                    "model": "gpt-4",
+                                    "choices": [{
+                                        "index": 0,
+                                        "message": {
+                                            "role": "assistant",
+                                            "content": "Response"
+                                        },
+                                        "finish_reason": "stop"
+                                    }]
+                                }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+    }
+
+    private static JsonNode responseFormatStrict(RecordedRequest request) throws Exception {
+        assertNotNull(request);
+        JsonNode body =
+                JsonUtils.getJsonCodec().fromJson(request.getBody().readUtf8(), JsonNode.class);
+        return body.path("response_format").path("json_schema").path("strict");
     }
 
     @Test

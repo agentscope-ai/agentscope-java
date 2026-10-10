@@ -64,7 +64,6 @@ const ChannelDetailPage = React.lazy(() => import('./pages/ChannelDetailPage'));
 const EnvironmentsHubPage = React.lazy(() => import('./pages/EnvironmentsHubPage'));
 const MemoryStoresPage = React.lazy(() => import('./pages/MemoryStoresPage'));
 const VaultsPage = React.lazy(() => import('./pages/VaultsPage'));
-const EndpointDetailPage = React.lazy(() => import('./features/build/deployments/EndpointDetailPage'));
 const ChatPage = React.lazy(() => import('./features/chat/ChatPage'));
 const AgentLayout = React.lazy(() => import('./components/AgentLayout'));
 const ExecutionsPage = React.lazy(() => import('./features/operate/ExecutionsPage'));
@@ -244,7 +243,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="workflows" element={<DefinitionsPage />} />
               <Route path="workflows/:definitionId" element={<DefinitionsPage />} />
               <Route path="endpoints" element={<LegacyEndpointCatalogRedirect />} />
-              <Route path="endpoints/:endpointId" element={<EndpointDetailPage />} />
               <Route path="entrypoints" element={<ChannelsHubPage />} />
               <Route path="entrypoints/:channelId" element={<ChannelDetailPage />} />
               <Route path="workspaces" element={<WorkspacesHubPage />} />

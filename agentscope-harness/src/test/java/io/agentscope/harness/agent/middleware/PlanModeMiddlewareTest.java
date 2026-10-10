@@ -22,14 +22,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.context.ContextRenderer;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.skill.runtime.SkillLoadTool;
@@ -47,6 +51,12 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 class PlanModeMiddlewareTest {
+    private static String renderPrompt(PlanModeMiddleware middleware, Agent agent, String base) {
+        RuntimeContext rc = RuntimeContext.empty();
+        String result = middleware.onSystemPrompt(agent, rc, base).block();
+        assertEquals(base, result);
+        return result + ContextRenderer.render(rc.get(WorkspaceContextMaterials.class).items());
+    }
 
     private static final Predicate<String> READ_ONLY = name -> name.equals("read_file");
 
@@ -147,15 +157,36 @@ class PlanModeMiddlewareTest {
         StubAgent agent = new StubAgent("tester", state);
         PlanModeMiddleware mw = new PlanModeMiddleware(manager, READ_ONLY);
 
-        String inactive = mw.onSystemPrompt(agent, null, "base").block();
+        String inactive = renderPrompt(mw, agent, "base");
         assertFalse(inactive.contains("PLAN MODE"));
 
         manager.enter(state);
-        String active = mw.onSystemPrompt(agent, null, "base").block();
+        String active = renderPrompt(mw, agent, "base");
         assertTrue(active.contains("PLAN MODE"));
         assertTrue(active.startsWith("base"));
         // Banner includes the plan file path
         assertTrue(active.contains("plans/PLAN.md"), "banner should include plan file path");
+    }
+
+    @Test
+    void modelBoundaryRefreshesModeWithinSameCall(@TempDir Path project, @TempDir Path workspace) {
+        PlanModeManager manager = manager(project, workspace);
+        AgentState state = AgentState.builder().build();
+        StubAgent agent = new StubAgent("tester", state);
+        var middleware = new PlanModeMiddleware(manager, READ_ONLY);
+        var rc = RuntimeContext.builder().agentState(state).build();
+        var input = new ModelCallInput(List.of(), List.of(), null, null);
+        middleware.onSystemPrompt(agent, rc, "base").block();
+        manager.enter(state);
+        middleware.onModelCall(agent, rc, input, ignored -> Flux.empty()).blockLast();
+        String active = ContextRenderer.render(rc.get(WorkspaceContextMaterials.class).items());
+        assertTrue(active.contains("PLAN MODE is active"));
+        manager.exit(state);
+        middleware.onModelCall(agent, rc, input, ignored -> Flux.empty()).blockLast();
+        String build = ContextRenderer.render(rc.get(WorkspaceContextMaterials.class).items());
+        assertFalse(build.contains("PLAN MODE is active"));
+        assertTrue(build.contains("switched from PLAN to BUILD"));
+        assertEquals(1, rc.get(WorkspaceContextMaterials.class).items().size());
     }
 
     @Test
@@ -170,7 +201,7 @@ class PlanModeMiddlewareTest {
         manager.exit(state);
         assertFalse(state.getPlanModeContext().isPlanActive());
 
-        String prompt = mw.onSystemPrompt(agent, null, "base").block();
+        String prompt = renderPrompt(mw, agent, "base");
         // BUILD mode should surface the plan file path
         assertTrue(prompt.contains("plans/PLAN.md"), "build mode should hint plan path");
         assertFalse(prompt.contains("PLAN MODE is active"), "should not show plan mode banner");
@@ -184,7 +215,7 @@ class PlanModeMiddlewareTest {
         PlanModeMiddleware mw = new PlanModeMiddleware(manager, READ_ONLY);
 
         // Never entered plan mode — no plan file recorded
-        String prompt = mw.onSystemPrompt(agent, null, "base").block();
+        String prompt = renderPrompt(mw, agent, "base");
         assertEquals("base", prompt);
     }
 
