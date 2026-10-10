@@ -65,7 +65,8 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
         WorkspaceContextMiddleware mw =
                 new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false, true);
 
-        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
         // Knowledge-related content is suppressed
         assertFalse(prompt.contains("## Domain Knowledge"));
@@ -89,7 +90,8 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
         WorkspaceContextMiddleware mw =
                 new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false, true);
 
-        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
         // The empty <domain_knowledge_context> element must not appear
         assertFalse(prompt.contains("<domain_knowledge_context>"));
@@ -105,7 +107,8 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
         WorkspaceContextMiddleware mw =
                 new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, false, true);
 
-        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
         // Should use the WITH_MEMORY notice variant (mentions MEMORY.md)
         assertTrue(prompt.contains("MEMORY.md"));
@@ -121,7 +124,8 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
         WorkspaceContextMiddleware mw =
                 new WorkspaceContextMiddleware(wm, "agent", null, 8000, true, true, true);
 
-        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
         // Memory is fully off (both tools + hooks disabled)
         assertFalse(prompt.contains("should not appear"));
@@ -142,7 +146,8 @@ class WorkspaceContextMiddlewareKnowledgePromptTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
         // Default: knowledge injection is intact
         assertTrue(prompt.contains("## Domain Knowledge"));
