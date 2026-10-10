@@ -54,6 +54,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `anonymousUserId(String)` | `userId` 为空时使用的兜底标识 | `"_default"` |
 | `addSharedPrefix(String)` | 额外的工作区相对路径前缀也路由到 KV（例如 `"prompts/"` / `"configs/"`） | 无 |
 | `workspaceIndex(WorkspaceIndex)` | 加速远端 ls/glob/grep 的 SQLite 索引 | 不加索引，走全量扫描 |
+| `shareMemoryAcrossAgents(boolean)` | 同一存储上的所有 agent 共享 `MEMORY.md` / `memory/`（键为 `users/<userId>/...`，不再是 `agents/<agentId>/users/<userId>/...`），详见 [Memory](/v2/zh/docs/harness/memory#多个-agent-共享记忆) | `false` |
 
 #### 内置路由规则
 

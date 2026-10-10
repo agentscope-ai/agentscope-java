@@ -55,6 +55,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `anonymousUserId(String)` | Fallback identifier when `userId` is absent | `"_default"` |
 | `addSharedPrefix(String)` | Route additional workspace-relative prefixes to the KV (e.g. `"prompts/"`, `"configs/"`) | none |
 | `workspaceIndex(WorkspaceIndex)` | SQLite index to accelerate remote ls/glob/grep | none (falls back to full store scan) |
+| `shareMemoryAcrossAgents(boolean)` | Share `MEMORY.md` / `memory/` with every agent on the same store (key `users/<userId>/...` instead of `agents/<agentId>/users/<userId>/...`); see [Memory](/v2/en/docs/harness/memory#sharing-memory-across-agents) | `false` |
 
 #### Built-in routing rules
 

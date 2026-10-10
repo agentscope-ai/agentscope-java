@@ -76,7 +76,9 @@ import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
+import io.agentscope.harness.agent.tool.MemorySaveTool;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.nio.file.Files;
@@ -1237,6 +1239,47 @@ class HarnessAgentTest {
                                     "/MEMORY.md")
                             != null);
         }
+    }
+
+    @Test
+    void remoteFilesystemSpec_shareMemoryAcrossAgents_sharesUserMemoryBetweenAgents()
+            throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");
+        InMemoryStore store = new InMemoryStore();
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
+        RuntimeContext bob = RuntimeContext.builder().userId("bob").build();
+
+        try (HarnessAgent planner = sharedMemoryAgent("planner", store);
+                HarnessAgent writer = sharedMemoryAgent("writer", store)) {
+            String saved =
+                    new MemorySaveTool(planner.getWorkspaceManager())
+                            .memorySave(alice, "- Alice prefers tea");
+            assertTrue(saved.startsWith("Saved"), saved);
+
+            WorkspaceManager writerWs = writer.getWorkspaceManager();
+            assertTrue(writerWs.readMemoryMd(alice).contains("Alice prefers tea"));
+            List<String> memoryFiles = writerWs.listMemoryFilePaths(alice);
+            assertTrue(
+                    memoryFiles.stream()
+                            .anyMatch(p -> p.matches("memory/\\d{4}-\\d{2}-\\d{2}\\.planner\\.md")),
+                    () -> "planner's ledger must be visible to writer: " + memoryFiles);
+            assertEquals("memory/2026-10-08.writer.md", writerWs.dailyLedgerPath("2026-10-08"));
+            try (WorkspaceManager aliceWs = writer.workspaceFor("alice", null)) {
+                assertEquals("memory/2026-10-08.writer.md", aliceWs.dailyLedgerPath("2026-10-08"));
+            }
+            assertFalse(writerWs.readMemoryMd(bob).contains("Alice prefers tea"));
+        }
+    }
+
+    private HarnessAgent sharedMemoryAgent(String name, InMemoryStore store) {
+        return HarnessAgent.builder()
+                .name(name)
+                .model(stubModel("ok"))
+                .workspace(workspace)
+                .filesystem(new RemoteFilesystemSpec(store).shareMemoryAcrossAgents(true))
+                .stateStore(mock(AgentStateStore.class))
+                .build();
     }
 
     private static Msg userText(String text) {

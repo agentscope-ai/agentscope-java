@@ -267,6 +267,34 @@ Memory 的记录边界为一行，Session 的记录边界为一条 entry，不�
 
 所有阈值都可以通过 `.memory(MemoryConfig.builder()...)` 调，绝大多数项目不需要碰。
 
+## 多个 agent 共享记忆
+
+默认每个 agent 的记忆各管各的：共享存储模式下，Alice 在 `planner` 这个 agent 里的记忆存在 `agents/planner/users/alice/...`，`writer` 看不到。想让同一个用户的所有 agent 共用一份长期记忆，就让这些 agent 用同一个存储，并都打开 `shareMemoryAcrossAgents(true)`：
+
+```java
+DistributedStore store = RedisDistributedStore.fromJedis(jedis);
+
+HarnessAgent planner = HarnessAgent.builder()
+    .name("planner")
+    .model(model)
+    .workspace(plannerWorkspace)
+    .distributedStore(store)
+    .filesystem(new RemoteFilesystemSpec().shareMemoryAcrossAgents(true))
+    .build();
+
+HarnessAgent writer = HarnessAgent.builder()
+    .name("writer")
+    .model(model)
+    .workspace(writerWorkspace)
+    .distributedStore(store)
+    .filesystem(new RemoteFilesystemSpec().shareMemoryAcrossAgents(true))
+    .build();
+```
+
+- 只共享 `MEMORY.md` 和 `memory/`，存储键变成 `users/<userId>/...`（仍由 `isolationScope` 决定：默认按用户，`SESSION` 则按会话）。`AGENTS.md`、skills、会话等其余内容仍按 agent 隔离。
+- 每个 agent 只往自己的日流水账 `memory/YYYY-MM-DD.<agentId>.md` 追加，几个 agent 同时 flush 不会互相覆盖。合并时会把所有 agent 的流水账合进共享的 `MEMORY.md`，`memory_search` 也能搜到全部流水账。
+- 该选项只作用于共享存储模式（`RemoteFilesystemSpec`）。本地模式下记忆就在工作区目录里，只有用同一个工作区的 agent 才会共享；沙箱模式下记忆留在各 agent 自己的沙箱里。
+
 ## 完全关掉
 
 如果你想自己接管记忆 / 自己写工具：

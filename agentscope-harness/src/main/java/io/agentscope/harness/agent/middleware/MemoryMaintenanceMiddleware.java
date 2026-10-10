@@ -225,8 +225,11 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                     fileName.endsWith(".md")
                             ? fileName.substring(0, fileName.length() - 3)
                             : fileName;
+            // Per-agent ledgers are named YYYY-MM-DD.<agentId>.md; the date is the prefix.
+            int dot = baseName.indexOf('.');
             try {
-                LocalDate fileDate = LocalDate.parse(baseName);
+                LocalDate fileDate =
+                        LocalDate.parse(dot >= 0 ? baseName.substring(0, dot) : baseName);
                 if (fileDate.isBefore(cutoff)) {
                     String fromPath = WorkspaceConstants.MEMORY_DIR + "/" + fileName;
                     String toPath = WorkspaceConstants.MEMORY_DIR + "/archive/" + fileName;

@@ -80,6 +80,7 @@ public class RemoteFilesystemSpec {
     private IsolationScope isolationScope = IsolationScope.USER;
     private WorkspaceIndex workspaceIndex = null;
     private boolean sharedLocalWorkspace = false;
+    private boolean shareMemoryAcrossAgents = false;
 
     /**
      * Creates a remote filesystem spec that defers store resolution to
@@ -208,6 +209,33 @@ public class RemoteFilesystemSpec {
     }
 
     /**
+     * When {@code true}, the long-term memory routes ({@code MEMORY.md} and {@code memory/}) drop
+     * the {@code agents/<agentId>} prefix from their store namespace, so every agent built on the
+     * same {@link BaseStore} with this option reads and writes one memory per isolation key. With
+     * the default {@link IsolationScope#USER} that is one memory per user, shared by all of the
+     * user's agents (store key {@code users/<userId>/memory/...} instead of
+     * {@code agents/<agentId>/users/<userId>/memory/...}).
+     *
+     * <p>Every other route ({@code AGENTS.md}, {@code skills/}, sessions, ...) stays per agent.
+     * Each agent appends to its own daily ledger ({@code memory/YYYY-MM-DD.<agentId>.md}) so
+     * concurrent flushes from different agents do not overwrite each other; consolidation merges
+     * the ledgers of all agents into the shared {@code MEMORY.md}.
+     *
+     * <p>Defaults to {@code false}: memory is isolated per agent.
+     *
+     * @param share whether agents on the same store share long-term memory
+     * @return this spec
+     */
+    public RemoteFilesystemSpec shareMemoryAcrossAgents(boolean share) {
+        this.shareMemoryAcrossAgents = share;
+        return this;
+    }
+
+    public boolean isShareMemoryAcrossAgents() {
+        return shareMemoryAcrossAgents;
+    }
+
+    /**
      * Builds the composite filesystem described by this spec.
      *
      * <ul>
@@ -251,12 +279,15 @@ public class RemoteFilesystemSpec {
         // exact-file routes (it does single-key exists/read), so the over-exposure is unreachable.
         LocalFilesystem workspaceTemplate = new LocalFilesystem(workspace, true, 10, null);
 
+        // Memory routes resolve without an agent id when shared, so their store namespace omits
+        // the agents/<agentId> prefix and every agent on the store sees the same memory (#3436).
+        String memoryAgentId = shareMemoryAcrossAgents ? null : effectiveAgentId;
+
         Map<String, AbstractFilesystem> routes = new LinkedHashMap<>();
         routes.put("AGENTS.md", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
-        routes.put("MEMORY.md", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
+        routes.put("MEMORY.md", exactFileOverlay("root", memoryAgentId, workspaceTemplate));
         routes.put("tools.json", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
-        routes.put(
-                "memory/", overlayRoute(workspace.resolve("memory"), "memory", effectiveAgentId));
+        routes.put("memory/", overlayRoute(workspace.resolve("memory"), "memory", memoryAgentId));
         routes.put(
                 "skills/", overlayRoute(workspace.resolve("skills"), "skills", effectiveAgentId));
         routes.put(
@@ -330,6 +361,10 @@ public class RemoteFilesystemSpec {
         return segment.isEmpty() ? "extra" : segment;
     }
 
+    /**
+     * Store namespace for a route. A {@code null} {@code agentId} (memory routes with {@link
+     * #shareMemoryAcrossAgents(boolean)}) omits the {@code agents/<agentId>} prefix.
+     */
     private NamespaceFactory storeNamespace(String agentId) {
         return rc -> {
             String uid = rc != null ? rc.getUserId() : null;
@@ -338,16 +373,26 @@ public class RemoteFilesystemSpec {
             return switch (isolationScope) {
                 case SESSION -> {
                     String effectiveSid = (sid != null && !sid.isBlank()) ? sid : "default";
-                    yield List.of("agents", agentId, "sessions", effectiveSid);
+                    yield agentScoped(agentId, "sessions", effectiveSid);
                 }
                 case USER -> {
                     String effectiveUid = (uid != null && !uid.isBlank()) ? uid : anonymousUserId;
-                    yield List.of("agents", agentId, "users", effectiveUid);
+                    yield agentScoped(agentId, "users", effectiveUid);
                 }
-                case AGENT -> List.of("agents", agentId, "shared");
+                case AGENT -> agentScoped(agentId, "shared");
                 case GLOBAL -> List.of("global");
             };
         };
+    }
+
+    private static List<String> agentScoped(String agentId, String... scopeKey) {
+        List<String> ns = new ArrayList<>();
+        if (agentId != null) {
+            ns.add("agents");
+            ns.add(agentId);
+        }
+        ns.addAll(List.of(scopeKey));
+        return ns;
     }
 
     private static String normalizePrefix(String prefix) {

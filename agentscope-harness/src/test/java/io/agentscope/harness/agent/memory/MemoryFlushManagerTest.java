@@ -29,9 +29,11 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -74,6 +76,49 @@ class MemoryFlushManagerTest {
         }
 
         assertTrue(model.inputs.isEmpty());
+    }
+
+    @Test
+    void flushMemories_appendsToTheLedgerOwnersDailyFile() throws Exception {
+        Model model =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .id("flush-response")
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("- Alice prefers tea")
+                                                                .build()))
+                                        .build());
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "fact-model";
+                    }
+                };
+        RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
+
+        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+            workspaceManager.setDailyLedgerOwner("planner");
+            new MemoryFlushManager(workspaceManager, model)
+                    .flushMemories(rc, List.of(message(MsgRole.USER, "I prefer tea")))
+                    .block();
+        }
+
+        Path memory = workspace.resolve("memory");
+        List<String> ledgers;
+        try (Stream<Path> files = Files.list(memory)) {
+            ledgers = files.map(p -> p.getFileName().toString()).toList();
+        }
+        assertEquals(1, ledgers.size(), ledgers::toString);
+        assertTrue(
+                ledgers.get(0).matches("\\d{4}-\\d{2}-\\d{2}\\.planner\\.md"), ledgers::toString);
+        assertTrue(Files.readString(memory.resolve(ledgers.get(0))).contains("Alice prefers tea"));
     }
 
     private static Msg message(MsgRole role, String text) {
