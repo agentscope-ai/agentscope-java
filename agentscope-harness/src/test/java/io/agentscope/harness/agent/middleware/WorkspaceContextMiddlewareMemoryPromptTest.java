@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,7 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Ensures Memory Recall / Persistence guidance and {@code <memory_context>} stay aligned with
+ * Ensures Memory Recall / Persistence guidance and memory reference material stay aligned with
  * {@code disableMemoryTools} / {@code disableMemoryHooks}.
  */
 class WorkspaceContextMiddlewareMemoryPromptTest {
@@ -69,10 +70,13 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
                         });
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
 
         assertNotNull(prompt);
         assertTrue(prompt.contains("agent persona"));
+        assertTrue(prompt.contains("## Runtime Environment"));
+        assertFalse(prompt.contains("AgentStateStore Context"));
         assertNotNull(readThread.get());
         assertNotSame(
                 callerThread, readThread.get(), "workspace context read ran on caller thread");
@@ -83,8 +87,9 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String promptWithoutBase = mw.onSystemPrompt(null, null, null).block();
-        String promptWithBase = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE").block();
+        String promptWithoutBase = WorkspacePromptTestSupport.render(mw, null, null);
+        String promptWithBase =
+                WorkspacePromptTestSupport.render(mw, RuntimeContext.empty(), "BASE");
 
         assertNotNull(promptWithoutBase);
         assertFalse(promptWithoutBase.startsWith("null"));
@@ -99,7 +104,8 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
         assertTrue(prompt.contains("## Domain Knowledge"));
         assertTrue(prompt.contains("## Memory Recall"));
@@ -107,8 +113,25 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         assertTrue(prompt.contains("## Memory Persistence"));
         assertTrue(prompt.contains("memory_save"));
         assertTrue(prompt.contains("automatically extracted"));
-        assertTrue(prompt.contains("<memory_context>"));
-        assertTrue(prompt.contains("cats prefer windowsills"));
+        assertFalse(prompt.contains("<memory_context>"));
+        assertFalse(prompt.contains("cats prefer windowsills"));
+        assertTrue(
+                rc.get(WorkspaceContextMaterials.class).items().stream()
+                        .anyMatch(item -> item.content().contains("cats prefer windowsills")));
+    }
+
+    @Test
+    void exhaustedWorkspaceBudgetDoesNotKeepMemory() throws Exception {
+        Files.writeString(workspace.resolve("AGENTS.md"), "required ".repeat(100));
+        Files.writeString(workspace.resolve("MEMORY.md"), "must not fit");
+        var wm = track(new WorkspaceManager(workspace));
+        var rc = RuntimeContext.empty();
+        new WorkspaceContextMiddleware(wm, 1).onSystemPrompt(null, rc, "BASE").block();
+        var materials = rc.get(WorkspaceContextMaterials.class);
+        assertTrue(
+                materials.items().stream()
+                        .filter(item -> item.kind().equals("memory"))
+                        .allMatch(item -> item.content().isEmpty()));
     }
 
     @Test
@@ -118,7 +141,8 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         WorkspaceContextMiddleware mw =
                 new WorkspaceContextMiddleware(wm, "agent", null, 8000, true, false);
 
-        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
         assertTrue(prompt.contains("## Domain Knowledge"));
         assertFalse(prompt.contains("## Memory Recall"));
@@ -127,8 +151,11 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         assertFalse(prompt.contains("memory_save"));
         assertTrue(prompt.contains("## Memory Persistence"));
         assertTrue(prompt.contains("automatically extracted"));
-        assertTrue(prompt.contains("<memory_context>"));
-        assertTrue(prompt.contains("prefer dark mode"));
+        assertFalse(prompt.contains("<memory_context>"));
+        assertFalse(prompt.contains("prefer dark mode"));
+        assertTrue(
+                rc.get(WorkspaceContextMaterials.class).items().stream()
+                        .anyMatch(item -> item.content().contains("prefer dark mode")));
     }
 
     @Test
@@ -138,12 +165,13 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         WorkspaceContextMiddleware mw =
                 new WorkspaceContextMiddleware(wm, "agent", null, 8000, false, true);
 
-        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
         assertTrue(prompt.contains("## Memory Recall"));
         assertTrue(prompt.contains("memory_save"));
         assertFalse(prompt.contains("automatically extracted"));
-        assertTrue(prompt.contains("<memory_context>"));
+        assertFalse(prompt.contains("<memory_context>"));
     }
 
     @Test
@@ -153,7 +181,8 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         WorkspaceContextMiddleware mw =
                 new WorkspaceContextMiddleware(wm, "agent", null, 8000, true, true);
 
-        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
         assertTrue(prompt.contains("## Domain Knowledge"));
         assertFalse(prompt.contains("## Memory Recall"));
@@ -163,7 +192,7 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         assertFalse(prompt.contains("automatically extracted"));
         assertFalse(prompt.contains("<memory_context>"));
         assertFalse(prompt.contains("should not appear in prompt"));
-        assertTrue(prompt.contains("<agents_context>"));
-        assertTrue(prompt.contains("<domain_knowledge_context>"));
+        assertTrue(prompt.contains("<working_principles "));
+        assertFalse(prompt.contains("<domain_knowledge_context>"));
     }
 }

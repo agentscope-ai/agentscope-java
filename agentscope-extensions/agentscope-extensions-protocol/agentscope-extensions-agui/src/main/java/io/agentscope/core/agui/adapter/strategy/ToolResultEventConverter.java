@@ -44,7 +44,9 @@ final class ToolResultEventConverter implements AgentEventConverter {
             context.beginToolResult(start.getToolCallId());
         } else {
             ToolResultEndEvent end = (ToolResultEndEvent) event;
-            if (end.getState() == ToolResultState.RUNNING) {
+            // SUSPENDED is the current encoding; RUNNING is the legacy one.
+            if (end.getState() == ToolResultState.SUSPENDED
+                    || end.getState() == ToolResultState.RUNNING) {
                 context.markToolCallSuspended(end.getToolCallId());
                 return;
             }

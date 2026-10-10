@@ -1048,6 +1048,24 @@ class AguiAgentAdapterV2Test {
 
         @Test
         void testSuspendedToolResultDoesNotEmitToolCallResult() {
+            ToolUseBlock toolUse = ToolUseBlock.builder().id("tool-1").name("lookup").build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "lookup"),
+                            new RequireExternalExecutionEvent("reply-tool", List.of(toolUse)),
+                            new AgentEndEvent("reply-tool"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_END,
+                            AguiEventType.RUN_FINISHED),
+                    types(events));
+        }
+
+        @Test
+        void testSuspendedToolResultEndEventStillDiscardsBufferedContent() {
             List<AguiEvent> events =
                     runReActEvents(
                             new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
@@ -1056,7 +1074,7 @@ class AguiAgentAdapterV2Test {
                             new ToolResultTextDeltaEvent(
                                     "reply-tool", "tool-1", "lookup", "needs external work"),
                             new ToolResultEndEvent(
-                                    "reply-tool", "tool-1", "lookup", ToolResultState.RUNNING));
+                                    "reply-tool", "tool-1", "lookup", ToolResultState.SUSPENDED));
 
             assertEquals(
                     List.of(AguiEventType.TOOL_CALL_START, AguiEventType.TOOL_CALL_END),
@@ -1078,11 +1096,11 @@ class AguiAgentAdapterV2Test {
                             ToolResultBlock.builder()
                                     .id("tool-1")
                                     .name("lookup")
-                                    .output(
-                                            TextBlock.builder()
-                                                    .text("Execute lookup externally")
-                                                    .build())
-                                    .metadata(Map.of(ToolResultBlock.METADATA_SUSPENDED, true))
+                                    .state(ToolResultState.SUSPENDED)
+                                    .metadata(
+                                            Map.of(
+                                                    ToolResultBlock.METADATA_SUSPEND_REASON,
+                                                    "Execute lookup externally"))
                                     .build());
 
             List<AguiEvent> events =
@@ -1091,14 +1109,8 @@ class AguiAgentAdapterV2Test {
                             new ToolCallStartEvent("reply-suspended", "tool-1", "lookup"),
                             new ToolCallDeltaEvent(
                                     "reply-suspended", "tool-1", "lookup", "{\"city\":\"Paris\"}"),
-                            new ToolResultStartEvent("reply-suspended", "tool-1", "lookup"),
-                            new ToolResultTextDeltaEvent(
-                                    "reply-suspended",
-                                    "tool-1",
-                                    "lookup",
-                                    "Execute lookup externally"),
-                            new ToolResultEndEvent(
-                                    "reply-suspended", "tool-1", "lookup", ToolResultState.RUNNING),
+                            new ToolCallEndEvent("reply-suspended", "tool-1", "lookup"),
+                            new RequireExternalExecutionEvent("reply-suspended", List.of(toolUse)),
                             new AgentResultEvent(suspendedResult),
                             new AgentEndEvent("reply-suspended"));
 
@@ -1144,11 +1156,7 @@ class AguiAgentAdapterV2Test {
                             ToolResultBlock.builder()
                                     .id("tool-1")
                                     .name("lookup")
-                                    .output(
-                                            TextBlock.builder()
-                                                    .text("Execute lookup on the client")
-                                                    .build())
-                                    .metadata(Map.of(ToolResultBlock.METADATA_SUSPENDED, true))
+                                    .state(ToolResultState.SUSPENDED)
                                     .build());
 
             List<AguiEvent> events =
@@ -1189,28 +1197,17 @@ class AguiAgentAdapterV2Test {
                                             ToolResultBlock.builder()
                                                     .id("tool-1")
                                                     .name("lookup")
-                                                    .output(
-                                                            TextBlock.builder()
-                                                                    .text("client lookup")
-                                                                    .build())
-                                                    .metadata(
-                                                            Map.of(
-                                                                    ToolResultBlock
-                                                                            .METADATA_SUSPENDED,
-                                                                    true))
+                                                    .state(ToolResultState.SUSPENDED)
                                                     .build(),
                                             ToolResultBlock.builder()
                                                     .id("tool-2")
                                                     .name("requestHumanApproval")
-                                                    .output(
-                                                            TextBlock.builder()
-                                                                    .text("Approve refund?")
-                                                                    .build())
+                                                    .state(ToolResultState.SUSPENDED)
                                                     .metadata(
                                                             Map.of(
                                                                     ToolResultBlock
-                                                                            .METADATA_SUSPENDED,
-                                                                    true))
+                                                                            .METADATA_SUSPEND_REASON,
+                                                                    "Approve refund?"))
                                                     .build()))
                             .generateReason(GenerateReason.TOOL_SUSPENDED)
                             .build();
@@ -1248,11 +1245,7 @@ class AguiAgentAdapterV2Test {
                             ToolResultBlock.builder()
                                     .id("")
                                     .name("lookup")
-                                    .output(
-                                            TextBlock.builder()
-                                                    .text("Execute lookup externally")
-                                                    .build())
-                                    .metadata(Map.of(ToolResultBlock.METADATA_SUSPENDED, true))
+                                    .state(ToolResultState.SUSPENDED)
                                     .build());
 
             List<AguiEvent> events =
@@ -1284,8 +1277,11 @@ class AguiAgentAdapterV2Test {
                             ToolResultBlock.builder()
                                     .id("tool-2")
                                     .name("search")
-                                    .output(TextBlock.builder().text("Search externally").build())
-                                    .metadata(Map.of(ToolResultBlock.METADATA_SUSPENDED, true))
+                                    .state(ToolResultState.SUSPENDED)
+                                    .metadata(
+                                            Map.of(
+                                                    ToolResultBlock.METADATA_SUSPEND_REASON,
+                                                    "Search externally"))
                                     .build());
 
             List<AguiEvent> events =
@@ -1299,11 +1295,8 @@ class AguiAgentAdapterV2Test {
                                     "reply-parallel", "tool-1", "lookup", "done"),
                             new ToolResultEndEvent("reply-parallel", "tool-1", "lookup", null),
                             new ToolCallEndEvent("reply-parallel", "tool-2", "search"),
-                            new ToolResultStartEvent("reply-parallel", "tool-2", "search"),
-                            new ToolResultTextDeltaEvent(
-                                    "reply-parallel", "tool-2", "search", "Search externally"),
-                            new ToolResultEndEvent(
-                                    "reply-parallel", "tool-2", "search", ToolResultState.RUNNING),
+                            new RequireExternalExecutionEvent(
+                                    "reply-parallel", List.of(suspendedTool)),
                             new AgentResultEvent(suspendedResult),
                             new AgentEndEvent("reply-parallel"));
 

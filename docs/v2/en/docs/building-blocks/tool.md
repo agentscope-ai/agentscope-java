@@ -122,6 +122,12 @@ Common `@Tool` attributes:
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
 
+#### Explicit result states
+
+Return `ToolResultBlock.success(text)` for a successful call and `ToolResultBlock.error(message)` for a failure. Both are supported directly and inside `Mono<ToolResultBlock>`. Do not infer failure from text prefixes. `ToolResultBlock.text(text)` defaults to `RUNNING`; use `withState(...)` to set a terminal state when preserving an existing JSON or multiline output.
+
+Built-in tools now return structured results. Direct callers should inspect `getState()` and read the text blocks from `getOutput()`; `Toolkit` registration is unchanged.
+
 ### Custom tools (extending `ToolBase`)
 
 When you need a custom permission policy, external execution, or a more complex schema, extend `ToolBase`:
@@ -230,12 +236,27 @@ Inside a `@Tool` method, any parameter **without `@ToolParam`** is treated as fr
 
 | Parameter type | Source |
 |----------------|--------|
-| `ToolEmitter` | Streaming emitter (no-op when none configured) |
+| `ToolEmitter` | Streaming emitter and tool call context (no-op when none configured) |
 | `Agent` | The current agent instance |
 | `AgentState` | The per-session state for the current call (via `RuntimeContext.getAgentState()`) |
 | `RuntimeContext` | The current per-call context |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()` (compatibility shim, deprecated) |
 | Any other user POJO type | `runtimeContext.get(ParamType.class)` — i.e. an object the caller registered via `RuntimeContext.builder().put(ParamType.class, value)` |
+
+An injected `ToolEmitter` exposes the current tool call ID, which can be used to correlate progress with frontend state or another shared store:
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    String toolCallId = emitter.getToolCallId();
+    if (toolCallId != null) {
+        progressByToolCall.put(toolCallId, "running");
+    }
+    return "done";
+}
+```
+
+`getToolCallId()` returns `null` when the emitter has no tool call context, such as a no-op or custom emitter.
 
 "User POJO" means: no `@ToolParam`, not primitive, not `ContentBlock` / `Msg`, not under `java.*` / `javax.*`. Every other parameter (those with `@ToolParam`, or that fall outside the above types) is read from the LLM-supplied JSON by name.
 

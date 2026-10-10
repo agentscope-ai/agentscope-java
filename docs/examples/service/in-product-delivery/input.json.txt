@@ -1,0 +1,25 @@
+{
+  "title": "Northstar opportunity OPP-104 proposal",
+  "input": {
+    "request": "Prepare proposal.md and open-questions.md from these sources. Cite source IDs and versions; mark unconfirmed requirements. Do not send to the customer.",
+    "opportunity_id": "OPP-104",
+    "revision": 1,
+    "sources": [
+      {
+        "id": "customer",
+        "version": "customer-v1",
+        "text": "80 stores; web support and read-only order lookup. SSO protocol, data region and peak concurrency are unknown."
+      },
+      {
+        "id": "catalog",
+        "version": "product-v1",
+        "text": "Supported: web knowledge answers and read-only order lookup with integration. Not supported: voice calls and offline mobile apps. No production accuracy guarantee."
+      },
+      {
+        "id": "delivery",
+        "version": "delivery-v1",
+        "text": "A four-week PoC is a proposal starting after access and sample data are ready, not a production launch promise."
+      }
+    ]
+  }
+}

@@ -38,7 +38,7 @@ en_link: /v2/en/integration/overview
 
 - [分布式存储总览](/v2/zh/integration/distributed/index) — `DistributedStore` API、能力矩阵、混合后端
 - [Redis](/v2/zh/integration/distributed/redis) — `AgentStateStore` + `BaseStore` + `SandboxSnapshotSpec` + `SandboxExecutionGuard`
-- [MySQL / JDBC](/v2/zh/integration/distributed/mysql) — `AgentStateStore` + `JdbcStore` + `JdbcSnapshotSpec` + `JdbcSandboxExecutionGuard`
+- [JDBC](/v2/zh/integration/distributed/jdbc) — `AgentStateStore` + `JdbcStore` + `JdbcSnapshotSpec` + `JdbcSandboxExecutionGuard`
 - [阿里云 OSS](/v2/zh/integration/distributed/oss) — `AgentStateStore` + `OssBaseStore` + `OssSnapshotSpec`
 
 ## 沙箱执行环境（Sandbox）

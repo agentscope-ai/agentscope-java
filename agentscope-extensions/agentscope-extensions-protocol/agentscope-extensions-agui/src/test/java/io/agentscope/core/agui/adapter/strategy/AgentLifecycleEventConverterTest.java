@@ -39,6 +39,10 @@ import org.junit.jupiter.api.Test;
 /** Unit tests for {@link AgentLifecycleEventConverter} edge branches. */
 class AgentLifecycleEventConverterTest {
 
+    // The suspended blocks below intentionally use the legacy wire shape (legacy
+    // agentscope_suspended metadata, no SUSPENDED state): they pin compatibility with
+    // messages serialized by older framework versions.
+
     @Test
     void suspendedResultWithoutMatchingToolUseDoesNotEmitInterrupt() {
         Msg result =
