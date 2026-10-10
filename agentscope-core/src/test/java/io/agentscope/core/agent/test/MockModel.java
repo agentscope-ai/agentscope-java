@@ -51,8 +51,10 @@ public class MockModel implements Model {
     private String errorMessage = "Mock error";
 
     /**
-     * Whether this mock reports {@code ToolChoice.Specific} support. Defaults to {@code true}
-     * since most models support it; only the few providers that don't override it to {@code false}.
+     * Whether this mock reports {@code ToolChoice.Specific} support. Defaults to {@code true},
+     * unlike the {@link Model} interface default of {@code false}; tests exercising the
+     * prompt-reminder fallback call {@link #setSupportsToolChoiceSpecific(boolean)} with
+     * {@code false}.
      */
     private boolean supportsToolChoiceSpecific = true;
 

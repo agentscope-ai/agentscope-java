@@ -78,7 +78,6 @@ class HarnessAgentIdTest {
                         .legacySessionHistory(true)
                         .model(stubModel())
                         .workspace(workspace)
-                        .legacySessionHistory(true)
                         .build();
         try {
             assertEquals("harness-x", custom.getAgentId(), "trimmed id should reach getAgentId()");
@@ -96,7 +95,6 @@ class HarnessAgentIdTest {
                         .legacySessionHistory(true)
                         .model(stubModel())
                         .workspace(workspace)
-                        .legacySessionHistory(true)
                         .build();
         try {
             assertDoesNotThrow(
