@@ -21,21 +21,25 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions</artifactId>
+        <artifactId>agentscope-extensions-nacos</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-extensions-nacos</artifactId>
-    <name>AgentScope Java - Nacos</name>
-    <description>Nacos integration for AgentScope Java</description>
-    <packaging>pom</packaging>
+    <artifactId>agentscope-extensions-nacos-mcp</artifactId>
+    <name>AgentScope Java - Nacos MCP</name>
+    <description>AgentScope Java - dynamic MCP server discovery and load balancing from the Nacos MCP registry</description>
 
-    <modules>
-        <module>agentscope-extensions-nacos-a2a</module>
-        <module>agentscope-extensions-nacos-mcp</module>
-        <module>agentscope-extensions-nacos-prompt</module>
-        <module>agentscope-extensions-nacos-skill</module>
-    </modules>
+    <dependencies>
+        <dependency>
+            <groupId>com.alibaba.nacos</groupId>
+            <artifactId>nacos-client</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+        </dependency>
+    </dependencies>
 
 </project>
