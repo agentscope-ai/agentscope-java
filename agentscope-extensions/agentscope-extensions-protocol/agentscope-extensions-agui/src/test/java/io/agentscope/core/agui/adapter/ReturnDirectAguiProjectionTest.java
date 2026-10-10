@@ -261,7 +261,7 @@ class ReturnDirectAguiProjectionTest {
         assertNotNull(seen, "the model must be called with the client's tool result");
         assertEquals(ToolResultState.ERROR, seen.getState());
         assertEquals(
-                "[ERROR] sandbox unavailable",
+                "sandbox unavailable",
                 seen.getOutput().stream()
                         .filter(TextBlock.class::isInstance)
                         .map(TextBlock.class::cast)
@@ -273,7 +273,7 @@ class ReturnDirectAguiProjectionTest {
     @Test
     void failedToolResultIsNotProjectedAsTheFinalAnswer() {
         // The shape `AguiMessageConverter` produces when a frontend tool reports a failure
-        // through the protocol's `error` field: an explicit ERROR state carrying the marker.
+        // through the protocol's `error` field: an explicit ERROR state carrying the reason.
         // A tool result in that state must not take the returnDirect short-circuit, or the
         // failure would be handed back to the caller as the agent's answer with no chance for
         // the model to react to it.

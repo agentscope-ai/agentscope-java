@@ -154,6 +154,20 @@ public class AguiMessage {
     }
 
     /**
+     * Creates a tool result message that reports a frontend tool failure.
+     *
+     * @param id The message ID
+     * @param toolCallId The ID of the tool call this is responding to
+     * @param content The tool result content as plain text
+     * @param error The error reported by the frontend tool
+     * @return A new tool message
+     */
+    public static AguiMessage toolMessage(
+            String id, String toolCallId, String content, String error) {
+        return new AguiMessage(id, "tool", wrapText(content), null, toolCallId, error);
+    }
+
+    /**
      * Creates a message with plain text content, supporting a custom role, tool calls, and
      * tool call ID. This is the full-parameter convenience factory for text-based messages.
      *
@@ -270,16 +284,6 @@ public class AguiMessage {
 
     /**
      * Get the error a frontend tool reported, per the AG-UI protocol's {@code error} field.
-     *
-     * <p>Only tool messages carry it. The inbound conversion reports the tool result as an error
-     * when this is present <em>and</em> not blank: a blank value is read as no error, so a client
-     * that sends an empty string cannot turn a success into a failure. A result that fails
-     * without any text therefore does not survive a round trip — the protocol has no way to say
-     * "failed, no reason".
-     *
-     * <p>Excluded from serialization when null, so a successful message keeps the wire shape it
-     * had before this field existed. Only this property is affected; the other fields of this
-     * class already serialize their nulls and are left as they are.
      *
      * @return The error message, or null if no error was reported
      */
