@@ -102,6 +102,7 @@ public class OllamaChatModel extends ChatModelBase {
                 defaultOptions != null ? defaultOptions : OllamaOptions.builder().build();
         this.formatter = formatter != null ? formatter : new OllamaChatFormatter();
         this.stream = stream;
+        setNativeStructuredOutput(true);
 
         HttpTransport transport =
                 httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();

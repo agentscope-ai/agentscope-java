@@ -39,6 +39,24 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## Structured output
+
+For `agent.call(messages, Output.class)`, the Ollama provider sends the output class's JSON Schema in the native `format` field. The returned message contains `_structured_output`, so `getStructuredData(Output.class)` reads the result while preserving the response text, thinking, and usage.
+
+```java
+public record ImageDescription(java.util.List<String> description, String name) {}
+
+try (ReActAgent agent = ReActAgent.builder()
+        .name("image-analysis")
+        .model(model) // Use a local vision model for image inputs.
+        .build()) {
+    Msg result = agent.call(messages, ImageDescription.class).block();
+    ImageDescription description = result.getStructuredData(ImageDescription.class);
+}
+```
+
+The same format works for text and image inputs, in streaming and non-streaming mode. With application tools registered, requests include both `tools` and `format`; the agent can execute tool calls before reading the final JSON response. Use a model that supports tool calling and a local Ollama version that supports this combination. If the native call raises an error, the agent falls back to the synthetic `generate_response` tool; avoid a JSON-only default `format` when relying on that fallback. See the [chat API](https://docs.ollama.com/api/chat) for both request fields. [Ollama Cloud currently does not support structured outputs](https://docs.ollama.com/capabilities/structured-outputs).
+
 ## Spring Boot
 
 Spring Boot applications can use the Ollama starter:
