@@ -228,6 +228,37 @@ class McpClientManager {
             String toolNamePrefix,
             Boolean propagateMetaOverride,
             Map<String, Boolean> toolPropagateMetaOverrides) {
+        return registerMcpClient(
+                mcpClientWrapper,
+                enableTools,
+                disableTools,
+                groupName,
+                presetParametersMapping,
+                toolNamePrefix,
+                propagateMetaOverride,
+                toolPropagateMetaOverrides,
+                null);
+    }
+
+    /**
+     * Same as {@link #registerMcpClient(McpClientWrapper, List, List, String, Map, String,
+     * Boolean, Map)} but additionally pins the read-only flag for selected tools.
+     *
+     * @param readOnlyTools remote tool names whose read-only flag is forced to {@code true}
+     *     regardless of the server's {@code annotations.readOnlyHint}; {@code null} or empty
+     *     leaves every tool's flag to the server. Unknown names are ignored, since the override
+     *     only ever restricts a tool further
+     */
+    Mono<Void> registerMcpClient(
+            McpClientWrapper mcpClientWrapper,
+            List<String> enableTools,
+            List<String> disableTools,
+            String groupName,
+            Map<String, Map<String, Object>> presetParametersMapping,
+            String toolNamePrefix,
+            Boolean propagateMetaOverride,
+            Map<String, Boolean> toolPropagateMetaOverrides,
+            List<String> readOnlyTools) {
         if (mcpClientWrapper == null) {
             return Mono.error(new IllegalArgumentException("MCP client wrapper cannot be null"));
         }
@@ -297,10 +328,15 @@ class McpClientManager {
                                             ? presetParametersMapping.get(mcpTool.name())
                                             : null;
 
+                            // Host-pinned read-only wins over an absent or false remote hint;
+                            // the override never loosens a tool the server already calls
+                            // read-only.
                             boolean readOnly =
-                                    mcpTool.annotations() != null
-                                            && Boolean.TRUE.equals(
-                                                    mcpTool.annotations().readOnlyHint());
+                                    (readOnlyTools != null
+                                                    && readOnlyTools.contains(mcpTool.name()))
+                                            || (mcpTool.annotations() != null
+                                                    && Boolean.TRUE.equals(
+                                                            mcpTool.annotations().readOnlyHint()));
 
                             McpTool agentTool =
                                     new McpTool(

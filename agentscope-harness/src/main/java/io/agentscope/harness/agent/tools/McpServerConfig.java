@@ -88,6 +88,25 @@ public class McpServerConfig {
     private List<String> disableTools;
     private boolean prefixToolNames;
     private boolean required;
+    private List<String> readOnlyTools;
+
+    /**
+     * Remote tool names pinned as read-only regardless of the server's
+     * {@code annotations.readOnlyHint}, which otherwise decides whether Plan Mode and the
+     * permission engine treat a call as mutating.
+     *
+     * <p>Not part of the {@code tools.json} contract: a user-declared server stays authoritative
+     * about its own tools. This exists for built-in registrations where the host, not the
+     * workspace, chose the endpoint and already knows the semantics of the tool it is importing.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public List<String> getReadOnlyTools() {
+        return readOnlyTools;
+    }
+
+    public void setReadOnlyTools(List<String> value) {
+        readOnlyTools = value;
+    }
 
     @com.fasterxml.jackson.annotation.JsonIgnore
     private java.util.function.Consumer<McpConnectionException> connectionFailureHandler;
