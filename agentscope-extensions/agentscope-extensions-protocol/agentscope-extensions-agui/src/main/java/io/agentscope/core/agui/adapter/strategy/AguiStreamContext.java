@@ -57,6 +57,7 @@ public class AguiStreamContext {
     private String currentTextMessageId;
     private String currentReasoningMessageId;
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
+
     private final Map<String, AguiEvent.Interrupt> pendingInterrupts = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
     private final TokenUsageAccumulator tokenUsageAccumulator = new TokenUsageAccumulator();
@@ -282,21 +283,36 @@ public class AguiStreamContext {
     }
 
     public void endToolResult(String replyId, String toolCallId) {
+        endToolResult(replyId, toolCallId, null);
+    }
+
+    /**
+     * Close out a tool call and emit its {@code TOOL_CALL_RESULT}.
+     *
+     * <p>The buffered deltas are the result: {@code ToolResult*DeltaEvent} carries the tool method's
+     * return value, while progress published through {@code ToolEmitter} travels as {@code
+     * ToolProgressEvent}, which this context does not buffer at all. {@code finalResultText} as
+     * reported by {@link io.agentscope.core.event.ToolResultEndEvent} is the fallback for a result
+     * that produced no bufferable delta, and that is also what separates a blank return value
+     * ({@code ""}) from a producer that reported none ({@code null}).
+     *
+     * @param replyId the enclosing reply id
+     * @param toolCallId the tool call being closed
+     * @param finalResultText the return value, used when nothing was buffered
+     */
+    public void endToolResult(String replyId, String toolCallId, String finalResultText) {
         if (!hasKnownToolCall(toolCallId, "ToolResultEndEvent")) {
             return;
         }
         if (startedToolCalls.contains(toolCallId) && endedToolCalls.add(toolCallId)) {
             emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
         }
-        StringBuilder content = toolResultContent.remove(toolCallId);
+        StringBuilder buffered = toolResultContent.remove(toolCallId);
+        String content =
+                buffered != null && !buffered.isEmpty() ? buffered.toString() : finalResultText;
         emit(
                 new AguiEvent.ToolCallResult(
-                        threadId,
-                        runId,
-                        toolCallId,
-                        content != null && !content.isEmpty() ? content.toString() : null,
-                        "tool",
-                        replyId + ":" + toolCallId));
+                        threadId, runId, toolCallId, content, "tool", replyId + ":" + toolCallId));
     }
 
     public void markToolCallSuspended(String toolCallId) {

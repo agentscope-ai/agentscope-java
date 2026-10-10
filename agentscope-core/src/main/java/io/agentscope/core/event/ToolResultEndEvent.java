@@ -27,6 +27,19 @@ public class ToolResultEndEvent extends AgentEvent {
     private final String toolCallName;
     private final ToolResultState state;
 
+    /**
+     * The tool method's return value as text, or {@code null} when the producer reports nothing.
+     *
+     * <p>{@code ""} is a reported value, not an absent one: it means the tool returned content with
+     * no text in it (an image, or a blank result), and a consumer must not fall back to its delta
+     * buffer for that case.
+     *
+     * <p>This deliberately does not ride on {@link AgentEvent#getMetadata()}, which passes the tool
+     * result's own metadata through unchanged — {@code ReActAgentNewLoopE2ETest} asserts that map
+     * exactly, so a framework key in it would be a contract change for unrelated consumers.
+     */
+    private final String finalResultText;
+
     @JsonCreator
     public ToolResultEndEvent(
             @JsonProperty("id") String id,
@@ -35,12 +48,14 @@ public class ToolResultEndEvent extends AgentEvent {
             @JsonProperty("toolCallId") String toolCallId,
             @JsonProperty("toolCallName") String toolCallName,
             @JsonProperty("state") ToolResultState state,
-            @JsonProperty("metadata") Map<String, Object> metadata) {
+            @JsonProperty("metadata") Map<String, Object> metadata,
+            @JsonProperty("finalResultText") String finalResultText) {
         super(id, createdAt);
         this.replyId = replyId;
         this.toolCallId = toolCallId;
         this.toolCallName = toolCallName;
         this.state = state;
+        this.finalResultText = finalResultText;
         this.withMetadata(metadata);
     }
 
@@ -54,15 +69,29 @@ public class ToolResultEndEvent extends AgentEvent {
             String toolCallId,
             String toolCallName,
             ToolResultState state) {
-        this(id, createdAt, replyId, toolCallId, toolCallName, state, null);
+        this(id, createdAt, replyId, toolCallId, toolCallName, state, null, null);
     }
 
     public ToolResultEndEvent(
             String replyId, String toolCallId, String toolCallName, ToolResultState state) {
+        this(replyId, toolCallId, toolCallName, state, null);
+    }
+
+    /**
+     * As {@link #ToolResultEndEvent(String, String, String, ToolResultState)} additionally reporting
+     * the tool method's return value.
+     */
+    public ToolResultEndEvent(
+            String replyId,
+            String toolCallId,
+            String toolCallName,
+            ToolResultState state,
+            String finalResultText) {
         this.replyId = replyId;
         this.toolCallId = toolCallId;
         this.toolCallName = toolCallName;
         this.state = state;
+        this.finalResultText = finalResultText;
     }
 
     @Override
@@ -84,5 +113,15 @@ public class ToolResultEndEvent extends AgentEvent {
 
     public ToolResultState getState() {
         return state;
+    }
+
+    /**
+     * The tool method's return value as text.
+     *
+     * @return the return value (possibly empty), or {@code null} when the producer reports nothing,
+     *     which leaves consumers falling back to the delta stream
+     */
+    public String getFinalResultText() {
+        return finalResultText;
     }
 }

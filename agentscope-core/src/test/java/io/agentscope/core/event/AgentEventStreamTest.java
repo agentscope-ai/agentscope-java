@@ -16,7 +16,9 @@
 package io.agentscope.core.event;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -162,6 +164,31 @@ class AgentEventStreamTest {
         }
 
         @Test
+        @DisplayName("ToolProgressEvent round-trips its type, content and metadata")
+        void toolProgressEventRoundTrip() throws Exception {
+            Map<String, Object> metadata = Map.of("chunk", true);
+            ToolProgressEvent original =
+                    new ToolProgressEvent(
+                            "reply-1",
+                            "tc-1",
+                            "search",
+                            TextBlock.builder().text("scanning 3 dirs").build());
+            original.withMetadata(metadata);
+
+            String json = mapper.writeValueAsString(original);
+            assertTrue(json.contains("TOOL_PROGRESS"), json);
+
+            AgentEvent deserialized = mapper.readValue(json, AgentEvent.class);
+            assertTrue(
+                    deserialized instanceof ToolProgressEvent,
+                    "the subtype registry has to resolve progress events");
+            ToolProgressEvent back = (ToolProgressEvent) deserialized;
+            assertEquals("tc-1", back.getToolCallId());
+            assertEquals("scanning 3 dirs", back.getText());
+            assertEquals(metadata, back.getMetadata());
+        }
+
+        @Test
         @DisplayName("ToolResultDataDeltaEvent serializes and deserializes metadata")
         void toolResultDataDeltaEventMetadataRoundTrip() throws Exception {
             Map<String, Object> metadata = Map.of("binary", true);
@@ -189,6 +216,61 @@ class AgentEventStreamTest {
             assertTrue(
                     deserialized.getMetadata() == null || deserialized.getMetadata().isEmpty(),
                     "ToolResultStartEvent should not carry result metadata before execution");
+        }
+
+        @Test
+        @DisplayName("finalResultText survives the polymorphic round trip")
+        void finalResultTextSurvivesRoundTrip() throws Exception {
+            ToolResultEndEvent original =
+                    new ToolResultEndEvent(
+                            "reply-1",
+                            "tc-1",
+                            "search",
+                            ToolResultState.SUCCESS,
+                            "fingerprint enrolled");
+
+            String json = mapper.writeValueAsString(original);
+            assertTrue(
+                    json.contains("\"finalResultText\":\"fingerprint enrolled\""),
+                    "the new property has to be on the wire, not just in the object: " + json);
+
+            ToolResultEndEvent back =
+                    assertInstanceOf(
+                            ToolResultEndEvent.class, mapper.readValue(json, AgentEvent.class));
+            assertEquals("fingerprint enrolled", back.getFinalResultText());
+        }
+
+        @Test
+        @DisplayName("an empty return value decodes as empty, not as absent")
+        void emptyFinalResultTextIsNotLossy() throws Exception {
+            // "" carries meaning: the tool did return content, it just holds no text. Read back as
+            // null it would send consumers falling back to the delta buffer, re-opening the leak.
+            ToolResultEndEvent original =
+                    new ToolResultEndEvent(
+                            "reply-1", "tc-1", "search", ToolResultState.SUCCESS, "");
+
+            ToolResultEndEvent back =
+                    assertInstanceOf(
+                            ToolResultEndEvent.class,
+                            mapper.readValue(
+                                    mapper.writeValueAsString(original), AgentEvent.class));
+            assertEquals("", back.getFinalResultText());
+        }
+
+        @Test
+        @DisplayName("a payload written before the field existed decodes to null")
+        void absentFinalResultTextDecodesToNull() throws Exception {
+            // Sessions persisted by an older build are reloaded through this same creator.
+            ToolResultEndEvent back =
+                    assertInstanceOf(
+                            ToolResultEndEvent.class,
+                            mapper.readValue(
+                                    "{\"type\":\"TOOL_RESULT_END\",\"replyId\":\"r\","
+                                            + "\"toolCallId\":\"t\",\"toolCallName\":\"n\","
+                                            + "\"state\":\"success\"}",
+                                    AgentEvent.class));
+            assertEquals("r", back.getReplyId());
+            assertNull(back.getFinalResultText());
         }
     }
 

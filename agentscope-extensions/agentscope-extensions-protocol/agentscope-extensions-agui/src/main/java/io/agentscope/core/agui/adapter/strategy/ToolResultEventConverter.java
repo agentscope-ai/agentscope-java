@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.adapter.strategy;
 
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
@@ -29,6 +30,7 @@ final class ToolResultEventConverter implements AgentEventConverter {
     public Set<Class<? extends AgentEvent>> eventTypes() {
         return Set.of(
                 ToolResultStartEvent.class,
+                ToolProgressEvent.class,
                 ToolResultTextDeltaEvent.class,
                 ToolResultDataDeltaEvent.class,
                 ToolResultEndEvent.class);
@@ -36,6 +38,13 @@ final class ToolResultEventConverter implements AgentEventConverter {
 
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
+        if (event instanceof ToolProgressEvent) {
+            // AG-UI has no channel for tool progress, and the result it renders comes from the
+            // deltas plus the authoritative return value. Buffering progress here is precisely the
+            // leak the result events now avoid by carrying their own type, so a progress chunk is
+            // deliberately dropped rather than passed through as a raw event.
+            return;
+        }
         if (event instanceof ToolResultTextDeltaEvent textDelta) {
             context.appendToolResultText(textDelta.getToolCallId(), textDelta.getDelta());
         } else if (event instanceof ToolResultDataDeltaEvent dataDelta) {
@@ -50,7 +59,7 @@ final class ToolResultEventConverter implements AgentEventConverter {
                 context.markToolCallSuspended(end.getToolCallId());
                 return;
             }
-            context.endToolResult(end.getReplyId(), end.getToolCallId());
+            context.endToolResult(end.getReplyId(), end.getToolCallId(), end.getFinalResultText());
         }
     }
 }

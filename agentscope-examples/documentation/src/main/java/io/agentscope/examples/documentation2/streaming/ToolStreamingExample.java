@@ -17,11 +17,12 @@ package io.agentscope.examples.documentation2.streaming;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.ToolResultDataDeltaEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.tool.Tool;
@@ -31,8 +32,7 @@ import io.agentscope.core.tool.Toolkit;
 
 /**
  * ToolStreamingExample - Demonstrates how tools emit streaming progress via {@link ToolEmitter}
- * and how the caller receives them as {@link ToolResultTextDeltaEvent} / {@link
- * ToolResultDataDeltaEvent} through {@code streamEvents()}.
+ * and how the caller receives them as {@link ToolProgressEvent} through {@code streamEvents()}.
  *
  * <p><b>How tool streaming works:</b>
  *
@@ -41,19 +41,19 @@ import io.agentscope.core.tool.Toolkit;
  *       the framework auto-injects it).
  *   <li>During execution, the tool calls {@code emitter.emit(ToolResultBlock.text(...))} to push
  *       intermediate progress chunks.
- *   <li>The framework routes each chunk to the event stream as a {@link ToolResultTextDeltaEvent}
- *       or {@link ToolResultDataDeltaEvent}.
+ *   <li>The framework routes each chunk to the event stream as a {@link ToolProgressEvent}.
  *   <li>The tool's final {@code return} value becomes the tool result sent to the LLM — emitted
- *       chunks are NOT sent to the LLM (they are for the UI only).
+ *       chunks are NOT sent to the LLM (they are for the UI only), and they arrive separately as
+ *       {@link ToolResultTextDeltaEvent}.
  * </ol>
  *
  * <p><b>Event sequence for a streaming tool call:</b>
  * <pre>
  *   TOOL_RESULT_START        (tool execution begins)
- *     TOOL_RESULT_TEXT_DELTA  ("Step 1: Fetching data...")
- *     TOOL_RESULT_TEXT_DELTA  ("Step 2: Processing...")
- *     TOOL_RESULT_TEXT_DELTA  ("Step 3: Formatting results...")
- *   TOOL_RESULT_END          (state=SUCCESS, final result sent to LLM)
+ *     TOOL_PROGRESS           ("Step 1: Fetching data...")   — UI only, emitted by the tool
+ *     TOOL_PROGRESS           ("Step 2: Processing...")
+ *     TOOL_RESULT_TEXT_DELTA  ("Quantum computing...")       — the return value, sent to the LLM
+ *   TOOL_RESULT_END          (state=SUCCESS, result repeated on finalResultText)
  * </pre>
  *
  * <p><b>Run:</b>
@@ -101,17 +101,23 @@ public class ToolStreamingExample {
             System.out.printf(
                     "%n[Tool Started] %s (id=%s)%n", e.getToolCallName(), e.getToolCallId());
 
-        } else if (event instanceof ToolResultTextDeltaEvent e) {
-            // Streaming text chunks from the tool — display them incrementally.
-            // These come from ToolEmitter.emit() calls inside the tool method.
-            System.out.println("  ▸ " + e.getDelta());
+        } else if (event instanceof ToolProgressEvent e) {
+            // Progress chunks from the tool's emitter.emit() calls — UI only, never the result.
+            if (e.getContent() instanceof TextBlock text) {
+                System.out.println("  ▸ " + text.getText());
+            } else {
+                System.out.printf(
+                        "  ▸ [data block: %s]%n", e.getContent().getClass().getSimpleName());
+            }
 
-        } else if (event instanceof ToolResultDataDeltaEvent e) {
-            // Non-text data blocks (images, binary, structured data).
-            System.out.printf("  ▸ [data block: %s]%n", e.getData().getClass().getSimpleName());
+        } else if (event instanceof ToolResultTextDeltaEvent e) {
+            // The tool's return value, which is also what the model received.
+            System.out.println("  = " + e.getDelta());
 
         } else if (event instanceof ToolResultEndEvent e) {
-            System.out.printf("[Tool Finished] id=%s  state=%s%n", e.getToolCallId(), e.getState());
+            System.out.printf(
+                    "[Tool Finished] id=%s  state=%s  result=%s%n",
+                    e.getToolCallId(), e.getState(), e.getFinalResultText());
         }
     }
 

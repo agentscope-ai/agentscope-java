@@ -61,6 +61,7 @@ import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
@@ -69,11 +70,13 @@ import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
@@ -756,6 +759,70 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testProgressChunksBecomeNeitherTheResultNorRawEvents() {
+            // ToolEmitter progress travels as ToolProgressEvent now. AG-UI has no channel for it,
+            // so
+            // the converter drops it: TOOL_CALL_RESULT is what a client stores as the tool message,
+            // and a progress event that reached the registry fallback would instead surface as one
+            // RAW event per chunk.
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-emitter", "tool-1", "enroll"),
+                            new ToolCallEndEvent("reply-emitter", "tool-1", "enroll"),
+                            new ToolResultStartEvent("reply-emitter", "tool-1", "enroll"),
+                            progress("reply-emitter", "tool-1", "enroll", "press once"),
+                            progress("reply-emitter", "tool-1", "enroll", "press again"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-emitter", "tool-1", "enroll", "fingerprint enrolled"),
+                            new ToolResultEndEvent(
+                                    "reply-emitter",
+                                    "tool-1",
+                                    "enroll",
+                                    null,
+                                    "fingerprint enrolled"));
+
+            assertEquals(
+                    "fingerprint enrolled",
+                    firstToolCallResult(events).content(),
+                    "the result delta is what the client stores as the tool message");
+            assertTrue(
+                    events.stream().noneMatch(AguiEvent.Raw.class::isInstance),
+                    "progress is handled by the converter rather than passed through as a raw"
+                            + " event");
+        }
+
+        @Test
+        void testToolResultWithoutFinalTextMetadataStillUsesDeltaBuffer() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-legacy", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-legacy", "tool-1", "lookup"),
+                            new ToolResultStartEvent("reply-legacy", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-legacy", "tool-1", "lookup", "partial"),
+                            new ToolResultEndEvent("reply-legacy", "tool-1", "lookup", null));
+
+            assertEquals(
+                    "partial",
+                    firstToolCallResult(events).content(),
+                    "producers that do not report a return value keep the previous behaviour");
+        }
+
+        private static AguiEvent.ToolCallResult firstToolCallResult(List<AguiEvent> events) {
+            return events.stream()
+                    .filter(AguiEvent.ToolCallResult.class::isInstance)
+                    .map(AguiEvent.ToolCallResult.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+        }
+
+        private static ToolProgressEvent progress(
+                String replyId, String toolCallId, String toolCallName, String text) {
+            return new ToolProgressEvent(
+                    replyId, toolCallId, toolCallName, TextBlock.builder().text(text).build());
+        }
+
+        @Test
         void testParallelToolResultsUsePerToolMessageIds() {
             List<String> messageIds =
                     runReActEvents(
@@ -822,6 +889,103 @@ class AguiAgentAdapterV2Test {
                             .findFirst()
                             .orElseThrow();
             assertEquals("hel\nstructuredlo", result.content());
+        }
+
+        @Test
+        void testMultimodalResultKeepsEveryPartInArrivalOrder() {
+            // A producer emits each block of the return value as its own delta, so the buffer holds
+            // the whole result in the order the parts arrived, ahead of the end event's joined
+            // text.
+            ImageBlock image =
+                    ImageBlock.builder()
+                            .source(URLSource.builder().url("https://example.com/cat.png").build())
+                            .build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolResultStartEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolResultDataDeltaEvent("reply-tool", "tool-1", "lookup", image),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-tool", "tool-1", "lookup", "3 rows found"),
+                            new ToolResultEndEvent(
+                                    "reply-tool", "tool-1", "lookup", null, "3 rows found"));
+
+            String content = firstToolCallResult(events).content();
+            int imageAt = content.indexOf("https://example.com/cat.png");
+            int textAt = content.indexOf("3 rows found");
+            assertTrue(imageAt >= 0, "the image part is kept: " + content);
+            assertTrue(textAt >= 0, "the text part is kept: " + content);
+            assertTrue(
+                    imageAt < textAt,
+                    "the buffered deltas win, so the parts stay in arrival order: " + content);
+        }
+
+        @Test
+        void testResultTextFallsBackToTheEndEventWhenNothingWasBuffered() {
+            // A producer that reports no deltas still has to surface its return value, and "" would
+            // read as an empty result rather than as nothing reported.
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-empty", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-empty", "tool-1", "lookup"),
+                            new ToolResultStartEvent("reply-empty", "tool-1", "lookup"),
+                            new ToolResultEndEvent(
+                                    "reply-empty",
+                                    "tool-1",
+                                    "lookup",
+                                    null,
+                                    "reported on the end event"));
+
+            assertEquals(
+                    "reported on the end event",
+                    firstToolCallResult(events).content(),
+                    "the end event is the fallback when the delta stream carried nothing");
+        }
+
+        @Test
+        void testImageOnlyResultDoesNotFallBackToProgressText() {
+            // A tool that streams progress and returns only an image has no text in its return
+            // value, so the field is "" — reported, but empty. Reading that as "nothing reported"
+            // used to put the progress chunks back into TOOL_CALL_RESULT.
+            ImageBlock image =
+                    ImageBlock.builder()
+                            .source(
+                                    URLSource.builder()
+                                            .url("https://example.com/chart.png")
+                                            .build())
+                            .build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-image", "tool-1", "render"),
+                            new ToolCallEndEvent("reply-image", "tool-1", "render"),
+                            new ToolResultStartEvent("reply-image", "tool-1", "render"),
+                            progress("reply-image", "tool-1", "render", "drawing axes"),
+                            new ToolResultDataDeltaEvent("reply-image", "tool-1", "render", image),
+                            new ToolResultEndEvent("reply-image", "tool-1", "render", null, ""));
+
+            String content = firstToolCallResult(events).content();
+            assertFalse(
+                    content.contains("drawing axes"), "progress text must not leak: " + content);
+            assertTrue(
+                    content.contains("https://example.com/chart.png"),
+                    "the image is the result: " + content);
+        }
+
+        @Test
+        void testBlankReturnValueYieldsEmptyResultNotProgressText() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-blank", "tool-1", "cleanup"),
+                            new ToolCallEndEvent("reply-blank", "tool-1", "cleanup"),
+                            new ToolResultStartEvent("reply-blank", "tool-1", "cleanup"),
+                            progress("reply-blank", "tool-1", "cleanup", "removing 3 files"),
+                            new ToolResultEndEvent("reply-blank", "tool-1", "cleanup", null, ""));
+
+            assertEquals(
+                    "",
+                    firstToolCallResult(events).content(),
+                    "an empty return value reads as empty, not as what the tool streamed");
         }
 
         @Test
