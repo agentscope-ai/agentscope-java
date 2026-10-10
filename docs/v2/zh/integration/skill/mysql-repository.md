@@ -1,5 +1,10 @@
-# MySQL 技能仓库
+---
+title: MySQL 技能仓库
+en_link: /v2/en/integration/skill/mysql-repository
+---
 
+
+> **已废弃**：请迁移到[统一 JDBC 模块](/v2/zh/integration/distributed/jdbc)的 `JdbcAgentSkillRepository`——一套实现覆盖 MySQL、PostgreSQL、H2、SQLite 及后续方言。本模块建的表原样可用，早于 metadata_json 的旧表需先补一列；迁移要点见[迁移指南](/v2/zh/integration/distributed/jdbc#从历史模块迁移)。
 `agentscope-extensions-skill-mysql-repository` 把技能存到 MySQL，提供完整的 CRUD：在控制台/业务系统里编辑保存，Agent 这边立即可读。
 
 ## 何时使用
@@ -22,6 +27,7 @@
 
 ```java
 import com.zaxxer.hikari.HikariDataSource;
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.skill.repository.mysql.MysqlSkillRepository;
 
 HikariDataSource ds = new HikariDataSource();
@@ -32,8 +38,11 @@ ds.setPassword("***");
 // 第二参数 createIfNotExist=true：自动建库建表
 MysqlSkillRepository repo = new MysqlSkillRepository(ds, true);
 
-Toolkit toolkit = new Toolkit();
-repo.getAllSkills().forEach(toolkit::registerSkill);
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model(model)
+    .skillRepository(repo)
+    .build();
 ```
 
 ## 表结构

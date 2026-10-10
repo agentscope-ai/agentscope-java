@@ -1,6 +1,7 @@
 ---
-title: "快速开始"
-description: "快速上手 AgentScope Java 2.0 —— 用 HarnessAgent 跑通第一个长期运行的智能体"
+title: 快速开始
+description: 从问答、流式输出和多轮对话开始，按需要引入后台任务与会话恢复。
+en_link: /v2/en/docs/quickstart
 ---
 
 ## 安装
@@ -19,11 +20,15 @@ AgentScope Java 需要 JDK 17 及以上版本，构建工具推荐 Maven 3.9+。
 </dependency>
 ```
 
-:::{note}
-把 `${agentscope.version}` 替换为最新版本号即可，最新版本请参考 [Release Notes](others/release-notes.md)。
-:::
 
-如果只需要裸 `ReActAgent` 的框架 API（不需要工作区 / 持久化 / 子 agent / 沙箱），`agentscope-core` 足够提供 agent 本身。具体模型提供商是独立的：特定模型提供商的 Chat Model 与 formatter 位于独立的 `agentscope-extensions-model-*` 模型扩展模块中。`ReActAgent` 与 `HarnessAgent` 的区别详见 [Harness 架构](./harness/architecture.md)。
+<Note>
+
+把 `${agentscope.version}` 替换为最新版本号即可，最新版本请参考 [Release Notes](/v2/zh/docs/others/release-notes)。
+
+</Note>
+
+
+如果只需要 `ReActAgent` 的推理、工具和上下文 API，并自行组合应用所需能力，`agentscope-core` 足够提供 agent 本身。具体模型提供商是独立的：特定模型提供商的 Chat Model 与 formatter 位于独立的 `agentscope-extensions-model-*` 模型扩展模块中。`ReActAgent` 与 `HarnessAgent` 的区别详见 [Harness 架构](/v2/zh/docs/harness/architecture)。
 
 下面的 quickstart 通过 `.model("dashscope:qwen-plus")` 使用 DashScope，因此还需要引入对应模型扩展：
 
@@ -39,129 +44,111 @@ MCP 集成需要官方 MCP SDK，参考 `agentscope-examples/documentation/pom.x
 
 ## 第一个智能体
 
-下面的例子用 `HarnessAgent` 跑通三件事：**工作区驱动的人格**（`AGENTS.md`）、**会话自动持久化**（相同 `sessionId` 的第二轮记得第一轮）、**对话压缩**（超阈值后自动压缩 + 长期事实落到 `MEMORY.md`）。模型 id 直接以字符串形式传给 `.model(...)`，由 `ModelRegistry` 解析并自动读取对应环境变量。
+推荐在应用启动时定义共享 Builder，每次请求用 `builder.build()` 创建新的 Agent，执行完成后关闭。Builder 保存通用配置，请求身份放在独立的 `RuntimeContext` 中；新建实例不会改变会话身份。下面用两个实例完成同一会话的两轮问答。运行前设置模型凭据：
+
+```bash
+export DASHSCOPE_API_KEY=your_api_key
+```
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import java.nio.file.Paths;
+import java.nio.file.Path;
 
 public class FirstAgent {
+    // 应用启动时配置一次，之后只调用 build()。
+    private static final HarnessAgent.Builder AGENT_BUILDER = HarnessAgent.builder()
+            .name("note-taker")
+            .agentId("note-taker")
+            .sysPrompt("你是一个帮助用户做笔记的助手。")
+            .model("dashscope:qwen-plus")
+            .workspace(Path.of(".agentscope/workspace"));
+
     public static void main(String[] args) {
-        HarnessAgent agent = HarnessAgent.builder()
-                .name("note-taker")
-                .sysPrompt("你是一个帮助用户做笔记的助手。")
-                // 字符串形式由 ModelRegistry 解析 —— 自动读取 DASHSCOPE_API_KEY；
-                // 切换其他厂商时改用 "openai:gpt-5.5"、"anthropic:claude-sonnet-4-5"、
-                // "gemini:gemini-2.0-flash" 或 "ollama:llama3"。
-                .model("dashscope:qwen-plus")
-                .workspace(Paths.get(".agentscope/workspace"))
-                .compaction(CompactionConfig.builder()
-                        .triggerMessages(30)
-                        .keepMessages(10)
-                        .build())
-                .build();
+        try (HarnessAgent agent = AGENT_BUILDER.build()) {
+            RuntimeContext ctx = RuntimeContext.builder()
+                    .userId("alice").sessionId("demo-session").build();
+            agent.call(new UserMessage("我叫天宇，今天准备一个技术分享。"), ctx).block();
+        }
 
-        RuntimeContext ctx = RuntimeContext.builder()
-                .sessionId("demo-session")
-                .userId("alice")
-                .build();
-
-        // 第一轮：自我介绍 + 当天的事
-        agent.call(new UserMessage("我叫天宇，今天准备一个关于 ReAct 的技术分享。"), ctx).block();
-
-        // 第二轮：同 sessionId，自动恢复上一轮状态后回答
-        agent.call(new UserMessage("我叫什么？我今天要干什么？"), ctx).block();
+        // 下一次请求使用新实例；相同会话身份从持久日志恢复上下文。
+        try (HarnessAgent agent = AGENT_BUILDER.build()) {
+            RuntimeContext ctx = RuntimeContext.builder()
+                    .userId("alice").sessionId("demo-session").build();
+            Msg reply = agent.call(new UserMessage("我叫什么？今天要干什么？"), ctx).block();
+            System.out.println(reply.getTextContent());
+        }
     }
 }
 ```
 
-跑完之后你会看到两棵目录树——**工作区**和**状态存储**：
+`call` 返回 `Mono<Msg>`；这里用 `block()` 启动执行并等待回复，适合命令行示例。一次调用可以多次推理和执行工具。相同 `userId`、`sessionId` 的下一次调用会使用同一段会话的上下文。
 
-```
-.agentscope/workspace/                          ← 工作区（agent 内容）
-├── AGENTS.md                                   ← 写一份就是 agent 的人格（不写也能跑）
-└── agents/note-taker/
-    └── sessions/                               ← 永不压缩的原始对话日志
+默认情况下，Harness 会自动保存执行日志和用于继续对话的状态快照（checkpoint）。重启时保留相同的 `agentId`、用户、会话身份和存储配置，即可继续对话；这不需要额外创建 `AgentSession`。
 
-~/.agentscope/state/note-taker/                 ← 状态存储（在工作区外面）
-└── alice/demo-session/                         ← AgentState 自动写回 / 加载
-    └── agent_state.json
-```
-
-`AgentState` 默认存储在**工作区之外**的 `~/.agentscope/state/<agentId>/` 下——因为状态是恢复工作区本身的前提条件（例如沙箱清空后需要先有状态才能重建工作区），不能和工作区数据耦合。进程重启、`sessionId` 不变，第二段对话依然记得第一段。
-
-:::{warning}
-默认的 `JsonFileAgentStateStore` 是基于本地文件的实现，适用于开发和单机部署。生产集群环境请使用分布式实现，如 `RedisAgentStateStore`（由 `agentscope-extensions-redis` 提供），或自行实现 `AgentStateStore` 接口。详见[上线指南](./others/going-to-production.md)。
-:::
-
-多聊几轮触发压缩后，提炼出来的事实会先落到 `workspace/memory/YYYY-MM-DD.md`，再被周期性合并到 `MEMORY.md`，并在下一轮推理时自动注入 system prompt。
+这个本地示例的原生日志位于 Workspace Filesystem 为当前身份解析的根目录下 `.agentscope-runtime/`。配置隔离目录或分布式 Filesystem 后，实际位置跟随对应根目录或 namespace。需要查看记录、更换后端时，再查阅[日志存储参考](/v2/zh/docs/harness/session-log#存储位置与后端配置)。
 
 ### 流式查看推理与工具调用
 
-把 `call(...)` 换成 `streamEvents(...)` 就能实时拿到文本片段、工具调用等中间事件，适合 Web / TUI 渲染：
+需要边生成边显示时，用 `streamEvents` 发起这次请求。把下面的 import 加到文件顶部，在 `main` 中为这次请求创建新实例：
 
 ```java
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 
-agent.streamEvents(new UserMessage("帮我把今天的关键点列三条。"))
-        .doOnNext(event -> {
-            if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
-                // 模型返回的流式文本片段 —— 追加到界面或标准输出
-                System.out.print(((TextBlockDeltaEvent) event).getDelta());
-            } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
-                // 智能体即将调用工具 —— 展示调用信息
-                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
-            }
-            // 其他事件：思考块、工具结果、回复结束等
-        })
-        .blockLast();
+try (HarnessAgent agent = AGENT_BUILDER.build()) {
+    RuntimeContext ctx = RuntimeContext.builder()
+            .userId("alice").sessionId("demo-session").build();
+    agent.streamEvents(new UserMessage("帮我把分享的准备工作列成三条。"), ctx)
+            .doOnNext(event -> {
+                if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
+                    System.out.print(((TextBlockDeltaEvent) event).getDelta());
+                } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
+                    System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
+                }
+            })
+            .blockLast();
+}
 ```
 
-:::{tip}
-运行前在环境变量里设置 `DASHSCOPE_API_KEY`。切换模型提供商时，需要引入对应的 `agentscope-extensions-model-*` 模型扩展模块，修改 `.model(...)` 的字符串，并设置对应的 API key（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`）。需要更精细地控制超时 / 自定义 endpoint 等参数时，可使用对应模型提供商的 builder（例如 `DashScopeChatModel.builder()...build()`）构造实例后传给 `.model(Model)`。
-:::
+`streamEvents` 返回 `Flux<AgentEvent>`，订阅后启动执行；`blockLast()` 在这里等待流结束。它与 `call` 使用相同的 Agent 能力和持久化配置。
 
-### 多用户并发
+同一个请求按输出需求选择 `call` 或 `streamEvents`。如果先 `call`，再用相同输入调用 `streamEvents`，会再次执行该请求。
 
-Agent 在调用之间是**无状态的**——同一个实例可以处理不同用户、不同会话的请求。通过 `RuntimeContext` 传入 `userId` / `sessionId`，每次调用自动加载并隔离各自的对话上下文：
+### 在 Web 请求中使用
+
+WebFlux 中使用 `Mono.using` 管理实例：订阅时从共享 Builder 构建 Agent，执行完成、报错或取消时关闭。不要在 `try` 块中返回尚未订阅的 `Mono`，否则 Agent 会提前关闭。下面是 handler 中的调用表达式：
 
 ```java
-import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.message.UserMessage;
-import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import reactor.core.publisher.Mono;
 
-// 应用启动时创建一个 agent 实例（单例即可）
-HarnessAgent agent = HarnessAgent.builder()
-        .name("note-taker")
-        .sysPrompt("你是一个帮助用户做笔记的助手。")
-        .model("dashscope:qwen-plus")
-        .workspace(Paths.get(".agentscope/workspace"))
-        .compaction(CompactionConfig.builder()
-                .triggerMessages(30)
-                .keepMessages(10)
-                .build())
-        .build();
-
-// 在 HTTP handler 中——不同请求传入不同 RuntimeContext
-agent.call(new UserMessage(userInput), RuntimeContext.builder()
-        .sessionId(sessionId)
-        .userId(userId)
-        .build()).block();
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId(userId).sessionId(sessionId).build();
+return Mono.using(
+        AGENT_BUILDER::build,
+        agent -> agent.call(new UserMessage(userInput), ctx),
+        HarnessAgent::close);
 ```
 
-同一 `(userId, sessionId)` 的请求自动串行化（不会并发写同一份状态）；不同 session 完全并行。完整生产部署模式（Redis session、沙箱、技能仓库等）参见[上线指南](./others/going-to-production.md)。
+`userId` 应来自已认证身份，`sessionId` 应经过访问权限检查。Builder 配置完成后不要在请求中调用 setter；共享的模型、工具和中间件仍须支持并发使用。不同会话可以并行；同一会话跨实例的请求应由应用按顺序调度，日志写入隔离不等于自动排队。生命周期与并发规则见[智能体](/v2/zh/docs/building-blocks/agent#实例生命周期)。
+
+### 什么时候使用 AgentSession
+
+日常问答、工作流节点以及随当前请求完成的流式界面，可以继续使用 `call` / `streamEvents`。直接把执行流作为 HTTP 响应时，客户端断连可能取消该次执行。
+
+当产品需要“关闭页面后继续运行”“忙时接收并保存下一项任务”“运行中补充要求”或“中断后继续原任务”时，使用 `agent.session(ctx)` 提供的 `AgentSession`。它负责接收任务和安排后台执行，前端独立读取快照与持久事件。
+
+后台任务的 Agent 由应用的会话管理器或任务 worker 持有，在任务停止或应用退出后再关闭；不要在提交任务的 HTTP 请求返回时关闭它。这里的生命周期覆盖整个后台执行，不只覆盖一次提交请求。
+
+下一步阅读[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)，或运行[可恢复聊天示例](/v2/zh/blogs/best-practices/session-chat)。通过 HTTP 使用托管 Agent 的应用，直接阅读 [Service Agent API](/v2/zh/service/session-event-log)。
 
 ## 接下来
 
-- [智能体（Agent）](./building-blocks/agent.md) —— `ReActAgent` 的完整接口、参数、`call` / `streamEvents` / `observe`、人机交互、`AgentStateStore` 配置
-- [Harness 架构](./harness/architecture.md) —— `HarnessAgent` 的各项能力如何协作、状态如何流转
-- [工作区](./harness/workspace.md) —— `AGENTS.md` / `MEMORY.md` / `skills/` / `subagents/` / `tools.json` 的目录布局与加载机制
-- [文件系统](./harness/filesystem.md) —— 本机 + shell / 共享存储 / 沙箱三种部署模式
+- [智能体（Agent）](/v2/zh/docs/building-blocks/agent) —— 直接调用、流式事件、结构化输出和工具交互
+- [Harness 架构](/v2/zh/docs/harness/architecture) —— 选择调用方式，按业务需要组合能力
+- [工作区](/v2/zh/docs/harness/workspace) —— 配置 `AGENTS.md`、技能、子 Agent 和工具
+- [上下文管理](/v2/zh/docs/harness/context)与[长期记忆](/v2/zh/docs/harness/memory) —— 管理长对话和跨会话信息
+- [会话操作、事件与恢复](/v2/zh/docs/harness/session-log) —— 构建有后台任务、排队和恢复能力的应用

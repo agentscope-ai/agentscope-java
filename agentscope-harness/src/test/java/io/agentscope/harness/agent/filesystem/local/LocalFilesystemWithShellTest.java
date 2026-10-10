@@ -16,10 +16,14 @@
 package io.agentscope.harness.agent.filesystem.local;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class LocalFilesystemWithShellTest {
 
@@ -40,5 +44,30 @@ class LocalFilesystemWithShellTest {
         assertEquals(
                 Charset.defaultCharset(),
                 LocalFilesystemWithShell.outputCharset("Windows 10", null));
+    }
+
+    @Test
+    void execute_outputLargerThanOsPipeBufferCompletesWithoutDeadlock(@TempDir Path tempDir) {
+        // ~68-72 KB of stdout: beyond the OS pipe buffer (~4 KB on Windows, 64 KB on Linux),
+        // below the default maxOutputBytes cap. Before stdout/stderr were drained concurrently
+        // with waitFor, this deadlocked and was misreported as a timeout (exit 124).
+        int lines = 4000;
+        String payload = "0123456789abcdef"; // 16 chars per line
+        boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
+        String command =
+                windows
+                        ? "for /l %i in (1,1," + lines + ") do @echo " + payload
+                        : "i=0; while [ \"$i\" -lt "
+                                + lines
+                                + " ]; do echo "
+                                + payload
+                                + "; i=$((i+1)); done";
+
+        LocalFilesystemWithShell fs = new LocalFilesystemWithShell(tempDir);
+        ExecuteResponse resp = fs.execute(null, command, 60);
+
+        assertEquals(0, resp.exitCode(), "unexpected exit code, output: " + resp.output());
+        assertFalse(resp.truncated());
+        assertEquals(lines, resp.output().split(payload, -1).length - 1);
     }
 }

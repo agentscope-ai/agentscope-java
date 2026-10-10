@@ -292,6 +292,24 @@ class LocalFilesystemModeTest {
                 () -> fs.read(RuntimeContext.empty(), "/../etc/passwd", 0, 0));
     }
 
+    // ==================== Bug reproduction: ls silently swallows errors ====================
+
+    @Test
+    void ls_nonExistentPath_shouldReturnFail(@TempDir Path workspace) {
+        LocalFilesystem fs = new LocalFilesystem(workspace);
+        LsResult r = fs.ls(RuntimeContext.empty(), "/this/path/does/not/exist");
+        assertFalse(r.isSuccess(), "ls on non-existent path should fail");
+    }
+
+    @Test
+    void ls_filePath_shouldReturnFail(@TempDir Path workspace) throws IOException {
+        Path file = workspace.resolve("foo.txt");
+        Files.writeString(file, "content");
+        LocalFilesystem fs = new LocalFilesystem(workspace);
+        LsResult r = fs.ls(RuntimeContext.empty(), file.toAbsolutePath().toString());
+        assertFalse(r.isSuccess(), "ls on a file path should fail");
+    }
+
     @Test
     void rooted_relativePathTraversalRejected(@TempDir Path base) throws IOException {
         Path workspace = base.resolve("workspace");

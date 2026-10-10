@@ -1,22 +1,103 @@
-# Core contributors
+---
+title: Contributors
+zh_link: /v2/zh/community/contributors
+---
 
-Thanks to everyone who contributes code, docs, and feedback to AgentScope Java. This page highlights **recently active** core contributors to the public repository (GitHub data; changes over time; bots excluded).
+AgentScope grows through the work of its community. Thank you to everyone who improves AgentScope Java through code, documentation, issue reports, and shared experience.
 
-See the full history on [GitHub Contributors](https://github.com/agentscope-ai/agentscope-java/graphs/contributors). To add yourself or update a row, open a pull request editing `docs/v2/en/community/contributors.md`.
+Meet some of the project's contributors below. Each card links to a GitHub profile; the full contribution history is available on [GitHub Contributors](https://github.com/agentscope-ai/agentscope-java/graphs/contributors).
 
-|                                  Avatar                                    | GitHub ID                                       | Profile                                                    | Notes              |
-|:--------------------------------------------------------------------------:|:------------------------------------------------|:-----------------------------------------------------------|:-------------------|
-|                ![Chickenlj](https://github.com/chickenlj.png)              | [Chickenlj](https://github.com/chickenlj)       | [github.com/chickenlj](https://github.com/chickenlj)       | Core contributor   |
-|  ![LearningGp](https://avatars.githubusercontent.com/u/38268859?s=64&v=4)  | [LearningGp](https://github.com/LearningGp)     | [github.com/LearningGp](https://github.com/LearningGp)     | Core contributor   |
-|  ![fang-tech](https://avatars.githubusercontent.com/u/141339556?s=64&v=4)  | [fang-tech](https://github.com/fang-tech)       | [github.com/fang-tech](https://github.com/fang-tech)       | Active contributor |
-|                 ![flystar32](https://github.com/flystar32.png)             | [flystar32](https://github.com/flystar32)       | [github.com/flystar32](https://github.com/flystar32)       | Active contributor |
-|                 ![albumenj](https://github.com/albumenj.png)               | [albumenj](https://github.com/albumenj)         | [github.com/albumenj](https://github.com/albumenj)         | Active contributor |
-|   ![guanxuc](https://avatars.githubusercontent.com/u/86234262?s=64&v=4)    | [guanxuc](https://github.com/guanxuc)           | [github.com/guanxuc](https://github.com/guanxuc)           | Active contributor |
-|    ![JGoP-L](https://avatars.githubusercontent.com/u/52067013?s=64&v=4)    | [JGoP-L](https://github.com/JGoP-L)             | [github.com/JGoP-L](https://github.com/JGoP-L)             | Active contributor |
-| ![shiyiyue1102](https://avatars.githubusercontent.com/u/20452676?s=64&v=4) | [shiyiyue1102](https://github.com/shiyiyue1102) | [github.com/shiyiyue1102](https://github.com/shiyiyue1102) | Active contributor |
-|    ![jujn](https://avatars.githubusercontent.com/u/109072362?s=64&v=4)     | [jujn](https://github.com/jujn)                 | [github.com/jujn](https://github.com/jujn)                 | Active contributor |
-| ![KomachiSion](https://avatars.githubusercontent.com/u/37170243?s=64&v=4)  | [KomachiSion](https://github.com/KomachiSion)   | [github.com/KomachiSion](https://github.com/KomachiSion)   | Active contributor |
+<ul className="as-contributors not-prose" aria-label="AgentScope Java contributors">
+  <li>
+    <a className="as-contributor" href="https://github.com/chickenlj">
+      <img noZoom className="as-contributor__avatar" src="https://github.com/chickenlj.png" alt="" width="48" height="48" loading="lazy" decoding="async" />
+      <span className="as-contributor__details">
+        <span className="as-contributor__name">Chickenlj</span>
+        <span className="as-contributor__role">Core contributor</span>
+      </span>
+    </a>
+  </li>
+  <li>
+    <a className="as-contributor" href="https://github.com/LearningGp">
+      <img noZoom className="as-contributor__avatar" src="https://avatars.githubusercontent.com/u/38268859?s=64&amp;v=4" alt="" width="48" height="48" loading="lazy" decoding="async" />
+      <span className="as-contributor__details">
+        <span className="as-contributor__name">LearningGp</span>
+        <span className="as-contributor__role">Core contributor</span>
+      </span>
+    </a>
+  </li>
+  <li>
+    <a className="as-contributor" href="https://github.com/fang-tech">
+      <img noZoom className="as-contributor__avatar" src="https://avatars.githubusercontent.com/u/141339556?s=64&amp;v=4" alt="" width="48" height="48" loading="lazy" decoding="async" />
+      <span className="as-contributor__details">
+        <span className="as-contributor__name">fang-tech</span>
+        <span className="as-contributor__role">Active contributor</span>
+      </span>
+    </a>
+  </li>
+  <li>
+    <a className="as-contributor" href="https://github.com/flystar32">
+      <img noZoom className="as-contributor__avatar" src="https://github.com/flystar32.png" alt="" width="48" height="48" loading="lazy" decoding="async" />
+      <span className="as-contributor__details">
+        <span className="as-contributor__name">flystar32</span>
+        <span className="as-contributor__role">Active contributor</span>
+      </span>
+    </a>
+  </li>
+  <li>
+    <a className="as-contributor" href="https://github.com/albumenj">
+      <img noZoom className="as-contributor__avatar" src="https://github.com/albumenj.png" alt="" width="48" height="48" loading="lazy" decoding="async" />
+      <span className="as-contributor__details">
+        <span className="as-contributor__name">albumenj</span>
+        <span className="as-contributor__role">Active contributor</span>
+      </span>
+    </a>
+  </li>
+  <li>
+    <a className="as-contributor" href="https://github.com/guanxuc">
+      <img noZoom className="as-contributor__avatar" src="https://avatars.githubusercontent.com/u/86234262?s=64&amp;v=4" alt="" width="48" height="48" loading="lazy" decoding="async" />
+      <span className="as-contributor__details">
+        <span className="as-contributor__name">guanxuc</span>
+        <span className="as-contributor__role">Active contributor</span>
+      </span>
+    </a>
+  </li>
+  <li>
+    <a className="as-contributor" href="https://github.com/JGoP-L">
+      <img noZoom className="as-contributor__avatar" src="https://avatars.githubusercontent.com/u/52067013?s=64&amp;v=4" alt="" width="48" height="48" loading="lazy" decoding="async" />
+      <span className="as-contributor__details">
+        <span className="as-contributor__name">JGoP-L</span>
+        <span className="as-contributor__role">Active contributor</span>
+      </span>
+    </a>
+  </li>
+  <li>
+    <a className="as-contributor" href="https://github.com/shiyiyue1102">
+      <img noZoom className="as-contributor__avatar" src="https://avatars.githubusercontent.com/u/20452676?s=64&amp;v=4" alt="" width="48" height="48" loading="lazy" decoding="async" />
+      <span className="as-contributor__details">
+        <span className="as-contributor__name">shiyiyue1102</span>
+        <span className="as-contributor__role">Active contributor</span>
+      </span>
+    </a>
+  </li>
+  <li>
+    <a className="as-contributor" href="https://github.com/jujn">
+      <img noZoom className="as-contributor__avatar" src="https://avatars.githubusercontent.com/u/109072362?s=64&amp;v=4" alt="" width="48" height="48" loading="lazy" decoding="async" />
+      <span className="as-contributor__details">
+        <span className="as-contributor__name">jujn</span>
+        <span className="as-contributor__role">Active contributor</span>
+      </span>
+    </a>
+  </li>
+  <li>
+    <a className="as-contributor" href="https://github.com/KomachiSion">
+      <img noZoom className="as-contributor__avatar" src="https://avatars.githubusercontent.com/u/37170243?s=64&amp;v=4" alt="" width="48" height="48" loading="lazy" decoding="async" />
+      <span className="as-contributor__details">
+        <span className="as-contributor__name">KomachiSion</span>
+        <span className="as-contributor__role">Active contributor</span>
+      </span>
+    </a>
+  </li>
+</ul>
 
-```{note}
-Rows are curated from public contribution activity and **do not** represent official HR titles at Tongyi Lab or Alibaba. The "Notes" column is a short community-facing label—wording can be adjusted with maintainer agreement in a PR.
-```
+Want to get involved? Start with the [contribution guide](https://github.com/agentscope-ai/agentscope-java/blob/main/CONTRIBUTING.md). To update this page, open a pull request editing `docs/v2/en/community/contributors.md`.

@@ -32,7 +32,7 @@ import io.agentscope.harness.agent.gateway.channel.chatui.SendOptions;
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
  *   mvn exec:java -pl agentscope-examples/documentation \
- *       -Dexec.mainClass=io.agentscope.examples.documentation2.harness.GatewayMultiAgentExample
+ *       -Dexec.mainClass=io.agentscope.examples.documentation2.harness.channel.GatewayMultiAgentExample
  * </pre>
  */
 public class GatewayMultiAgentExample {

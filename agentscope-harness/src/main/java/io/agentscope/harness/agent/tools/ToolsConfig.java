@@ -54,6 +54,25 @@ public class ToolsConfig {
     @JsonProperty("mcpServers")
     private Map<String, McpServerConfig> mcpServers;
 
+    private boolean defaultToolsEnabled = true;
+    private boolean strictAllow;
+
+    public boolean isStrictAllow() {
+        return strictAllow;
+    }
+
+    public void setStrictAllow(boolean value) {
+        strictAllow = value;
+    }
+
+    public boolean isDefaultToolsEnabled() {
+        return defaultToolsEnabled;
+    }
+
+    public void setDefaultToolsEnabled(boolean value) {
+        defaultToolsEnabled = value;
+    }
+
     public List<String> getAllow() {
         return allow;
     }

@@ -31,6 +31,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -65,6 +66,7 @@ import reactor.core.publisher.Flux;
  * <p>Configure via {@link HarnessAgent.Builder#abstractFilesystem} with a
  * {@link LocalFilesystemWithShell} instance pointing at your desired workspace directory.
  */
+@HarnessQuiescence
 class LocalFilesystemPersonalAssistantExampleTest {
 
     @TempDir Path workspace;

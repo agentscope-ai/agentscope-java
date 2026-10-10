@@ -29,6 +29,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -41,15 +42,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
-/**
- * Regression test: the default {@code HarnessAgent} {@code AgentStateStore} is now {@link
- * io.agentscope.core.state.JsonFileAgentStateStore} rooted at {@code ~/.agentscope/state/<agentId>/}, NOT
- * a workspace-scoped session.
- *
- * <p>Each test points the {@code agentscope.state.home} system property at a fresh {@link
- * TempDir} so we can both (a) assert state lands at the expected location and (b) avoid sharing
- * state across tests / polluting the surefire-shared {@code target/test-state-home/}.
- */
+/** Native history defaults to the workspace; explicit legacy snapshots retain their old location. */
+@HarnessQuiescence
 class JsonSessionDefaultLocationTest {
 
     @TempDir Path stateHome;
@@ -57,6 +51,7 @@ class JsonSessionDefaultLocationTest {
     @TempDir Path workspace;
 
     private String previousStateHome;
+    private HarnessAgent agent;
 
     @BeforeEach
     void overrideStateHome() {
@@ -66,54 +61,41 @@ class JsonSessionDefaultLocationTest {
 
     @AfterEach
     void restoreStateHome() {
-        if (previousStateHome != null) {
-            System.setProperty("agentscope.state.home", previousStateHome);
-        } else {
-            System.clearProperty("agentscope.state.home");
+        try {
+            if (agent != null) {
+                agent.close();
+            }
+        } finally {
+            if (previousStateHome != null) {
+                System.setProperty("agentscope.state.home", previousStateHome);
+            } else {
+                System.clearProperty("agentscope.state.home");
+            }
         }
     }
 
     @Test
-    void defaultSession_writesUnderStateHome_notInsideWorkspace() throws Exception {
-        Files.createDirectories(workspace);
-        Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
-
+    void defaultSession_writesOnlyNativeJournalUnderWorkspace() throws Exception {
         String agentName = "assistant-" + UUID.randomUUID();
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name(agentName)
                         .model(stubModel("done"))
                         .workspace(workspace)
+                        .disableMemoryHooks()
                         .build();
-
-        RuntimeContext rc = RuntimeContext.builder().sessionId("s1").sessionId("s1").build();
+        RuntimeContext rc = RuntimeContext.builder().sessionId("s1").build();
         agent.call(userMsg("hi"), rc).block();
-
-        Path stateRoot = stateHome.resolve(agentName);
-        assertTrue(
-                Files.isDirectory(stateRoot),
-                "Default AgentStateStore should root state at <agentscope.state.home>/<agentId>/,"
-                        + " missing: "
-                        + stateRoot);
-
-        // agent_state.json must exist somewhere under the state root (JsonFileAgentStateStore may
-        // url-encode the session id into a subdirectory name).
-        long agentStateCount;
-        try (Stream<Path> walk = Files.walk(stateRoot)) {
-            agentStateCount =
-                    walk.filter(Files::isRegularFile)
-                            .filter(p -> p.getFileName().toString().equals("agent_state.json"))
-                            .count();
-        }
-        assertTrue(agentStateCount >= 1, "agent_state.json should be persisted under " + stateRoot);
-
-        // Inverse assertion: state must NOT leak into workspace. The pre-Phase-0 layout was
-        // <workspace>/agents/<agentId>/context/<sessionId>/agent_state.json — verify it's gone.
-        Path contextDir = workspace.resolve("agents/" + agentName + "/context");
+        assertTrue(agent.sessionLog(rc).head().seq() > 0);
+        assertEquals(2, agent.sessionTranscript(rc).messages().size());
         assertFalse(
-                Files.isDirectory(contextDir),
-                "Phase 0 regression: agent_state must not live inside workspace, found: "
-                        + contextDir);
+                Files.exists(stateHome.resolve(agentName)),
+                "Native logging must not write legacy state");
+        try (Stream<Path> files = Files.walk(workspace)) {
+            assertFalse(
+                    files.anyMatch(path -> path.toString().endsWith(".jsonl")),
+                    "Native logging must not duplicate conversation into legacy JSONL files");
+        }
     }
 
     @Test
@@ -127,8 +109,9 @@ class JsonSessionDefaultLocationTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         String agentName = "shared-" + UUID.randomUUID();
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
+                        .legacySessionHistory(true)
                         .name(agentName)
                         .model(stubModel("done"))
                         .workspace(workspace)
@@ -166,8 +149,9 @@ class JsonSessionDefaultLocationTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         String agentName = "wipe-" + UUID.randomUUID();
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
+                        .legacySessionHistory(true)
                         .name(agentName)
                         .model(stubModel("done"))
                         .workspace(workspace)

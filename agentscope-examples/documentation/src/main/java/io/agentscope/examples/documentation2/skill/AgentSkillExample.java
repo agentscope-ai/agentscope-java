@@ -52,7 +52,7 @@ public class AgentSkillExample {
      * Output directory where the agent may write new skill files during the demo.
      */
     private static final String OUTPUT_DIR =
-            "agentscope-examples/documentation2/target/skill-output";
+            "agentscope-examples/documentation/target/skill-output";
 
     /**
      * Runs the agent skill example.

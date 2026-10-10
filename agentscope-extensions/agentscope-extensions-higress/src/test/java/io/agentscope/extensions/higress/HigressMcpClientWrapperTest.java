@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -226,6 +227,32 @@ class HigressMcpClientWrapperTest {
         assertThrows(
                 RuntimeException.class,
                 () -> wrapper.callTool("my_tool", Collections.emptyMap()).block());
+    }
+
+    @Test
+    void testCallTool_PassesMetaStraightThrough() {
+        // Guarantee pinned by review: meta reaches the delegate untouched — including null,
+        // which McpTool passes when metadata propagation is disabled for this server.
+        Map<String, Object> args = Map.of("param1", "value1");
+        McpSchema.TextContent content = new McpSchema.TextContent(null, null, "result");
+        McpSchema.CallToolResult expectedResult =
+                new McpSchema.CallToolResult(List.of(content), false, null);
+
+        when(mockDelegateClient.callTool(eq("my_tool"), eq(args), isNull()))
+                .thenReturn(Mono.just(expectedResult));
+
+        HigressMcpClientWrapper wrapper = createWrapper(false, null, 10);
+        McpSchema.CallToolResult result = wrapper.callTool("my_tool", args, null).block();
+
+        assertNotNull(result);
+        verify(mockDelegateClient, times(1)).callTool(eq("my_tool"), eq(args), isNull());
+
+        Map<String, Object> meta = Map.of("traceId", "abc-123");
+        when(mockDelegateClient.callTool(eq("my_tool"), eq(args), eq(meta)))
+                .thenReturn(Mono.just(expectedResult));
+
+        assertNotNull(wrapper.callTool("my_tool", args, meta).block());
+        verify(mockDelegateClient, times(1)).callTool(eq("my_tool"), eq(args), eq(meta));
     }
 
     @Test

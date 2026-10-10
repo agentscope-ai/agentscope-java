@@ -29,7 +29,7 @@ const TIERS: { value: BindingTier; label: string; field: keyof BindingCreateRequ
   { value: 'parentPeer', label: 'Parent peer',          field: 'parentPeer' },
   { value: 'guildRoles', label: 'Guild + roles',        field: 'roles' },
   { value: 'guild',      label: 'Guild',                field: 'guild' },
-  { value: 'team',       label: 'Team',                 field: 'team' },
+  { value: 'team',       label: 'Platform team ID',                 field: 'team' },
   { value: 'account',    label: 'Account',              field: 'account' },
   { value: 'channel',    label: 'Channel (catch-all)',  field: 'channel' },
 ];
@@ -361,7 +361,7 @@ function BindingDialog({ state, isNew, onChange, onCancel, onSave }: DialogProps
         )}
         {tierField === 'team' && (
           <div style={{ marginTop: 10 }}>
-            <label style={S.fieldLabel}>Team</label>
+            <label style={S.fieldLabel}>Platform team ID</label>
             <input style={S.input} value={state.team} onChange={e => onChange({ ...state, team: e.target.value })} />
           </div>
         )}

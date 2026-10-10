@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -25,6 +26,8 @@ import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
@@ -43,6 +46,24 @@ import org.junit.jupiter.api.Test;
 class SandboxBackedFilesystemTest {
 
     private static final RuntimeContext RT = RuntimeContext.empty();
+
+    @Test
+    void releasedContextCannotFallBackToAnotherCallsSandbox() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox previous = new FakeSandbox(new ExecResult(0, "", "", false));
+        FakeSandbox current = new FakeSandbox(new ExecResult(0, "", "", false));
+        SandboxAcquireResult acquired = SandboxAcquireResult.userManaged(previous);
+        RuntimeContext stale =
+                RuntimeContext.builder().put(SandboxAcquireResult.class, acquired).build();
+        acquired.beginRelease();
+        filesystem.setSandbox(current);
+
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> filesystem.execute(stale, "echo stale", 1));
+        assertNull(previous.lastCommand);
+        assertNull(current.lastCommand);
+    }
 
     @Test
     void downloadFiles_decodesWrappedBase64Output() {
@@ -94,6 +115,19 @@ class SandboxBackedFilesystemTest {
     }
 
     @Test
+    void downloadFiles_rejectsTruncatedExecOutput() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, "partial", "", true));
+        filesystem.setSandbox(sandbox);
+
+        List<FileDownloadResponse> responses =
+                filesystem.downloadFiles(RT, List.of("/tmp/truncated.bin"));
+
+        assertTrue(!responses.get(0).isSuccess());
+        assertEquals("File download output was truncated by the sandbox", responses.get(0).error());
+    }
+
+    @Test
     void uploadFiles_prefersNativeTransferWhenSupported() {
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
@@ -109,9 +143,65 @@ class SandboxBackedFilesystemTest {
     }
 
     @Test
-    void uploadFiles_usesTarHydrationForUnsupportedNativePaths() throws Exception {
+    void uploadFiles_resolvesRelativePathForNativeTransfer() {
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(
+                        RT,
+                        List.of(
+                                Map.entry(
+                                        "agents/通用智能助手/sessions/sessions.json",
+                                        new byte[] {3, 1, 4})));
+
+        assertTrue(responses.get(0).isSuccess());
+        assertArrayEquals(
+                new byte[] {3, 1, 4},
+                sandbox.uploaded.get("/workspace/agents/通用智能助手/sessions/sessions.json"));
+        assertNull(sandbox.lastCommand);
+        assertEquals(0, sandbox.hydrateCalls);
+    }
+
+    @Test
+    void uploadFiles_rejectsNullContentOnNativeTransferPath() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(
+                        RT, List.of(new AbstractMap.SimpleImmutableEntry<>("agents/a.txt", null)));
+
+        assertTrue(!responses.get(0).isSuccess());
+        assertEquals("File content must not be null", responses.get(0).error());
+        assertTrue(sandbox.uploaded.isEmpty());
+        assertEquals(0, sandbox.hydrateCalls);
+    }
+
+    @Test
+    void uploadFiles_fallsBackToHydrationWhenRootUnavailable() throws Exception {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        sandbox.state.setWorkspaceSpec(null);
+        filesystem.setSandbox(sandbox);
+        byte[] content = new byte[] {5};
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(RT, List.of(Map.entry("agents/a.jsonl", content)));
+
+        assertTrue(responses.get(0).isSuccess());
+        assertTrue(sandbox.uploaded.isEmpty());
+        assertEquals(1, sandbox.hydrateCalls);
+        assertArchive(sandbox.hydratedArchive, "agents/a.jsonl", content);
+    }
+
+    @Test
+    void uploadFiles_usesTarHydrationForUnsupportedNativePaths() throws Exception {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        // File API rooted outside the workspace: resolved paths stay unsupported natively.
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/data");
         filesystem.setSandbox(sandbox);
         byte[] content = "session-data".getBytes(StandardCharsets.UTF_8);
 

@@ -64,6 +64,14 @@
     </dependencyManagement>
 
     <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-agui</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-agui-spring-boot-starter</artifactId>
+        </dependency>
         <!-- AgentScope Core -->
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -140,6 +148,12 @@
             <artifactId>agentscope-extensions-model-gemini</artifactId>
         </dependency>
 
+        <!-- Jev extension for example middlewares -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-jev</artifactId>
+        </dependency>
+
         <!-- Git-based Skill Repository -->
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -177,4 +191,79 @@
             <optional>true</optional>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Declared without executions so the spring-boot:run prefix resolves; the default lifecycle is unaffected -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot.version}</version>
+            </plugin>
+        </plugins>
+    </build>
+    <profiles>
+        <profile>
+            <id>copilotkit</id>
+            <build>
+                <resources>
+                    <resource><directory>src/main/resources</directory></resource>
+                    <resource><directory>target/generated-resources</directory></resource>
+                </resources>
+                <plugins>
+                    <plugin>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-maven-plugin</artifactId>
+                        <configuration>
+                            <mainClass>io.agentscope.examples.documentation2.copilotkit.CopilotKitExampleApplication</mainClass>
+                            <classifier>copilotkit</classifier>
+                        </configuration>
+                        <executions>
+                            <execution><goals><goal>repackage</goal></goals></execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>com.github.eirslett</groupId>
+                        <artifactId>frontend-maven-plugin</artifactId>
+                        <version>1.15.1</version>
+                        <configuration>
+                            <workingDirectory>frontend/copilotkit</workingDirectory>
+                            <installDirectory>target</installDirectory>
+                            <nodeVersion>v20.19.2</nodeVersion>
+                            <npmVersion>10.9.2</npmVersion>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>install-node-npm</id>
+                                <goals>
+                                    <goal>install-node-and-npm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                            </execution>
+                            <execution>
+                                <id>npm-install</id>
+                                <goals>
+                                    <goal>npm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>ci</arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>npm-build</id>
+                                <goals>
+                                    <goal>npm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>run build</arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

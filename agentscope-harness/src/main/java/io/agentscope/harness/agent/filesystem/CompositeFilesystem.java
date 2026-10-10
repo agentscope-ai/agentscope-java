@@ -63,6 +63,11 @@ import java.util.Map;
  */
 public class CompositeFilesystem implements AbstractFilesystem {
 
+    @Override
+    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
+        return routeForPath("agents/").backend().sessionStorage(rc);
+    }
+
     private final AbstractFilesystem defaultBackend;
     private final List<RouteEntry> sortedRoutes;
 
@@ -96,6 +101,14 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
     private record RouteResult(
             AbstractFilesystem backend, String backendPath, String routePrefix) {}
+
+    /**
+     * Returns the backend filesystem that would serve {@code path}: the longest matching prefix
+     * route, or the default backend when no route matches.
+     */
+    public AbstractFilesystem filesystemFor(String path) {
+        return routeForPath(path).backend();
+    }
 
     private RouteResult routeForPath(String path) {
         // Canonicalize both sides by stripping any leading slash before matching so callers can

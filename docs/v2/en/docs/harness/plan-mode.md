@@ -1,13 +1,15 @@
 ---
-title: "Plan Mode"
-description: "Think before acting: a read-only phase that writes a plan file and requires HITL approval before executing"
+title: Plan Mode
+description: 'Think before acting: a read-only phase that writes a plan file and requires
+  HITL approval before executing'
+zh_link: /v2/zh/docs/harness/plan-mode
 ---
 
 ## Role
 
 Plan Mode lets the agent "figure out and write down intent" before executing. While active, the agent is in a **read-only phase**:
 
-- Only **read-only tools** plus 4 whitelisted tools work: `plan_enter` / `plan_write` / `plan_exit` / `todo_write` (the shell can be opted in — see [below](#allowing-the-shell-during-the-plan-phase-opt-in)).
+- Only **read-only tools** plus 9 whitelisted tools work: `plan_enter` / `plan_write` / `plan_exit` / `todo_write` / `agent_spawn` / `agent_send` / `agent_list` / `task_output` / `task_list` (the shell can be opted in — see [below](#allowing-the-shell-during-the-plan-phase-opt-in)).
 - Any other tool call is rejected immediately (the agent sees a "plan-mode denied" note).
 - Exiting Plan Mode requires HITL confirmation (reusing the permission system's ASK), so the model can't unilaterally jump into execution.
 
@@ -47,7 +49,7 @@ You can also call `enableTaskList()` so that todos created during the plan phase
 
 ## Workflow
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     autonumber
     participant U as User
@@ -61,14 +63,13 @@ sequenceDiagram
     A->>FS: plan_write to plans/PLAN.md
     A->>H: plan_exit → HITL confirmation
     H-->>A: ConfirmResult(true)
-    A->>A: enter execution phase; all tools allowed
+    A->>A: enter execution phase: all tools allowed
 ```
 
-Any non-whitelisted tool call (e.g. `write_file`, or `execute` unless you [opt in](#allowing-the-shell-during-the-plan-phase-opt-in)) during the plan phase is rejected immediately with something like:
+Any non-whitelisted tool call (e.g. `write_file`, or `execute` unless you [opt in](#allowing-the-shell-during-the-plan-phase-opt-in)) during the plan phase is rejected immediately. The tool result the model sees is exactly the `PlanModeMiddleware.DENY_MESSAGE` constant:
 
 ```text
-[Tool denied — plan mode is active]
-Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are allowed.
+Blocked: you are in PLAN mode (read-only). You may investigate and run read-only tools, record your plan with plan_write, and call plan_exit when ready to execute. Do not modify files or run mutating commands until the plan is approved.
 ```
 
 Seeing the denial, the model naturally switches back to "write the plan first".
@@ -112,7 +113,7 @@ This mirrors how OpenCode handles its plan agent: it allows the shell for invest
 
 ## Runtime permission switching (the "bypass" escape hatch)
 
-Plan Mode is one specific phase switch. Underneath it, every session carries a [`PermissionMode`](../building-blocks/context.md) that the permission engine evaluates against. You can flip that mode at runtime — for example to grant a deliberate, user-initiated "skip all permission prompts" toggle (similar to a YOLO / dangerous-skip switch in other coding tools):
+Plan Mode is one specific phase switch. Underneath it, every session carries a [`PermissionMode`](/v2/en/docs/building-blocks/context) that the permission engine evaluates against. You can flip that mode at runtime — for example to grant a deliberate, user-initiated "skip all permission prompts" toggle (similar to a YOLO / dangerous-skip switch in other coding tools):
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder().sessionId("my-session").build();
@@ -147,12 +148,9 @@ If you use `agentscope-admin-spring-boot-starter`, the admin HTTP API also expos
 
 ## Interaction with subagents
 
-⚠ Current **known gap**: subagents spawned via `agent_spawn` during Plan Mode **do not automatically inherit the read-only restriction**. To restrict the child:
+Subagents spawned via `agent_spawn` during Plan Mode **automatically inherit the read-only restriction**: the parent's plan-mode context is propagated to the child at spawn time, so the child also runs in a read-only phase until the plan is approved.
 
-- Narrow `tools` in the child's declaration to a read-only set, or
-- Also `enablePlanMode()` on the child's own builder and enter it explicitly
-
-A future release will propagate plan-mode restrictions parent → child automatically.
+Restrictions can still be tightened per child by narrowing the `tools` in the child's declaration to a read-only set.
 
 ## Interaction with `todo_write`
 
@@ -163,7 +161,7 @@ Plan Mode and `todo_write` (provided by core) are **independent but commonly use
 
 Typical workflow: write `PLAN.md` during the plan phase → `plan_exit` → in execution use `todo_write` to slice the PLAN into 5–8 todos → progress one at a time. Each reasoning step shows the agent a todos reminder to stay focused.
 
-⚠ Don't confuse with subagent **background tasks** (`task_output` / `task_cancel` / `task_list`) — that's a different concept; see [Subagent](./subagent.md).
+⚠ Don't confuse with subagent **background tasks** (`task_output` / `task_cancel` / `task_list`) — that's a different concept; see [Subagent](/v2/en/docs/harness/subagent).
 
 ## Viewing the task list
 
@@ -205,6 +203,6 @@ agent.streamEvents(message)
 
 ## Related Pages
 
-- [Workspace](./workspace.md) — `plans/` directory location
-- [Subagent](./subagent.md) — `todo_write` ≠ subagent task; don't confuse them
-- [Architecture](./architecture.md) — where Plan Mode sits in the call() timeline
+- [Workspace](/v2/en/docs/harness/workspace) — `plans/` directory location
+- [Subagent](/v2/en/docs/harness/subagent) — `todo_write` ≠ subagent task; don't confuse them
+- [Architecture](/v2/en/docs/harness/architecture) — where Plan Mode sits in the call() timeline

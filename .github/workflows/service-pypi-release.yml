@@ -1,0 +1,127 @@
+name: AgentScope Service PyPI release
+
+on:
+  push:
+    tags: ['v*', 'agentscope-service-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SDK version matching the selected source (for example 2.1.0-BETA1 or 2.1.0b1)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: service-pypi-release
+  cancel-in-progress: false
+
+env:
+  SDK_DIRECTORY: agentscope-service/service-controlplane/sdk/python
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: bash .github/scripts/check-service-release-source.sh
+
+  test:
+    needs: source
+    if: needs.source.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install SDK and test dependencies
+        run: python -m pip install -e "$SDK_DIRECTORY[dev,openclaw]"
+      - name: Test SDK
+        working-directory: ${{ env.SDK_DIRECTORY }}
+        run: python -m pytest -q
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install packaging tools
+        run: python -m pip install 'build>=1.2,<2' 'twine>=6,<7' packaging
+      - name: Check project and release version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          python - <<'PY'
+          import ast
+          import os
+          import tomllib
+          from pathlib import Path
+          from packaging.version import Version
+
+          sdk = Path(os.environ['SDK_DIRECTORY'])
+          project = tomllib.loads((sdk / 'pyproject.toml').read_text())['project']
+          requested = os.environ['INPUT_VERSION'] or os.environ['GITHUB_REF_NAME']
+          requested = requested.removeprefix('agentscope-service-v').removeprefix('v')
+          if project['name'] != 'agentscope-service-sdk':
+              raise SystemExit('Unexpected PyPI project name')
+          if Version(requested) != Version(project['version']):
+              raise SystemExit(f"Requested {requested} does not match SDK {project['version']}")
+          module = ast.parse((sdk / 'agentscope_service' / '__init__.py').read_text())
+          declared = next(ast.literal_eval(node.value) for node in module.body
+                          if isinstance(node, ast.Assign)
+                          and any(isinstance(target, ast.Name) and target.id == '__version__'
+                                  for target in node.targets))
+          if declared != project['version']:
+              raise SystemExit('SDK __version__ and package version differ')
+          print(f"Publishing {project['name']}=={project['version']}")
+          PY
+      - name: Build and check wheel and sdist
+        run: |
+          python -m build "$SDK_DIRECTORY" --outdir "$RUNNER_TEMP/python-dist"
+          python -m twine check --strict "$RUNNER_TEMP/python-dist/"*
+      - name: Verify installed wheel outside source directory
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -m venv wheel-smoke
+          wheel-smoke/bin/python -m pip install "$RUNNER_TEMP/python-dist/"*.whl
+          wheel-smoke/bin/python - <<'PY'
+          from importlib.metadata import version
+          import agentscope_service
+          from agentscope_service import SessionBridge, ExecutableAdapter, TaskResult
+          assert agentscope_service.__version__ == version('agentscope-service-sdk')
+          print(f'Installed SDK {agentscope_service.__version__}')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: service-python-distributions
+          path: ${{ runner.temp }}/python-dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/agentscope-service-sdk/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: service-python-distributions
+          path: dist/
+      - name: Publish to PyPI using Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
