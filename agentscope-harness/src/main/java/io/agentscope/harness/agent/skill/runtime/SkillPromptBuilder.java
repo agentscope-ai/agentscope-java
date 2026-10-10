@@ -114,7 +114,7 @@ public final class SkillPromptBuilder {
      * caller can no-op concatenation.
      *
      * @param catalog the per-call snapshot (non-null)
-     * @param filter  visibility filter applied per skillId (non-null; use {@link SkillFilter#all()})
+     * @param filter  visibility filter applied per skill name (non-null; use {@link SkillFilter#all()})
      * @return prompt text, or empty string when nothing is visible
      */
     public String render(SkillCatalog catalog, SkillFilter filter) {
