@@ -102,6 +102,29 @@ HarnessAgent.builder()
 也适用于从失败会话中重新加载的工具调用。等待人工审批的工具仍须提供审批结果；空输入恢复执行、
 调用方补交工具结果的行为保持原有语义。远端 agent 和自定义工厂需自行配置恢复策略。
 
+### 为子 agent 单独配置压缩
+
+本地声明默认继承父 agent 的压缩配置和启用状态。在工作区规格中设置 `compaction: false`
+可单独禁用压缩；`compaction: true` 使用默认配置，即使父 agent 已禁用压缩也会启用。
+映射形式用于指定独立配置，省略的字段使用 `CompactionConfig` 默认值：
+
+```yaml
+compaction:
+  triggerMessages: 20
+  keepMessages: 5
+  keepTokens: 0
+  flushBeforeCompact: false
+```
+
+支持的字段包括 `triggerMessages`、`triggerTokens`、`reserved`、`keepMessages`、
+`keepTokens`、`keepTokensMin`、`keepTokensMax`、`keepTokensRatio`、`summaryPrompt`、
+`flushBeforeCompact` 和 `offloadBeforeCompact`。字段名区分大小写。类型错误或未知字段会记录警告，
+但子 agent 声明仍会加载，并继承父 agent 的压缩配置。省略 `compaction` 或设置为 null 时也继承父配置。
+
+Java 中可调用 `SubagentDeclaration.Builder` 的 `.compaction(config)` 或 `.disableCompaction()`，
+最后一次调用生效；`.compaction(null)` 恢复继承。Java 配置还支持自定义模型、剪枝和参数截断。
+这些设置仅适用于本地子 agent。远程子 agent 自行管理压缩，远程声明中的 `compaction` 设置会被忽略。
+
 ### 内置 `general-purpose`
 
 不需要写声明文件，总是可用。它的角色是"通用兜底"——能力和主 agent 一致（同样的模型、工具、技能），共享主工作区。适合"主 agent 想隔离上下文跑一个子任务但又懒得专门写 spec"。
