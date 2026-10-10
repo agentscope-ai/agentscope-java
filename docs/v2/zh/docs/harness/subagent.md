@@ -126,15 +126,22 @@ HarnessAgent.builder()
 RuntimeContext ctx = RuntimeContext.builder()
     .sessionId("s-1")
     .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
-    .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 120) // 可选；覆盖 LLM 的 timeout_seconds
+    .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 3600)
+    .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 1800) // 可选；覆盖 LLM 的 timeout_seconds
     .build();
 ```
 
 开启后：
 
-1. 若设置了 `CTX_FORCE_SYNC_TIMEOUT_SECONDS`，它会**完全覆盖** LLM 的 `timeout_seconds`（`<=0` 回退到 30s，上限 600s）。
-2. 未设置时，LLM 传的 `timeout_seconds=0` 会被改写成默认同步超时（30s），**不会**提交后台任务；LLM 传的正数超时仍生效。
+1. 若设置了 `CTX_FORCE_SYNC_TIMEOUT_SECONDS`，它会**完全覆盖** LLM 的 `timeout_seconds`（`<=0` 回退到 30s，受应用上限保护，默认上限 600s）。应用侧可通过 `CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS` 显式提高或收紧该上限（例如配置 3600s 允许等待 1800s）。
+2. 未设置时，LLM 传的 `timeout_seconds=0` 会被改写成默认同步超时（30s），**不会**提交后台任务；LLM 传的正数超时仍生效（永远受 600s 硬上限保护，且可被应用上限进一步向下收紧）。
 3. 同步等待超时后返回 `status: timeout` 并中断子 agent，**不会** promote 成后台 `task_id`。
+
+上限未设置、无效或非正数时，默认使用 600 秒。两个配置均支持 `Number` 或整数字符串；超过 `Integer.MAX_VALUE` 的值会限制为该值。仅提高上限不会放宽模型的 600 秒限制：等待超过 600 秒需要同时设置应用超时覆盖值和更高的上限。关闭强制同步时，这两个配置均不生效。
+
+这两个配置由可信的宿主应用提供，单位是**秒，不是毫秒**。应用负责定义超时上限策略；除 `Integer.MAX_VALUE` 表示范围外，框架不再施加额外的时长硬上限。请校验单位并选择适合业务的上限，例如 24 小时应配置为 `86400` 秒，而不是 `86400000`。带小数的 `Number` 向零截断，字符串则必须使用整数语法（`"1800"` 有效，`"1800.0"` 无效）。
+
+`AgentSpawnTool` 在 DEBUG 日志中记录最终强制同步超时、应用上限及会话，在 INFO 日志中记录超时截断。超时响应也会报告实际采用的等待时长。
 
 `agent_send` 同样遵守该开关。同一轮里多个强制同步的 `agent_spawn` 仍可按 Toolkit 默认并行推进。
 
