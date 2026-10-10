@@ -172,16 +172,13 @@ env:
 
 工作区材料每次 Agent call 读取一次，再由最终 Context 构建器分层组织，不直接把全部文件追加进 System。
 
-| 段落 | 来源 | 受预算约束 |
-|------|------|-----------|
-| `## Session Context` | 模板生成（日期、操作系统、workspace 绝对路径、临时目录、当前 `sessionId`） | 否 |
-| `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` 引导段 | 内置模板（教模型怎么用记忆 + 怎么查 knowledge）。Memory 相关段会随 `disableMemoryTools()` / `disableMemoryHooks()` 裁剪或整段省略；Domain Knowledge 段会随 `disableKnowledgeContext()` 整段省略 | 否 |
-| `## Workspace` 段 | 模板生成，**按 filesystem 模式分支**（详见下面）—— 告诉模型自己跑在本机 / 沙箱 / 远端 | 否 |
-| `## Workspace Files (Injected)` 段 | 框架自动从工作区把以下文件拉成 `<loaded_context>` XML 块注入 | 见下 |
-| `<agents_context>` | `AGENTS.md` 全文 | 无限 |
-| `<memory_context>` | `MEMORY.md`（剩余预算下，超出按字符截断 + 提示「用 memory_search 查更早」；关 tools 时只硬截断不提工具；tools + hooks 都关时整段不注入） | `maxContextTokens` 默认 8000 |
-| `<domain_knowledge_context>` | `knowledge/KNOWLEDGE.md` 全文 + `knowledge/` 下所有文件路径列表；`disableKnowledgeContext()` 时整段不注入 | 无限（仅文件名做索引） |
-| `<x_md>` / `<y_md>` | 你 `additionalContextFile("X.md")` 添加的任意文件 | 无限 |
+| 材料 | 模型中的位置 | 预算行为 |
+| --- | --- | --- |
+| AGENTS.md | System / `project_rules` | 不直接淘汰，计入最终预算 |
+| 工作原则、环境信息 | System / `working_principles`、`environment` | 计入最终预算。`disableKnowledgeContext()` 时省略 `## Domain Knowledge` 引导段 |
+| MEMORY.md | USER 参考消息 / `HARNESS_CONTEXT`，kind=memory | 准备时可截断，最终预算不足时可省略 |
+| knowledge 入口及路径索引 | USER 参考消息 / `HARNESS_CONTEXT`，kind=knowledge | 可因最终预算省略。`disableKnowledgeContext()` 时整段不注入 |
+| additionalContextFile | USER 参考消息 / `HARNESS_CONTEXT`，kind=additional | 必需材料，不能任意淘汰 |
 
 `maxContextTokens` 默认 8000，用于工作区材料准备，不代表最终模型输入上限。
 最终预算还包括 System、历史、状态和工具 Schema；仍超限则拒绝请求。
