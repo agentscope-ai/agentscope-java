@@ -79,6 +79,17 @@ class AguiModelTest {
         }
 
         @Test
+        void testReasoningMessageFactory() {
+            AguiMessage msg = AguiMessage.reasoningMessage("msg-r1", "Think step by step");
+
+            assertEquals("msg-r1", msg.getId());
+            assertEquals("reasoning", msg.getRole());
+            assertEquals("Think step by step", msg.getTextContent());
+            assertTrue(msg.isReasoningMessage());
+            assertFalse(msg.isAssistantMessage());
+        }
+
+        @Test
         void testRoleHelpersAreCaseInsensitive() {
             AguiMessage user =
                     new AguiMessage("msg-1", "USER", new MessageContent.Text("Hello"), null, null);
@@ -91,11 +102,15 @@ class AguiModelTest {
             AguiMessage tool =
                     new AguiMessage(
                             "msg-4", "TOOL", new MessageContent.Text("Hello"), null, "tc-1");
+            AguiMessage reasoning =
+                    new AguiMessage(
+                            "msg-5", "REASONING", new MessageContent.Text("Think"), null, null);
 
             assertTrue(user.isUserMessage());
             assertTrue(assistant.isAssistantMessage());
             assertTrue(system.isSystemMessage());
             assertTrue(tool.isToolMessage());
+            assertTrue(reasoning.isReasoningMessage());
         }
 
         @Test
