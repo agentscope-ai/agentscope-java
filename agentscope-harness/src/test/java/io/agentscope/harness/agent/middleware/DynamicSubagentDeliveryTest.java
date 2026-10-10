@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -335,6 +336,34 @@ class DynamicSubagentDeliveryTest {
         assertTrue(
                 forwarded.get().messages().stream().noneMatch(m -> textOf(m).contains("for-s2")),
                 "another session's task result must never leak into this session's reminder");
+    }
+
+    @Test
+    void onReasoning_noSubagentsNoDeliveries_forwardsOriginalInputUnchanged() {
+        // Nothing to add (no declared subagents, empty task summary) and nothing pending →
+        // the middleware must forward the original ReasoningInput instance untouched, taking
+        // the rebuilt == input.messages() pass-through branch.
+        ReActAgent agent = newReActAgent();
+        StubRepo repo = new StubRepo();
+        DynamicSubagentsMiddleware mw = newMiddleware(repo);
+
+        ReasoningInput original = new ReasoningInput(new ArrayList<>(), List.of(), null);
+        AtomicReference<ReasoningInput> forwarded = new AtomicReference<>();
+        mw.onReasoning(
+                        agent,
+                        null,
+                        original,
+                        in -> {
+                            forwarded.set(in);
+                            return Flux.<AgentEvent>empty();
+                        })
+                .blockLast();
+
+        assertSame(
+                original,
+                forwarded.get(),
+                "empty addition + no delivery must forward the original ReasoningInput as-is");
+        assertTrue(repo.markCalls.isEmpty());
     }
 
     // ---- dynamic declaration semantics preserved ----------------------------------------------
