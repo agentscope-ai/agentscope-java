@@ -24,6 +24,9 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.harness.agent.context.ContextItem;
+import io.agentscope.harness.agent.context.ContextRenderer;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
@@ -146,7 +149,13 @@ class DisableKnowledgeContextSubagentPropagationTest {
      */
     private String renderedChildPrompt(HarnessAgent child) {
         WorkspaceContextMiddleware mw = knowledgeMiddleware(child);
-        String prompt = mw.onSystemPrompt(child, RuntimeContext.empty(), "BASE\n").block();
-        return prompt != null ? prompt : "";
+        RuntimeContext rc = RuntimeContext.empty();
+        mw.onSystemPrompt(child, rc, "BASE\n").block();
+        return "BASE\n"
+                + "\n"
+                + ContextRenderer.render(
+                        rc.get(WorkspaceContextMaterials.class).items().stream()
+                                .filter(item -> item.placement() == ContextItem.Placement.SYSTEM)
+                                .toList());
     }
 }
