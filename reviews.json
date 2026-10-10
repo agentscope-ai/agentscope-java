@@ -1,0 +1,202 @@
+[
+  {
+    "id": 5311111889,
+    "node_id": "PRR_kwDOP1FeW88AAAABPJEi0Q",
+    "user": {
+      "login": "oss-maintainer",
+      "id": 284898786,
+      "node_id": "U_kgDOEPs14g",
+      "avatar_url": "https://avatars.githubusercontent.com/u/284898786?u=bb2aa7c417d54a49840932fdb26ef72f8e2af882&v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/oss-maintainer",
+      "html_url": "https://github.com/oss-maintainer",
+      "followers_url": "https://api.github.com/users/oss-maintainer/followers",
+      "following_url": "https://api.github.com/users/oss-maintainer/following{/other_user}",
+      "gists_url": "https://api.github.com/users/oss-maintainer/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/oss-maintainer/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/oss-maintainer/subscriptions",
+      "organizations_url": "https://api.github.com/users/oss-maintainer/orgs",
+      "repos_url": "https://api.github.com/users/oss-maintainer/repos",
+      "events_url": "https://api.github.com/users/oss-maintainer/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/oss-maintainer/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "### Summary\n\nAdds a granular `disableKnowledgeContext()` switch on `HarnessAgent.Builder` that suppresses the `## Domain Knowledge` guidance, `knowledge/KNOWLEDGE.md` and the knowledge file catalog, while leaving `AGENTS.md`, `MEMORY.md` and the memory tools intact. The approach is sound and the backward compatibility is handled properly — the 6-arg constructor delegates with `false`, and the IO short-circuit in `buildWorkspaceSection` avoids the `readKnowledgeMd()` read entirely rather than reading and discarding. `mergeable` is clean and `Check License` / `Check Module Sync` are green (build still running at review time).\n\nThree things keep this from an approve:\n\n1. **Subagents don't inherit the switch.** `HarnessAgentBuilderSupport` propagates every sibling `disable*` flag to both subagent factories; this one is missing from both, so a subagent of an agent that disabled knowledge context still gets the full knowledge injection.\n2. **No tests.** The diff is production-only; the PR body lists the test as \"suggested\". `WorkspaceContextMiddlewareMemoryPromptTest` is a ready-made template for exactly these assertions.\n3. **No docs.** `docs/v2/{en,zh}/docs/harness/workspace.md` tabulate every other `disable*` switch and currently state that `knowledge/` can only be switched off via `disableWorkspaceContext()`.\n\nMinor prompt-shape notes (empty `<domain_knowledge_context>` element, possibly-empty guidance block, constructor arity) are inline.\n\n### Findings\n- **[Warning]** `HarnessAgent.java:1253` — `disableKnowledgeContext` is not captured/propagated in either subagent factory in `HarnessAgentBuilderSupport`\n- **[Warning]** `HarnessAgent.java:2257` — no test coverage added for the new switch or the two new notice variants\n- **[Warning]** `HarnessAgent.java:2249-2261` — `docs/v2/en` + `docs/v2/zh` `harness/workspace.md` switch tables not updated\n- **[Info]** `WorkspaceContextMiddleware.java:194` — seventh positional param / third adjacent boolean on a public constructor; a setter would match the existing `setArtifactDeliveryEnabled` pattern\n- **[Info]** `WorkspaceContextMiddleware.java:303` — `buildGuidance()` can now return a lone `\"\\n\"`, leaving an empty guidance block in the assembled prompt\n- **[Info]** `WorkspaceContextMiddleware.java:624` — an empty `<domain_knowledge_context></domain_knowledge_context>` element is still emitted; consider skipping it like `additionalBlock`\n\n*Not blocking:* none of the above changes behaviour for callers who leave the flag off — default path is byte-identical.\n\n---\n*Automated review by github-manager-bot*",
+    "state": "COMMENTED",
+    "html_url": "https://github.com/agentscope-ai/agentscope-java/pull/3287#pullrequestreview-5311111889",
+    "pull_request_url": "https://api.github.com/repos/agentscope-ai/agentscope-java/pulls/3287",
+    "author_association": "COLLABORATOR",
+    "_links": {
+      "html": {
+        "href": "https://github.com/agentscope-ai/agentscope-java/pull/3287#pullrequestreview-5311111889"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/agentscope-ai/agentscope-java/pulls/3287"
+      }
+    },
+    "submitted_at": "2026-09-24T22:45:27Z",
+    "commit_id": "b56331f0ed2a30a77b2d49d6d6204a74d485aed3"
+  },
+  {
+    "id": 5311192468,
+    "node_id": "PRR_kwDOP1FeW88AAAABPJJdlA",
+    "user": {
+      "login": "z43460018724",
+      "id": 31715316,
+      "node_id": "MDQ6VXNlcjMxNzE1MzE2",
+      "avatar_url": "https://avatars.githubusercontent.com/u/31715316?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/z43460018724",
+      "html_url": "https://github.com/z43460018724",
+      "followers_url": "https://api.github.com/users/z43460018724/followers",
+      "following_url": "https://api.github.com/users/z43460018724/following{/other_user}",
+      "gists_url": "https://api.github.com/users/z43460018724/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/z43460018724/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/z43460018724/subscriptions",
+      "organizations_url": "https://api.github.com/users/z43460018724/orgs",
+      "repos_url": "https://api.github.com/users/z43460018724/repos",
+      "events_url": "https://api.github.com/users/z43460018724/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/z43460018724/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "",
+    "state": "COMMENTED",
+    "html_url": "https://github.com/agentscope-ai/agentscope-java/pull/3287#pullrequestreview-5311192468",
+    "pull_request_url": "https://api.github.com/repos/agentscope-ai/agentscope-java/pulls/3287",
+    "author_association": "NONE",
+    "_links": {
+      "html": {
+        "href": "https://github.com/agentscope-ai/agentscope-java/pull/3287#pullrequestreview-5311192468"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/agentscope-ai/agentscope-java/pulls/3287"
+      }
+    },
+    "submitted_at": "2026-09-24T22:57:23Z",
+    "commit_id": "f432b18996f1d546e595fa4542f08c3c68afc9e5"
+  },
+  {
+    "id": 5311192700,
+    "node_id": "PRR_kwDOP1FeW88AAAABPJJefA",
+    "user": {
+      "login": "z43460018724",
+      "id": 31715316,
+      "node_id": "MDQ6VXNlcjMxNzE1MzE2",
+      "avatar_url": "https://avatars.githubusercontent.com/u/31715316?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/z43460018724",
+      "html_url": "https://github.com/z43460018724",
+      "followers_url": "https://api.github.com/users/z43460018724/followers",
+      "following_url": "https://api.github.com/users/z43460018724/following{/other_user}",
+      "gists_url": "https://api.github.com/users/z43460018724/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/z43460018724/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/z43460018724/subscriptions",
+      "organizations_url": "https://api.github.com/users/z43460018724/orgs",
+      "repos_url": "https://api.github.com/users/z43460018724/repos",
+      "events_url": "https://api.github.com/users/z43460018724/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/z43460018724/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "",
+    "state": "COMMENTED",
+    "html_url": "https://github.com/agentscope-ai/agentscope-java/pull/3287#pullrequestreview-5311192700",
+    "pull_request_url": "https://api.github.com/repos/agentscope-ai/agentscope-java/pulls/3287",
+    "author_association": "NONE",
+    "_links": {
+      "html": {
+        "href": "https://github.com/agentscope-ai/agentscope-java/pull/3287#pullrequestreview-5311192700"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/agentscope-ai/agentscope-java/pulls/3287"
+      }
+    },
+    "submitted_at": "2026-09-24T22:57:26Z",
+    "commit_id": "f432b18996f1d546e595fa4542f08c3c68afc9e5"
+  },
+  {
+    "id": 5311192942,
+    "node_id": "PRR_kwDOP1FeW88AAAABPJJfbg",
+    "user": {
+      "login": "z43460018724",
+      "id": 31715316,
+      "node_id": "MDQ6VXNlcjMxNzE1MzE2",
+      "avatar_url": "https://avatars.githubusercontent.com/u/31715316?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/z43460018724",
+      "html_url": "https://github.com/z43460018724",
+      "followers_url": "https://api.github.com/users/z43460018724/followers",
+      "following_url": "https://api.github.com/users/z43460018724/following{/other_user}",
+      "gists_url": "https://api.github.com/users/z43460018724/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/z43460018724/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/z43460018724/subscriptions",
+      "organizations_url": "https://api.github.com/users/z43460018724/orgs",
+      "repos_url": "https://api.github.com/users/z43460018724/repos",
+      "events_url": "https://api.github.com/users/z43460018724/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/z43460018724/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "",
+    "state": "COMMENTED",
+    "html_url": "https://github.com/agentscope-ai/agentscope-java/pull/3287#pullrequestreview-5311192942",
+    "pull_request_url": "https://api.github.com/repos/agentscope-ai/agentscope-java/pulls/3287",
+    "author_association": "NONE",
+    "_links": {
+      "html": {
+        "href": "https://github.com/agentscope-ai/agentscope-java/pull/3287#pullrequestreview-5311192942"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/agentscope-ai/agentscope-java/pulls/3287"
+      }
+    },
+    "submitted_at": "2026-09-24T22:57:28Z",
+    "commit_id": "f432b18996f1d546e595fa4542f08c3c68afc9e5"
+  },
+  {
+    "id": 5311193235,
+    "node_id": "PRR_kwDOP1FeW88AAAABPJJgkw",
+    "user": {
+      "login": "z43460018724",
+      "id": 31715316,
+      "node_id": "MDQ6VXNlcjMxNzE1MzE2",
+      "avatar_url": "https://avatars.githubusercontent.com/u/31715316?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/z43460018724",
+      "html_url": "https://github.com/z43460018724",
+      "followers_url": "https://api.github.com/users/z43460018724/followers",
+      "following_url": "https://api.github.com/users/z43460018724/following{/other_user}",
+      "gists_url": "https://api.github.com/users/z43460018724/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/z43460018724/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/z43460018724/subscriptions",
+      "organizations_url": "https://api.github.com/users/z43460018724/orgs",
+      "repos_url": "https://api.github.com/users/z43460018724/repos",
+      "events_url": "https://api.github.com/users/z43460018724/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/z43460018724/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "",
+    "state": "COMMENTED",
+    "html_url": "https://github.com/agentscope-ai/agentscope-java/pull/3287#pullrequestreview-5311193235",
+    "pull_request_url": "https://api.github.com/repos/agentscope-ai/agentscope-java/pulls/3287",
+    "author_association": "NONE",
+    "_links": {
+      "html": {
+        "href": "https://github.com/agentscope-ai/agentscope-java/pull/3287#pullrequestreview-5311193235"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/agentscope-ai/agentscope-java/pulls/3287"
+      }
+    },
+    "submitted_at": "2026-09-24T22:57:32Z",
+    "commit_id": "f432b18996f1d546e595fa4542f08c3c68afc9e5"
+  }
+]

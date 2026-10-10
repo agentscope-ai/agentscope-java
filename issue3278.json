@@ -1,0 +1,103 @@
+{
+  "url": "https://api.github.com/repos/agentscope-ai/agentscope-java/issues/3278",
+  "repository_url": "https://api.github.com/repos/agentscope-ai/agentscope-java",
+  "labels_url": "https://api.github.com/repos/agentscope-ai/agentscope-java/issues/3278/labels{/name}",
+  "comments_url": "https://api.github.com/repos/agentscope-ai/agentscope-java/issues/3278/comments",
+  "events_url": "https://api.github.com/repos/agentscope-ai/agentscope-java/issues/3278/events",
+  "html_url": "https://github.com/agentscope-ai/agentscope-java/issues/3278",
+  "id": 5566261711,
+  "node_id": "I_kwDOP1FeW88AAAABS8Zpzw",
+  "number": 3278,
+  "title": "[Feature]: Add independent switch to disable knowledge context injection",
+  "user": {
+    "login": "z43460018724",
+    "id": 31715316,
+    "node_id": "MDQ6VXNlcjMxNzE1MzE2",
+    "avatar_url": "https://avatars.githubusercontent.com/u/31715316?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/z43460018724",
+    "html_url": "https://github.com/z43460018724",
+    "followers_url": "https://api.github.com/users/z43460018724/followers",
+    "following_url": "https://api.github.com/users/z43460018724/following{/other_user}",
+    "gists_url": "https://api.github.com/users/z43460018724/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/z43460018724/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/z43460018724/subscriptions",
+    "organizations_url": "https://api.github.com/users/z43460018724/orgs",
+    "repos_url": "https://api.github.com/users/z43460018724/repos",
+    "events_url": "https://api.github.com/users/z43460018724/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/z43460018724/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "labels": [
+    {
+      "id": 9333490439,
+      "node_id": "LA_kwDOP1FeW88AAAACLFHDBw",
+      "url": "https://api.github.com/repos/agentscope-ai/agentscope-java/labels/enhancement",
+      "name": "enhancement",
+      "color": "a2eeef",
+      "default": true,
+      "description": "New feature or request",
+      "archived_at": null,
+      "archived_by": null
+    },
+    {
+      "id": 11073247426,
+      "node_id": "LA_kwDOP1FeW88AAAAClARYwg",
+      "url": "https://api.github.com/repos/agentscope-ai/agentscope-java/labels/area/harness",
+      "name": "area/harness",
+      "color": "d4d4d4",
+      "default": false,
+      "description": "agentscope-harness (test/runtime support)",
+      "archived_at": null,
+      "archived_by": null
+    }
+  ],
+  "state": "open",
+  "locked": false,
+  "assignees": [
+
+  ],
+  "milestone": null,
+  "comments": 4,
+  "created_at": "2026-09-24T09:31:18Z",
+  "updated_at": "2026-09-27T10:53:26Z",
+  "closed_at": null,
+  "assignee": null,
+  "author_association": "NONE",
+  "issue_field_values": [
+
+  ],
+  "type": null,
+  "active_lock_reason": null,
+  "sub_issues_summary": {
+    "total": 0,
+    "completed": 0,
+    "percent_completed": 0
+  },
+  "issue_dependencies_summary": {
+    "blocked_by": 0,
+    "total_blocked_by": 0,
+    "blocking": 0,
+    "total_blocking": 0
+  },
+  "body": "### Problem\n\nCurrently, the only way to disable knowledge-related system prompt injection is `disableWorkspaceContext()`, which is a nuclear option — it disables **everything**: AGENTS.md, MEMORY.md, knowledge/KNOWLEDGE.md, knowledge file catalog, guidance text, and session context.\n\nThere is no independent switch to disable **only** the knowledge context while keeping AGENTS.md, MEMORY.md, and memory tools intact.\n\n### Use Case\n\nWe build an enterprise Q&A agent with a custom `searchKnowledge` tool (backed by Solr full-text search + Milvus vector search + Rerank, indexing 120K enterprise documents). The LLM is expected to call `searchKnowledge` when it needs domain knowledge.\n\nHowever, the framework's `WorkspaceContextMiddleware` injects into every system prompt:\n1. `DOMAIN_KNOWLEDGE_GUIDANCE` text (\"The knowledge/ directory is the source of truth...\")\n2. `knowledge/KNOWLEDGE.md` full content\n3. All file paths under `knowledge/` directory\n4. Workspace Files notice mentioning `knowledge/KNOWLEDGE.md`\n\nThis causes the LLM to prefer `list_files` on the knowledge/ directory or `memory_search` over calling our `searchKnowledge` tool. For example, when asked about a contact person, the LLM tries to browse local files instead of querying the enterprise knowledge base.\n\n**We need** a way to disable **only** the knowledge injection so the LLM relies on our custom tool, while keeping AGENTS.md, MEMORY.md, and memory tools working normally.\n\n### Proposed Solution\n\nAdd a `disableKnowledgeContext()` Builder method that precisely disables knowledge-related injection without affecting other workspace context:\n\n```java\nHarnessAgent.builder()\n    .disableKnowledgeContext()  // NEW: disable knowledge/ injection only\n    // AGENTS.md — still injected\n    // MEMORY.md — still injected\n    // memory tools (memory_search, memory_get, etc.) — still available\n    // session context (date, OS, workspace path) — still injected\n```\n\nWhen `disableKnowledgeContext()` is called:\n1. Skip `DOMAIN_KNOWLEDGE_GUIDANCE` text\n2. Skip `knowledge/KNOWLEDGE.md` content injection (including file IO)\n3. Skip knowledge file path catalog\n4. Use Workspace Files notice text without knowledge/ mention\n\n### Relationship to existing switches\n\n| Method | What it disables |\n|--------|-----------------|\n| `disableWorkspaceContext()` | Everything (nuclear option) |\n| `disableMemoryTools()` | memory_search / memory_get / memory_save tools |\n| `disableMemoryHooks()` | memory flush + background maintenance + MEMORY.md injection |\n| **`disableKnowledgeContext()`** | **Only** knowledge-related injection (guidance + KNOWLEDGE.md + file catalog + notice text) |\n\n### Affected Code\n\n- `WorkspaceContextMiddleware.java`: `buildGuidance()`, `workspaceFilesNotice()`, `buildKnowledgeBlock()`, `buildWorkspaceSection()`\n- `HarnessAgent.java`: Builder method + flag + constructor pass-through\n\nWe have a working prototype and are happy to review a PR once implemented.",
+  "closed_by": null,
+  "reactions": {
+    "url": "https://api.github.com/repos/agentscope-ai/agentscope-java/issues/3278/reactions",
+    "total_count": 0,
+    "+1": 0,
+    "-1": 0,
+    "laugh": 0,
+    "hooray": 0,
+    "confused": 0,
+    "heart": 0,
+    "rocket": 0,
+    "eyes": 0
+  },
+  "timeline_url": "https://api.github.com/repos/agentscope-ai/agentscope-java/issues/3278/timeline",
+  "performed_via_github_app": null,
+  "state_reason": null,
+  "pinned_comment": null
+}

@@ -128,7 +128,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private final int maxContextTokens;
     private final boolean disableMemoryTools;
     private final boolean disableMemoryHooks;
-    private final boolean disableKnowledgeContext;
+    private boolean disableKnowledgeContext = false;
     private List<String> additionalContextFiles = List.of();
     private boolean artifactDeliveryEnabled = false;
 
@@ -155,31 +155,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             int maxContextTokens,
             boolean disableMemoryTools,
             boolean disableMemoryHooks) {
-        this(
-                workspaceManager,
-                agentName,
-                environmentMemory,
-                maxContextTokens,
-                disableMemoryTools,
-                disableMemoryHooks,
-                false);
-    }
-
-    public WorkspaceContextMiddleware(
-            WorkspaceManager workspaceManager,
-            String agentName,
-            String environmentMemory,
-            int maxContextTokens,
-            boolean disableMemoryTools,
-            boolean disableMemoryHooks,
-            boolean disableKnowledgeContext) {
         this.workspaceManager = workspaceManager;
         this.agentName = agentName != null && !agentName.isBlank() ? agentName : "HarnessAgent";
         this.environmentMemory = environmentMemory;
         this.maxContextTokens = maxContextTokens;
         this.disableMemoryTools = disableMemoryTools;
         this.disableMemoryHooks = disableMemoryHooks;
-        this.disableKnowledgeContext = disableKnowledgeContext;
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -190,6 +171,10 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     public void setAdditionalContextFiles(List<String> files) {
         this.additionalContextFiles = files != null ? files : List.of();
+    }
+
+    public void setDisableKnowledgeContext(boolean disableKnowledgeContext) {
+        this.disableKnowledgeContext = disableKnowledgeContext;
     }
 
     /**
@@ -340,12 +325,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private String buildGuidance(String knowledgeContent, List<Path> knowledgeFiles) {
         StringBuilder sb = new StringBuilder();
-        if (!disableKnowledgeContext && (!knowledgeContent.isBlank() || !knowledgeFiles.isEmpty())) {
+        if (!disableKnowledgeContext
+                && (!knowledgeContent.isBlank() || !knowledgeFiles.isEmpty())) {
             sb.append(DOMAIN_KNOWLEDGE_GUIDANCE.strip()).append("\n\n");
             if (!knowledgeFiles.isEmpty()) {
                 sb.append(KNOWLEDGE_FILES_GUIDANCE.strip()).append("\n\n");
             }
-        }
         }
         if (!disableMemoryTools) {
             sb.append(MEMORY_RECALL_GUIDANCE.strip()).append("\n\n");
