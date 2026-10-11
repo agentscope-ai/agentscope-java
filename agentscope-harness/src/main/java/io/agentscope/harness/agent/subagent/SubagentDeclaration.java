@@ -96,6 +96,7 @@ public final class SubagentDeclaration {
     private final boolean persistSession;
     private final boolean inheritParentPermissions;
     private final Boolean exposeToUser;
+    private final Integer timeoutSeconds;
     private final Boolean enablePendingToolRecovery;
     private final List<String> tools;
     private final List<String> skills;
@@ -142,6 +143,7 @@ public final class SubagentDeclaration {
         this.persistSession = b.persistSession;
         this.inheritParentPermissions = b.inheritParentPermissions;
         this.exposeToUser = b.exposeToUser;
+        this.timeoutSeconds = b.timeoutSeconds;
         this.enablePendingToolRecovery = b.enablePendingToolRecovery;
         this.tools = b.tools != null ? List.copyOf(b.tools) : List.of();
         this.skills = b.skills != null ? List.copyOf(b.skills) : List.of();
@@ -303,6 +305,36 @@ public final class SubagentDeclaration {
     }
 
     /**
+     * Optional per-subagent synchronous wait timeout, in seconds.
+     *
+     * <p>When positive, this value takes precedence over the {@code timeout_seconds} argument
+     * the LLM supplies on {@code agent_spawn} / {@code agent_send}, giving the application operator
+     * control over how long the parent waits synchronously for the subagent result before
+     * returning. This is useful when the model cannot reliably estimate the wait for deep,
+     * long-running work and keeps timing out.
+     *
+     * <p>Semantics when positive:
+     *
+     * <ul>
+     *   <li>The parent waits synchronously for up to this many seconds, overriding an LLM request
+     *       for background execution ({@code timeout_seconds=0}).
+     *   <li>This bounds the wait, not the subagent's lifetime: when the wait elapses the run is
+     *       promoted to a background task and its {@code task_id} is returned, unless
+     *       {@code AgentSpawnTool#CTX_FORCE_SYNC} is enabled, in which case the subagent is
+     *       interrupted and {@code status: timeout} is returned.
+     *   <li>Values are clamped to the tool's maximum; {@code <= 0} is treated as unset.
+     * </ul>
+     *
+     * <p>{@code null} (default) defers to the per-call {@code RuntimeContext} override and then the
+     * LLM's {@code timeout_seconds} argument. This is overridden at runtime by a
+     * {@code RuntimeContext} value keyed {@code AgentSpawnTool#CTX_TIMEOUT_SECONDS}; see
+     * {@code AgentSpawnTool} for the full resolution precedence.
+     */
+    public Integer getTimeoutSeconds() {
+        return timeoutSeconds;
+    }
+
+    /**
      * Recovery policy for orphaned tool calls in an automatically constructed local subagent.
      * {@code null} (default) inherits the parent's setting; {@code true} or {@code false}
      * explicitly overrides it. Remote subagents configure recovery on their own server.
@@ -407,6 +439,7 @@ public final class SubagentDeclaration {
         private boolean persistSession = false;
         private boolean inheritParentPermissions = true;
         private Boolean exposeToUser;
+        private Integer timeoutSeconds;
         private Boolean enablePendingToolRecovery;
         private List<String> tools;
         private List<String> skills;
@@ -570,6 +603,23 @@ public final class SubagentDeclaration {
          */
         public Builder exposeToUser(Boolean exposeToUser) {
             this.exposeToUser = exposeToUser;
+            return this;
+        }
+
+        /**
+         * Per-subagent synchronous wait timeout in seconds, overriding the LLM's
+         * {@code timeout_seconds} argument.
+         *
+         * <p>Use this when the model cannot reliably estimate the wait for deep, long-running work.
+         * A positive value makes the parent wait synchronously for up to this many seconds, even if
+         * the model requests background execution. It bounds the wait rather than the subagent's
+         * lifetime: once the wait elapses the run is promoted to a background task unless
+         * force-sync is enabled. The per-call {@code RuntimeContext} override has higher priority.
+         * {@code null} (default) and non-positive values leave the LLM's argument in effect when
+         * no context override applies.
+         */
+        public Builder timeoutSeconds(Integer timeoutSeconds) {
+            this.timeoutSeconds = timeoutSeconds;
             return this;
         }
 
