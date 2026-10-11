@@ -19,6 +19,7 @@ package io.agentscope.core.a2a.agent.message;
 import io.a2a.spec.DataPart;
 import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Map;
 
@@ -33,7 +34,14 @@ public class ToolUseBlockParser implements ContentBlockParser<ToolUseBlock> {
                 MessageConvertUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_TOOL_USE);
         metadata.put(MessageConstants.TOOL_NAME_METADATA_KEY, contentBlock.getName());
         metadata.put(MessageConstants.TOOL_CALL_ID_METADATA_KEY, contentBlock.getId());
-        metadata.putAll(contentBlock.getMetadata());
+        contentBlock
+                .getMetadata()
+                .forEach(
+                        (key, value) -> {
+                            if (!MessageMetadataKeys.TOOL_CALL_PARSE_FAILED.equals(key)) {
+                                metadata.put(key, value);
+                            }
+                        });
         return new DataPart(contentBlock.getInput(), metadata);
     }
 }

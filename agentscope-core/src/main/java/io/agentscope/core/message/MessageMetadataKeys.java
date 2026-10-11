@@ -153,4 +153,14 @@ public final class MessageMetadataKeys {
      * <p><b>Type:</b> Boolean
      */
     public static final String TOOL_RETURN_DIRECT = "_tool_return_direct";
+
+    /**
+     * Internal marker that a tool call's final streamed arguments failed JSON parsing.
+     *
+     * <p>The failed raw arguments are intentionally discarded, so this marker must be retained
+     * when a {@code ToolUseBlock} is persisted or reconstructed. A block that loses this metadata
+     * cannot be revalidated from its fallback content. Provider and protocol formatters must omit
+     * this key from outbound payloads.
+     */
+    public static final String TOOL_CALL_PARSE_FAILED = "_tool_call_parse_failed";
 }

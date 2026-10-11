@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,6 +25,7 @@ import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -31,6 +33,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openai.dto.OpenAIContentPart;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIReasoningDetail;
@@ -430,6 +433,25 @@ class OpenAIMessageConverterTest {
             assertEquals(
                     "signature_abc",
                     result.getToolCalls().get(0).getFunction().getThoughtSignature());
+        }
+
+        @Test
+        @DisplayName("Should omit internal parse failure metadata from provider payload")
+        void testToolCallOmitsInternalParseFailureMetadata() {
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_parse_failed")
+                            .name("search")
+                            .input(Map.of())
+                            .content("{}")
+                            .metadata(Map.of(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED, true))
+                            .build();
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+            String payload = JsonUtils.getJsonCodec().toJson(result);
+
+            assertFalse(payload.contains(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
         }
 
         @Test
