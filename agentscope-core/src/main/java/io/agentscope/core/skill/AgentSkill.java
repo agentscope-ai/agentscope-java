@@ -80,6 +80,12 @@ public class AgentSkill {
     private final Path originDir;
 
     /**
+     * Whether this is a system capability exempt from grant-layer (per-user capability)
+     * trimming. Settable only via the Builder; public constructors default to {@code false}.
+     */
+    private final boolean system;
+
+    /**
      * Creates an AgentSkill with explicit parameters.
      *
      * <p>Use this constructor when you want to create a skill directly without parsing
@@ -155,6 +161,27 @@ public class AgentSkill {
             Map<String, String> resources,
             String source,
             Path originDir) {
+        this(metadata, skillContent, resources, source, originDir, false);
+    }
+
+    /**
+     * Full constructor including the system-capability flag (Builder path only).
+     *
+     * @param metadata Skill metadata including required {@code name} and {@code description}
+     * @param skillContent The skill implementation or instructions (must not be null or empty)
+     * @param resources Supporting resources (can be null)
+     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param originDir Absolute path to the skill's source directory, or {@code null}
+     * @param system Whether this skill is exempt from grant-layer trimming
+     * @throws IllegalArgumentException if metadata is invalid or skillContent is null or empty
+     */
+    private AgentSkill(
+            Map<String, Object> metadata,
+            String skillContent,
+            Map<String, String> resources,
+            String source,
+            Path originDir,
+            boolean system) {
         String name = getRequiredMetadataString(metadata, "name");
         String description = getRequiredMetadataString(metadata, "description");
         if (skillContent == null || skillContent.isEmpty()) {
@@ -170,6 +197,7 @@ public class AgentSkill {
         this.resources = resources != null ? new HashMap<>(resources) : new HashMap<>();
         this.source = source != null ? source : "custom";
         this.originDir = originDir;
+        this.system = system;
     }
 
     /**
@@ -280,6 +308,17 @@ public class AgentSkill {
     }
 
     /**
+     * Whether this skill is a system capability exempt from grant-layer (per-user capability)
+     * trimming. The bypass takes effect only when a surface is present; a missing surface fails
+     * closed.
+     *
+     * @return {@code true} if this skill bypasses grant-layer trimming; {@code false} by default
+     */
+    public boolean isSystem() {
+        return system;
+    }
+
+    /**
      * Creates a builder initialized with this skill's values.
      *
      * <p>This is useful for creating modified versions of existing skills.
@@ -344,6 +383,7 @@ public class AgentSkill {
         private Map<String, String> resources;
         private String source;
         private Path originDir;
+        private boolean system = false;
 
         /**
          * Creates an empty builder.
@@ -364,6 +404,7 @@ public class AgentSkill {
             this.resources = new HashMap<>(baseSkill.resources);
             this.source = baseSkill.source;
             this.originDir = baseSkill.originDir;
+            this.system = baseSkill.system;
         }
 
         /**
@@ -503,13 +544,26 @@ public class AgentSkill {
         }
 
         /**
+         * Marks the skill as a system capability exempt from grant-layer (per-user capability)
+         * trimming. Only mark framework/infrastructure skills; business skills marked system
+         * bypass per-user capability trimming entirely.
+         *
+         * @param system true to exempt this skill from grant-layer trimming
+         * @return This builder
+         */
+        public Builder system(boolean system) {
+            this.system = system;
+            return this;
+        }
+
+        /**
          * Builds the AgentSkill instance.
          *
          * @return A new AgentSkill instance
          * @throws IllegalArgumentException if required fields are missing
          */
         public AgentSkill build() {
-            return new AgentSkill(metadata, skillContent, resources, source, originDir);
+            return new AgentSkill(metadata, skillContent, resources, source, originDir, system);
         }
     }
 

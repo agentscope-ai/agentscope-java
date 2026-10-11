@@ -138,7 +138,8 @@ final class ReflectiveFunctionTool extends ToolBase {
                         .concurrencySafe(annotation.concurrencySafe())
                         .externalTool(annotation.externalTool())
                         .stateInjected(annotation.stateInjected())
-                        .returnDirect(annotation.returnDirect());
+                        .returnDirect(annotation.returnDirect())
+                        .system(annotation.system());
         if (annotation.dangerousFiles().length > 0) {
             builder.dangerousFiles(List.of(annotation.dangerousFiles()));
         }

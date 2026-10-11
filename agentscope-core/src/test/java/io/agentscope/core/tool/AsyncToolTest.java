@@ -23,6 +23,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.test.GrantTestUtils;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
@@ -63,7 +64,11 @@ class AsyncToolTest {
                         .build();
 
         ToolResultBlock response =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
                         .block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
@@ -83,7 +88,11 @@ class AsyncToolTest {
                         .build();
 
         ToolResultBlock response =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
                         .block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
@@ -103,7 +112,11 @@ class AsyncToolTest {
                         .build();
 
         ToolResultBlock response =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
                         .block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
@@ -124,7 +137,11 @@ class AsyncToolTest {
                         .build();
 
         ToolResultBlock response =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
                         .block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
@@ -155,7 +172,9 @@ class AsyncToolTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(addCall, concatCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(
+                                List.of(addCall, concatCall), null, null, GrantTestUtils.grantRc())
+                        .block(TIMEOUT);
 
         assertNotNull(responses, "Responses should not be null");
         assertEquals(2, responses.size(), "Should have two responses");
@@ -195,7 +214,9 @@ class AsyncToolTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(syncCall, asyncCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(
+                                List.of(syncCall, asyncCall), null, null, GrantTestUtils.grantRc())
+                        .block(TIMEOUT);
 
         assertNotNull(responses, "Responses should not be null");
         assertEquals(2, responses.size(), "Should have two responses");

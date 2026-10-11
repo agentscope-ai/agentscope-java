@@ -24,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.test.GrantTestUtils;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -260,11 +262,11 @@ class ExternalToolSupportTest {
                         .id("call-ext-1")
                         .name("db_query")
                         .input(input)
-                        .content(io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(input))
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         List<ToolResultBlock> results =
-                toolkit.callTools(List.of(toolCall), null, null, null)
+                toolkit.callTools(List.of(toolCall), null, null, GrantTestUtils.grantRc())
                         .block(java.time.Duration.ofSeconds(3));
 
         assertNotNull(results);
@@ -286,11 +288,11 @@ class ExternalToolSupportTest {
                         .id("call-ext-2")
                         .name("call_api")
                         .input(input)
-                        .content(io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(input))
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         List<ToolResultBlock> results =
-                toolkit.callTools(List.of(toolCall), null, null, null)
+                toolkit.callTools(List.of(toolCall), null, null, GrantTestUtils.grantRc())
                         .block(java.time.Duration.ofSeconds(3));
 
         assertNotNull(results);

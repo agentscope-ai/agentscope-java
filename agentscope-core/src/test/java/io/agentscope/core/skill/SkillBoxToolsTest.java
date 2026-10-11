@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -84,6 +85,21 @@ class SkillBoxToolsTest {
 
         // Register skill access tools
         skillBox.registerSkillLoadTool();
+    }
+
+    /**
+     * Direct-execution tests bypass the agent call() entry; seed ALLOW_ALL so the grant layer's
+     * fail-closed load gate does not deny every skill load.
+     */
+    private static RuntimeContext grantRc() {
+        RuntimeContext rc = RuntimeContext.empty();
+        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
+        return rc;
+    }
+
+    private static RuntimeContext withGrant(RuntimeContext rc) {
+        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
+        return rc;
     }
 
     private AgentTool createDummyTool(String name) {
@@ -168,7 +184,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -204,7 +224,7 @@ class SkillBoxToolsTest {
                 ToolCallParam.builder()
                         .toolUseBlock(toolUseBlock)
                         .input(input)
-                        .runtimeContext(runtimeContext)
+                        .runtimeContext(withGrant(runtimeContext))
                         .build();
         tool.callAsync(param).block(TIMEOUT);
 
@@ -230,7 +250,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -253,7 +277,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -276,7 +304,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -297,7 +329,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -333,7 +369,7 @@ class SkillBoxToolsTest {
                 ToolCallParam.builder()
                         .toolUseBlock(toolUseBlock)
                         .input(input)
-                        .runtimeContext(runtimeContext)
+                        .runtimeContext(withGrant(runtimeContext))
                         .build();
         tool.callAsync(param).block(TIMEOUT);
 
@@ -409,6 +445,7 @@ class SkillBoxToolsTest {
     }
 
     private ToolResultBlock loadSkillWithContext(String skillId, RuntimeContext rc) {
+        withGrant(rc);
         AgentTool tool = toolkit.getTool("load_skill_through_path");
         Map<String, Object> input = Map.of("skillId", skillId, "path", "SKILL.md");
         ToolCallParam param =
@@ -485,7 +522,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -512,7 +553,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -535,7 +580,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -560,7 +609,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -584,7 +637,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -605,7 +662,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -632,7 +693,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = loader.callAsync(param).block(TIMEOUT);
 
@@ -657,7 +722,11 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 

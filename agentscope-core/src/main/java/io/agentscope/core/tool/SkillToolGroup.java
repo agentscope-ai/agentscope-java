@@ -46,13 +46,25 @@ public class SkillToolGroup extends ToolGroup {
     private final String activateOnSkill;
     private final String rawDescription;
 
+    /**
+     * Single source of the skill tool-group naming convention: {@code skillId +
+     * "_skill_tools"}.
+     *
+     * @param skillId the skill identifier
+     * @return the derived tool-group name
+     */
+    public static String skillToolsGroupName(String skillId) {
+        return skillId + "_skill_tools";
+    }
+
     private SkillToolGroup(Builder builder) {
         super(
                 builder.name,
                 builder.description,
                 builder.active,
                 ToolGroupScope.META,
-                builder.tools);
+                builder.tools,
+                builder.system);
         this.activateOnSkill =
                 Objects.requireNonNull(builder.activateOnSkill, "activateOnSkill cannot be null");
         this.rawDescription = builder.description != null ? builder.description : "";
@@ -89,6 +101,9 @@ public class SkillToolGroup extends ToolGroup {
                         .active(isActive())
                         .activateOnSkill(activateOnSkill)
                         .tools(getTools())
+                        // Rebuilt via skillBuilder: without this the system flag is silently
+                        // dropped on copy.
+                        .system(isSystem())
                         .build();
         return copy;
     }
@@ -110,6 +125,7 @@ public class SkillToolGroup extends ToolGroup {
         private boolean active = false;
         private String activateOnSkill;
         private Set<String> tools = new HashSet<>();
+        private boolean system = false;
 
         /**
          * Sets the name of the tool group.
@@ -163,6 +179,18 @@ public class SkillToolGroup extends ToolGroup {
          */
         public Builder tools(Set<String> tools) {
             this.tools = new HashSet<>(tools);
+            return this;
+        }
+
+        /**
+         * Marks the group as a system capability exempt from grant-layer trimming. This builder
+         * does not extend {@link ToolGroup.Builder}, so the flag is declared explicitly here.
+         *
+         * @param system true to exempt this group from grant-layer trimming
+         * @return This builder for method chaining
+         */
+        public Builder system(boolean system) {
+            this.system = system;
             return this;
         }
 

@@ -16,6 +16,7 @@
 package io.agentscope.core.skill;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
@@ -162,6 +163,30 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
         return builderFilter.overlay(runtimeOverlay);
     }
 
+    /**
+     * Grant visibility filter, fail-closed: a missing surface or an internal error
+     * yields an empty set (the filterVisible hook's exception handling is fail-open, so
+     * this filter must catch its own exceptions).
+     *
+     * @param visible the skills remaining after the filterVisible hook
+     * @param ctx the per-call runtime context carrying the grant set
+     * @return the granted subset; empty on a missing surface or filter error
+     */
+    private List<AgentSkill> applyCapabilityFilter(List<AgentSkill> visible, RuntimeContext ctx) {
+        try {
+            CapabilitySurface surface = ctx != null ? ctx.get(CapabilitySurface.class) : null;
+            if (surface == null) {
+                return List.of();
+            }
+            return visible.stream().filter(surface::allowsSkill).toList();
+        } catch (Exception e) {
+            log.warn(
+                    "Capability filtering failed; failing closed to an empty skill set: {}",
+                    e.getMessage());
+            return List.of();
+        }
+    }
+
     private SkillBox reloadSkills(RuntimeContext ctx) {
         if (repositories.isEmpty()) {
             return null;
@@ -207,6 +232,14 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
                     e.getMessage());
             visible = new ArrayList<>(skillsByName.values());
         }
+        if (visible.isEmpty()) {
+            return null;
+        }
+
+        // Grant filtering runs after the overridable filterVisible hook and must reassign
+        // visible: the signature/cache/box below consume the filtered list, otherwise
+        // the box (prompt + registry) stays full.
+        visible = applyCapabilityFilter(visible, ctx);
         if (visible.isEmpty()) {
             return null;
         }

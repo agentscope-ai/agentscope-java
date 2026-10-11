@@ -20,8 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PreCallEvent;
@@ -31,6 +33,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.AgentTool;
@@ -77,9 +80,13 @@ class SkillRuntimeIntegrationTest {
     }
 
     private RuntimeContext sessionContext() {
-        return RuntimeContext.builder()
-                .agentState(AgentState.builder().toolContext(toolContext).build())
-                .build();
+        RuntimeContext rc =
+                RuntimeContext.builder()
+                        .agentState(AgentState.builder().toolContext(toolContext).build())
+                        .build();
+        // Direct-execution tests bypass the agent call() entry; seed the grant surface.
+        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
+        return rc;
     }
 
     @Test
@@ -92,9 +99,9 @@ class SkillRuntimeIntegrationTest {
         String group = skill.getSkillId() + "_skill_tools";
         source.createToolGroup(group, "first agent group", false);
         var builder =
-                io.agentscope.core.ReActAgent.builder()
+                ReActAgent.builder()
                         .name("agent")
-                        .model(org.mockito.Mockito.mock(io.agentscope.core.model.Model.class))
+                        .model(org.mockito.Mockito.mock(Model.class))
                         .toolkit(source)
                         .skillBox(shared);
         var first = builder.build();

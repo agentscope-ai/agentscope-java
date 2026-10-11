@@ -127,6 +127,13 @@ public @interface Tool {
     boolean externalTool() default false;
 
     /**
+     * Whether this tool is a system capability exempt from grant-layer trimming.
+     * Only mark framework/infrastructure tools; business tools marked system bypass
+     * per-user capability trimming entirely.
+     */
+    boolean system() default false;
+
+    /**
      * Whether the tool requires the agent state to be injected at call time.
      *
      * <p>When true, the method signature must declare exactly one

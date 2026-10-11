@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -186,6 +187,41 @@ class ToolExecutor {
     }
 
     /**
+     * Grant gate (E1): backend tools must pass the call's capability surface. External tools
+     * (request-config overrides) are caller-controlled and skip the gate. A missing surface
+     * means this execution never entered an agent {@code call()} (whose funnel always writes
+     * one): treat it as unrestricted — direct execution is trusted assembler code (threat
+     * model: end user vs. capability surface).
+     *
+     * @return the denial result, or {@code null} when the call proceeds
+     */
+    private Mono<ToolResultBlock> requireToolGranted(
+            ToolCallParam param, AgentTool tool, boolean fromRequestConfig) {
+        if (fromRequestConfig) {
+            return null;
+        }
+        RuntimeContext gateRc = param.getRuntimeContext();
+        CapabilitySurface surface = gateRc != null ? gateRc.get(CapabilitySurface.class) : null;
+        if (surface == null) {
+            surface = CapabilitySurface.ALLOW_ALL;
+        }
+        String toolName = param.getToolUseBlock().getName();
+        if (surface.allowsTool(tool, groupManager.getGroupsOfTool(toolName))) {
+            return null;
+        }
+        logger.warn(
+                "Denied ungranted tool call (grant): tool='{}', userId='{}', sessionId='{}',"
+                        + " agentId='{}'",
+                toolName,
+                gateRc != null ? gateRc.getUserId() : null,
+                gateRc != null ? gateRc.getSessionId() : null,
+                param.getAgent() != null ? param.getAgent().getAgentId() : "unknown");
+        // Byte-identical to the resolveTool not-found wording: do not reveal existence (the
+        // model-facing channel must not distinguish "exists but ungranted" from "missing").
+        return Mono.just(ToolResultBlock.error("Tool not found: " + toolName));
+    }
+
+    /**
      * Core tool execution logic.
      *
      * <p>This method handles:
@@ -212,11 +248,17 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
 
+        boolean fromRequestConfig = requestConfig.overrides(toolCall.getName());
+        Mono<ToolResultBlock> denial = requireToolGranted(param, tool, fromRequestConfig);
+        if (denial != null) {
+            return denial;
+        }
+
         // Check tool activation. This gate only applies to backend tools: an external tool injected
         // via the request config is ungrouped and always callable, so a same-named-but-inactive
         // backend tool must not reject it (the model was shown the external override and the call
-        // must be honoured).
-        boolean fromRequestConfig = requestConfig.overrides(toolCall.getName());
+        // must be honoured). The activation gate is orthogonal to the grant gate above: both must
+        // pass for a backend tool.
         RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
         if (!fromRequestConfig
                 && registered != null

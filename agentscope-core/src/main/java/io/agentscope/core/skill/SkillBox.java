@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
+import io.agentscope.core.tool.SkillToolGroup;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
@@ -232,7 +233,11 @@ public class SkillBox {
             throw new IllegalArgumentException("Missing or empty required parameter: path");
         }
         return skillToolFactory.loadSkillResourceImpl(
-                skillId, path, skillToolFactory.resolveToolContext(param));
+                skillId,
+                path,
+                skillToolFactory.resolveToolContext(param),
+                // Not gated here: the single decision lives in loadSkillResourceImpl.
+                param.getRuntimeContext());
     }
 
     /**
@@ -505,7 +510,7 @@ public class SkillBox {
                     throw new IllegalStateException(
                             "Must bind toolkit or call toolkit() before apply()");
                 }
-                String skillToolGroup = skill.getSkillId() + "_skill_tools";
+                String skillToolGroup = SkillToolGroup.skillToolsGroupName(skill.getSkillId());
                 if (toolkit.getToolGroup(skillToolGroup) == null) {
                     toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
                 }

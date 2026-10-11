@@ -20,9 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.skill.repository.RuntimeContextSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
 import java.util.List;
@@ -95,10 +97,20 @@ class DynamicSkillMiddlewareTest {
                 List.of(new StubRepo(skills)), new Toolkit(), null, false, workDir);
     }
 
+    /**
+     * Direct onSystemPrompt calls bypass the agent call() entry, so the grant layer's
+     * fail-closed skill filtering would cut every skill. Seed ALLOW_ALL explicitly.
+     */
+    private static RuntimeContext grantRc() {
+        RuntimeContext rc = RuntimeContext.empty();
+        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
+        return rc;
+    }
+
     @Test
     void emptyRepositoryProducesNoBox() {
         DynamicSkillMiddleware mw = middleware(List.of());
-        RuntimeContext rc = RuntimeContext.empty();
+        RuntimeContext rc = grantRc();
 
         String prompt = mw.onSystemPrompt(null, rc, "base").block();
 
@@ -110,7 +122,7 @@ class DynamicSkillMiddlewareTest {
     void repositorySkillIsExposedViaRuntimeContext() {
         AgentSkill skill = new AgentSkill("my_skill", "My Skill", "# Content", null);
         DynamicSkillMiddleware mw = middleware(List.of(skill));
-        RuntimeContext rc = RuntimeContext.empty();
+        RuntimeContext rc = grantRc();
 
         String prompt = mw.onSystemPrompt(null, rc, "base").block();
 
@@ -125,7 +137,7 @@ class DynamicSkillMiddlewareTest {
         StubRepo repo = new StubRepo(List.of(skill));
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(repo), new Toolkit(), null, false, workDir);
-        RuntimeContext rc = RuntimeContext.empty();
+        RuntimeContext rc = grantRc();
 
         mw.onSystemPrompt(null, rc, "base").block();
         assertNotNull(rc.get(SkillBox.class));
@@ -148,8 +160,8 @@ class DynamicSkillMiddlewareTest {
         StubRepo repo = new StubRepo(List.of(a));
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(repo), new Toolkit(), null, true, workDir);
-        RuntimeContext rcA = RuntimeContext.empty();
-        RuntimeContext rcB = RuntimeContext.empty();
+        RuntimeContext rcA = grantRc();
+        RuntimeContext rcB = grantRc();
         mw.onSystemPrompt(null, rcA, "").block();
         SkillBox boxA = rcA.get(SkillBox.class);
         String id = boxA.getAllSkillIds().iterator().next();
@@ -202,7 +214,7 @@ class DynamicSkillMiddlewareTest {
                 futures.add(
                         pool.submit(
                                 () -> {
-                                    RuntimeContext rc = RuntimeContext.empty();
+                                    RuntimeContext rc = grantRc();
                                     mw.onSystemPrompt(null, rc, "").block();
                                     SkillBox box = rc.get(SkillBox.class);
                                     assertEquals(
@@ -235,13 +247,13 @@ class DynamicSkillMiddlewareTest {
         StubRepo repo = new StubRepo(List.of(skill));
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(repo), new Toolkit(), null, false, workDir);
-        RuntimeContext rc = RuntimeContext.empty();
+        RuntimeContext rc = grantRc();
         mw.onSystemPrompt(null, rc, "").block();
         SkillBox active = rc.get(SkillBox.class);
         Path activeFile = active.getUploadDir().resolve(skill.getSkillId()).resolve("data.txt");
         for (int i = 0; i < 32; i++) {
             repo.skills = List.of(new AgentSkill("other" + i, "Other", "content", null));
-            mw.onSystemPrompt(null, RuntimeContext.empty(), "").block();
+            mw.onSystemPrompt(null, grantRc(), "").block();
         }
         // An executing skill may have modified its workspace; rebuilding must leave it alone.
         java.nio.file.Files.writeString(activeFile, "in use");
@@ -261,11 +273,11 @@ class DynamicSkillMiddlewareTest {
 
     @Test
     void contextualRepositoryReceivesExactRequest() {
-        var repo =
-                org.mockito.Mockito.mock(
-                        io.agentscope.core.skill.repository.RuntimeContextSkillRepository.class);
+        var repo = org.mockito.Mockito.mock(RuntimeContextSkillRepository.class);
         RuntimeContext a = RuntimeContext.builder().userId("A").sessionId("s").build();
+        a.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
         RuntimeContext b = RuntimeContext.builder().userId("B").sessionId("s").build();
+        b.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
         org.mockito.Mockito.when(repo.getAllSkills(a))
                 .thenReturn(List.of(new AgentSkill("skill_a", "A", "A", null)));
         org.mockito.Mockito.when(repo.getAllSkills(b))

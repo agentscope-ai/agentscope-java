@@ -15,11 +15,13 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.SkillToolGroup;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.io.IOException;
@@ -120,6 +122,12 @@ class SkillToolFactory {
             }
 
             @Override
+            public boolean isSystem() {
+                // Framework meta tool: ungrouped, always visible, usable even under DENY_ALL.
+                return true;
+            }
+
+            @Override
             public Map<String, Object> getParameters() {
                 // Dynamic skills are not known at build time, so the parameter enum is omitted;
                 // the skill catalog is advertised via the system prompt instead.
@@ -199,6 +207,13 @@ class SkillToolFactory {
             }
 
             @Override
+            public boolean isSystem() {
+                // Aligned with the runtime load tool: ungrouped and always visible;
+                // grant decisions live in loadSkillResourceImpl.
+                return true;
+            }
+
+            @Override
             public Map<String, Object> getParameters() {
                 // Get all available skill IDs
                 List<String> availableSkillIds = new ArrayList<>(skillRegistry.getSkillIds());
@@ -247,7 +262,12 @@ class SkillToolFactory {
                                 ToolResultBlock.error("Missing or empty required parameter: path"));
                     }
 
-                    String result = loadSkillResourceImpl(skillId, path, resolveToolContext(param));
+                    String result =
+                            loadSkillResourceImpl(
+                                    skillId,
+                                    path,
+                                    resolveToolContext(param),
+                                    param.getRuntimeContext());
                     return Mono.just(ToolResultBlock.text(result));
                 } catch (IllegalArgumentException e) {
                     logger.warn("Error loading skill resource: {}", e.getMessage());
@@ -265,15 +285,22 @@ class SkillToolFactory {
     }
 
     /**
-     * Implementation of skill resource loading logic.
+     * Implementation of skill resource loading logic. Both load paths (per-call box and the
+     * build-time bound static tool) converge here, so the grant gate lives in this method only.
      *
      * @param skillId The unique identifier of the skill
      * @param path The path to the resource file
+     * @param tcs the per-call tool context state (may be {@code null})
+     * @param rc the tool call's runtime context (may be {@code null} → unrestricted: direct
+     *     execution does not pass through grant resolution)
      * @return The formatted resource content or error message with available resources
-     * @throws IllegalArgumentException if skill doesn't exist or resource not found
+     * @throws IllegalArgumentException if skill doesn't exist, is not granted, or resource not
+     *     found
      */
-    String loadSkillResourceImpl(String skillId, String path, ToolContextState tcs) {
+    String loadSkillResourceImpl(
+            String skillId, String path, ToolContextState tcs, RuntimeContext rc) {
         AgentSkill skill = validateSkillExists(skillId);
+        requireSkillGranted(skillId, skill, rc);
 
         // Special handling for SKILL.md - return the skill's markdown content
         if ("SKILL.md".equals(path)) {
@@ -446,6 +473,33 @@ class SkillToolFactory {
     }
 
     /**
+     * Grant gate for skill loading (both load paths converge here). A missing surface means
+     * this load never entered an agent call() (whose funnel always writes one): treat it as
+     * unrestricted — direct execution is trusted assembler code.
+     *
+     * @param skillId the caller-supplied skill identifier (authoritative for the error echo)
+     * @param skill the resolved skill (from {@link #validateSkillExists})
+     * @param rc the tool call's runtime context (may be {@code null})
+     * @throws IllegalArgumentException when the skill is not granted — byte-identical to the
+     *     {@link #validateSkillExists} not-found wording: do not reveal existence
+     */
+    private void requireSkillGranted(String skillId, AgentSkill skill, RuntimeContext rc) {
+        CapabilitySurface surface = rc != null ? rc.get(CapabilitySurface.class) : null;
+        if (surface == null) {
+            surface = CapabilitySurface.ALLOW_ALL;
+        }
+        if (!surface.allowsSkill(skill)) {
+            logger.warn(
+                    "Skill load denied (grant): skillId='{}', userId='{}', sessionId='{}'",
+                    skillId,
+                    rc != null ? rc.getUserId() : null,
+                    rc != null ? rc.getSessionId() : null);
+            throw new IllegalArgumentException(
+                    String.format("Skill not found: '%s'. Please check the skill ID.", skillId));
+        }
+    }
+
+    /**
      * Validates that a skill is registered and returns its instance.
      *
      * @param skillId The unique identifier of the skill
@@ -497,7 +551,7 @@ class SkillToolFactory {
         // (skillId_skill_tools) plus any SkillToolGroup bound via activateOnSkill. Shared group
         // definitions are never mutated.
         List<String> groups = new ArrayList<>();
-        String toolsGroupName = skillId + "_skill_tools";
+        String toolsGroupName = SkillToolGroup.skillToolsGroupName(skillId);
         if (toolkit != null && toolkit.getToolGroup(toolsGroupName) != null) {
             groups.add(toolsGroupName);
         }
