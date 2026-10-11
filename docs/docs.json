@@ -54,6 +54,7 @@
                     "group": "Building Blocks",
                     "pages": [
                       "v2/en/docs/building-blocks/agent",
+                      "v2/en/docs/building-blocks/capability-grant",
                       "v2/en/docs/building-blocks/message-and-event",
                       "v2/en/docs/building-blocks/middleware",
                       "v2/en/docs/building-blocks/model",
@@ -513,6 +514,7 @@
                     "group": "核心组件",
                     "pages": [
                       "v2/zh/docs/building-blocks/agent",
+                      "v2/zh/docs/building-blocks/capability-grant",
                       "v2/zh/docs/building-blocks/message-and-event",
                       "v2/zh/docs/building-blocks/middleware",
                       "v2/zh/docs/building-blocks/model",
