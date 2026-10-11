@@ -263,22 +263,28 @@ class CapabilityGrantIntegrationTest {
     // ==================== entry resolution ====================
 
     @Test
-    @DisplayName("no resolver, or a resolver returning null → ALLOW_ALL carried on rc")
+    @DisplayName("no resolver, or a resolver returning null → ALLOW_ALL on the call-scoped rc")
     void entrySeedsAllowAllWithoutResolverOrNullReturn() {
-        ReActAgent plain = ReActAgent.builder().name("a").model(new MockModel("done")).build();
-        RuntimeContext ctx1 = rc();
-        plain.call(userMsg("hi"), ctx1).block(Duration.ofSeconds(10));
-        assertSame(CapabilitySurface.ALLOW_ALL, ctx1.get(CapabilitySurface.class));
+        RecordingMiddleware recorder1 = new RecordingMiddleware();
+        ReActAgent plain =
+                ReActAgent.builder()
+                        .name("a")
+                        .model(new MockModel("done"))
+                        .middleware(recorder1)
+                        .build();
+        plain.call(userMsg("hi"), rc()).block(Duration.ofSeconds(10));
+        assertSame(CapabilitySurface.ALLOW_ALL, recorder1.seen.get());
 
+        RecordingMiddleware recorder2 = new RecordingMiddleware();
         ReActAgent nullResolver =
                 ReActAgent.builder()
                         .name("a")
                         .model(new MockModel("done"))
                         .capabilityResolver((ctx, a) -> null)
+                        .middleware(recorder2)
                         .build();
-        RuntimeContext ctx2 = rc();
-        nullResolver.call(userMsg("hi"), ctx2).block(Duration.ofSeconds(10));
-        assertSame(CapabilitySurface.ALLOW_ALL, ctx2.get(CapabilitySurface.class));
+        nullResolver.call(userMsg("hi"), rc()).block(Duration.ofSeconds(10));
+        assertSame(CapabilitySurface.ALLOW_ALL, recorder2.seen.get());
     }
 
     @Test
@@ -308,15 +314,16 @@ class CapabilityGrantIntegrationTest {
     @DisplayName("resolver result instance is carried as-is (same reference)")
     void entryCarriesResolvedInstance() {
         CapabilitySurface granted = new CapabilitySurface(null, Set.of("g1"), Set.of());
+        RecordingMiddleware recorder = new RecordingMiddleware();
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("a")
                         .model(new MockModel("done"))
                         .capabilityResolver((ctx, a) -> granted)
+                        .middleware(recorder)
                         .build();
-        RuntimeContext ctx = rc();
-        agent.call(userMsg("hi"), ctx).block(Duration.ofSeconds(10));
-        assertSame(granted, ctx.get(CapabilitySurface.class));
+        agent.call(userMsg("hi"), rc()).block(Duration.ofSeconds(10));
+        assertSame(granted, recorder.seen.get());
     }
 
     @Test
@@ -325,6 +332,7 @@ class CapabilityGrantIntegrationTest {
         Toolkit toolkit = new Toolkit();
         SkillBox skillBox = new SkillBox(toolkit);
         skillBox.registerSkill(skill("boxed"));
+        RecordingMiddleware recorder = new RecordingMiddleware();
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("a")
@@ -333,11 +341,13 @@ class CapabilityGrantIntegrationTest {
                         .skillBox(skillBox)
                         .capabilityResolver(
                                 (ctx, a) -> new CapabilitySurface(null, Set.of("g1"), Set.of()))
+                        .middleware(recorder)
                         .build();
         RuntimeContext ctx = rc();
         agent.call(userMsg("hi"), ctx).block(Duration.ofSeconds(10));
         // Guard fired: resolver disabled, ALLOW_ALL fallback (prompt catalog stays full).
-        assertSame(CapabilitySurface.ALLOW_ALL, ctx.get(CapabilitySurface.class));
+        // Observed on the call-scoped rc — the caller's rc stays isolated.
+        assertSame(CapabilitySurface.ALLOW_ALL, recorder.seen.get());
     }
 
     @Test
@@ -386,18 +396,15 @@ class CapabilityGrantIntegrationTest {
                                 }));
             }
             start.countDown();
-            List<RuntimeContext> contexts = new ArrayList<>();
             for (Future<?> f : futures) {
-                contexts.add((RuntimeContext) f.get(30, TimeUnit.SECONDS));
+                f.get(30, TimeUnit.SECONDS);
             }
 
-            // Each rc ends with its own surface; the middleware saw the matching surface mid-call.
+            // The middleware saw the matching surface mid-call (the caller rcs stay isolated).
             assertTrue(seenByUser.get("u1").allowsToolGroup("g1"));
             assertFalse(seenByUser.get("u1").allowsToolGroup("g2"));
             assertTrue(seenByUser.get("u2").allowsToolGroup("g2"));
             assertFalse(seenByUser.get("u2").allowsToolGroup("g1"));
-            assertTrue(contexts.get(0).get(CapabilitySurface.class).allowsToolGroup("g1"));
-            assertTrue(contexts.get(1).get(CapabilitySurface.class).allowsToolGroup("g2"));
         } finally {
             pool.shutdownNow();
         }
@@ -823,7 +830,7 @@ class CapabilityGrantIntegrationTest {
         ctx.setToolRequestConfig(config);
         ToolResultBlock result = toolkit.callTool(param("ext_tool", Map.of(), ctx)).block();
 
-        assertEquals("[Awaiting external execution]", firstText(result));
+        assertTrue(result.isSuspended(), "external tool reaches the suspended short-circuit");
     }
 
     private static void assertNotUnauthorized(ToolResultBlock result) {

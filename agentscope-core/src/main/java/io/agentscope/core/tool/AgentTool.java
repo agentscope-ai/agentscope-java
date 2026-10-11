@@ -88,6 +88,21 @@ public interface AgentTool {
     }
 
     /**
+     * Gets deferred tool definition loading configuration for this tool.
+     *
+     * <p>Providers that support tool search (such as the OpenAI Responses {@code tool_search}
+     * server tool) can defer loading this tool's parameter schema until the model searches for
+     * it. Returning {@code null} means no explicit preference is provided, which leaves the tool
+     * eagerly loaded.
+     *
+     * @return deferred loading value ({@code true}/{@code false}) or {@code null} when
+     *     unspecified
+     */
+    default Boolean getDeferLoading() {
+        return null;
+    }
+
+    /**
      * Gets the optional output schema for this tool in JSON Schema format.
      *
      * <p>Most tools do not expose a structured output schema to models, so the default

@@ -17,7 +17,10 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -44,11 +47,17 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 @DisplayName("ReActAgent RuntimeContext")
 class ReActAgentRuntimeContextTest {
@@ -133,7 +142,12 @@ class ReActAgentRuntimeContextTest {
                 "unexpected tool output: " + toolOut);
 
         RuntimeContext r = fromMiddleware.get();
-        assertSame(run, r, "middleware receives the explicit call context");
+        assertNotSame(run, r, "each execution isolates its identity from the caller context");
+        assertEquals(run.getUserId(), r.getUserId());
+        assertEquals("from-initial-put", run.get(SharedPojo.class).value);
+        assertEquals("from-pre", r.get(SharedPojo.class).value);
+        assertNotNull(r.get(ExecutionIdentity.CONTEXT_KEY));
+        assertNull(run.get(ExecutionIdentity.CONTEXT_KEY));
 
         assertTrue(
                 agent
@@ -179,15 +193,15 @@ class ReActAgentRuntimeContextTest {
         assertSame(agent.getToolExecutionContext(), mergedFromNull.getToolExecutionContext());
     }
 
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"complete", "error", "cancel"})
+    @ParameterizedTest
+    @ValueSource(strings = {"complete", "error", "cancel"})
     void concurrentCallKeepsItsContextAfterAnotherCallTerminates(String termination) {
         RuntimeContext alice = RuntimeContext.builder().userId("alice").sessionId("s").build();
         RuntimeContext bob = RuntimeContext.builder().userId("bob").sessionId("s").build();
-        var aliceRelease = reactor.core.publisher.Sinks.<String>one();
-        var bobRelease = reactor.core.publisher.Sinks.<String>one();
-        Map<String, RuntimeContext> entered = new java.util.concurrent.ConcurrentHashMap<>();
-        Map<String, RuntimeContext> resumed = new java.util.concurrent.ConcurrentHashMap<>();
+        var aliceRelease = Sinks.<String>one();
+        var bobRelease = Sinks.<String>one();
+        Map<String, RuntimeContext> entered = new ConcurrentHashMap<>();
+        Map<String, RuntimeContext> resumed = new ConcurrentHashMap<>();
         MiddlewareBase middleware =
                 new MiddlewareBase() {
                     @Override
@@ -212,30 +226,33 @@ class ReActAgentRuntimeContextTest {
                         .model(new MockModel("done"))
                         .middlewares(List.of(middleware))
                         .build()) {
-            AtomicReference<Throwable> aliceError = new AtomicReference<>();
-            AtomicReference<Msg> aliceResult = new AtomicReference<>();
-            var callA = agent.call("a", alice).subscribe(aliceResult::set, aliceError::set);
+            var callA = agent.call("a", alice).toFuture().orTimeout(10, TimeUnit.SECONDS);
             var callB = agent.call("b", bob).toFuture();
             try {
-                assertSame(alice, entered.get("alice"));
-                assertSame(bob, entered.get("bob"));
+                assertNotSame(alice, entered.get("alice"));
+                assertNotSame(bob, entered.get("bob"));
+                assertEquals("alice", entered.get("alice").getUserId());
+                assertEquals("bob", entered.get("bob").getUserId());
+                assertNotSame(entered.get("alice"), entered.get("bob"));
                 if (termination.equals("cancel")) {
-                    callA.dispose();
+                    callA.cancel(true);
                 } else if (termination.equals("error")) {
                     aliceRelease.tryEmitError(new IllegalStateException("expected failure"));
-                    assertNotNull(aliceError.get());
+                    assertThrows(CompletionException.class, callA::join);
                 } else {
                     aliceRelease.tryEmitValue("system");
-                    assertNotNull(aliceResult.get());
+                    assertNotNull(callA.join());
                 }
                 bobRelease.tryEmitValue("system");
-                assertNotNull(callB.get(10, java.util.concurrent.TimeUnit.SECONDS));
-                assertSame(bob, resumed.get("bob"));
+                assertNotNull(callB.get(10, TimeUnit.SECONDS));
+                assertSame(entered.get("bob"), resumed.get("bob"));
+                assertNull(alice.get(ExecutionIdentity.CONTEXT_KEY));
+                assertNull(bob.get(ExecutionIdentity.CONTEXT_KEY));
                 assertEquals("bob", bob.getAgentState().getUserId());
             } catch (Exception e) {
                 throw new AssertionError(e);
             } finally {
-                callA.dispose();
+                callA.cancel(true);
                 callB.cancel(true);
             }
         }

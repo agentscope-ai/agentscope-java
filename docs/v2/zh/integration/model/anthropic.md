@@ -40,6 +40,27 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
+## 服务端工具
+
+Anthropic 内置工具由 Anthropic 在模型服务端执行，不会进入 AgentScope 本地 Toolkit。使用 SDK
+的强类型工具定义构造 `ToolUnion`，再交给 `AnthropicServerTool.of(...)` 包装：
+
+```java
+import com.anthropic.models.messages.ToolUnion;
+import com.anthropic.models.messages.WebSearchTool20250305;
+import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
+
+AnthropicChatModel model = AnthropicChatModel.builder()
+    .apiKey(System.getenv("ANTHROPIC_API_KEY"))
+    .modelName("claude-sonnet-4.5")
+    .addServerTool(AnthropicServerTool.of(
+        ToolUnion.ofWebSearchTool20250305(WebSearchTool20250305.builder().build())))
+    .build();
+```
+
+服务端工具可以与本地 function tools 同时配置；Anthropic 按工具名称选择工具，因此两者名称冲突时会快速
+失败。`AnthropicServerTool.of(...)` 只接受 SDK 内置工具定义，不接受自定义 client tool。
+
 ### Bearer Token 鉴权
 
 对于需要 `Authorization: Bearer <token>` 的 Anthropic 兼容网关，通过模型 builder 设置

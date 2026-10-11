@@ -3,6 +3,8 @@ title: MySQL Skill Repository
 zh_link: /v2/zh/integration/skill/mysql-repository
 ---
 
+
+> **Deprecated**: migrate to [`JdbcAgentSkillRepository`](/v2/en/integration/distributed/jdbc) in the unified JDBC module — one implementation for MySQL, PostgreSQL, H2, SQLite, and future dialects. Tables from this module work as-is; pre-`metadata_json` tables need one ALTER first. See the [migration notes](/v2/en/integration/distributed/jdbc#migrating-from-legacy-modules).
 `agentscope-extensions-skill-mysql-repository` stores skills in MySQL with full CRUD: edit and save in your admin console / business system, and the Agent picks up changes immediately on the next read.
 
 ## When to use

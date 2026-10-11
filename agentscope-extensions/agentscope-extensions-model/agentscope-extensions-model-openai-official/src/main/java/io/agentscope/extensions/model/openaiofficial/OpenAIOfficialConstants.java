@@ -59,8 +59,12 @@ final class OpenAIOfficialConstants {
     static final String MD_RESPONSE_COMPLETED_AT = "openai.response.completed_at";
     static final String MD_RESPONSE_INCOMPLETE_REASON = "openai.response.incomplete_reason";
     static final String MD_RESPONSE_ERROR = "openai.response.error";
+    static final String MD_RESPONSE_CITATIONS = "openai.response.citations";
 
     // Reasoning-level (internal state, used for history replay)
     static final String MD_REASONING_ENCRYPTED_CONTENT = "openai.reasoning.encrypted_content";
     static final String MD_REASONING_TEXT = "openai.reasoning.text";
+
+    // Function-call-level (internal state, used for history replay)
+    static final String MD_FUNCTION_CALL_NAMESPACE = "openai.functionCall.namespace";
 }

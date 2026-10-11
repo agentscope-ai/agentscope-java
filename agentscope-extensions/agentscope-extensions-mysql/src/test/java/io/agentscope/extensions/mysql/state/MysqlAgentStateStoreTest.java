@@ -16,8 +16,11 @@
 package io.agentscope.extensions.mysql.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,6 +36,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -62,9 +66,12 @@ class MysqlAgentStateStoreTest {
         when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
         when(preparedStatement.executeQuery()).thenReturn(resultSet);
         when(preparedStatement.executeUpdate()).thenReturn(1);
-        // Constructor verification calls: verifyDatabaseExists, verifyTableExists,
-        // ensureVersionColumn. All three need resultSet.next() → true.
-        when(resultSet.next()).thenReturn(true, true, true);
+        // The constructor runs, in order for the createIfNotExist=false path used by newStore():
+        // verifyDatabaseExists, verifyTableExists, ensureVersionColumn. The first three need
+        // resultSet.next() -> true, and the trailing false is the default for anything after them,
+        // so
+        // a mock that never answers false cannot make a read loop spin.
+        when(resultSet.next()).thenReturn(true, true, true, false);
         // ensureVersionColumn: COUNT(*) returns 1 (column exists, no ALTER needed)
         when(resultSet.getInt(1)).thenReturn(1);
     }
@@ -215,5 +222,37 @@ class MysqlAgentStateStoreTest {
         long result = store.saveIfVersion("user", "session", "agent_state", new TestState("v"), 0L);
 
         assertEquals(AgentStateStore.UNVERSIONED, result);
+    }
+
+    @Test
+    @DisplayName("auto-created sessions table pins a binary collation on session_id and state_key")
+    void createTablePinsBinaryCollationOnKeyColumnsOnly() throws Exception {
+        // The table default is utf8mb4_unicode_ci (case-insensitive), so two users whose ids
+        // differ only in case would otherwise share session state.
+        //
+        // With createIfNotExist=true the constructor verifies existence after creating (next ->
+        // true) and then runs the INFORMATION_SCHEMA version-column check (next -> true). The
+        // DDL itself is picked out of the captured statements rather than by position, so the
+        // assertion does not depend on how many statements the constructor issues.
+        when(resultSet.next()).thenReturn(true, true, false);
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+
+        new MysqlAgentStateStore(dataSource, "agentscope", "agentscope_sessions", true);
+
+        verify(connection, atLeastOnce()).prepareStatement(sqlCaptor.capture());
+        String ddl =
+                sqlCaptor.getAllValues().stream()
+                        .filter(sql -> sql.startsWith("CREATE TABLE"))
+                        .findFirst()
+                        .orElseThrow(
+                                () ->
+                                        new AssertionError(
+                                                "No CREATE TABLE was issued: "
+                                                        + sqlCaptor.getAllValues()));
+
+        assertTrue(ddl.contains("session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(ddl.contains("state_key VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(ddl.contains("state_data LONGTEXT NOT NULL"));
+        assertFalse(ddl.contains("LONGTEXT COLLATE"));
     }
 }

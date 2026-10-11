@@ -93,7 +93,13 @@ public final class JevModelRouterMiddlewareTest {
                                         + " decisions.")
                         .instructions("Choose the least costly model that can complete the task.")
                         .confidenceThreshold(0.30)
-                        .failOpen(false)
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(5),
+                                        "example-v1",
+                                        (ctx, record) -> {}))
                         .build();
 
         ReActAgent agent =

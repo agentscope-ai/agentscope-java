@@ -97,6 +97,18 @@ public @interface Tool {
     boolean strict() default false;
 
     /**
+     * Whether to defer loading this tool's full definition until the model needs it.
+     *
+     * <p>This is a per-tool hint for providers that support deferred tool loading (such as the
+     * OpenAI Responses {@code tool_search} server tool). The tool name and description remain
+     * visible to the model, while the parameter schema is loaded only after a tool search.
+     * Providers without deferred loading support ignore this flag.
+     *
+     * @return true to defer this tool's schema until tool search loads it
+     */
+    boolean deferLoading() default false;
+
+    /**
      * Whether the tool only reads data without observable side effects.
      *
      * <p>Read-only tools are auto-allowed under {@code PermissionMode.EXPLORE} and

@@ -152,12 +152,12 @@ function App() {
 
 ## 示例项目
 
-完整示例见 [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui)：
+完整示例见 [agentscope-examples/documentation](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/documentation)：
 
 ```bash
 export DASHSCOPE_API_KEY=your-key
-cd agentscope-examples/agui
-mvn spring-boot:run
+cd agentscope-examples/documentation
+mvn spring-boot:run -Dspring-boot.run.mainClass=io.agentscope.examples.documentation2.agui.AguiExampleApplication
 ```
 
 访问 http://localhost:8080 查看演示。

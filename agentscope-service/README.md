@@ -1,63 +1,42 @@
 # AgentScope Service
 
-## Release deployment and documentation
-
-For published-image Docker and Helm installation, see the [deployment guide](deploy/README.md) and [release runbook](release/README.md). The complete [Service documentation](../docs/v2/en/service/index.md) covers usage and operations. The local startup instructions below are for development and include demo users and optional database resets.
-
-
-> **An Agent control and orchestration platform built on AgentScope Harness — a unified control plane for the enterprise.**
+> **An Agent as a Service platform for business applications: submit work through APIs, stay involved, and retrieve reviewable results and deliverables.**
 
 [中文说明](README_zh.md)
 
-AgentScope Service is not meant to replace your existing Agent frameworks. It adds a unified control plane so you can govern and coordinate Agents built with different frameworks and stacks — Claude, OpenClaw, QwenPaw, and more — in one place.
+AgentScope Service publishes Agents that research, use tools, and verify results as callable services. Applications can generate customer proposals in a CRM, verify documents in a pipeline, investigate incidents and create PRs in an engineering product, provide an interactive specialist assistant, or run scheduled background tasks.
 
-![AgentScope Service](/docs/imgs/agentservice/agentscope-service-architecture.png)
-
-- **AgentScope Service is a control plane.** It provides agent registration, discovery, and distributed coordination for every Agent in the enterprise, and works with mainstream Agent runtimes including AgentScope, LangChain, ADK, and Claude / Qoder. Enterprises get a single place to inspect Agent metrics and operate on live Sessions — for example, compressing session context.
-- **AgentScope Service provides low-code Agent creation and deployment.** Built on the AgentScope Harness runtime, it lets you run multiple Agents on one Managed Agents platform under unified operations. The platform hosts Harness capabilities, while tool execution can be delegated to a Sandbox that you control.
-- **Agents registered with AgentScope Service can be assembled into one or more Teams.** Whether the Agent is a self-hosted AgentScope runtime or a low-code Managed Agent Harness runtime, Agents can be orchestrated together to tackle more complex work.
-
-These paths are not mutually exclusive. Inside one company, R&D may use Coding Agents, a business platform may run AgentScope, and a new project may want hosted Harness from day one — that mix is common. AgentScope Service does not lock you into any single agent framework or platform; it provides unified control-plane capabilities across agent runtimes.
+Users start work and review delivery inside their existing product. Service runs and coordinates Agents and exposes their interactions. Application teams own business tools, data authorization, the interface, and result acceptance. See [Use cases](../docs/v2/en/service/usecases.md) for integration designs.
 
 ## Capabilities
 
-### Control Plane
+### From task to delivery through APIs
 
-The Control Plane (component name: Aistio) is the core of AgentScope Service. User-operated Agent applications register through the Application SDK / ASDP. Managed Agents, external applications, and user-operated Runtime Hosts all execute the same durable `ExecutionAttempt` contract.
+Create or connect an Agent, configure resources, and publish an Endpoint. Applications call it with Application credentials, retain the Invocation ID, and read status, snapshots, events, pending actions, and artifacts. Jobs serve independent background work; Conversations serve session-capable single Agents. Each task or conversation turn has its own Invocation.
 
-The Dashboard is the Control Plane's visual console. It gives the whole fleet a live view of online agents, deployment instances, active sessions, token usage, and other global signals so operators can see how the cluster is doing.
+Endpoints define input/output contracts and releases. Applications use queries, SSE, or Webhooks to receive changes, involve people in decisions, and return verified results to a business process. Execution completion and business acceptance are separate stages.
 
-![dashboard](/docs/imgs/agentservice/agentscope-service-dashboard.png)
+Start with the [API quickstart](../docs/v2/en/service/first-session.md), then follow [Endpoint publishing](../docs/v2/en/service/endpoints.md) and [Unified service API](../docs/v2/en/service/service-api.md). Managed native session, file, subagent, and checkpoint APIs provide their respective extensions; their IDs, authentication, and event cursors are not interchangeable with public Invocations.
 
-From the Dashboard you can also inspect session details, view the live context state of an active session (including how different parts of the context contribute), dynamically adjust or compress session context, and intervene in a running conversation.
+### Choose execution for the task
 
-### Managed Agents
+- **Managed:** Define a specialist Agent through instructions, models, tools, and resources. Service runs AgentScope Harness, while tools execute in the configured Environment. Deploy the platform on your own infrastructure.
+- **External:** Connect an existing AgentScope or other framework application, retaining its process and deployment. Implement task execution, event reporting, and supported controls.
+- **Hosted:** Reuse Coding Agents such as Codex or Claude Code through a Runtime Host that manages provider processes and work directories.
 
-Managed Agents evolve from the `agentscope-builder` platform. They remain a low-code Agent platform that gives developers SaaS-style Agent definition and hosted execution. The upgrade further emphasizes the split between reasoning and tool execution: Harness capabilities are hosted more thoroughly, while tool execution stays under greater user control.
+Validate delivery with one Agent first. Use a Team for dynamic delegation or a Workflow for explicit steps, conditions, and human gates. Callers continue to consume an Endpoint and follow its Invocation. Teams and Workflows currently provide Jobs; interaction support depends on runtime capabilities.
 
-![managed agents](/docs/imgs/agentservice/agentscope-service-managedagents-arc.png)
+### Shared management and observation
 
-Agent definition follows the core design of AgentScope Harness. You first define foundational concepts such as Workspace and Memory, then associate a workspace and memory with an agent to create it.
+The Control Plane manages the Agent catalog, bindings, releases, application identity, task coordination, and public invocations. Managed Agents, External Applications, and Runtime Hosts cooperate through durable execution contracts. Console is the visual interface for API configuration, task inspection, and operations; business users can stay in their own product.
 
-The recommended path is: create Agent → create Environment → create Session → send the first message → watch the event stream in the Dashboard. Creating a Session alone does not start the Agent. For long-running work, Managed Agents especially emphasize **recoverability**: events are persisted, state can be rebuilt, and HITL can pause and resume. A front-end refresh or a service replica change should not mean starting over.
-
-Runtime design is closely aligned with Claude Managed Agents. Harness infrastructure and runtime are fully hosted (backed by AgentScope Harness Runtime). The Brain/Hands split gives users more control over where tools actually run. Deployment separates into a Control Plane and a managed Dataplane — see the production deployment section below.
-
-### Agent Teams
-
-Every agent registered with the AgentScope Service Control Plane — whether self-deployed and registered through a framework (LangChain, AgentScope, ADK, Claude SDK, and so on), or created as a Managed Agent through the low-code path — can be orchestrated into Agent Teams to collaborate on complex work.
-
-![agent-service-teams.png](/docs/imgs/agentservice/agent-service-teams.png)
-
-In AgentScope Service, a Team is not a chat room. It is an operable collaboration unit: tasks can be claimed, plans can be approved, members can be woken, and state does not vanish just because a Session ends. A common pattern is a Lead that decomposes and accepts work, with Members claiming research, coding, verification, and other subtasks by capability. The platform owns message routing, the task board, and lifecycle — business code should not have to hand-roll temporary multi-process communication.
-
-One point worth calling out: AgentScope Framework natively supports Agent Teams. That mechanism uses the AgentScope Service Control Plane for distributed task management and scheduling. So you can either use AgentScope Framework's native Teams capability during main-agent development to compose multi-agent collaboration, or dynamically assemble independent Agents in the console for a specific complex task. Which path you choose depends on the scenario.
+Workspaces, Environments, Memory, and Vault organize execution resources. Application identity and business end-user identity require separate handling: different credentials in one Application do not automatically isolate users' tasks. Configure CRM, GitHub, order-system, and other connections in the integration.
 
 ## Architecture
 
 ### How it works
 
-Humans reach the Control Plane through the Dashboard (browser) or the REST API (SDK / curl / third-party integration). Three data-plane kinds are managed together:
+Business applications submit and observe work through Endpoint / Invocation APIs. Developers configure capabilities through management APIs or Console. The Control Plane coordinates three execution models:
 
 - `managed`: hosted AgentScope Harness execution;
 - `external-application`: user applications built with AgentScope, LangChain, Claude Agent SDK, and others, registered through Application SDK / ASDP;
@@ -75,78 +54,128 @@ In production, the recommended AgentScope Service deployment looks like this:
 | Plane | Owns | Does not own |
 | --- | --- | --- |
 | Gateway | Public entry, authentication, and API routing | Business state and Agent execution |
-| Control Plane (`aistiod`) | Product resources, console, Agent state, Sessions, Teams, and runtime commands | Harness inference and Session stream transport |
+| Control Plane (`service-controlplane`) | Product resources, publishing and Invocations, public events, task coordination, runtime commands | Harness inference and native Managed Session event generation |
 | Dataplane | Managed Harness Runtime, event log, SSE, Turn Lease, HITL, and Work Queue | Direct reads of product Catalog tables |
 | Scheduler | Channel, Cron, outbound jobs, and Self-hosted Hands Workers | The inference loop |
 
 
 ## How Agents attach
 
-AgentScope Service serves two kinds of users at once:
+Application developers can validate a call with the [API quickstart](../docs/v2/en/service/first-session.md). Platform teams prepare models, execution resources, identities, and releases. Existing applications implement the [External execution adapter](../docs/v2/en/service/register-agentscope-agent.md) before publishing a service.
 
-1. **Platform / platform-services teams**: create Managed Agents through the Console / API and build hosted agents quickly.
-2. **Business engineering teams**: already have Agents built with different stacks and want them under unified governance — attach through the Application SDK / ASDP.
+## Quick start with Docker Compose
 
-Currently supports Agent Framework, Coding Agent,
+Use the published `2.1.0-BETA1` prerelease. Install Docker Engine or Docker Desktop
+with Compose v2, Bash, curl and OpenSSL; have a model API credential available.
+No source checkout, Java, Maven or Go is needed to start the platform.
 
-## Quick start
-
-### Prerequisites
-
-- Docker
-- JDK 17+
-- Maven
-- Go 1.26+
-- A model API key; the example below uses DashScope
-
-Node.js 22 is required for a fresh local source checkout or a console rebuild. Published-image deployments do not require Node.js.
-
-### 1. Start the local stack
-
-From the monorepo:
+### 1. Download and initialize
 
 ```bash
-git clone https://github.com/agentscope-ai/agentscope-java.git
-cd agentscope-java
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/agentscope-service-2.1.0-BETA1-compose.tar.gz
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/SHA256SUMS
+awk '$2 == "agentscope-service-2.1.0-BETA1-compose.tar.gz"' SHA256SUMS > compose.sha256
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c compose.sha256
+else
+  shasum -a 256 -c compose.sha256
+fi
+```
 
-export DASHSCOPE_API_KEY=sk-xxx
+```bash
+tar -xzf agentscope-service-2.1.0-BETA1-compose.tar.gz
 cd agentscope-service
-scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
+./init-env.sh 2.1.0-BETA1 sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope
 ```
 
-This starts PostgreSQL, `aistiod`, the data plane, scheduler, and gateway. Local development sets `AISTIO_ENABLE_KUBERNETES=false`; CRD reconcilers and ASDP gRPC are not required for the hosted product flow.
-Because the project has not been released and v4 deliberately replaces the legacy execution schema, `BUILDER_REBUILD=1` also recreates the disposable `cp`, `rt`, and `dp` development schemas. Use `BUILDER_RESET_DB=0` only when an already-v4 local database must be preserved. The startup script verifies all three schemas and the terminal collaboration/orchestration migrations before reporting success; run `scripts/smoke.sh` for the API-level end-to-end check.
+Edit the generated `.env` to set `DASHSCOPE_API_KEY`. For a trusted local evaluation,
+set `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`; tools then run inside the Dataplane
+container. Other installations should prepare an isolated execution Environment.
+Initialization preserves an existing `.env`; keep its credentials and Vault key
+with your backups.
 
-| Item | Value |
-| --- | --- |
-| Console and public API | http://localhost:18080 |
-| Default login | `admin` / `admin` |
-| Additional seed users | `alice` / `alice`, `bob` / `bob` |
-| Logs and local state | `.dev-stack/` |
-
-Default users and development secrets are for local use only.
-
-### 2. Run your first session
-
-1. Open http://localhost:18080 and sign in (`admin` / `admin`).
-2. In **Managed Agents**, create an Agent.
-3. In the local development stack, a new Managed Agent is automatically bound to a shared `default-local` Environment. You can select a different Environment in Agent settings.
-4. Open **Sessions**, create a session, and send the first message.
-5. In **Dashboard**, inspect online status, events, and runtime state.
-6. For collaboration, create a persistent **Team**, assign an Issue, and inspect discussion routes and AgentTasks.
-
-To try BYO Agent registration, use the sample at `agentscope-examples/agents/agentscope-paw`. After it starts, the agent should appear in the Dashboard.
-
-To bring **DeepSeek Harness** into the same fleet, load the Cordis plugin at `agentscope-service/aistio/sdk/dsh` (`@agentscope/dsh-aistio`). It self-registers with aistiod, serves `/agentscope/*`, receives AgentTask events, and uses the same Issue/Comment/Artifact contract as other runtimes. See that directory's [README](aistio/sdk/dsh/README.md).
-
-
-### 3. Stop the stack
+### 2. Start and use Service
 
 ```bash
-scripts/dev-down.sh
+docker compose pull
+docker compose up -d --wait --wait-timeout 600
+docker compose ps
+curl -fsS http://localhost:18080/actuator/health
 ```
+
+The stack starts PostgreSQL, Control Plane with Dashboard, Dataplane, Scheduler
+and Gateway using published amd64/arm64 images. Open http://localhost:18080 and
+sign in as `admin` with `CONTROL_PLANE_BOOTSTRAP_PASSWORD` from `.env`, then change
+the password. The release installation creates no demo users.
+
+Follow [Deploy and prepare Service](https://java.agentscope.io/v2/en/service/quickstart)
+to configure accounts, a model and an execution Environment, then
+[create your first Managed Agent](https://java.agentscope.io/v2/en/service/create-managed-agent).
+For the DSH plugin, see its [installation guide](service-controlplane/sdk/dsh/README.md).
+
+Stop with `docker compose down`. Data volumes are retained; do not use `-v` for an
+ordinary shutdown. See [operations](https://java.agentscope.io/v2/en/service/operations)
+before upgrading or restoring data.
+
+## Install CLI and Runtime Host with Go
+
+To connect a Coding Agent on a separate Linux/macOS host, install Go 1.26+ and
+both commands at the same version:
+
+```bash
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
+AS_CLI_BIN_DIR="$(go env GOBIN)"
+if [ -z "$AS_CLI_BIN_DIR" ]; then
+  AS_CLI_BIN_DIR="$(go env GOPATH)/bin"
+fi
+export PATH="$AS_CLI_BIN_DIR:$PATH"
+as version
+agentscope-runtime-host -help
+as connect http://localhost:18080
+as runtime status
+```
+
+Use your actual Service URL when the Host is on another machine. Install and
+authenticate the Coding Agent provider separately. The CLI connects to an existing
+Service and starts Runtime Host; it does not deploy the platform. Persist the PATH
+setting in your shell configuration. See the
+[Runtime Host guide](https://java.agentscope.io/v2/en/service/runtime-host).
+
+## Production installation with Helm
+
+Prepare external PostgreSQL, shared RWX Workspace storage, Artifact storage,
+a configuration Secret, domain and TLS. Add the published Chart repository:
+
+```bash
+helm repo add agentscope https://chickenlj.github.io/helm-charts
+helm repo update agentscope
+```
+
+Follow the [production installation guide](https://java.agentscope.io/v2/en/service/kubernetes)
+to install `agentscope/agentscope-service` with `--version 2.1.0-BETA1` and the ACR
+namespace `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`. The Chart runs one
+replica per component with Recreate updates; allow a maintenance window.
 
 ## Development
+
+### Start the source development stack
+
+Source development needs JDK 17+, Maven, Go 1.26+, Node.js 22 and Docker.
+From the repository root:
+
+```bash
+export DASHSCOPE_API_KEY=YOUR_MODEL_CREDENTIAL
+cd agentscope-service
+scripts/dev-down.sh
+BUILDER_REBUILD=1 scripts/dev-up.sh
+# Stop later with scripts/dev-down.sh.
+```
+
+The development stack seeds demo users and uses development secrets. A full
+rebuild resets the disposable `cp`, `rt` and `dp` schemas by default; set
+`BUILDER_RESET_DB=0` only to retain an existing compatible development database.
+It is separate from the release Compose installation above.
 
 ### Build the backend
 
@@ -155,7 +184,7 @@ Run the Maven build from the monorepo root so all AgentScope snapshots used by t
 ```bash
 mvn install -DskipTests
 
-cd agentscope-service/aistio
+cd agentscope-service/service-controlplane
 make build
 make test
 ```
@@ -165,7 +194,7 @@ make test
 ```bash
 cd agentscope-service/frontend
 npm install
-npm run build   # emits static assets into ../aistio/ui
+npm run build   # emits static assets into ../service-controlplane/ui
 
 npm run dev     # Vite HMR; /api proxies to the gateway
 ```
@@ -184,7 +213,7 @@ docker compose -f agentscope-service/docker-compose.yml up --build
 | Service | Port | Exposure |
 | --- | ---: | --- |
 | Gateway | 18080 | Public (container port 8080 with Docker Compose) |
-| `aistiod` | 8081 | Internal |
+| `service-controlplane` | 8081 | Internal |
 | Data plane | 8082 | Internal |
 | Scheduler | 8083 | Internal |
 | PostgreSQL | 5432 | Local infrastructure |
@@ -202,10 +231,10 @@ Java services use `builder.*` properties and `BUILDER_*` environment variables. 
 | `BUILDER_DB_URL`, `BUILDER_DB_USER`, `BUILDER_DB_PASSWORD` | Java data-plane database |
 | `BUILDER_CONTROL_URL`, `BUILDER_DATA_URL`, `BUILDER_SCHEDULER_URL` | Internal service endpoints |
 | `BUILDER_E2B_API_KEY` | E2B credential for `sandbox` environments |
-| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | Allows new `local` Environment bindings. Defaults to `false` in `aistiod`; `scripts/dev-up.sh` and the development Compose stack opt in. Keep disabled in production. |
-| `AISTIO_PRODUCT_DSN` | Product database used by `aistiod` |
-| `AISTIO_ENABLE_KUBERNETES` | Enables Aistio CRD reconcilers and Kubernetes integration |
-| `BUILDER_REBUILD=1` | Rebuilds the monorepo/aistiod and, by default, recreates the disposable local `cp`/`rt`/`dp` schemas |
+| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | Allows new `local` Environment bindings. Defaults to `false` in `service-controlplane`; `scripts/dev-up.sh` and the development Compose stack opt in. Keep disabled in production. |
+| `CONTROL_PLANE_PRODUCT_DSN` | Product database used by `service-controlplane` |
+| `CONTROL_PLANE_ENABLE_KUBERNETES` | Enables Control Plane CRD reconcilers and Kubernetes integration |
+| `BUILDER_REBUILD=1` | Rebuilds the monorepo/service-controlplane and, by default, recreates the disposable local `cp`/`rt`/`dp` schemas |
 | `BUILDER_RESET_DB=0` | Preserves an already-v4 local database during a full binary rebuild |
 | `BUILDER_SMOKE_TEST=1` | Runs `scripts/smoke.sh` automatically after health and SQL-schema verification |
 
@@ -214,17 +243,15 @@ Production deployments must replace all development credentials and use durable 
 
 ## Roadmap
 
-AgentScope Service brings Agents built in different modes — Framework, Coding Agent, Managed Agents — onto one control plane, and gives Agent-to-Agent collaboration a unified view. Whether you create your first Agent from the Console and host the Harness runtime on the platform, or attach existing AgentScope / LangChain / Claude applications to the control plane, the goal is the same: **give the enterprise a one-stop Agent control and governance center**.
-
-Near-term focus includes:
-
-1. **Continue iterating on AgentScope Framework-native capabilities**
-2. **Support more Agent frameworks and Coding Agents** — deepen adapters for LangChain, ADK, Claude, Qoder, OpenAI Agents, and more, and lower BYO attachment cost
-3. **Automation** — extend automatic triggers and closed-loop execution around Deployment, Cron, Webhook, and Channel, so Agents move toward event-driven task handling
-4. **More event-driven integrations** — attach GitHub / GitLab, DingTalk, WeCom, and other entry points, turning code changes, tickets, and group messages directly into Issues, Comments, or AgentTasks
+Further development focuses on application integration and delivery: end-user authorization, file input contracts, automatic triggers through the public invocation path, and continued validation of long tasks, complex orchestration, and cost governance.
 
 For enterprise cloud offerings, also see Alibaba Cloud [Agent Teams](https://help.aliyun.com/zh/agentteams/magic-console-product-overview) and [Agent Loop](https://help.aliyun.com/zh/document_detail/3033860.html).
 
 ## Documentation
 
-For a deeper walkthrough of AgentScope Service, see the blog post [AgentScope Service — Enterprise Agent Control and Governance Center](https://java.agentscope.io/v2/en/blogs/agentscope-service-release.html).
+- [Service overview](../docs/v2/en/service/index.md)
+- [Use cases and integration designs](../docs/v2/en/service/usecases.md)
+- [API quickstart](../docs/v2/en/service/first-session.md)
+- [Unified service API](../docs/v2/en/service/service-api.md)
+- [Managed native sessions and tasks](../docs/v2/en/service/session-event-log.md)
+- [API reference](../docs/v2/en/service/api-reference.md)
