@@ -51,6 +51,7 @@ import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
@@ -3736,47 +3737,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                     tool.getName()));
                                                 }
 
-                                                Set<String> chunkedToolIds =
-                                                        ConcurrentHashMap.newKeySet();
-
                                                 BiConsumer<ToolUseBlock, ToolResultBlock>
                                                         internalChunkCallback =
                                                                 (toolUse, chunk) -> {
                                                                     if (chunk.getOutput() != null
                                                                             && !chunk.getOutput()
                                                                                     .isEmpty()) {
-                                                                        chunkedToolIds.add(
-                                                                                toolUse.getId());
                                                                         for (ContentBlock block :
                                                                                 chunk.getOutput()) {
-                                                                            if (block
-                                                                                    instanceof
-                                                                                    TextBlock tb) {
-                                                                                sink.next(
-                                                                                        new ToolResultTextDeltaEvent(
-                                                                                                        replyId,
-                                                                                                        toolUse
-                                                                                                                .getId(),
-                                                                                                        toolUse
-                                                                                                                .getName(),
-                                                                                                        tb
-                                                                                                                .getText())
-                                                                                                .withMetadata(
-                                                                                                        chunk
-                                                                                                                .getMetadata()));
-                                                                            } else {
-                                                                                sink.next(
-                                                                                        new ToolResultDataDeltaEvent(
-                                                                                                        replyId,
-                                                                                                        toolUse
-                                                                                                                .getId(),
-                                                                                                        toolUse
-                                                                                                                .getName(),
-                                                                                                        block)
-                                                                                                .withMetadata(
-                                                                                                        chunk
-                                                                                                                .getMetadata()));
-                                                                            }
+                                                                            sink.next(
+                                                                                    new ToolProgressEvent(
+                                                                                                    replyId,
+                                                                                                    toolUse
+                                                                                                            .getId(),
+                                                                                                    toolUse
+                                                                                                            .getName(),
+                                                                                                    block)
+                                                                                            .withMetadata(
+                                                                                                    chunk
+                                                                                                            .getMetadata()));
                                                                         }
                                                                     }
                                                                     hookDispatcher
@@ -3854,8 +3833,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                 emitToolResultDelta(
                                                                                         sink,
                                                                                         replyId,
-                                                                                        entry,
-                                                                                        chunkedToolIds);
+                                                                                        entry);
                                                                                 ToolResultState
                                                                                         state =
                                                                                                 determineToolResultState(
@@ -3993,21 +3971,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Emit delta events for tool results that were NOT already streamed via the chunk
-         * callback. For non-streaming tools the chunk callback is never invoked, so the
-         * event stream would otherwise contain only START and END with no content.
+         * Emit delta events carrying the tool method's return value.
          */
         private void emitToolResultDelta(
                 FluxSink<AgentEvent> sink,
                 String replyId,
-                Map.Entry<ToolUseBlock, ToolResultBlock> entry,
-                Set<String> chunkedToolIds) {
+                Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
             String toolId = entry.getKey().getId();
             String toolName = entry.getKey().getName();
             ToolResultBlock toolResult = entry.getValue();
-            if (chunkedToolIds.contains(toolId)) {
-                return;
-            }
             List<ContentBlock> output = toolResult.getOutput();
             if (output == null || output.isEmpty()) {
                 return;
