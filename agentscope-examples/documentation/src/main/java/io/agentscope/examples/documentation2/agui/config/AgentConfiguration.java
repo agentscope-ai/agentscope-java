@@ -27,6 +27,7 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.InputMessageDeduplicationMiddleware;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.documentation2.agui.tools.ExampleTools;
@@ -149,6 +150,9 @@ public class AgentConfiguration {
                                 .build())
                 .toolkit(toolkit)
                 //                .middleware(exampleCustomEventMiddleware())
+                // Clients resend the full history every turn while this agent's context
+                // persists across calls: strip the overlapping prefix at the call boundary.
+                .middleware(new InputMessageDeduplicationMiddleware())
                 .maxIters(10)
                 .build();
     }
@@ -173,6 +177,7 @@ public class AgentConfiguration {
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
                 .middleware(exampleCustomEventMiddleware())
+                .middleware(new InputMessageDeduplicationMiddleware())
                 .maxIters(1)
                 .build();
     }
@@ -200,6 +205,7 @@ public class AgentConfiguration {
                                 .build())
                 .toolkit(toolkit)
                 .middleware(exampleCustomEventMiddleware())
+                .middleware(new InputMessageDeduplicationMiddleware())
                 .maxIters(5)
                 .build();
     }

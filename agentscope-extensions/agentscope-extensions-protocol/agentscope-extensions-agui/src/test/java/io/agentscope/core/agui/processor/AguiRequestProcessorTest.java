@@ -18,7 +18,6 @@ package io.agentscope.core.agui.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,107 +57,11 @@ import reactor.core.publisher.Flux;
 class AguiRequestProcessorTest {
 
     @Test
-    void extractLatestUserMessagePreservesFullRunInputMetadata() {
-        AguiRequestProcessor processor =
-                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
-        AguiMessage firstUser = AguiMessage.userMessage("msg-1", "first");
-        AguiMessage lastUser = AguiMessage.userMessage("msg-3", "last");
-        RunAgentInput input =
-                RunAgentInput.builder()
-                        .threadId("thread-1")
-                        .runId("run-1")
-                        .messages(
-                                List.of(
-                                        firstUser,
-                                        AguiMessage.assistantMessage("msg-2", "ok"),
-                                        lastUser))
-                        .state(Map.of("cursor", 8))
-                        .forwardedProps(Map.of("agentId", "agent-a"))
-                        .resume(
-                                List.of(
-                                        new AguiResume(
-                                                "int-1",
-                                                AguiResume.STATUS_RESOLVED,
-                                                Map.of("approved", true))))
-                        .build();
-
-        RunAgentInput extracted = processor.extractLatestUserMessage(input);
-
-        assertEquals(List.of(lastUser), extracted.getMessages());
-        assertEquals(input.getState(), extracted.getState());
-        assertEquals(input.getForwardedProps(), extracted.getForwardedProps());
-        assertEquals(input.getResume(), extracted.getResume());
-    }
-
-    @Test
-    void extractLatestUserMessageKeepsFullInputWhenNoAssistantTurnExists() {
-        AguiRequestProcessor processor =
-                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
-        AguiMessage firstUser = AguiMessage.userMessage("msg-1", "first");
-        AguiMessage secondUser = AguiMessage.userMessage("msg-2", "second");
-        RunAgentInput input =
-                RunAgentInput.builder()
-                        .threadId("thread-1")
-                        .runId("run-1")
-                        .messages(List.of(firstUser, secondUser))
-                        .build();
-
-        assertSame(input, processor.extractLatestUserMessage(input));
-    }
-
-    @Test
-    void extractLatestUserMessageIncludesToolAndUserFollowUpsAfterAssistant() {
-        AguiRequestProcessor processor =
-                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
-        AguiMessage tool = AguiMessage.toolMessage("msg-3", "tool-1", "approved");
-        AguiMessage followUp = AguiMessage.userMessage("msg-4", "continue");
-        RunAgentInput input =
-                RunAgentInput.builder()
-                        .threadId("thread-1")
-                        .runId("run-1")
-                        .messages(
-                                List.of(
-                                        AguiMessage.userMessage("msg-1", "first"),
-                                        AguiMessage.assistantMessage("msg-2", "need approval"),
-                                        tool,
-                                        followUp))
-                        .state(Map.of("cursor", 8))
-                        .build();
-
-        RunAgentInput extracted = processor.extractLatestUserMessage(input);
-
-        assertEquals(List.of(tool, followUp), extracted.getMessages());
-        assertEquals(input.getState(), extracted.getState());
-    }
-
-    @Test
-    void extractLatestUserMessageFallsBackToLastUserWhenAssistantIsLast() {
-        AguiRequestProcessor processor =
-                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
-        AguiMessage firstUser = AguiMessage.userMessage("msg-1", "first");
-        RunAgentInput input =
-                RunAgentInput.builder()
-                        .threadId("thread-1")
-                        .runId("run-1")
-                        .messages(List.of(firstUser, AguiMessage.assistantMessage("msg-2", "done")))
-                        .state(Map.of("cursor", 8))
-                        .forwardedProps(Map.of("agentId", "agent-a"))
-                        .build();
-
-        RunAgentInput extracted = processor.extractLatestUserMessage(input);
-
-        assertEquals(List.of(firstUser), extracted.getMessages());
-        assertEquals(input.getState(), extracted.getState());
-        assertEquals(input.getForwardedProps(), extracted.getForwardedProps());
-    }
-
-    @Test
     void processCoalescesNullResolverResultWithoutNpe() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
         when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
                 .thenReturn(agent);
-        when(resolver.hasMemory(any(RuntimeContext.class))).thenReturn(false);
         when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                 .thenReturn(Flux.just(new AgentEndEvent("ok")));
 
@@ -218,7 +121,6 @@ class AguiRequestProcessorTest {
         ReActAgent agent = mock(ReActAgent.class);
         when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
                 .thenReturn(agent);
-        when(resolver.hasMemory(any(RuntimeContext.class))).thenReturn(false);
         ArgumentCaptor<List<Msg>> msgsCaptor = ArgumentCaptor.forClass(List.class);
         when(agent.streamEvents(msgsCaptor.capture(), any(RuntimeContext.class)))
                 .thenReturn(Flux.just(new AgentEndEvent("reply-2")));
@@ -686,25 +588,25 @@ class AguiRequestProcessorTest {
     }
 
     @Test
-    void processExtractsFollowUpMessagesWhenServerHasMemory() {
+    void processPassesFullMessagesThroughRegardlessOfMemory() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
         when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
                 .thenReturn(agent);
-        when(resolver.hasMemory(any(RuntimeContext.class))).thenReturn(true);
         AtomicReference<RunAgentInput> seenInput = new AtomicReference<>();
         AguiMessage tool = AguiMessage.toolMessage("msg-3", "tool-1", "approved");
         AguiMessage followUp = AguiMessage.userMessage("msg-4", "continue");
+        List<AguiMessage> messages =
+                List.of(
+                        AguiMessage.userMessage("msg-1", "first"),
+                        AguiMessage.assistantMessage("msg-2", "need approval"),
+                        tool,
+                        followUp);
         RunAgentInput input =
                 RunAgentInput.builder()
                         .threadId("thread-1")
                         .runId("run-1")
-                        .messages(
-                                List.of(
-                                        AguiMessage.userMessage("msg-1", "first"),
-                                        AguiMessage.assistantMessage("msg-2", "need approval"),
-                                        tool,
-                                        followUp))
+                        .messages(messages)
                         .build();
         AguiRequestProcessor processor =
                 AguiRequestProcessor.builder()
@@ -716,8 +618,9 @@ class AguiRequestProcessorTest {
 
         processor.process(request(input)).events().collectList().block();
 
-        verify(resolver).hasMemory(any(RuntimeContext.class));
-        assertEquals(List.of(tool, followUp), seenInput.get().getMessages());
+        // Full pass-through: message deduplication is the agent-side middleware's job.
+        verify(resolver, never()).hasMemory(any(RuntimeContext.class));
+        assertEquals(messages, seenInput.get().getMessages());
     }
 
     @Test

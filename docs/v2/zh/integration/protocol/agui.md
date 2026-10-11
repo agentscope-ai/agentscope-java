@@ -72,6 +72,8 @@ Flux<AguiEvent> events = Flux.using(
 
 `RunAgentInput` 由前端传入，包含 `threadId`、`runId`、`messages`、`tools`、`state`等。适配器内部完成消息转换、调用 Agent 流式 API，再把事件映射到 AG-UI。
 
+若客户端每轮全量重发历史且服务端持久化上下文，还需在 agent 上注册 `InputMessageDeduplicationMiddleware`，见[服务端记忆与消息去重](#服务端记忆与消息去重)。
+
 ## 事件映射
 
 v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射，未映射事件会回退为官方 `RAW` 事件。
@@ -256,6 +258,29 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 ```
 
 `forwardedProps` 来自客户端请求体，适合传递 UI 选项或前端上下文。不要把它当作可信身份来源；服务端用户身份应由认证链路或服务端 resolver 注入。
+
+## 服务端记忆与消息去重
+
+CopilotKit 等主流 AG-UI 客户端每轮全量重发会话历史，与服务端持久化上下文叠加会让历史逐轮重复累积。`InputMessageDeduplicationMiddleware`（协议中立）在 call 边界完成去重：以持久化上下文的末条消息为 anchor，在入站消息列表中命中时剥离重叠前缀。
+
+```java
+import io.agentscope.core.middleware.InputMessageDeduplicationMiddleware;
+
+ReActAgent agent = ReActAgent.builder()
+        // ... 既有配置 ...
+        .middleware(new InputMessageDeduplicationMiddleware())
+        .build();
+```
+
+`HarnessAgent` 的注册方式完全一致。anchor 优先按消息 id 匹配，未命中再按 role + 文本内容 + 块签名兜底；两者均未命中时输入原样透传（fail-open）。剥离后为空时重答最后一条用户消息（regenerate 语义）；存在未完成 tool call 时保持空输入以续跑中断的 run。同轮 system 消息与 tool call/result 配对完整保留。
+
+**应注册**：客户端每轮全量重发历史，且服务端通过 `AgentStateStore` 持有会话上下文——包括 starter `server-side-memory: true` 部署与多副本部署（去重按调用读取持久化 state，无需会话亲和）。
+
+**不应注册**：前端全量消息列表是唯一真相源（服务端不保留历史，或每次请求重建状态）——此时去重会错误剥离前缀。
+
+> **`server-side-memory: true` 迁移提示** —— 此前将请求裁剪为最后一条 user 消息的逻辑已移除（它会丢弃同轮 system/tool 消息，且对部分服务端记忆形态判定失效）；`server-side-memory: true` 部署的 agent 需注册 `InputMessageDeduplicationMiddleware`。
+
+任何满足「全量重发 × 持久化上下文」形态的接入（A2A、自定义 HTTP/RPC）注册同一中间件即可。
 
 ## Frontend Tools 与合并模式
 
