@@ -24,23 +24,36 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.anthropic.core.JsonValue;
+import com.anthropic.core.ObjectMappers;
+import com.anthropic.models.messages.CodeExecutionResultBlock;
+import com.anthropic.models.messages.CodeExecutionToolResultBlock;
 import com.anthropic.models.messages.ContentBlock;
+import com.anthropic.models.messages.DirectCaller;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageDeltaUsage;
 import com.anthropic.models.messages.OutputTokensDetails;
 import com.anthropic.models.messages.RawContentBlockDeltaEvent;
+import com.anthropic.models.messages.RawContentBlockStartEvent;
 import com.anthropic.models.messages.RawMessageDeltaEvent;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
+import com.anthropic.models.messages.ServerToolUseBlock;
 import com.anthropic.models.messages.Usage;
+import com.anthropic.models.messages.WebSearchResultBlock;
+import com.anthropic.models.messages.WebSearchToolResultBlock;
+import com.anthropic.models.messages.WebSearchToolResultError;
+import com.anthropic.models.messages.WebSearchToolResultErrorCode;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -463,6 +476,203 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                 .verify();
     }
 
+    // ==================== Server tools (web search) ====================
+
+    private static ServerToolUseBlock buildServerToolUseBlock(String id) {
+        return ServerToolUseBlock.builder()
+                .id(id)
+                .name(ServerToolUseBlock.Name.WEB_SEARCH)
+                .input(JsonValue.from(Map.of("query", "AgentScope")))
+                .caller(DirectCaller.builder().build())
+                .build();
+    }
+
+    private static WebSearchToolResultBlock buildWebSearchResultBlock(String toolUseId) {
+        return WebSearchToolResultBlock.builder()
+                .toolUseId(toolUseId)
+                .caller(DirectCaller.builder().build())
+                .contentOfResultBlocks(
+                        List.of(
+                                WebSearchResultBlock.builder()
+                                        .url("https://example.com")
+                                        .title("Example")
+                                        .encryptedContent("enc_abc123")
+                                        .pageAge("2 days")
+                                        .build()))
+                .build();
+    }
+
+    @Test
+    void testParseMessageWithServerToolUseAndWebSearchResult() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        ContentBlock serverToolUseUnion =
+                ContentBlock.ofServerToolUse(buildServerToolUseBlock("srvtoolu_01"));
+        ContentBlock webSearchResultUnion =
+                ContentBlock.ofWebSearchToolResult(buildWebSearchResultBlock("srvtoolu_01"));
+
+        when(message.id()).thenReturn("msg_server");
+        when(message.content()).thenReturn(List.of(serverToolUseUnion, webSearchResultUnion));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(100L);
+        when(usage.outputTokens()).thenReturn(50L);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertNotNull(response);
+        assertEquals(2, response.getContent().size());
+
+        ToolUseBlock toolUse = assertInstanceOf(ToolUseBlock.class, response.getContent().get(0));
+        assertEquals("srvtoolu_01", toolUse.getId());
+        assertEquals("web_search", toolUse.getName());
+        assertTrue(toolUse.isServerTool());
+        assertEquals(ToolCallState.FINISHED, toolUse.getState());
+        assertEquals("AgentScope", toolUse.getInput().get("query"));
+
+        io.agentscope.core.message.ToolResultBlock toolResult =
+                assertInstanceOf(
+                        io.agentscope.core.message.ToolResultBlock.class,
+                        response.getContent().get(1));
+        assertEquals("srvtoolu_01", toolResult.getId());
+        assertTrue(toolResult.isServerTool());
+
+        // The raw block (including encrypted_content) is preserved in metadata as JSON
+        String rawJson =
+                assertInstanceOf(
+                        String.class,
+                        toolResult.getMetadata().get(AnthropicServerToolHelper.RESULT_METADATA));
+        assertTrue(rawJson.contains("\"web_search_tool_result\""));
+        assertTrue(rawJson.contains("\"srvtoolu_01\""));
+        assertTrue(rawJson.contains("\"enc_abc123\""));
+        assertTrue(rawJson.contains("\"2 days\""));
+
+        // Human-readable output
+        TextBlock outputText = assertInstanceOf(TextBlock.class, toolResult.getOutput().get(0));
+        assertEquals("Example (https://example.com)", outputText.getText());
+    }
+
+    @Test
+    void testParseMessageWithWebSearchError() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        WebSearchToolResultBlock errorBlock =
+                WebSearchToolResultBlock.builder()
+                        .toolUseId("srvtoolu_err")
+                        .caller(DirectCaller.builder().build())
+                        .content(
+                                WebSearchToolResultError.builder()
+                                        .errorCode(WebSearchToolResultErrorCode.MAX_USES_EXCEEDED)
+                                        .build())
+                        .build();
+
+        when(message.id()).thenReturn("msg_err");
+        when(message.content()).thenReturn(List.of(ContentBlock.ofWebSearchToolResult(errorBlock)));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals(1, response.getContent().size());
+        io.agentscope.core.message.ToolResultBlock toolResult =
+                assertInstanceOf(
+                        io.agentscope.core.message.ToolResultBlock.class,
+                        response.getContent().get(0));
+        assertTrue(toolResult.isServerTool());
+        String rawJson =
+                assertInstanceOf(
+                        String.class,
+                        toolResult.getMetadata().get(AnthropicServerToolHelper.RESULT_METADATA));
+        assertTrue(rawJson.contains("\"max_uses_exceeded\""));
+        TextBlock errorText = assertInstanceOf(TextBlock.class, toolResult.getOutput().get(0));
+        assertTrue(errorText.getText().contains("max_uses_exceeded"));
+    }
+
+    @Test
+    void testParseMessageWithCodeExecutionResult() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        CodeExecutionToolResultBlock codeResult =
+                CodeExecutionToolResultBlock.builder()
+                        .toolUseId("srvtoolu_code")
+                        .content(
+                                CodeExecutionResultBlock.builder()
+                                        .stdout("42\n")
+                                        .stderr("")
+                                        .returnCode(0)
+                                        .content(List.of())
+                                        .build())
+                        .build();
+
+        when(message.id()).thenReturn("msg_code");
+        when(message.content())
+                .thenReturn(List.of(ContentBlock.ofCodeExecutionToolResult(codeResult)));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals(1, response.getContent().size());
+        io.agentscope.core.message.ToolResultBlock toolResult =
+                assertInstanceOf(
+                        io.agentscope.core.message.ToolResultBlock.class,
+                        response.getContent().get(0));
+        assertEquals("srvtoolu_code", toolResult.getId());
+        assertEquals("code_execution", toolResult.getName());
+        assertTrue(toolResult.isServerTool());
+        String rawJson =
+                assertInstanceOf(
+                        String.class,
+                        toolResult.getMetadata().get(AnthropicServerToolHelper.RESULT_METADATA));
+        assertTrue(rawJson.contains("\"code_execution_tool_result\""));
+        assertTrue(rawJson.contains("\"42\\n\""));
+    }
+
+    @Test
+    void testParseStreamEventServerToolUseStart() throws Exception {
+        RawContentBlockStartEvent startEvent =
+                RawContentBlockStartEvent.builder()
+                        .index(0)
+                        .contentBlock(buildServerToolUseBlock("srvtoolu_stream"))
+                        .build();
+        RawMessageStreamEvent event = RawMessageStreamEvent.ofContentBlockStart(startEvent);
+
+        ChatResponse response = invokeParseStreamEvent(event, Instant.now());
+
+        assertNotNull(response);
+        assertEquals(1, response.getContent().size());
+        ToolUseBlock toolUse = assertInstanceOf(ToolUseBlock.class, response.getContent().get(0));
+        assertEquals("srvtoolu_stream", toolUse.getId());
+        assertEquals("web_search", toolUse.getName());
+        assertTrue(toolUse.isServerTool());
+        assertEquals(ToolCallState.FINISHED, toolUse.getState());
+    }
+
+    @Test
+    void testParseStreamEventWebSearchToolResultStart() throws Exception {
+        RawContentBlockStartEvent startEvent =
+                RawContentBlockStartEvent.builder()
+                        .index(1)
+                        .contentBlock(buildWebSearchResultBlock("srvtoolu_stream"))
+                        .build();
+        RawMessageStreamEvent event = RawMessageStreamEvent.ofContentBlockStart(startEvent);
+
+        ChatResponse response = invokeParseStreamEvent(event, Instant.now());
+
+        assertNotNull(response);
+        assertEquals(1, response.getContent().size());
+        io.agentscope.core.message.ToolResultBlock toolResult =
+                assertInstanceOf(
+                        io.agentscope.core.message.ToolResultBlock.class,
+                        response.getContent().get(0));
+        assertEquals("srvtoolu_stream", toolResult.getId());
+        assertTrue(toolResult.isServerTool());
+    }
+
     @Test
     void testParseMessageWithCachedTokens() {
         // input_tokens excludes cached tokens in the Anthropic API; the parser adds them back
@@ -574,5 +784,67 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                             assertEquals(42, usage.getOutputTokens());
                         })
                 .verifyComplete();
+    }
+
+    @Test
+    void testParseMessageWithoutIdFallsBackToGeneratedId() throws Exception {
+        // A proxy may strip the top-level id, and the SDK throws on the typed accessor (issue
+        // #592).
+        String json =
+                "{\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\","
+                        + "\"content\":[{\"type\":\"text\",\"text\":\"2 + 3 = 5\"}],"
+                        + "\"stop_reason\":\"end_turn\","
+                        + "\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}";
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertNotNull(response);
+        assertNotNull(response.getId());
+        assertFalse(response.getId().isBlank());
+        assertEquals(1, response.getContent().size());
+        TextBlock parsedText = assertInstanceOf(TextBlock.class, response.getContent().get(0));
+        assertEquals("2 + 3 = 5", parsedText.getText());
+    }
+
+    @Test
+    void testParseMessageReusesRawId() throws Exception {
+        // Covers the raw _id() branch: the hand-rolled mocks only stub the typed accessor.
+        String json =
+                "{\"id\":\"msg_01ABC\",\"type\":\"message\",\"role\":\"assistant\","
+                        + "\"model\":\"claude-sonnet-4-5\","
+                        + "\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],"
+                        + "\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}";
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals("msg_01ABC", response.getId());
+    }
+
+    @Test
+    void testParseStreamEventMessageStartWithoutIdDoesNotThrow() throws Exception {
+        // Before the fix this threw, which aborted the whole message_start branch and dropped the
+        // prompt-token accounting that message_delta reads back out of the shared usage state.
+        String json =
+                "{\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\","
+                        + "\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}";
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+
+        RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
+        when(messageStart.message()).thenReturn(message);
+
+        RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
+        when(event.isMessageStart()).thenReturn(true);
+        when(event.asMessageStart()).thenReturn(messageStart);
+        when(event.isContentBlockDelta()).thenReturn(false);
+        when(event.isContentBlockStart()).thenReturn(false);
+        when(event.isMessageDelta()).thenReturn(false);
+
+        ChatResponse response = invokeParseStreamEvent(event, Instant.now());
+
+        assertNotNull(response);
+        assertNotNull(response.getId()); // generated, since the proxy stripped it
+        assertTrue(response.getContent().isEmpty());
     }
 }

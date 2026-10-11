@@ -249,7 +249,7 @@ export default function SessionsHubPage() {
 
       {managedEntries.map(s => {
         const reason = stopReasonSummary(s.stopReason);
-        const archived = !!s.archivedAt;
+        const archived = s.status === 'archived';
         const agentLabel = agentNameById.get(s.agentId) || s.agentId;
         const taskRef = parseAgentTaskExternalKey(s.externalKey);
         const fromTask = isAgentTaskSession(s);

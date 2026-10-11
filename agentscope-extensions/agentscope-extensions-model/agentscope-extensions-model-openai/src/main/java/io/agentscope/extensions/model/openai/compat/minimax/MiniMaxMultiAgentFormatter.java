@@ -58,6 +58,6 @@ public class MiniMaxMultiAgentFormatter extends OpenAIMultiAgentFormatter {
 
     @Override
     public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
-        request.setToolChoice(null);
+        MiniMaxFormatter.applyMiniMaxToolChoice(request, toolChoice);
     }
 }

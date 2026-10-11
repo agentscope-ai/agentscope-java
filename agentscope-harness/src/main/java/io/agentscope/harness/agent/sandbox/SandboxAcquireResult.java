@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 /**
  * Result of acquiring a {@link Sandbox} from {@link SandboxManager}.
  *
@@ -37,6 +39,7 @@ public final class SandboxAcquireResult {
     private final Sandbox sandbox;
     private final boolean selfManaged;
     private final SandboxLease lease;
+    private final AtomicBoolean released = new AtomicBoolean();
 
     private SandboxAcquireResult(Sandbox sandbox, boolean selfManaged, SandboxLease lease) {
         this.sandbox = sandbox;
@@ -61,6 +64,16 @@ public final class SandboxAcquireResult {
 
     public Sandbox getSandbox() {
         return sandbox;
+    }
+
+    /** Shared across RuntimeContext copies, so a finished call cannot reuse its sandbox. */
+    public boolean isReleased() {
+        return released.get();
+    }
+
+    /** Claims cleanup once, including when multiple context copies hold this acquisition. */
+    public boolean beginRelease() {
+        return released.compareAndSet(false, true);
     }
 
     /** Returns {@code true} if the SDK owns the full sandbox lifecycle. */

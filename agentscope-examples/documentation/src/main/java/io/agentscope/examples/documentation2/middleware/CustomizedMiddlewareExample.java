@@ -20,7 +20,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -37,6 +37,8 @@ import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Flux;
@@ -49,7 +51,7 @@ import reactor.core.publisher.Flux;
  *   <li>Replaced all {@code legacy.hook.*} events with {@code MiddlewareBase} override methods.</li>
  *   <li>{@code PreCallEvent} / {@code PostCallEvent} → {@code onAgent()} before/after {@code next.apply()}.</li>
  *   <li>{@code PreActingEvent} / {@code PostActingEvent} → {@code onActing()} before/after {@code next.apply()}.</li>
- *   <li>{@code ActingChunkEvent} → tap {@code ToolResultTextDeltaEvent} inside the {@code onActing()} stream.</li>
+ *   <li>{@code ActingChunkEvent} → tap {@code ToolProgressEvent} inside the {@code onActing()} stream.</li>
  *   <li>Reasoning streaming is observable via {@code onReasoning()} stream events.</li>
  *   <li>{@code JsonlTraceExporter} removed; replaced by custom file-logging middleware pattern.</li>
  *   <li>{@code .hooks(List)} → {@code .middlewares(List)}.</li>
@@ -134,6 +136,13 @@ public class CustomizedMiddlewareExample {
      */
     static class MonitoringMiddleware implements MiddlewareBase {
 
+        /** Declares participation only at the overridden extension points. */
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(
+                    ExtensionPoint.ON_AGENT, ExtensionPoint.ON_REASONING, ExtensionPoint.ON_ACTING);
+        }
+
         @Override
         public Flux<AgentEvent> onAgent(
                 Agent agent,
@@ -176,10 +185,10 @@ public class CustomizedMiddlewareExample {
             return next.apply(input)
                     .doOnNext(
                             event -> {
-                                if (event instanceof ToolResultTextDeltaEvent delta) {
+                                if (event instanceof ToolProgressEvent progress) {
                                     System.out.println(
                                             "[MIDDLEWARE] tool progress chunk: "
-                                                    + delta.getDelta());
+                                                    + progress.getText());
                                 }
                             })
                     .doOnComplete(

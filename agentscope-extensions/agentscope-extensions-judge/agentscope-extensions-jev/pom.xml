@@ -31,6 +31,18 @@
     <description>TypeSafe System One client for the Jev decision model</description>
 
     <dependencies>
+        <!-- Optional adapter: consumers that use the browser integration opt in explicitly. -->
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>1.45.0</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-harness</artifactId>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
