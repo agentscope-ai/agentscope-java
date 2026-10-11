@@ -483,7 +483,7 @@ final class E2bEnvdProcessClient {
         return "/files?path="
                 + URLEncoder.encode(remotePath, StandardCharsets.UTF_8)
                 + "&username="
-                + URLEncoder.encode(opt.getRunUser(), StandardCharsets.UTF_8);
+                + URLEncoder.encode(effectiveRunUser(), StandardCharsets.UTF_8);
     }
 
     private Request.Builder buildEnvdRequest(
@@ -650,6 +650,11 @@ final class E2bEnvdProcessClient {
         String token =
                 Base64.getEncoder().encodeToString((u + ":").getBytes(StandardCharsets.UTF_8));
         return "Basic " + token;
+    }
+
+    private String effectiveRunUser() {
+        String u = opt.getRunUser();
+        return u != null ? u : "user";
     }
 
     private static String truncateUtf8(byte[] b) {

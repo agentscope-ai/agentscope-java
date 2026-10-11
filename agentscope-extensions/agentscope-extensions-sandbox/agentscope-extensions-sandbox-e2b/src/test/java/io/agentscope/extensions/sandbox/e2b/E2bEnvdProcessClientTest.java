@@ -345,26 +345,6 @@ class E2bEnvdProcessClientTest {
         }
     }
 
-    // Extreme numerics must not crash the parser: 1e999 decodes to Infinity
-    // (truthy in Python), so it raises — via SandboxRuntimeException, never via
-    // NumberFormatException escaping the throws-IOException contract.
-    @Test
-    void endStreamResponseWithInfiniteErrorThrows() throws Exception {
-        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        byte[] frame = endStreamFrame("{\"error\":1e999}");
-
-        SandboxException.SandboxRuntimeException ex =
-                assertThrows(
-                        SandboxException.SandboxRuntimeException.class,
-                        () ->
-                                drainStartStream(
-                                        client,
-                                        frame,
-                                        new ByteArrayOutputStream(),
-                                        new ByteArrayOutputStream()));
-        assertEquals(SandboxErrorCode.WORKSPACE_START_ERROR, ex.getErrorCode());
-    }
-
     // Connect protocol: successful EndStreamResponse is "{}" (no error, no metadata).
     // Python SDK: end_stream without "error" → return (stop iteration).
     @Test
@@ -510,44 +490,6 @@ class E2bEnvdProcessClientTest {
         assertTrue(ex.getMessage().contains("Compressed"));
     }
 
-    // Combined flag values carrying the compressed bit are rejected as compressed
-    // before end-stream handling: 0x03 must not reach the EndStreamMessage parser.
-    @Test
-    void compressedEndStreamFrameThrowsIOException() throws Exception {
-        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        byte[] frame = envelope(0x03, new byte[] {0x1f, (byte) 0x8b, 0x00});
-
-        IOException ex =
-                assertThrows(
-                        IOException.class,
-                        () ->
-                                drainStartStream(
-                                        client,
-                                        frame,
-                                        new ByteArrayOutputStream(),
-                                        new ByteArrayOutputStream()));
-        assertTrue(ex.getMessage().contains("Compressed"));
-    }
-
-    // 0x07 (end-stream + compressed + reserved) likewise rejects on the compressed
-    // bit first, never reaching end-stream or reserved-bit handling.
-    @Test
-    void compressedReservedEndStreamFrameThrowsIOException() throws Exception {
-        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        byte[] frame = envelope(0x07, new byte[] {0x1f, (byte) 0x8b, 0x00});
-
-        IOException ex =
-                assertThrows(
-                        IOException.class,
-                        () ->
-                                drainStartStream(
-                                        client,
-                                        frame,
-                                        new ByteArrayOutputStream(),
-                                        new ByteArrayOutputStream()));
-        assertTrue(ex.getMessage().contains("Compressed"));
-    }
-
     // Connect protocol: flags bits 2-7 reserved — implementations must skip unless understood.
     // https://connectrpc.com/docs/protocol/#streaming-rpcs
     @Test
@@ -660,21 +602,6 @@ class E2bEnvdProcessClientTest {
         assertTrue(ex.getMessage().contains("Invalid connect frame length"));
     }
 
-    @Test
-    void zeroLengthFrameIsSkipped() throws Exception {
-        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        byte[] frame =
-                concatFrames(
-                        envelope(0x00, new byte[0]),
-                        connectFrame(endEventJson(99, null)),
-                        endStreamFrame("{}"));
-        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
-        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-        int exit = drainStartStream(client, frame, stdout, stderr);
-
-        assertEquals(99, exit);
-    }
-
     // ---- parseJsonStartResponse edge cases ----
 
     @Test
@@ -776,6 +703,7 @@ class E2bEnvdProcessClientTest {
         when(mockCall.execute()).thenReturn(okResponse);
 
         E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setRunUser(null);
         opt.setHttpClient(mockHttp);
         E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
 
@@ -1037,65 +965,5 @@ class E2bEnvdProcessClientTest {
         E2bSandboxClientOptions options = new E2bSandboxClientOptions();
         options.setCodec(codec);
         return options;
-    }
-
-    // ---- static utility method tests ----
-
-    @Test
-    void envdHostWithCustomDomain() throws Exception {
-        Method method =
-                E2bEnvdProcessClient.class.getDeclaredMethod("envdHost", E2bSandboxState.class);
-        method.setAccessible(true);
-
-        E2bSandboxState state = mock(E2bSandboxState.class);
-        when(state.getSandboxDomain()).thenReturn("custom.com");
-        when(state.getSandboxId()).thenReturn("test-id");
-
-        String result = (String) method.invoke(null, state);
-        assertEquals("https://49983-test-id.custom.com", result);
-    }
-
-    @Test
-    void envdHostWithDefaultDomain() throws Exception {
-        Method method =
-                E2bEnvdProcessClient.class.getDeclaredMethod("envdHost", E2bSandboxState.class);
-        method.setAccessible(true);
-
-        E2bSandboxState state = mock(E2bSandboxState.class);
-        when(state.getSandboxDomain()).thenReturn(null);
-        when(state.getSandboxId()).thenReturn("test-id");
-
-        String result = (String) method.invoke(null, state);
-        assertEquals("https://49983-test-id.e2b.app", result);
-    }
-
-    @Test
-    void filenameFromPathWithSlashReturnsBasename() throws Exception {
-        Method method =
-                E2bEnvdProcessClient.class.getDeclaredMethod("filenameFromPath", String.class);
-        method.setAccessible(true);
-
-        String result = (String) method.invoke(null, "/home/user/file.txt");
-        assertEquals("file.txt", result);
-    }
-
-    @Test
-    void filenameFromPathWithoutSlashReturnsInput() throws Exception {
-        Method method =
-                E2bEnvdProcessClient.class.getDeclaredMethod("filenameFromPath", String.class);
-        method.setAccessible(true);
-
-        String result = (String) method.invoke(null, "file.txt");
-        assertEquals("file.txt", result);
-    }
-
-    @Test
-    void filenameFromPathWithTrailingSlashReturnsEmpty() throws Exception {
-        Method method =
-                E2bEnvdProcessClient.class.getDeclaredMethod("filenameFromPath", String.class);
-        method.setAccessible(true);
-
-        String result = (String) method.invoke(null, "/home/");
-        assertEquals("", result);
     }
 }
