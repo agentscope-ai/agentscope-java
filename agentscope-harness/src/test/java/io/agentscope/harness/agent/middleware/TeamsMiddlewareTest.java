@@ -15,11 +15,13 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
@@ -104,21 +106,23 @@ class TeamsMiddlewareTest {
                         new io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore());
         TeamTool tool = new TeamTool(client, ctx);
         String out =
-                tool.team(
-                        "createTask",
-                        null,
-                        "x",
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null);
+                assertText(
+                        tool.team(
+                                "createTask",
+                                null,
+                                "x",
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null),
+                        ToolResultState.ERROR);
         assertTrue(out.contains("error"));
         assertFalse(out.contains("\"taskId\""));
     }

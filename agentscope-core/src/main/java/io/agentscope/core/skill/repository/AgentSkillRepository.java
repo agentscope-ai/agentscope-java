@@ -25,10 +25,43 @@ import java.util.List;
  * allowing different storage stores (filesystem, database, remote APIs, etc.) to be
  * used interchangeably.
  *
+ * <h2>Scope isolation — required of every implementation</h2>
+ *
+ * <p>A developer must be able to hand different agents or different users their own
+ * isolated skill repository, easily and by construction. Skill names are human-chosen;
+ * the same name from two scopes is the normal case, not a collision. Each repository instance addresses exactly one
+ * scope, and every implementation must guarantee:
+ *
+ * <ul>
+ *   <li>the same skill name in two scopes coexists — never a global unique constraint;
+ *   <li>reads, overwrites (including {@code force}), and deletes stay inside the
+ *       instance's scope, never touching another scope's same-name skill;
+ *   <li>a scope the instance cannot address is rejected explicitly, never silently
+ *       redirected to another scope.
+ * </ul>
+ *
+ * <p>How a scope is expressed is backend-native and deliberately not standardized here.
+ * Most storages already offer a natural handle, and constructing one repository per
+ * handle value is the intended usage:
+ *
+ * <ul>
+ *   <li>file-backed repositories (FileSystem, Classpath): the configured base directory
+ *       or resource path — one path per scope;
+ *   <li>Workspace: the per-user directory chosen by the runtime context;
+ *   <li>Nacos: the native namespace id;
+ *   <li>Git: the repository, branch, or in-repo skills root;
+ *   <li>relational databases: {@code JdbcAgentSkillRepository} binds one namespace per
+ *       instance at construction, backed by an explicit {@code namespace} column.
+ * </ul>
+ *
+ * <p>An application needing several scopes at once registers one repository per scope
+ * and composes them (for example by chaining {@code skillRepository(...)} on the agent
+ * builder) instead of querying one repository across scopes.
+ *
  * <p>Example usage:
  * <pre>{@code
- * AgentSkillRepository repo = new GitHubSkillRepository("owner/repo");
- * AgentSkill skill = repo.getByName("calculate").orElseThrow();
+ * AgentSkillRepository repo = new GitSkillRepository("https://github.com/org/skills.git");
+ * AgentSkill skill = repo.getSkill("calculate");
  * }</pre>
  *
  */

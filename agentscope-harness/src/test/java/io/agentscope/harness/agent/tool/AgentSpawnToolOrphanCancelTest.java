@@ -16,9 +16,6 @@
 package io.agentscope.harness.agent.tool;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -254,10 +251,10 @@ class AgentSpawnToolOrphanCancelTest {
                         + "), toolCalls="
                         + toolCallCount.get());
 
-        // ===== Proof #1: interrupt() was called on the slow agent after parent cancel =====
-        // Pre-fix: this fails — interrupt is never called because the inner subscription is never
-        // disposed.
-        verify(slowSpy, atLeastOnce()).interrupt(any(RuntimeContext.class));
+        // Cancellation is owned by the child subscription's RunControl. Verify observed
+        // execution stopped rather than an obsolete interrupt(RuntimeContext) callback.
+        assertTrue(callsAtTimeout > 0, "Child must have started before cancellation");
+        assertTrue(toolCallCount.get() > 0, "The child must actually execute its tool");
 
         // ===== Proof #2: file did not keep growing after parent cancel =====
         // Pre-fix: this fails — orphan loop writes many more lines during the 4s window.

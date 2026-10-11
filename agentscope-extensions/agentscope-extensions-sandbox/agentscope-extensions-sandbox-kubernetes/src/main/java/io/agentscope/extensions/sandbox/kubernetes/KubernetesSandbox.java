@@ -88,7 +88,12 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     @Override
     protected ExecResult doExec(RuntimeContext runtimeContext, String command, int timeoutSeconds)
             throws Exception {
-        String wrapped = "cd " + shellQuote(k8sState.getWorkspaceRoot()) + " && (" + command + ")";
+        if (command == null || command.isBlank()) {
+            throw new SandboxException.ExecException(
+                    2, "", "empty command rejected by KubernetesSandbox");
+        }
+        String wrapped =
+                "cd " + shellQuote(k8sState.getWorkspaceRoot()) + " && (\n" + command + "\n)";
         ExecutionResult result =
                 sdkSandbox.commands().run(wrapped, Duration.ofSeconds(Math.max(timeoutSeconds, 1)));
 

@@ -68,15 +68,24 @@ public final class ModelContextWindows {
                     Map.entry("o3-mini", 200_000),
                     Map.entry("o3", 200_000),
                     Map.entry("o1-mini", 128_000),
-                    Map.entry("o1", 200_000));
+                    Map.entry("o1", 200_000),
+                    Map.entry("gpt-5.4-mini", 400_000),
+                    Map.entry("gpt-5.4", 1_050_000),
+                    Map.entry("gpt-5.5", 1_050_000),
+                    Map.entry("gpt-5.6-luna", 1_050_000),
+                    Map.entry("gpt-5.6-terra", 1_050_000),
+                    Map.entry("gpt-5.6-sol", 1_050_000),
+                    Map.entry("gpt-6-astra", 1_050_000));
 
     public static final Map<String, Integer> DEEPSEEK =
             Map.ofEntries(
-                    Map.entry("deepseek-v4-flash", 1_000_000),
-                    Map.entry("deepseek-v4-pro", 1_000_000));
+                    Map.entry("deepseek-flash", 1_048_576),
+                    Map.entry("deepseek-v4-flash", 1_048_576),
+                    Map.entry("deepseek-v4-pro", 1_048_576));
 
     public static final Map<String, Integer> GLM =
             Map.ofEntries(
+                    Map.entry("glm-5.3", 1_000_000),
                     Map.entry("glm-5.2", 1_000_000),
                     Map.entry("glm-5.1", 200_000),
                     Map.entry("glm-5-turbo", 200_000),

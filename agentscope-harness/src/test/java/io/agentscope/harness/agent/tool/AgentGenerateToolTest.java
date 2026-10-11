@@ -15,16 +15,22 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -49,6 +55,56 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
 class AgentGenerateToolTest {
+
+    @Test
+    void missingNameAndDescriptionReportErrors() {
+        AgentGenerateTool tool =
+                new AgentGenerateTool(
+                        new SubagentSpecGenerator(fixedModel(VALID_SPEC)),
+                        emptyManager(),
+                        new RecordingFs());
+        for (String name : java.util.Arrays.asList(null, "", " ")) {
+            assertText(
+                    tool.agentGenerate(RuntimeContext.empty(), name, "description", true).block(),
+                    ToolResultState.ERROR);
+        }
+        assertText(
+                tool.agentGenerate(RuntimeContext.empty(), "worker", " ", true).block(),
+                ToolResultState.ERROR);
+    }
+
+    @Test
+    void writeFailurePreservesGeneratedSpecAndReportsError() {
+        AbstractFilesystem fs = mock(AbstractFilesystem.class);
+        when(fs.write(any(), anyString(), anyString())).thenReturn(WriteResult.fail("read-only"));
+        AgentGenerateTool tool =
+                new AgentGenerateTool(
+                        new SubagentSpecGenerator(fixedModel(VALID_SPEC)), emptyManager(), fs);
+        String text =
+                assertText(
+                        tool.agentGenerate(RuntimeContext.empty(), "worker", "review", false)
+                                .block(),
+                        ToolResultState.ERROR);
+        assertTrue(text.contains("read-only"));
+        assertTrue(text.contains("Generated spec:"));
+        assertTrue(text.contains("You are a code reviewer."));
+    }
+
+    @Test
+    void filesystemExceptionReportsError() {
+        AbstractFilesystem fs = mock(AbstractFilesystem.class);
+        when(fs.write(any(), anyString(), anyString()))
+                .thenThrow(new IllegalStateException("offline"));
+        AgentGenerateTool tool =
+                new AgentGenerateTool(
+                        new SubagentSpecGenerator(fixedModel(VALID_SPEC)), emptyManager(), fs);
+        assertEquals(
+                "Error: offline",
+                assertText(
+                        tool.agentGenerate(RuntimeContext.empty(), "worker", "review", false)
+                                .block(),
+                        ToolResultState.ERROR));
+    }
 
     private static final String VALID_SPEC =
             """
@@ -173,8 +229,14 @@ class AgentGenerateToolTest {
         AgentGenerateTool tool = new AgentGenerateTool(gen, emptyManager(), fs);
 
         String result =
-                tool.agentGenerate(RuntimeContext.empty(), "code-reviewer", "review code", true)
-                        .block();
+                assertText(
+                        tool.agentGenerate(
+                                        RuntimeContext.empty(),
+                                        "code-reviewer",
+                                        "review code",
+                                        true)
+                                .block(),
+                        ToolResultState.SUCCESS);
 
         assertNotNull(result);
         assertTrue(result.startsWith("dry_run=true"));
@@ -189,8 +251,14 @@ class AgentGenerateToolTest {
         AgentGenerateTool tool = new AgentGenerateTool(gen, emptyManager(), fs);
 
         String result =
-                tool.agentGenerate(RuntimeContext.empty(), "code-reviewer", "review code", false)
-                        .block();
+                assertText(
+                        tool.agentGenerate(
+                                        RuntimeContext.empty(),
+                                        "code-reviewer",
+                                        "review code",
+                                        false)
+                                .block(),
+                        ToolResultState.SUCCESS);
 
         assertNotNull(result);
         assertTrue(result.startsWith("Wrote subagent spec to "));
@@ -205,8 +273,14 @@ class AgentGenerateToolTest {
                 new AgentGenerateTool(gen, managerWith("code-reviewer"), new RecordingFs());
 
         String result =
-                tool.agentGenerate(RuntimeContext.empty(), "code-reviewer", "review code", false)
-                        .block();
+                assertText(
+                        tool.agentGenerate(
+                                        RuntimeContext.empty(),
+                                        "code-reviewer",
+                                        "review code",
+                                        false)
+                                .block(),
+                        ToolResultState.ERROR);
 
         assertEquals("Error: agent 'code-reviewer' already exists", result);
     }
@@ -217,12 +291,14 @@ class AgentGenerateToolTest {
         AgentGenerateTool tool = new AgentGenerateTool(gen, emptyManager(), new RecordingFs());
 
         String result =
-                tool.agentGenerate(
-                                RuntimeContext.empty(),
-                                "Code_Reviewer", // underscore + capitals
-                                "review code",
-                                false)
-                        .block();
+                assertText(
+                        tool.agentGenerate(
+                                        RuntimeContext.empty(),
+                                        "Code_Reviewer", // underscore + capitals
+                                        "review code",
+                                        false)
+                                .block(),
+                        ToolResultState.ERROR);
         assertNotNull(result);
         assertTrue(result.startsWith("Error: name "));
     }
@@ -233,8 +309,14 @@ class AgentGenerateToolTest {
         AgentGenerateTool tool = new AgentGenerateTool(gen, emptyManager(), null);
 
         String result =
-                tool.agentGenerate(RuntimeContext.empty(), "code-reviewer", "review code", false)
-                        .block();
+                assertText(
+                        tool.agentGenerate(
+                                        RuntimeContext.empty(),
+                                        "code-reviewer",
+                                        "review code",
+                                        false)
+                                .block(),
+                        ToolResultState.ERROR);
         assertNotNull(result);
         assertTrue(result.startsWith("Error: no filesystem configured"));
     }
@@ -246,7 +328,10 @@ class AgentGenerateToolTest {
         AgentGenerateTool tool = new AgentGenerateTool(gen, emptyManager(), fs);
 
         String result =
-                tool.agentGenerate(RuntimeContext.empty(), "weird", "weird agent", false).block();
+                assertText(
+                        tool.agentGenerate(RuntimeContext.empty(), "weird", "weird agent", false)
+                                .block(),
+                        ToolResultState.ERROR);
         assertNotNull(result);
         assertTrue(result.startsWith("Error: "));
         assertNull(fs.writtenPath, "no write on malformed spec");

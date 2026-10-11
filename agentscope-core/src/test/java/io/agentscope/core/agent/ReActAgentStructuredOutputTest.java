@@ -17,7 +17,10 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
@@ -36,11 +39,16 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.ToolChoice;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -58,6 +66,13 @@ class ReActAgentStructuredOutputTest {
         public String location;
         public String temperature;
         public String condition;
+    }
+
+    static class WeatherTools {
+        @Tool(description = "Look up the current weather for a city")
+        public String lookupWeather(@ToolParam(name = "city", description = "city") String city) {
+            return "Sunny, 72°F";
+        }
     }
 
     @BeforeEach
@@ -868,5 +883,380 @@ class ReActAgentStructuredOutputTest {
 
         // The agent should handle null eventMsg gracefully — either by returning
         // empty or by continuing the loop. No NPE should be thrown.
+    }
+
+    /** Model emits free text twice, then complies when forced via {@code ToolChoice.Specific}. */
+    @Test
+    @DisplayName("Forces generate_response via tool_choice when the model skips the tool")
+    void testStructuredOutputForcesToolChoiceWhenModelSkipsTool() {
+        Map<String, Object> toolInput = weatherToolInput();
+        AtomicInteger calls = new AtomicInteger();
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            int n = calls.getAndIncrement();
+                            if (n < 2) {
+                                // Rounds 0 and 1: the model ignores generate_response and emits
+                                // free text, triggering the forced-retry path.
+                                return List.of(textResponse("msg_" + n, "Plain text answer."));
+                            }
+                            // Round 2: forced by tool_choice, the model finally complies.
+                            return List.of(structuredToolResponse("msg_" + n, toolInput));
+                        });
+
+        ReActAgent agent = buildWeatherAgent(mockModel);
+
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+
+        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
+        assertNotNull(result);
+        assertEquals("San Francisco", result.location);
+
+        // 1 initial free-text round + 2 free-text forced retries = 3 reasoning calls total,
+        // with generate_response called on the final round.
+        assertEquals(3, mockModel.getCallCount());
+
+        // The final round was forced via ToolChoice.Specific.
+        assertTrue(
+                mockModel.getLastOptions().getToolChoice() instanceof ToolChoice.Specific,
+                "Expected a ToolChoice.Specific on the forced round");
+        assertEquals(
+                "generate_response",
+                ((ToolChoice.Specific) mockModel.getLastOptions().getToolChoice()).toolName());
+    }
+
+    /** Gives up after 3 forced retries when the model never calls {@code generate_response}. */
+    @Test
+    @DisplayName("Gives up after 3 forced retries when the model never calls generate_response")
+    void testStructuredOutputGivesUpAfterThreeForcedRetries() {
+        AtomicInteger calls = new AtomicInteger();
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            // The model never calls generate_response.
+                            return List.of(
+                                    textResponse(
+                                            "msg_" + calls.getAndIncrement(),
+                                            "I'll just answer in plain text."));
+                        });
+
+        ReActAgent agent = buildWeatherAgent(mockModel);
+
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+
+        // No structured data was produced; the loop gave up rather than deadlocking.
+        assertFalse(responseMsg.hasStructuredData());
+        // 1 initial round + 3 forced retries = 4 reasoning calls, then give up.
+        assertEquals(4, mockModel.getCallCount());
+
+        // The final (give-up) round was still forced via tool_choice before finishing.
+        assertTrue(mockModel.getLastOptions().getToolChoice() instanceof ToolChoice.Specific);
+    }
+
+    /** Sends a prompt reminder on the first fallback call when {@code ToolChoice.Specific} is unsupported. */
+    @Test
+    @DisplayName(
+            "Sends prompt reminder on first fallback call when ToolChoice.Specific unsupported")
+    void testStructuredOutputPromptReminderWhenToolChoiceUnsupported() {
+        Map<String, Object> toolInput = weatherToolInput();
+        AtomicInteger calls = new AtomicInteger();
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            int n = calls.getAndIncrement();
+                            boolean reminderPresent =
+                                    msgs.stream()
+                                            .anyMatch(
+                                                    m ->
+                                                            m.getTextContent() != null
+                                                                    && m.getTextContent()
+                                                                            .contains(
+                                                                                    "You MUST call"
+                                                                                        + " the `generate_response`"
+                                                                                        + " tool"));
+                            if (reminderPresent) {
+                                // The model complies after seeing the prompt reminder.
+                                return List.of(structuredToolResponse("msg_" + n, toolInput));
+                            }
+                            return List.of(textResponse("msg_" + n, "Plain text answer."));
+                        });
+        mockModel.setSupportsToolChoiceSpecific(false);
+
+        ReActAgent agent = buildWeatherAgent(mockModel);
+
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+
+        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
+        assertNotNull(result);
+        assertEquals("San Francisco", result.location);
+
+        // The always-on reminder is visible from the first fallback round.
+        assertEquals(1, mockModel.getCallCount());
+
+        // The prompt strategy must NOT set tool_choice.
+        assertNull(mockModel.getLastOptions().getToolChoice());
+    }
+
+    /** The request-local reminder is present once on every fallback round. */
+    @Test
+    @DisplayName("Sends one request-local reminder on every fallback round")
+    void testStructuredOutputPromptReminderPresentOnEveryFallbackRound() {
+        Map<String, Object> toolInput = weatherToolInput();
+        AtomicInteger calls = new AtomicInteger();
+        List<Integer> reminderCounts = new CopyOnWriteArrayList<>();
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            int n = calls.getAndIncrement();
+                            reminderCounts.add(
+                                    (int)
+                                            countTextOccurrences(
+                                                    msgs,
+                                                    "You MUST call the `generate_response`"
+                                                            + " tool"));
+                            if (n < 2) {
+                                return List.of(textResponse("msg_" + n, "Plain text answer."));
+                            }
+                            return List.of(structuredToolResponse("msg_" + n, toolInput));
+                        });
+        mockModel.setSupportsToolChoiceSpecific(false);
+
+        ReActAgent agent = buildWeatherAgent(mockModel);
+
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+        assertNotNull(responseMsg.getStructuredData(WeatherResponse.class));
+
+        // Every round sees exactly one reminder, including retries after free-text output.
+        assertEquals(3, mockModel.getCallCount());
+        assertEquals(List.of(1, 1, 1), reminderCounts);
+    }
+
+    /** After give-up, a later normal call does not receive the structured-output reminder. */
+    @Test
+    @DisplayName("Does not send structured-output reminder on a later normal call")
+    void testStructuredOutputGiveUpLeavesNoReminderForLaterNormalCall() {
+        AtomicInteger calls = new AtomicInteger();
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs ->
+                                List.of(
+                                        textResponse(
+                                                "msg_" + calls.getAndIncrement(),
+                                                "I'll just answer in plain text.")));
+        mockModel.setSupportsToolChoiceSpecific(false);
+
+        ReActAgent agent = buildWeatherAgent(mockModel);
+
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+        // No structured data; the loop gave up rather than deadlocking.
+        assertFalse(responseMsg.hasStructuredData());
+        // 1 initial round + 3 forced retries = 4 reasoning calls, then give up.
+        assertEquals(4, mockModel.getCallCount());
+
+        // Follow-up normal call: its input contains no request-local structured-output reminder.
+        Msg followUp = agent.call(weatherInput()).block();
+        assertNotNull(followUp);
+        assertEquals(
+                0,
+                countTextOccurrences(
+                        mockModel.getLastMessages(), "You MUST call the `generate_response` tool"));
+    }
+
+    /** Merges the transient reminder into the last user message without changing durable state. */
+    @Test
+    @DisplayName("Merges reminder into last user message without changing durable state")
+    void testStructuredOutputReminderMergesIntoLastUserMessage() {
+        Map<String, Object> toolInput = weatherToolInput();
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            boolean reminderPresent =
+                                    msgs.stream()
+                                            .anyMatch(
+                                                    m ->
+                                                            m.getTextContent() != null
+                                                                    && m.getTextContent()
+                                                                            .contains(
+                                                                                    "You MUST call"
+                                                                                        + " the `generate_response`"
+                                                                                        + " tool"));
+                            if (reminderPresent) {
+                                return List.of(structuredToolResponse("msg_so", toolInput));
+                            }
+                            return List.of(textResponse("msg_text", "ok"));
+                        });
+
+        ReActAgent agent = buildWeatherAgent(mockModel);
+
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+        assertNotNull(responseMsg.getStructuredData(WeatherResponse.class));
+
+        List<Msg> requestMessages = mockModel.getLastMessages();
+        assertNotNull(requestMessages);
+        Msg lastMessage = requestMessages.get(requestMessages.size() - 1);
+        assertEquals(MsgRole.USER, lastMessage.getRole());
+        assertTrue(lastMessage.getTextContent().contains("What's the weather in San Francisco?"));
+        assertTrue(lastMessage.getTextContent().contains("You MUST call the `generate_response`"));
+
+        List<Msg> durableContext = agent.getAgentState().getContext();
+        assertEquals(
+                0,
+                countTextOccurrences(durableContext, "You MUST call the `generate_response` tool"));
+        durableContext.stream()
+                .filter(msg -> msg.getRole() == MsgRole.USER)
+                .filter(msg -> msg.getTextContent().contains("What's the weather in San"))
+                .findFirst()
+                .ifPresent(
+                        msg ->
+                                assertFalse(
+                                        msg.getTextContent()
+                                                .contains(
+                                                        "You MUST call the"
+                                                                + " `generate_response`")));
+    }
+
+    /** Adds a separate user reminder when the final model input ends with a tool result. */
+    @Test
+    @DisplayName("Adds separate user reminder after a tool result")
+    void testStructuredOutputReminderAfterToolResultUsesSeparateUserMessage() {
+        Map<String, Object> toolInput = weatherToolInput();
+        AtomicInteger calls = new AtomicInteger();
+        Map<String, Object> businessToolInput = Map.of("city", "San Francisco");
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            if (calls.getAndIncrement() == 0) {
+                                return List.of(
+                                        businessToolResponse(
+                                                "business_1", "lookupWeather", businessToolInput));
+                            }
+                            return List.of(structuredToolResponse("so_1", toolInput));
+                        });
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new WeatherTools());
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("weather-agent")
+                        .sysPrompt("You are a weather assistant")
+                        .model(mockModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+        assertNotNull(responseMsg.getStructuredData(WeatherResponse.class));
+        assertEquals(2, mockModel.getCallCount());
+
+        List<Msg> requestMessages = mockModel.getLastMessages();
+        assertNotNull(requestMessages);
+        assertTrue(requestMessages.size() >= 2);
+        assertEquals(MsgRole.TOOL, requestMessages.get(requestMessages.size() - 2).getRole());
+        Msg reminderMessage = requestMessages.get(requestMessages.size() - 1);
+        assertEquals(MsgRole.USER, reminderMessage.getRole());
+        assertTrue(
+                reminderMessage.getTextContent().contains("You MUST call the `generate_response`"));
+        assertEquals(
+                1,
+                countTextOccurrences(
+                        requestMessages, "You MUST call the `generate_response` tool"));
+        assertEquals(
+                0,
+                countTextOccurrences(
+                        agent.getAgentState().getContext(),
+                        "You MUST call the `generate_response` tool"));
+    }
+
+    // ==================== Helpers ====================
+
+    /** Builds a weather agent bound to the given mock model. */
+    private static ReActAgent buildWeatherAgent(MockModel mockModel) {
+        return ReActAgent.builder()
+                .name("weather-agent")
+                .sysPrompt("You are a weather assistant")
+                .model(mockModel)
+                .toolkit(new Toolkit())
+                .build();
+    }
+
+    /** Builds the standard user weather-query message. */
+    private static Msg weatherInput() {
+        return Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .content(TextBlock.builder().text("What's the weather in San Francisco?").build())
+                .build();
+    }
+
+    /** Builds the {@code generate_response} tool input payload. */
+    private static Map<String, Object> weatherToolInput() {
+        return Map.of(
+                "response",
+                Map.of("location", "San Francisco", "temperature", "72°F", "condition", "Sunny"));
+    }
+
+    /** Builds a free-text response with the given id and text. */
+    private static ChatResponse textResponse(String id, String text) {
+        return ChatResponse.builder()
+                .id(id)
+                .content(List.of(TextBlock.builder().text(text).build()))
+                .usage(new ChatUsage(1, 2, 3))
+                .build();
+    }
+
+    /** Builds a {@code generate_response} tool-call response with the given payload. */
+    private static ChatResponse structuredToolResponse(String id, Map<String, Object> toolInput) {
+        return ChatResponse.builder()
+                .id(id)
+                .content(
+                        List.of(
+                                ToolUseBlock.builder()
+                                        .id(id)
+                                        .name("generate_response")
+                                        .input(toolInput)
+                                        .content(JsonUtils.getJsonCodec().toJson(toolInput))
+                                        .build()))
+                .usage(new ChatUsage(10, 20, 30))
+                .build();
+    }
+
+    /** Builds a business tool-call response with the given payload. */
+    private static ChatResponse businessToolResponse(
+            String id, String toolName, Map<String, Object> toolInput) {
+        return ChatResponse.builder()
+                .id(id)
+                .content(
+                        List.of(
+                                ToolUseBlock.builder()
+                                        .id(id)
+                                        .name(toolName)
+                                        .input(toolInput)
+                                        .content(JsonUtils.getJsonCodec().toJson(toolInput))
+                                        .build()))
+                .usage(new ChatUsage(1, 2, 3))
+                .build();
+    }
+
+    /** Counts messages whose text content contains the given substring. */
+    private static long countTextOccurrences(List<Msg> msgs, String needle) {
+        if (msgs == null) {
+            return 0;
+        }
+        return msgs.stream()
+                .filter(m -> m.getTextContent() != null && m.getTextContent().contains(needle))
+                .count();
     }
 }

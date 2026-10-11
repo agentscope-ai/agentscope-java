@@ -27,7 +27,7 @@ flowchart LR
     E --> O[Observation<br/>结构化结果、错误与 Artifact]
     O --> T[State / Trace<br/>任务事实与执行证据]
     T --> M
-```
+[..](..)```
 
 这条链路建立三个必须区分的事实：
 

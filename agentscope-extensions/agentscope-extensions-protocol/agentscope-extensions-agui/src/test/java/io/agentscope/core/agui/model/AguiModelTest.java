@@ -169,6 +169,16 @@ class AguiModelTest {
         }
 
         @Test
+        void testEqualsAccountsForToolCallIdAndError() {
+            AguiMessage base = new AguiMessage("msg-1", "tool", null, null, "tc-1", "boom");
+
+            assertEquals(base, new AguiMessage("msg-1", "tool", null, null, "tc-1", "boom"));
+            // Nothing else differs, so these isolate the two fields the error handling added.
+            assertNotEquals(base, new AguiMessage("msg-1", "tool", null, null, "tc-1", "other"));
+            assertNotEquals(base, new AguiMessage("msg-1", "tool", null, null, "tc-2", "boom"));
+        }
+
+        @Test
         void testHashCode() {
             AguiMessage msg1 = AguiMessage.userMessage("msg-1", "Hello");
             AguiMessage msg2 = AguiMessage.userMessage("msg-1", "Hello");
@@ -199,6 +209,27 @@ class AguiModelTest {
             assertEquals(msg.getId(), deserialized.getId());
             assertEquals(msg.getRole(), deserialized.getRole());
             assertEquals("Hello", deserialized.getTextContent());
+        }
+
+        @Test
+        void testJsonSerializationOmitsErrorWhenAbsent() throws JsonProcessingException {
+            // The field is newer than the wire format it joins: a message that reports no error
+            // must keep the representation it had before the field existed, so a strict client
+            // does not start seeing `"error": null` on every message.
+            AguiMessage withoutError = new AguiMessage("msg-1", "tool", null, null, "tc-1");
+
+            String withoutErrorJson = JsonUtils.getJsonCodec().toJson(withoutError);
+            assertFalse(withoutErrorJson.contains("error"), withoutErrorJson);
+
+            // A reported failure is still carried.
+            AguiMessage withError =
+                    new AguiMessage("msg-2", "tool", null, null, "tc-1", "sandbox unavailable");
+
+            String withErrorJson = JsonUtils.getJsonCodec().toJson(withError);
+            assertTrue(withErrorJson.contains("\"error\""), withErrorJson);
+            assertEquals(
+                    "sandbox unavailable",
+                    JsonUtils.getJsonCodec().fromJson(withErrorJson, AguiMessage.class).getError());
         }
 
         @Test
@@ -815,31 +846,6 @@ class AguiModelTest {
                     () -> new AguiResume(null, AguiResume.STATUS_RESOLVED, null));
             assertThrows(
                     NullPointerException.class, () -> new AguiResume("interrupt-1", null, null));
-        }
-    }
-
-    @Nested
-    class ToolMergeModeTest {
-
-        @Test
-        void testAllModesExist() {
-            assertNotNull(ToolMergeMode.FRONTEND_ONLY);
-            assertNotNull(ToolMergeMode.AGENT_ONLY);
-            assertNotNull(ToolMergeMode.MERGE_FRONTEND_PRIORITY);
-        }
-
-        @Test
-        void testModeCount() {
-            assertEquals(3, ToolMergeMode.values().length);
-        }
-
-        @Test
-        void testValueOf() {
-            assertEquals(ToolMergeMode.FRONTEND_ONLY, ToolMergeMode.valueOf("FRONTEND_ONLY"));
-            assertEquals(ToolMergeMode.AGENT_ONLY, ToolMergeMode.valueOf("AGENT_ONLY"));
-            assertEquals(
-                    ToolMergeMode.MERGE_FRONTEND_PRIORITY,
-                    ToolMergeMode.valueOf("MERGE_FRONTEND_PRIORITY"));
         }
     }
 }
