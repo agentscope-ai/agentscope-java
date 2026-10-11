@@ -6,7 +6,7 @@ en_link: /v2/en/service/tools
 
 工具让 Managed Agent 能够读取文件、执行命令和访问业务系统。要让某个 Agent 使用这些能力，需要把工具配置保存到它的 **Agent 定义**中。随后，应用使用这个 Agent 的 ID 创建 Session，Service 就会按照该 Session 选定的定义版本，为运行中的 HarnessAgent 装配工具。应用提交任务时无需重新声明工具。
 
-本页说明如何完成这条配置路径。开始前，请先按[部署指南](/v2/zh/service/quickstart)准备 `BASE_URL`、`TOKEN`、`TENANT`、`NAMESPACE` 和 `ENVIRONMENT_ID`，并确认所选环境可用。只想先体验文件读写时，可以先完成[第一个托管 Agent](/v2/zh/service/create-managed-agent)；需要连接自己的业务系统时，再继续下面的 MCP 配置。
+本页说明如何完成这条配置路径。开始前，请先按[部署指南](/v2/zh/service/quickstart)准备 `BASE_URL`、`TENANT`、`NAMESPACE` 和 `ENVIRONMENT_ID`，并确认所选环境可用。只想先体验文件读写时，可以先完成[第一个托管 Agent](/v2/zh/service/create-managed-agent)；需要连接自己的业务系统时，再继续下面的 MCP 配置。
 
 ## 工具配置与 Agent 的关系
 
@@ -64,6 +64,16 @@ MCP 还需要 `definition.mcpServers` 描述如何连接服务。连接中的 `n
 
 ### 内置工具如何选择
 
+查询平台提供的工具定义，先核对名称与配置，再写入 Agent 定义：
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/toolsets/builtin"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/toolsets/mcp-catalog"
+```
+
 `agent_toolset` 的 `defaultConfig` 为内置工具设置默认启用状态，`configs` 再覆盖指定工具。设置为 `false` 后，示例只在这个内置工具集中启用 `read` 和 `write`，不会因此关闭另一个 `mcp_toolset` 中的产品查询工具。如果希望使用 Shell 或查找文件，可以在同一组 `configs` 中增加相应条目。
 
 | 配置中的工具名 | 执行记录中的工具名 | 用途 |
@@ -101,17 +111,23 @@ MCP 还需要 `definition.mcpServers` 描述如何连接服务。连接中的 `n
 下面的命令将 `agent-definition.json` 放入请求的 `definition` 字段，并通过 `defaultEnvironmentId` 绑定已准备好的执行环境。`binding.kind: "managed"` 表示由 Service 使用 HarnessAgent 内核运行这个定义。命令会保存返回的 Agent ID 和定义版本，后面创建 Session 时将使用它们。
 
 ```bash
-AGENT_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --slurpfile definition agent-definition.json \
-    --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
+jq -n --slurpfile definition agent-definition.json \
+    --arg tenant "$TENANT" \
+  --arg namespace "$NAMESPACE" \
     --arg env "$ENVIRONMENT_ID" '{
       tenant:$tenant, namespace:$namespace,
       agentKey:"product-assistant", displayName:$definition[0].name,
       binding:{kind:"managed"},
       definition:($definition[0] + {defaultEnvironmentId:$env})
-    }')")
+    }' > request.json
+```
+
+```bash
+AGENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
+    -H "Content-Type: application/json" \
+    --data-binary @request.json
+)
 AGENT_ID=$(printf '%s' "$AGENT_JSON" | jq -er '.agent.id')
 AGENT_VERSION=$(printf '%s' "$AGENT_JSON" | jq -er '.definition.version')
 printf '%s' "$AGENT_JSON" | jq '{agentId:.agent.id, definition:.definition}'
@@ -124,9 +140,9 @@ printf '%s' "$AGENT_JSON" | jq '{agentId:.agent.id, definition:.definition}'
 如果要为已有 Agent 配置工具，请先将 `AGENT_ID` 设为它的平台 ID，再执行下面的命令。这里先读取当前定义，保留名称、指令、模型和资源绑定等可写字段，再用文件中的 `tools`、`mcpServers` 替换对应配置。文件中的名称和指令不会覆盖已有 Agent。
 
 ```bash
-CURRENT=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+CURRENT=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/definition"
+)
 UPDATED=$(printf '%s' "$CURRENT" | jq --slurpfile config agent-definition.json '
   .definition | {
     name, description, system, model, maxIters, tools, mcpServers, skills, multiagent,
@@ -139,10 +155,11 @@ UPDATED=$(printf '%s' "$CURRENT" | jq --slurpfile config agent-definition.json '
       .workspaceBinding.overrides =
         (((.workspaceBinding.overrides // []) + ["tools", "mcpServers"]) | unique)
     else . end')
-SAVED=$(curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$UPDATED")
+SAVED=$(
+  curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+    -H "Content-Type: application/json" \
+    --data-binary "$UPDATED"
+)
 AGENT_VERSION=$(printf '%s' "$SAVED" | jq -er '.definition.version')
 printf '%s' "$SAVED" | jq '.definition | {version, tools, mcpServers, workspaceBinding}'
 ```
@@ -167,13 +184,20 @@ MCP 认证则通过 [Vault](/v2/zh/service/vault) 提供。对于示例中的 `c
 
 ```bash
 VAULT_IDS_JSON=$(jq -n --arg id "$VAULT_ID" '[$id]')
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --arg agent "$AGENT_ID" --argjson version "$AGENT_VERSION" \
+jq -n --arg agent "$AGENT_ID" \
+  --argjson version "$AGENT_VERSION" \
     --argjson vaults "$VAULT_IDS_JSON" '{
       target:{type:"agent", id:$agent, version:$version}, vaultIds:$vaults
-    }')")
+    }' > request.json
+```
+
+```bash
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: tools-session-001" \
+    --data-binary @request.json
+)
 SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
 SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 ```
@@ -209,13 +233,26 @@ SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 创建 Session 后，可以提交一个范围明确的任务，例如要求查询目录中一个已知产品，并把查询结果整理到 `product-summary.md` 后读回核对。把下面的 `KNOWN_PRODUCT_ID` 替换为你能核验的产品标识；它只是验证输入，不是预置的演示数据。
 
 ```bash
-TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: catalog-check-001' \
-  --data '{"message":"请使用产品目录查询 KNOWN_PRODUCT_ID，根据实际结果生成 product-summary.md，写入后读回核对。如果查询失败，请说明原因，不要编造产品信息。"}')
+cat > request.json <<'JSON'
+{
+  "message": "请使用产品目录查询 KNOWN_PRODUCT_ID，根据实际结果生成 product-summary.md，写入后读回核对。如果查询失败，请说明原因，不要编造产品信息。"
+}
+JSON
+```
+
+```bash
+TURN_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns" \
+    -H 'Idempotency-Key: catalog-check-001' \
+    -H "Content-Type: application/json" \
+    --data-binary @request.json
+)
 TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
-curl --fail-with-body -sS "$SESSION_URL/snapshot" \
-  -H "Authorization: Bearer $TOKEN" | jq '{tools, required_actions, turns}'
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/snapshot" \
+  | jq '{tools, required_actions, turns}'
 ```
 
 任务提交后在后台执行，一次快照可能还没有工具记录。按[会话指南](/v2/zh/service/session-event-log)继续读取快照或订阅事件，确认实际出现 `catalog__lookup_product` 的调用、参数与返回数据；写文件前应出现待确认请求，允许后才继续写入和读回。最终还需核对产品信息与来源是否一致，不能仅凭模型声称“已查询”就判断接入成功。网络重试应沿用同一个幂等键和消息，新任务才使用新的 key。

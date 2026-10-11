@@ -4,7 +4,7 @@ zh_link: /v2/zh/service/issues
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This page uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 An Issue keeps the objective, owner, discussion, executions, and deliverables for a piece of work. An application can create “analyze these logs,” assign an Agent, show progress, and ask the user to accept the report—all through APIs.
@@ -15,47 +15,66 @@ This applies to registered, task-capable Agents across Managed, External, and Ho
 
 ## Create your first work item
 
-The examples use Bash, `curl`, and `jq`. Set `SERVICE_URL` to your Service address, `TOKEN` to a user Bearer token, and `TENANT` / `NAMESPACE` to your authorized scope; see [API authentication](/v2/en/service/api-reference). Define this request helper:
+The examples use Bash, `curl`, and `jq`. Set `BASE_URL` to your Service address, and `TENANT` / `NAMESPACE` to the default scope; see [API authentication](/v2/en/service/api-reference). Run the following steps in the same Bash terminal:
 
 ```bash
-api() {
-  curl --fail-with-body --silent --show-error \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H 'Content-Type: application/json' "$@"
-}
+set -euo pipefail
 ```
 
 
 Set `AGENT_ID` to a task-capable Agent in the same namespace. Including an assignee creates work for asynchronous dispatch. A successful response means the work was accepted; query its state to follow execution.
 
 ```bash
-created=$(api "$SERVICE_URL/api/v1/issues" --data "$(jq -n \
-  --arg tenant "$TENANT" --arg namespace "$NAMESPACE" --arg agent "$AGENT_ID" \
-  '{tenant:$tenant,namespace:$namespace,
-    title:"Analyze sample logs and produce an error report",
-    description:"Read sample.log in the Workspace. Produce report.md and identify uncertain causes.",
-    acceptanceCriteria:["Group and count errors","Include evidence with line numbers"],
-    assigneeType:"agent",assigneeRef:$agent,access:{mode:"private"}}')")
-ISSUE_ID=$(jq -r '.issue.id' <<<"$created")
-TASK_ID=$(jq -r '.agentTask.id // empty' <<<"$created")
-printf '%s\n' "$created" | jq .
+ISSUE_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/issues" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE",
+  "title": "Analyze sample logs and classify errors",
+  "description": "Read sample.log in the Workspace, produce report.md and identify unconfirmed causes.",
+  "acceptanceCriteria": [
+    "Include error categories and counts",
+    "Cite line-numbered evidence for each category"
+  ],
+  "assigneeType": "agent",
+  "assigneeRef": "$AGENT_ID",
+  "access": {
+    "mode": "private"
+  }
+}
+JSON
+)
+ISSUE_ID=$(jq -er '.issue.id' <<< "$ISSUE_JSON")
+TASK_ID=$(jq -r '.agentTask.id // empty' <<< "$ISSUE_JSON")
 ```
 
 `issue.id` identifies the business work; `agentTask.id` identifies work assigned to an Agent. Retries, collaboration, and follow-up input can introduce additional tasks, so build the full work view around the Issue. For a Team, use `assigneeType:"team"` and its ID in `assigneeRef`; for a person, use `human`. Omit the assignee to save the work before assigning it.
 
-`access.mode` defaults to `private`. Use `namespace` for namespace members or `shared` with `members` for selected collaborators. This scope also controls access to discussion and results. Access to `sample.log` depends separately on the Agent's Workspace and tools.
+Local mode bypasses work access checks; see the [production access guide](/v2/en/service/access) for sharing scopes. The Agent still needs the actual Workspace and file tools to read `sample.log`.
 
 ## Assign existing work and add input
 
 Read the latest `version` and send it as `expectedVersion` before changing existing work. This avoids overwriting another participant's changes. For example, assign an existing Issue to a Team:
 
 ```bash
-current=$(api "$SERVICE_URL/api/v1/issues/$ISSUE_ID")
-api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/assign" --data "$(jq -n \
-  --arg team "$TEAM_ID" --argjson version "$(jq '.issue.version' <<<"$current")" \
-  '{assigneeType:"team",assigneeRef:$team,expectedVersion:$version}')"
+ISSUE_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID"
+)
+ISSUE_VERSION=$(jq -er '.issue.version' <<< "$ISSUE_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/assign" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "assigneeType": "team",
+  "assigneeRef": "$TEAM_ID",
+  "expectedVersion": $ISSUE_VERSION
+}
+JSON
 ```
 
 Normal scheduling does not require an extra `dispatch` call. Inspect the returned `agentTask` and its subsequent state. Assigning a human owner does not create an Agent execution.
@@ -63,10 +82,19 @@ Normal scheduling does not require an extra `dispatch` call. Inspect the returne
 During execution, add a comment with new information or requested changes. Use structured `mentions` when addressing an Agent explicitly:
 
 ```bash
-api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/comments" --data "$(jq -n \
-  --arg agent "$AGENT_ID" \
-  '{content:"Also count timeout errors and distinguish confirmed causes from hypotheses.",
-    mentions:[{type:"agent",ref:$agent}]}')"
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/comments" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "content": "Also count timeout errors and distinguish confirmed from unconfirmed causes.",
+  "mentions": [
+    {
+      "type": "agent",
+      "ref": "$AGENT_ID"
+    }
+  ]
+}
+JSON
 ```
 
 The response's `routes` explain whether input was queued, merged into existing work, or blocked by policy. Comments can trigger work. For an informational progress record, use `type:"progress"` without mentions. Include `parentId` to reply to a comment. Submit the same body to `POST /api/v1/issues/{issueId}/comments/preview-routing` to preview routing before posting.
@@ -76,13 +104,28 @@ The response's `routes` explain whether input was queued, merged into existing w
 When a page opens again, read the Issue and its tasks, comments, and artifacts to reconstruct the work view:
 
 ```bash
-api "$SERVICE_URL/api/v1/issues/$ISSUE_ID"
-api "$SERVICE_URL/api/v1/agent-tasks" --get \
-  --data-urlencode "tenant=$TENANT" --data-urlencode "namespace=$NAMESPACE" \
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agent-tasks" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
   --data-urlencode "issueId=$ISSUE_ID"
-api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/comments?limit=50"
-api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/artifacts"
-api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/activity?limit=50"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/issues/$ISSUE_ID/comments" \
+  --data-urlencode "limit=50"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/artifacts"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/issues/$ISSUE_ID/activity" \
+  --data-urlencode "limit=50"
 ```
 
 Task results, errors, and execution references support result displays and diagnostics. Continue comment pagination with the returned `nextCursor`. Artifact listings provide IDs; use `POST /api/v1/artifacts/{artifactId}/download` for download information. Upload through `POST /api/v1/artifacts/uploads`; see the [API reference](/v2/en/service/api-reference) for fields.
@@ -122,18 +165,36 @@ The Lead should bring child results into the parent Issue and Artifacts, identif
 Continue with the `ISSUE_ID` created above. Load the result and confirm the Issue is currently `in_review`:
 
 ```bash
-review=$(api "$SERVICE_URL/api/v1/issues/$ISSUE_ID")
-api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/artifacts"
-api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/comments?limit=50"
+review=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID"
+)
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/artifacts"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/issues/$ISSUE_ID/comments" \
+  --data-urlencode "limit=50"
 printf '%s\n' "$review" | jq '.issue | {title,status,version,acceptanceCriteria}'
 ```
 
 Let the user inspect the acceptance criteria, final report, and relevant child results. Once they accept, submit the version they reviewed:
 
 ```bash
-api "$SERVICE_URL/api/v1/issues/$ISSUE_ID/accept" --data "$(jq -n \
-  --argjson version "$(jq '.issue.version' <<<"$review")" \
-  '{expectedVersion:$version,reason:"The report and evidence meet the acceptance criteria"}')"
+ISSUE_VERSION=$(jq -er '.issue.version' <<< "$review")
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/accept" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "expectedVersion": $ISSUE_VERSION,
+  "reason": "Verified the report and evidence against the acceptance criteria."
+}
+JSON
 ```
 
 For requested changes, use `/reject` with `expectedVersion` and an explicit `reason`. Rejection returns work to `in_progress` without automatically executing it again. Follow the [comment and assignment flow](/v2/en/service/issues#assign-existing-work-and-add-input) to ask the owner to continue. Viewing a child or resolving a comment thread does not accept the current Issue.
@@ -152,11 +213,17 @@ To clarify requirements in a conversation first, use the [Agent API chat flow](/
 Inbox belongs to the authenticated user; a request parameter cannot turn it into another person's Inbox. Query it with a user identity:
 
 ```bash
-api "$SERVICE_URL/api/v1/inbox" --get \
-  --data-urlencode "tenant=$TENANT" --data-urlencode "namespace=$NAMESPACE" \
-  --data-urlencode 'view=action' --data-urlencode 'limit=50'
-api "$SERVICE_URL/api/v1/inbox/summary" --get \
-  --data-urlencode "tenant=$TENANT" --data-urlencode "namespace=$NAMESPACE"
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/inbox" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode 'view=action' \
+  --data-urlencode 'limit=50'
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/inbox/summary" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
 ```
 
 The list returns `items`, `hasMore`, and `nextCursor`. Pass `cursor` for the next page. Use `view=action` for unresolved decisions, `unread` for unread items, `attention` for items needing attention, or `all` for all unarchived items. Add `archived=true` to read archived notifications.
@@ -165,19 +232,47 @@ Read a selected item with `GET /api/v1/inbox/{inboxId}`, then follow its work or
 
 ### Decide an execution approval
 
+Read the current user’s pending approvals in this scope, review the target and requested operation, then select the actual APPROVAL_ID before proceeding.
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/approvals" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "status=pending" \
+  --data-urlencode "limit=25"
+```
+
+```bash
+APPROVAL_ID="APPROVAL_ID_FROM_LIST"
+```
+
 An approval may originate from a Workflow's human gate or a runtime operation. Obtain `APPROVAL_ID` from the notification reference or query `GET /api/v1/approvals?tenant=...&namespace=...`. Read the requester, target, and reason first. Only the designated approver may decide:
 
 ```bash
-approval=$(api "$SERVICE_URL/api/v1/approvals/$APPROVAL_ID")
+approval=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/approvals/$APPROVAL_ID"
+)
 printf '%s\n' "$approval" | jq .
 ```
 
 After the user chooses to approve:
 
 ```bash
-api "$SERVICE_URL/api/v1/approvals/$APPROVAL_ID/decide" --data "$(jq -n \
-  --argjson version "$(jq '.approval.version' <<<"$approval")" \
-  '{expectedVersion:$version,status:"approved",decision:{reason:"Operation scope reviewed"}}')"
+APPROVAL_VERSION=$(jq -er '.approval.version' <<< "$approval")
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/approvals/$APPROVAL_ID/decide" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "expectedVersion": $APPROVAL_VERSION,
+  "status": "approved",
+  "decision": {
+    "reason": "Verified the requested operation and its scope."
+  }
+}
+JSON
 ```
 
 Reject with `status:"rejected"`. The decision may resume or fail waiting execution; it does not accept the final deliverable. Reload expired requests or requests that no longer match the current execution.
@@ -194,3 +289,91 @@ For the platform UI workflow, see [Console: tasks and feedback](/v2/en/service/c
 
 
 Retry failed tasks with `POST /api/v1/agent-tasks/{taskId}/retry`; cancel with `/cancel`. Read the failure and current state first. Retries retain old records and may repeat external effects.
+
+<span id="curl-management"></span>
+
+## Handle rejection, retries and notifications
+
+Use the local URL and default scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup).
+
+<Accordion title="Reject a delivery">
+
+When review finds an unmet criterion, read the current version and reject with revision instructions. This is an alternative to acceptance, not its next step.
+
+```bash
+ISSUE_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID"
+)
+ISSUE_VERSION=$(jq -er '.issue.version' <<< "$ISSUE_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/reject" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "expectedVersion": $ISSUE_VERSION,
+  "reason": "Add line-numbered evidence for every error category."
+}
+JSON
+```
+
+</Accordion>
+
+<Accordion title="Cancel or retry an AgentTask">
+
+Take TASK_ID from the work detail or task list; it is distinct from Issue ID. Cancel uses the current task version. Retrying a failed task creates a new task record and requires no expectedVersion. Inspect state and failure first; these are alternative operations.
+
+```bash
+TASK_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-tasks/$TASK_ID"
+)
+TASK_VERSION=$(jq -er '.task.version' <<< "$TASK_JSON")
+```
+
+<Tabs>
+<Tab title="Cancel">
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agent-tasks/$TASK_ID/cancel" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "expectedVersion": $TASK_VERSION
+}
+JSON
+```
+
+</Tab>
+<Tab title="Retry failed task">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/agent-tasks/$TASK_ID/retry"
+```
+
+</Tab>
+</Tabs>
+
+</Accordion>
+
+<Accordion title="Read and organize the Inbox">
+
+Select INBOX_ID from the list. Reading or archiving organizes the current user’s notification; it does not approve a request or cancel work.
+
+```bash
+INBOX_ID="INBOX_ID_FROM_LIST"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/inbox/$INBOX_ID"
+```
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/inbox/$INBOX_ID/read"
+```
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/inbox/$INBOX_ID/archive"
+```
+
+</Accordion>

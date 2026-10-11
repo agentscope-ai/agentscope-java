@@ -6,25 +6,23 @@ zh_link: /v2/zh/service/sse-events
 
 After submitting a task, an application needs to show its background progress to the user. The Session API preserves snapshots and an event log: a snapshot restores work that has already happened, and subsequent events update messages, tool calls, and pending actions. SSE delivers those events continuously, so an application can follow the same task after a page refresh or network interruption. Closing the connection does not cancel execution.
 
-Start with [Integrate applications with the Session API](/v2/en/service/service-api) to create a Session and submit a Turn. The examples below reuse its `SESSION_URL` and application credential. If your backend needs notifications while users are offline, go to the [Webhook section](#webhooks). Webhook notifications can be used alongside page-level SSE subscriptions.
+Start with [Integrate applications with the Session API](/v2/en/service/service-api) to create a Session and submit a Turn. The examples below reuse its `SESSION_URL` in local mode. If your backend needs notifications while users are offline, go to the [Webhook section](#webhooks). Webhook notifications can be used alongside page-level SSE subscriptions.
 
 ## Restore a snapshot before applying events
 
 When opening a page, read the Session `/snapshot`, restore its messages, tools, and actions, then pass its `as_of` as `after` to `/events/stream`. Persist a cursor only after successfully applying the event. Reconnect from the last applied cursor. If local page state is also lost, reload the snapshot first.
 
-This example uses an application credential. An authorized platform Bearer token can perform the same reads.
+Local mode reads events without credentials. See [production deployment](/v2/en/service/kubernetes#production-application-credentials) for application credentials.
 
 ```bash
 SNAPSHOT=$(
-  curl -sS --fail-with-body "$SESSION_URL/snapshot" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY"
+  curl -sS --fail-with-body "$SESSION_URL/snapshot"
 )
 CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
 ```
 
 ```bash
 curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Accept: text/event-stream" \
   --data-urlencode "after=$CURSOR"
 ```
@@ -38,15 +36,13 @@ To observe one Turn, use this matching pair:
 ```bash
 TURN_URL="$SESSION_URL/turns/$TURN_ID"
 TURN_SNAPSHOT=$(
-  curl -sS --fail-with-body "$TURN_URL/snapshot" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY"
+  curl -sS --fail-with-body "$TURN_URL/snapshot"
 )
 TURN_CURSOR=$(jq -er '.as_of' <<< "$TURN_SNAPSHOT")
 ```
 
 ```bash
 curl -sS --fail-with-body -N -G "$TURN_URL/events/stream" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Accept: text/event-stream" \
   --data-urlencode "after=$TURN_CURSOR"
 ```
@@ -56,7 +52,6 @@ To reconnect a Session stream, replace `LAST_APPLIED_CURSOR` with the last succe
 ```bash
 LAST_APPLIED_CURSOR="LAST_APPLIED_SESSION_CURSOR"
 curl -sS --fail-with-body -N "$SESSION_URL/events/stream" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Accept: text/event-stream" \
   -H "Last-Event-ID: $LAST_APPLIED_CURSOR"
 ```
@@ -78,7 +73,6 @@ Use `GET /events?after=...&limit=100` when a persistent connection is unnecessar
 ```bash
 EVENT_PAGE=$(
   curl -sS --fail-with-body -G "$SESSION_URL/events" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     --data-urlencode "after=$CURSOR" \
     --data-urlencode "limit=100"
 )
@@ -91,7 +85,6 @@ Fetch the next page immediately only when `has_more` is true. Advance the cursor
 if jq -e '.has_more == true' <<< "$EVENT_PAGE" > /dev/null; then
   NEXT_CURSOR=$(jq -er '.next_cursor' <<< "$EVENT_PAGE")
   curl -sS --fail-with-body -G "$SESSION_URL/events" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     --data-urlencode "after=$NEXT_CURSOR" \
     --data-urlencode "limit=100"
 fi
@@ -103,13 +96,12 @@ A `410` response with `cursor_expired` means the resource's incremental history 
 
 ## Notify a backend while users are offline
 
-Register under a Session's `/webhooks` for events across its tasks, or under a Turn's `/webhooks` for just that task. Application credentials need `webhooks:write`. Replace the example URL with an HTTPS receiver you have deployed:
+Register under a Session's `/webhooks` for events across its tasks, or under a Turn's `/webhooks` for just that task. Replace the example URL with an HTTPS receiver you have deployed:
 
 ```bash
 WEBHOOKS_URL="$SESSION_URL/webhooks"
 WEBHOOK_JSON=$(
   curl -sS --fail-with-body "$WEBHOOKS_URL" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: notifications-001" \
     --data-binary @- <<'JSON'
@@ -138,22 +130,19 @@ Delivery is at least once, so receivers may see duplicates. Persist the notifica
 Inspect subscriptions and delivery status:
 
 ```bash
-curl -sS --fail-with-body "$WEBHOOKS_URL" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$WEBHOOKS_URL"
 ```
 
 After recovering the receiver, retry failed delivery when needed:
 
 ```bash
-curl -sS --fail-with-body -X POST "$WEBHOOKS_URL/$WEBHOOK_ID/retry" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body -X POST "$WEBHOOKS_URL/$WEBHOOK_ID/retry"
 ```
 
 Disable a subscription when notifications are no longer needed:
 
 ```bash
-curl -sS --fail-with-body -X DELETE "$WEBHOOKS_URL/$WEBHOOK_ID" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body -X DELETE "$WEBHOOKS_URL/$WEBHOOK_ID"
 ```
 
 </Accordion>

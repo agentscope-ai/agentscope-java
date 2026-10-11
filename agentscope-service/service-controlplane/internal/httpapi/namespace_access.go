@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/sessionapi"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/gin-gonic/gin"
@@ -163,6 +164,13 @@ func namespaceAction(c *gin.Context) string {
 // navigation roles and Kubernetes SAR are not substitutes for this decision.
 func (s *Server) namespaceAccessMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if s.localDev {
+			if !s.setLocalNamespaceAccess(c) {
+				return
+			}
+			c.Next()
+			return
+		}
 		if console, _ := c.Get(ctxConsoleAuth); console != true || s.store == nil {
 			c.Next()
 			return
@@ -375,6 +383,9 @@ func (s *Server) resolveAccessObjectScope(c *gin.Context) (string, string, strin
 }
 
 func (s *Server) canAccessIssue(ctx context.Context, a *namespaceAccess, id uuid.UUID, write bool) (*controlmodel.Issue, error) {
+	if s.localDev {
+		return s.store.Collaboration().GetIssue(ctx, id)
+	}
 	seen := map[uuid.UUID]bool{}
 	for !seen[id] {
 		seen[id] = true
@@ -398,6 +409,15 @@ func (s *Server) canAccessIssue(ctx context.Context, a *namespaceAccess, id uuid
 }
 
 func (s *Server) listMyNamespaces(c *gin.Context) {
+	if s.localDev {
+		n, err := s.localDevelopmentNamespace(c.Request.Context())
+		if err != nil {
+			s.accessFailure(c, err)
+			return
+		}
+		c.JSON(200, gin.H{"items": namespaceSummaries([]*controlmodel.Namespace{n}, product.LocalDeveloperID)})
+		return
+	}
 	user := c.GetString("userId")
 	if user == "" {
 		c.JSON(403, ErrorResponse{Error: "console account required"})

@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login, saveToken } from '../api/auth';
+import { tryLocalDevSession } from '@/lib/auth';
 
 const s: Record<string, React.CSSProperties> = {
   page: {
@@ -88,6 +89,14 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let cancelled = false;
+    tryLocalDevSession().then((enabled) => {
+      if (enabled && !cancelled) navigate('/', { replace: true });
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

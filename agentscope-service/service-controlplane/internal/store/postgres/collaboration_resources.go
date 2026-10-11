@@ -810,7 +810,7 @@ func (r *collaborationRepo) DecideApproval(ctx context.Context, id uuid.UUID, ex
 	if err != nil {
 		return nil, err
 	}
-	actorAllowed := actor.Type == controlmodel.ActorHuman && actor.Ref == current.ApproverRef ||
+	actorAllowed := store.WorkAccessFrom(ctx).LocalDev || actor.Type == controlmodel.ActorHuman && actor.Ref == current.ApproverRef ||
 		status == controlmodel.ApprovalCancelled && actor.Type == controlmodel.ActorSystem
 	if current.Status != controlmodel.ApprovalPending || expectedVersion > 0 && current.Version != expectedVersion || !actorAllowed {
 		return nil, store.ErrConflict

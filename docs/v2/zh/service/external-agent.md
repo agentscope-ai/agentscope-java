@@ -4,7 +4,7 @@ en_link: /v2/en/service/external-agent
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 External Agent 保留你的应用进程、框架和部署方式，同时接入统一目录、会话诊断与工作协作。它不是由 Service 启动的 Managed Agent，也不要求把应用改造成 Runtime Host provider。
@@ -123,7 +123,7 @@ Python 默认使用出站 HTTP exchange（`POST /api/v1/agent-runtime/exchange`�
 
 ## 查询身份与维护凭据
 
-以下管理请求使用有权访问目标 namespace 的平台账户 Bearer token，不使用 应用凭据。
+以下管理请求直接访问本地开发模式的 Service。
 
 | 方法与路径 | 参数 | 响应 |
 | --- | --- | --- |
@@ -136,7 +136,7 @@ Python 默认使用出站 HTTP exchange（`POST /api/v1/agent-runtime/exchange`�
 | `POST /api/v1/agent-registrations/{agentId}/credentials/rotate` | 可选 `ttlSeconds` | 201；`credential`、新 `registrationCredential` |
 | `DELETE /api/v1/agent-registrations/{agentId}/credentials/{credentialId}` | Agent 与 credential UUID | 204 |
 
-目录状态 `disabled` 用于停止后续调度，`archived` 用于归档逻辑资源。正在执行的任务应通过[任务取消 API](/v2/zh/service/issues)处理，不把修改目录状态当作进程已停止的证明。
+目录状态 `disabled` 用于停止后续调度，`archived` 用于归档逻辑资源。正在执行的任务应通过[任务取消 API](/v2/zh/service/issues#curl-management)处理，不把修改目录状态当作进程已停止的证明。
 
 ## SDK 参数对照
 
@@ -213,7 +213,7 @@ Python 的 `start_grpc` 是所选运行通道的总开关：即使 `transport="h
 
 ## 从 API 检查适配能力
 
-用平台账户 Bearer 请求 `GET /api/v1/agents/{agentId}/instances`，读取返回 `items` 中每个实例的 `capabilities`。例如 `context-query`、`message-query` 是查询能力，`session-abort` 是取消能力，`agent-task` 才是平台任务入口。实例能力可能随适配器配置变化，不能仅根据 `framework` 名称判断。
+请求 `GET /api/v1/agents/{agentId}/instances`，读取返回 `items` 中每个实例的 `capabilities`。例如 `context-query`、`message-query` 是查询能力，`session-abort` 是取消能力，`agent-task` 才是平台任务入口。实例能力可能随适配器配置变化，不能仅根据 `framework` 名称判断。
 
 `GET /api/v1/agents/{agentId}/runtime-inventory` 返回上报的 Workspace 和子 Agent 信息。`not_reporting` 表示没有遥测，不能据此判断它从未执行过任务。业务调用使用 Session API；接入后读取 Session 和 Turn 的 capabilities，确认适配器实际支持哪些交互。
 
@@ -244,8 +244,82 @@ Python 默认使用 HTTP exchange 接收执行并上报事件，也可选择 ASD
 | 使用者 | 操作 | 接口与字段 |
 | --- | --- | --- |
 | 业务管理者 | 查询任务与物理尝试 | `GET /api/v1/agent-tasks/{taskId}`、`GET /api/v1/execution-attempts?tenant=...&namespace=...&taskId=...` |
-| 业务管理者 | 请求取消或重试 | `POST /api/v1/agent-tasks/{taskId}/cancel`、`/retry`；并发版本等字段见 [Issue API](/v2/zh/service/issues) |
+| 业务管理者 | 请求取消或重试 | `POST /api/v1/agent-tasks/{taskId}/cancel`、`/retry`；并发版本等字段见 [Issue API](/v2/zh/service/issues#curl-management) |
 | 任务执行者 | 读取上下文、开始、进度、结果 | `/api/v1/agent-tasks/{taskId}/context`、`/start`、`/progress`、`/respond`、`/complete`、`/fail`，使用分配给该任务的 token |
 | 应用消费者 | 读取快照并续传事件 | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}/snapshot` 与 `/events/stream`，使用调用凭据 |
 
 管理 token 不应替代运行协议注入的 task token；取消请求被接受后，仍需读取任务与 Attempt 的最终状态。External Agent 的 Session 当前只在实例声明 `session-abort` 时提供取消能力，其他中途交互以 capabilities 返回为准。
+
+<span id="curl-management"></span>
+
+## 目录与凭据维护示例
+
+沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)的本地地址和默认空间变量。
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agents" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "status=active" \
+  --data-urlencode "limit=25"
+```
+
+```bash
+AGENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID"
+)
+CATALOG_VERSION=$(jq -er '.agent.version' <<< "$AGENT_JSON")
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agents/$AGENT_ID/bindings" \
+  --data-urlencode "includeDisabled=true"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/instances"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/runtime-inventory"
+```
+
+<Accordion title="维护目录信息和注册凭据">
+
+目录版本不等于定义版本。下面只修改展示名称。凭据轮换后把新的 registrationCredential 保存到受保护的适配器配置；删除凭据使用旧 credential.id，不是 binding.id。
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "version": $CATALOG_VERSION,
+  "displayName": "Report service"
+}
+JSON
+```
+
+```bash
+ROTATED_CREDENTIAL=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-registrations/$AGENT_ID/credentials/rotate" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<'JSON'
+{
+  "ttlSeconds": 86400
+}
+JSON
+)
+REGISTRATION_CREDENTIAL=$(jq -er '.registrationCredential' <<< "$ROTATED_CREDENTIAL")
+```
+
+确认新凭据已可用且旧连接不再需要它后，按需撤销旧凭据。
+
+```bash
+OLD_CREDENTIAL_ID="OLD_CREDENTIAL_ID_FROM_REGISTRATION"
+```
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/v1/agent-registrations/$AGENT_ID/credentials/$OLD_CREDENTIAL_ID"
+```
+
+</Accordion>

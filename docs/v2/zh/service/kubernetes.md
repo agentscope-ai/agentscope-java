@@ -16,8 +16,8 @@ en_link: /v2/en/service/kubernetes
 可以直接从公开 Helm 仓库安装 Chart，无需下载源码。先下载与版本配套的配置模板和初始化 SQL：
 
 ```bash
-curl -fLO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/kubernetes.env.example
-curl -fLO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/postgres-init.sql
+curl -sS --fail-with-body -LO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/kubernetes.env.example
+curl -sS --fail-with-body -LO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/postgres-init.sql
 ```
 
 用应用数据库所有者在目标数据库执行 SQL，创建 `cp`、`rt`、`dp` 三个 schema。为数据库、文件和密钥建立备份策略。如需离线安装，从 [GitHub Release](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.1.0-BETA1) 下载 `agentscope-service-2.1.0-BETA1-kubernetes.tar.gz` 和 `SHA256SUMS`，核对校验和后解压；包中包含 Chart 和相同的配置文件。
@@ -158,3 +158,218 @@ Compose 默认只将 Gateway 暴露在宿主机的 `127.0.0.1:18080`，用户请
 需要从其他设备访问这套部署，或联调 OAuth、Channel 的公网回调时，可以为 Gateway 配置 HTTPS 入口。先准备域名和 TLS 证书，再让反向代理将请求转发到 Gateway。随后在 `.env` 中把 `BUILDER_OAUTH_PUBLIC_URL` 设置为实际的外部地址，例如 `https://agentscope.example.com`；如果 Gateway 还需要调整监听地址或端口，再修改 `BIND_ADDRESS` 和 `GATEWAY_PORT`，并重建容器使配置生效。
 
 执行进度通过 SSE 长连接传输，因此代理需要及时转发事件，关闭事件流缓存，并允许足够长的读取超时。配置完成后，除了确认能够登录，还应运行一次持续生成内容的任务，检查事件是否陆续到达、刷新后能否重新连接，以及业务所需的回调是否正常。
+
+
+## 使用发布版 Docker Compose
+
+没有 Kubernetes 时，也可以使用发布版 Compose 安装包。它使用已发布镜像，保留完整的认证与权限校验，不需要源码或 Java、Go 构建工具。准备 Docker Compose v2、Bash、curl 和 OpenSSL，下载并校验安装包：
+
+```bash
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/agentscope-service-2.1.0-BETA1-compose.tar.gz
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/SHA256SUMS
+awk '$2 == "agentscope-service-2.1.0-BETA1-compose.tar.gz"' SHA256SUMS > compose.sha256
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c compose.sha256
+else
+  shasum -a 256 -c compose.sha256
+fi
+```
+
+```bash
+tar -xzf agentscope-service-2.1.0-BETA1-compose.tar.gz
+cd agentscope-service
+./init-env.sh 2.1.0-BETA1 sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope
+```
+
+填写生成的 `.env` 中的 `DASHSCOPE_API_KEY`，保持 `BUILDER_LOCAL_DEV=false`。按实际隔离要求准备 Environment；可信本机验证可设置 `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`，工具在 Dataplane 容器中执行。
+
+```bash
+docker compose pull
+docker compose up -d --wait --wait-timeout 600
+docker compose ps
+curl -fsS http://localhost:18080/actuator/health
+```
+
+打开 `http://localhost:18080`，使用 `.env` 中的初始管理员登录并修改密码，再按下面的认证与权限配置接入 API。日常停止使用 `docker compose down` 保留数据卷；备份与升级见[运维](/v2/zh/service/operations#compose-operations)。
+
+<span id="production-api-access"></span>
+
+## 认证与权限
+
+生产环境保持 `BUILDER_LOCAL_DEV=false`。发布 Compose 配置默认关闭本地开发模式，完整 Service Helm Chart 也关闭它。首次用 `.env` 或 Secret 中的 `CONTROL_PLANE_BOOTSTRAP_ADMIN`、`CONTROL_PLANE_BOOTSTRAP_PASSWORD` 登录 Console，再在 Profile 中修改密码。
+
+本地教程省略认证请求头。把同样的 API 用于生产时，先完成下面的登录与空间选择：
+
+```bash
+export BASE_URL="https://agentscope.example.com"
+```
+
+输入平台账号和密码。首次部署使用 `admin`，密码以 `.env` 或 Profile 中修改后的值为准。
+
+```bash
+printf 'Username: '
+IFS= read -r LOGIN_USER
+printf 'Password: '
+IFS= read -r -s LOGIN_PASSWORD
+printf '\n'
+
+LOGIN_JSON=$(
+  jq -n --arg username "$LOGIN_USER" --arg password "$LOGIN_PASSWORD" \
+    '{username: $username, password: $password}' \
+  | curl -sS --fail-with-body "$BASE_URL/api/auth/login" \
+      -H "Content-Type: application/json" \
+      --data-binary @-
+)
+unset LOGIN_PASSWORD
+TOKEN=$(jq -er '.token' <<< "$LOGIN_JSON")
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/me/namespaces" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq '.items[] | {tenant, name}'
+```
+
+从结果中选择一个空间，将它的 `tenant` 和 `name` 分别填入前面的 `TENANT` 和 `NAMESPACE`。平台 token 用于管理资源；应用调用凭据见[应用接入](/v2/zh/service/service-api)。
+
+```bash
+export TENANT="YOUR_AUTHORIZED_TENANT"
+export NAMESPACE="YOUR_AUTHORIZED_NAMESPACE"
+```
+
+管理请求携带以下请求头；请求体和查询参数中的空间应与所选空间一致：
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+账号、空间角色、资源授权与私有工作访问的配置见[生产权限管理](/v2/zh/service/access)。工具确认和指定人员审批必须使用有权限的用户身份；应用 API key 不代表该用户。外部工具、模型和 OAuth 提供方仍有各自的凭据，本地免鉴权模式不会跳过它们。
+
+<span id="production-application-credentials"></span>
+
+## 应用调用凭据
+
+先按[创建 Agent](/v2/zh/service/create-managed-agent)准备实际 `AGENT_ID`；管理操作由 Application 所有者执行。
+
+接入业务后端时，建议创建 Application，为它签发独立的 API key，并明确授予它可以使用的 Agent、Team 或 Workflow。凭据属于 Application，因此同一应用更换 key 后仍能访问自己的 Session；其他应用即使使用同一个 Agent，也不能读取这些记录。API key 应保存在业务后端，由后端检查最终用户的业务权限。
+
+
+```bash
+set -euo pipefail
+
+APPLICATION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/applications" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE",
+  "name": "report-application"
+}
+JSON
+)
+APPLICATION_ID=$(jq -er '.application.id' <<< "$APPLICATION_JSON")
+```
+
+为应用签发能够调用这个 Agent 的凭据：
+
+```bash
+KEY_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/applications/$APPLICATION_ID/credentials" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "name": "backend",
+  "scopes": [
+    "invoke",
+    "read",
+    "interact",
+    "cancel",
+    "webhooks:write"
+  ],
+  "targets": [
+    {
+      "type": "agent",
+      "id": "$AGENT_ID"
+    }
+  ]
+}
+JSON
+)
+AGENTSCOPE_API_KEY=$(jq -er '.apiKey' <<< "$KEY_JSON")
+CREDENTIAL_ID=$(jq -er '.credential.id' <<< "$KEY_JSON")
+```
+
+服务只在创建凭据时返回明文 key。轮换时先签发新 key，更新应用配置并确认调用成功，再撤销旧凭据。`invoke` 允许提交工作，`read` 允许读取记录，`interact` 允许补充输入，`cancel` 允许取消；注册和管理回调还需要 `webhooks:write`。这些 scope 不会把应用变成人工审批人，指定人员的确认仍需由有权限的用户完成。
+
+<Accordion title="列出与撤销旧凭据">
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/applications/$APPLICATION_ID/credentials" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+先使用上面的签发接口创建并验证新凭据。确认后，将 `OLD_CREDENTIAL_ID` 替换为列表中需要撤销的旧凭据 ID；此操作会停用旧 key。
+
+```bash
+OLD_CREDENTIAL_ID="OLD_CREDENTIAL_ID_FROM_LIST"
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/v1/applications/$APPLICATION_ID/credentials/$OLD_CREDENTIAL_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+</Accordion>
+
+应用调用 Session API 时，将本地教程中的无凭据请求改为携带 `-H "X-API-Key: $AGENTSCOPE_API_KEY"`。指定人工审批时改用用户 Bearer token。Python 客户端使用 `ServiceClient(BASE_URL, AGENTSCOPE_API_KEY)`；管理客户端使用用户 token。
+
+
+### 应用额度
+
+先读取当前版本，再调整 Application 的并发和 token 额度：
+
+```bash
+APPLICATION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/applications/$APPLICATION_ID" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE"
+)
+APPLICATION_VERSION=$(jq -er '.application.version' <<< "$APPLICATION_JSON")
+
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/applications/$APPLICATION_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "version": $APPLICATION_VERSION,
+  "maxConcurrent": 5,
+  "tokenBudget": 1000000
+}
+JSON
+```
+
+<span id="production-cli-install"></span>
+
+## 安装生产 CLI 与 Runtime Host
+
+在目标 Linux/macOS 主机安装 Go 1.26+，通过标准 Go 模块版本安装两个发布的命令：
+
+```bash
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
+as connect https://agentscope.example.com
+```
+
+按[Runtime Host 指南](/v2/zh/service/runtime-host#使用-go-安装)配置 PATH，替换实际服务地址，按 CLI 提示登录或使用短期 enrollment token。Provider 自身仍需单独安装和认证。
