@@ -42,12 +42,16 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Minimal Connect client for envd {@code process.Process/Start} (server streaming), sufficient
  * for {@code sh -c} command execution and binary tar streaming on stdout.
  */
 final class E2bEnvdProcessClient {
+
+    private static final Logger log = LoggerFactory.getLogger(E2bEnvdProcessClient.class);
 
     private static final MediaType CONNECT_JSON = MediaType.get("application/connect+json");
     private static final MediaType CONNECT_PROTO = MediaType.get("application/connect+proto");
@@ -126,19 +130,7 @@ final class E2bEnvdProcessClient {
         String host = envdHost(state);
         String url = host + "/process.Process/Start";
         byte[] envelope = encodeStartRequestEnvelope(shellCommand, cwd);
-        Request.Builder rb =
-                new Request.Builder()
-                        .url(url)
-                        .post(RequestBody.create(envelope, connectMediaType()))
-                        .addHeader("Connect-Protocol-Version", "1")
-                        .addHeader("User-Agent", "agentscope-java-e2b")
-                        .addHeader("E2b-Sandbox-Id", state.getSandboxId())
-                        .addHeader("E2b-Sandbox-Port", Integer.toString(ENVD_PORT))
-                        .addHeader("Authorization", basicAuthUser(opt.getRunUser()));
-        if (state.getEnvdAccessToken() != null && !state.getEnvdAccessToken().isBlank()) {
-            rb.addHeader("X-Access-Token", state.getEnvdAccessToken());
-        }
-        Request req = rb.build();
+        Request req = buildEnvdRequest(url, envelope, connectMediaType(), state).build();
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
@@ -178,7 +170,9 @@ final class E2bEnvdProcessClient {
             if (lenB.length < 4) {
                 break;
             }
-            int len = ByteBuffer.wrap(lenB).order(ByteOrder.BIG_ENDIAN).getInt() & 0x7FFFFFFF;
+            // Connect protocol: Message-Length is 4-byte unsigned integer, big-endian
+            // https://connectrpc.com/docs/protocol/#streaming-rpcs
+            int len = ByteBuffer.wrap(lenB).order(ByteOrder.BIG_ENDIAN).getInt();
             if (len < 0 || len > 64 * 1024 * 1024) {
                 throw new IOException("Invalid connect frame length: " + len);
             }
@@ -186,36 +180,106 @@ final class E2bEnvdProcessClient {
             if (data.length < len) {
                 break;
             }
-            if (flags != 0x00) {
+            // Connect protocol: flags bit 0 = compressed. Checked before end_stream so
+            // a combined envelope (e.g. 0x03) is rejected as compressed instead of
+            // feeding compressed bytes to the EndStreamMessage JSON parser.
+            // https://connectrpc.com/docs/protocol/#streaming-rpcs
+            if ((flags & 0x01) != 0) {
+                throw new IOException("Compressed connect frames not supported");
+            }
+            // Connect protocol: flags bit 1 = end_stream — final envelope carries EndStreamMessage
+            // JSON
+            // https://connectrpc.com/docs/protocol/#streaming-rpcs
+            if ((flags & 0x02) != 0) {
+                EndStreamMessage endMsg = parseEndStreamResponse(data);
+                if (endMsg.hasError()) {
+                    log.debug(
+                            "drainStartStream: endStream error code={} msg={}",
+                            endMsg.code(),
+                            endMsg.message());
+                    throw new SandboxException.SandboxRuntimeException(
+                            SandboxErrorCode.WORKSPACE_START_ERROR,
+                            "Process start failed: " + endMsg.description());
+                }
+                log.debug("drainStartStream: endStream ok");
+                break;
+            }
+            // Connect protocol: flags bits 2-7 reserved for future extensions
+            // https://connectrpc.com/docs/protocol/#streaming-rpcs
+            if ((flags & 0xFC) != 0) {
+                log.debug(
+                        "drainStartStream: skipping reserved flags=0x{}",
+                        Integer.toHexString(flags));
                 continue;
             }
+            DynamicMessage sr;
             try {
-                DynamicMessage sr = parseStartResponseFrame(data);
-                if (!sr.hasField(srEventF)) {
-                    continue;
-                }
-                DynamicMessage pe = (DynamicMessage) sr.getField(srEventF);
-                if (pe.hasField(peDataF)) {
-                    DynamicMessage de = (DynamicMessage) pe.getField(peDataF);
-                    appendDataStream(de, "stdout", stdout);
-                    appendDataStream(de, "stderr", stderr);
-                }
-                if (pe.hasField(peEndF)) {
-                    DynamicMessage end = (DynamicMessage) pe.getField(peEndF);
-                    Descriptors.FieldDescriptor ec =
-                            end.getDescriptorForType().findFieldByName("exit_code");
-                    if (ec != null) {
-                        exit = ((Number) end.getField(ec)).intValue();
-                    }
-                }
-            } catch (IOException e) {
+                sr = parseStartResponseFrame(data);
+            } catch (IOException ignored) {
+                // A corrupt data frame must not abort the whole stream: skip it and keep
+                // draining. A missing EndEvent then surfaces as IOException below.
+                // Note: end-stream envelope parse errors (handled above, outside this try)
+                // intentionally propagate as IOException — a corrupt stream trailer means
+                // the stream itself is untrustworthy.
+                log.debug(
+                        "drainStartStream: skipping undecodable frame flags=0x{} len={}",
+                        Integer.toHexString(flags),
+                        len);
                 continue;
+            }
+            if (!sr.hasField(srEventF)) {
+                log.debug("drainStartStream: frame with no event");
+                continue;
+            }
+            DynamicMessage pe = (DynamicMessage) sr.getField(srEventF);
+            if (pe.hasField(peDataF)) {
+                DynamicMessage de = (DynamicMessage) pe.getField(peDataF);
+                appendDataStream(de, "stdout", stdout);
+                appendDataStream(de, "stderr", stderr);
+            }
+            if (pe.hasField(peEndF)) {
+                DynamicMessage end = (DynamicMessage) pe.getField(peEndF);
+                // Note: no emptiness guard here. On the proto wire, an EndEvent with
+                // exit_code=0 is bit-identical to an EndEvent with no fields (proto3
+                // omits default scalars), so they cannot be distinguished — the official
+                // Python SDK reads end.exit_code directly for the same reason. The JSON
+                // path filters truly-empty end events earlier in parseJsonStartResponse.
+                Descriptors.Descriptor endDesc = end.getDescriptorForType();
+                // Proto3: scalar sint32 defaults to 0, omitted from wire when 0.
+                // getField() returns proto3 default (0) when absent; hasField() returns false.
+                // https://protobuf.dev/programming-guides/proto3/#default
+                Descriptors.FieldDescriptor ecF = endDesc.findFieldByName("exit_code");
+                if (ecF != null) {
+                    exit = ((Number) end.getField(ecF)).intValue();
+                }
+                // EndEvent.error — populated when cmd.Wait() returns ExitError
+                // (non-zero exit code or signal). Go handler: ProcessEvent_EndEvent.Error =
+                // errMsg
+                // https://github.com/e2b-dev/infra/blob/main/packages/envd/internal/services/process/handler/handler.go
+                // Python SDK: error=event.event.end.error
+                // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b/sandbox_sync/commands/command_handle.py#L115
+                Descriptors.FieldDescriptor errF = endDesc.findFieldByName("error");
+                if (errF != null && end.hasField(errF)) {
+                    writeStderrLine(
+                            stderr,
+                            String.valueOf(end.getField(errF)).getBytes(StandardCharsets.UTF_8));
+                }
             }
         }
         if (exit == null) {
             throw new IOException("envd process stream ended before receiving a process exit code");
         }
         return exit;
+    }
+
+    private static void writeStderrLine(ByteArrayOutputStream stderr, byte[] text) {
+        // Keep EndEvent.error visually separate from preceding stderr output that
+        // may not end with a newline ("partial" + "exit status 1" is unreadable).
+        byte[] buffered = stderr.toByteArray();
+        if (buffered.length > 0 && buffered[buffered.length - 1] != '\n') {
+            stderr.write('\n');
+        }
+        stderr.writeBytes(text);
     }
 
     private static void appendDataStream(
@@ -230,6 +294,69 @@ final class E2bEnvdProcessClient {
                 ((ByteString) v).writeTo(out);
             }
             return;
+        }
+    }
+
+    // Connect protocol EndStreamMessage JSON: {"error":{"code":"...","message":"..."}}
+    // Python SDK ServerStreamParser also parses end_stream envelope as JSON error:
+    //   if EnvelopeFlags.end_stream in flags:
+    //       data = json.loads(data)
+    //       if "error" in data: raise make_error(data["error"])
+    //       return  # no error → stop iteration
+    // https://connectrpc.com/docs/protocol/#error-end-stream
+    // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b_connect/client.py#L230-L238
+    private static EndStreamMessage parseEndStreamResponse(byte[] data) throws IOException {
+        JsonNode root = JSON.readTree(data);
+        if (root == null || root.isNull()) {
+            return new EndStreamMessage(false, null, null);
+        }
+        JsonNode errorNode = root.path("error");
+        // Mirror official connectrpc ConnectEnvelopeReader.handle_end_message:
+        //   error = end_stream_message.get("error")
+        //   if error: raise
+        // Python truthiness: missing/null/empty object/empty string/0/false mean success;
+        // anything else (non-empty object, non-empty string, ...) signals failure.
+        if (isFalsy(errorNode)) {
+            return new EndStreamMessage(false, null, null);
+        }
+        String code = errorNode.path("code").asText(null);
+        String message = errorNode.path("message").asText(null);
+        if (code == null && message == null) {
+            message = errorNode.isTextual() ? errorNode.textValue() : errorNode.toString();
+        }
+        return new EndStreamMessage(true, code, message);
+    }
+
+    private static boolean isFalsy(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return true;
+        }
+        if (node.isObject() || node.isArray()) {
+            return node.isEmpty();
+        }
+        if (node.isTextual()) {
+            return node.textValue().isEmpty();
+        }
+        if (node.isNumber()) {
+            // asDouble(): infinities stay infinite (truthy), NaN becomes 0.0 only if the
+            // codec produced it — decimalValue() would throw NumberFormatException instead.
+            return node.asDouble() == 0.0;
+        }
+        return !node.asBoolean(true);
+    }
+
+    private record EndStreamMessage(boolean errorPresent, String code, String message) {
+        boolean hasError() {
+            return errorPresent;
+        }
+
+        // Either side may be absent (Connect Error allows code-only or message-only);
+        // never render a literal "null" into the user-visible message.
+        String description() {
+            if (code != null && message != null) {
+                return code + ": " + message;
+            }
+            return message != null ? message : code;
         }
     }
 
@@ -283,6 +410,23 @@ final class E2bEnvdProcessClient {
         ByteBuffer.wrap(out, 1, 4).order(ByteOrder.BIG_ENDIAN).putInt(msg.length);
         System.arraycopy(msg, 0, out, 5, msg.length);
         return out;
+    }
+
+    private Request.Builder buildEnvdRequest(
+            String url, byte[] body, MediaType mediaType, E2bSandboxState state) {
+        Request.Builder rb =
+                new Request.Builder()
+                        .url(url)
+                        .post(RequestBody.create(body, mediaType))
+                        .addHeader("Connect-Protocol-Version", "1")
+                        .addHeader("User-Agent", "agentscope-java-e2b")
+                        .addHeader("E2b-Sandbox-Id", state.getSandboxId())
+                        .addHeader("E2b-Sandbox-Port", Integer.toString(ENVD_PORT))
+                        .addHeader("Authorization", basicAuthUser(opt.getRunUser()));
+        if (state.getEnvdAccessToken() != null && !state.getEnvdAccessToken().isBlank()) {
+            rb.addHeader("X-Access-Token", state.getEnvdAccessToken());
+        }
+        return rb;
     }
 
     private E2bCodec codec() {
@@ -340,12 +484,41 @@ final class E2bEnvdProcessClient {
 
         JsonNode endNode = eventNode.path("end");
         if (!endNode.isMissingNode() && !endNode.isNull()) {
+            // Always set end on event when node exists, even if sub-fields are empty
+            // (proto3 default 0 for sint32, empty string for proto3_optional).
+            // Also parse "error" field for signal-killed processes.
+            // Python SDK reads exit_code/error directly without presence check:
+            //   exit_code=event.event.end.exit_code, error=event.event.end.error
+            // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b/sandbox_sync/commands/command_handle.py#L115
             Descriptors.Descriptor endDesc = processEventDesc.findNestedTypeByName("EndEvent");
             DynamicMessage.Builder endBuilder = DynamicMessage.newBuilder(endDesc);
             Descriptors.FieldDescriptor exitCodeField = endDesc.findFieldByName("exit_code");
+            // protojson accepts both the camelCase jsonName ("exitCode") and the
+            // original proto field name ("exit_code") on the wire: prefer jsonName,
+            // fall back to the original. (Single-word fields like error/event/end
+            // are identical in both forms and need no fallback.)
             JsonNode exitCodeNode = endNode.path("exitCode");
+            if (exitCodeNode.isMissingNode() || exitCodeNode.isNull()) {
+                exitCodeNode = endNode.path("exit_code");
+            }
             if (exitCodeNode.canConvertToInt()) {
                 endBuilder.setField(exitCodeField, exitCodeNode.intValue());
+            }
+            Descriptors.FieldDescriptor errorField = endDesc.findFieldByName("error");
+            // EndEvent.error — populated when cmd.Wait() returns ExitError
+            // (non-zero exit code or signal). Go handler: Error = errMsg.
+            // https://github.com/e2b-dev/infra/blob/main/packages/envd/internal/services/process/handler/handler.go
+            // Python SDK: error=event.event.end.error
+            // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b/sandbox_sync/commands/command_handle.py#L115
+            JsonNode errorNode = endNode.path("error");
+            if (errorNode.isTextual()) {
+                endBuilder.setField(errorField, errorNode.textValue());
+            }
+            // Only retain end when it carries an exit code or a textual error.
+            // An end event with neither must not fabricate exit 0: without it the
+            // stream falls through to "ended before receiving a process exit code".
+            // (Real envd always populates exit_code; this guards malformed streams.)
+            if (exitCodeNode.canConvertToInt() || errorNode.isTextual()) {
                 event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
             }
         }
