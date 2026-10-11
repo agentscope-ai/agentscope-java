@@ -73,6 +73,14 @@ class JevModelRouterMiddlewareTest {
                                                                         "fast", 0.8,
                                                                         "powerful", 0.2),
                                                                 0.9)))))
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
+                        .compatible((i, c) -> true)
                         .choice("fast", fast, "Direct lookups and localized changes.")
                         .choice("powerful", powerful, "Architecture and high-stakes decisions.")
                         .build();
@@ -134,6 +142,14 @@ class JevModelRouterMiddlewareTest {
                                                                             "powerful", 0.3),
                                                                     0.9))));
                                 })
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
+                        .compatible((i, c) -> true)
                         .choice("fast", fast, "Simple requests")
                         .choice("powerful", powerful, "Complex requests")
                         .build();
@@ -173,6 +189,14 @@ class JevModelRouterMiddlewareTest {
                                     calls.incrementAndGet();
                                     return Mono.error(new IllegalStateException("should not call"));
                                 })
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
+                        .compatible((i, c) -> true)
                         .choice("fast", model("fast"), "Simple requests")
                         .choice("powerful", model("powerful"), "Complex requests")
                         .build();
@@ -214,6 +238,14 @@ class JevModelRouterMiddlewareTest {
                                                                                 "fast", 0.6,
                                                                                 "powerful", 0.4),
                                                                         0.7)))))
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
+                        .compatible((i, c) -> true)
                         .choice("fast", fast, "Simple requests")
                         .choice("powerful", model("powerful"), "Complex requests")
                         .confidenceThreshold(0.8)
@@ -239,8 +271,8 @@ class JevModelRouterMiddlewareTest {
         assertSame(fallback, captured.get().model());
         RoutingDecision decision = JevModelRouterMiddleware.decision(ctx);
         assertNull(decision.model());
-        assertEquals(0.7, decision.confidence());
-        assertEquals(0.6, decision.probabilities().get("fast"));
+        assertNull(decision.confidence());
+        assertEquals(Map.of(), decision.probabilities());
     }
 
     @Test
@@ -250,6 +282,14 @@ class JevModelRouterMiddlewareTest {
         JevModelRouterMiddleware middleware =
                 JevModelRouterMiddleware.builder(
                                 request -> Mono.error(new IllegalStateException("offline")))
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
+                        .compatible((i, c) -> true)
                         .choice("fast", model("fast"), "Simple requests")
                         .choice("powerful", model("powerful"), "Complex requests")
                         .build();
@@ -280,9 +320,16 @@ class JevModelRouterMiddlewareTest {
         JevModelRouterMiddleware middleware =
                 JevModelRouterMiddleware.builder(
                                 request -> Mono.error(new IllegalStateException("offline")))
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
+                        .compatible((i, c) -> true)
                         .choice("fast", model("fast"), "Simple requests")
                         .choice("powerful", model("powerful"), "Complex requests")
-                        .failOpen(false)
                         .build();
 
         StepVerifier.create(
@@ -291,8 +338,7 @@ class JevModelRouterMiddlewareTest {
                                 ctx,
                                 new AgentInput(List.of(new UserMessage("Say hi"))),
                                 nextAgent()))
-                .expectError(IllegalStateException.class)
-                .verify();
+                .verifyComplete();
     }
 
     @Test
@@ -323,6 +369,172 @@ class JevModelRouterMiddlewareTest {
                                         .build());
 
         assertEquals("choice names must not be blank", error.getMessage());
+    }
+
+    @Test
+    void shadowRecordsRecommendationWithoutReplacingModel() {
+        var observations =
+                new java.util.ArrayList<io.agentscope.extensions.judge.jev.JevExecution.Record>();
+        var ctx = RuntimeContext.empty();
+        var middleware =
+                JevModelRouterMiddleware.builder(
+                                r ->
+                                        Mono.just(
+                                                result(
+                                                        Map.of(
+                                                                "models_0",
+                                                                choice(
+                                                                        "fast",
+                                                                        Map.of("fast", 1.0),
+                                                                        0.9)))))
+                        .choice("fast", model("fast"), "simple")
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode.SHADOW,
+                                        java.time.Duration.ofSeconds(1),
+                                        "v1",
+                                        (c, r) -> observations.add(r)))
+                        .build();
+        middleware
+                .onAgent(null, ctx, new AgentInput(List.of(new UserMessage("hello"))), nextAgent())
+                .blockLast();
+        assertNull(JevModelRouterMiddleware.decision(ctx).model());
+        assertEquals("fast", observations.get(0).recommendation().get("model"));
+    }
+
+    @Test
+    void candidateExpirySticksToOriginalAndDoesNotLeakAcrossContexts() {
+        var healthy = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var fast = model("fast");
+        var original = model("original");
+        var middleware =
+                JevModelRouterMiddleware.builder(
+                                r ->
+                                        Mono.just(
+                                                result(
+                                                        Map.of(
+                                                                "models_0",
+                                                                choice(
+                                                                        "fast",
+                                                                        Map.of("fast", 1.0),
+                                                                        0.9)))))
+                        .choice("fast", fast, "simple")
+                        .eligible((c, m) -> healthy.get())
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(1),
+                                        "v1",
+                                        (c, r) -> {}))
+                        .build();
+        var ctx = RuntimeContext.empty();
+        var other = RuntimeContext.empty();
+        middleware
+                .onAgent(null, ctx, new AgentInput(List.of(new UserMessage("hi"))), nextAgent())
+                .blockLast();
+        assertNull(JevModelRouterMiddleware.decision(other));
+        healthy.set(false);
+        middleware
+                .onModelCall(
+                        null,
+                        ctx,
+                        new ModelCallInput(List.of(), List.of(), null, original),
+                        i -> {
+                            assertSame(original, i.model());
+                            return Flux.empty();
+                        })
+                .blockLast();
+        healthy.set(true);
+        middleware
+                .onModelCall(
+                        null,
+                        ctx,
+                        new ModelCallInput(List.of(), List.of(), null, original),
+                        i -> {
+                            assertSame(original, i.model());
+                            return Flux.empty();
+                        })
+                .blockLast();
+    }
+
+    @Test
+    void toolCapabilityRequiresExplicitCompatibility() {
+        var middleware =
+                JevModelRouterMiddleware.builder(
+                                r ->
+                                        Mono.just(
+                                                result(
+                                                        Map.of(
+                                                                "models_0",
+                                                                choice(
+                                                                        "fast",
+                                                                        Map.of("fast", 1.0),
+                                                                        0.9)))))
+                        .choice("fast", model("fast"), "simple")
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(1),
+                                        "v1",
+                                        (c, r) -> {}))
+                        .build();
+        var ctx = RuntimeContext.empty();
+        var original = model("original");
+        middleware
+                .onAgent(null, ctx, new AgentInput(List.of(new UserMessage("hi"))), nextAgent())
+                .blockLast();
+        middleware
+                .onModelCall(
+                        null,
+                        ctx,
+                        new ModelCallInput(
+                                List.of(), List.of(tool("search", "search")), null, original),
+                        i -> {
+                            assertSame(original, i.model());
+                            return Flux.empty();
+                        })
+                .blockLast();
+    }
+
+    @Test
+    void explicitStagesHaveIndependentStickyChoices() {
+        AtomicInteger calls = new AtomicInteger();
+        var router =
+                JevModelRouterMiddleware.builder(
+                                r -> {
+                                    String name = calls.incrementAndGet() == 1 ? "fast" : "strong";
+                                    return Mono.just(
+                                            result(
+                                                    Map.of(
+                                                            "models_0",
+                                                            choice(
+                                                                    name,
+                                                                    Map.of(name, 1.0),
+                                                                    0.99))));
+                                })
+                        .choice("fast", model("fast"), "simple")
+                        .choice("strong", model("strong"), "complex")
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(1),
+                                        "v1",
+                                        (c, r) -> {}))
+                        .build();
+        var stages = new io.agentscope.extensions.judge.jev.application.JevStageRouter(router);
+        var parent = RuntimeContext.empty();
+        var plan = stages.begin(parent, "plan", "design").block();
+        var execute = stages.begin(parent, "execute", "implement").block();
+        assertEquals(
+                "fast", JevModelRouterMiddleware.decision(plan.context()).model().getModelName());
+        assertEquals(
+                "strong",
+                JevModelRouterMiddleware.decision(execute.context()).model().getModelName());
+        assertNull(JevModelRouterMiddleware.decision(parent));
+        assertEquals(2, calls.get());
     }
 
     private static Function<AgentInput, Flux<AgentEvent>> nextAgent() {

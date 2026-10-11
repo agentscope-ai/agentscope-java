@@ -17,25 +17,34 @@ package io.agentscope.extensions.model.openaiofficial;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.openai.core.ObjectMappers;
 import com.openai.core.http.StreamResponse;
 import com.openai.models.responses.ResponseFunctionToolCall;
+import com.openai.models.responses.ResponseFunctionWebSearch;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.ResponseStatus;
 import com.openai.models.responses.ResponseStreamEvent;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ModelException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -234,6 +243,7 @@ class ResponsesStreamingAssemblerTest {
                                 .arguments("{}")
                                 .callId("call_123")
                                 .name("get_weather")
+                                .namespace("weather")
                                 .id("fc_001")
                                 .build());
         List<ResponseStreamEvent> events =
@@ -250,6 +260,9 @@ class ResponsesStreamingAssemblerTest {
         assertEquals("get_weather", block.getName());
         assertEquals("{\"city\"", block.getContent());
         assertTrue(block.getInput().isEmpty());
+        assertEquals(
+                "weather",
+                block.getMetadata().get(OpenAIOfficialConstants.MD_FUNCTION_CALL_NAMESPACE));
         assertEquals(ToolCallState.PENDING, block.getState());
     }
 
@@ -267,8 +280,7 @@ class ResponsesStreamingAssemblerTest {
                 List.of(
                         TestSdkFixtures.outputItemAddedEvent(item),
                         TestSdkFixtures.functionCallArgsDeltaEvent("{\"city\"", "fc_001"),
-                        TestSdkFixtures.functionCallArgsDoneEvent(
-                                "{\"city\":\"SF\"}", "fc_001", "get_weather"),
+                        TestSdkFixtures.functionCallArgsDoneEvent("{\"city\":\"SF\"}", "fc_001"),
                         TestSdkFixtures.completedEvent(
                                 TestSdkFixtures.completedResponse(List.of())));
         List<ChatResponse> results = assemble(events);
@@ -292,8 +304,7 @@ class ResponsesStreamingAssemblerTest {
                 List.of(
                         TestSdkFixtures.outputItemAddedEvent(item),
                         TestSdkFixtures.functionCallArgsDeltaEvent("{\"city\"", "fc_001"),
-                        TestSdkFixtures.functionCallArgsDoneEvent(
-                                "{\"city\":\"SF\"}", "fc_001", "get_weather"),
+                        TestSdkFixtures.functionCallArgsDoneEvent("{\"city\":\"SF\"}", "fc_001"),
                         TestSdkFixtures.completedEvent(
                                 TestSdkFixtures.completedResponse(List.of())));
         List<ChatResponse> results = assemble(events);
@@ -355,6 +366,193 @@ class ResponsesStreamingAssemblerTest {
         assertEquals("tool_a", block1.getName());
         assertEquals("call_2", block2.getId());
         assertEquals("tool_b", block2.getName());
+    }
+
+    @Test
+    void outputItemDoneEmitsServerToolCallAndResult() throws Exception {
+        ResponseOutputItem added =
+                webSearchItem("initial", ResponseFunctionWebSearch.Status.IN_PROGRESS);
+        ResponseOutputItem done =
+                webSearchItem("done snapshot", ResponseFunctionWebSearch.Status.COMPLETED);
+        ResponseOutputItem terminal =
+                webSearchItem("terminal snapshot", ResponseFunctionWebSearch.Status.COMPLETED);
+        List<ResponseStreamEvent> events =
+                List.of(
+                        TestSdkFixtures.outputItemAddedEvent(added),
+                        TestSdkFixtures.outputItemDoneEvent(done),
+                        TestSdkFixtures.completedEvent(
+                                TestSdkFixtures.completedResponse(List.of(terminal))));
+        List<ChatResponse> results = assemble(events);
+
+        assertEquals(3, results.size());
+        ToolUseBlock block = (ToolUseBlock) results.get(0).getContent().get(0);
+        assertEquals("ws_test_001", block.getId());
+        assertEquals("web_search", block.getName());
+        assertTrue(block.isServerTool());
+        assertEquals(ToolCallState.FINISHED, block.getState());
+        assertNull(block.getMetadata().get("openai.serverToolItem"));
+
+        ToolResultBlock result = (ToolResultBlock) results.get(1).getContent().get(0);
+        String raw = (String) result.getMetadata().get("openai.serverToolItem");
+        JsonNode node = ObjectMappers.jsonMapper().readTree(raw);
+        assertEquals("done snapshot", node.path("action").path("query").asText());
+        assertEquals("completed", node.path("status").asText());
+        assertTrue(terminalBlock(results).getContent().isEmpty());
+    }
+
+    @Test
+    void outputItemDoneCompletesServerToolResult() {
+        List<ResponseStreamEvent> events =
+                List.of(
+                        TestSdkFixtures.outputItemAddedEvent(TestSdkFixtures.webSearchItem()),
+                        TestSdkFixtures.outputItemDoneEvent(TestSdkFixtures.webSearchItem()),
+                        TestSdkFixtures.completedEvent(
+                                TestSdkFixtures.completedResponse(
+                                        List.of(TestSdkFixtures.webSearchItem()))));
+        List<ChatResponse> results = assemble(events);
+
+        assertEquals(3, results.size());
+        assertInstanceOf(ToolUseBlock.class, results.get(0).getContent().get(0));
+        ToolResultBlock result = (ToolResultBlock) results.get(1).getContent().get(0);
+        assertEquals("ws_test_001", result.getId());
+        assertEquals("web_search", result.getName());
+        assertTrue(result.isServerTool());
+        assertTrue(result.getOutput().get(0).toString().contains("OpenAI Responses"));
+        assertTrue(terminalBlock(results).getContent().isEmpty());
+    }
+
+    @Test
+    void hostedToolSearchResultPairsWithCompanionCallId() {
+        List<ResponseStreamEvent> events =
+                List.of(
+                        TestSdkFixtures.outputItemDoneEvent(TestSdkFixtures.toolSearchCallItem()),
+                        TestSdkFixtures.outputItemDoneEvent(TestSdkFixtures.toolSearchOutputItem()),
+                        TestSdkFixtures.completedEvent(
+                                TestSdkFixtures.completedResponse(
+                                        List.of(
+                                                TestSdkFixtures.toolSearchCallItem(),
+                                                TestSdkFixtures.toolSearchOutputItem()))));
+        List<ChatResponse> results = assemble(events);
+
+        assertEquals(3, results.size());
+        ToolUseBlock use = (ToolUseBlock) results.get(0).getContent().get(0);
+        assertEquals("ts_call_001", use.getId());
+        assertEquals("tool_search", use.getName());
+        ToolResultBlock result = (ToolResultBlock) results.get(1).getContent().get(0);
+        assertEquals(use.getId(), result.getId());
+        assertEquals("tool_search", result.getName());
+        assertTrue(result.isServerTool());
+        assertTrue(terminalBlock(results).getContent().isEmpty());
+    }
+
+    @Test
+    void serverToolResultPrecedesSubsequentFunctionCall() {
+        List<ResponseStreamEvent> events =
+                List.of(
+                        TestSdkFixtures.outputItemDoneEvent(TestSdkFixtures.webSearchItem()),
+                        TestSdkFixtures.functionCallArgsDeltaEvent("{\"city\":\"SF\"}", "fc_1"),
+                        TestSdkFixtures.completedEvent(
+                                TestSdkFixtures.completedResponse(List.of())));
+        List<ChatResponse> results = assemble(events);
+
+        assertEquals(4, results.size());
+        assertInstanceOf(ToolUseBlock.class, results.get(0).getContent().get(0));
+        assertInstanceOf(ToolResultBlock.class, results.get(1).getContent().get(0));
+        assertInstanceOf(ToolUseBlock.class, results.get(2).getContent().get(0));
+        assertEquals("web_search", ((ToolUseBlock) results.get(0).getContent().get(0)).getName());
+        assertEquals(
+                "web_search", ((ToolResultBlock) results.get(1).getContent().get(0)).getName());
+    }
+
+    @Test
+    void imageGenerationPartialImageEmitsRunningResult() {
+        List<ResponseStreamEvent> events =
+                List.of(
+                        TestSdkFixtures.imageGenerationPartialImageEvent(
+                                "ig_test_001", 0, "partial-image-base64", "webp"),
+                        TestSdkFixtures.outputItemDoneEvent(TestSdkFixtures.imageGenerationItem()),
+                        TestSdkFixtures.completedEvent(
+                                TestSdkFixtures.completedResponse(
+                                        List.of(TestSdkFixtures.imageGenerationItem()))));
+        List<ChatResponse> results = assemble(events);
+
+        assertEquals(4, results.size());
+        ToolResultBlock partial = (ToolResultBlock) results.get(0).getContent().get(0);
+        assertEquals("ig_test_001", partial.getId());
+        assertEquals("image_generation", partial.getName());
+        assertEquals(ToolResultState.RUNNING, partial.getState());
+        assertInstanceOf(DataBlock.class, partial.getOutput().get(0));
+        DataBlock partialImage = (DataBlock) partial.getOutput().get(0);
+        assertInstanceOf(Base64Source.class, partialImage.getSource());
+        Base64Source partialSource = (Base64Source) partialImage.getSource();
+        assertEquals("image/webp", partialSource.getMediaType());
+        assertEquals("partial-image-base64", partialSource.getData());
+
+        assertInstanceOf(ToolUseBlock.class, results.get(1).getContent().get(0));
+        ToolResultBlock finalResult = (ToolResultBlock) results.get(2).getContent().get(0);
+        assertEquals("ig_test_001", finalResult.getId());
+        assertEquals(ToolResultState.SUCCESS, finalResult.getState());
+        assertInstanceOf(DataBlock.class, finalResult.getOutput().get(0));
+        DataBlock finalImage = (DataBlock) finalResult.getOutput().get(0);
+        assertInstanceOf(Base64Source.class, finalImage.getSource());
+        Base64Source finalSource = (Base64Source) finalImage.getSource();
+        assertEquals("image-result", finalSource.getData());
+        assertTrue(terminalBlock(results).getContent().isEmpty());
+    }
+
+    @Test
+    void terminalResponsePreservesUrlCitations() {
+        List<ResponseStreamEvent> events =
+                List.of(
+                        TestSdkFixtures.completedEvent(
+                                TestSdkFixtures.completedResponse(
+                                        List.of(
+                                                TestSdkFixtures.messageItemWithUrlCitation(
+                                                        "answer",
+                                                        "OpenAI",
+                                                        "https://openai.com",
+                                                        0,
+                                                        6)))));
+        List<ChatResponse> results = assemble(events);
+        ChatResponse terminal = terminalBlock(results);
+
+        Object citations =
+                terminal.getMetadata().get(OpenAIOfficialConstants.MD_RESPONSE_CITATIONS);
+        assertTrue(citations instanceof List);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> citationList = (List<Map<String, Object>>) citations;
+        assertEquals(1, citationList.size());
+        assertEquals("url_citation", citationList.get(0).get("type"));
+        assertEquals("https://openai.com", citationList.get(0).get("url"));
+    }
+
+    @Test
+    void terminalResponsePreservesContainerFileCitations() {
+        List<ResponseStreamEvent> events =
+                List.of(
+                        TestSdkFixtures.completedEvent(
+                                TestSdkFixtures.completedResponse(
+                                        List.of(
+                                                TestSdkFixtures
+                                                        .messageItemWithContainerFileCitation(
+                                                                "answer",
+                                                                "container_001",
+                                                                "file_001",
+                                                                "result.png",
+                                                                0,
+                                                                6)))));
+        List<ChatResponse> results = assemble(events);
+        ChatResponse terminal = terminalBlock(results);
+
+        Object citations =
+                terminal.getMetadata().get(OpenAIOfficialConstants.MD_RESPONSE_CITATIONS);
+        assertTrue(citations instanceof List);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> citationList = (List<Map<String, Object>>) citations;
+        assertEquals(1, citationList.size());
+        assertEquals("container_file_citation", citationList.get(0).get("type"));
+        assertEquals("container_001", citationList.get(0).get("container_id"));
+        assertEquals("file_001", citationList.get(0).get("file_id"));
     }
 
     // ── Terminal re-extraction ────────────────────────────────────────────
@@ -554,5 +752,19 @@ class ResponsesStreamingAssemblerTest {
                         + expected.getSimpleName()
                         + " but got "
                         + (actual != null ? actual.getClass().getSimpleName() : "null"));
+    }
+
+    private static ResponseOutputItem webSearchItem(
+            String query, ResponseFunctionWebSearch.Status status) {
+        return ResponseOutputItem.ofWebSearchCall(
+                ResponseFunctionWebSearch.builder()
+                        .id("ws_test_001")
+                        .action(
+                                ResponseFunctionWebSearch.Action.ofSearch(
+                                        ResponseFunctionWebSearch.Action.Search.builder()
+                                                .query(query)
+                                                .build()))
+                        .status(status)
+                        .build());
     }
 }

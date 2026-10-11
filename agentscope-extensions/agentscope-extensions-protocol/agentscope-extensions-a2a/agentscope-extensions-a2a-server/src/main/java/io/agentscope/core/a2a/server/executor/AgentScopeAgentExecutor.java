@@ -40,6 +40,7 @@ import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
@@ -276,6 +277,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                 return Set.of(
                         AgentEventType.TEXT_BLOCK_DELTA,
                         AgentEventType.THINKING_BLOCK_DELTA,
+                        AgentEventType.TOOL_PROGRESS,
                         AgentEventType.TOOL_RESULT_TEXT_DELTA,
                         AgentEventType.TOOL_RESULT_DATA_DELTA,
                         AgentEventType.HINT_BLOCK);
@@ -292,7 +294,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             LoggerUtil.debug(
                     log, "[{}] Handle Agent execute output event: {}", context.getTaskId(), output);
             Msg responseMessage = convertToResponseMessage(output);
-            if (responseMessage != null) {
+            // Progress is a live update, not part of the tool result: accumulating it would let
+            // compactStreamingChunks merge it into the complete message's result text.
+            if (responseMessage != null && !(output instanceof ToolProgressEvent)) {
                 accumulatedOutput.add(responseMessage);
             }
             handleEvent(output, responseMessage);
@@ -342,6 +346,21 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                         event,
                         event.getReplyId(),
                         ThinkingBlock.builder().thinking(event.getDelta()).build());
+            }
+            if (output instanceof ToolProgressEvent event) {
+                ContentBlock progress = event.getContent();
+                if (progress == null) {
+                    return null;
+                }
+                return toolResultMessage(
+                        event,
+                        event.getReplyId(),
+                        ToolResultBlock.builder()
+                                .id(event.getToolCallId())
+                                .name(event.getToolCallName())
+                                .output(progress)
+                                .metadata(event.getMetadata())
+                                .build());
             }
             if (output instanceof ToolResultTextDeltaEvent event) {
                 return toolResultMessage(
@@ -523,6 +542,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         private boolean isStreamingChunk(AgentEvent output) {
             return output instanceof TextBlockDeltaEvent
                     || output instanceof ThinkingBlockDeltaEvent
+                    || output instanceof ToolProgressEvent
                     || output instanceof ToolResultTextDeltaEvent
                     || output instanceof ToolResultDataDeltaEvent;
         }

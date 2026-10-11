@@ -19,7 +19,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.UserMessage;
@@ -46,7 +46,7 @@ import reactor.core.publisher.Flux;
  *       {@code next.apply()}.</li>
  *   <li>{@code PreActingEvent} / {@code PostActingEvent} → {@code onActing()} before/after
  *       {@code next.apply()}.</li>
- *   <li>{@code ActingChunkEvent} → tap {@code ToolResultTextDeltaEvent} in acting stream.</li>
+ *   <li>{@code ActingChunkEvent} → tap {@code ToolProgressEvent} in acting stream.</li>
  *   <li>{@code ErrorEvent} → {@code doOnError()} on the agent stream.</li>
  *   <li>{@code agent.getMemory().getMessages()} → {@code agent.getAgentState().getContext()}.</li>
  *   <li>Removed {@code .memory(new InMemoryMemory())}.</li>
@@ -189,9 +189,9 @@ public class InterruptionExample {
             return next.apply(input)
                     .doOnNext(
                             event -> {
-                                if (event instanceof ToolResultTextDeltaEvent delta) {
+                                if (event instanceof ToolProgressEvent progress) {
                                     System.out.println(
-                                            "[Middleware] Tool progress: " + delta.getDelta());
+                                            "[Middleware] Tool progress: " + progress.getText());
                                 }
                             })
                     .doOnComplete(() -> System.out.println("[Middleware] Tool result completed"));

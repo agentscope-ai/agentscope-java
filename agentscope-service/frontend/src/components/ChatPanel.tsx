@@ -128,6 +128,15 @@ function errorText(evt: SessionEvent): string {
   return `${label} ${message || 'Session turn failed'}`.trim();
 }
 
+function messageIdentity(event: SessionEvent): string {
+  return String(event.payload?.message_id ?? event.id);
+}
+
+function toolResults(event: SessionEvent): Record<string, unknown>[] {
+  const results = event.payload?.tool_results;
+  return Array.isArray(results) ? results as Record<string, unknown>[] : [event.payload ?? {}];
+}
+
 function eventsToMessages(events: SessionEvent[]): Message[] {
   const out: Message[] = [];
   // Index of the current assistant turn bubble; content appends into it until
@@ -152,17 +161,22 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
   for (const evt of events) {
     if (evt.type === 'user.message') {
       closeOpen();
-      out.push({
-        id: evt.id,
+      const id = messageIdentity(evt);
+      if (!out.some(message => message.id === id)) out.push({
+        id,
         role: 'user',
-        blocks: [{ kind: 'text', id: evt.id, text: payloadText(evt.payload) }],
+        blocks: [{ kind: 'text', id, text: payloadText(evt.payload) }],
       });
     } else if (evt.type === 'agent.turn_stub' || evt.type === 'agent.message' || evt.type === 'agent.thinking') {
-      ensureOpen(evt.id).blocks.push({
+      const id = messageIdentity(evt);
+      const block: ConversationContentBlock = {
         kind: evt.type === 'agent.thinking' ? 'thinking' : 'text',
-        id: evt.id,
+        id,
         text: payloadText(evt.payload) || '[agent response]',
-      });
+      };
+      const existing = out.find(message => message.blocks.some(value => value.id === id));
+      if (existing) existing.blocks = existing.blocks.map(value => value.id === id ? block : value);
+      else ensureOpen(evt.id).blocks.push(block);
     } else if (evt.type === 'agent.tool_use') {
       ensureOpen(evt.id).blocks.push({
         kind: 'tool',
@@ -171,18 +185,13 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
         text: evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined,
       });
     } else if (evt.type === 'agent.tool_result') {
-      const toolUseId = String(
-        evt.payload?.tool_use_id ?? evt.payload?.toolCallId ?? evt.payload?.id ?? '',
-      );
-      const output = evt.payload?.output != null
-        ? String(evt.payload.output)
-        : payloadText(evt.payload);
-      if (!toolUseId) continue;
-      for (const m of out) {
-        const idx = m.blocks.findIndex(b => b.kind === 'tool' && b.id === toolUseId);
-        if (idx >= 0) {
-          m.blocks = m.blocks.map((b, i) => (i === idx ? { ...b, result: output, toolState: String(evt.payload?.state || 'complete').toLowerCase() } : b));
-          break;
+      for (const result of toolResults(evt)) {
+        const toolUseId = String(result.tool_use_id ?? result.toolCallId ?? result.id ?? '');
+        if (!toolUseId) continue;
+        const output = result.output != null ? String(result.output) : payloadText(result);
+        for (const message of out) {
+          message.blocks = message.blocks.map(block => block.kind === 'tool' && block.id === toolUseId
+            ? { ...block, result: output, toolState: String(result.state || 'complete').toLowerCase() } : block);
         }
       }
     } else if (evt.type === 'session.error') {
@@ -377,19 +386,20 @@ export default function ChatPanel({
 
     if (evt.type === 'user.message') {
       const text = payloadText(evt.payload);
+      const id = messageIdentity(evt);
       if (!text) return;
       const localUser = pendingUserMsgIdRef.current;
       pendingUserMsgIdRef.current = null;
       setMessages(prev => {
         const next = closeOpen(prev);
-        if (next.some(m => m.id === evt.id)) return next;
+        if (next.some(m => m.id === id)) return next;
         if (localUser && next.some(m => m.id === localUser)) {
           return next.map(m =>
             m.id === localUser
-              ? { ...m, id: evt.id, blocks: [{ kind: 'text', id: evt.id, text }] }
+              ? { ...m, id: id, blocks: [{ kind: 'text', id: id, text }] }
               : m);
         }
-        return [...next, { id: evt.id, role: 'user', blocks: [{ kind: 'text', id: evt.id, text }] }];
+        return [...next, { id: id, role: 'user', blocks: [{ kind: 'text', id: id, text }] }];
       });
       return;
     }
@@ -397,23 +407,18 @@ export default function ChatPanel({
     if (evt.type === 'agent.message' || evt.type === 'agent.turn_stub' || evt.type === 'agent.thinking') {
       const kind = evt.type === 'agent.thinking' ? 'thinking' : 'text';
       const text = payloadText(evt.payload) || '[agent response]';
+      const id = messageIdentity(evt);
+      const previewId = evt.payload?.replaces_preview_id;
       setMessages(prev => {
-        // The final persisted event carries the full text: replace the streamed
-        // preview block instead of appending a duplicate.
-        const cur = openMsgIdRef.current;
-        if (cur) {
-          const existing = prev.find(m => m.id === cur);
-          if (existing && !existing.closed) {
-            const idx = existing.blocks.findIndex(b => b.kind === kind && b.id === evt.id);
-            if (idx >= 0) {
-              return prev.map(m =>
-                m.id === cur
-                  ? { ...m, blocks: m.blocks.map((b, i) => (i === idx ? { ...b, text } : b)) }
-                  : m);
-            }
-          }
-        }
-        return append(prev, evt.id, { kind, id: evt.id, text });
+        // Native turn/output may revise an existing message. Adopt the temporary preview id
+        // once, then retain the message identity while the SSE cursor advances independently.
+        const existing = prev.find(message => message.blocks.some(block => block.kind === kind
+          && (block.id === id || (previewId != null && block.id === previewId))));
+        if (existing) return prev.map(message => message === existing
+          ? { ...message, blocks: message.blocks.map(block => block.kind === kind
+            && (block.id === id || (previewId != null && block.id === previewId))
+            ? { ...block, id, text } : block) } : message);
+        return append(prev, evt.id, { kind, id, text });
       });
       return;
     }
@@ -453,23 +458,13 @@ export default function ChatPanel({
     }
 
     if (evt.type === 'agent.tool_result') {
-      const toolUseId = String(
-        evt.payload?.tool_use_id ?? evt.payload?.toolCallId ?? evt.payload?.id ?? '',
-      );
-      const output = evt.payload?.output != null
-        ? String(evt.payload.output)
-        : payloadText(evt.payload);
-      if (!toolUseId) return;
-      setMessages(prev => {
-        let updated = false;
-        const next = prev.map(m => {
-          const idx = m.blocks.findIndex(b => b.kind === 'tool' && b.id === toolUseId);
-          if (idx < 0) return m;
-          updated = true;
-          return { ...m, blocks: m.blocks.map((b, i) => (i === idx ? { ...b, result: output, toolState: String(evt.payload?.state || 'complete').toLowerCase() } : b)) };
-        });
-        return updated ? next : prev;
-      });
+      setMessages(prev => prev.map(message => ({ ...message, blocks: message.blocks.map(block => {
+        if (block.kind !== 'tool') return block;
+        const result = toolResults(evt).find(value => block.id === String(value.tool_use_id ?? value.toolCallId ?? value.id ?? ''));
+        if (!result) return block;
+        return { ...block, result: result.output != null ? String(result.output) : payloadText(result),
+          toolState: String(result.state || 'complete').toLowerCase() };
+      }) })));
       return;
     }
 
@@ -592,7 +587,7 @@ export default function ChatPanel({
           () => { /* stream ended */ },
           {
             after: lastSeqRef.current,
-            eventDeltas: ['agent.message', 'agent.thinking', 'agent.tool_use'],
+            eventDeltas: ['agent.message'],
             // Resume from the last seen sequence on automatic reconnects.
             getAfter: () => lastSeqRef.current,
             retryMs: 2000,
