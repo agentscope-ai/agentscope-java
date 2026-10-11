@@ -17,6 +17,7 @@ package io.agentscope.core.agui.converter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -153,7 +154,7 @@ class AguiMessageConverterTest {
 
         AguiMessage aguiMsg = converter.toAguiMessage(msg);
 
-        assertEquals("msg-5", aguiMsg.getId());
+        assertTrue(aguiMsg.getId().startsWith("agui::msg-5-"));
         assertEquals("user", aguiMsg.getRole());
         assertEquals("Test message", aguiMsg.getTextContent());
     }
@@ -176,7 +177,7 @@ class AguiMessageConverterTest {
 
         AguiMessage aguiMsg = converter.toAguiMessage(msg);
 
-        assertEquals("msg-6", aguiMsg.getId());
+        assertTrue(aguiMsg.getId().startsWith("agui::msg-6-"));
         assertEquals("assistant", aguiMsg.getRole());
         assertEquals("Calling tool...", aguiMsg.getTextContent());
         assertTrue(aguiMsg.hasToolCalls());
@@ -209,8 +210,11 @@ class AguiMessageConverterTest {
 
         Msg msg = converter.toMsg(original);
         AguiMessage converted = converter.toAguiMessage(msg);
+        AguiMessage convertedAgain = converter.toAguiMessage(converter.toMsg(converted));
 
-        assertEquals(original.getId(), converted.getId());
+        assertTrue(converted.getId().startsWith("agui::" + original.getId() + "-"));
+        assertNotEquals(original.getId(), converted.getId());
+        assertEquals(converted.getId(), convertedAgain.getId());
         assertEquals(original.getRole(), converted.getRole());
         assertEquals(original.getTextContent(), converted.getTextContent());
     }
@@ -523,7 +527,7 @@ class AguiMessageConverterTest {
 
         AguiMessage aguiMsg = converter.toAguiMessage(msg);
 
-        assertEquals("msg-tr1", aguiMsg.getId());
+        assertTrue(aguiMsg.getId().startsWith("agui::msg-tr1-"));
         assertEquals("tool", aguiMsg.getRole());
         assertEquals("tc-1", aguiMsg.getToolCallId());
         assertEquals("Result: 42", aguiMsg.getTextContent());
@@ -543,8 +547,9 @@ class AguiMessageConverterTest {
         List<AguiMessage> messages = converter.toAguiMessageList(List.of(msg));
 
         assertEquals(2, messages.size());
-        assertEquals("msg-tr2", messages.get(0).getId());
-        assertEquals("msg-tr2-1", messages.get(1).getId());
+        assertTrue(messages.get(0).getId().startsWith("agui::msg-tr2-"));
+        assertTrue(messages.get(1).getId().startsWith("agui::msg-tr2-"));
+        assertNotEquals(messages.get(0).getId(), messages.get(1).getId());
         assertEquals("tc-1", messages.get(0).getToolCallId());
         assertEquals("tc-2", messages.get(1).getToolCallId());
     }
@@ -580,7 +585,7 @@ class AguiMessageConverterTest {
 
         AguiMessage result = converter.toAguiMessage(msg);
 
-        assertEquals("msg-thinking", result.getId());
+        assertTrue(result.getId().startsWith("agui::msg-thinking-"));
         assertEquals("reasoning", result.getRole());
         assertEquals("Need to inspect the weather", result.getTextContent());
     }
@@ -605,10 +610,11 @@ class AguiMessageConverterTest {
         List<AguiMessage> results = converter.toAguiMessages(msg);
 
         assertEquals(2, results.size());
-        assertEquals("msg-mixed-reasoning", results.get(0).getId());
+        assertTrue(results.get(0).getId().startsWith("agui::msg-mixed-"));
         assertTrue(results.get(0).isReasoningMessage());
         assertEquals("Need a tool", results.get(0).getTextContent());
-        assertEquals("msg-mixed", results.get(1).getId());
+        assertTrue(results.get(1).getId().startsWith("agui::msg-mixed-"));
+        assertNotEquals(results.get(0).getId(), results.get(1).getId());
         assertTrue(results.get(1).isAssistantMessage());
         assertEquals("Let me check", results.get(1).getTextContent());
         assertEquals("tc-weather", results.get(1).getToolCalls().get(0).getId());

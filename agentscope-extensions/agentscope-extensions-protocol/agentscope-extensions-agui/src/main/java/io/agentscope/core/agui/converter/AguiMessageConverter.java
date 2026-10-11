@@ -64,6 +64,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -87,6 +88,129 @@ public class AguiMessageConverter {
      * Creates a new AguiMessageConverter
      */
     public AguiMessageConverter() {}
+
+    /**
+     * Convert an AgentScope message to an AG-UI message.
+     *
+     * @param msg The AgentScope message to convert
+     * @return The converted AG-UI message
+     * @deprecated Use {@link #toAguiMessages(Msg)} instead. The list-returning method preserves
+     *     mixed reasoning content and expands multiple tool results without throwing.
+     */
+    @Deprecated
+    public AguiMessage toAguiMessage(Msg msg) {
+        List<AguiMessage> messages = toAguiMessages(msg);
+        if (messages.size() != 1) {
+            throw new IllegalArgumentException(
+                    "A message that converts to multiple AG-UI messages must be converted with"
+                            + " toAguiMessages(Msg)");
+        }
+        return messages.get(0);
+    }
+
+    /**
+     * Convert an AgentScope message to one or more AG-UI messages.
+     *
+     * <p>A message mixing {@link ThinkingBlock} with other content is split into a reasoning
+     * message and the remaining content. A TOOL message with multiple tool results is expanded
+     * into one AG-UI tool message per result, preserving each result's {@code toolCallId},
+     * content, and error state.
+     *
+     * <p>Each generated AG-UI message receives a unique ID in the format
+     * {@code agui::sourceId-UUID}. An ID that already carries the prefix is reused, so repeated
+     * conversions do not append another marker.
+     *
+     * @param msg The AgentScope message to convert
+     * @return The converted AG-UI messages, never empty
+     */
+    public List<AguiMessage> toAguiMessages(Msg msg) {
+        if (msg.getRole() == MsgRole.TOOL) {
+            List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
+            if (toolResults.size() > 1) {
+                List<AguiMessage> messages = new ArrayList<>();
+                for (ToolResultBlock toolResult : toolResults) {
+                    messages.add(toolResultMessage(msg, toolResult));
+                }
+                return List.copyOf(messages);
+            }
+        }
+        return splitReasoningMessage(msg, toSingleAguiMessage(msg));
+    }
+
+    /**
+     * Convert an AgentScope message that carries at most one tool result.
+     *
+     * @param msg The AgentScope message to convert
+     * @return The converted AG-UI message
+     */
+    private AguiMessage toSingleAguiMessage(Msg msg) {
+        String role = convertRole(msg.getRole());
+        StringBuilder content = new StringBuilder();
+        List<AguiToolCall> toolCalls = new ArrayList<>();
+        String toolCallId = null;
+        String error = null;
+        boolean toolMessage = msg.getRole() == MsgRole.TOOL;
+        String reasoningContent = thinkingContent(msg);
+
+        for (ContentBlock block : msg.getContent()) {
+            if (block instanceof TextBlock tb) {
+                appendContent(content, tb.getText());
+            } else if (block instanceof ToolUseBlock tub) {
+                toolCalls.add(toAguiToolCall(tub));
+            } else if (block instanceof ToolResultBlock trb) {
+                toolCallId = trb.getId();
+                if (toolMessage && trb.getState() == ToolResultState.ERROR) {
+                    error = toolResultText(trb);
+                } else {
+                    for (ContentBlock output : trb.getOutput()) {
+                        if (output instanceof TextBlock tb) {
+                            appendContent(content, tb.getText());
+                        }
+                    }
+                }
+            }
+        }
+
+        if (reasoningContent.length() > 0
+                && content.length() == 0
+                && toolCalls.isEmpty()
+                && toolCallId == null) {
+            return AguiMessage.reasoningMessage(
+                    generatedMessageId(msg), reasoningContent.toString());
+        }
+
+        // The protocol lists `content` as required on a tool message and does not accept null
+        String contentText = content.toString();
+        MessageContent wireContent =
+                contentText.isEmpty() && !toolMessage ? null : new MessageContent.Text(contentText);
+
+        return new AguiMessage(
+                generatedMessageId(msg),
+                role,
+                wireContent,
+                toolCalls.isEmpty() ? null : toolCalls,
+                toolCallId,
+                error);
+    }
+
+    /**
+     * Convert a list of AgentScope messages to AG-UI messages.
+     *
+     * <p>Each generated AG-UI message receives a unique ID in the format
+     * {@code agui::sourceId-UUID}. An ID that already carries the prefix is reused, so repeated
+     * conversions do not append another marker.
+     *
+     * <p>The output list may contain more messages than the input list because messages that mix
+     * reasoning with other content or contain multiple tool results are expanded.
+     *
+     * @param msgs The AgentScope messages to convert
+     * @return The converted AG-UI messages
+     */
+    public List<AguiMessage> toAguiMessageList(List<Msg> msgs) {
+        return msgs.stream()
+                .flatMap(msg -> toAguiMessages(msg).stream())
+                .collect(Collectors.toList());
+    }
 
     /**
      * Convert an AG-UI message to an AgentScope message.
@@ -128,160 +252,6 @@ public class AguiMessageConverter {
         }
 
         return Msg.builder().id(aguiMessage.getId()).role(role).content(blocks).build();
-    }
-
-    /**
-     * Convert an AgentScope message to an AG-UI message.
-     *
-     * <p>A message that requires multiple AG-UI messages cannot be represented by a single
-     * conversion. This includes a TOOL message with multiple {@link ToolResultBlock}s and a
-     * message mixing {@link ThinkingBlock} with other content. Use {@link #toAguiMessages(Msg)}
-     * for those cases.
-     *
-     * @param msg The AgentScope message to convert
-     * @return The converted AG-UI message
-     */
-    public AguiMessage toAguiMessage(Msg msg) {
-        List<AguiMessage> messages = toAguiMessages(msg);
-        if (messages.size() != 1) {
-            throw new IllegalArgumentException(
-                    "A message that converts to multiple AG-UI messages must be converted with"
-                            + " toAguiMessages(Msg)");
-        }
-        return messages.get(0);
-    }
-
-    /**
-     * Convert an AgentScope message to one or more AG-UI messages.
-     *
-     * <p>A message mixing {@link ThinkingBlock} with other content is split into a reasoning
-     * message and the remaining content. A TOOL message with multiple tool results is expanded
-     * into one AG-UI tool message per result, preserving each result's {@code toolCallId},
-     * content, and error state.
-     *
-     * @param msg The AgentScope message to convert
-     * @return The converted AG-UI messages, never empty
-     */
-    public List<AguiMessage> toAguiMessages(Msg msg) {
-        if (msg.getRole() != MsgRole.TOOL) {
-            return splitReasoningMessage(msg, toSingleAguiMessage(msg));
-        }
-        List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
-        if (toolResults.size() <= 1) {
-            return splitReasoningMessage(msg, toSingleAguiMessage(msg));
-        }
-        List<AguiMessage> messages = new ArrayList<>();
-        for (int i = 0; i < toolResults.size(); i++) {
-            messages.add(toolResultMessage(msg, toolResults.get(i), i));
-        }
-        return List.copyOf(messages);
-    }
-
-    private List<AguiMessage> splitReasoningMessage(Msg msg, AguiMessage standardMessage) {
-        String reasoningContent = thinkingContent(msg);
-        if (reasoningContent.isEmpty() || standardMessage.isReasoningMessage()) {
-            return List.of(standardMessage);
-        }
-        return List.of(
-                AguiMessage.reasoningMessage(msg.getId() + "-reasoning", reasoningContent),
-                standardMessage);
-    }
-
-    private static String thinkingContent(Msg msg) {
-        StringBuilder reasoningContent = new StringBuilder();
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof ThinkingBlock tb) {
-                appendContent(reasoningContent, tb.getThinking());
-            }
-        }
-        return reasoningContent.toString();
-    }
-
-    /**
-     * Convert an AgentScope message that carries at most one tool result.
-     *
-     * @param msg The AgentScope message to convert
-     * @return The converted AG-UI message
-     */
-    private AguiMessage toSingleAguiMessage(Msg msg) {
-        String role = convertRole(msg.getRole());
-        StringBuilder content = new StringBuilder();
-        List<AguiToolCall> toolCalls = new ArrayList<>();
-        String toolCallId = null;
-        String error = null;
-        boolean toolMessage = msg.getRole() == MsgRole.TOOL;
-        String reasoningContent = thinkingContent(msg);
-
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock tb) {
-                appendContent(content, tb.getText());
-            } else if (block instanceof ToolUseBlock tub) {
-                toolCalls.add(toAguiToolCall(tub));
-            } else if (block instanceof ToolResultBlock trb) {
-                toolCallId = trb.getId();
-                if (toolMessage && trb.getState() == ToolResultState.ERROR) {
-                    error = toolResultText(trb);
-                } else {
-                    for (ContentBlock output : trb.getOutput()) {
-                        if (output instanceof TextBlock tb) {
-                            appendContent(content, tb.getText());
-                        }
-                    }
-                }
-            }
-        }
-
-        if (reasoningContent.length() > 0
-                && content.length() == 0
-                && toolCalls.isEmpty()
-                && toolCallId == null) {
-            return AguiMessage.reasoningMessage(msg.getId(), reasoningContent.toString());
-        }
-
-        // The protocol lists `content` as required on a tool message and does not accept null
-        String contentText = content.toString();
-        MessageContent wireContent =
-                contentText.isEmpty() && !toolMessage ? null : new MessageContent.Text(contentText);
-
-        return new AguiMessage(
-                msg.getId(),
-                role,
-                wireContent,
-                toolCalls.isEmpty() ? null : toolCalls,
-                toolCallId,
-                error);
-    }
-
-    /**
-     * Join the text blocks of a tool result into a single string
-     */
-    private static String toolResultText(ToolResultBlock trb) {
-        StringBuilder text = new StringBuilder();
-        for (ContentBlock output : trb.getOutput()) {
-            if (output instanceof TextBlock tb) {
-                if (text.length() > 0) {
-                    text.append("\n");
-                }
-                text.append(tb.getText());
-            }
-        }
-        return text.toString();
-    }
-
-    /**
-     * Build one AG-UI tool message from a single AgentScope tool result.
-     *
-     * <p>The first expanded message keeps the source message ID; later messages get an index
-     * suffix so every emitted AG-UI message has a distinct ID.
-     */
-    private AguiMessage toolResultMessage(Msg msg, ToolResultBlock result, int index) {
-        String id = index == 0 ? msg.getId() : msg.getId() + "-" + index;
-        String text = toolResultText(result);
-        boolean error = result.getState() == ToolResultState.ERROR;
-        MessageContent content =
-                error ? new MessageContent.Text("") : new MessageContent.Text(text);
-        return new AguiMessage(
-                id, convertRole(msg.getRole()), content, null, result.getId(), error ? text : null);
     }
 
     /**
@@ -340,38 +310,6 @@ public class AguiMessageConverter {
             }
         }
         return List.copyOf(msgs);
-    }
-
-    private static Set<String> collectToolResultIds(List<Msg> msgs) {
-        Set<String> ids = new HashSet<>();
-        for (Msg msg : msgs) {
-            if (msg.getContent() == null) {
-                continue;
-            }
-            for (ContentBlock block : msg.getContent()) {
-                if (block instanceof ToolResultBlock toolResult
-                        && toolResult.getId() != null
-                        && !toolResult.getId().isBlank()) {
-                    ids.add(toolResult.getId());
-                }
-            }
-        }
-        return ids;
-    }
-
-    /**
-     * Convert a list of AgentScope messages to AG-UI messages.
-     *
-     * <p>A TOOL message with multiple tool results is expanded into one AG-UI tool message per
-     * result.
-     *
-     * @param msgs The AgentScope messages to convert
-     * @return The converted AG-UI messages
-     */
-    public List<AguiMessage> toAguiMessageList(List<Msg> msgs) {
-        return msgs.stream()
-                .flatMap(msg -> toAguiMessages(msg).stream())
-                .collect(Collectors.toList());
     }
 
     /**
@@ -463,6 +401,57 @@ public class AguiMessageConverter {
             target.append("\n");
         }
         target.append(value);
+    }
+
+    /**
+     * Join the text blocks of a tool result into a single string
+     */
+    private static String toolResultText(ToolResultBlock trb) {
+        StringBuilder text = new StringBuilder();
+        for (ContentBlock output : trb.getOutput()) {
+            if (output instanceof TextBlock tb) {
+                appendContent(text, tb.getText());
+            }
+        }
+        return text.toString();
+    }
+
+    /**
+     * Build one AG-UI tool message from a single AgentScope tool result.
+     */
+    private AguiMessage toolResultMessage(Msg msg, ToolResultBlock result) {
+        String id = generatedMessageId(msg);
+        String text = toolResultText(result);
+        boolean error = result.getState() == ToolResultState.ERROR;
+        MessageContent content =
+                error ? new MessageContent.Text("") : new MessageContent.Text(text);
+        return new AguiMessage(
+                id, convertRole(msg.getRole()), content, null, result.getId(), error ? text : null);
+    }
+
+    private List<AguiMessage> splitReasoningMessage(Msg msg, AguiMessage standardMessage) {
+        String reasoningContent = thinkingContent(msg);
+        if (reasoningContent.isEmpty() || standardMessage.isReasoningMessage()) {
+            return List.of(standardMessage);
+        }
+        return List.of(
+                AguiMessage.reasoningMessage(generatedMessageId(msg), reasoningContent),
+                standardMessage);
+    }
+
+    private static String generatedMessageId(Msg msg) {
+        String id = msg.getId();
+        return id.startsWith("agui::") ? id : "agui::" + id + "-" + UUID.randomUUID();
+    }
+
+    private static String thinkingContent(Msg msg) {
+        StringBuilder reasoningContent = new StringBuilder();
+        for (ContentBlock block : msg.getContent()) {
+            if (block instanceof ThinkingBlock tb) {
+                appendContent(reasoningContent, tb.getThinking());
+            }
+        }
+        return reasoningContent.toString();
     }
 
     /**
@@ -566,6 +555,23 @@ public class AguiMessageConverter {
         }
     }
 
+    private static Set<String> collectToolResultIds(List<Msg> msgs) {
+        Set<String> ids = new HashSet<>();
+        for (Msg msg : msgs) {
+            if (msg.getContent() == null) {
+                continue;
+            }
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof ToolResultBlock toolResult
+                        && toolResult.getId() != null
+                        && !toolResult.getId().isBlank()) {
+                    ids.add(toolResult.getId());
+                }
+            }
+        }
+        return ids;
+    }
+
     private Msg toToolResultMsg(AguiResume resume, String toolCallId) {
         ToolResultState state =
                 resume.isCancelled() ? ToolResultState.INTERRUPTED : ToolResultState.SUCCESS;
@@ -602,7 +608,6 @@ public class AguiMessageConverter {
      * @param interrupt the originating interrupt containing tool metadata
      * @return a USER-role Msg with the confirmation result
      */
-    @SuppressWarnings("unchecked")
     private Msg toConfirmResultMsg(
             AguiResume resume, String toolCallId, AguiEvent.Interrupt interrupt) {
         boolean approved = isApproved(resume);
@@ -648,7 +653,6 @@ public class AguiMessageConverter {
      * <p>If the status is {@code cancelled}, the tool is denied. Otherwise, only an explicit
      * {@code approved: true} boolean field approves the tool.
      */
-    @SuppressWarnings("unchecked")
     private static boolean isApproved(AguiResume resume) {
         if (resume.isCancelled()) {
             return false;
