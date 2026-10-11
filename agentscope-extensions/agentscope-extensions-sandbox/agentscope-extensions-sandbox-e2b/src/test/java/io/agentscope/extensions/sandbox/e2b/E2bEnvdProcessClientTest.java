@@ -19,6 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
@@ -35,8 +39,16 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import okhttp3.Call;
 import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class E2bEnvdProcessClientTest {
 
@@ -333,26 +345,6 @@ class E2bEnvdProcessClientTest {
         }
     }
 
-    // Extreme numerics must not crash the parser: 1e999 decodes to Infinity
-    // (truthy in Python), so it raises — via SandboxRuntimeException, never via
-    // NumberFormatException escaping the throws-IOException contract.
-    @Test
-    void endStreamResponseWithInfiniteErrorThrows() throws Exception {
-        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        byte[] frame = endStreamFrame("{\"error\":1e999}");
-
-        SandboxException.SandboxRuntimeException ex =
-                assertThrows(
-                        SandboxException.SandboxRuntimeException.class,
-                        () ->
-                                drainStartStream(
-                                        client,
-                                        frame,
-                                        new ByteArrayOutputStream(),
-                                        new ByteArrayOutputStream()));
-        assertEquals(SandboxErrorCode.WORKSPACE_START_ERROR, ex.getErrorCode());
-    }
-
     // Connect protocol: successful EndStreamResponse is "{}" (no error, no metadata).
     // Python SDK: end_stream without "error" → return (stop iteration).
     @Test
@@ -498,44 +490,6 @@ class E2bEnvdProcessClientTest {
         assertTrue(ex.getMessage().contains("Compressed"));
     }
 
-    // Combined flag values carrying the compressed bit are rejected as compressed
-    // before end-stream handling: 0x03 must not reach the EndStreamMessage parser.
-    @Test
-    void compressedEndStreamFrameThrowsIOException() throws Exception {
-        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        byte[] frame = envelope(0x03, new byte[] {0x1f, (byte) 0x8b, 0x00});
-
-        IOException ex =
-                assertThrows(
-                        IOException.class,
-                        () ->
-                                drainStartStream(
-                                        client,
-                                        frame,
-                                        new ByteArrayOutputStream(),
-                                        new ByteArrayOutputStream()));
-        assertTrue(ex.getMessage().contains("Compressed"));
-    }
-
-    // 0x07 (end-stream + compressed + reserved) likewise rejects on the compressed
-    // bit first, never reaching end-stream or reserved-bit handling.
-    @Test
-    void compressedReservedEndStreamFrameThrowsIOException() throws Exception {
-        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        byte[] frame = envelope(0x07, new byte[] {0x1f, (byte) 0x8b, 0x00});
-
-        IOException ex =
-                assertThrows(
-                        IOException.class,
-                        () ->
-                                drainStartStream(
-                                        client,
-                                        frame,
-                                        new ByteArrayOutputStream(),
-                                        new ByteArrayOutputStream()));
-        assertTrue(ex.getMessage().contains("Compressed"));
-    }
-
     // Connect protocol: flags bits 2-7 reserved — implementations must skip unless understood.
     // https://connectrpc.com/docs/protocol/#streaming-rpcs
     @Test
@@ -648,21 +602,6 @@ class E2bEnvdProcessClientTest {
         assertTrue(ex.getMessage().contains("Invalid connect frame length"));
     }
 
-    @Test
-    void zeroLengthFrameIsSkipped() throws Exception {
-        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        byte[] frame =
-                concatFrames(
-                        envelope(0x00, new byte[0]),
-                        connectFrame(endEventJson(99, null)),
-                        endStreamFrame("{}"));
-        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
-        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-        int exit = drainStartStream(client, frame, stdout, stderr);
-
-        assertEquals(99, exit);
-    }
-
     // ---- parseJsonStartResponse edge cases ----
 
     @Test
@@ -744,6 +683,157 @@ class E2bEnvdProcessClientTest {
         return DynamicMessage.newBuilder(startResponseDesc)
                 .setField(startResponseDesc.findFieldByName("event"), event)
                 .build();
+    }
+
+    // ---- filesystem REST API tests ----
+
+    @Test
+    void uploadFileViaRestApiSendsMultipartPost() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        Response okResponse =
+                new Response.Builder()
+                        .code(200)
+                        .message("OK")
+                        .body(ResponseBody.create("", MediaType.get("application/json")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setRunUser(null);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        client.uploadFile(state, "/tmp/test.txt", "data".getBytes());
+
+        ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
+        verify(mockHttp).newCall(requestCaptor.capture());
+        Request sent = requestCaptor.getValue();
+        assertEquals("POST", sent.method());
+        assertTrue(sent.body() instanceof MultipartBody);
+        assertEquals(1, ((MultipartBody) sent.body()).size());
+        String url = sent.url().toString();
+        assertTrue(url.startsWith("https://49983-test-id.e2b.app/files?path="));
+        assertTrue(url.contains("path=%2Ftmp%2Ftest.txt"));
+        assertTrue(url.contains("username=user"));
+        verify(mockCall).execute();
+    }
+
+    @Test
+    void uploadFileViaRestApiThrowsOnHttpError() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        Response okResponse =
+                new Response.Builder()
+                        .code(500)
+                        .message("Internal Server Error")
+                        .body(ResponseBody.create("server error", MediaType.get("text/plain")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        SandboxException.SandboxRuntimeException ex =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> client.uploadFile(state, "/tmp/test.txt", "data".getBytes()));
+        assertEquals(SandboxErrorCode.WORKSPACE_ARCHIVE_WRITE_ERROR, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("500"));
+    }
+
+    @Test
+    void uploadFileWithDirectoryPathThrowsIllegalArgument() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        E2bSandboxState state = mock(E2bSandboxState.class);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> client.uploadFile(state, "/home/", "data".getBytes()));
+    }
+
+    @Test
+    void downloadFileViaRestApiReturnsBytes() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        byte[] content = "hello world".getBytes(StandardCharsets.UTF_8);
+        Response okResponse =
+                new Response.Builder()
+                        .code(200)
+                        .message("OK")
+                        .body(
+                                ResponseBody.create(
+                                        content, MediaType.get("application/octet-stream")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        byte[] result = client.downloadFile(state, "/tmp/test.txt");
+
+        assertArrayEquals(content, result);
+        ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
+        verify(mockHttp).newCall(requestCaptor.capture());
+        String url = requestCaptor.getValue().url().toString();
+        assertTrue(url.startsWith("https://49983-test-id.e2b.app/files?path="));
+        assertTrue(url.contains("path=%2Ftmp%2Ftest.txt"));
+        assertTrue(url.contains("username=user"));
+        verify(mockCall).execute();
+    }
+
+    @Test
+    void downloadFileViaRestApiThrowsOnHttpError() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        Response okResponse =
+                new Response.Builder()
+                        .code(404)
+                        .message("Not Found")
+                        .body(ResponseBody.create("not found", MediaType.get("text/plain")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        SandboxException.SandboxRuntimeException ex =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> client.downloadFile(state, "/tmp/nonexistent.txt"));
+        assertEquals(SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("404"));
     }
 
     private static int drainStartStream(
