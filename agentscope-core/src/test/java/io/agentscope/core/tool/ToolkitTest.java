@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -37,10 +38,13 @@ import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -284,7 +288,8 @@ class ToolkitTest {
         AgentTool first = namedAgentTool("remove_if_same_b");
         AgentTool second = namedAgentTool("remove_if_same_b");
         toolkit.registerAgentTool(first);
-        toolkit.registerAgentTool(second);
+        // Duplicate names fail fast since #3328; the replacement here is intentional.
+        toolkit.replaceAgentTool(second);
         assertFalse(
                 toolkit.removeToolIfSame("remove_if_same_b", first),
                 "stale instance after replace must return false");
@@ -326,6 +331,64 @@ class ToolkitTest {
                 tk.removeToolIfSame("remove_if_same_no_delete", tool),
                 "allowToolDeletion=false must return false");
         assertSame(tool, tk.getTool("remove_if_same_no_delete"));
+    }
+
+    @Test
+    @DisplayName("registerAgentTool rejects a null tool")
+    void registerAgentToolRejectsNullTool() {
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> toolkit.registerAgentTool((AgentTool) null));
+        assertEquals("AgentTool cannot be null", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("sameSourceRefreshPredicate gates on deliberate replace and source identity")
+    void sameSourceRefreshPredicateBranches() throws Exception {
+        Method sourceMethod =
+                TestToolObject.class.getDeclaredMethod("testToolMethod", String.class);
+        AtomicBoolean flag = new AtomicBoolean(false);
+
+        // A deliberate replacement is never a refresh, whatever the source pair says.
+        assertNull(
+                Toolkit.sameSourceRefreshPredicate(true, new TestToolObject(), sourceMethod, flag));
+        // Direct instance / MCP / schema registrations carry no annotated source at all.
+        assertNull(Toolkit.sameSourceRefreshPredicate(false, null, null, flag));
+        // The defensive half-set pair (annotated scanning always sets both together).
+        assertNull(Toolkit.sameSourceRefreshPredicate(false, new TestToolObject(), null, flag));
+
+        TestToolObject source = new TestToolObject();
+        Toolkit refreshToolkit = new Toolkit();
+        refreshToolkit.registerTool(source);
+        AgentTool bound = refreshToolkit.getTool("test_tool_method");
+        assertTrue(bound instanceof ReflectiveFunctionTool);
+
+        Predicate<AgentTool> refreshPredicate =
+                Toolkit.sameSourceRefreshPredicate(false, source, sourceMethod, flag);
+        assertNotNull(refreshPredicate);
+        assertTrue(refreshPredicate.test(bound), "same source object + method is a refresh");
+        assertTrue(flag.get());
+
+        AtomicBoolean otherFlag = new AtomicBoolean(false);
+        Predicate<AgentTool> otherPredicate =
+                Toolkit.sameSourceRefreshPredicate(
+                        false, new TestToolObject(), sourceMethod, otherFlag);
+        assertFalse(otherPredicate.test(bound), "a different source object is a conflict");
+        assertFalse(otherFlag.get());
+
+        AtomicBoolean plainFlag = new AtomicBoolean(false);
+        Predicate<AgentTool> plainPredicate =
+                Toolkit.sameSourceRefreshPredicate(false, source, sourceMethod, plainFlag);
+        assertFalse(
+                plainPredicate.test(mock(AgentTool.class)),
+                "a non-reflective binding never matches");
+        assertFalse(plainFlag.get());
+
+        // The per-call flag is a required capture target, guarded fail-loud at build time.
+        assertThrows(
+                NullPointerException.class,
+                () -> Toolkit.sameSourceRefreshPredicate(false, source, sourceMethod, null));
     }
 
     @Test
@@ -420,12 +483,11 @@ class ToolkitTest {
         toolkit.createToolGroup("activeGroup", "Active tools", true);
         toolkit.createToolGroup("inactiveGroup", "Inactive tools", false);
 
-        // Register tools to different groups
+        // Register tools to the active group. The inactive group keeps a differently-named
+        // tool: the original test relied on a second same-named registration silently
+        // overriding the tool's group binding, which #3328 turned into a fail-fast error.
         toolkit.registration().tool(sampleTools).group("activeGroup").apply();
-
-        // Create a separate tool for inactive group
-        SampleTools inactiveTools = new SampleTools();
-        toolkit.registration().tool(inactiveTools).group("inactiveGroup").apply();
+        toolkit.registration().tool(new InactiveGroupTools()).group("inactiveGroup").apply();
 
         // Get a tool from inactive group (should exist in registry)
         AgentTool tool = toolkit.getTool("add");
@@ -1370,5 +1432,13 @@ class ToolkitTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> toolkit.registration().propagateMeta(null, false));
+    }
+
+    /** Fixture: a tool that only lives in the inactive group of the group-gating test. */
+    static class InactiveGroupTools {
+        @Tool(name = "inactive_only", description = "Bound to the inactive group")
+        public String inactiveOnly() {
+            return "inactive";
+        }
     }
 }

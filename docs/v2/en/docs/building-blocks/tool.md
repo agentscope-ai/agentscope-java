@@ -226,6 +226,28 @@ public class HumanApprovalTool extends ToolBase {
 
 Runnable examples: `agentscope-examples/documentation/.../tool/ToolBaseExample.java`, `tool/ToolExecutionContextExample.java`.
 
+### Duplicate names and intentional replacement
+
+The tool name is the lookup key everything downstream resolves a call by — schemas, permission rules, tool groups and confirmation handling alike. Registering a tool whose name is already bound to a *different* tool therefore fails fast with an `IllegalStateException` instead of silently replacing the previous binding:
+
+```java
+toolkit.registerTool(new LocalTools());   // @Tool(name = "dup", ...)
+toolkit.registerTool(new OtherTools());   // same name, different tool
+// IllegalStateException: Tool 'dup' is already registered and will not be silently replaced.
+```
+
+MCP tools go through the same check, so a remote tool clashing with a local one (or with another server's tool) is reported when that server's tools are registered. To keep both, register the client with a `toolNamePrefix` or rename one tool.
+
+Re-registering the *same* logical tool stays idempotent — no special handling is needed for refreshes: the same annotated object and method, the same MCP client re-registering its tools (reconnect / tool-list refresh), and an unchanged external-tool schema re-declared through `registerSchema` are all accepted as refreshes. A schema that *changed* under the same name is a conflict: remove the old registration first or pick a different name.
+
+For a deliberate override — swapping one implementation for another under the same name — use the explicit replacement API:
+
+```java
+toolkit.replaceAgentTool(newFallbackTool); // replaces the existing "dup" binding
+```
+
+`replaceAgentTool` is the only intentional-replacement path; every other registration route (`registerTool`, `registerAgentTool`, `registerSchema`, sub-agent registration and MCP client registration) goes through the fail-fast check.
+
 ## Receiving context
 
 The [`RuntimeContext`](/v2/en/docs/building-blocks/agent#runtimecontext-per-call-context) passed to `agent.call(msgs, runtimeContext)` is forwarded to every tool invocation in that reply. Tools can read it in two ways: annotation-based tools through automatic injection, and `ToolBase.callAsync` through `ToolCallParam`.
