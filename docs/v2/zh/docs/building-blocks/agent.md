@@ -553,7 +553,7 @@ agent.call(List.of(new UserMessage("继续之前的任务。")), rc).block();
 | `InMemoryAgentStateStore` | `agentscope-core` | 单元测试 / 单进程 demo |
 | `JsonFileAgentStateStore` | `agentscope-core` | 单机开发，按 `(userId, sessionId)` 分目录落 JSON |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | 多副本生产，跨进程跨机器共享 |
-| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | 需要落关系型库（审计 / 报表） |
+| `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | 需要落关系型库（审计 / 报表） |
 
 大多数场景只用一个 `sessionId` 就够；要按用户分桶就在 `RuntimeContext` 上同时设置 `userId`，存储会按 `(userId, sessionId)` 二元组寻址每个槽位。
 

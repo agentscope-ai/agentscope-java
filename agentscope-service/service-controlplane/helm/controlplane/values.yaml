@@ -1,8 +1,8 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/agentscope-ai/agentscope-service-control
-  tag: "0.2.0"
+  repository: sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope/as-controlplane
+  tag: "2.1.0-BETA1"
   pullPolicy: IfNotPresent
 
 service:

@@ -15,7 +15,7 @@
  */
 
 /** SDK version reported on `/agentscope/info`. */
-export const SDK_VERSION = '0.1.0'
+export const SDK_VERSION = '2.1.0-BETA1'
 
 /** Framework identifier advertised to the control plane. */
 export const FRAMEWORK = 'deepseek-harness'

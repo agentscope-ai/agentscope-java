@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -24,6 +25,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -77,15 +79,17 @@ class AgentSpawnToolKeyTest {
         AgentSpawnTool tool = new AgentSpawnTool(defaultManager, repository, 0);
 
         String defaultSpawn =
-                tool.agentSpawn(
-                                RuntimeContext.empty(),
-                                null,
-                                "default-agent",
-                                "ignored",
-                                null,
-                                1,
-                                null)
-                        .block();
+                assertText(
+                        tool.agentSpawn(
+                                        RuntimeContext.empty(),
+                                        null,
+                                        "default-agent",
+                                        "ignored",
+                                        null,
+                                        1,
+                                        null)
+                                .block(),
+                        ToolResultState.SUCCESS);
         assertTrue(defaultSpawn.contains("agent_id: default-agent"));
 
         SubagentDeclaration primaryDeclaration =
@@ -116,6 +120,7 @@ class AgentSpawnToolKeyTest {
                                 null,
                                 1,
                                 null)
+                        .map(result -> assertText(result, ToolResultState.ERROR))
                         .block()
                         .contains("PRIMARY-only"));
         assertTrue(
@@ -128,6 +133,7 @@ class AgentSpawnToolKeyTest {
                                 null,
                                 1,
                                 null)
+                        .map(result -> assertText(result, ToolResultState.ERROR))
                         .block()
                         .contains("Unknown agent_id"));
 
@@ -135,25 +141,32 @@ class AgentSpawnToolKeyTest {
                 RuntimeContext.builder().sessionId("s1").userId("u1").build();
         scopedContext.put(AgentSpawnTool.CTX_AGENT_MANAGER, scopedManager);
         String persistentSpawn =
-                tool.agentSpawn(
-                                scopedContext,
-                                null,
-                                "scoped-agent",
-                                "first task",
-                                "scoped",
-                                0,
-                                null)
-                        .block();
+                assertText(
+                        tool.agentSpawn(
+                                        scopedContext,
+                                        null,
+                                        "scoped-agent",
+                                        "first task",
+                                        "scoped",
+                                        0,
+                                        null)
+                                .block(),
+                        ToolResultState.SUCCESS);
         assertTrue(persistentSpawn.contains("agent_id: scoped-agent"));
         assertEquals("done", repository.runLatestLocalTask());
 
         String key =
                 persistentSpawn.lines().findFirst().orElseThrow().substring("agent_key: ".length());
-        String sent = tool.agentSend(scopedContext, null, key, null, "follow-up", 1).block();
+        String sent =
+                assertText(
+                        tool.agentSend(scopedContext, null, key, null, "follow-up", 1).block(),
+                        ToolResultState.SUCCESS);
         assertTrue(sent.contains("done"));
 
         String backgroundSend =
-                tool.agentSend(scopedContext, null, key, null, "background", 0).block();
+                assertText(
+                        tool.agentSend(scopedContext, null, key, null, "background", 0).block(),
+                        ToolResultState.SUCCESS);
         assertTrue(backgroundSend.contains("task_id:"));
         assertEquals("done", repository.runLatestLocalTask());
 
@@ -167,9 +180,17 @@ class AgentSpawnToolKeyTest {
                                 restoredKey, "scoped-agent", "sub-restored", null, 1));
         AgentSpawnTool restoreTool = new AgentSpawnTool(defaultManager, repository, 0);
         String restored =
-                restoreTool
-                        .agentSend(scopedContext, restoredState, restoredKey, null, "restore", 1)
-                        .block();
+                assertText(
+                        restoreTool
+                                .agentSend(
+                                        scopedContext,
+                                        restoredState,
+                                        restoredKey,
+                                        null,
+                                        "restore",
+                                        1)
+                                .block(),
+                        ToolResultState.SUCCESS);
         assertTrue(restored.contains("done"));
     }
 

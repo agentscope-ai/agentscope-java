@@ -1,0 +1,60 @@
+name: AgentScope Service npm release
+
+on:
+  push:
+    tags: ['v*', 'agentscope-service-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: npm version matching the selected source (for example 2.1.0-BETA1)
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: service-npm-release
+  cancel-in-progress: false
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: bash .github/scripts/check-service-release-source.sh
+
+  publish:
+    needs: source
+    if: needs.source.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: agentscope-service/service-controlplane/sdk/dsh/package-lock.json
+      - run: npm install --global npm@11
+      - name: Test, build and publish to agentscope-service
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="$INPUT_VERSION"
+          if [ -z "$version" ]; then
+            version="${GITHUB_REF_NAME#agentscope-service-v}"
+            version="${version#v}"
+          fi
+          python3 agentscope-service/release/release.py publish-npm --version "$version"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: service-npm-publication
+          path: agentscope-service/release/dist/**/npm/
+          if-no-files-found: error

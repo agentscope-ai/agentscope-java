@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -43,7 +44,7 @@ public class MemorySearchTool {
         this.workspaceManager = workspaceManager;
     }
 
-    public String memorySearch(RuntimeContext runtimeContext, String query) {
+    public ToolResultBlock memorySearch(RuntimeContext runtimeContext, String query) {
         return memorySearch(runtimeContext, query, null);
     }
 
@@ -54,7 +55,7 @@ public class MemorySearchTool {
                     "Search through long-term memory files (MEMORY.md and memory/*.md) for"
                             + " relevant information. Use before answering questions about prior"
                             + " work, decisions, dates, people, preferences, or todos.")
-    public String memorySearch(
+    public ToolResultBlock memorySearch(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "query",
@@ -72,7 +73,7 @@ public class MemorySearchTool {
                             required = false)
                     String matchMode) {
         if (query == null || query.isBlank()) {
-            return "No query provided";
+            return ToolResultBlock.error("No query provided");
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
@@ -86,9 +87,9 @@ public class MemorySearchTool {
                                     Pattern.compile(Pattern.quote(term), Pattern.CASE_INSENSITIVE)
                                             .asPredicate());
         } catch (IllegalArgumentException e) {
-            return "Error: " + e.getMessage();
+            return ToolResultBlock.error(e.getMessage());
         }
-        return keywordSearch(rc, query, matcher);
+        return ToolResultBlock.success(keywordSearch(rc, query, matcher));
     }
 
     private String keywordSearch(RuntimeContext rc, String query, Predicate<String> matcher) {

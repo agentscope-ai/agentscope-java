@@ -20,7 +20,7 @@ package version
 // build time via -ldflags.
 var (
 	// Version is the control plane release version.
-	Version = "0.2.0"
+	Version = "2.1.0-BETA1"
 	// APIVersion is the served CRD API version.
 	APIVersion = "v1alpha1"
 	// Component is the control plane component name.

@@ -17,7 +17,7 @@ package dataplane
 import (
 	"testing"
 
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/internal/prober"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/prober"
 )
 
 func TestSessionsProbeLikelyTruncated(t *testing.T) {

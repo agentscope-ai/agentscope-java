@@ -111,7 +111,7 @@ class MetaToolFactory {
                     }
 
                     String result = resetEquippedToolsImpl(toActivate, resolveToolContext(param));
-                    return Mono.just(ToolResultBlock.text(result));
+                    return Mono.just(ToolResultBlock.success(result));
                 } catch (Exception e) {
                     return Mono.just(ToolResultBlock.error(e.getMessage()));
                 }
@@ -152,7 +152,8 @@ class MetaToolFactory {
             groupManager.validateGroupExists(groupName);
             ToolGroup group = groupManager.getToolGroup(groupName);
             if (group.getScope() != ToolGroupScope.META) {
-                return "Error: Group '" + groupName + "' is not manageable by this tool.";
+                throw new IllegalArgumentException(
+                        "Group '" + groupName + "' is not manageable by this tool.");
             }
         }
 
@@ -160,7 +161,8 @@ class MetaToolFactory {
         // runtime context is an integration fault, and touching shared state here would be
         // destructive — fail fast instead.
         if (tcs == null) {
-            return "Error: reset_equipped_tools requires a per-session runtime context";
+            throw new IllegalStateException(
+                    "reset_equipped_tools requires a per-session runtime context");
         }
 
         // Single source of truth: atomically keep EXTERNAL-scoped groups and replace META-scoped
