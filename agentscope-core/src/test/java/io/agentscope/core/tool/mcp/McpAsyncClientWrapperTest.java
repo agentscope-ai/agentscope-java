@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,9 +30,11 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.Version;
 import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -202,6 +205,60 @@ class McpAsyncClientWrapperTest {
         assertFalse(wrapper.isInitialized());
         assertTrue(wrapper.cachedTools.isEmpty());
         verify(mockClient, times(1)).closeGracefully();
+        // A successful graceful close must not trigger the forceful fallback.
+        verify(mockClient, never()).close();
+    }
+
+    @Test
+    void testClose_GracefulCloseFails_FallsBackToForceClose() {
+        setupSuccessfulInitialization();
+        wrapper.initialize().block();
+
+        when(mockClient.closeGracefully())
+                .thenReturn(Mono.error(new IllegalStateException("graceful close rejected")));
+
+        wrapper.close();
+
+        assertFalse(wrapper.isInitialized());
+        assertTrue(wrapper.cachedTools.isEmpty());
+        verify(mockClient, times(1)).closeGracefully();
+        verify(mockClient, times(1)).close();
+    }
+
+    @Test
+    void testClose_TimesOutAndFallsBackToForceClose() {
+        // Short timeout so the test does not have to wait for the default close timeout.
+        McpAsyncClientWrapper shortTimeoutWrapper =
+                new McpAsyncClientWrapper("test-async-client", mockClient, Duration.ofMillis(50));
+        setupSuccessfulInitialization();
+        shortTimeoutWrapper.initialize().block();
+        assertTrue(shortTimeoutWrapper.isInitialized());
+
+        // Graceful close never completes -> the bounded wait must give up,
+        // then fall back to forceful close instead of blocking forever.
+        when(mockClient.closeGracefully()).thenReturn(Mono.never());
+
+        shortTimeoutWrapper.close();
+
+        assertFalse(shortTimeoutWrapper.isInitialized());
+        assertTrue(shortTimeoutWrapper.cachedTools.isEmpty());
+        verify(mockClient, times(1)).closeGracefully();
+        verify(mockClient, times(1)).close();
+    }
+
+    @Test
+    void testClose_TimeoutCancelsPendingGracefulClose() {
+        McpAsyncClientWrapper shortTimeoutWrapper =
+                new McpAsyncClientWrapper("test-async-client", mockClient, Duration.ofMillis(50));
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+        when(mockClient.closeGracefully())
+                .thenReturn(Mono.<Void>never().doOnCancel(() -> cancelled.set(true)));
+
+        shortTimeoutWrapper.close();
+
+        // The pending graceful-close chain must be cancelled rather than left dangling.
+        assertTrue(cancelled.get());
+        verify(mockClient, times(1)).close();
     }
 
     private void setupSuccessfulInitialization() {

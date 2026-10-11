@@ -17,6 +17,7 @@ package io.agentscope.core.tool.mcp;
 
 import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -42,16 +43,29 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
     private static final Logger logger = LoggerFactory.getLogger(McpAsyncClientWrapper.class);
 
     private final McpAsyncClient client;
+    private final Duration closeTimeout;
+
+    /**
+     * Constructs a new asynchronous MCP client wrapper using the default close timeout.
+     *
+     * @param name unique identifier for this client
+     * @param client the underlying async MCP client
+     */
+    public McpAsyncClientWrapper(String name, McpAsyncClient client) {
+        this(name, client, DEFAULT_CLOSE_TIMEOUT);
+    }
 
     /**
      * Constructs a new asynchronous MCP client wrapper.
      *
      * @param name unique identifier for this client
      * @param client the underlying async MCP client
+     * @param closeTimeout upper bound for the graceful close attempt in {@link #close()}
      */
-    public McpAsyncClientWrapper(String name, McpAsyncClient client) {
+    public McpAsyncClientWrapper(String name, McpAsyncClient client, Duration closeTimeout) {
         super(name);
         this.client = client;
+        this.closeTimeout = closeTimeout;
     }
 
     /**
@@ -175,22 +189,19 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
     /**
      * Closes the MCP client connection and releases all resources.
      *
-     * <p>This method attempts to close the client gracefully, falling back to forceful closure if
-     * graceful closure fails. This method is idempotent and can be called multiple times safely.
+     * <p>Graceful closure is attempted first and is bounded by the configured close timeout
+     * ({@link #DEFAULT_CLOSE_TIMEOUT} unless overridden), because {@code closeGracefully().block()}
+     * otherwise waits forever when the MCP server stops responding. On timeout or failure the
+     * graceful attempt is cancelled and a forceful close releases the underlying transport. This
+     * method is idempotent and can be called multiple times safely.
      */
     @Override
     public void close() {
         if (client != null) {
             logger.info("Closing MCP async client: {}", name);
-            try {
-                client.closeGracefully()
-                        .doOnSuccess(v -> logger.debug("MCP client '{}' closed", name))
-                        .doOnError(e -> logger.error("Error closing MCP client '{}'", name, e))
-                        .block();
-            } catch (Exception e) {
-                logger.error("Exception during MCP client close", e);
-                client.close();
-            }
+            // Mono.defer keeps the graceful close lazy: it runs on subscription, inside the
+            // bounded wait performed by closeWithTimeout.
+            closeWithTimeout(Mono.defer(client::closeGracefully), client::close, closeTimeout);
         }
         initialized = false;
         cachedTools.clear();
