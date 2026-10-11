@@ -75,7 +75,7 @@
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <testcontainers.version>1.21.4</testcontainers.version>
         <guava.version>33.7.2-jre</guava.version>
-        <google-genai.version>1.45.0</google-genai.version>
+        <google-genai.version>1.76.0</google-genai.version>
         <dashscope-sdk-java.version>2.23.1</dashscope-sdk-java.version>
         <bailian.version>2.14.4</bailian.version>
         <openai-java.version>4.78.0</openai-java.version>
