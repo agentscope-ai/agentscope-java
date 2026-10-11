@@ -72,6 +72,11 @@ public class DashScopeAutoConfiguration {
             builder.enableThinking(properties.getEnableThinking());
         }
 
+        if (properties.getMultimodalModelPatterns() != null
+                && !properties.getMultimodalModelPatterns().isEmpty()) {
+            builder.multimodalModelPatterns(properties.getMultimodalModelPatterns());
+        }
+
         customizerObjectProvider
                 .orderedStream()
                 .forEach(customizer -> customizer.customize(builder));

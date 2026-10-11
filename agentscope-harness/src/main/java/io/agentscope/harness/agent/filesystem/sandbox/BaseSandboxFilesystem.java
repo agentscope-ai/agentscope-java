@@ -255,32 +255,42 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 Base64.getEncoder()
                         .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
+        // The program must be delimited by real line feeds: inside a POSIX double-quoted
+        // string a literal backslash-n sequence reaches python3 unchanged, which collapses
+        // the program into a single line and fails with a SyntaxError (#2571).
+        String pythonProgram =
+                """
+                import sys, os, base64, json
+                payload = json.loads(base64.b64decode(sys.stdin.read().strip()).decode('utf-8'))
+                path, old, new = payload['path'], payload['old'], payload['new']
+                replace_all = payload.get('replace_all', False)
+                if not os.path.isfile(path):
+                    print(json.dumps({'error': 'file_not_found'}))
+                    sys.exit(0)
+                with open(path, 'rb') as f: text = f.read().decode('utf-8')
+                count = text.count(old)
+                if count == 0:
+                    print(json.dumps({'error': 'string_not_found'}))
+                    sys.exit(0)
+                if count > 1 and not replace_all:
+                    print(json.dumps({'error': 'multiple_occurrences', 'count': count}))
+                    sys.exit(0)
+                result = text.replace(old, new) if replace_all else text.replace(old, new, 1)
+                with open(path, 'wb') as f: f.write(result.encode('utf-8'))
+                print(json.dumps({'count': count}))
+                """;
+
         String cmd =
-                "python3 -c \"import sys, os, base64, json\\n"
-                    + "payload ="
-                    + " json.loads(base64.b64decode(sys.stdin.read().strip()).decode('utf-8'))\\n"
-                    + "path, old, new = payload['path'], payload['old'], payload['new']\\n"
-                    + "replace_all = payload.get('replace_all', False)\\n"
-                    + "if not os.path.isfile(path):\\n"
-                    + "    print(json.dumps({'error': 'file_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "with open(path, 'rb') as f: text = f.read().decode('utf-8')\\n"
-                    + "count = text.count(old)\\n"
-                    + "if count == 0:\\n"
-                    + "    print(json.dumps({'error': 'string_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "if count > 1 and not replace_all:\\n"
-                    + "    print(json.dumps({'error': 'multiple_occurrences', 'count': count}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "result = text.replace(old, new) if replace_all else text.replace(old, new,"
-                    + " 1)\\n"
-                    + "with open(path, 'wb') as f: f.write(result.encode('utf-8'))\\n"
-                    + "print(json.dumps({'count': count}))\\n"
-                    + "\" 2>&1 <<'__EDIT_EOF__'\n"
+                "python3 -c \""
+                        + pythonProgram
+                        + "\" 2>&1 <<'__EDIT_EOF__'\n"
                         + payloadB64
                         + "\n__EDIT_EOF__\n";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
+        if (!result.isSuccess()) {
+            return EditResult.fail(executeFailureMessage(result, "editing", filePath));
+        }
         String output = result.output() != null ? result.output().strip() : "";
 
         if (output.contains("\"error\"")) {

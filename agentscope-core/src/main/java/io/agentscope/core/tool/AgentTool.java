@@ -88,6 +88,21 @@ public interface AgentTool {
     }
 
     /**
+     * Gets deferred tool definition loading configuration for this tool.
+     *
+     * <p>Providers that support tool search (such as the OpenAI Responses {@code tool_search}
+     * server tool) can defer loading this tool's parameter schema until the model searches for
+     * it. Returning {@code null} means no explicit preference is provided, which leaves the tool
+     * eagerly loaded.
+     *
+     * @return deferred loading value ({@code true}/{@code false}) or {@code null} when
+     *     unspecified
+     */
+    default Boolean getDeferLoading() {
+        return null;
+    }
+
+    /**
      * Gets the optional output schema for this tool in JSON Schema format.
      *
      * <p>Most tools do not expose a structured output schema to models, so the default
@@ -109,6 +124,23 @@ public interface AgentTool {
      * @return {@code true} if the tool is read-only; {@code false} by default
      */
     default boolean isReadOnly() {
+        return false;
+    }
+
+    /**
+     * Whether this tool's result should be returned directly to the caller,
+     * skipping the next reasoning iteration. Defaults to {@code false}.
+     *
+     * <p>The flag applies wherever the tool's successful result is produced: framework-executed
+     * tools and results supplied by the caller when resuming after {@code TOOL_SUSPENDED}
+     * (e.g. {@code externalTool = true} tools). A batch resolved across multiple resumes, or
+     * mixing externally supplied and framework-executed results, is always fed back to the
+     * model.
+     *
+     * <p>Since the successful result becomes the turn's final answer, ensure it always
+     * produces presentable content blocks — never an empty output list.
+     */
+    default boolean isReturnDirect() {
         return false;
     }
 

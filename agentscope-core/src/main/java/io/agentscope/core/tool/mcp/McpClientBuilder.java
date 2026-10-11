@@ -104,6 +104,7 @@ public class McpClientBuilder {
     private Function<ElicitRequest, Mono<ElicitResult>> asyncElicitationHandler;
     private Function<ElicitRequest, ElicitResult> syncElicitationHandler;
     private List<String> protocolVersions;
+    private boolean propagateMeta = true;
 
     private McpClientBuilder(String name) {
         this.name = name;
@@ -462,6 +463,33 @@ public class McpClientBuilder {
     }
 
     /**
+     * Configures whether request metadata is propagated to this MCP server.
+     *
+     * <p>By default, entries registered under {@link McpMeta} in the runtime context plus the
+     * framework tool-call id are sent as the {@code meta} field of every tool call request. For
+     * MCP servers that are not fully trusted (e.g. external third-party services), disable the
+     * propagation so that internal metadata such as trace ids or callback URLs never leaves the
+     * process.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * McpClientWrapper external = McpClientBuilder.create("external-mcp")
+     *         .propagateMeta(false)
+     *         .sseTransport("https://mcp.example.com/sse")
+     *         .buildAsync()
+     *         .block();
+     * }</pre>
+     *
+     * @param propagateMeta true to propagate metadata (default), false to omit the {@code meta}
+     *     field entirely from tool call requests
+     * @return this builder
+     */
+    public McpClientBuilder propagateMeta(boolean propagateMeta) {
+        this.propagateMeta = propagateMeta;
+        return this;
+    }
+
+    /**
      * Builds an asynchronous MCP client wrapper.
      *
      * @return Mono emitting the async client wrapper
@@ -500,7 +528,9 @@ public class McpClientBuilder {
 
                     McpAsyncClient mcpClient = clientBuilder.build();
 
-                    return new McpAsyncClientWrapper(name, mcpClient);
+                    McpAsyncClientWrapper wrapper = new McpAsyncClientWrapper(name, mcpClient);
+                    wrapper.setPropagateMeta(propagateMeta);
+                    return wrapper;
                 });
     }
 
@@ -540,7 +570,9 @@ public class McpClientBuilder {
 
         McpSyncClient mcpClient = clientBuilder.build();
 
-        return new McpSyncClientWrapper(name, mcpClient);
+        McpSyncClientWrapper wrapper = new McpSyncClientWrapper(name, mcpClient);
+        wrapper.setPropagateMeta(propagateMeta);
+        return wrapper;
     }
 
     /**

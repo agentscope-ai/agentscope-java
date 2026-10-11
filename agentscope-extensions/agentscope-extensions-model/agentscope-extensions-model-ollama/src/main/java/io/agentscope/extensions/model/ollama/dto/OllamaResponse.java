@@ -56,6 +56,10 @@ public class OllamaResponse {
     @JsonProperty("prompt_eval_count")
     private Integer promptEvalCount;
 
+    /** Number of prompt tokens read from Ollama's prompt cache. */
+    @JsonProperty("prompt_eval_cached_count")
+    private Integer promptEvalCachedCount;
+
     /** Time spent evaluating the prompt. */
     @JsonProperty("prompt_eval_duration")
     private Long promptEvalDuration;
@@ -136,6 +140,14 @@ public class OllamaResponse {
 
     public Integer getPromptEvalCount() {
         return promptEvalCount;
+    }
+
+    public Integer getPromptEvalCachedCount() {
+        return promptEvalCachedCount;
+    }
+
+    public void setPromptEvalCachedCount(Integer promptEvalCachedCount) {
+        this.promptEvalCachedCount = promptEvalCachedCount;
     }
 
     public void setPromptEvalCount(Integer promptEvalCount) {

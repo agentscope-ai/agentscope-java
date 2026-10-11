@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JacksonJsonCodec;
@@ -209,6 +210,33 @@ class OllamaMessageConverterTest {
         assertNotNull(ollamaMsg.getToolCalls());
         assertEquals(1, ollamaMsg.getToolCalls().size());
         assertEquals("search", ollamaMsg.getToolCalls().get(0).getFunction().getName());
+    }
+
+    @Test
+    @DisplayName("Should preserve assistant ThinkingBlock with tool calls")
+    void testConvertAssistantMessageWithThinkingAndToolUse() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                Arrays.asList(
+                                        ThinkingBlock.builder()
+                                                .thinking("I need current weather data.")
+                                                .build(),
+                                        new ToolUseBlock(
+                                                "call-789",
+                                                "get_weather",
+                                                Map.of("city", "Tokyo"),
+                                                null)))
+                        .build();
+
+        OllamaMessage ollamaMsg = converter.convertMessage(msg);
+
+        assertNotNull(ollamaMsg);
+        assertEquals("assistant", ollamaMsg.getRole());
+        assertEquals("I need current weather data.", ollamaMsg.getThinking());
+        assertNotNull(ollamaMsg.getToolCalls());
+        assertEquals("get_weather", ollamaMsg.getToolCalls().get(0).getFunction().getName());
     }
 
     @Test

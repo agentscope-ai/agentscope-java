@@ -81,9 +81,10 @@ public final class MessageMetadataKeys {
     /**
      * Metadata key for chat usage statistics.
      *
-     * <p>Contains token usage information (input tokens, output tokens, and time)
-     * accumulated during model generation. This allows users to track token consumption
-     * for cost estimation and usage monitoring.
+     * <p>Contains token usage information (input tokens, output tokens, cached tokens, cache
+     * creation tokens, reasoning tokens, tool-use prompt tokens, and time) accumulated during
+     * model generation. This allows users to track token consumption for cost estimation and usage
+     * monitoring.
      *
      * <p><b>Type:</b> {@link io.agentscope.core.model.ChatUsage}
      * <p><b>Example:</b>
@@ -93,6 +94,10 @@ public final class MessageMetadataKeys {
      * if (usage != null) {
      *     System.out.println("Input tokens: " + usage.getInputTokens());
      *     System.out.println("Output tokens: " + usage.getOutputTokens());
+     *     System.out.println("Cached tokens: " + usage.getCachedTokens());
+     *     System.out.println("Cache creation tokens: " + usage.getCacheCreationTokens());
+     *     System.out.println("Reasoning tokens: " + usage.getReasoningTokens());
+     *     System.out.println("Tool-use prompt tokens: " + usage.getToolUsePromptTokens());
      *     System.out.println("Total tokens: " + usage.getTotalTokens());
      * }
      * }</pre>
@@ -118,10 +123,9 @@ public final class MessageMetadataKeys {
      * Metadata key to explicitly mark a message for prompt caching or non-caching.
      *
      * <p>When set to {@code true}, the formatter adds <code>cache_control:
-     * {"type": "ephemeral"}</code> to this message during formatting, unless the message already
-     * carries a custom <code>cache_control</code> value (e.g. with additional attributes such as
-     * <code>ttl</code>), in which case it is left untouched. When set to {@code false}, the
-     * message is explicitly excluded from caching: no <code>cache_control</code> is emitted for it,
+     * {"type": "ephemeral"}</code> to this message's final content block during formatting. When
+     * set to {@code false}, the message is explicitly excluded from caching: no
+     * <code>cache_control</code> is emitted for it,
      * and the automatic cache control strategy configured via
      * {@link io.agentscope.core.model.GenerateOptions#getCacheControl()} skips it.
      *
@@ -141,4 +145,12 @@ public final class MessageMetadataKeys {
      * }</pre>
      */
     public static final String CACHE_CONTROL = "_cache_control";
+
+    /**
+     * Metadata key marking an assistant message synthesized by the {@code returnDirect}
+     * tool path (the tool result presented as the turn's final answer).
+     *
+     * <p><b>Type:</b> Boolean
+     */
+    public static final String TOOL_RETURN_DIRECT = "_tool_return_direct";
 }

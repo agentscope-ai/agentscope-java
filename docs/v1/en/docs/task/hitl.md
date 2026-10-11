@@ -1,5 +1,6 @@
 ---
 title: Human-in-the-Loop
+zh_link: /v1/zh/docs/task/hitl
 ---
 
 Human-in-the-Loop lets you insert human review checkpoints during agent execution. When the agent is about to call tools, you can pause for user confirmation before proceeding.

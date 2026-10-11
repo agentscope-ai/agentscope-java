@@ -41,6 +41,7 @@ import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -292,6 +293,77 @@ class DashScopeHttpClientTest {
         // Text-only kimi models
         assertFalse(DashScopeHttpClient.isMultimodalModel("kimi-k2-thinking"));
         assertFalse(DashScopeHttpClient.isMultimodalModel("Moonshot-Kimi-K2-Instruct"));
+    }
+
+    // ========== User-Extensible Multimodal Model Patterns ==========
+
+    @Test
+    void testUserMultimodalPatternsExtendDetection() {
+        // deepseek-v4.1 is not covered by the built-in whitelist
+        assertFalse(DashScopeHttpClient.isMultimodalModel("deepseek-v4.1"));
+        assertFalse(client.requiresMultimodalApi("deepseek-v4.1", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint("deepseek-v4.1", EndpointType.AUTO));
+
+        DashScopeHttpClient extended =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .multimodalModelPatterns(List.of("deepseek-v4"))
+                        .build();
+
+        assertTrue(extended.requiresMultimodalApi("deepseek-v4.1", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                extended.selectEndpoint("deepseek-v4.1", EndpointType.AUTO));
+        // Explicit TEXT still wins over user patterns
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                extended.selectEndpoint("deepseek-v4.1", EndpointType.TEXT));
+    }
+
+    @Test
+    void testUserMultimodalPatternsAreCaseInsensitiveAndTrimmed() {
+        DashScopeHttpClient extended =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        // List.of rejects null, so use Arrays.asList to cover a null entry
+                        .multimodalModelPatterns(Arrays.asList(" DeepSeek-V4 ", "", null))
+                        .build();
+
+        assertTrue(extended.requiresMultimodalApi("deepseek-v4.1", EndpointType.AUTO));
+        assertTrue(extended.requiresMultimodalApi("DeepSeek-V4.1-max", EndpointType.AUTO));
+        // Patterns are substrings: "deepseek-v4" also matches prefixed model ids
+        assertTrue(extended.requiresMultimodalApi("dashscope:deepseek-v4.1", EndpointType.AUTO));
+        // Non-matching model still falls back to text
+        assertFalse(extended.requiresMultimodalApi("qwen-plus", EndpointType.AUTO));
+    }
+
+    @Test
+    void testUserMultimodalPatternsNullAndEmptyNoEffect() {
+        DashScopeHttpClient noPatterns =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .multimodalModelPatterns(null)
+                        .build();
+        DashScopeHttpClient emptyPatterns =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .multimodalModelPatterns(List.of())
+                        .build();
+
+        for (DashScopeHttpClient c : List.of(noPatterns, emptyPatterns)) {
+            assertFalse(c.requiresMultimodalApi("deepseek-v4.1", EndpointType.AUTO));
+            assertEquals(
+                    DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                    c.selectEndpoint("deepseek-v4.1", EndpointType.AUTO));
+            // Built-in detection is unaffected
+            assertTrue(c.requiresMultimodalApi("qwen-vl-max", EndpointType.AUTO));
+        }
     }
 
     @Test
@@ -795,6 +867,31 @@ class DashScopeHttpClientTest {
                 DashScopeHttpClient.TEXT_GENERATION_ENDPOINT + "?custom=custom-value",
                 recorded.getPath());
         assertTrue(recorded.getBody().readUtf8().contains("\"custom\":\"custom-value\""));
+    }
+
+    @Test
+    void testAdditionalBodyParamsOverrideReasoningEffort() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+        request.getParameters().setReasoningEffort("high");
+
+        Map<String, Object> additionalBodyParams = new HashMap<>();
+        additionalBodyParams.put("reasoning_effort", "low");
+
+        client.call(request, null, additionalBodyParams, null);
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+
+        DashScopeRequest dashScopeRequest =
+                JsonUtils.getJsonCodec().fromJson(body, DashScopeRequest.class);
+        assertNotNull(dashScopeRequest.getParameters());
+        assertEquals("low", dashScopeRequest.getParameters().getReasoningEffort());
     }
 
     // ==================== DashScopeHttpException Tests ====================

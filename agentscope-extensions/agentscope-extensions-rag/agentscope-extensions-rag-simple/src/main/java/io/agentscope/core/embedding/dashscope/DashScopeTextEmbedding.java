@@ -29,6 +29,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * DashScope Text Embedding Model implementation.
@@ -183,6 +184,7 @@ public class DashScopeTextEmbedding implements EmbeddingModel {
                                                 "dashscope");
                                     }
                                 })
+                        .subscribeOn(Schedulers.boundedElastic())
                         .onErrorMap(
                                 e -> {
                                     if (e instanceof EmbeddingException) {

@@ -33,6 +33,9 @@ import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
@@ -140,6 +143,11 @@ public class RemoteFilesystem implements AbstractFilesystem {
         }
         List<String> frozen = List.copyOf(namespace);
         return rc -> frozen;
+    }
+
+    @Override
+    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
+        return new io.agentscope.harness.agent.session.StoreSessionStorage(store, getNamespace(rc));
     }
 
     private List<String> getNamespace(RuntimeContext rc) {
@@ -503,9 +511,15 @@ public class RemoteFilesystem implements AbstractFilesystem {
             String contentStr;
             String encoding;
             try {
-                contentStr = new String(content, StandardCharsets.UTF_8);
+                contentStr =
+                        StandardCharsets.UTF_8
+                                .newDecoder()
+                                .onMalformedInput(CodingErrorAction.REPORT)
+                                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                                .decode(ByteBuffer.wrap(content))
+                                .toString();
                 encoding = "utf-8";
-            } catch (Exception e) {
+            } catch (CharacterCodingException e) {
                 contentStr = Base64.getEncoder().encodeToString(content);
                 encoding = "base64";
             }

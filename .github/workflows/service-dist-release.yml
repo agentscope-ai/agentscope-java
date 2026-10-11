@@ -1,0 +1,137 @@
+name: AgentScope Service distribution release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing main release tag (for example v2.1.0-BETA1)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: service-dist-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: ${{ vars.SERVICE_IMAGE_REPOSITORY || 'sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope' }}
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+      registry: ${{ steps.source.outputs.registry }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - name: Check reviewed source and version
+        id: source
+        run: |
+          [[ "$RELEASE_TAG" == v* && "$RELEASE_TAG" != */* ]]
+          version="${RELEASE_TAG#v}"
+          python3 agentscope-service/release/release.py check-tag --version "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "registry=${IMAGE_REPOSITORY%%/*}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agentscope-service/service-controlplane/go.mod
+          cache-dependency-path: agentscope-service/service-controlplane/go.sum
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'PyYAML>=6,<7'
+      - name: Validate packaging and CLI source
+        run: |
+          python agentscope-service/release/release.py hygiene
+          python -m unittest discover -s agentscope-service/release/tests
+          cd agentscope-service/service-controlplane
+          go test ./cmd/as ./cmd/agentscope-runtime-host
+      - name: Build distribution archives
+        env:
+          SERVICE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          python agentscope-service/release/release.py package --distributions-only \
+            --version "$SERVICE_VERSION" --repository "$IMAGE_REPOSITORY"
+          cd "agentscope-service/release/dist/$SERVICE_VERSION"
+          sha256sum -c SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: service-distributions
+          path: agentscope-service/release/dist/${{ steps.source.outputs.version }}/
+          if-no-files-found: error
+
+  images:
+    needs: package
+    runs-on: ubuntu-latest
+    env:
+      SERVICE_VERSION: ${{ needs.package.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - name: Check source and registry credentials
+        env:
+          REGISTRY_USER: ${{ secrets.SERVICE_REGISTRY_USER }}
+          REGISTRY_TOKEN: ${{ secrets.SERVICE_REGISTRY_TOKEN }}
+        run: |
+          python3 agentscope-service/release/release.py check-tag --version "$SERVICE_VERSION"
+          if [[ -z "$REGISTRY_USER" || -z "$REGISTRY_TOKEN" ]]; then
+            echo 'Configure SERVICE_REGISTRY_USER and SERVICE_REGISTRY_TOKEN repository secrets.' >&2
+            exit 1
+          fi
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ needs.package.outputs.registry }}
+          username: ${{ secrets.SERVICE_REGISTRY_USER }}
+          password: ${{ secrets.SERVICE_REGISTRY_TOKEN }}
+      - name: Build and push four multi-platform images
+        run: |
+          python3 agentscope-service/release/release.py images \
+            --version "$SERVICE_VERSION" --repository "$IMAGE_REPOSITORY" \
+            --platforms linux/amd64,linux/arm64 --push --skip-existing
+      - uses: actions/upload-artifact@v4
+        with:
+          name: service-image-metadata
+          path: |
+            agentscope-service/release/dist/${{ needs.package.outputs.version }}/image-*.json
+            agentscope-service/release/dist/${{ needs.package.outputs.version }}/images.json
+          if-no-files-found: error
+
+  publish:
+    needs: [package, images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SERVICE_VERSION: ${{ needs.package.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: service-distributions
+          path: agentscope-service/release/dist/${{ needs.package.outputs.version }}/
+      - uses: actions/download-artifact@v4
+        with:
+          name: service-image-metadata
+          path: agentscope-service/release/dist/${{ needs.package.outputs.version }}/
+      - name: Upload assets, create Go tag and publish GitHub Release
+        run: python3 agentscope-service/release/release.py publish-github --version "$SERVICE_VERSION"

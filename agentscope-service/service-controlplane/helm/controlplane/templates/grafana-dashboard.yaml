@@ -1,0 +1,14 @@
+{{- if .Values.metrics.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: controlplane
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    grafana_dashboard: "1"
+data:
+  controlplane-overview.json: |-
+    {{ .Files.Get "dashboards/controlplane-overview.json" | nindent 4 }}
+{{- end }}

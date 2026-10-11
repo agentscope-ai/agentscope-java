@@ -1,5 +1,6 @@
 ---
 title: Agent
+zh_link: /v1/zh/docs/quickstart/agent
 ---
 
 AgentScope provides an out-of-the-box ReAct agent `ReActAgent` for developers.
