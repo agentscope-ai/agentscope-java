@@ -2421,10 +2421,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 if (r.isConfirmed()) {
                     replacements.put(target.getId(), target.withState(ToolCallState.ALLOWED));
                     if (r.getRules() != null) {
+                        List<PermissionRule> accepted = new ArrayList<>();
                         for (PermissionRule rule : r.getRules()) {
                             if (rule != null) {
                                 permissionEngine.addRule(rule);
+                                accepted.add(rule);
                             }
+                        }
+                        // Persist the accepted rules into the session state so
+                        // they survive the next call boundary: with a state
+                        // store configured, every call rebuilds the engine from
+                        // the stored permission context, so engine-only
+                        // additions are lost (issue #3369).
+                        if (!accepted.isEmpty()) {
+                            state.setPermissionContext(
+                                    state.getPermissionContext().withAddedRules(accepted));
                         }
                     }
                 } else {
