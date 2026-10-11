@@ -176,7 +176,7 @@ This requires the caller to pass `userId="alice"` in `RuntimeContext`.
 `workspace/<userId>/skills/` is a **logical path**, not necessarily "a directory on the local disk." Skill files are read and written through the `AbstractFilesystem` abstraction, and where they physically land depends on the [filesystem mode](/v2/en/docs/harness/filesystem) you configure — so per-user skill isolation is decoupled from the storage backend:
 
 - **Local + shell** — literally `workspace/alice/skills/...` on the host disk.
-- **Shared store (remote filesystem)** — the `skills/` prefix is routed to the KV store; per-user isolation shows up as the namespace key `agents/<agentId>/users/alice/skills/...`, consistent across replicas, and edits from an admin console take effect on the next reasoning step.
+- **Shared store (remote filesystem)** — the `skills/` prefix is routed to the KV store; per-user isolation shows up as the namespace key `agents/<agentId>/users/alice/skills/...`, consistent across replicas, and edits from an admin console take effect on the next call.
 - **Sandbox (sandbox filesystem)** — the host-side user directory is hydrated into the container's `/workspace` via workspace projection at sandbox start, so the agent reads the same copy inside the sandbox.
 
 Whichever mode you run, `<userId>/skills/` overrides the shared version at the same priority. For the per-mode isolation keys, physical representation, and the role of `userId`, see [Filesystem](/v2/en/docs/harness/filesystem#how-multi-user-isolation-works).
@@ -203,11 +203,11 @@ Example: the team Git has a generic `code-reviewer`; the project's `workspace/sk
 | `skillRepository(repo)` | Append a marketplace; callable multiple times |
 | `skillRepositories(list)` | Replace all marketplaces at once |
 | `projectGlobalSkillsDir(path)` | Enable the project-global dir; skipped if missing |
-| `disableDynamicSkills()` | Turn off "re-merge before each reasoning"; merge once at build |
+| `disableDynamicSkills()` | Turn off "re-merge before each call"; merge once at build |
 
 Subagents inherit the parent's marketplaces and project-global dir automatically.
 
-When to use `disableDynamicSkills()`: one-shot tasks; or slow marketplace stores you don't want to refetch per turn. Usually don't touch it.
+When to use `disableDynamicSkills()`: one-shot tasks; or slow marketplace stores you don't want to refetch per call. Usually don't touch it.
 
 ## Self-learning loop (optional)
 
@@ -274,7 +274,7 @@ agent.promoteSkill("notes-taker", "alice")                   // manually promote
 
 ## How the agent reads and runs skills
 
-When the agent reasons, it sees an `<available_skills>` block in the system prompt listing every skill currently in scope:
+On each call, harness builds an `<available_skills>` block in the system prompt listing every skill currently in scope. The block is built once per call (during PreCall, seeded together with the system message) and then stays visible as-is across every reasoning step of that call — it is not rebuilt per step:
 
 ```xml
 <available_skills>
@@ -322,7 +322,7 @@ So the agent's shell call is always `execute("python3 <files-root>/scripts/foo.p
 
 ### Where marketplace files actually live
 
-Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each reasoning step:
+Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each call (during PreCall, in the same `onSystemPrompt` pass that builds `<available_skills>`):
 
 - Per-file SHA-256 dedup — only changed files are rewritten
 - Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass
@@ -347,7 +347,7 @@ Two classes of skills can run in the container, with different staging points:
 
 ### Step 1: materialize marketplace skills to the host
 
-Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each reasoning step, `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<source>/<name>/`:
+Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each call (during PreCall), `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<source>/<name>/`:
 
 - **Per-file SHA-256 dedup** — only changed files are rewritten; unchanged ones are skipped.
 - **Orphan cleanup** — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass.
@@ -417,4 +417,4 @@ A common point of confusion: **reading** a skill (`load_skill_through_path` fetc
 
 - [Workspace](/v2/en/docs/harness/workspace) — overall layout of `skills/`
 - [Filesystem](/v2/en/docs/harness/filesystem) — multi-tenant isolation and per-user bucketing
-- [Architecture](/v2/en/docs/harness/architecture) — how the skill set is rebuilt each reasoning step
+- [Architecture](/v2/en/docs/harness/architecture) — how the skill set is rebuilt each call

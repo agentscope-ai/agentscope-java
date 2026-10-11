@@ -176,7 +176,7 @@ workspace/
 这里的 `workspace/<userId>/skills/` 是一个**逻辑路径**，不等于"一定是本机磁盘上的目录"。技能文件的读写统一走 `AbstractFilesystem` 抽象，实际落在哪儿由你配的[文件系统模式](/v2/zh/docs/harness/filesystem)决定，所以"按用户隔离 skill"这个能力跟具体存储后端解耦：
 
 - **本机 + shell** —— 就是宿主磁盘上的 `workspace/alice/skills/...`；
-- **共享存储（remote filesystem）** —— `skills/` 前缀被路由到 KV，用户隔离体现为命名空间键 `agents/<agentId>/users/alice/skills/...`，多副本之间一致；管理台改完下一轮推理即可生效；
+- **共享存储（remote filesystem）** —— `skills/` 前缀被路由到 KV，用户隔离体现为命名空间键 `agents/<agentId>/users/alice/skills/...`，多副本之间一致；管理台改完下一次 call 即可生效；
 - **沙箱（sandbox filesystem）** —— 宿主侧的用户目录在沙箱启动时通过 workspace projection 注入容器的 `/workspace`，agent 在沙箱里读到的是同一份。
 
 不管跑在哪种模式，`<userId>/skills/` 都按同样的优先级覆盖共用版。各模式下的隔离键、物理表现以及 `userId` 的作用，详见[文件系统](/v2/zh/docs/harness/filesystem#多用户隔离怎么实现)。
@@ -203,11 +203,11 @@ workspace/
 | `skillRepository(repo)` | 追加一个市场；可重复调用 |
 | `skillRepositories(list)` | 一次性替换所有市场 |
 | `projectGlobalSkillsDir(path)` | 启用项目全局目录；目录不存在则跳过 |
-| `disableDynamicSkills()` | 关掉"每次推理前重新合并"，改成 build 时合并一次 |
+| `disableDynamicSkills()` | 关掉"每次 call 前重新合并"，改成 build 时合并一次 |
 
 子 agent 自动继承父的市场列表和项目全局目录，不用重复配。
 
-什么时候用 `disableDynamicSkills()`：单次任务，跑完就退出；或市场后端慢、不想每轮拉。平时不用动这个开关。
+什么时候用 `disableDynamicSkills()`：单次任务，跑完就退出；或市场后端慢、不想每次 call 都重新拉。平时不用动这个开关。
 
 ## 自学习闭环（可选）
 
@@ -274,7 +274,7 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 ## Agent 是怎么读取和执行 skill 的
 
-每轮推理时，agent 会在 system prompt 里看到一个 `<available_skills>` 块，列出当前可见的所有 skill：
+agent 每次 call 时，harness 会在 system prompt 里构建一个 `<available_skills>` 块，列出当前可见的所有 skill。这个块每次 call 只构建一次（在 PreCall 阶段，随 system message 一起 seed），随后在该 call 的每一轮推理里都原样可见——不是每轮重新构建：
 
 ```xml
 <available_skills>
@@ -322,10 +322,10 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 ### 市场 skill 文件实际落在哪儿
 
-市场 skill 的资源最初只在内存里。要让 shell 能跑它们，harness 在每轮推理前把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`：
+市场 skill 的资源最初只在内存里。要让 shell 能跑它们，harness 在每次 call 前（PreCall 阶段，与 `<available_skills>` 同一次 `onSystemPrompt`）把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`：
 
 - 文件级 SHA-256 去重，只重写变化过的文件
-- 已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录，会在同一轮顺手清掉
+- 已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录，会在同一次物化里顺手清掉
 - Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱
 
 工作区 skill（Layer 3 / Layer 4）不需要 stage——它们本来就在工作区目录里。
@@ -347,10 +347,10 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 ### 第一步：把市场 skill 物化到宿主
 
-市场 skill 的资源拿到时只是内存里的字节，shell 没法直接执行。每轮推理前，`MarketplaceStager` 把它们写到宿主的 `<wsRoot>/.skills-cache/<source>/<name>/`：
+市场 skill 的资源拿到时只是内存里的字节，shell 没法直接执行。每次 call 前（PreCall 阶段），`MarketplaceStager` 把它们写到宿主的 `<wsRoot>/.skills-cache/<source>/<name>/`：
 
 - **文件级 SHA-256 去重** —— 只重写变化过的文件，没变的跳过；
-- **孤儿清理** —— 已下架的 skill、或从 builder 里移除的整个仓库，留下的目录在同一轮顺手删掉；
+- **孤儿清理** —— 已下架的 skill、或从 builder 里移除的整个仓库，留下的目录在同一次物化里顺手删掉；
 - **恢复执行位** —— 资源在入库时被转成字符串，POSIX 权限丢了，所以 stager 用启发式补回 `+x`：文件开头是 shebang（`#!`），或后缀是已知脚本类型（`.sh`/`.bash`/`.py`/`.rb`/`.pl`/`.js`/`.mjs`），就加上可执行位（按 `chmod +x` 的语义，只给本来有读权限的位加执行位）。纯静态资产（`.json`/`.md`/`.txt`）保持 644。
 
 工作区 skill（Layer 3 / Layer 4）跳过这一步——它们本来就在工作区目录里。
@@ -417,4 +417,4 @@ execute("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <目标�
 
 - [工作区](/v2/zh/docs/harness/workspace) — `skills/` 目录的整体布局
 - [文件系统](/v2/zh/docs/harness/filesystem) — 多租户隔离与按用户切目录
-- [架构](/v2/zh/docs/harness/architecture) — skill 集合是怎么每轮重新合成的
+- [架构](/v2/zh/docs/harness/architecture) — skill 集合是怎么每次 call 重新合成的
