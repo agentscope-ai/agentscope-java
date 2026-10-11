@@ -237,18 +237,18 @@ public class AguiAgentAdapter {
                 () -> finishRun(state));
     }
 
+    private Flux<AgentEvent> withTextOutputDisposition(Flux<AgentEvent> events) {
+        return config.isTextOutputDispositionEnabled()
+                ? AgentEventStreams.withTextOutputDisposition(events)
+                : events;
+    }
+
     private Flux<AguiEvent> convertAgentEvents(Flux<AgentEvent> events, AguiStreamContext context) {
         return events
                 // Use concatMapIterable to preserve strict event ordering
                 .concatMapIterable(event -> agentEventConverterRegistry.convert(event, context))
                 .onErrorResume(
                         error -> Flux.concat(finishPendingEvents(context), Flux.error(error)));
-    }
-
-    private Flux<AgentEvent> withTextOutputDisposition(Flux<AgentEvent> events) {
-        return config.isTextOutputDispositionEnabled()
-                ? AgentEventStreams.withTextOutputDisposition(events)
-                : events;
     }
 
     private Flux<AguiEvent> finishPendingEvents(AguiStreamContext context) {

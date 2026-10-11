@@ -34,6 +34,7 @@ import java.util.Objects;
  *   <li>assistant - Messages from the AI assistant</li>
  *   <li>system - System instructions</li>
  *   <li>tool - Tool execution results</li>
+ *   <li>reasoning - Assistant reasoning or thinking content</li>
  * </ul>
  *
  * <p>The {@code content} field uses {@link MessageContent}, a type-safe sealed union
@@ -47,10 +48,11 @@ public class AguiMessage {
     private final MessageContent content;
     private final List<AguiToolCall> toolCalls;
     private final String toolCallId;
+    private final String error;
     private final String status;
 
     /**
-     * Creates a new AguiMessage.
+     * Creates a new AguiMessage without an error payload.
      *
      * @param id The unique message ID
      * @param role The message role (user, assistant, system, tool)
@@ -59,15 +61,48 @@ public class AguiMessage {
      * @param toolCallId Tool call ID for tool messages (optional)
      */
     public AguiMessage(
-            @JsonProperty("id") String id,
-            @JsonProperty("role") String role,
-            @JsonProperty("content") MessageContent content,
-            @JsonProperty("toolCalls") List<AguiToolCall> toolCalls,
-            @JsonProperty("toolCallId") String toolCallId) {
-        this(id, role, content, toolCalls, toolCallId, null);
+            String id,
+            String role,
+            MessageContent content,
+            List<AguiToolCall> toolCalls,
+            String toolCallId) {
+        this(id, role, content, toolCalls, toolCallId, null, null);
     }
 
-    /** Optional tool-result status extension; omitted values preserve legacy behavior. */
+    /**
+     * Creates a message with the legacy six-argument extension. Recognized tool-result state
+     * values are retained as {@code status}; other values are retained as {@code error} for
+     * compatibility with the AG-UI error extension.
+     */
+    public AguiMessage(
+            String id,
+            String role,
+            MessageContent content,
+            List<AguiToolCall> toolCalls,
+            String toolCallId,
+            String extension) {
+        this(
+                id,
+                role,
+                content,
+                toolCalls,
+                toolCallId,
+                isToolResultStatus(extension) ? null : extension,
+                isToolResultStatus(extension) ? extension : null);
+    }
+
+    /**
+     * Creates a new AguiMessage.
+     *
+     * @param id The unique message ID
+     * @param role The message role (user, assistant, system, tool, reasoning)
+     * @param content The message content (plain text or structured blocks), may be null
+     * @param toolCalls Tool calls for assistant messages (optional)
+     * @param toolCallId Tool call ID for tool messages (optional)
+     * @param error The error a frontend tool reported, per the AG-UI protocol's {@code error}
+     *     field on tool messages; may be null
+     * @param status Optional tool-result status extension; may be null
+     */
     @JsonCreator
     public AguiMessage(
             @JsonProperty("id") String id,
@@ -75,6 +110,7 @@ public class AguiMessage {
             @JsonProperty("content") MessageContent content,
             @JsonProperty("toolCalls") List<AguiToolCall> toolCalls,
             @JsonProperty("toolCallId") String toolCallId,
+            @JsonProperty("error") String error,
             @JsonProperty("status") String status) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.role = Objects.requireNonNull(role, "role cannot be null");
@@ -84,6 +120,7 @@ public class AguiMessage {
                         ? Collections.unmodifiableList(toolCalls)
                         : Collections.emptyList();
         this.toolCallId = toolCallId;
+        this.error = error;
         this.status = status;
     }
 
@@ -144,6 +181,31 @@ public class AguiMessage {
     }
 
     /**
+     * Creates a tool result message that reports a frontend tool failure.
+     *
+     * @param id The message ID
+     * @param toolCallId The ID of the tool call this is responding to
+     * @param content The tool result content as plain text
+     * @param error The error reported by the frontend tool
+     * @return A new tool message
+     */
+    public static AguiMessage toolMessage(
+            String id, String toolCallId, String content, String error) {
+        return new AguiMessage(id, "tool", wrapText(content), null, toolCallId, error, null);
+    }
+
+    /**
+     * Creates a reasoning message.
+     *
+     * @param id The message ID
+     * @param content The reasoning content as plain text
+     * @return A new reasoning message
+     */
+    public static AguiMessage reasoningMessage(String id, String content) {
+        return new AguiMessage(id, "reasoning", wrapText(content), null, null);
+    }
+
+    /**
      * Creates a message with plain text content, supporting a custom role, tool calls, and
      * tool call ID. This is the full-parameter convenience factory for text-based messages.
      *
@@ -189,6 +251,16 @@ public class AguiMessage {
         return text != null ? new MessageContent.Text(text) : null;
     }
 
+    private static boolean isToolResultStatus(String value) {
+        if (value == null) {
+            return false;
+        }
+        return switch (value.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "success", "error", "interrupted", "denied", "running", "suspended" -> true;
+            default -> false;
+        };
+    }
+
     /**
      * Get the message ID.
      *
@@ -201,7 +273,7 @@ public class AguiMessage {
     /**
      * Get the message role.
      *
-     * @return The role (user, assistant, system, tool)
+     * @return The role (user, assistant, system, tool, reasoning)
      */
     public String getRole() {
         return role;
@@ -258,6 +330,16 @@ public class AguiMessage {
         return toolCallId;
     }
 
+    /**
+     * Get the error a frontend tool reported, per the AG-UI protocol's {@code error} field.
+     *
+     * @return The error message, or null if no error was reported
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public String getError() {
+        return error;
+    }
+
     /** @return optional tool-result status, or null when omitted by the client */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public String getStatus() {
@@ -301,6 +383,15 @@ public class AguiMessage {
     }
 
     /**
+     * Check if this is a reasoning message.
+     *
+     * @return true if role is "reasoning"
+     */
+    public boolean isReasoningMessage() {
+        return "reasoning".equalsIgnoreCase(role);
+    }
+
+    /**
      * Check if this message has tool calls.
      *
      * @return true if tool calls are present
@@ -321,6 +412,8 @@ public class AguiMessage {
                 + toolCalls
                 + ", toolCallId='"
                 + toolCallId
+                + "', error='"
+                + error
                 + "', status='"
                 + status
                 + "'}";
@@ -336,11 +429,12 @@ public class AguiMessage {
                 && Objects.equals(content, that.content)
                 && Objects.equals(toolCalls, that.toolCalls)
                 && Objects.equals(toolCallId, that.toolCallId)
+                && Objects.equals(error, that.error)
                 && Objects.equals(status, that.status);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, role, content, toolCalls, toolCallId, status);
+        return Objects.hash(id, role, content, toolCalls, toolCallId, error, status);
     }
 }

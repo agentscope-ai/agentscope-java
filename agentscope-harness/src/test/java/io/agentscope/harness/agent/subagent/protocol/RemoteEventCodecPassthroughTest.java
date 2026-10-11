@@ -52,6 +52,7 @@ import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
@@ -131,6 +132,13 @@ class RemoteEventCodecPassthroughTest {
         events.put(
                 AgentEventType.TOOL_RESULT_START,
                 new ToolResultStartEvent("reply", "call-1", "read_file"));
+        events.put(
+                AgentEventType.TOOL_PROGRESS,
+                new ToolProgressEvent(
+                        "reply",
+                        "call-1",
+                        "read_file",
+                        TextBlock.builder().text("opened a").build()));
         events.put(
                 AgentEventType.TOOL_RESULT_TEXT_DELTA,
                 new ToolResultTextDeltaEvent("reply", "call-1", "read_file", "line one"));

@@ -26,8 +26,8 @@
 **/playwright-report
 agentscope-service/docs/test-reports
 agentscope-service/release/dist
-agentscope-service/aistio/bin
-agentscope-service/aistio/ui
+agentscope-service/service-controlplane/bin
+agentscope-service/service-controlplane/ui
 docs/_build
 **/*.ppt
 **/*.pptx

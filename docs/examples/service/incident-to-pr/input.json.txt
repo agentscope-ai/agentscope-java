@@ -1,0 +1,18 @@
+{
+  "title": "Repair INC-204 order query",
+  "input": {
+    "request": "Repair status filtering and pagination in the prepared exercise repository. Filter before pagination, preserve order and input data; keep all supplied tests and add boundary coverage. Create a reviewable PR; do not merge or deploy.",
+    "incident_id": "INC-204",
+    "repository": "REPLACE_WITH_EXERCISE_REPOSITORY",
+    "base_commit": "REPLACE_WITH_COMMIT_SHA",
+    "diagnosis": "The order query returns all rows regardless of status, page, or size.",
+    "acceptance": [
+      "status null or blank selects all rows",
+      "filter before pagination",
+      "page >= 1; size 1..100",
+      "out-of-range page returns empty list",
+      "preserve input order and input data"
+    ],
+    "test_command": "javac --release 17 -d out OrderQuery.java OrderQueryTest.java && java -cp out OrderQueryTest"
+  }
+}
