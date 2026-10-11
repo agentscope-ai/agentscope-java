@@ -21,22 +21,28 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolUseBlock;
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
+import reactor.test.scheduler.VirtualTimeScheduler;
 
 @DisplayName("Agent Runner Tests")
 class AgentRunnerTest {
@@ -157,15 +163,15 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
-        when(mockFlux.doFinally(any())).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(messages)).thenReturn(Flux.never());
 
         // When
         Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
 
         // Then
         assertNotNull(result);
+        verify(mockBuilder, times(0)).build();
+        result.subscribe();
         verify(mockBuilder, times(1)).build();
         verify(mockAgent, times(1)).streamEvents(messages);
     }
@@ -179,15 +185,15 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(messages)).thenReturn(Flux.never());
 
-        // First call to populate the cache
-        runner.streamEvents(messages, requestOptions);
+        // First subscription populates the cache.
+        runner.streamEvents(messages, requestOptions).subscribe();
 
         // When & Then
         assertThrows(
-                IllegalStateException.class, () -> runner.streamEvents(messages, requestOptions));
+                IllegalStateException.class,
+                () -> runner.streamEvents(messages, requestOptions).blockLast());
     }
 
     @Test
@@ -219,6 +225,178 @@ class AgentRunnerTest {
         // Try to stream again with the same taskId - should succeed since agent was removed
         Flux<AgentEvent> secondResult = runner.streamEvents(messages, requestOptions);
         assertNotNull(secondResult);
+        secondResult.blockLast();
+        verify(mockBuilder, times(2)).build();
+    }
+
+    @Test
+    @DisplayName("Should retain a paused agent until the confirmation response completes")
+    void testRetainAgentWhileWaitingForConfirmation() {
+        String taskId = UUID.randomUUID().toString();
+        requestOptions.setTaskId(taskId);
+        List<Msg> firstRequest = List.of(Msg.builder().textContent("Run the tool").build());
+        List<Msg> confirmation = List.of(Msg.builder().textContent("Confirmed").build());
+        when(mockAgent.streamEvents(firstRequest))
+                .thenReturn(
+                        Flux.just(
+                                new RequireUserConfirmEvent(
+                                        "reply-1",
+                                        List.of(
+                                                ToolUseBlock.builder()
+                                                        .id("tool-call-1")
+                                                        .name("delete_file")
+                                                        .input(Map.of("path", "report.txt"))
+                                                        .build()))));
+        when(mockAgent.streamEvents(confirmation)).thenReturn(Flux.empty());
+
+        runner.streamEvents(firstRequest, requestOptions).blockLast();
+        verify(mockBuilder, times(1)).build();
+
+        runner.streamEvents(confirmation, requestOptions).blockLast();
+        verify(mockAgent, times(1)).streamEvents(firstRequest);
+        verify(mockAgent, times(1)).streamEvents(confirmation);
+
+        when(mockAgent.streamEvents(firstRequest)).thenReturn(Flux.empty());
+        runner.streamEvents(firstRequest, requestOptions).blockLast();
+        verify(mockBuilder, times(2)).build();
+    }
+
+    @Test
+    @DisplayName("Should expire a paused agent and reject a stale resume")
+    void testExpirePausedAgentAndRejectStaleResume() {
+        VirtualTimeScheduler scheduler = VirtualTimeScheduler.getOrSet();
+        try {
+            runner = ReActAgentWithBuilderRunner.newInstance(mockBuilder, Duration.ofMinutes(30));
+            String taskId = UUID.randomUUID().toString();
+            requestOptions.setTaskId(taskId);
+            List<Msg> firstRequest = List.of(Msg.builder().textContent("Run the tool").build());
+            List<Msg> confirmation = List.of(Msg.builder().textContent("Confirmed").build());
+            when(mockAgent.streamEvents(firstRequest))
+                    .thenReturn(
+                            Flux.just(
+                                    new RequireUserConfirmEvent(
+                                            "reply-1",
+                                            List.of(
+                                                    ToolUseBlock.builder()
+                                                            .id("tool-call-1")
+                                                            .name("delete_file")
+                                                            .input(Map.of("path", "report.txt"))
+                                                            .build()))));
+
+            runner.streamEvents(firstRequest, requestOptions).blockLast();
+
+            scheduler.advanceTimeBy(Duration.ofMinutes(30));
+            verify(mockAgent).interrupt();
+            verify(mockAgent).close();
+            requestOptions.setResume(true);
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> runner.streamEvents(confirmation, requestOptions).blockLast());
+            verify(mockBuilder, times(1)).build();
+        } finally {
+            VirtualTimeScheduler.reset();
+        }
+    }
+
+    @Test
+    @DisplayName("Should give a resumed confirmation batch its own expiry")
+    void testResumeDoesNotExpireAtPreviousPauseDeadline() {
+        VirtualTimeScheduler scheduler = VirtualTimeScheduler.getOrSet();
+        try {
+            requestOptions.setTaskId(UUID.randomUUID().toString());
+            List<Msg> messages = List.of(Msg.builder().textContent("Continue").build());
+            RequireUserConfirmEvent request =
+                    new RequireUserConfirmEvent(
+                            "reply-1",
+                            List.of(
+                                    ToolUseBlock.builder()
+                                            .id("tool-1")
+                                            .name("delete_file")
+                                            .build()));
+            when(mockAgent.streamEvents(messages)).thenReturn(Flux.just(request));
+            runner.streamEvents(messages, requestOptions).blockLast();
+            scheduler.advanceTimeBy(Duration.ofMinutes(20));
+            requestOptions.setResume(true);
+            runner.streamEvents(messages, requestOptions).blockLast();
+            scheduler.advanceTimeBy(Duration.ofMinutes(10));
+            verify(mockAgent, never()).interrupt();
+            verify(mockAgent, never()).close();
+            scheduler.advanceTimeBy(Duration.ofMinutes(20));
+            verify(mockAgent).interrupt();
+            verify(mockAgent).close();
+            verify(mockBuilder).build();
+        } finally {
+            VirtualTimeScheduler.reset();
+        }
+    }
+
+    @Test
+    @DisplayName("Should cancel the expiry when a paused task is stopped")
+    void testStopPausedAgentCancelsExpiry() {
+        VirtualTimeScheduler scheduler = VirtualTimeScheduler.getOrSet();
+        try {
+            requestOptions.setTaskId(UUID.randomUUID().toString());
+            List<Msg> messages = List.of(Msg.builder().textContent("Run").build());
+            when(mockAgent.streamEvents(messages))
+                    .thenReturn(
+                            Flux.just(
+                                    new RequireUserConfirmEvent(
+                                            "reply-1",
+                                            List.of(
+                                                    ToolUseBlock.builder()
+                                                            .id("tool-1")
+                                                            .name("delete_file")
+                                                            .build()))));
+            runner.streamEvents(messages, requestOptions).blockLast();
+            runner.stop(requestOptions.getTaskId());
+            scheduler.advanceTimeBy(Duration.ofHours(1));
+            verify(mockAgent).interrupt();
+            verify(mockAgent).close();
+            requestOptions.setResume(true);
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> runner.streamEvents(messages, requestOptions).blockLast());
+            verify(mockBuilder).build();
+        } finally {
+            VirtualTimeScheduler.reset();
+        }
+    }
+
+    @Test
+    @DisplayName("Should allow resuming as soon as the confirmation event is emitted")
+    void testResumeImmediatelyAfterConfirmationEvent() {
+        String taskId = UUID.randomUUID().toString();
+        requestOptions.setTaskId(taskId);
+        List<Msg> firstRequest = List.of(Msg.builder().textContent("Run the tool").build());
+        List<Msg> confirmation = List.of(Msg.builder().textContent("Confirmed").build());
+        when(mockAgent.streamEvents(firstRequest))
+                .thenReturn(
+                        Flux.just(
+                                new RequireUserConfirmEvent(
+                                        "reply-1",
+                                        List.of(
+                                                ToolUseBlock.builder()
+                                                        .id("tool-call-1")
+                                                        .name("delete_file")
+                                                        .input(Map.of("path", "report.txt"))
+                                                        .build()))));
+        when(mockAgent.streamEvents(confirmation)).thenReturn(Flux.empty());
+        boolean[] resumed = {false};
+
+        runner.streamEvents(firstRequest, requestOptions)
+                .doOnNext(
+                        event -> {
+                            if (event instanceof RequireUserConfirmEvent) {
+                                runner.streamEvents(confirmation, requestOptions).blockLast();
+                                resumed[0] = true;
+                            }
+                        })
+                .blockLast();
+
+        assertTrue(resumed[0]);
+        verify(mockBuilder, times(1)).build();
+        verify(mockAgent, times(1)).streamEvents(firstRequest);
+        verify(mockAgent, times(1)).streamEvents(confirmation);
     }
 
     @Test
@@ -230,17 +408,17 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
-        when(mockFlux.doFinally(any())).thenReturn(mockFlux);
-        runner.streamEvents(messages, requestOptions);
+        when(mockAgent.streamEvents(messages)).thenReturn(Flux.never());
+        runner.streamEvents(messages, requestOptions).subscribe();
 
         runner.stop(taskId);
         verify(mockAgent, times(1)).interrupt();
+        verify(mockAgent, times(1)).close();
 
         // Try to stream again with the same taskId - should succeed since agent was removed
         Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
         assertNotNull(result);
+        result.subscribe();
     }
 
     @Test
