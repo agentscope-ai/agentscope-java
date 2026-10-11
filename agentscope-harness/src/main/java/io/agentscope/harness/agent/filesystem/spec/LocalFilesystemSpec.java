@@ -276,17 +276,6 @@ public class LocalFilesystemSpec {
         return this;
     }
 
-    /**
-     * Builds the effective filesystem as an {@link OverlayFilesystem} with the agent
-     * {@code workspace} as the upper (read-write, shell host) layer and the user
-     * {@link #project(Path)} as the read-only lower layer. Writes always land in
-     * {@code workspace}; reads check {@code workspace} first then fall back to {@code project},
-     * giving copy-on-write semantics for files that originate in the project tree.
-     *
-     * @param workspace agent workspace root (becomes overlay upper)
-     * @param localNamespaceFactory optional namespace factory for per-user/session folder scoping
-     * @return an {@link OverlayFilesystem} wired with the options in this spec
-     */
     /** Project root explicitly configured, or {@code null} to fall back to {@code ${user.dir}}. */
     public Path getProject() {
         return project;
@@ -315,6 +304,17 @@ public class LocalFilesystemSpec {
         return List.copyOf(additionalRoots);
     }
 
+    /**
+     * Builds the effective filesystem as an {@link OverlayFilesystem} with the agent
+     * {@code workspace} as the upper (read-write, shell host) layer and the user
+     * {@link #project(Path)} as the read-only lower layer. Writes always land in
+     * {@code workspace}; reads check {@code workspace} first then fall back to {@code project},
+     * giving copy-on-write semantics for files that originate in the project tree.
+     *
+     * @param workspace agent workspace root (becomes overlay upper)
+     * @param localNamespaceFactory optional namespace factory for per-user/session folder scoping
+     * @return an {@link OverlayFilesystem} wired with the options in this spec
+     */
     public AbstractFilesystem toFilesystem(Path workspace, NamespaceFactory localNamespaceFactory) {
         Path effectiveProject =
                 project != null ? project : Paths.get(System.getProperty("user.dir"));
