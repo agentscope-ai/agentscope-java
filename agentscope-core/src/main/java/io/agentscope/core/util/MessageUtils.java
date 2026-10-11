@@ -124,9 +124,10 @@ public final class MessageUtils {
     /**
      * Returns the IDs of server tool results contained in the supplied message.
      *
-     * <p>Only provider-produced results are included. Local tool results normally live in
-     * TOOL-role messages, so a local result that unexpectedly appears in an assistant message
-     * must not mark a matching server tool call as complete.
+     * <p>Only provider-produced terminal results are included. Local tool results normally live
+     * in TOOL-role messages, so a local result that unexpectedly appears in an assistant message
+     * must not mark a matching server tool call as complete. A running provider result is also
+     * excluded because it represents an intermediate partial result, not a completed tool call.
      *
      * @param message the message to inspect
      * @return the inline server tool result IDs
@@ -138,6 +139,7 @@ public final class MessageUtils {
 
         return message.getContentBlocks(ToolResultBlock.class).stream()
                 .filter(ToolResultBlock::isServerTool)
+                .filter(result -> result.getState() != ToolResultState.RUNNING)
                 .map(ToolResultBlock::getId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toUnmodifiableSet());

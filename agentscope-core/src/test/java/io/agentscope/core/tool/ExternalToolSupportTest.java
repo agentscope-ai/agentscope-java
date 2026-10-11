@@ -198,6 +198,24 @@ class ExternalToolSupportTest {
     }
 
     @Test
+    @DisplayName("Should preserve deferLoading when registering external schema")
+    void testExternalSchemaDeferLoadingPreserved() {
+        ToolSchema deferredSchema =
+                ToolSchema.builder()
+                        .name("deferred_tool")
+                        .description("Deferred external tool")
+                        .parameters(Map.of("type", "object"))
+                        .deferLoading(true)
+                        .build();
+
+        toolkit.registerSchema(deferredSchema);
+
+        List<ToolSchema> schemas = toolkit.getToolSchemas();
+        assertEquals(1, schemas.size());
+        assertEquals(Boolean.TRUE, schemas.get(0).getDeferLoading());
+    }
+
+    @Test
     @DisplayName("Should handle null schemas list gracefully")
     void testRegisterSchemasNull() {
         // Should not throw
@@ -321,6 +339,16 @@ class ExternalToolSupportTest {
         }
     }
 
+    static class DeferredInternalToolExample {
+        @Tool(
+                name = "deferred_calculator",
+                description = "Calculate expression",
+                deferLoading = true)
+        public String calculate(@ToolParam(name = "expression") String expression) {
+            return "result";
+        }
+    }
+
     @Test
     @DisplayName("Should propagate strict from @Tool annotation")
     void testAnnotationStrictPropagation() {
@@ -330,5 +358,16 @@ class ExternalToolSupportTest {
         assertEquals(1, schemas.size());
         assertEquals("strict_calculator", schemas.get(0).getName());
         assertEquals(Boolean.TRUE, schemas.get(0).getStrict());
+    }
+
+    @Test
+    @DisplayName("Should propagate deferLoading from @Tool annotation")
+    void testAnnotationDeferLoadingPropagation() {
+        toolkit.registerTool(new DeferredInternalToolExample());
+
+        List<ToolSchema> schemas = toolkit.getToolSchemas();
+        assertEquals(1, schemas.size());
+        assertEquals("deferred_calculator", schemas.get(0).getName());
+        assertEquals(Boolean.TRUE, schemas.get(0).getDeferLoading());
     }
 }

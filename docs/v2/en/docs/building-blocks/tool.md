@@ -122,6 +122,12 @@ Common `@Tool` attributes:
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
 
+#### Explicit result states
+
+Return `ToolResultBlock.success(text)` for a successful call and `ToolResultBlock.error(message)` for a failure. Both are supported directly and inside `Mono<ToolResultBlock>`. Do not infer failure from text prefixes. `ToolResultBlock.text(text)` defaults to `RUNNING`; use `withState(...)` to set a terminal state when preserving an existing JSON or multiline output.
+
+Built-in tools now return structured results. Direct callers should inspect `getState()` and read the text blocks from `getOutput()`; `Toolkit` registration is unchanged.
+
 ### Custom tools (extending `ToolBase`)
 
 When you need a custom permission policy, external execution, or a more complex schema, extend `ToolBase`:
@@ -230,12 +236,27 @@ Inside a `@Tool` method, any parameter **without `@ToolParam`** is treated as fr
 
 | Parameter type | Source |
 |----------------|--------|
-| `ToolEmitter` | Streaming emitter (no-op when none configured) |
+| `ToolEmitter` | Streaming emitter and tool call context (no-op when none configured) |
 | `Agent` | The current agent instance |
 | `AgentState` | The per-session state for the current call (via `RuntimeContext.getAgentState()`) |
 | `RuntimeContext` | The current per-call context |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()` (compatibility shim, deprecated) |
 | Any other user POJO type | `runtimeContext.get(ParamType.class)` — i.e. an object the caller registered via `RuntimeContext.builder().put(ParamType.class, value)` |
+
+An injected `ToolEmitter` exposes the current tool call ID, which can be used to correlate progress with frontend state or another shared store:
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    String toolCallId = emitter.getToolCallId();
+    if (toolCallId != null) {
+        progressByToolCall.put(toolCallId, "running");
+    }
+    return "done";
+}
+```
+
+`getToolCallId()` returns `null` when the emitter has no tool call context, such as a no-op or custom emitter.
 
 "User POJO" means: no `@ToolParam`, not primitive, not `ContentBlock` / `Msg`, not under `java.*` / `javax.*`. Every other parameter (those with `@ToolParam`, or that fall outside the above types) is read from the LLM-supplied JSON by name.
 
@@ -270,6 +291,25 @@ agent.call(List.of(new UserMessage("Greet me.")), ctx).block();
 ```
 
 The model never sees `userCtx` — it is not part of the tool's JSON schema. Full example: `agentscope-examples/documentation/.../tool/ToolExecutionContextExample.java`.
+
+### Streaming tool progress
+
+Long-running tools can publish intermediate progress through `ToolEmitter.emit()`. Progress travels as [`ToolProgressEvent`](/v2/en/docs/building-blocks/message-and-event#event-types) in the event stream — it is for display only and never sent to the LLM. The tool's return value is what the model receives, and it travels separately as `ToolResultTextDeltaEvent` / `ToolResultDataDeltaEvent`.
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    emitter.emit(ToolResultBlock.text("Scanning 3 directories..."));
+    // ... do work ...
+    emitter.emit(ToolResultBlock.text("Indexing results..."));
+    // ... do more work ...
+
+    // Only this return value is sent to the LLM as the tool result.
+    return "3 files found";
+}
+```
+
+Clients that rebuild tool results from the event stream must accumulate `ToolResult*DeltaEvent` and ignore `ToolProgressEvent`. Mixing the two would put progress text into the tool message and feed it back to the model on the next turn, contradicting `ToolEmitter`'s contract.
 
 ### Accessing context in `ToolBase.callAsync`
 

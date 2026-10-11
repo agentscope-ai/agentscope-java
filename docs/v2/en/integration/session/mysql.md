@@ -5,7 +5,7 @@ zh_link: /v2/zh/integration/session/mysql
 
 <Note>
 
-This page has been superseded by [Distributed Storage — MySQL](/v2/en/integration/distributed/mysql). Content below is kept for reference.
+This page has been superseded by [Distributed Storage — JDBC](/v2/en/integration/distributed/jdbc). Content below is kept for reference.
 
 </Note>
 

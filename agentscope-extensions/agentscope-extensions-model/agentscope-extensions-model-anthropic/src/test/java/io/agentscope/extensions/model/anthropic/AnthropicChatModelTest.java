@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.anthropic;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -70,6 +71,7 @@ class AnthropicChatModelTest {
 
         assertNotNull(model, "Model should be created");
         assertEquals("claude-sonnet-4-5-20250929", model.getModelName());
+        assertTrue(model.supportsToolChoiceSpecific());
     }
 
     @Test
