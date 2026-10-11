@@ -27,6 +27,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolProgressEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
@@ -443,18 +444,12 @@ class ReActAgentNewLoopE2ETest {
                 List.of("fingerprint enrolled"),
                 resultDeltas,
                 "deltas carry only what the model received, so progress must not appear here");
-
-        assertEquals(
-                "fingerprint enrolled",
-                lastToolResultEnd(events).getFinalResultText(),
-                "the end event reports the same return value in one event");
     }
 
     @Test
-    void imageOnlyReturnValueIsReportedAsEmptyRatherThanAbsent() {
-        // "" and null mean different things downstream: null reads as "the producer reported
-        // nothing", so a consumer would keep looking for a value the tool did return. A tool that
-        // returned only an image produced a value, and that value has no text in it.
+    void imageOnlyReturnValueIsCarriedAsDataDelta() {
+        // An image return value has no text, so the delta stream carries it as a data delta
+        // rather than dropping it from the result.
         List<AgentEvent> events =
                 runWithProgressTool(
                         ToolResultBlock.of(
@@ -462,7 +457,11 @@ class ReActAgentNewLoopE2ETest {
                                         .source(new URLSource("https://example.com/chart.png"))
                                         .build()));
 
-        assertEquals("", lastToolResultEnd(events).getFinalResultText());
+        List<AgentEvent> dataDeltas =
+                events.stream().filter(ToolResultDataDeltaEvent.class::isInstance).toList();
+        assertEquals(1, dataDeltas.size(), "the image is emitted as one data delta");
+        ToolResultDataDeltaEvent dataDelta = (ToolResultDataDeltaEvent) dataDeltas.get(0);
+        assertTrue(dataDelta.getData() instanceof ImageBlock);
     }
 
     private List<AgentEvent> runWithProgressTool(ToolResultBlock returnValue) {
@@ -491,14 +490,6 @@ class ReActAgentNewLoopE2ETest {
                         .block();
         assertNotNull(events);
         return events;
-    }
-
-    private static ToolResultEndEvent lastToolResultEnd(List<AgentEvent> events) {
-        return events.stream()
-                .filter(ToolResultEndEvent.class::isInstance)
-                .map(ToolResultEndEvent.class::cast)
-                .reduce((first, second) -> second)
-                .orElseThrow();
     }
 
     /** Streams one progress chunk, then returns {@code returnValue}: the {@code ToolEmitter} deal. */

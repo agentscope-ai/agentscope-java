@@ -3846,10 +3846,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                                                 .getId(),
                                                                                                         entry.getKey()
                                                                                                                 .getName(),
-                                                                                                        state,
-                                                                                                        finalToolResultText(
-                                                                                                                entry
-                                                                                                                        .getValue()))
+                                                                                                        state)
                                                                                                 .withMetadata(
                                                                                                         entry.getValue()
                                                                                                                 .getMetadata()));
@@ -3975,11 +3972,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * Emit delta events carrying the tool method's return value.
-         *
-         * <p>Progress published through {@link io.agentscope.core.tool.ToolEmitter} travels as
-         * {@link ToolProgressEvent} rather than as deltas, so every delta here is part of what the
-         * model received. A tool that streams progress and also returns a value therefore reports
-         * both: its progress chunks on their own type, then its result chunks.
          */
         private void emitToolResultDelta(
                 FluxSink<AgentEvent> sink,
@@ -4003,34 +3995,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     .withMetadata(toolResult.getMetadata()));
                 }
             }
-        }
-
-        /**
-         * Join the text blocks of a tool method's return value, reported on {@link
-         * ToolResultEndEvent#getFinalResultText()}.
-         *
-         * <p>The deltas of this lifecycle already carry the same value, and progress published
-         * through {@link io.agentscope.core.tool.ToolEmitter} no longer reaches them; this field is
-         * what a consumer that does not accumulate the stream still gets the result from, in a
-         * single event.
-         *
-         * <p>An empty join is reported as {@code ""}, not {@code null}: a tool that returns an image
-         * or a blank string did produce a return value, and a consumer reading {@code null} as
-         * "nothing was reported" would go on looking for it elsewhere. Only a result we know nothing
-         * about is left unreported.
-         *
-         * @return joined text (possibly empty), or {@code null} when there are no content blocks to
-         *     report from
-         */
-        private String finalToolResultText(ToolResultBlock result) {
-            if (result == null || result.getOutput() == null || result.getOutput().isEmpty()) {
-                return null;
-            }
-            return result.getOutput().stream()
-                    .filter(TextBlock.class::isInstance)
-                    .map(block -> ((TextBlock) block).getText())
-                    .filter(value -> value != null && !value.isEmpty())
-                    .collect(Collectors.joining());
         }
 
         private ToolResultState determineToolResultState(ToolResultBlock result) {

@@ -53,7 +53,7 @@ import io.agentscope.core.tool.Toolkit;
  *     TOOL_PROGRESS           ("Step 1: Fetching data...")   — UI only, emitted by the tool
  *     TOOL_PROGRESS           ("Step 2: Processing...")
  *     TOOL_RESULT_TEXT_DELTA  ("Quantum computing...")       — the return value, sent to the LLM
- *   TOOL_RESULT_END          (state=SUCCESS, result repeated on finalResultText)
+ *   TOOL_RESULT_END          (state=SUCCESS)
  * </pre>
  *
  * <p><b>Run:</b>
@@ -115,9 +115,7 @@ public class ToolStreamingExample {
             System.out.println("  = " + e.getDelta());
 
         } else if (event instanceof ToolResultEndEvent e) {
-            System.out.printf(
-                    "[Tool Finished] id=%s  state=%s  result=%s%n",
-                    e.getToolCallId(), e.getState(), e.getFinalResultText());
+            System.out.printf("[Tool Finished] id=%s  state=%s%n", e.getToolCallId(), e.getState());
         }
     }
 

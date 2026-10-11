@@ -294,7 +294,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             LoggerUtil.debug(
                     log, "[{}] Handle Agent execute output event: {}", context.getTaskId(), output);
             Msg responseMessage = convertToResponseMessage(output);
-            if (responseMessage != null) {
+            // Progress is a live update, not part of the tool result: accumulating it would let
+            // compactStreamingChunks merge it into the complete message's result text.
+            if (responseMessage != null && !(output instanceof ToolProgressEvent)) {
                 accumulatedOutput.add(responseMessage);
             }
             handleEvent(output, responseMessage);

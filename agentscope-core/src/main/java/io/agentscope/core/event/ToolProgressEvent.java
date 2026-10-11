@@ -24,12 +24,6 @@ import java.util.Map;
 /**
  * An intermediate update published by a running tool through {@link
  * io.agentscope.core.tool.ToolEmitter}.
- *
- * <p>{@link ToolResultTextDeltaEvent} and {@link ToolResultDataDeltaEvent} carry the tool's result,
- * which is also what the model receives. Progress carries no such promise: {@code ToolEmitter}'s
- * contract says emitted chunks are not sent to the LLM, so a consumer that rebuilt a tool result
- * from the delta stream would persist progress as the return value. Keeping the two on separate
- * event types makes that confusion impossible rather than merely discouraged.
  */
 public class ToolProgressEvent extends AgentEvent {
 

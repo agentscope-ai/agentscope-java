@@ -774,12 +774,7 @@ class AguiAgentAdapterV2Test {
                             progress("reply-emitter", "tool-1", "enroll", "press again"),
                             new ToolResultTextDeltaEvent(
                                     "reply-emitter", "tool-1", "enroll", "fingerprint enrolled"),
-                            new ToolResultEndEvent(
-                                    "reply-emitter",
-                                    "tool-1",
-                                    "enroll",
-                                    null,
-                                    "fingerprint enrolled"));
+                            new ToolResultEndEvent("reply-emitter", "tool-1", "enroll", null));
 
             assertEquals(
                     "fingerprint enrolled",
@@ -894,8 +889,7 @@ class AguiAgentAdapterV2Test {
         @Test
         void testMultimodalResultKeepsEveryPartInArrivalOrder() {
             // A producer emits each block of the return value as its own delta, so the buffer holds
-            // the whole result in the order the parts arrived, ahead of the end event's joined
-            // text.
+            // the whole result in the order the parts arrived.
             ImageBlock image =
                     ImageBlock.builder()
                             .source(URLSource.builder().url("https://example.com/cat.png").build())
@@ -908,8 +902,7 @@ class AguiAgentAdapterV2Test {
                             new ToolResultDataDeltaEvent("reply-tool", "tool-1", "lookup", image),
                             new ToolResultTextDeltaEvent(
                                     "reply-tool", "tool-1", "lookup", "3 rows found"),
-                            new ToolResultEndEvent(
-                                    "reply-tool", "tool-1", "lookup", null, "3 rows found"));
+                            new ToolResultEndEvent("reply-tool", "tool-1", "lookup", null));
 
             String content = firstToolCallResult(events).content();
             int imageAt = content.indexOf("https://example.com/cat.png");
@@ -922,32 +915,9 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testResultTextFallsBackToTheEndEventWhenNothingWasBuffered() {
-            // A producer that reports no deltas still has to surface its return value, and "" would
-            // read as an empty result rather than as nothing reported.
-            List<AguiEvent> events =
-                    runReActEvents(
-                            new ToolCallStartEvent("reply-empty", "tool-1", "lookup"),
-                            new ToolCallEndEvent("reply-empty", "tool-1", "lookup"),
-                            new ToolResultStartEvent("reply-empty", "tool-1", "lookup"),
-                            new ToolResultEndEvent(
-                                    "reply-empty",
-                                    "tool-1",
-                                    "lookup",
-                                    null,
-                                    "reported on the end event"));
-
-            assertEquals(
-                    "reported on the end event",
-                    firstToolCallResult(events).content(),
-                    "the end event is the fallback when the delta stream carried nothing");
-        }
-
-        @Test
         void testImageOnlyResultDoesNotFallBackToProgressText() {
-            // A tool that streams progress and returns only an image has no text in its return
-            // value, so the field is "" — reported, but empty. Reading that as "nothing reported"
-            // used to put the progress chunks back into TOOL_CALL_RESULT.
+            // A tool that streams progress and returns only an image carries the image as a data
+            // delta; progress travels on its own event type and never reaches the buffer.
             ImageBlock image =
                     ImageBlock.builder()
                             .source(
@@ -962,7 +932,7 @@ class AguiAgentAdapterV2Test {
                             new ToolResultStartEvent("reply-image", "tool-1", "render"),
                             progress("reply-image", "tool-1", "render", "drawing axes"),
                             new ToolResultDataDeltaEvent("reply-image", "tool-1", "render", image),
-                            new ToolResultEndEvent("reply-image", "tool-1", "render", null, ""));
+                            new ToolResultEndEvent("reply-image", "tool-1", "render", null));
 
             String content = firstToolCallResult(events).content();
             assertFalse(
@@ -974,18 +944,18 @@ class AguiAgentAdapterV2Test {
 
         @Test
         void testBlankReturnValueYieldsEmptyResultNotProgressText() {
+            // With no delta, the result stays absent; it must not fall back to progress text.
             List<AguiEvent> events =
                     runReActEvents(
                             new ToolCallStartEvent("reply-blank", "tool-1", "cleanup"),
                             new ToolCallEndEvent("reply-blank", "tool-1", "cleanup"),
                             new ToolResultStartEvent("reply-blank", "tool-1", "cleanup"),
                             progress("reply-blank", "tool-1", "cleanup", "removing 3 files"),
-                            new ToolResultEndEvent("reply-blank", "tool-1", "cleanup", null, ""));
+                            new ToolResultEndEvent("reply-blank", "tool-1", "cleanup", null));
 
-            assertEquals(
-                    "",
+            assertNull(
                     firstToolCallResult(events).content(),
-                    "an empty return value reads as empty, not as what the tool streamed");
+                    "an absent delta reads as absent, not as what the tool streamed");
         }
 
         @Test
