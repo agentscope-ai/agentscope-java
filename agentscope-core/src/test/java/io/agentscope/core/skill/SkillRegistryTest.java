@@ -19,6 +19,7 @@ package io.agentscope.core.skill;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -43,55 +44,62 @@ class SkillRegistryTest {
     void testRegisterNewSkill() {
         AgentSkill skill = createSkill("test");
 
-        registry.registerSkill("test_custom", skill);
+        registry.registerSkill("test", skill);
 
-        assertTrue(registry.exists("test_custom"));
-        assertEquals(skill, registry.getSkill("test_custom"));
+        assertTrue(registry.exists("test"));
+        assertEquals(skill, registry.getSkill("test"));
     }
 
     @Test
-    @DisplayName("Should register same skill id replaces existing")
-    void testRegisterSameSkillIdReplacesExisting() {
-        AgentSkill skill1 = createSkill("v1");
-        registry.registerSkill("test_custom", skill1);
+    @DisplayName("Should re-registering the same instance be idempotent")
+    void testRegisterSameInstanceIsIdempotent() {
+        AgentSkill skill = createSkill("v1");
+        registry.registerSkill("test", skill);
+        registry.registerSkill("test", skill);
+        assertTrue(registry.exists("test"));
+        assertEquals(skill, registry.getSkill("test"));
+    }
 
-        AgentSkill skill2 = createSkill("v2");
-        registry.registerSkill("test_custom", skill2);
-
-        assertTrue(registry.exists("test_custom"));
-        assertEquals(skill2, registry.getSkill("test_custom"));
+    @Test
+    @DisplayName("Should reject a different instance under an already-used name")
+    void testRegisterDuplicateNameDifferentInstanceRejected() {
+        registry.registerSkill("test", createSkill("v1"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> registry.registerSkill("test", createSkill("v2")));
+        assertTrue(registry.exists("test"));
     }
 
     @Test
     @DisplayName("Should get skill ids")
     void testGetSkillIds() {
-        registry.registerSkill("test1_custom", createSkill("test1"));
-        registry.registerSkill("test2_custom", createSkill("test2"));
+        registry.registerSkill("test1", createSkill("test1"));
+        registry.registerSkill("test2", createSkill("test2"));
 
-        var skillIds = registry.getSkillIds();
-        assertEquals(2, skillIds.size());
-        assertTrue(skillIds.contains("test1_custom"));
-        assertTrue(skillIds.contains("test2_custom"));
+        var skillNames = registry.getSkillNames();
+        assertEquals(2, skillNames.size());
+        assertTrue(skillNames.contains("test1"));
+        assertTrue(skillNames.contains("test2"));
     }
 
     @Test
     @DisplayName("Should exists")
     void testExists() {
-        registry.registerSkill("test_custom", createSkill("test"));
+        registry.registerSkill("test", createSkill("test"));
 
-        assertTrue(registry.exists("test_custom"));
+        assertTrue(registry.exists("test"));
         assertFalse(registry.exists("non-existent"));
     }
 
     @Test
     @DisplayName("Should remove skill")
     void testRemoveSkill() {
-        registry.registerSkill("test_custom", createSkill("test"));
+        registry.registerSkill("test", createSkill("test"));
 
-        registry.removeSkill("test_custom");
+        registry.removeSkill("test");
 
-        assertFalse(registry.exists("test_custom"));
-        assertNull(registry.getSkill("test_custom"));
+        assertFalse(registry.exists("test"));
+        assertNull(registry.getSkill("test"));
     }
 
     @Test

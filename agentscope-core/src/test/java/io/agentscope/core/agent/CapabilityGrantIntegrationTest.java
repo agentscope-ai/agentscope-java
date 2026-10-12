@@ -255,7 +255,7 @@ class CapabilityGrantIntegrationTest {
         }
     }
 
-    /** A skill named {@code name} with skillId {@code name_custom}. */
+    /** A skill named {@code name} with skillName {@code name_custom}. */
     private static AgentSkill skill(String name) {
         return new AgentSkill(name, "Skill " + name, "# " + name, null);
     }
@@ -513,6 +513,51 @@ class CapabilityGrantIntegrationTest {
                 schemaNames(schemas).stream().sorted().toList());
     }
 
+    @Test
+    @DisplayName(
+            "an external override of reset_equipped_tools keeps the caller's schema (no rewrite)")
+    void externalMetaToolOverrideNotRewritten() {
+        Toolkit toolkit = grantToolkit();
+        SchemaOnlyTool callerReset =
+                new SchemaOnlyTool(
+                        ToolSchema.builder()
+                                .name("reset_equipped_tools")
+                                .description("caller-hosted tool-group reset (preview)")
+                                .parameters(
+                                        Map.of(
+                                                "type",
+                                                "object",
+                                                "properties",
+                                                Map.of("groups", Map.of("type", "array"))))
+                                .build());
+        ToolRequestConfig config =
+                new ToolRequestConfig(
+                        Map.of("reset_equipped_tools", callerReset), ToolMergeMode.EXTERNAL_ONLY);
+
+        List<ToolSchema> schemas =
+                toolkit.getToolSchemas(
+                        List.of("g1", "g2"),
+                        config,
+                        new CapabilitySurface(null, Set.of("g1"), Set.of()));
+
+        // The external override shadows the backend meta tool: exactly one row, the caller's.
+        assertEquals(List.of("reset_equipped_tools"), schemaNames(schemas));
+        ToolSchema reset = metaSchema(schemas);
+        assertEquals(
+                "caller-hosted tool-group reset (preview)",
+                reset.getDescription(),
+                "the caller-controlled schema must pass through untouched");
+        assertTrue(
+                reset.getParameters().toString().contains("groups"),
+                "the caller's parameter shape is preserved");
+        assertFalse(
+                reset.getDescription().contains("Reset your equipped tools"),
+                "backend base description must not replace the caller's");
+        assertFalse(
+                reset.getDescription().contains("group-one"),
+                "backend group notes must not leak through the external tool");
+    }
+
     private static SchemaOnlyTool schemaOnly(String name) {
         return new SchemaOnlyTool(
                 ToolSchema.builder()
@@ -734,7 +779,7 @@ class CapabilityGrantIntegrationTest {
         String prompt =
                 mw.onSystemPrompt(
                                 null,
-                                rc(new CapabilitySurface(Set.of("alpha_custom"), null, null)),
+                                rc(new CapabilitySurface(Set.of("alpha"), null, null)),
                                 "base")
                         .block();
 
@@ -771,21 +816,21 @@ class CapabilityGrantIntegrationTest {
                         false,
                         null);
 
-        RuntimeContext rc1 = rc(new CapabilitySurface(Set.of("alpha_custom"), null, null));
+        RuntimeContext rc1 = rc(new CapabilitySurface(Set.of("alpha"), null, null));
         mw.onSystemPrompt(null, rc1, "base").block();
         SkillBox box1 = rc1.get(SkillBox.class);
 
-        RuntimeContext rc2 = rc(new CapabilitySurface(Set.of("beta_custom"), null, null));
+        RuntimeContext rc2 = rc(new CapabilitySurface(Set.of("beta"), null, null));
         mw.onSystemPrompt(null, rc2, "base").block();
         SkillBox box2 = rc2.get(SkillBox.class);
 
         assertNotNull(box1);
         assertNotNull(box2);
         assertTrue(box1 != box2, "different grants must materialize different boxes");
-        assertTrue(box1.getAllSkillIds().contains("alpha_custom"));
-        assertFalse(box1.getAllSkillIds().contains("beta_custom"));
-        assertTrue(box2.getAllSkillIds().contains("beta_custom"));
-        assertFalse(box2.getAllSkillIds().contains("alpha_custom"));
+        assertTrue(box1.getAllSkillNames().contains("alpha"));
+        assertFalse(box1.getAllSkillNames().contains("beta"));
+        assertTrue(box2.getAllSkillNames().contains("beta"));
+        assertFalse(box2.getAllSkillNames().contains("alpha"));
     }
 
     // ==================== tool execution gate ====================
@@ -856,18 +901,18 @@ class CapabilityGrantIntegrationTest {
                         null,
                         false,
                         null);
-        RuntimeContext ctx = rc(new CapabilitySurface(Set.of("alpha_custom"), null, null));
+        RuntimeContext ctx = rc(new CapabilitySurface(Set.of("alpha"), null, null));
         mw.onSystemPrompt(null, ctx, "base").block();
         assertNotNull(ctx.get(SkillBox.class));
 
-        ToolResultBlock denied = loadViaToolkit(toolkit, "beta_custom", ctx);
+        ToolResultBlock denied = loadViaToolkit(toolkit, "beta", ctx);
         assertEquals(
-                "Error: Skill not found: 'beta_custom'. Please check the skill ID.",
+                "Error: Skill not found: 'beta'. Please check the skill name.",
                 firstText(denied),
                 "deny wording must be byte-identical to the not-found wording");
 
-        ToolResultBlock allowed = loadViaToolkit(toolkit, "alpha_custom", ctx);
-        assertTrue(firstText(allowed).contains("Successfully loaded skill: alpha_custom"));
+        ToolResultBlock allowed = loadViaToolkit(toolkit, "alpha", ctx);
+        assertTrue(firstText(allowed).contains("Successfully loaded skill: alpha"));
     }
 
     @Test
@@ -887,8 +932,8 @@ class CapabilityGrantIntegrationTest {
         RuntimeContext ctx = rc(new CapabilitySurface(Set.of(), null, null));
         mw.onSystemPrompt(null, ctx, "base").block();
 
-        ToolResultBlock result = loadViaToolkit(toolkit, "gamma_custom", ctx);
-        assertTrue(firstText(result).contains("Successfully loaded skill: gamma_custom"));
+        ToolResultBlock result = loadViaToolkit(toolkit, "gamma", ctx);
+        assertTrue(firstText(result).contains("Successfully loaded skill: gamma"));
     }
 
     @Test
@@ -902,16 +947,16 @@ class CapabilityGrantIntegrationTest {
         AgentTool loadTool = toolkit.getTool("load_skill_through_path");
         assertNotNull(loadTool);
 
-        RuntimeContext ctx = rc(new CapabilitySurface(Set.of("alpha_custom"), null, null));
+        RuntimeContext ctx = rc(new CapabilitySurface(Set.of("alpha"), null, null));
         ToolResultBlock denied =
-                callDirect(loadTool, Map.of("skillId", "secret_custom", "path", "SKILL.md"), ctx);
+                callDirect(loadTool, Map.of("skillName", "secret", "path", "SKILL.md"), ctx);
         assertEquals(
-                "Error: Skill not found: 'secret_custom'. Please check the skill ID.",
+                "Error: Skill not found: 'secret'. Please check the skill name.",
                 firstText(denied));
 
         ToolResultBlock allowed =
-                callDirect(loadTool, Map.of("skillId", "alpha_custom", "path", "SKILL.md"), ctx);
-        assertTrue(firstText(allowed).contains("Successfully loaded skill: alpha_custom"));
+                callDirect(loadTool, Map.of("skillName", "alpha", "path", "SKILL.md"), ctx);
+        assertTrue(firstText(allowed).contains("Successfully loaded skill: alpha"));
     }
 
     @Test
@@ -932,18 +977,18 @@ class CapabilityGrantIntegrationTest {
 
         // Direct callAsync so the executor gate does not preempt the load-gate check.
         ToolResultBlock result =
-                callDirect(loadTool, Map.of("skillId", "gamma_custom", "path", "SKILL.md"), rc());
+                callDirect(loadTool, Map.of("skillName", "gamma", "path", "SKILL.md"), rc());
         assertTrue(
-                firstText(result).contains("Successfully loaded skill: gamma_custom"),
+                firstText(result).contains("Successfully loaded skill: gamma"),
                 "no surface (direct path) = unrestricted: " + firstText(result));
     }
 
     /** Loads SKILL.md through the toolkit entry (executor + load gate). */
-    private ToolResultBlock loadViaToolkit(Toolkit toolkit, String skillId, RuntimeContext ctx) {
+    private ToolResultBlock loadViaToolkit(Toolkit toolkit, String skillName, RuntimeContext ctx) {
         return toolkit.callTool(
                         param(
                                 "load_skill_through_path",
-                                Map.of("skillId", skillId, "path", "SKILL.md"),
+                                Map.of("skillName", skillName, "path", "SKILL.md"),
                                 ctx))
                 .block();
     }

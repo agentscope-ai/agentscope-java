@@ -122,10 +122,10 @@ class CapabilitySurfaceTest {
     @Test
     @DisplayName("skill object entry: id delegation, system bypass, and the null guard")
     void skillObjectEntryMatrix() {
-        // Id delegation: builder default source "custom" → skillId "s1_custom".
+        // Id delegation: builder default source "custom" → skillName "s1".
         AgentSkill s1 = AgentSkill.builder().name("s1").description("d").skillContent("c").build();
         AgentSkill s2 = AgentSkill.builder().name("s2").description("d").skillContent("c").build();
-        CapabilitySurface surface = new CapabilitySurface(Set.of("s1_custom"), Set.of(), Set.of());
+        CapabilitySurface surface = new CapabilitySurface(Set.of("s1"), Set.of(), Set.of());
         assertTrue(surface.allowsSkill(s1));
         assertFalse(surface.allowsSkill(s2));
         assertTrue(CapabilitySurface.ALLOW_ALL.allowsSkill(s2));
@@ -140,7 +140,7 @@ class CapabilitySurfaceTest {
                         .system(true)
                         .build();
         assertTrue(CapabilitySurface.DENY_ALL.allowsSkill(systemSkill));
-        assertFalse(CapabilitySurface.DENY_ALL.allowsSkill(systemSkill.getSkillId()));
+        assertFalse(CapabilitySurface.DENY_ALL.allowsSkill(systemSkill.getName()));
 
         // Null guard: a registry miss is never granted, not even on ALLOW_ALL.
         AgentSkill registryMiss = null;
@@ -194,11 +194,11 @@ class CapabilitySurfaceTest {
     }
 
     @Test
-    @DisplayName("skill path — granted skillId authorizes its skill tool group")
+    @DisplayName("skill path — granted skillName authorizes its skill tool group")
     void skillGroupPath() {
         // Group dimension restricted (empty) so only the skill path can rescue the tool.
         CapabilitySurface surface = new CapabilitySurface(Set.of("s1"), Set.of(), Set.of());
-        // skillId s1 → group name "s1_skill_tools" (SkillToolGroup naming convention)
+        // skillName s1 → group name "s1_skill_tools" (SkillToolGroup naming convention)
         assertTrue(surface.allowsTool(tool("t1"), Set.of("s1_skill_tools")));
         assertFalse(surface.allowsTool(tool("t1"), Set.of("s2_skill_tools")));
     }

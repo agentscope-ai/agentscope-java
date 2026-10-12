@@ -203,6 +203,11 @@ public class AgentSkill {
     /**
      * Gets the skill name.
      *
+     * <p>The name is the skill's business identity and follows the industry convention of unique
+     * skill naming: it is the single identifier used across the grant surface, registry keying,
+     * loading, and skill tool-group naming. It must be unique within an agent's catalog; the
+     * {@link #getSource() source} is provenance metadata only, not part of the identity.
+     *
      * @return The skill name (never null)
      */
     public String getName() {
@@ -291,7 +296,13 @@ public class AgentSkill {
      * <p>The ID is composed of name and source: "name_source".
      *
      * @return Unique skill identifier (never null)
+     * @deprecated Skills are identified by {@link #getName()} everywhere (grant surface,
+     *     registry key, load addressing, skill tool-group naming). The name is the
+     *     industry-standard unique identity and must be unique within an agent's catalog; the
+     *     {@code name + "_" + source} composite is a storage detail and is not injective over
+     *     {@code (name, source)}.
      */
+    @Deprecated(forRemoval = true, since = "2.0.5")
     public String getSkillId() {
         return getName() + "_" + source;
     }

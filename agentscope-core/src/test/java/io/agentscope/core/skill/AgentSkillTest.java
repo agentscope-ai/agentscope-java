@@ -98,7 +98,7 @@ class AgentSkillTest {
                         "github_skill", "From GitHub", "GitHub content", resources, "github");
 
         assertEquals("github", skill.getSource());
-        assertEquals("github_skill_github", skill.getSkillId());
+        assertEquals("github_skill", skill.getName());
     }
 
     @Test
@@ -169,13 +169,14 @@ class AgentSkillTest {
     }
 
     @Test
-    @DisplayName("Should skill id uniqueness")
-    void testSkillIdUniqueness() {
+    @DisplayName("Should skill identity be the name; source is provenance only")
+    void testSkillIdentityIsTheName() {
         AgentSkill skill1 = new AgentSkill("same_name", "desc", "content", null, "source1");
         AgentSkill skill2 = new AgentSkill("same_name", "desc", "content", null, "source2");
 
-        assertEquals("same_name_source1", skill1.getSkillId());
-        assertEquals("same_name_source2", skill2.getSkillId());
+        assertEquals(skill1.getName(), skill2.getName());
+        assertEquals("source1", skill1.getSource());
+        assertEquals("source2", skill2.getSource());
     }
 
     @Test
@@ -345,7 +346,7 @@ class AgentSkillTest {
         // Unicode
         AgentSkill skill3 = new AgentSkill("技能名称", "技能描述：测试", "技能内容\n包含中文", null, "来源");
         assertEquals("技能名称", skill3.getName());
-        assertEquals("技能名称_来源", skill3.getSkillId());
+        assertEquals("来源", skill3.getSource());
 
         // Many resources
         Map<String, String> manyResources = new HashMap<>();

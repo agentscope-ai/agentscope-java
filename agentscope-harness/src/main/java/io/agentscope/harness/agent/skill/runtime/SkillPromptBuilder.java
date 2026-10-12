@@ -52,13 +52,13 @@ public final class SkillPromptBuilder {
             Skills provide specialized capabilities and domain knowledge. Use them when they match your current task.
 
             How to use skills:
-            - Load skill: load_skill_through_path(skillId="<skill-id>", path="SKILL.md")
+            - Load skill: load_skill_through_path(skillName="<skill-name>", path="SKILL.md")
             - The skill will be activated and its documentation loaded with detailed instructions
             - Additional resources (scripts, assets, references) can be loaded with the same tool and other paths
 
             Example:
-            1. User asks to analyze data -> find a matching skill below (e.g. <skill-id>data-analysis_workspace</skill-id>)
-            2. Load it: load_skill_through_path(skillId="data-analysis_workspace", path="SKILL.md")
+            1. User asks to analyze data -> find a matching skill below (e.g. <skill-name>data-analysis</skill-name>)
+            2. Load it: load_skill_through_path(skillName="data-analysis", path="SKILL.md")
             3. Follow the instructions returned by the skill
 
             Metadata is rendered as XML under each <skill> element:
@@ -171,7 +171,7 @@ public final class SkillPromptBuilder {
             }
             appendXmlNode(sb, e.getKey(), e.getValue(), 1);
         }
-        appendXmlNode(sb, "skill-id", skill.getSkillId(), 1);
+        appendXmlNode(sb, "skill-name", skill.getName(), 1);
         if (entry.filesRoot() != null && !entry.filesRoot().isBlank()) {
             appendXmlNode(sb, "files-root", entry.filesRoot(), 1);
         }

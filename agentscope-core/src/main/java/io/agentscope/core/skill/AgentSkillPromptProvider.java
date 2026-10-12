@@ -54,20 +54,20 @@ public class AgentSkillPromptProvider {
             Skills provide specialized capabilities and domain knowledge. Use them when they match your current task.
 
             How to use skills:
-            - Load skill: load_skill_through_path(skillId="<skill-id>", path="SKILL.md")
+            - Load skill: load_skill_through_path(skillName="<skill-name>", path="SKILL.md")
             - The skill will be activated and its documentation loaded with detailed instructions
             - Additional resources (scripts, assets, references) can be loaded using the same tool with different paths
 
             Example:
-            1. User asks to analyze data → find a matching skill below (e.g. <skill-id>data-analysis_builtin</skill-id>)
-            2. Load it: load_skill_through_path(skillId="data-analysis_builtin", path="SKILL.md")
+            1. User asks to analyze data → find a matching skill below (e.g. <skill-name>data-analysis</skill-name>)
+            2. Load it: load_skill_through_path(skillName="data-analysis", path="SKILL.md")
             3. Follow the instructions returned by the skill
 
             Metadata is rendered as XML under each <skill> element:
             - scalar metadata becomes a simple child element
             - nested maps become nested XML elements
             - lists become repeated <item> elements
-            - <skill-id> is always appended for tool loading
+            - <skill-name> is always appended for tool loading
             </usage>
 
             <available_skills>
@@ -86,9 +86,9 @@ public class AgentSkillPromptProvider {
             than describing or suggesting commands to the user.
 
             Skills root directory: %s
-            Each skill's files are located under a subdirectory named by its <skill-id>:
-              %s/<skill-id>/scripts/
-              %s/<skill-id>/assets/
+            Each skill's files are located under a subdirectory named by its <skill-name>:
+              %s/<skill-name>/scripts/
+              %s/<skill-name>/assets/
 
             Workflow:
             1. After loading a skill, use ls to explore its directory structure and discover available scripts/assets
@@ -102,10 +102,10 @@ public class AgentSkillPromptProvider {
 
             Example:
               # Explore what scripts are available for a skill
-              execute_shell_command(command="ls %s/data-analysis_builtin/scripts/")
+              execute_shell_command(command="ls %s/data-analysis/scripts/")
 
               # Run an existing script with absolute path
-              execute_shell_command(command="python3 %s/data-analysis_builtin/scripts/analyze.py")
+              execute_shell_command(command="python3 %s/data-analysis/scripts/analyze.py")
             </code_execution>
             """;
 
@@ -183,8 +183,8 @@ public class AgentSkillPromptProvider {
     public String getSkillSystemPrompt(SkillFilter filter) {
         SkillFilter effectiveFilter = filter != null ? filter : SkillFilter.all();
 
-        Set<String> skillIds = skillRegistry.getSkillIds();
-        if (skillIds.isEmpty()) {
+        Set<String> skillNames = skillRegistry.getSkillNames();
+        if (skillNames.isEmpty()) {
             return "";
         }
 
@@ -193,11 +193,11 @@ public class AgentSkillPromptProvider {
         int visibleCount = 0;
         int withOriginDir = 0;
 
-        for (String skillId : skillIds) {
-            if (!effectiveFilter.isAllowed(skillId)) {
+        for (String skillName : skillNames) {
+            if (!effectiveFilter.isAllowed(skillName)) {
                 continue;
             }
-            AgentSkill skill = skillRegistry.getSkill(skillId);
+            AgentSkill skill = skillRegistry.getSkill(skillName);
             if (skill == null) {
                 continue;
             }
@@ -291,7 +291,7 @@ public class AgentSkillPromptProvider {
     /**
      * Sets whether all metadata fields are exposed to the LLM.
      *
-     * <p>When disabled, only {@code name}, {@code description}, and {@code skill-id}
+     * <p>When disabled, only {@code name}, {@code description}, and {@code skill-name}
      * are rendered into the skill prompt.
      *
      * @param exposeAllMetadata {@code true} to expose all metadata, {@code false} to expose only
@@ -309,7 +309,7 @@ public class AgentSkillPromptProvider {
             }
             appendXmlNode(sb, entry.getKey(), entry.getValue(), 1);
         }
-        appendXmlNode(sb, "skill-id", skill.getSkillId(), 1);
+        appendXmlNode(sb, "skill-name", skill.getName(), 1);
         // Per-skill files-root: only emitted when code execution is enabled AND the skill
         // carries an originDir (filesystem-backed). Lets the LLM build absolute shell paths
         // without going through uploadSkillFiles or guessing layouts.

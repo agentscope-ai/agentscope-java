@@ -458,7 +458,7 @@ public class Toolkit {
                                 config.externalTools().values().stream()
                                         .map(Toolkit::externalToolSchema))
                         .toList();
-        return surface != null ? rewriteMetaToolSchema(schemas, surface) : schemas;
+        return surface != null ? rewriteMetaToolSchema(schemas, config, surface) : schemas;
     }
 
     /**
@@ -488,18 +488,22 @@ public class Toolkit {
      * Post-processing for the reset_equipped_tools schema: both the to_activate enum and
      * the description keep only activatable groups (the original description embeds the
      * full group notes, so filtering the enum alone would still leak group names). Only
-     * called with a non-null surface (an absent surface skips trimming entirely).
+     * called with a non-null surface (an absent surface skips trimming entirely). Only the
+     * framework's backend meta tool is rewritten: an external override of the same name is
+     * caller-controlled and passes through untouched.
      *
      * @param schemas the grant-filtered schemas to post-process
+     * @param config the per-call request config, for external-override detection
      * @param surface the per-request grant set (never {@code null} here)
-     * @return schemas with the meta tool's enum and description rewritten
+     * @return schemas with the backend meta tool's enum and description rewritten
      */
     private List<ToolSchema> rewriteMetaToolSchema(
-            List<ToolSchema> schemas, CapabilitySurface surface) {
+            List<ToolSchema> schemas, ToolRequestConfig config, CapabilitySurface surface) {
         return schemas.stream()
                 .map(
                         s ->
                                 "reset_equipped_tools".equals(s.getName())
+                                                && !config.overrides(s.getName())
                                         ? rewriteResetToolSchema(s, surface)
                                         : s)
                 .toList();

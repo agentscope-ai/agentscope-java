@@ -6,7 +6,7 @@ en_link: /v2/en/docs/building-blocks/capability-grant
 
 ## 概述
 
-企业级系统里，agent 通常以**多租户、多角色**形态运行：同一个 agent 面向大量权限不同的用户。Capability grant layer（授权层）让你能**按用户 / 请求的实际权限，把无权能力彻底切除**——被切除的能力对模型**不存在**：不进 tool schema、不可枚举、不可被 `reset_equipped_tools` 激活、不可被 `load_skill_through_path` 加载、不可执行。
+企业级系统里，agent 通常以**多租户、多角色**形态运行：同一个 agent 面向大量权限不同的用户。Capability grant layer（授权层）让你能**按用户 / 请求的实际权限，把无权能力彻底切除**——被切除的能力对模型**不存在**：不进 tool schema、不可枚举、不可被 `reset_equipped_tools` 激活、不可被 `load_skill_through_path` 加载、不可执行。Harness 的技能链路（`HarnessSkillMiddleware` 的提示词与技能目录、harness 版 `load_skill_through_path`）同样受授权面约束。
 
 它与其他既有层正交：
 
@@ -27,7 +27,7 @@ CapabilityResolver resolver = (ctx, agent) -> {
     // 粒度自选：按 (userId, agentId) 做 per-agent 差异，
     // 或忽略 agentId 按用户出一份数据（框架一视同仁）
     return new CapabilitySurface(
-            authzService.allowedSkills(userId),      // 允许的 skillId；null = 未设置
+            authzService.allowedSkills(userId),      // 允许的 skillName；null = 未设置
             authzService.allowedToolGroups(userId),  // 允许的 ToolGroup 名；null = 未设置
             authzService.allowedTools(userId));      // 允许的工具名；null = 未设置
 };
@@ -73,11 +73,11 @@ new CapabilitySurface(Set.of(), Set.of(), Set.of());
 
 正向授权层次包含，命中**任一已设置维度**即放行：
 
-- 授权一个 **skill** 即隐含授权其手册、脚本与关联工具（技能组 `skillId + "_skill_tools"`）；
+- 授权一个 **skill** 即隐含授权其手册、脚本与关联工具（技能组 `skillName + "_skill_tools"`）；
 - 授权一个 **ToolGroup** 即隐含授权组内全部工具；
 - 逐名授权一个**工具**即授权该工具本身（不问分组，也不放大到组内其他工具）。
 
-按 skillId 授权的精度依赖 skillId 唯一：`skillId = name + "_" + source` 对 `(name, source)` 非单射，name 含 `_` 时可能碰撞——多租户部署请保证 skill 命名全局唯一。
+skill 以 **skillName** 授权与寻址（行业标准的唯一定位）：`allowedSkills` 存放业务权限清单中的 skillName；`SkillRegistry` 以 skillName 为键并强制单个 agent 目录内唯一（同名同实例幂等、同名异实例拒绝）。`name + "_" + source` 形式的内部存储标识不进入授权面。
 
 只提供白名单，不提供 deny（反向禁用）；默认拒绝——不在授权清单内的能力即「不存在」。
 
@@ -99,4 +99,4 @@ resolver 抛异常时**中止本次调用**：异常传播给调用方并记录 
 
 ## 静态 skillBox 路径限制
 
-`skillBox(...)` 已随 hook 系统于 2.0.0 标记为过时，**新代码不要使用**——skill 接入一律使用 `skillRepositories(...)` 动态路径。存量代码若仍停留在该路径，其限制如下：`skillBox(...)` 构建期注册（或 `dynamicSkillsEnabled(false)`）没有 per-call 可见面过滤——配置 resolver 时构建期会输出 ERROR 并使该 agent 的 resolver 失效——该 agent 直调时不裁剪；作为子代理运行时继承父授权面，skill 加载与工具执行仍被硬门拦截，但静态**提示词会枚举全量 skill 目录**（残留暴露；静态 load 工具 schema 内嵌的 `skillId` enum 同样全量）。
+`skillBox(...)` 已随 hook 系统于 2.0.0 标记为过时，**新代码不要使用**——skill 接入一律使用 `skillRepositories(...)` 动态路径。存量代码若仍停留在该路径，其限制如下：`skillBox(...)` 构建期注册（或 `dynamicSkillsEnabled(false)`）没有 per-call 可见面过滤——配置 resolver 时构建期会输出 ERROR 并使该 agent 的 resolver 失效——该 agent 直调时不裁剪；作为子代理运行时继承父授权面，skill 加载与工具执行仍被硬门拦截，但静态**提示词会枚举全量 skill 目录**（残留暴露；静态 load 工具 schema 内嵌的 `skillName` enum 同样全量）。

@@ -32,10 +32,11 @@ import java.util.function.Function;
  *
  * <p>A tool is granted when any explicit path matches: it is system-marked, per-name
  * whitelisted, a member of a granted group, or in a granted skill's tool group. A skill is
- * granted when it is system-marked or its skillId is whitelisted. Default is deny: anything
+ * granted when it is system-marked or its name is whitelisted. Default is deny: anything
  * not reachable from the enumeration does not exist.
  *
- * @param allowedSkills allowed skillIds; {@code null} = not set (no skill grants)
+ * @param allowedSkills allowed skill names (the business identity, e.g. from an
+ *     entitlement list); {@code null} = not set (no skill grants)
  * @param allowedToolGroups allowed ToolGroup names; {@code null} = not set (no group grants)
  * @param allowedTools allowed tool names (per-name, grouping ignored); {@code null} = not set
  *     (no per-name grants)
@@ -70,16 +71,16 @@ public record CapabilitySurface(
     }
 
     /**
-     * Skill decision by skillId, grant set only. Fallback for callers that do not hold an
+     * Skill decision by name, grant set only. Fallback for callers that do not hold an
      * {@link AgentSkill} instance; this overload does not know the system-capability mark, so
      * such callers must apply that bypass themselves (or resolve the skill and prefer {@link
      * #allowsSkill(AgentSkill)}).
      *
-     * @param skillId the skill identifier to check
-     * @return {@code true} for an all-null surface or a whitelisted skillId
+     * @param skillName the skill name to check
+     * @return {@code true} for an all-null surface or a whitelisted skill name
      */
-    public boolean allowsSkill(String skillId) {
-        return isUnrestricted() || (allowedSkills != null && allowedSkills.contains(skillId));
+    public boolean allowsSkill(String skillName) {
+        return isUnrestricted() || (allowedSkills != null && allowedSkills.contains(skillName));
     }
 
     /**
@@ -89,13 +90,14 @@ public record CapabilitySurface(
      *
      * @param skill the skill to check; {@code null} (a registry miss) is never granted, not
      *     even on {@link #ALLOW_ALL} — fail-closed like a missing surface
-     * @return {@code true} for a system skill, an all-null surface, or a whitelisted skillId
+     * @return {@code true} for a system skill, an all-null surface, or a whitelisted skill
+     *     name
      */
     public boolean allowsSkill(AgentSkill skill) {
         if (skill == null) {
             return false; // registry miss: fail closed
         }
-        return skill.isSystem() || allowsSkill(skill.getSkillId());
+        return skill.isSystem() || allowsSkill(skill.getName());
     }
 
     /**
@@ -145,20 +147,14 @@ public record CapabilitySurface(
         if (allowsToolGroup(name)) {
             return true;
         }
-        if (allowedTools == null) {
-            return false; // no per-name grants (all-null already passed above)
-        }
-        for (String t : allowedTools) {
-            if (groupsOf.apply(t).contains(name)) {
-                return true;
-            }
-        }
-        return false;
+        // Reachability: some per-name granted tool belongs to this group.
+        return allowedTools != null
+                && allowedTools.stream().anyMatch(t -> groupsOf.apply(t).contains(name));
     }
 
     /**
-     * Whether the group name derives from a granted skill (naming convention: {@code skillId +
-     * "_skill_tools"}, see {@link SkillToolGroup#skillToolsGroupName}).
+     * Whether the group name derives from a granted skill (naming convention: {@code
+     * skillName + "_skill_tools"}, see {@link SkillToolGroup#skillToolsGroupName}).
      *
      * @param name the group name to check
      * @return {@code true} when the name is a granted skill's tool group

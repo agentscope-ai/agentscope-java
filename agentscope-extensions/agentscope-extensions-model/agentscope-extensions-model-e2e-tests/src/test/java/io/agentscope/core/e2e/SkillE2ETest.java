@@ -197,8 +197,8 @@ class SkillE2ETest {
             skillBox.registerSkillLoadTool();
 
             AgentSkill targetSkill = repo.getSkill(targetSkillName);
-            String expectedSkillId = targetSkill.getSkillId();
-            System.out.println("    expected skillId : " + expectedSkillId);
+            String expectedSkillName = targetSkill.getName();
+            System.out.println("    expected skillName : " + expectedSkillName);
             System.out.println("    prompt           : " + prompt);
 
             AtomicBoolean loadedCorrectSkill = new AtomicBoolean(false);
@@ -215,9 +215,9 @@ class SkillE2ETest {
                                                 if (toolUse != null
                                                         && "load_skill_through_path"
                                                                 .equals(toolUse.getName())
-                                                        && expectedSkillId.equals(
+                                                        && expectedSkillName.equals(
                                                                 toolUse.getInput()
-                                                                        .get("skillId"))) {
+                                                                        .get("skillName"))) {
                                                     loadedCorrectSkill.set(true);
                                                     postActing.stopAgent();
                                                 }
@@ -248,8 +248,8 @@ class SkillE2ETest {
                                 + targetSkillName
                                 + "] | "
                                 + provider.getProviderName()
-                                + " — did not call load_skill_through_path(skillId='"
-                                + expectedSkillId
+                                + " — did not call load_skill_through_path(skillName='"
+                                + expectedSkillName
                                 + "')");
             }
         }

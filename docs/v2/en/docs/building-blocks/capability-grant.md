@@ -10,7 +10,8 @@ In enterprise deployments an agent serves many users with different permissions.
 grant layer lets you **cut out every capability the current user is not authorized for** — a cut
 capability does not exist for the model: it never enters tool schemas, cannot be enumerated,
 cannot be activated via `reset_equipped_tools`, cannot be loaded via `load_skill_through_path`,
-and cannot be executed.
+and cannot be executed. The harness skill chain (`HarnessSkillMiddleware`'s prompt and catalog,
+plus the harness `load_skill_through_path`) is equally governed by the grant surface.
 
 It is orthogonal to the existing layers:
 
@@ -31,7 +32,7 @@ CapabilityResolver resolver = (ctx, agent) -> {
     // Granularity is yours: per-(userId, agentId), or ignore agentId and return one
     // surface per user — the framework treats both identically.
     return new CapabilitySurface(
-            authzService.allowedSkills(userId),      // allowed skillIds; null = not set
+            authzService.allowedSkills(userId),      // allowed skillName values; null = not set
             authzService.allowedToolGroups(userId),  // allowed ToolGroup names; null = not set
             authzService.allowedTools(userId));      // allowed tool names; null = not set
 };
@@ -88,14 +89,16 @@ accessors (`allowedSkills()` etc.) still preserve the distinction.
 Positive authorization is hierarchical; matching **any set dimension** grants:
 
 - Granting a **skill** implicitly grants its manual, scripts and associated tools (the skill
-  tool group `skillId + "_skill_tools"`);
+  tool group `skillName + "_skill_tools"`);
 - Granting a **ToolGroup** implicitly grants every tool in it;
 - Granting a **tool** by name grants exactly that tool (grouping is ignored, and it does not
   amplify to sibling tools in the same group).
 
-Grant-by-skillId precision assumes unique skill ids: `skillId = name + "_" + source` is not
-injective over `(name, source)` — names containing `_` can collide. Keep skill names globally
-unique in multi-tenant deployments.
+Skills are granted and addressed **by skillName** (the industry-standard unique identity):
+`allowedSkills` holds the skillName values from the business entitlement list; the registry keys
+by skillName and enforces per-agent-catalog uniqueness (same name + same instance is idempotent,
+a different instance is rejected). The internal `name + "_" + source` storage identifier never
+enters the grant surface.
 
 Only whitelists are provided; there is no deny (reverse-ban) capability. Default is deny —
 anything not reachable from the enumeration does not exist.
@@ -142,4 +145,4 @@ this path, its limitation: the static `skillBox(...)` registration (or
 configured, `build()` logs an ERROR and disables the resolver on that agent: top-level calls
 of this agent are untrimmed; as a sub-agent, loading and execution stay gated under the
 inherited surface, but the static skill *prompt* still enumerates the full skill catalog (a
-residual exposure; the static load tool's embedded `skillId` enum lists the full catalog too).
+residual exposure; the static load tool's embedded `skillName` enum lists the full catalog too).

@@ -53,7 +53,7 @@ class AgentSkillPromptProviderTest {
     void testSingleSkill() {
         AgentSkill skill =
                 new AgentSkill("test_skill", "Test Skill Description", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test_skill", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -62,7 +62,7 @@ class AgentSkillPromptProviderTest {
         assertTrue(prompt.contains("<skill>"));
         assertTrue(prompt.contains("<name>test_skill</name>"));
         assertTrue(prompt.contains("<description>Test Skill Description</description>"));
-        assertTrue(prompt.contains("<skill-id>test_skill_custom</skill-id>"));
+        assertTrue(prompt.contains("<skill-name>test_skill</skill-name>"));
         assertTrue(prompt.contains("</skill>"));
         assertTrue(prompt.contains("</available_skills>"));
     }
@@ -75,7 +75,7 @@ class AgentSkillPromptProviderTest {
         metadata.put("description", "Manage Trello boards");
         metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("trello_custom", skill);
+        skillRegistry.registerSkill("trello", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -84,11 +84,11 @@ class AgentSkillPromptProviderTest {
         int homepageIndex =
                 prompt.indexOf(
                         "<homepage>https://developer.atlassian.com/cloud/trello/rest/</homepage>");
-        int skillIdIndex = prompt.indexOf("<skill-id>trello_custom</skill-id>");
+        int skillNameIndex = prompt.indexOf("<skill-name>trello</skill-name>");
 
         assertTrue(nameIndex < descriptionIndex);
         assertTrue(descriptionIndex < homepageIndex);
-        assertTrue(homepageIndex < skillIdIndex);
+        assertTrue(homepageIndex < skillNameIndex);
     }
 
     @Test
@@ -110,7 +110,7 @@ class AgentSkillPromptProviderTest {
                                         "env", List.of("TRELLO_API_KEY", "TRELLO_TOKEN")))));
 
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("trello_custom", skill);
+        skillRegistry.registerSkill("trello", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -134,7 +134,7 @@ class AgentSkillPromptProviderTest {
         metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
         metadata.put("metadata", Map.of("clawdbot", Map.of("emoji", "📋")));
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("trello_custom", skill);
+        skillRegistry.registerSkill("trello", skill);
 
         provider.setExposeAllMetadata(false);
 
@@ -142,7 +142,7 @@ class AgentSkillPromptProviderTest {
 
         assertTrue(prompt.contains("<name>trello</name>"));
         assertTrue(prompt.contains("<description>Manage Trello boards</description>"));
-        assertTrue(prompt.contains("<skill-id>trello_custom</skill-id>"));
+        assertTrue(prompt.contains("<skill-name>trello</skill-name>"));
         assertFalse(prompt.contains("<homepage>"));
         assertFalse(prompt.contains("<metadata>"));
     }
@@ -155,7 +155,7 @@ class AgentSkillPromptProviderTest {
         metadata.put("description", "Manage Trello boards");
         metadata.put("homepage", null);
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("trello_custom", skill);
+        skillRegistry.registerSkill("trello", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -171,7 +171,7 @@ class AgentSkillPromptProviderTest {
         metadata.put("name", "test_skill");
         metadata.put("description", "Description with <xml> & \"quotes\" and 'apostrophes'");
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test_skill", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -189,7 +189,7 @@ class AgentSkillPromptProviderTest {
         metadata.put("description", "desc");
         metadata.put("tool:config", "enabled");
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test_skill", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -200,7 +200,7 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should not include code execution section when not enabled")
     void testNoCodeExecutionSectionByDefault() {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test_skill", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -212,7 +212,7 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should not include code execution section when enabled but uploadDir not set")
     void testNoCodeExecutionSectionWhenEnabledButNoUploadDir() {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test_skill", skill);
 
         provider.setCodeExecutionEnable(true);
 
@@ -226,7 +226,7 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should include code execution section with uploadDir when enabled")
     void testCodeExecutionSectionIncludedWhenEnabled(@TempDir Path tempDir) {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test_skill", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -243,7 +243,7 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Code execution section should appear after </available_skills>")
     void testCodeExecutionSectionAppearsAfterAvailableSkills(@TempDir Path tempDir) {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test_skill", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -259,7 +259,7 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should use custom code execution instruction when set")
     void testCustomCodeExecutionInstruction(@TempDir Path tempDir) {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test_skill", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -285,7 +285,7 @@ class AgentSkillPromptProviderTest {
                         .skillContent("# Content")
                         .originDir(origin)
                         .build();
-        skillRegistry.registerSkill("alpha_custom", skill);
+        skillRegistry.registerSkill("alpha", skill);
 
         provider.setCodeExecutionEnable(true);
 
@@ -308,7 +308,7 @@ class AgentSkillPromptProviderTest {
                         .skillContent("# Content")
                         .originDir(origin)
                         .build();
-        skillRegistry.registerSkill("alpha_custom", skill);
+        skillRegistry.registerSkill("alpha", skill);
 
         // codeExecutionEnabled defaults to false
         String prompt = provider.getSkillSystemPrompt();
@@ -330,8 +330,8 @@ class AgentSkillPromptProviderTest {
                         .originDir(origin)
                         .build();
         AgentSkill noOrigin = new AgentSkill("beta", "beta skill", "# B", null); // no originDir
-        skillRegistry.registerSkill("alpha_custom", withOrigin);
-        skillRegistry.registerSkill("beta_custom", noOrigin);
+        skillRegistry.registerSkill("alpha", withOrigin);
+        skillRegistry.registerSkill("beta", noOrigin);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);

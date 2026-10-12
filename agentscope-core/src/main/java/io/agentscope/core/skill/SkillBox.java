@@ -74,8 +74,8 @@ public class SkillBox {
     }
 
     private SkillBox(SkillBox source, Toolkit toolkit) {
-        for (String id : source.getAllSkillIds()) {
-            skillRegistry.registerSkill(id, source.getSkill(id));
+        for (String name : source.getAllSkillNames()) {
+            skillRegistry.registerSkill(name, source.getSkill(name));
         }
         skillPromptProvider = source.skillPromptProvider.copyFor(skillRegistry);
         skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
@@ -122,7 +122,7 @@ public class SkillBox {
     /**
      * Controls whether the skill prompt exposes all metadata fields or only the core fields.
      *
-     * <p>When disabled, only {@code name}, {@code description}, and {@code skill-id}
+     * <p>When disabled, only {@code name}, {@code description}, and {@code skill-name}
      * are included in the skill prompt.
      *
      * @param exposeAllMetadata {@code true} to expose all metadata, {@code false} to expose only
@@ -201,17 +201,17 @@ public class SkillBox {
             throw new IllegalArgumentException("AgentSkill cannot be null");
         }
 
-        String skillId = skill.getSkillId();
-        skillRegistry.registerSkill(skillId, skill);
-        logger.info("Registered skill '{}'", skillId);
+        String skillName = skill.getName();
+        skillRegistry.registerSkill(skillName, skill);
+        logger.info("Registered skill '{}'", skillName);
     }
 
     /**
-     * Gets all skill IDs.
-     * @return All skill IDs
+     * Gets all skill names (the skill's business identity, unique in this box).
+     * @return All skill names
      */
-    public Set<String> getAllSkillIds() {
-        return skillRegistry.getSkillIds();
+    public Set<String> getAllSkillNames() {
+        return skillRegistry.getSkillNames();
     }
 
     /**
@@ -219,21 +219,21 @@ public class SkillBox {
      * point used by the shared {@code load_skill_through_path} tool: skill activation is written to
      * the per-session tool context, never to the shared group manager.
      *
-     * @param param the tool call parameters carrying {@code skillId} and {@code path}
+     * @param param the tool call parameters carrying {@code skillName} and {@code path}
      * @return the formatted resource content, or a message describing the failure
      */
     String loadSkillResource(ToolCallParam param) {
         Map<String, Object> input = param.getInput();
-        String skillId = (String) input.get("skillId");
-        if (skillId == null || skillId.trim().isEmpty()) {
-            throw new IllegalArgumentException("Missing or empty required parameter: skillId");
+        String skillName = (String) input.get("skillName");
+        if (skillName == null || skillName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Missing or empty required parameter: skillName");
         }
         String path = (String) input.get("path");
         if (path == null || path.trim().isEmpty()) {
             throw new IllegalArgumentException("Missing or empty required parameter: path");
         }
         return skillToolFactory.loadSkillResourceImpl(
-                skillId,
+                skillName,
                 path,
                 skillToolFactory.resolveToolContext(param),
                 // Not gated here: the single decision lives in loadSkillResourceImpl.
@@ -241,45 +241,45 @@ public class SkillBox {
     }
 
     /**
-     * Gets a skill by ID (latest version).
+     * Gets a skill by name (the skill's business identity).
      *
-     * @param skillId The skill ID
+     * @param skillName The skill name
      * @return The skill instance, or null if not found
-     * @throws IllegalArgumentException if skillId is null
+     * @throws IllegalArgumentException if skillName is null
      */
-    public AgentSkill getSkill(String skillId) {
-        if (skillId == null) {
-            throw new IllegalArgumentException("Skill ID cannot be null");
+    public AgentSkill getSkill(String skillName) {
+        if (skillName == null) {
+            throw new IllegalArgumentException("Skill name cannot be null");
         }
-        return skillRegistry.getSkill(skillId);
+        return skillRegistry.getSkill(skillName);
     }
 
     /**
      * Removes a skill completely.
      *
-     * @param skillId The skill ID
-     * @throws IllegalArgumentException if skillId is null
+     * @param skillName The skill name
+     * @throws IllegalArgumentException if skillName is null
      */
-    public void removeSkill(String skillId) {
-        if (skillId == null) {
-            throw new IllegalArgumentException("Skill ID cannot be null");
+    public void removeSkill(String skillName) {
+        if (skillName == null) {
+            throw new IllegalArgumentException("Skill name cannot be null");
         }
-        skillRegistry.removeSkill(skillId);
-        logger.info("Removed skill '{}'", skillId);
+        skillRegistry.removeSkill(skillName);
+        logger.info("Removed skill '{}'", skillName);
     }
 
     /**
      * Checks if a skill exists.
      *
-     * @param skillId The skill ID
+     * @param skillName The skill name
      * @return true if the skill exists, false otherwise
-     * @throws IllegalArgumentException if skillId is null
+     * @throws IllegalArgumentException if skillName is null
      */
-    public boolean exists(String skillId) {
-        if (skillId == null) {
-            throw new IllegalArgumentException("Skill ID cannot be null");
+    public boolean exists(String skillName) {
+        if (skillName == null) {
+            throw new IllegalArgumentException("Skill name cannot be null");
         }
-        return skillRegistry.exists(skillId);
+        return skillRegistry.exists(skillName);
     }
 
     /**
@@ -510,7 +510,7 @@ public class SkillBox {
                     throw new IllegalStateException(
                             "Must bind toolkit or call toolkit() before apply()");
                 }
-                String skillToolGroup = SkillToolGroup.skillToolsGroupName(skill.getSkillId());
+                String skillToolGroup = SkillToolGroup.skillToolsGroupName(skill.getName());
                 if (toolkit.getToolGroup(skillToolGroup) == null) {
                     toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
                 }
@@ -599,7 +599,7 @@ public class SkillBox {
      * lifetime so {@code uploadSkillFiles} no longer mints a fresh {@code agentscope-code-execution-*}
      * tempdir each round).
      *
-     * @param workDir the directory under which {@code skills/<skillId>/} subtrees are written;
+     * @param workDir the directory under which {@code skills/<skillName>/} subtrees are written;
      *                {@code null} (the default) preserves the legacy per-instance tempdir behavior
      */
     public void setWorkDir(Path workDir) {
@@ -701,8 +701,8 @@ public class SkillBox {
         SkillFileFilter filter = fileFilter != null ? fileFilter : SkillFileFilter.acceptAll();
         int fileCount = 0;
 
-        for (String skillId : getAllSkillIds()) {
-            AgentSkill skill = getSkill(skillId);
+        for (String skillName : getAllSkillNames()) {
+            AgentSkill skill = getSkill(skillName);
 
             // Skills with a populated originDir already live on disk at a known absolute path,
             // which the prompt provider exposes as <files-root>. Re-materialising them under
@@ -717,7 +717,7 @@ public class SkillBox {
                 continue;
             }
 
-            Path skillDir = targetDir.resolve(skillId);
+            Path skillDir = targetDir.resolve(skillName);
 
             for (String resourcePath : resourcePaths) {
                 if (!filter.accept(resourcePath)) {
@@ -726,7 +726,7 @@ public class SkillBox {
 
                 String content = skill.getResource(resourcePath);
                 if (content == null) {
-                    logger.warn("Resource not found: {} in skill {}", resourcePath, skillId);
+                    logger.warn("Resource not found: {} in skill {}", resourcePath, skillName);
                     continue;
                 }
 

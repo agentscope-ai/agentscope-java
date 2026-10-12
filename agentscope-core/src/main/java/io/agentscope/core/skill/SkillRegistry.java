@@ -21,13 +21,14 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Pure storage layer for {@link AgentSkill}s, keyed by skill id.
+ * Pure storage layer for {@link AgentSkill}s, keyed by skill name.
+ *
+ * <p>The skill name is the business identity (industry-standard unique skill naming) and must be
+ * unique within one catalog; re-registering the same instance is idempotent, while registering a
+ * different instance under an already-used name fails fast.
  *
  * <p>The skill activation state is not stored here: it is the per-session {@code activatedGroups}
  * on {@link io.agentscope.core.state.ToolContextState}.
- *
- * <p>This is a pure storage layer: parameters are assumed non-null and validation is performed at
- * the {@code Toolkit} layer.
  */
 class SkillRegistry {
     private final Map<String, AgentSkill> skills = new ConcurrentHashMap<>();
@@ -35,44 +36,49 @@ class SkillRegistry {
     // ==================== Registration ====================
 
     /**
-     * Registers a skill, replacing any existing skill with the same id.
+     * Registers a skill under its name.
      *
-     * @param skillId The unique skill identifier (must not be null)
+     * @param skillName The unique skill name (must not be null)
      * @param skill The skill implementation (must not be null)
+     * @throws IllegalArgumentException when the name is already taken by a different instance
      */
-    void registerSkill(String skillId, AgentSkill skill) {
-        skills.put(skillId, skill);
+    void registerSkill(String skillName, AgentSkill skill) {
+        AgentSkill existing = skills.putIfAbsent(skillName, skill);
+        if (existing != null && existing != skill) {
+            throw new IllegalArgumentException(
+                    "Duplicate skill name: '" + skillName + "' is already registered");
+        }
     }
 
     // ==================== Query Operations ====================
 
     /**
-     * Gets a skill by ID.
+     * Gets a skill by name.
      *
-     * @param skillId The skill ID (must not be null)
+     * @param skillName The skill name (must not be null)
      * @return The skill instance, or null if not found
      */
-    AgentSkill getSkill(String skillId) {
-        return skills.get(skillId);
+    AgentSkill getSkill(String skillName) {
+        return skills.get(skillName);
     }
 
     /**
-     * Gets all skill IDs.
+     * Gets all skill names.
      *
-     * @return Set of skill IDs (never null, may be empty)
+     * @return Set of skill names (never null, may be empty)
      */
-    Set<String> getSkillIds() {
+    Set<String> getSkillNames() {
         return new TreeSet<>(skills.keySet());
     }
 
     /**
      * Checks if a skill exists.
      *
-     * @param skillId The skill ID (must not be null)
+     * @param skillName The skill name (must not be null)
      * @return true if the skill exists, false otherwise
      */
-    boolean exists(String skillId) {
-        return skills.containsKey(skillId);
+    boolean exists(String skillName) {
+        return skills.containsKey(skillName);
     }
 
     // ==================== Removal Operations ====================
@@ -80,9 +86,9 @@ class SkillRegistry {
     /**
      * Removes a skill completely.
      *
-     * @param skillId The skill ID (must not be null)
+     * @param skillName The skill name (must not be null)
      */
-    void removeSkill(String skillId) {
-        skills.remove(skillId);
+    void removeSkill(String skillName) {
+        skills.remove(skillName);
     }
 }

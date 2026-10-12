@@ -24,7 +24,7 @@ import java.util.Map;
 /**
  * Immutable snapshot of the skills visible to a single {@code onSystemPrompt} pass.
  *
- * <p>Keyed by {@code skillId} (the AgentSkill's {@code name + "_" + source}), insertion-order
+ * <p>Keyed by skill name (the AgentSkill's business identity), insertion-order
  * preserved so the prompt renders skills in compose order.
  */
 public final class SkillCatalog {
@@ -45,7 +45,7 @@ public final class SkillCatalog {
             if (e == null) {
                 continue;
             }
-            map.put(e.skill().getSkillId(), e);
+            map.put(e.skill().getName(), e);
         }
         return new SkillCatalog(map);
     }

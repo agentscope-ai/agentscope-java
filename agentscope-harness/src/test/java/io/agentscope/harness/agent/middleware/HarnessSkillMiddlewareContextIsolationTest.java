@@ -57,10 +57,10 @@ class HarnessSkillMiddlewareContextIsolationTest {
         assertFalse(prompt.contains("Bob private description"));
         assertTrue(
                 middleware.runtime().currentCatalog(alice).ids().stream()
-                        .anyMatch(id -> id.startsWith("alice-skill_")));
+                        .anyMatch(id -> id.startsWith("alice-skill")));
         assertFalse(
                 middleware.runtime().currentCatalog(alice).ids().stream()
-                        .anyMatch(id -> id.startsWith("bob-skill_")));
+                        .anyMatch(id -> id.startsWith("bob-skill")));
     }
 
     private void writeSkill(String tenant, String name, String description, String body)

@@ -337,8 +337,8 @@ class HarnessAgentDynamicHookBuilderTest {
                                         .runtimeContext(ctx)
                                         .input(
                                                 Map.of(
-                                                        "skillId",
-                                                        "lazy-resource_workspace-namespaced",
+                                                        "skillName",
+                                                        "lazy-resource",
                                                         "path",
                                                         "references/guide.md"))
                                         .build())

@@ -47,14 +47,14 @@ public class SkillToolGroup extends ToolGroup {
     private final String rawDescription;
 
     /**
-     * Single source of the skill tool-group naming convention: {@code skillId +
+     * Single source of the skill tool-group naming convention: {@code skillName +
      * "_skill_tools"}.
      *
-     * @param skillId the skill identifier
+     * @param skillName the skill name (the skill's business identity)
      * @return the derived tool-group name
      */
-    public static String skillToolsGroupName(String skillId) {
-        return skillId + "_skill_tools";
+    public static String skillToolsGroupName(String skillName) {
+        return skillName + "_skill_tools";
     }
 
     private SkillToolGroup(Builder builder) {
@@ -94,18 +94,16 @@ public class SkillToolGroup extends ToolGroup {
 
     @Override
     public ToolGroup copy() {
-        SkillToolGroup copy =
-                SkillToolGroup.skillBuilder()
-                        .name(getName())
-                        .description(rawDescription)
-                        .active(isActive())
-                        .activateOnSkill(activateOnSkill)
-                        .tools(getTools())
-                        // Rebuilt via skillBuilder: without this the system flag is silently
-                        // dropped on copy.
-                        .system(isSystem())
-                        .build();
-        return copy;
+        return SkillToolGroup.skillBuilder()
+                .name(getName())
+                .description(rawDescription)
+                .active(isActive())
+                .activateOnSkill(activateOnSkill)
+                .tools(getTools())
+                // Rebuilt via skillBuilder: without this the system flag is silently
+                // dropped on copy.
+                .system(isSystem())
+                .build();
     }
 
     /**

@@ -164,7 +164,7 @@ class DynamicSkillMiddlewareTest {
         RuntimeContext rcB = grantRc();
         mw.onSystemPrompt(null, rcA, "").block();
         SkillBox boxA = rcA.get(SkillBox.class);
-        String id = boxA.getAllSkillIds().iterator().next();
+        String id = boxA.getAllSkillNames().iterator().next();
         Path fileA = boxA.getUploadDir().resolve(id).resolve("data.txt");
         repo.skills = List.of(b);
         mw.onSystemPrompt(null, rcB, "").block();
@@ -221,7 +221,7 @@ class DynamicSkillMiddlewareTest {
                                             "complete resource",
                                             java.nio.file.Files.readString(
                                                     box.getUploadDir()
-                                                            .resolve(skill.getSkillId())
+                                                            .resolve(skill.getName())
                                                             .resolve("data.txt")));
                                     return box;
                                 }));
@@ -250,7 +250,7 @@ class DynamicSkillMiddlewareTest {
         RuntimeContext rc = grantRc();
         mw.onSystemPrompt(null, rc, "").block();
         SkillBox active = rc.get(SkillBox.class);
-        Path activeFile = active.getUploadDir().resolve(skill.getSkillId()).resolve("data.txt");
+        Path activeFile = active.getUploadDir().resolve(skill.getName()).resolve("data.txt");
         for (int i = 0; i < 32; i++) {
             repo.skills = List.of(new AgentSkill("other" + i, "Other", "content", null));
             mw.onSystemPrompt(null, grantRc(), "").block();
@@ -267,7 +267,7 @@ class DynamicSkillMiddlewareTest {
                 java.nio.file.Files.readString(
                         rc.get(SkillBox.class)
                                 .getUploadDir()
-                                .resolve(skill.getSkillId())
+                                .resolve(skill.getName())
                                 .resolve("data.txt")));
     }
 

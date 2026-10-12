@@ -80,7 +80,6 @@ class SkillUtilTest {
 
             assertEquals("github_skill", skill.getName());
             assertEquals("github", skill.getSource());
-            assertEquals("github_skill_github", skill.getSkillId());
         }
 
         @Test

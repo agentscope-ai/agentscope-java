@@ -281,7 +281,7 @@ When the agent reasons, it sees an `<available_skills>` block in the system prom
 <skill>
   <name>code-reviewer</name>
   <description>Use when the user asks for code review, style feedback, or PR audits.</description>
-  <skill-id>code-reviewer_workspace-namespaced</skill-id>
+  <skill-name>code-reviewer</skill-name>
   <files-root>/workspace/skills/code-reviewer</files-root>
 </skill>
 ...
@@ -294,8 +294,8 @@ Each entry carries just enough metadata for the agent to decide whether to load 
 
 To activate a skill the agent calls a built-in tool — `load_skill_through_path`:
 
-- `load_skill_through_path(skillId, path="SKILL.md")` returns the markdown body
-- `load_skill_through_path(skillId, path="references/style-guide.md")` returns any other file under the skill directory
+- `load_skill_through_path(skillName, path="SKILL.md")` returns the markdown body
+- `load_skill_through_path(skillName, path="references/style-guide.md")` returns any other file under the skill directory
 
 How the file gets fetched depends on where the skill came from:
 
@@ -330,7 +330,7 @@ Marketplace skill resources start as in-memory bytes. For shell execution to wor
 
 Workspace skills (Layer 3 / Layer 4) need no staging — they already live in the workspace tree.
 
-If two repositories report the same `getSource()`, the second is auto-suffixed (`<source>_2`, `<source>_3`, …) with a warning log, so paths and skill-ids never collide.
+If two repositories report the same `getSource()`, the second is auto-suffixed (`<source>_2`, `<source>_3`, …) with a warning log, so paths and skill names never collide.
 
 ## Running skills in a sandbox
 

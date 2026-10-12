@@ -281,7 +281,7 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 <skill>
   <name>code-reviewer</name>
   <description>当用户需要代码评审、风格反馈或 PR 审核时使用。</description>
-  <skill-id>code-reviewer_workspace-namespaced</skill-id>
+  <skill-name>code-reviewer</skill-name>
   <files-root>/workspace/skills/code-reviewer</files-root>
 </skill>
 ...
@@ -294,8 +294,8 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 加载某个 skill 时 agent 会调用内置工具 `load_skill_through_path`：
 
-- `load_skill_through_path(skillId, path="SKILL.md")` 返回 markdown 正文
-- `load_skill_through_path(skillId, path="references/style-guide.md")` 返回该 skill 目录下的任意文件
+- `load_skill_through_path(skillName, path="SKILL.md")` 返回 markdown 正文
+- `load_skill_through_path(skillName, path="references/style-guide.md")` 返回该 skill 目录下的任意文件
 
 具体怎么取文件，取决于 skill 来自哪里：
 
@@ -330,7 +330,7 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 工作区 skill（Layer 3 / Layer 4）不需要 stage——它们本来就在工作区目录里。
 
-如果两个仓库返回了相同的 `getSource()`，第二个会自动加后缀（`<source>_2`、`<source>_3` …），并打 warning log，所以路径和 skill-id 不会撞。
+如果两个仓库返回了相同的 `getSource()`，第二个会自动加后缀（`<source>_2`、`<source>_3` …），并打 warning log，所以路径和 skillName 不会撞。
 
 ## 在沙箱里运行 skill
 
