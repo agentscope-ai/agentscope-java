@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -111,7 +112,7 @@ public class ConversationCompactor {
         return Mono.usingWhen(
                 recorder.record(
                                 "compaction/start",
-                                Map.of("compactionId", id, "inputMessages", conversationMessages))
+                                compactionStartPayload(id, beforeMsgCount, beforeTokenCount))
                         .thenReturn(new CompactionExecution(id)),
                 execution ->
                         compactCandidate(rc, conversationMessages, config, agentId, sessionId)
@@ -123,17 +124,19 @@ public class ConversationCompactor {
                                         execution.id,
                                         beforeMsgCount,
                                         beforeTokenCount,
-                                        execution.afterMessages(conversationMessages))),
+                                        execution.afterMessages(conversationMessages),
+                                        execution.durationMs())),
                 (execution, error) ->
                         SessionLogException.causedBy(error)
                                 ? Mono.empty()
                                 : recorder.record(
                                         "compaction/end",
-                                        compactionEndPayload(
+                                        failedCompactionEndPayload(
                                                 execution.id,
-                                                "failed",
                                                 beforeMsgCount,
-                                                beforeTokenCount)),
+                                                beforeTokenCount,
+                                                error,
+                                                execution.durationMs())),
                 execution ->
                         recorder.record(
                                 "compaction/end",
@@ -141,15 +144,21 @@ public class ConversationCompactor {
                                         execution.id,
                                         "cancelled",
                                         beforeMsgCount,
-                                        beforeTokenCount)));
+                                        beforeTokenCount,
+                                        execution.durationMs())));
     }
 
     private static final class CompactionExecution {
         private final String id;
+        private final long startNanos = System.nanoTime();
         private final AtomicReference<Optional<List<Msg>>> result = new AtomicReference<>();
 
         private CompactionExecution(String id) {
             this.id = id;
+        }
+
+        private long durationMs() {
+            return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
         }
 
         private List<Msg> afterMessages(List<Msg> fallback) {
@@ -160,25 +169,55 @@ public class ConversationCompactor {
         }
     }
 
+    private static Map<String, Object> compactionStartPayload(
+            String compactionId, int beforeMsgCount, int beforeTokenCount) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("compactionId", compactionId);
+        payload.put("status", "started");
+        payload.put("beforeMsgCount", beforeMsgCount);
+        payload.put("beforeTokenCount", beforeTokenCount);
+        return payload;
+    }
+
     private static Map<String, Object> completedCompactionEndPayload(
             String compactionId,
             int beforeMsgCount,
             int beforeTokenCount,
-            List<Msg> afterMessages) {
+            List<Msg> afterMessages,
+            long durationMs) {
         Map<String, Object> payload =
-                compactionEndPayload(compactionId, "completed", beforeMsgCount, beforeTokenCount);
+                compactionEndPayload(
+                        compactionId, "completed", beforeMsgCount, beforeTokenCount, durationMs);
         payload.put("afterMsgCount", afterMessages.size());
         payload.put("afterTokenCount", TokenCounterUtil.calculateToken(afterMessages));
         return payload;
     }
 
+    private static Map<String, Object> failedCompactionEndPayload(
+            String compactionId,
+            int beforeMsgCount,
+            int beforeTokenCount,
+            Throwable error,
+            long durationMs) {
+        Map<String, Object> payload =
+                compactionEndPayload(
+                        compactionId, "failed", beforeMsgCount, beforeTokenCount, durationMs);
+        payload.put("errorType", error.getClass().getSimpleName());
+        return payload;
+    }
+
     private static Map<String, Object> compactionEndPayload(
-            String compactionId, String status, int beforeMsgCount, int beforeTokenCount) {
+            String compactionId,
+            String status,
+            int beforeMsgCount,
+            int beforeTokenCount,
+            long durationMs) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("compactionId", compactionId);
         payload.put("status", status);
         payload.put("beforeMsgCount", beforeMsgCount);
         payload.put("beforeTokenCount", beforeTokenCount);
+        payload.put("durationMs", durationMs);
         return payload;
     }
 
@@ -280,7 +319,7 @@ public class ConversationCompactor {
                                             }
                                             log.warn(
                                                     "Memory flush before compaction failed: {}",
-                                                    e.getMessage());
+                                                    e.getClass().getSimpleName());
                                             return Mono.empty();
                                         })
                         : Mono.empty();

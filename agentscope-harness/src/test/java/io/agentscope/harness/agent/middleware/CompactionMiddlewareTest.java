@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -25,10 +26,12 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
@@ -45,6 +48,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Signal;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
@@ -90,6 +94,119 @@ class CompactionMiddlewareTest {
         assertEquals(1, facts.stream().filter(e -> e.type().equals("run/end")).count());
         assertTrue(facts.stream().allMatch(e -> run.runId().equals(e.executionRunId())));
         assertTrue(facts.stream().filter(e -> e.type().equals("model/end")).count() >= 2);
+    }
+
+    /** Without a session log the recovery companion still recovers overflow once. */
+    @Test
+    void overflowRecoveryWorksWithoutSessionLog() {
+        AtomicInteger calls = new AtomicInteger();
+        var recovery = new CompactionMiddleware(null, new SuccessfulSummaryModel(), fixedConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("overflow-no-log-test")
+                        .model(new OverflowOnceModel(calls, "answer"))
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        var reply =
+                agent.call(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                context("user", "no-log-session"))
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(reply);
+        assertEquals("answer", reply.getTextContent());
+        assertEquals(2, calls.get());
+    }
+
+    /**
+     * The full middleware (standalone wiring) must also recover stream-event overflows exactly
+     * once through its own reasoning boundary.
+     */
+    @Test
+    void streamEventsOverflowRecoveryCompletesOnce() {
+        AtomicInteger calls = new AtomicInteger();
+        var recovery = new CompactionMiddleware(null, new SuccessfulSummaryModel(), fixedConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("overflow-stream-test")
+                        .model(new OverflowOnceModel(calls, "answer"))
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .middleware(recovery)
+                        .build();
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                context("user", "stream-session"))
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(events);
+        assertEquals(2, calls.get());
+        assertTrue(
+                events.stream().anyMatch(event -> event.getType() == AgentEventType.AGENT_END),
+                "stream must terminate with an AGENT_END event");
+    }
+
+    /** A retry that overflows again must propagate the provider error without another call. */
+    @Test
+    void secondOverflowPropagatesWithoutAnotherRetry() {
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger summaryCalls = new AtomicInteger();
+        var recovery =
+                new CompactionMiddleware(
+                        null, new CountingSummaryModel(summaryCalls), noCompactionConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("overflow-always-test")
+                        .model(new AlwaysOverflowModel(calls))
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        List<Signal<AgentEvent>> signals =
+                agent.streamEvents(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                context("user", "overflow-always-session"))
+                        .materialize()
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(signals);
+        Signal<AgentEvent> terminal = signals.get(signals.size() - 1);
+        assertTrue(terminal.isOnError(), "stream must terminate with an error signal");
+        assertTrue(
+                terminal.getThrowable() instanceof IllegalStateException
+                        && terminal.getThrowable().getMessage() != null
+                        && terminal.getThrowable()
+                                .getMessage()
+                                .contains("context_length_exceeded"));
+        assertEquals(2, calls.get());
+        assertEquals(1, summaryCalls.get());
+    }
+
+    /**
+     * A durable synthetic reminder (here the empty-response loop) must not block overflow
+     * recovery: the compacted history cannot re-commit while synthetics remain, but the reduced
+     * model view still unblocks the single retry.
+     */
+    @Test
+    void overflowRecoveryWithSyntheticDurableHistoryStillRetries() {
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger summaryCalls = new AtomicInteger();
+        var recovery =
+                new CompactionMiddleware(
+                        null, new CountingSummaryModel(summaryCalls), noCompactionConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("overflow-synthetic-test")
+                        .model(new EmptyThenOverflowThenAnswerModel(calls))
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        var reply =
+                agent.call(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                context("user", "synthetic-session"))
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(reply);
+        assertEquals("answer", reply.getTextContent());
+        assertEquals(3, calls.get());
+        assertEquals(1, summaryCalls.get());
     }
 
     /** An ordinary compaction failure skips compaction and invokes original reasoning once. */
@@ -398,12 +515,17 @@ class CompactionMiddlewareTest {
                 .build();
     }
 
-    /** Creates stable configuration that bypasses compaction for model-stream interrupt tests. */
+    /**
+     * Creates stable configuration that bypasses boundary compaction for model-stream interrupt and
+     * overflow recovery tests. Flush is disabled so the counting model only sees summarization
+     * calls.
+     */
     private CompactionConfig noCompactionConfig() {
         return CompactionConfig.builder()
                 .triggerMessages(0)
                 .triggerTokens(Integer.MAX_VALUE)
                 .keepTokens(0)
+                .flushBeforeCompact(false)
                 .build();
     }
 
@@ -433,6 +555,115 @@ class CompactionMiddlewareTest {
     /** Creates a minimal user message shared by single-session and concurrent-session tests. */
     private Msg userMessage(String text) {
         return Msg.builder().role(MsgRole.USER).textContent(text).build();
+    }
+
+    /** Fails the first request with a provider overflow, then answers successfully. */
+    private static final class OverflowOnceModel extends ChatModelBase {
+        private final AtomicInteger calls;
+        private final String answer;
+
+        private OverflowOnceModel(AtomicInteger calls, String answer) {
+            this.calls = calls;
+            this.answer = answer;
+        }
+
+        @Override
+        public String getModelName() {
+            return "overflow-once";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            if (calls.getAndIncrement() == 0)
+                return Flux.error(new IllegalStateException("context_length_exceeded"));
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text(answer).build()))
+                            .build());
+        }
+    }
+
+    /** Always fails with a provider overflow error to verify single retry semantics. */
+    private static final class AlwaysOverflowModel extends ChatModelBase {
+        private final AtomicInteger calls;
+
+        private AlwaysOverflowModel(AtomicInteger calls) {
+            this.calls = calls;
+        }
+
+        @Override
+        public String getModelName() {
+            return "overflow-always";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            calls.incrementAndGet();
+            return Flux.error(new IllegalStateException("context_length_exceeded"));
+        }
+    }
+
+    /** Counts summary invocations while emitting one successful summary chunk. */
+    private static final class CountingSummaryModel extends ChatModelBase {
+        private final AtomicInteger calls;
+
+        private CountingSummaryModel(AtomicInteger calls) {
+            this.calls = calls;
+        }
+
+        @Override
+        public String getModelName() {
+            return "counting-summary";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            calls.incrementAndGet();
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("summary").build()))
+                            .build());
+        }
+    }
+
+    /**
+     * Emits an empty response first (driving the durable synthetic reminder), then fails once
+     * with a provider overflow, then answers — reproducing a synthetic-bearing durable history.
+     */
+    private static final class EmptyThenOverflowThenAnswerModel extends ChatModelBase {
+        private final AtomicInteger calls;
+
+        private EmptyThenOverflowThenAnswerModel(AtomicInteger calls) {
+            this.calls = calls;
+        }
+
+        @Override
+        public String getModelName() {
+            return "empty-then-overflow";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            int call = calls.getAndIncrement();
+            if (call == 0)
+                return Flux.just(
+                        ChatResponse.builder()
+                                .content(
+                                        List.of(
+                                                ThinkingBlock.builder()
+                                                        .thinking("thinking only")
+                                                        .build()))
+                                .build());
+            if (call == 1) return Flux.error(new IllegalStateException("context_length_exceeded"));
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("answer").build()))
+                            .build());
+        }
     }
 
     /** Throws while creating the summary publisher, exercising the outer compaction fallback. */

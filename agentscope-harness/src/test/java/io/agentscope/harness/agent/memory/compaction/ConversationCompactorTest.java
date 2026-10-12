@@ -199,6 +199,7 @@ class ConversationCompactorTest {
             assertEquals(compacted.size(), end.data().get("afterMsgCount"));
             assertEquals(
                     TokenCounterUtil.calculateToken(compacted), end.data().get("afterTokenCount"));
+            assertTrue(end.data().containsKey("durationMs"));
         } finally {
             recorder.close();
         }
@@ -252,6 +253,54 @@ class ConversationCompactorTest {
                     TokenCounterUtil.calculateToken(input), end.data().get("beforeTokenCount"));
             assertFalse(end.data().containsKey("afterMsgCount"));
             assertFalse(end.data().containsKey("afterTokenCount"));
+            assertEquals("IllegalStateException", end.data().get("errorType"));
+            assertFalse(String.valueOf(end.data()).contains("summary failed"));
+            assertTrue(end.data().containsKey("durationMs"));
+        } finally {
+            recorder.close();
+        }
+    }
+
+    /** Verifies that compaction events never carry raw message content or input lists. */
+    @Test
+    void compactIfNeeded_eventsOmitsRawMessageContent() {
+        InMemorySessionLogStore store = new InMemorySessionLogStore();
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder().userId("user").sessionId("redacted-session").build();
+        var log =
+                store.open(new SessionKey("user", "agent-id", "redacted-session"), runtimeContext);
+        SessionRecorder recorder = new SessionRecorder(log, "turn");
+        runtimeContext.put(SessionRecorder.CONTEXT_KEY, recorder);
+
+        String longSecret = "z".repeat(256);
+        List<Msg> input =
+                List.of(
+                        message("SENSITIVE-MARKER " + longSecret),
+                        message("M2"),
+                        message("TAIL_1"),
+                        message("TAIL_2"));
+        try {
+            new ConversationCompactor(new RecordingModel(), new MemoryFlushManager(null, null))
+                    .compactIfNeeded(
+                            runtimeContext, input, config(false), "agent-id", "redacted-session")
+                    .block()
+                    .orElseThrow();
+
+            var events = log.readAfter(0, 100);
+            var start =
+                    events.stream()
+                            .filter(event -> event.type().equals("compaction/start"))
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals("started", start.data().get("status"));
+            assertEquals(input.size(), start.data().get("beforeMsgCount"));
+            assertFalse(start.data().containsKey("inputMessages"));
+            String serialized =
+                    events.stream()
+                            .map(event -> event.type() + ":" + event.data())
+                            .reduce("", (left, right) -> left + "\n" + right);
+            assertFalse(serialized.contains("SENSITIVE-MARKER"));
+            assertFalse(serialized.contains(longSecret));
         } finally {
             recorder.close();
         }

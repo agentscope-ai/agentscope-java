@@ -260,10 +260,13 @@ The catalog below helps locate the facts needed for a timeline, diagnosis or app
 
 Events cover adapter-visible requests and output, not provider internals or backups of referenced files. Keep raw requests, tool results and checkpoints in an authorized diagnostic interface; filter what you expose to a browser.
 
-The `compaction/end` payload includes `compactionId`, `status`, `beforeMsgCount`, and
-`beforeTokenCount`. When `status` is `completed`, it also includes `afterMsgCount` and
-`afterTokenCount`, calculated from the effective post-compaction conversation. Failed or cancelled
-compactions include only the before metrics because no post-compaction state is available.
+The `compaction/start` payload includes `compactionId`, `status` (`started`), `beforeMsgCount`,
+and `beforeTokenCount`; message content is never copied into the event. The `compaction/end`
+payload includes `compactionId`, `status`, `beforeMsgCount`, `beforeTokenCount`, and
+`durationMs`. When `status` is `completed`, it also includes `afterMsgCount` and
+`afterTokenCount`, calculated from the effective post-compaction conversation. When `status` is
+`failed`, it includes `errorType` (the exception class name only) instead of after metrics.
+Cancelled compactions also omit after metrics because no post-compaction state is available.
 
 <Accordion title="SessionEvent envelope">
 
