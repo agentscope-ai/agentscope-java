@@ -249,8 +249,11 @@ public class ConversationCompactor {
 
         int cutoff = determineCutoffIndex(messages, totalTokens, config);
         if (cutoff <= 0) {
-            log.debug("Compaction triggered but safe cutoff is 0 — skipping");
-            return Mono.just(Optional.empty());
+            log.debug("Compaction triggered but safe cutoff is 0 — returning lightweight result");
+            return Mono.just(
+                    messages.equals(conversationMessages)
+                            ? Optional.empty()
+                            : Optional.of(messages));
         }
 
         // Keep prior summaries in the summarization input so each compaction builds on the
