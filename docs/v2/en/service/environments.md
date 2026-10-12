@@ -12,7 +12,7 @@ An Environment selects the execution backend for a Managed Agent's file, Shell, 
 
 A [Workspace](/v2/en/service/workspaces) supplies instructions, Skills, and tool definitions, while the Environment determines where files and commands are executed. Managed model calls and reasoning remain in Dataplane even when tools run on a self_hosted Worker. A Hosted Agent's Runtime Host runs another kind of Agent runtime; its enrollment credentials cannot replace an Environment Worker's credentials.
 
-Use the platform identity variables from the [deployment guide](/v2/en/service/quickstart) and `AGENT_ID` from [your first Managed Agent](/v2/en/service/create-managed-agent) to verify file tools. If a suitable Environment already exists, retain its ID and continue to binding. When creating one yourself, also prepare its execution backend: a successful resource creation does not establish that a Worker is online or sandbox credentials are usable.
+Use the platform identity variables from the [API identity setup](/v2/en/service/create-managed-agent#api-setup) and `AGENT_ID` from [your first Managed Agent](/v2/en/service/create-managed-agent) to verify file tools. If a suitable Environment already exists, retain its ID and continue to binding. When creating one yourself, also prepare its execution backend: a successful resource creation does not establish that a Worker is online or sandbox credentials are usable.
 
 ## Choose a type
 
@@ -145,7 +145,7 @@ Environment `config` belongs to the resource, and PATCH replaces the entire obje
 
 ## Management APIs
 
-Use a platform user Bearer token with `X-AgentScope-Tenant` and `X-AgentScope-Namespace`; prepare variables as in the [deployment preparation](/v2/en/service/quickstart). Listings are filtered to inspectable resources. Reads require inspect, mutations require edit, and creation requires namespace resource creation rights.
+Use a platform user Bearer token with `X-AgentScope-Tenant` and `X-AgentScope-Namespace`; prepare variables as in the [API identity setup](/v2/en/service/create-managed-agent#api-setup). Listings are filtered to inspectable resources. Reads require inspect, mutations require edit, and creation requires namespace resource creation rights.
 
 | Operation | API | Parameters and response |
 | --- | --- | --- |

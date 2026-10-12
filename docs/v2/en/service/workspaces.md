@@ -152,7 +152,7 @@ Inspect consumers before editing and verify changes with new work. Resolve depen
 
 ## APIs and access
 
-Authenticate with a platform user Bearer token and select a scope with `X-AgentScope-Tenant` and `X-AgentScope-Namespace`. Reading, editing, and publishing require the corresponding inspect, edit, and publish resource permissions; creation requires namespace resource creation rights. Set variables as shown in the [deployment preparation](/v2/en/service/quickstart). Below, `{id}` is the returned Workspace ID; encode URL parameters.
+Authenticate with a platform user Bearer token and select a scope with `X-AgentScope-Tenant` and `X-AgentScope-Namespace`. Reading, editing, and publishing require the corresponding inspect, edit, and publish resource permissions; creation requires namespace resource creation rights. Set variables as shown in the [API identity setup](/v2/en/service/create-managed-agent#api-setup). Below, `{id}` is the returned Workspace ID; encode URL parameters.
 
 | Operation | API | Request or response |
 | --- | --- | --- |

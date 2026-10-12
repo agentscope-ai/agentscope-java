@@ -123,6 +123,13 @@ class OpenAIResponsesChatModelTest {
         return client;
     }
 
+    @Test
+    void supportsSpecificToolChoice() {
+        OpenAIResponsesChatModel model = createModel(mockClientWithResponseService(), false);
+
+        assertTrue(model.supportsToolChoiceSpecific());
+    }
+
     @Nested
     class NonStreaming {
 

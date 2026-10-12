@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent;
 
+import static io.agentscope.core.message.ToolResultState.SUCCESS;
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -177,6 +179,7 @@ class SubagentFactoryDeclarationTest {
                                 null,
                                 30,
                                 null)
+                        .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
         AgentState nextParentState = AgentState.builder().build();
         String second =
@@ -188,6 +191,7 @@ class SubagentFactoryDeclarationTest {
                                 null,
                                 30,
                                 null)
+                        .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
 
         assertTrue(first.contains("status: ok"), first);
@@ -250,13 +254,21 @@ class SubagentFactoryDeclarationTest {
         RuntimeContext bob = RuntimeContext.builder().userId("bob").sessionId("s1").build();
 
         String aliceFirst =
-                tool.agentSpawn(alice, null, "note-taker", "first", label, 30, null).block(TIMEOUT);
+                tool.agentSpawn(alice, null, "note-taker", "first", label, 30, null)
+                        .map(result -> assertText(result, SUCCESS))
+                        .block(TIMEOUT);
         String bobFirst =
-                tool.agentSpawn(bob, null, "note-taker", "first", label, 30, null).block(TIMEOUT);
+                tool.agentSpawn(bob, null, "note-taker", "first", label, 30, null)
+                        .map(result -> assertText(result, SUCCESS))
+                        .block(TIMEOUT);
         String aliceAgain =
-                tool.agentSpawn(alice, null, "note-taker", "again", label, 30, null).block(TIMEOUT);
+                tool.agentSpawn(alice, null, "note-taker", "again", label, 30, null)
+                        .map(result -> assertText(result, SUCCESS))
+                        .block(TIMEOUT);
         String bobAgain =
-                tool.agentSpawn(bob, null, "note-taker", "again", label, 30, null).block(TIMEOUT);
+                tool.agentSpawn(bob, null, "note-taker", "again", label, 30, null)
+                        .map(result -> assertText(result, SUCCESS))
+                        .block(TIMEOUT);
 
         assertTrue(aliceFirst.contains("child bound to alice"), aliceFirst);
         assertTrue(aliceAgain.contains("child bound to alice"), aliceAgain);
@@ -269,8 +281,13 @@ class SubagentFactoryDeclarationTest {
         assertEquals(2, factoryCalls.get(), "one child must be constructed per user");
         if (!label.isBlank()) {
             String aliceSend =
-                    tool.agentSend(alice, null, null, label, "follow-up", 30).block(TIMEOUT);
-            String bobSend = tool.agentSend(bob, null, null, label, "follow-up", 30).block(TIMEOUT);
+                    tool.agentSend(alice, null, null, label, "follow-up", 30)
+                            .map(result -> assertText(result, SUCCESS))
+                            .block(TIMEOUT);
+            String bobSend =
+                    tool.agentSend(bob, null, null, label, "follow-up", 30)
+                            .map(result -> assertText(result, SUCCESS))
+                            .block(TIMEOUT);
             assertTrue(aliceSend.contains("child bound to alice"), aliceSend);
             assertTrue(bobSend.contains("child bound to bob"), bobSend);
         }
@@ -312,6 +329,7 @@ class SubagentFactoryDeclarationTest {
                                     assertTrue(start.await(10, TimeUnit.SECONDS));
                                     return tool.agentSpawn(
                                                     ctx, null, "worker", null, "notes", 30, null)
+                                            .map(result -> assertText(result, SUCCESS))
                                             .block(TIMEOUT);
                                 }));
             }

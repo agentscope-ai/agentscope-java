@@ -12,7 +12,7 @@ Vault 保存 Agent 访问外部工具时使用的凭据。要让某次执行使�
 
 Agent 定义说明连接地址和可用工具，Vault 则保存认证内容，便于同一个 Agent 在不同 Session 中使用不同的授权。它与调用 Service API 的用户 `TOKEN` 或 Application key 分开管理：前者认证 Agent 访问外部系统，后者认证应用访问 Service。Secret 写入后，公开资源接口只返回类型、标签和目标等元数据，不重新返回明文。
 
-下面沿用[部署指南](/v2/zh/service/quickstart)中的平台身份变量。验证前还需要一个已按[工具指南](/v2/zh/service/tools)配置 MCP 连接的 Managed Agent，并保留它的 `AGENT_ID`。本页使用连接名 `reports` 和变量名 `REPORTS_TOKEN`；请按实际连接调整这些名称和服务 URL。
+下面沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的平台身份变量。验证前还需要一个已按[工具指南](/v2/zh/service/tools)配置 MCP 连接的 Managed Agent，并保留它的 `AGENT_ID`。本页使用连接名 `reports` 和变量名 `REPORTS_TOKEN`；请按实际连接调整这些名称和服务 URL。
 
 ## 创建 Vault 并添加凭据
 
@@ -134,7 +134,7 @@ printf '%s' "$SESSION_JSON" | jq '{id, target, vaultIds}'
 
 ## 管理 API
 
-请求使用平台用户 Bearer token 和 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`，变量准备见[部署准备](/v2/zh/service/quickstart)。资源读取需要 inspect、修改需要 edit，创建需要空间资源创建权限。列表按可检查资源过滤，绑定到 Agent 时还会检查依赖访问权限。
+请求使用平台用户 Bearer token 和 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`，变量准备见[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)。资源读取需要 inspect、修改需要 edit，创建需要空间资源创建权限。列表按可检查资源过滤，绑定到 Agent 时还会检查依赖访问权限。
 
 | 操作 | API | 参数与响应 |
 | --- | --- | --- |
