@@ -1582,9 +1582,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     .getToolSchemas(activeGroups, scope.toolRequestConfig)
                                     .isEmpty();
                     boolean useNative =
-                            hasTools
-                                    ? model.supportsNativeStructuredOutputWithTools()
-                                    : model.supportsNativeStructuredOutput();
+                            model.supportsNativeStructuredOutput()
+                                    && (!hasTools
+                                            || model.supportsNativeStructuredOutputWithTools());
                     log.debug(
                             "Structured output routing: native={}, hasTools={} (agent={}#{})",
                             useNative,
@@ -1592,17 +1592,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             getAgentId(),
                             getName());
                     if (useNative) {
-                        return doNativeStructuredCall(msgs, jsonSchema)
-                                .onErrorResume(
-                                        e -> {
-                                            log.warn(
-                                                    "Native structured output failed ({}) — falling"
-                                                            + " back to synthetic tool path",
-                                                    e.getMessage() != null
-                                                            ? e.getMessage()
-                                                            : e.getClass().getSimpleName());
-                                            return doFallbackStructuredCall(msgs, jsonSchema);
-                                        });
+                        Mono<Msg> nativeCall = doNativeStructuredCall(msgs, jsonSchema, !hasTools);
+                        if (hasTools) {
+                            // A native call with business tools may already have executed
+                            // side-effecting tools before a later model round fails. Preserve that
+                            // safe state and propagate the error instead of rolling back and
+                            // replaying the whole call through the synthetic-tool path.
+                            return nativeCall.onErrorResume(
+                                    error -> saveStateAfterCallFailure(scope, error));
+                        }
+                        return nativeCall.onErrorResume(
+                                e -> {
+                                    log.warn(
+                                            "Native structured output failed ({}) — falling"
+                                                    + " back to synthetic tool path",
+                                            e.getMessage() != null
+                                                    ? e.getMessage()
+                                                    : e.getClass().getSimpleName());
+                                    return doFallbackStructuredCall(msgs, jsonSchema);
+                                });
                     }
                     return doFallbackStructuredCall(msgs, jsonSchema);
                 });
@@ -1613,7 +1621,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * {@link GenerateOptions}. The model returns structured JSON as text content and the
      * ReAct loop terminates naturally (no synthetic tool needed).
      */
-    private Mono<Msg> doNativeStructuredCall(List<Msg> msgs, Map<String, Object> jsonSchema) {
+    private Mono<Msg> doNativeStructuredCall(
+            List<Msg> msgs, Map<String, Object> jsonSchema, boolean rollbackOnError) {
         return Mono.deferContextual(
                 cv -> {
                     CallExecution scope = scopeFrom(cv);
@@ -1654,6 +1663,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             .then(Mono.<Msg>empty())))
                             .doOnError(
                                     e -> {
+                                        if (!rollbackOnError) {
+                                            return;
+                                        }
                                         List<Msg> ctx = scope.state.contextMutable();
                                         while (ctx.size() > contextSizeBefore) {
                                             ctx.remove(ctx.size() - 1);
