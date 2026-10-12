@@ -15,12 +15,15 @@
  */
 package io.agentscope.extensions.redis.circuitbreaker;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.tool.circuitbreaker.ToolCircuitBreaker;
+import io.agentscope.core.tool.circuitbreaker.ToolCircuitBreakerConfig;
 import io.agentscope.core.tool.circuitbreaker.ToolCircuitSnapshot;
 import io.agentscope.extensions.redis.state.RedisClientAdapter;
 import java.time.Duration;
@@ -35,10 +38,8 @@ import org.junit.jupiter.api.Test;
  * Client-side behaviour of {@link RedisToolCircuitBreakerStore}: key layout, the arguments handed to
  * the compare-and-set script, and the encoding of persisted state.
  *
- * <p>Scope note: the Lua script is executed by Redis, so a fake client cannot run it. These tests
- * cover the Java side — which key is addressed, what the script receives, and how stored values are
- * encoded and decoded, including values a healthy writer would never produce. The script's
- * server-side effect needs a live Redis to verify.
+ * <p>These recording-client tests cover the Java side. {@link RedisToolCircuitBreakerStoreScriptTest}
+ * executes the actual Lua scripts, including atomic transitions, repair races and expiry commands.
  */
 class RedisToolCircuitBreakerStoreTest {
 
@@ -80,7 +81,7 @@ class RedisToolCircuitBreakerStoreTest {
         store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, new ToolCircuitSnapshot(2L, 5_000L));
 
         // Expected "" makes "missing" and "closed" compare equal; update carries the new state.
-        assertEquals(List.of("", "0:2:5000::0", "86400"), client.scriptArgs.get(0));
+        assertEquals(List.of("", "v1:0:2:5000:0:-1:", "86400"), client.scriptArgs.get(0));
     }
 
     @Test
@@ -90,7 +91,7 @@ class RedisToolCircuitBreakerStoreTest {
 
         store.compareAndSet(TOOL, open, ToolCircuitSnapshot.CLOSED);
 
-        assertEquals(List.of("0:3:7000::0", "", "86400"), client.scriptArgs.get(0));
+        assertEquals(List.of("v1:0:3:7000:0:-1:", "", "86400"), client.scriptArgs.get(0));
     }
 
     @Test
@@ -100,7 +101,7 @@ class RedisToolCircuitBreakerStoreTest {
 
         store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, claimed);
 
-        assertEquals(List.of("", "0:4:1000:tok:9000", "86400"), client.scriptArgs.get(0));
+        assertEquals(List.of("", "v1:0:4:1000:9000:3:tok", "86400"), client.scriptArgs.get(0));
     }
 
     @Test
@@ -176,6 +177,19 @@ class RedisToolCircuitBreakerStoreTest {
     }
 
     @Test
+    void opaqueTokensRoundTripWithoutConflatingEmptyAndNull() {
+        RedisToolCircuitBreakerStore store = store();
+        for (String token : List.of("", "a:b", "opaque:\n天气:🧪")) {
+            ToolCircuitSnapshot original = new ToolCircuitSnapshot(0L, 1L, 1_000L, token, 9_000L);
+            client.scriptArgs.clear();
+            store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, original);
+            client.values.put(KEY, client.scriptArgs.get(0).get(1));
+
+            assertEquals(original, store.snapshot(TOOL));
+        }
+    }
+
+    @Test
     void unreadableValuesFailOpenRatherThanWithholdingForever() {
         RedisToolCircuitBreakerStore store = store();
 
@@ -187,7 +201,10 @@ class RedisToolCircuitBreakerStoreTest {
                         "0:1:1000::0:extra",
                         "x:1:1000::0",
                         "0:-1:1000::0",
-                        "0:1:-5::0")) {
+                        "0:1:-5::0",
+                        "v1:0:1:1000:9000:4:tok",
+                        "v1:0:1:1000:9000:-2:",
+                        "v1:0:1:1000:9000:-1:tok")) {
             client.values.put(KEY, malformed);
             assertEquals(
                     ToolCircuitSnapshot.CLOSED,
@@ -215,6 +232,53 @@ class RedisToolCircuitBreakerStoreTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new RedisToolCircuitBreakerStore(client, "cb:", null));
+    }
+
+    @Test
+    void breakerConstructionRejectsTtlNoLongerThanCooldownOrProbeTimeout() {
+        ToolCircuitBreakerConfig config =
+                ToolCircuitBreakerConfig.builder()
+                        .initialCooldown(Duration.ofSeconds(1))
+                        .maxCooldown(Duration.ofSeconds(10))
+                        .probeTimeout(Duration.ofSeconds(20))
+                        .build();
+        for (Duration ttl :
+                List.of(Duration.ofSeconds(9), Duration.ofSeconds(20), Duration.ofMillis(20_999))) {
+            RedisToolCircuitBreakerStore store =
+                    new RedisToolCircuitBreakerStore(client, "cb:", ttl);
+            assertThrows(
+                    IllegalArgumentException.class, () -> new ToolCircuitBreaker(config, store));
+        }
+        assertDoesNotThrow(
+                () ->
+                        new ToolCircuitBreaker(
+                                config,
+                                new RedisToolCircuitBreakerStore(
+                                        client, "cb:", Duration.ofSeconds(21))));
+
+        ToolCircuitBreakerConfig longerCooldown =
+                ToolCircuitBreakerConfig.builder()
+                        .initialCooldown(Duration.ofSeconds(1))
+                        .maxCooldown(Duration.ofSeconds(30))
+                        .probeTimeout(Duration.ofSeconds(20))
+                        .build();
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new ToolCircuitBreaker(
+                                longerCooldown,
+                                new RedisToolCircuitBreakerStore(
+                                        client, "cb:", Duration.ofSeconds(30))));
+    }
+
+    @Test
+    void defaultTtlIsValidatedAgainstCustomBreakerPolicy() {
+        ToolCircuitBreakerConfig config =
+                ToolCircuitBreakerConfig.builder().maxCooldown(Duration.ofDays(2)).build();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new ToolCircuitBreaker(config, new RedisToolCircuitBreakerStore(client)));
     }
 
     private RedisToolCircuitBreakerStore store() {

@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool.circuitbreaker;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -206,7 +207,8 @@ class ToolCircuitBreakerTest {
         breaker.recordFailure(WEATHER);
         clock.advance(Duration.ofSeconds(60));
 
-        breaker.recordSuccess(WEATHER);
+        String token = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        breaker.recordSuccess(WEATHER, token);
 
         assertEquals(ToolCircuitState.CLOSED, breaker.state(WEATHER));
 
@@ -223,7 +225,8 @@ class ToolCircuitBreakerTest {
         clock.advance(Duration.ofSeconds(60));
         assertEquals(ToolCircuitState.HALF_OPEN, breaker.state(WEATHER));
 
-        breaker.recordFailure(WEATHER);
+        String token = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        breaker.recordFailure(WEATHER, token);
 
         assertEquals(ToolCircuitState.OPEN, breaker.state(WEATHER));
 
@@ -265,7 +268,8 @@ class ToolCircuitBreakerTest {
         ToolCircuitBreaker breaker = weatherBreaker(1);
         breaker.recordFailure(WEATHER);
         clock.advance(Duration.ofSeconds(60));
-        breaker.recordFailure(WEATHER);
+        String token = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        breaker.recordFailure(WEATHER, token);
         assertEquals(ToolCircuitState.OPEN, breaker.state(WEATHER));
 
         breaker.reset(WEATHER);
@@ -276,6 +280,30 @@ class ToolCircuitBreakerTest {
         breaker.recordFailure(WEATHER);
         clock.advance(Duration.ofSeconds(60));
         assertEquals(ToolCircuitState.HALF_OPEN, breaker.state(WEATHER));
+    }
+
+    @Test
+    void resetIgnoresNullToolNames() {
+        ToolCircuitBreaker breaker = weatherBreaker(1);
+        breaker.recordFailure(WEATHER);
+
+        assertDoesNotThrow(() -> breaker.reset(null));
+
+        assertEquals(ToolCircuitState.OPEN, breaker.state(WEATHER));
+    }
+
+    @Test
+    void resetDiscardsProbeClaimAndIgnoresItsLateOutcomes() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        String token = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+
+        breaker.reset(WEATHER);
+        breaker.recordFailure(WEATHER, token);
+        breaker.recordSuccess(WEATHER, token);
+
+        assertEquals(ToolCircuitState.CLOSED, breaker.state(WEATHER));
     }
 
     // ==================== Exponential backoff ====================
@@ -340,6 +368,90 @@ class ToolCircuitBreakerTest {
     }
 
     @Test
+    void configRejectsDurationsThatTruncateToZeroMilliseconds() {
+        Duration subMillisecond = Duration.ofNanos(999_999);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ToolCircuitBreakerConfig.builder().initialCooldown(subMillisecond).build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ToolCircuitBreakerConfig.builder().maxCooldown(subMillisecond).build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ToolCircuitBreakerConfig.builder().probeTimeout(subMillisecond).build());
+    }
+
+    @Test
+    void configRejectsDurationsThatOverflowMilliseconds() {
+        Duration overflowing = Duration.ofSeconds(Long.MAX_VALUE);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ToolCircuitBreakerConfig.builder().initialCooldown(overflowing).build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ToolCircuitBreakerConfig.builder().maxCooldown(overflowing).build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ToolCircuitBreakerConfig.builder().probeTimeout(overflowing).build());
+    }
+
+    @Test
+    void hugeCooldownCannotWrapItsDeadlineIntoThePast() {
+        ToolCircuitBreaker breaker =
+                breaker(
+                        ToolCircuitBreakerConfig.builder()
+                                .monitorTools(WEATHER)
+                                .failureThreshold(1)
+                                .initialCooldown(Duration.ofMillis(Long.MAX_VALUE))
+                                .maxCooldown(Duration.ofMillis(Long.MAX_VALUE)));
+
+        breaker.recordFailure(WEATHER);
+
+        assertEquals(ToolCircuitState.OPEN, breaker.state(WEATHER));
+        assertTrue(breaker.tryAcquireProbe(WEATHER).isEmpty());
+    }
+
+    @Test
+    void hugeProbeTimeoutCannotWrapItsLeaseIntoThePast() {
+        ToolCircuitBreaker breaker =
+                breaker(
+                        ToolCircuitBreakerConfig.builder()
+                                .monitorTools(WEATHER)
+                                .failureThreshold(1)
+                                .probeTimeout(Duration.ofMillis(Long.MAX_VALUE)));
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+
+        String token = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+
+        assertTrue(breaker.tryAcquireProbe(WEATHER).isEmpty());
+        breaker.recordSuccess(WEATHER, token);
+        assertEquals(ToolCircuitState.CLOSED, breaker.state(WEATHER));
+    }
+
+    @Test
+    void storeCanRejectAnIncompatiblePolicyAtConstruction() {
+        ToolCircuitBreakerStore store =
+                new InMemoryToolCircuitBreakerStore() {
+                    @Override
+                    public void validateConfig(ToolCircuitBreakerConfig config) {
+                        if (config.getMaxCooldown().compareTo(Duration.ofMinutes(1)) > 0) {
+                            throw new IllegalArgumentException("Policy exceeds store retention");
+                        }
+                    }
+                };
+
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                new ToolCircuitBreaker(
+                                        ToolCircuitBreakerConfig.builder().build(), store, clock));
+
+        assertEquals("Policy exceeds store retention", error.getMessage());
+    }
+
+    @Test
     void configRejectsInvertedCooldownBounds() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -396,6 +508,134 @@ class ToolCircuitBreakerTest {
     }
 
     @Test
+    void halfOpenRejectsOutcomesWithoutAClaim() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+
+        breaker.recordSuccess(WEATHER);
+        breaker.recordFailure(WEATHER);
+        breaker.recordSuccess(WEATHER, "unclaimed-token");
+        breaker.recordFailure(WEATHER, "unclaimed-token");
+
+        assertEquals(ToolCircuitState.HALF_OPEN, breaker.state(WEATHER));
+        assertTrue(breaker.tryAcquireProbe(WEATHER).isPresent());
+    }
+
+    @Test
+    void expiredProbeRejectsOutcomesWithoutAToken() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        clock.advance(Duration.ofSeconds(30));
+
+        breaker.recordSuccess(WEATHER);
+        breaker.recordFailure(WEATHER);
+
+        assertEquals(ToolCircuitState.HALF_OPEN, breaker.state(WEATHER));
+        assertTrue(breaker.tryAcquireProbe(WEATHER).isPresent());
+    }
+
+    @Test
+    void expiredProbeCanStillSucceedIfItsTokenHasNotBeenReplaced() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        String token = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        clock.advance(Duration.ofSeconds(30));
+
+        breaker.recordSuccess(WEATHER, token);
+
+        assertEquals(ToolCircuitState.CLOSED, breaker.state(WEATHER));
+    }
+
+    @Test
+    void expiredProbeCanStillFailIfItsTokenHasNotBeenReplaced() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        String token = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        clock.advance(Duration.ofSeconds(30));
+
+        breaker.recordFailure(WEATHER, token);
+
+        assertEquals(ToolCircuitState.OPEN, breaker.state(WEATHER));
+        clock.advance(Duration.ofSeconds(60));
+        assertEquals(ToolCircuitState.OPEN, breaker.state(WEATHER));
+    }
+
+    @Test
+    void supersededProbeCannotCompleteAfterReplacementLeaseExpires() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        String stale = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        clock.advance(Duration.ofSeconds(30));
+        String replacement = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        clock.advance(Duration.ofSeconds(30));
+
+        breaker.recordSuccess(WEATHER, stale);
+        breaker.recordFailure(WEATHER, stale);
+
+        assertEquals(ToolCircuitState.HALF_OPEN, breaker.state(WEATHER));
+        breaker.recordSuccess(WEATHER, replacement);
+        assertEquals(ToolCircuitState.CLOSED, breaker.state(WEATHER));
+    }
+
+    @Test
+    void supersededProbeCannotCompleteAfterReplacementIsReleased() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        String stale = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        clock.advance(Duration.ofSeconds(30));
+        String replacement = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        breaker.releaseProbe(WEATHER, replacement);
+
+        breaker.recordSuccess(WEATHER, stale);
+        breaker.recordFailure(WEATHER, stale);
+
+        assertEquals(ToolCircuitState.HALF_OPEN, breaker.state(WEATHER));
+        assertTrue(breaker.tryAcquireProbe(WEATHER).isPresent());
+    }
+
+    @Test
+    void supersededProbeFailureCannotReopenRecoveredCircuit() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        String stale = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        clock.advance(Duration.ofSeconds(30));
+        String replacement = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        breaker.recordSuccess(WEATHER, replacement);
+
+        breaker.recordFailure(WEATHER, stale);
+
+        assertEquals(ToolCircuitState.CLOSED, breaker.state(WEATHER));
+    }
+
+    @Test
+    void supersededProbeSuccessCannotEraseNewFailureStreak() {
+        ToolCircuitBreaker breaker = probeBreaker(3);
+        breaker.recordFailure(WEATHER);
+        breaker.recordFailure(WEATHER);
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        String stale = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        clock.advance(Duration.ofSeconds(30));
+        String replacement = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        breaker.recordSuccess(WEATHER, replacement);
+        breaker.recordFailure(WEATHER);
+        breaker.recordFailure(WEATHER);
+
+        breaker.recordSuccess(WEATHER, stale);
+        breaker.recordFailure(WEATHER);
+
+        assertEquals(ToolCircuitState.OPEN, breaker.state(WEATHER));
+    }
+
+    @Test
     void releasingAProbeLetsTheNextCallerRetryImmediately() {
         ToolCircuitBreaker breaker = probeBreaker();
         breaker.recordFailure(WEATHER);
@@ -439,10 +679,14 @@ class ToolCircuitBreakerTest {
     }
 
     private ToolCircuitBreaker probeBreaker() {
+        return probeBreaker(1);
+    }
+
+    private ToolCircuitBreaker probeBreaker(int threshold) {
         return breaker(
                 ToolCircuitBreakerConfig.builder()
                         .monitorTools(WEATHER)
-                        .failureThreshold(1)
+                        .failureThreshold(threshold)
                         .initialCooldown(Duration.ofSeconds(60))
                         .backoffMultiplier(2.0)
                         .maxCooldown(Duration.ofSeconds(600))

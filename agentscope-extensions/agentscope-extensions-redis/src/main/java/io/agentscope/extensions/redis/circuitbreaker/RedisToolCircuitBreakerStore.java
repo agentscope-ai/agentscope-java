@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.redis.circuitbreaker;
 
+import io.agentscope.core.tool.circuitbreaker.ToolCircuitBreakerConfig;
 import io.agentscope.core.tool.circuitbreaker.ToolCircuitBreakerStore;
 import io.agentscope.core.tool.circuitbreaker.ToolCircuitSnapshot;
 import io.agentscope.extensions.redis.state.RedisClientAdapter;
@@ -36,16 +37,20 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>Key layout</h2>
  *
- * <p>One key per tool, {@code {prefix}{tool}}, holding the whole snapshot as a delimited value:
+ * <p>One key per tool, {@code {prefix}{tool}}, holding a versioned snapshot:
  *
  * <pre>
- *   "&lt;failureCount&gt;:&lt;generation&gt;:&lt;openedAt&gt;:&lt;probeToken&gt;:&lt;probeLeaseUntil&gt;"
+ *   "v1:&lt;failureCount&gt;:&lt;generation&gt;:&lt;openedAt&gt;:&lt;probeLeaseUntil&gt;:&lt;tokenLength&gt;:&lt;probeToken&gt;"
  * </pre>
  *
  * <p>Keeping the entire state in one key is what lets a complete transition be one compare-and-set,
  * and it means every script touches a single key — so the store needs no hash tags and works
  * unchanged on Redis Cluster. A missing key is the encoding of {@link ToolCircuitSnapshot#CLOSED},
  * so a recovered tool leaves nothing behind.
+ * The token length counts Java string characters; {@code -1} represents null and {@code 0} an empty
+ * token. The final field may contain any characters, including colons. Legacy five-field values are
+ * migrated on read without extending their remaining TTL. Older implementations cannot read the
+ * versioned format, so upgrade all replicas sharing a prefix together.
  *
  * <h2>Atomicity</h2>
  *
@@ -56,10 +61,13 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>Expiry</h2>
  *
- * <p>Non-closed states carry a TTL so tools that misbehave once do not accumulate state forever. Keep
- * the TTL comfortably longer than the breaker's maximum cooldown: if an open circuit's key expires
- * mid-cooldown the tool is offered again early, which fails open — safe, but not what was configured.
- * The default of 24h clears the default 600s ceiling by a wide margin.
+ * <p>Non-closed states carry a TTL so tools that misbehave once do not accumulate state forever.
+ * Creating a breaker validates that the effective Redis TTL exceeds both its maximum cooldown and
+ * probe timeout: expiring either state early would bypass the configured isolation or admit another
+ * probe. The default of 24h clears the default cooldown and probe timeout by a wide margin.
+ *
+ * <p>All stores with the same prefix share circuit state. Assign a distinct prefix per environment,
+ * tenant or tool namespace when equally named tools must have independent circuits.
  */
 public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
 
@@ -72,7 +80,7 @@ public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
     /** Encoding of {@link ToolCircuitSnapshot#CLOSED}: an absent key. */
     private static final String ABSENT = "";
 
-    private static final int FIELD_COUNT = 5;
+    private static final String FORMAT_VERSION = "v1:";
 
     /**
      * Replace the stored value only if it still equals what the caller observed.
@@ -89,6 +97,23 @@ public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
                     + "  redis.call('DEL', KEYS[1]) "
                     + "else "
                     + "  redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]) "
+                    + "end "
+                    + "return 1";
+
+    /** Canonicalize only the exact bytes read, preserving a concurrent transition and the TTL. */
+    private static final String CANONICALIZE_SCRIPT =
+            "local current = redis.call('GET', KEYS[1]) "
+                    + "if current ~= ARGV[1] then return 0 end "
+                    + "if ARGV[2] == '' then "
+                    + "  redis.call('DEL', KEYS[1]) "
+                    + "else "
+                    + "  local ttl = redis.call('PTTL', KEYS[1]) "
+                    + "  if ttl == -2 then return 0 end "
+                    + "  if ttl == -1 then "
+                    + "    redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]) "
+                    + "  else "
+                    + "    redis.call('SET', KEYS[1], ARGV[2], 'PX', math.max(1, ttl)) "
+                    + "  end "
                     + "end "
                     + "return 1";
 
@@ -110,8 +135,9 @@ public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
      *
      * @param client Redis client adapter
      * @param keyPrefix prefix for every key, letting environments share one Redis instance
-     * @param stateTtl how long non-closed state is retained; must be positive and should exceed the
-     *     breaker's maximum cooldown
+     * @param stateTtl how long non-closed state is retained; must be positive. Whole seconds are used,
+     *     with a minimum of one second. The effective TTL must exceed the breaker's maximum cooldown
+     *     and probe timeout, which is checked when the breaker is created.
      */
     public RedisToolCircuitBreakerStore(
             RedisClientAdapter client, String keyPrefix, Duration stateTtl) {
@@ -127,8 +153,47 @@ public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
     }
 
     @Override
+    public void validateConfig(ToolCircuitBreakerConfig config) {
+        Objects.requireNonNull(config, "config must not be null");
+        Duration ttl = Duration.ofSeconds(ttlSeconds);
+        Duration required =
+                config.getMaxCooldown().compareTo(config.getProbeTimeout()) >= 0
+                        ? config.getMaxCooldown()
+                        : config.getProbeTimeout();
+        if (ttl.compareTo(required) <= 0) {
+            throw new IllegalArgumentException(
+                    "Redis state TTL ("
+                            + ttl
+                            + ") must exceed both maxCooldown ("
+                            + config.getMaxCooldown()
+                            + ") and probeTimeout ("
+                            + config.getProbeTimeout()
+                            + ")");
+        }
+    }
+
+    @Override
     public ToolCircuitSnapshot snapshot(String toolName) {
-        return decode(toolName, client.get(circuitKey(toolName)));
+        String key = circuitKey(toolName);
+        while (true) {
+            String raw = client.get(key);
+            ToolCircuitSnapshot snapshot = decode(toolName, raw);
+            String canonical = encode(snapshot);
+            if (raw == null || (raw.equals(canonical) && !raw.isEmpty())) {
+                return snapshot;
+            }
+            // Decode and CAS must agree on one encoding. Otherwise an unreadable value reported as
+            // CLOSED, or a parseable noncanonical value, makes every subsequent transition lose
+            // CAS.
+            if (client.evalScript(
+                            CANONICALIZE_SCRIPT,
+                            List.of(key),
+                            List.of(raw, canonical, Long.toString(ttlSeconds)))
+                    == 1L) {
+                return snapshot;
+            }
+            // A writer won the repair race. Read its snapshot instead of discarding its transition.
+        }
     }
 
     @Override
@@ -151,19 +216,23 @@ public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
      * equal.
      */
     private static String encode(ToolCircuitSnapshot snapshot) {
-        if (snapshot == null || ToolCircuitSnapshot.CLOSED.equals(snapshot)) {
+        Objects.requireNonNull(snapshot, "snapshot must not be null");
+        if (ToolCircuitSnapshot.CLOSED.equals(snapshot)) {
             return ABSENT;
         }
         String token = snapshot.probeToken() == null ? "" : snapshot.probeToken();
-        return snapshot.failureCount()
+        return FORMAT_VERSION
+                + snapshot.failureCount()
                 + ":"
                 + snapshot.generation()
                 + ":"
                 + snapshot.openedAtEpochMilli()
                 + ":"
-                + token
+                + snapshot.probeLeaseUntilEpochMilli()
                 + ":"
-                + snapshot.probeLeaseUntilEpochMilli();
+                + (snapshot.probeToken() == null ? -1 : token.length())
+                + ":"
+                + token;
     }
 
     /**
@@ -174,33 +243,47 @@ public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
         if (value == null || value.isEmpty()) {
             return ToolCircuitSnapshot.CLOSED;
         }
-        String[] parts = value.split(":", -1);
-        if (parts.length != FIELD_COUNT) {
-            logger.warn(
-                    "Ignoring malformed circuit state for tool={}, value={}. Treating the circuit"
-                            + " as closed.",
-                    toolName,
-                    value);
-            return ToolCircuitSnapshot.CLOSED;
-        }
         try {
-            long failureCount = Long.parseLong(parts[0]);
-            long generation = Long.parseLong(parts[1]);
-            long openedAt = Long.parseLong(parts[2]);
-            String token = parts[3].isEmpty() ? null : parts[3];
-            long probeLease = Long.parseLong(parts[4]);
+            String[] parts;
+            long failureCount;
+            long generation;
+            long openedAt;
+            String token;
+            long probeLease;
+            if (value.startsWith(FORMAT_VERSION)) {
+                parts = value.split(":", 7);
+                if (parts.length != 7) {
+                    throw new IllegalArgumentException("incomplete versioned snapshot");
+                }
+                failureCount = Long.parseLong(parts[1]);
+                generation = Long.parseLong(parts[2]);
+                openedAt = Long.parseLong(parts[3]);
+                probeLease = Long.parseLong(parts[4]);
+                int tokenLength = Integer.parseInt(parts[5]);
+                if (tokenLength < -1
+                        || (tokenLength == -1 && !parts[6].isEmpty())
+                        || (tokenLength >= 0 && tokenLength != parts[6].length())) {
+                    throw new IllegalArgumentException("invalid token length");
+                }
+                token = tokenLength == -1 ? null : parts[6];
+            } else {
+                parts = value.split(":", -1);
+                if (parts.length != 5) {
+                    throw new IllegalArgumentException("incomplete legacy snapshot");
+                }
+                failureCount = Long.parseLong(parts[0]);
+                generation = Long.parseLong(parts[1]);
+                openedAt = Long.parseLong(parts[2]);
+                token = parts[3].isEmpty() ? null : parts[3];
+                probeLease = Long.parseLong(parts[4]);
+            }
             if (failureCount < 0L || generation < 0L || openedAt < 0L || probeLease < 0L) {
-                logger.warn(
-                        "Ignoring out-of-range circuit state for tool={}, value={}. Treating the"
-                                + " circuit as closed.",
-                        toolName,
-                        value);
-                return ToolCircuitSnapshot.CLOSED;
+                throw new IllegalArgumentException("negative snapshot field");
             }
             return new ToolCircuitSnapshot(failureCount, generation, openedAt, token, probeLease);
-        } catch (NumberFormatException e) {
+        } catch (IllegalArgumentException e) {
             logger.warn(
-                    "Ignoring unparsable circuit state for tool={}, value={}. Treating the circuit"
+                    "Repairing unreadable circuit state for tool={}, value={}. Treating the circuit"
                             + " as closed.",
                     toolName,
                     value);
@@ -209,6 +292,6 @@ public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
     }
 
     private String circuitKey(String toolName) {
-        return keyPrefix + toolName;
+        return keyPrefix + Objects.requireNonNull(toolName, "toolName must not be null");
     }
 }

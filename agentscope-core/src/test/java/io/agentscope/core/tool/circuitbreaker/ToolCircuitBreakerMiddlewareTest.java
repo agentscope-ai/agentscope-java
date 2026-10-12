@@ -18,6 +18,7 @@ package io.agentscope.core.tool.circuitbreaker;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -31,6 +32,7 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Duration;
 import java.time.Instant;
@@ -287,7 +289,24 @@ class ToolCircuitBreakerMiddlewareTest {
         clock.advance(Duration.ofSeconds(60));
 
         // The half-open probe fails, so the second generation applies: 120s, not 60s.
-        failTool(middleware, WEATHER);
+        RuntimeContext ctx = RuntimeContext.empty();
+        middleware
+                .onReasoning(
+                        null,
+                        ctx,
+                        new ReasoningInput(List.of(), List.of(schema(WEATHER)), null),
+                        input -> Flux.just(new ToolCallStartEvent(REPLY_ID, "probe", WEATHER)))
+                .blockLast();
+        middleware
+                .onActing(
+                        null,
+                        ctx,
+                        new ActingInput(List.of()),
+                        input ->
+                                Flux.just(
+                                        new ToolResultEndEvent(
+                                                REPLY_ID, "probe", WEATHER, ToolResultState.ERROR)))
+                .blockLast();
 
         clock.advance(Duration.ofSeconds(60));
         assertEquals(List.of(DATABASE), offeredToolNames(middleware, WEATHER, DATABASE));
@@ -382,6 +401,125 @@ class ToolCircuitBreakerMiddlewareTest {
         assertEquals(List.of(WEATHER), offeredToolNames(middleware, WEATHER));
     }
 
+    @Test
+    void nullContextWithholdsHalfOpenToolsWithoutClaiming() {
+        ToolCircuitBreakerMiddleware middleware = middleware(1);
+        failTool(middleware, WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        AtomicReference<ReasoningInput> seen = new AtomicReference<>();
+        middleware
+                .onReasoning(
+                        null,
+                        null,
+                        new ReasoningInput(List.of(), List.of(schema(WEATHER)), null),
+                        input -> {
+                            seen.set(input);
+                            return Flux.just(new ToolCallStartEvent(REPLY_ID, "call", WEATHER));
+                        })
+                .blockLast();
+        assertTrue(seen.get().tools().isEmpty());
+        assertTrue(middleware.getBreaker().tryAcquireProbe(WEATHER).isPresent());
+    }
+
+    @Test
+    void forcedChoiceForWithheldToolFallsBackToAutoAndPreservesOtherOptions() {
+        ToolCircuitBreakerMiddleware middleware = middleware(1);
+        failTool(middleware, WEATHER);
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .temperature(0.4)
+                        .toolChoice(new ToolChoice.Specific(WEATHER))
+                        .build();
+        AtomicReference<ReasoningInput> seen = new AtomicReference<>();
+        middleware
+                .onReasoning(
+                        null,
+                        RuntimeContext.empty(),
+                        new ReasoningInput(
+                                List.of(), List.of(schema(WEATHER), schema(DATABASE)), options),
+                        input -> {
+                            seen.set(input);
+                            return Flux.empty();
+                        })
+                .blockLast();
+        assertTrue(seen.get().options().getToolChoice() instanceof ToolChoice.Auto);
+        assertEquals(0.4, seen.get().options().getTemperature());
+        assertTrue(options.getToolChoice() instanceof ToolChoice.Specific);
+    }
+
+    @Test
+    void requiredChoiceFallsBackWhenAllToolsAreWithheld() {
+        ToolCircuitBreakerMiddleware middleware = middleware(1);
+        failTool(middleware, WEATHER);
+        AtomicReference<ReasoningInput> seen = new AtomicReference<>();
+        middleware
+                .onReasoning(
+                        null,
+                        RuntimeContext.empty(),
+                        new ReasoningInput(
+                                List.of(),
+                                List.of(schema(WEATHER)),
+                                GenerateOptions.builder()
+                                        .toolChoice(new ToolChoice.Required())
+                                        .build()),
+                        input -> {
+                            seen.set(input);
+                            return Flux.empty();
+                        })
+                .blockLast();
+        assertTrue(seen.get().tools().isEmpty());
+        assertTrue(seen.get().options().getToolChoice() instanceof ToolChoice.Auto);
+    }
+
+    @Test
+    void claimIsAcquiredOnlyOnSubscriptionAndReleasedWhenNextThrows() {
+        ToolCircuitBreakerMiddleware middleware = middleware(1);
+        failTool(middleware, WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        RuntimeContext ctx = RuntimeContext.empty();
+        Flux<AgentEvent> stream =
+                middleware.onReasoning(
+                        null,
+                        ctx,
+                        new ReasoningInput(List.of(), List.of(schema(WEATHER)), null),
+                        input -> {
+                            throw new IllegalStateException("model failed synchronously");
+                        });
+        String token = middleware.getBreaker().tryAcquireProbe(WEATHER).orElseThrow();
+        middleware.getBreaker().releaseProbe(WEATHER, token);
+        assertThrows(IllegalStateException.class, stream::blockLast);
+        assertTrue(middleware.getBreaker().tryAcquireProbe(WEATHER).isPresent());
+    }
+
+    @Test
+    void reasoningErrorAfterSelectionReturnsClaimImmediately() {
+        ToolCircuitBreakerMiddleware middleware = middleware(1);
+        failTool(middleware, WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        Flux<AgentEvent> stream =
+                middleware.onReasoning(
+                        null,
+                        RuntimeContext.empty(),
+                        new ReasoningInput(List.of(), List.of(schema(WEATHER)), null),
+                        input ->
+                                Flux.concat(
+                                        Flux.just(
+                                                new ToolCallStartEvent(REPLY_ID, "call", WEATHER)),
+                                        Flux.error(new IllegalStateException("model failed"))));
+        assertThrows(IllegalStateException.class, stream::blockLast);
+        assertTrue(middleware.getBreaker().tryAcquireProbe(WEATHER).isPresent());
+    }
+
+    @Test
+    void namespaceAndOrderAreExplicitAndValidated() {
+        ToolCircuitBreaker breaker = middleware(1).getBreaker();
+        assertEquals(7, new ToolCircuitBreakerMiddleware(breaker, "weather", 7).order());
+        assertEquals(1, new ToolCircuitBreakerMiddleware(breaker).order());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new ToolCircuitBreakerMiddleware(breaker, " "));
+    }
+
     // ==================== Helpers ====================
 
     private ToolCircuitBreakerMiddleware middleware(int threshold) {
@@ -424,7 +562,7 @@ class ToolCircuitBreakerMiddlewareTest {
         middleware
                 .onReasoning(
                         null,
-                        null,
+                        RuntimeContext.empty(),
                         new ReasoningInput(List.of(), schemas, null),
                         received -> {
                             seen.set(received);

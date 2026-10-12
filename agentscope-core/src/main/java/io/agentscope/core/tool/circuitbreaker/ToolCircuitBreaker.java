@@ -121,6 +121,7 @@ public class ToolCircuitBreaker {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.store = Objects.requireNonNull(store, "store must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.store.validateConfig(this.config);
     }
 
     /**
@@ -218,14 +219,16 @@ public class ToolCircuitBreaker {
                     || current.hasActiveProbe(now)) {
                 return Optional.empty();
             }
-            String token = UUID.randomUUID().toString().replace("-", "");
+            // UUIDs preserve uniqueness across replicas and expired claims. Tokens are generated
+            // only during recovery, and their standard representation needs no normalization.
+            String token = UUID.randomUUID().toString();
             ToolCircuitSnapshot update =
                     new ToolCircuitSnapshot(
                             current.failureCount(),
                             current.generation(),
                             current.openedAtEpochMilli(),
                             token,
-                            now + config.getProbeTimeout().toMillis());
+                            deadlineAfter(now, config.getProbeTimeout().toMillis()));
             if (store.compareAndSet(toolName, current, update)) {
                 logger.debug(
                         "Recovery probe claimed: tool={}, generation={}",
@@ -240,7 +243,8 @@ public class ToolCircuitBreaker {
      * Hand back a probe claim without reporting an outcome, so another turn can retry immediately.
      *
      * <p>Used when the advertised tool was never called, or when the call was refused or cancelled
-     * and therefore tested nothing. Does nothing if the claim has already expired or been replaced.
+     * and therefore tested nothing. Does nothing if the claim has already been replaced, completed
+     * or released.
      *
      * @param toolName tool whose probe is being released
      * @param probeToken token returned by {@link #tryAcquireProbe(String)}
@@ -283,6 +287,8 @@ public class ToolCircuitBreaker {
      * <p>A probe success closes the circuit and discards the accumulated backoff. A success while
      * closed clears any partial failure streak, which is what makes the threshold count consecutive
      * failures and stops an occasional blip from ever tripping a healthy tool.
+     * Results with a probe token are accepted only while that token remains stored in HALF_OPEN;
+     * expiry alone does not invalidate it, but a replacement, completion or reset does.
      *
      * @param toolName tool that succeeded
      * @param probeToken token from {@link #tryAcquireProbe(String)}, or null when the call was not a
@@ -301,9 +307,8 @@ public class ToolCircuitBreaker {
                 return;
             }
             if (state == ToolCircuitState.HALF_OPEN) {
-                if (current.hasActiveProbe(now)
-                        && !Objects.equals(probeToken, current.probeToken())) {
-                    // Someone else owns the live probe; a superseded result must not close it.
+                if (probeToken == null || !probeToken.equals(current.probeToken())) {
+                    // Lease expiry allows a new claim, but never authorizes another call's result.
                     return;
                 }
                 if (store.compareAndSet(toolName, current, ToolCircuitSnapshot.CLOSED)) {
@@ -311,6 +316,10 @@ public class ToolCircuitBreaker {
                     return;
                 }
                 continue;
+            }
+            if (probeToken != null) {
+                // A completed or superseded probe must not clear a newer closed failure streak.
+                return;
             }
             if (current.failureCount() == 0L) {
                 return;
@@ -337,6 +346,8 @@ public class ToolCircuitBreaker {
      * <p>Only genuine execution failures belong here. A call refused by permission rules or
      * cancelled by the user says nothing about the health of the dependency and must not count
      * towards a trip.
+     * A HALF_OPEN outcome must carry the stored probe token, even after its lease expires;
+     * superseded probe results are ignored in every state.
      *
      * @param toolName tool that failed
      * @param probeToken token from {@link #tryAcquireProbe(String)}, or null when the call was not a
@@ -361,15 +372,18 @@ public class ToolCircuitBreaker {
                 return;
             }
             if (state == ToolCircuitState.HALF_OPEN) {
-                if (current.hasActiveProbe(now)
-                        && !Objects.equals(probeToken, current.probeToken())) {
-                    // Someone else owns the live probe; a superseded result must not re-open it.
+                if (probeToken == null || !probeToken.equals(current.probeToken())) {
+                    // Lease expiry allows a new claim, but never authorizes another call's result.
                     return;
                 }
                 if (reopen(toolName, current, now)) {
                     return;
                 }
                 continue;
+            }
+            if (probeToken != null) {
+                // A late result from an old probe cannot reopen a recovered or manually reset tool.
+                return;
             }
             long failures = current.failureCount() + 1L;
             if (failures < config.getFailureThreshold()) {
@@ -405,9 +419,12 @@ public class ToolCircuitBreaker {
      * <p>Intended for operators who know a dependency is healthy again and do not want to wait out
      * the cooldown.
      *
-     * @param toolName tool to reset
+     * @param toolName tool to reset; null is ignored
      */
     public void reset(String toolName) {
+        if (toolName == null) {
+            return;
+        }
         store.reset(toolName);
         logger.info("Tool circuit manually reset: tool={}", toolName);
     }
@@ -439,7 +456,14 @@ public class ToolCircuitBreaker {
             return ToolCircuitState.CLOSED;
         }
         Duration cooldown = cooldownFor(snapshot.generation());
-        boolean elapsed = now >= snapshot.openedAtEpochMilli() + cooldown.toMillis();
+        boolean elapsed = now >= deadlineAfter(snapshot.openedAtEpochMilli(), cooldown.toMillis());
         return elapsed ? ToolCircuitState.HALF_OPEN : ToolCircuitState.OPEN;
+    }
+
+    private static long deadlineAfter(long epochMilli, long delayMillis) {
+        // Very large valid durations must not wrap into the past and immediately expire.
+        return epochMilli > Long.MAX_VALUE - delayMillis
+                ? Long.MAX_VALUE
+                : epochMilli + delayMillis;
     }
 }

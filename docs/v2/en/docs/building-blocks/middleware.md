@@ -340,6 +340,57 @@ onAgent
         └── onActing (per tool call)
 ```
 
+### ToolCircuitBreakerMiddleware
+
+`ToolCircuitBreakerMiddleware` (`io.agentscope.core.tool.circuitbreaker`) stops offering a supervised tool after repeated execution errors. Supervision is opt-in: the default configuration watches no tools. A success clears the failure streak; permission refusal and interruption do not count as dependency failures.
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.tool.circuitbreaker.ToolCircuitBreaker;
+import io.agentscope.core.tool.circuitbreaker.ToolCircuitBreakerConfig;
+import io.agentscope.core.tool.circuitbreaker.ToolCircuitBreakerMiddleware;
+import java.time.Duration;
+
+ToolCircuitBreakerConfig policy = ToolCircuitBreakerConfig.builder()
+        .monitorTools("query_weather")
+        .failureThreshold(3)
+        .initialCooldown(Duration.ofSeconds(60))
+        .maxCooldown(Duration.ofMinutes(10))
+        .probeTimeout(Duration.ofMinutes(5))
+        .build();
+ToolCircuitBreaker breaker = new ToolCircuitBreaker(policy);
+ReActAgent agent = ReActAgent.builder()
+        .name("assistant")
+        .model(model)
+        .toolkit(toolkit)
+        .middleware(new ToolCircuitBreakerMiddleware(breaker))
+        .build();
+```
+
+After three consecutive errors, the tool is removed from that reasoning turn's schema list. The shared toolkit remains intact. After the cooldown, one turn may claim a recovery probe; other turns keep withholding the tool until the probe completes or its lease expires. A successful probe closes the circuit. A failed probe starts the next cooldown, growing from 60 to 120, 240, 480 and then 600 seconds. Only the current probe token can report its outcome, including after lease expiry if no replacement has claimed it.
+
+Set `probeTimeout` no shorter than the tool execution timeout, allowing for model reasoning and user approval. Approval and external execution may span calls; the middleware retains its trusted binding in conversation metadata so these calls can resume with a fresh `RuntimeContext`. Refusals, cancelled calls and unused probes release their claims. Direct `onReasoning` calls without a context withhold half-open tools because no outcome binding can be carried; normal agent APIs establish the context automatically.
+
+Share one breaker across agents using the same dependency. To use a shared Redis store, add `agentscope-extensions-redis` and supply a `RedisClientAdapter`:
+
+```java
+import io.agentscope.extensions.redis.circuitbreaker.RedisToolCircuitBreakerStore;
+
+var store = new RedisToolCircuitBreakerStore(
+        redisClient, "tenant-a:weather-cb:", Duration.ofHours(24));
+ToolCircuitBreaker sharedBreaker = new ToolCircuitBreaker(policy, store);
+```
+
+Creating the breaker validates that the effective Redis TTL exceeds both `maxCooldown` and `probeTimeout`. Redis TTL uses whole seconds, rounded down with a minimum of one second. Give independent tenants, environments or tool namespaces different key prefixes; replicas intended to share dependency health use the same prefix. All transitions touch one Redis key and remain compatible with Redis Cluster. Legacy snapshots are migrated on read without extending their TTL. Older replicas cannot read the new versioned format, so upgrade all replicas sharing one prefix together.
+
+For cross-replica recovery, give the middleware the same stable binding namespace on each replica. Independent breakers installed on one agent require different binding namespaces. The default namespace is `default`, and the default order is `1`:
+
+```java
+var middleware = new ToolCircuitBreakerMiddleware(sharedBreaker, "weather", 1);
+```
+
+The middleware's order must account for other middleware. Higher orders are outermost. Put it inside reasoning retries so every retry acquires and releases its own probe, and outside acting middleware that retries or supplies cached results so one final result is counted per tool call. Middleware that adds tool schemas must run before filtering; it must not reintroduce withheld tools afterward. Use an explicit order or builder registration order to meet those requirements. A forced `ToolChoice.Specific` targeting a withheld tool is downgraded to automatic choice; `ToolChoice.Required` also becomes automatic when filtering leaves no tools.
+
 ## Practical examples
 
 ### Timing middleware

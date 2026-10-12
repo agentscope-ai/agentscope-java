@@ -32,6 +32,13 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.luaj</groupId>
+            <artifactId>luaj-jse</artifactId>
+            <version>3.0.1</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
             <scope>provided</scope>

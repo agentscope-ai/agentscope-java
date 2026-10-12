@@ -37,6 +37,18 @@ package io.agentscope.core.tool.circuitbreaker;
 public interface ToolCircuitBreakerStore {
 
     /**
+     * Validate storage constraints against the policy before a breaker starts using this store.
+     *
+     * <p>Stores that expire state must retain it longer than both the maximum cooldown and the
+     * probe lease. The default implementation has no retention constraints. Implementations
+     * must reject incompatible configurations rather than silently discarding an open circuit.
+     *
+     * @param config policy used by the breaker
+     * @throws IllegalArgumentException when the store cannot preserve the configured lifecycle
+     */
+    default void validateConfig(ToolCircuitBreakerConfig config) {}
+
+    /**
      * Read all state for one tool in a single round trip.
      *
      * @param toolName tool to read

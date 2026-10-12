@@ -43,6 +43,9 @@ import java.util.Set;
  * A tool that keeps failing is isolated for longer, which cuts both the probe traffic aimed at a
  * struggling dependency and the tokens spent re-discovering that it is still down. The cap stops
  * backoff from isolating a tool for hours after a long outage.
+ *
+ * <p>The breaker uses epoch milliseconds, so durations must be at least one millisecond and their
+ * millisecond values must fit in a signed 64-bit integer.
  */
 public final class ToolCircuitBreakerConfig {
 
@@ -272,7 +275,7 @@ public final class ToolCircuitBreakerConfig {
         /**
          * Set the cooldown applied on the first trip.
          *
-         * @param initialCooldown positive duration
+         * @param initialCooldown duration of at least one millisecond
          * @return this builder
          */
         public Builder initialCooldown(Duration initialCooldown) {
@@ -305,7 +308,8 @@ public final class ToolCircuitBreakerConfig {
         /**
          * Set how long a claimed half-open probe remains exclusive.
          *
-         * @param probeTimeout positive duration, normally no shorter than tool execution timeout
+         * @param probeTimeout duration of at least one millisecond, normally no shorter than tool
+         *     execution timeout
          * @return this builder
          */
         public Builder probeTimeout(Duration probeTimeout) {
@@ -325,20 +329,9 @@ public final class ToolCircuitBreakerConfig {
                 throw new IllegalArgumentException(
                         "failureThreshold must be at least 1, got " + failureThreshold);
             }
-            if (initialCooldown == null
-                    || initialCooldown.isNegative()
-                    || initialCooldown.isZero()) {
-                throw new IllegalArgumentException(
-                        "initialCooldown must be positive, got " + initialCooldown);
-            }
-            if (maxCooldown == null || maxCooldown.isNegative() || maxCooldown.isZero()) {
-                throw new IllegalArgumentException(
-                        "maxCooldown must be positive, got " + maxCooldown);
-            }
-            if (probeTimeout == null || probeTimeout.isNegative() || probeTimeout.isZero()) {
-                throw new IllegalArgumentException(
-                        "probeTimeout must be positive, got " + probeTimeout);
-            }
+            validateDuration("initialCooldown", initialCooldown);
+            validateDuration("maxCooldown", maxCooldown);
+            validateDuration("probeTimeout", probeTimeout);
             if (backoffMultiplier < 1.0 || !Double.isFinite(backoffMultiplier)) {
                 throw new IllegalArgumentException(
                         "backoffMultiplier must be a finite value of at least 1.0, got "
@@ -353,6 +346,22 @@ public final class ToolCircuitBreakerConfig {
                                 + ")");
             }
             return new ToolCircuitBreakerConfig(this);
+        }
+
+        private static void validateDuration(String name, Duration duration) {
+            if (duration == null || duration.isNegative() || duration.isZero()) {
+                throw new IllegalArgumentException(name + " must be positive, got " + duration);
+            }
+            try {
+                if (duration.toMillis() < 1L) {
+                    throw new IllegalArgumentException(
+                            name + " must be at least one millisecond, got " + duration);
+                }
+            } catch (ArithmeticException e) {
+                throw new IllegalArgumentException(
+                        name + " must fit in a signed 64-bit millisecond value, got " + duration,
+                        e);
+            }
         }
     }
 }
