@@ -64,7 +64,10 @@ class AgentSpawnToolPlanModeTest {
         String childSessionId =
                 "sub-"
                         + AgentSpawnTool.deterministicHash(
-                                fixture.context().getSessionId(), "worker", "persistent-worker");
+                                fixture.context().getUserId(),
+                                fixture.context().getSessionId(),
+                                "worker",
+                                "persistent-worker");
         assertFalse(reused.isPlanModeActive(fixture.context().getUserId(), childSessionId));
 
         fixture.parentState().getPlanModeContext().setPlanActive(true);

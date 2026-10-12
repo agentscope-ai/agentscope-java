@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -30,6 +31,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
@@ -42,12 +44,19 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 /**
@@ -116,6 +125,7 @@ class SubagentFactoryDeclarationTest {
         List<List<Msg>> childModelInputs = new CopyOnWriteArrayList<>();
         MockModel childModel = new MockModel(recordingReply(childModelInputs, "noted"));
         AtomicInteger privateMiddlewareCalls = new AtomicInteger();
+        AtomicInteger factoryCalls = new AtomicInteger();
         MiddlewareBase privateMiddleware =
                 new MiddlewareBase() {
                     @Override
@@ -141,6 +151,7 @@ class SubagentFactoryDeclarationTest {
                         .subagentFactory(
                                 declaration,
                                 parentRc -> {
+                                    factoryCalls.incrementAndGet();
                                     HarnessAgent child =
                                             HarnessAgent.builder()
                                                     .name("note-taker")
@@ -167,8 +178,16 @@ class SubagentFactoryDeclarationTest {
                                 30,
                                 null)
                         .block(TIMEOUT);
+        AgentState nextParentState = AgentState.builder().build();
         String second =
-                tool.agentSpawn(ctx, null, "note-taker", "What is the code word?", null, 30, null)
+                tool.agentSpawn(
+                                ctx,
+                                nextParentState,
+                                "note-taker",
+                                "What is the code word?",
+                                null,
+                                30,
+                                null)
                         .block(TIMEOUT);
 
         assertTrue(first.contains("status: ok"), first);
@@ -186,6 +205,134 @@ class SubagentFactoryDeclarationTest {
                                                         messages, "What is the code word?")),
                 "the second spawn must continue the first spawn's conversation");
         assertEquals(2, privateMiddlewareCalls.get(), "custom middleware runs on both spawns");
+        assertEquals(
+                1, factoryCalls.get(), "persistent reuse must not construct a discarded child");
+        assertTrue(
+                nextParentState
+                        .getToolContext()
+                        .getSpawnRegistry()
+                        .containsKey(lineValue(second, "agent_key: ")),
+                "a reused child must be registered before returning to the current parent call");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "notes"})
+    void declaredFactory_persistSessionIsolatesUsers(String label) {
+        AtomicInteger factoryCalls = new AtomicInteger();
+        SubagentDeclaration declaration =
+                SubagentDeclaration.builder()
+                        .name("note-taker")
+                        .description("Keeps notes")
+                        .persistSession(true)
+                        .build();
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(new MockModel("unused"))
+                        .workspace(workspace)
+                        .subagentFactory(
+                                declaration,
+                                parentRc -> {
+                                    factoryCalls.incrementAndGet();
+                                    String owner = parentRc.getUserId();
+                                    HarnessAgent child =
+                                            HarnessAgent.builder()
+                                                    .name("note-taker")
+                                                    .model(new MockModel("child bound to " + owner))
+                                                    .workspace(workspace.resolve(owner))
+                                                    .stateStore(new InMemoryAgentStateStore())
+                                                    .build();
+                                    createdAgents.add(child);
+                                    return child;
+                                })
+                        .buildSubagentEntries(workspace);
+        AgentSpawnTool tool = new AgentSpawnTool(new DefaultAgentManager(entries, null), null, 0);
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").sessionId("s1").build();
+        RuntimeContext bob = RuntimeContext.builder().userId("bob").sessionId("s1").build();
+
+        String aliceFirst =
+                tool.agentSpawn(alice, null, "note-taker", "first", label, 30, null).block(TIMEOUT);
+        String bobFirst =
+                tool.agentSpawn(bob, null, "note-taker", "first", label, 30, null).block(TIMEOUT);
+        String aliceAgain =
+                tool.agentSpawn(alice, null, "note-taker", "again", label, 30, null).block(TIMEOUT);
+        String bobAgain =
+                tool.agentSpawn(bob, null, "note-taker", "again", label, 30, null).block(TIMEOUT);
+
+        assertTrue(aliceFirst.contains("child bound to alice"), aliceFirst);
+        assertTrue(aliceAgain.contains("child bound to alice"), aliceAgain);
+        assertTrue(bobFirst.contains("child bound to bob"), bobFirst);
+        assertTrue(bobAgain.contains("child bound to bob"), bobAgain);
+        assertNotEquals(lineValue(aliceFirst, "agent_key: "), lineValue(bobFirst, "agent_key: "));
+        assertNotEquals(lineValue(aliceFirst, "session_id: "), lineValue(bobFirst, "session_id: "));
+        assertEquals(lineValue(aliceFirst, "agent_key: "), lineValue(aliceAgain, "agent_key: "));
+        assertEquals(lineValue(bobFirst, "agent_key: "), lineValue(bobAgain, "agent_key: "));
+        assertEquals(2, factoryCalls.get(), "one child must be constructed per user");
+        if (!label.isBlank()) {
+            String aliceSend =
+                    tool.agentSend(alice, null, null, label, "follow-up", 30).block(TIMEOUT);
+            String bobSend = tool.agentSend(bob, null, null, label, "follow-up", 30).block(TIMEOUT);
+            assertTrue(aliceSend.contains("child bound to alice"), aliceSend);
+            assertTrue(bobSend.contains("child bound to bob"), bobSend);
+        }
+    }
+
+    @Test
+    void declaredFactory_concurrentPersistentSpawnsCreateOneChild() throws Exception {
+        AtomicInteger factoryCalls = new AtomicInteger();
+        SubagentDeclaration declaration =
+                SubagentDeclaration.builder()
+                        .name("worker")
+                        .description("Worker")
+                        .persistSession(true)
+                        .build();
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(new MockModel("unused"))
+                        .workspace(workspace)
+                        .subagentFactory(
+                                declaration,
+                                rc -> {
+                                    factoryCalls.incrementAndGet();
+                                    return mock(Agent.class);
+                                })
+                        .buildSubagentEntries(workspace);
+        AgentSpawnTool tool = new AgentSpawnTool(new DefaultAgentManager(entries, null), null, 0);
+        RuntimeContext ctx = RuntimeContext.builder().userId("user").sessionId("s1").build();
+        int callers = 8;
+        CountDownLatch ready = new CountDownLatch(callers);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(callers);
+        try {
+            List<Future<String>> results = new ArrayList<>();
+            for (int i = 0; i < callers; i++) {
+                results.add(
+                        executor.submit(
+                                () -> {
+                                    ready.countDown();
+                                    assertTrue(start.await(10, TimeUnit.SECONDS));
+                                    return tool.agentSpawn(
+                                                    ctx, null, "worker", null, "notes", 30, null)
+                                            .block(TIMEOUT);
+                                }));
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+            String expectedKey = null;
+            for (Future<String> result : results) {
+                String response = result.get(30, TimeUnit.SECONDS);
+                assertTrue(response.contains("status: accepted"), response);
+                String key = lineValue(response, "agent_key: ");
+                if (expectedKey == null) {
+                    expectedKey = key;
+                }
+                assertEquals(expectedKey, key);
+            }
+            assertEquals(1, factoryCalls.get(), "concurrent cache misses must construct one child");
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+        }
     }
 
     @Test

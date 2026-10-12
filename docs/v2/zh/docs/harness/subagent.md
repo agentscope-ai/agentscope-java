@@ -128,7 +128,8 @@ HarnessAgent.builder()
     .build();
 ```
 
-工厂在每次 spawn 时调用，参数是父 agent 的 `RuntimeContext`。声明负责名称、描述，以及 spawn
+需要新实例时才调用工厂，参数是父 agent 的 `RuntimeContext`。持久化缓存命中时直接复用已有实例，
+不会再次调用工厂。声明负责名称、描述，以及 spawn
 时生效的选项：`persistSession`、`mode`、`hidden`、`exposeToUser`、`inheritParentPermissions`；
 描述"怎么构建实例"的字段（`model`、`tools`、`skills`、`workspace`、`steps` 等）会被忽略。
 远程声明（`url(...)`）不能和工厂一起用。
@@ -245,7 +246,9 @@ agent_send label="pr-reviewer" message="顺便也看下 schema 变更"
     .build())
 ```
 
-开启后，框架会根据 `(parentSessionId, agentId, label)` 生成确定性的 key。如果再次 spawn 同样的组合，就会复用已存在的 agent 实例——对话历史和状态都保留。
+开启后，框架会根据 `(userId, parentSessionId, agentId, label)` 生成确定性的 key。如果再次 spawn 同样的组合，就会复用已存在的 agent 实例——对话历史和状态都保留。不同用户即使父会话 ID 和 label 相同，也会使用各自的实例。`agent_spawn` 和 `agent_send` 的 label 按用户和父会话隔离。
+
+持久化 key 现在包含用户身份，因此旧版本生成的 key 与新 spawn 的 key 不同；已保存的条目仍可通过 `agent_send` 使用原有的 `agent_key` 访问。
 
 自定义工厂构建的子 agent 也一样：用 `subagentFactory(declaration, factory)` 注册，并在声明里设
 `persistSession(true)` 即可（见上文「自定义工厂」）。

@@ -2153,7 +2153,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * {@code exposeToUser}, and {@code inheritParentPermissions}. Options that describe how to
          * build the instance ({@code model}, {@code tools}, {@code skills}, {@code workspace},
          * {@code steps}, ...) are ignored; configure those inside the factory, which receives the
-         * parent's {@link RuntimeContext} on every spawn.
+         * parent's {@link RuntimeContext} when a new instance is needed. Persistent reuse does not
+         * invoke the factory again.
          *
          * @throws IllegalArgumentException if {@code declaration} is a remote subagent ({@code
          *     url} set), which is invoked over HTTP and cannot use a local factory
