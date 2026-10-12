@@ -290,6 +290,21 @@ public class McpTool extends ToolBase {
     }
 
     /**
+     * Whether this tool and {@code other} are served by the <em>same</em> {@link McpClientWrapper}
+     * instance. Identity comparison (reference equality, not {@code equals}): used by tool
+     * registration to classify a re-registration as an idempotent refresh of one client's own
+     * tools (same wrapper) rather than a same-named tool taking over another client's
+     * registration (distinct wrappers, possibly distinct servers).
+     *
+     * @param other the incoming McpTool being registered under the same name; {@code null} (or a
+     *     non-MCP tool reaching this check) never matches
+     * @return true if both tools share one client wrapper instance
+     */
+    public boolean isFromSameWrapper(McpTool other) {
+        return other != null && this.clientWrapper == other.clientWrapper;
+    }
+
+    /**
      * Gets the preset arguments configured for this tool.
      *
      * @return the preset arguments, or null if none configured

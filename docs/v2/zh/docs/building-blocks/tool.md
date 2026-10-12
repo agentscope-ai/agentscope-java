@@ -226,6 +226,28 @@ public class HumanApprovalTool extends ToolBase {
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/ToolBaseExample.java`、`tool/ToolExecutionContextExample.java`。
 
+### 重名冲突与显式替换
+
+Tool 名字是下游一切逻辑的查找键——schema 生成、权限规则、Tool Group、确认处理都按名字解析一次调用。因此，注册一个名字已经被*另一个* tool 占用的工具会立刻抛出 `IllegalStateException`，而不是静默覆盖原有的注册：
+
+```java
+toolkit.registerTool(new LocalTools());   // @Tool(name = "dup", ...)
+toolkit.registerTool(new OtherTools());   // 同名、不同的 tool
+// IllegalStateException: Tool 'dup' is already registered and will not be silently replaced.
+```
+
+MCP tool 走同一道校验：远端工具与本地工具（或另一个 server 的工具）重名时，会在该 server 的工具注册当场报错。想两者共存，注册 client 时配置 `toolNamePrefix`，或给其中一个改名。
+
+重复注册*同一个*逻辑工具依然保持幂等，刷新类场景无需特殊处理：同一个被注解对象加同一个方法、同一个 MCP client 重新注册自己的工具（重连 / tool 列表刷新）、以及用 `registerSchema` 重新声明一份内容完全相同的外部工具 schema，都会被识别为刷新而放行。同名但内容*变了*的 schema 属于冲突：先移除旧注册，或换一个名字。
+
+如果就是要有意覆盖——在同一个名字下换一份实现——使用显式替换 API：
+
+```java
+toolkit.replaceAgentTool(newFallbackTool); // 替换掉已有的 "dup" 绑定
+```
+
+`replaceAgentTool` 是唯一的有意替换入口；其余所有注册路径（`registerTool`、`registerAgentTool`、`registerSchema`、sub-agent 与 MCP 注册）都经过 fail-fast 校验。
+
 ## 接收 Context
 
 每次 `agent.call(msgs, runtimeContext)` 传入的 [`RuntimeContext`](/v2/zh/docs/building-blocks/agent#runtimecontext-per-call-上下文) 会自动透传到所在 reply 内每一次工具调用。Tool 可以用两种方式拿到它：注解式 tool 走自动注入，`ToolBase.callAsync` 走 `ToolCallParam`。

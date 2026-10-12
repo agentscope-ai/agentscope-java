@@ -1213,6 +1213,55 @@ class HarnessAgentTest {
     }
 
     @Test
+    void fromAgent_rebuildsHarnessPlatformToolsWithoutCollision() {
+        // A HarnessAgent-built source carries harness platform tool instances in its toolkit.
+        // fromAgent().build() must strip those and let buildInstance() re-register fresh ones:
+        // Toolkit's fail-fast duplicate-name rule rejects inherited instances otherwise
+        // (regression: "Tool name already registered" for agent_spawn / memory_search / ...).
+        // Subagent-orchestration, session-search, memory, filesystem and web tools are asserted
+        // below; shell and wait-async tools are covered by the FROM_AGENT_RESET_TOOL_NAMES
+        // constant because they need a sandbox filesystem / message bus to register.
+        try (HarnessAgent source =
+                        HarnessAgent.builder()
+                                .name("from-agent-collision")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build();
+                HarnessAgent copied =
+                        HarnessAgent.Builder.fromAgent(source.getDelegate())
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build()) {
+            Toolkit sourceToolkit = source.getToolkit();
+            Toolkit copiedToolkit = copied.getToolkit();
+            List<String> names =
+                    List.of(
+                            "agent_spawn",
+                            "agent_send",
+                            "agent_list",
+                            "memory_search",
+                            "memory_get",
+                            "memory_save",
+                            "session_search",
+                            "read_file",
+                            "write_file",
+                            "edit_file",
+                            "web_fetch",
+                            "web_search");
+            for (String name : names) {
+                AgentTool inherited = sourceToolkit.getTool(name);
+                AgentTool rebuilt = copiedToolkit.getTool(name);
+                assertNotNull(rebuilt, name + " should be re-registered on the copy");
+                assertNotSame(
+                        inherited,
+                        rebuilt,
+                        name + " must be a fresh instance, not the inherited one");
+            }
+        }
+    }
+
+    @Test
     void remoteFilesystemSpec_sharesMemoryMdInNonsandboxMode() throws Exception {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");

@@ -36,6 +36,7 @@ import io.agentscope.core.middleware.TaskReminderMiddleware;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.session.SessionHistoryMode;
 import io.agentscope.core.session.SessionKey;
@@ -133,6 +134,7 @@ import io.agentscope.harness.agent.tool.ShellExecuteTool;
 import io.agentscope.harness.agent.tool.SkillManageConfig;
 import io.agentscope.harness.agent.tool.SkillManageTool;
 import io.agentscope.harness.agent.tool.WebTools;
+import io.agentscope.harness.agent.tools.HarnessPlatformTools;
 import io.agentscope.harness.agent.tools.McpServerRegistrar;
 import io.agentscope.harness.agent.tools.McpServerRegistrationListener;
 import io.agentscope.harness.agent.tools.ToolFilter;
@@ -157,6 +159,8 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -190,6 +194,47 @@ import reactor.core.publisher.Mono;
 public class HarnessAgent implements Agent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
+
+    /**
+     * Harness tool names that {@link Builder#fromAgent} must strip from the inherited toolkit
+     * before rebuilding. {@code buildInstance} re-creates every harness tool instance with fresh
+     * bindings — middleware-contributed teams/subagents/task tools (see
+     * {@link HarnessPlatformTools#NAMES}), memory tools, session search, filesystem tools, the
+     * artifact delivery tool, the shell tool, web tools, and plan-mode tools. Since the toolkit
+     * fail-fast duplicate-name rule rejects re-registration, the source build's instances must be
+     * removed first.
+     *
+     * <p>Keep in sync with {@code buildInstance}: every tool registered there must be covered
+     * either by {@link HarnessPlatformTools#NAMES} or by this set. Guarded by
+     * {@code HarnessAgentTest#fromAgent_rebuildsHarnessPlatformToolsWithoutCollision}.
+     */
+    private static final Set<String> FROM_AGENT_RESET_TOOL_NAMES =
+            Stream.concat(
+                            HarnessPlatformTools.NAMES.stream(),
+                            Stream.of(
+                                    // Memory tools (buildInstance, disableMemoryTools)
+                                    "memory_search",
+                                    "memory_get",
+                                    "memory_save",
+                                    // Session search (buildInstance, non-legacy history)
+                                    "session_search",
+                                    "session_list",
+                                    "session_history",
+                                    // Filesystem tools (buildInstance, disableFilesystemTools)
+                                    "read_file",
+                                    "write_file",
+                                    "edit_file",
+                                    "grep_files",
+                                    "glob_files",
+                                    "list_files",
+                                    // Artifact delivery (buildInstance, artifactDeliveryEnabled)
+                                    "deliver_artifact",
+                                    // Shell (buildInstance, sandbox filesystem only)
+                                    "execute",
+                                    // Web tools (buildInstance, disableWebTools)
+                                    "web_fetch",
+                                    "web_search"))
+                    .collect(Collectors.toUnmodifiableSet());
 
     private final ReActAgent delegate;
     private final WorkspaceManager workspaceManager;
@@ -1564,6 +1609,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
             b.maxIters(agent.getMaxIters());
             b.generateOptions(agent.getGenerateOptions());
             b.toolkit(agent.getToolkit().copy());
+            // buildInstance() re-registers every harness tool with fresh instances on the copied
+            // toolkit (middleware-contributed tools, memory, session, filesystem, artifact,
+            // shell, web and plan-mode tools). The toolkit's fail-fast duplicate-name rule
+            // rejects re-registration, so the source build's instances must be stripped first.
+            // User-registered tools are untouched and remain inherited as-is.
+            b.toolkit.getToolSchemas().stream()
+                    .map(ToolSchema::getName)
+                    .filter(FROM_AGENT_RESET_TOOL_NAMES::contains)
+                    .toList()
+                    .forEach(b.toolkit::removeTool);
             if (b.contextSources.taskContext().requirementProposals()) {
                 // Re-register from the copied task options at build time. This also lets the
                 // caller disable proposals on the copy without retaining the original tool.
