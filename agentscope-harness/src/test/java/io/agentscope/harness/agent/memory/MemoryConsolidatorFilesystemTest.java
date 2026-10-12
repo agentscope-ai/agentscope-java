@@ -17,6 +17,8 @@ package io.agentscope.harness.agent.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -148,6 +150,113 @@ class MemoryConsolidatorFilesystemTest {
                     alice, MemoryConsolidator.STATE_REL_PATH, scopedFile.toString());
             assertEquals(isolated ? scopedFile : legacy, consolidator.readWatermark(alice));
             assertEquals(isolated ? Instant.EPOCH : legacy, consolidator.readWatermark(bob));
+        }
+    }
+
+    @Test
+    void watermarkWithoutNamespaceFactoryReadsLegacyStoreSlot(@TempDir Path tmp) {
+        InMemoryStore store = new InMemoryStore();
+        Instant legacy = Instant.parse("2026-10-10T12:00:00Z");
+        store.put(
+                List.of("memory", "consolidation"),
+                "watermark",
+                Map.of("ts", legacy.toEpochMilli()));
+        RemoteFilesystem fs = new RemoteFilesystem(store, List.of("workspace"));
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs, null, null)) {
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null, null, 4000, store);
+            assertEquals(legacy, consolidator.readWatermark(RuntimeContext.empty()));
+        }
+    }
+
+    @Test
+    void watermarkNormalizesNullRuntimeContextBeforeResolvingNamespace(@TempDir Path tmp) {
+        InMemoryStore store = new InMemoryStore();
+        Instant scoped = Instant.parse("2026-10-10T12:00:00Z");
+        NamespaceFactory namespaces =
+                rc -> {
+                    assertNotNull(rc);
+                    assertNull(rc.getUserId());
+                    assertNull(rc.getSessionId());
+                    return List.of("anonymous");
+                };
+        store.put(
+                List.of("memory", "consolidation", "scopes", "anonymous"),
+                "watermark",
+                Map.of("ts", scoped.toEpochMilli()));
+        RemoteFilesystem fs = new RemoteFilesystem(store, namespaces);
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs, null, namespaces)) {
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null, null, 4000, store);
+            assertEquals(scoped, consolidator.readWatermark(null));
+        }
+    }
+
+    @Test
+    void watermarkRetriesCasConflictWithinTheSameScope(@TempDir Path tmp) {
+        List<String> watermarkNamespace = List.of("memory", "consolidation", "scopes", "alice");
+        Instant old = Instant.now().minusSeconds(7200);
+        List<Long> expectedVersions = new ArrayList<>();
+        InMemoryStore store =
+                new InMemoryStore() {
+                    @Override
+                    public boolean putIfVersion(
+                            List<String> namespace,
+                            String key,
+                            Map<String, Object> value,
+                            long expectedVersion) {
+                        assertEquals(watermarkNamespace, namespace);
+                        assertEquals("watermark", key);
+                        expectedVersions.add(expectedVersion);
+                        if (expectedVersions.size() == 1) {
+                            // Another replica advances the version between the read and CAS.
+                            super.put(
+                                    namespace,
+                                    key,
+                                    Map.of("ts", old.plusSeconds(1).toEpochMilli()));
+                        }
+                        return super.putIfVersion(namespace, key, value, expectedVersion);
+                    }
+                };
+        store.put(watermarkNamespace, "watermark", Map.of("ts", old.toEpochMilli()));
+        NamespaceFactory namespaces = IsolationScope.USER.toNamespaceFactory();
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
+        RemoteFilesystem fs = new RemoteFilesystem(store, namespaces);
+        seedStoreFile(
+                store,
+                namespaces.getNamespace(alice),
+                "memory/2026-10-11.md",
+                "Alice fact",
+                old.plusSeconds(3600));
+        Model model = mock(Model.class);
+        when(model.stream(anyList(), isNull(), isNull()))
+                .thenReturn(
+                        Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("curated")
+                                                                .build()))
+                                        .build()));
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs, null, namespaces)) {
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, model, null, 4000, store);
+            Instant before = Instant.now();
+            consolidator.consolidate(alice).block();
+
+            assertEquals("curated", wsm.readMemoryMd(alice));
+            assertEquals(List.of(1L, 2L), expectedVersions);
+            assertEquals(3L, store.get(watermarkNamespace, "watermark").version());
+            Instant fileWatermark =
+                    Instant.parse(
+                            wsm.readManagedWorkspaceFileUtf8(
+                                    alice, MemoryConsolidator.STATE_REL_PATH));
+            assertFalse(fileWatermark.isBefore(before));
+            assertEquals(
+                    fileWatermark.toEpochMilli(), consolidator.readWatermark(alice).toEpochMilli());
+            assertNull(store.get(List.of("memory", "consolidation"), "watermark"));
+            assertEquals(
+                    Instant.EPOCH,
+                    consolidator.readWatermark(RuntimeContext.builder().userId("bob").build()));
+            verify(model, times(1)).stream(anyList(), isNull(), isNull());
         }
     }
 

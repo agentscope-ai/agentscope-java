@@ -362,7 +362,7 @@ public class MemoryConsolidator {
                 factory == null
                         ? List.of()
                         : factory.getNamespace(rc != null ? rc : RuntimeContext.empty());
-        if (scope == null || scope.isEmpty()) {
+        if (scope.isEmpty()) {
             return WATERMARK_NAMESPACE;
         }
         // Keep intentionally unscoped cursors compatible, but never import the old global
