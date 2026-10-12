@@ -426,7 +426,8 @@ public class ToolCircuitBreakerMiddleware implements MiddlewareBase {
                 } else if (ownerSeen) {
                     for (ToolResultBlock result : msg.getContentBlocks(ToolResultBlock.class)) {
                         if (id.equals(result.getId())
-                                && resultState(result) != ToolResultState.RUNNING) {
+                                && resultState(result) != ToolResultState.RUNNING
+                                && resultState(result) != ToolResultState.SUSPENDED) {
                             recordOutcome(ctx, id, binding.toolName(), resultState(result));
                             ownerSeen = false;
                             break;
@@ -439,7 +440,10 @@ public class ToolCircuitBreakerMiddleware implements MiddlewareBase {
 
     private void recordOutcome(
             RuntimeContext ctx, String callId, String name, ToolResultState state) {
-        if (name == null || state == null || state == ToolResultState.RUNNING) {
+        if (name == null
+                || state == null
+                || state == ToolResultState.RUNNING
+                || state == ToolResultState.SUSPENDED) {
             return;
         }
         String token = null;
@@ -467,7 +471,7 @@ public class ToolCircuitBreakerMiddleware implements MiddlewareBase {
 
     private ToolResultState resultState(ToolResultBlock result) {
         if (result.isSuspended()) {
-            return ToolResultState.RUNNING;
+            return ToolResultState.SUSPENDED;
         }
         if (result.getState() != null && result.getState() != ToolResultState.RUNNING) {
             return result.getState();
@@ -623,6 +627,7 @@ public class ToolCircuitBreakerMiddleware implements MiddlewareBase {
         }
         return new AgentResultEvent(event.getId(), event.getCreatedAt(), cleaned.get(0))
                 .withSource(event.getSource())
+                .withExecution(event.getExecution())
                 .withMetadata(event.getMetadata());
     }
 

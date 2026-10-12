@@ -1,5 +1,6 @@
 ---
 title: 工具系统
+en_link: /v1/en/docs/task/tool
 ---
 
 工具系统让智能体能够执行 API 调用、数据库查询、文件操作等外部操作。

@@ -1,5 +1,6 @@
 ---
 title: AG-UI
+en_link: /v2/en/integration/protocol/agui
 ---
 
 ## 兼容性说明
@@ -10,9 +11,11 @@ title: AG-UI
 
 `AguiMessage.content` 现在使用类型化消息内容表示。仅处理纯文本时，请使用 `getTextContent()`。
 
-已支持多模态输入，但是暂不支持文档类型。
+多模态输入支持 text、image、audio 和 video。暂不支持 document 输入：adapter 会通过 `RUN_ERROR` 拒绝请求，错误码为 `INVALID_INPUT_ERROR`，错误信息不包含文档来源或 metadata。
 
-`AguiMessageConverter.toAguiMessage()` 目前只保留文本和工具调用字段；image、audio、video、document 内容块不会被序列化回 AG-UI message content。
+这一保护仅针对 `RUN_ERROR` 的错误消息，不针对整个事件流。此前的 `RUN_STARTED.input` 保留原始请求，包括被拒绝的文档内容。记录日志或转发事件的使用方需要自行对敏感输入脱敏。
+
+`AguiMessageConverter.toAguiMessageList()` 会把包含多个 `ToolResultBlock` 的 TOOL `Msg` 展开成每个 tool result 一条 AG-UI tool message。`toAguiMessage()` 仅用于最多一个 tool result 的消息，多结果时会拒绝；需要展开结果时请使用 `toAguiMessages()`。目前仍只保留文本和工具调用字段；image、audio、video、document 内容块不会被序列化回 AG-UI message content。
 
 ## 何时使用
 
@@ -44,11 +47,15 @@ Spring Boot 应用直接使用 starter：
 
 ## 快速上手
 
+先按[快速开始](/v2/zh/docs/quickstart)配置共享的 `HarnessAgent.Builder agentBuilder`。每次请求创建一个 Agent，SSE 流结束或取消时关闭：
+
 ```java
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.harness.agent.HarnessAgent;
+import java.time.Duration;
 import reactor.core.publisher.Flux;
 
 AguiAdapterConfig config = AguiAdapterConfig.builder()
@@ -57,10 +64,10 @@ AguiAdapterConfig config = AguiAdapterConfig.builder()
     .runTimeout(Duration.ofMinutes(5))
     .build();
 
-AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
-
-// 前端通过 SSE 拿到的事件
-Flux<AguiEvent> events = adapter.run(runAgentInput);
+Flux<AguiEvent> events = Flux.using(
+    agentBuilder::build,
+    agent -> new AguiAgentAdapter(agent, config).run(runAgentInput),
+    HarnessAgent::close);
 ```
 
 `RunAgentInput` 由前端传入，包含 `threadId`、`runId`、`messages`、`tools`、`state`等。适配器内部完成消息转换、调用 Agent 流式 API，再把事件映射到 AG-UI。
@@ -201,7 +208,7 @@ agentscope:
 | `agui.forwardedProps` | `RunAgentInput.forwardedProps` |
 | `agui.resume` | `RunAgentInput.resume` |
 
-由于 `sessionId` 始终来自 `threadId`，同一个 agent 实例在不同 AG-UI thread 之间保持会话隔离。
+`sessionId` 来自 `threadId`。沿用相同的用户、thread 和持久存储配置，新实例可以继续原会话；不同 thread 使用各自的会话身份。
 
 ## Spring Boot 集成
 
@@ -252,15 +259,15 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 
 ## Frontend Tools 与合并模式
 
-AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会在单次 run 开始时把这些工具注入 agent toolkit，并在 run 结束或取消后清理。
+AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 将它们转换成单次 run 的 `ToolRequestConfig` 并放入 RuntimeContext，不修改 agent toolkit，因此结束或取消时无需恢复注册表。
 
 | `ToolMergeMode` | 行为 |
 | --- | --- |
-| `FRONTEND_ONLY` | 只使用前端传入工具，临时隐藏 agent 原有工具 |
+| `EXTERNAL_ONLY` | 只使用前端传入工具，临时隐藏 agent 原有工具 |
 | `AGENT_ONLY` | 忽略前端传入工具，只使用 agent toolkit |
-| `MERGE_FRONTEND_PRIORITY` | 合并两侧工具；同名时前端工具优先 |
+| `MERGE_EXTERNAL_PRIORITY` | 合并两侧工具；同名时前端工具优先 |
 
-默认值是 `MERGE_FRONTEND_PRIORITY`。注入是 run scoped，不会永久修改 agent toolkit。
+默认值是 `MERGE_EXTERNAL_PRIORITY`。枚举位于 `io.agentscope.core.tool.ToolMergeMode`。`EXTERNAL_ONLY` 在外部工具为空时不暴露任何工具，且不受 Toolkit 的删除开关影响；它只控制请求可见性。
 
 ## HITL Interrupt
 
@@ -289,6 +296,10 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
             "editedArgs": {
               "type": "object",
               "description": "Full replacement of the tool args. Not merged."
+            },
+            "reason": {
+              "type": "string",
+              "description": "拒绝该工具调用时可选的说明。"
             }
           },
           "required": ["approved"]
@@ -332,16 +343,18 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
 
 对于权限确认，只有 `payload.approved` 是布尔值 `true` 时才会批准工具；缺失、非布尔值或 `false` 都会视为拒绝。`payload.editedArgs` 如果存在，必须是 JSON object，并且是对原始工具参数的**完整替换**，不是局部 merge。AgentScope Java 会根据 `editedArgs` 同时重建 `ToolUseBlock.input` 和原始 JSON `ToolUseBlock.content`，因此被批准的工具会使用修改后的参数执行。
 
+`payload.reason` 是可选字符串。拒绝时会写入 `ConfirmResult.reason`，并作为 DENIED tool-result 文本返回给模型；缺失或为空白时，AgentScope 保持默认的 `Permission denied by user` 文案。
+
 前端不需要在 `resume[]` 中回传 `metadata`；只需要发送 `interruptId`、`status` 和 `payload`。通过 Spring `AguiRequestProcessor` 入口时，AgentScope Java 会在服务端记录最近一次 `RUN_FINISHED.outcome.interrupts[]`，校验下一次 `resume[]` 是否覆盖所有 open interrupts，并把原始 interrupt 传给 adapter 做恢复转换。
 
 ## 示例项目
 
-完整示例见 [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui)：
+完整示例见 [agentscope-examples/documentation](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/documentation)：
 
 ```bash
 export DASHSCOPE_API_KEY=your-key
-cd agentscope-examples/agui
-mvn spring-boot:run
+cd agentscope-examples/documentation
+mvn spring-boot:run -Dspring-boot.run.mainClass=io.agentscope.examples.documentation2.agui.AguiExampleApplication
 ```
 
 启动后访问 http://localhost:8080 查看默认前端示例。该示例展示了多 agent 路由、自定义 converter、自定义 enricher、token usage 和 HITL interrupt。

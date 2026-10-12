@@ -30,13 +30,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-@SuppressWarnings("deprecation")
 class WorkspaceSkillRepositoryTest {
 
     @TempDir Path workspace;
@@ -46,6 +44,40 @@ class WorkspaceSkillRepositoryTest {
     @BeforeEach
     void setUp() {
         fs = new LocalFilesystem(workspace);
+    }
+
+    @Test
+    void explicitWritesAndDefaultOperationsStayInTheirOwnNamespaces() {
+        LocalFilesystem namespaced =
+                new LocalFilesystem(
+                        workspace,
+                        false,
+                        64,
+                        ctx -> ctx.getUserId() == null ? List.of() : List.of(ctx.getUserId()));
+        WorkspaceSkillRepository repo = new WorkspaceSkillRepository(namespaced, "skills", "test");
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
+        RuntimeContext bob = RuntimeContext.builder().userId("bob").build();
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("shared-name")
+                        .description("A test skill")
+                        .skillContent("# Body")
+                        .build();
+        assertTrue(repo.save(List.of(skill), false, alice));
+        assertTrue(repo.save(List.of(skill), false, bob));
+        assertTrue(repo.save(List.of(skill), false));
+        assertFalse(repo.save(List.of(skill), false, alice));
+        assertTrue(repo.writeSkillFile("shared-name", "notes.txt", "alice", alice));
+        assertTrue(repo.writeSkillFile("shared-name", "notes.txt", "bob", bob));
+        assertEquals("alice", repo.readSkillFile("shared-name", "notes.txt", alice));
+        assertEquals("bob", repo.readSkillFile("shared-name", "notes.txt", bob));
+        assertNull(repo.readSkillFile("shared-name", "notes.txt"));
+        assertTrue(repo.deleteSkillFile("shared-name", "notes.txt", alice));
+        assertEquals("bob", repo.readSkillFile("shared-name", "notes.txt", bob));
+        assertTrue(repo.delete("shared-name", alice));
+        assertFalse(repo.skillExists("shared-name", alice));
+        assertTrue(repo.skillExists("shared-name", bob));
+        assertTrue(repo.skillExists("shared-name"));
     }
 
     // =========================================================================
@@ -62,8 +94,7 @@ class WorkspaceSkillRepositoryTest {
             // A resource file that is NOT SKILL.md — must not surface as a skill.
             writeResource("skills/alpha/references/guide.md", "guide content");
 
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
 
             List<AgentSkill> skills = repo.getAllSkills();
             assertEquals(2, skills.size());
@@ -76,8 +107,7 @@ class WorkspaceSkillRepositoryTest {
         @Test
         void getSkillFindsByName() throws IOException {
             writeSkill("csv-sum", "Sum CSV columns.", "# CSV Sum\nBody.");
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
 
             AgentSkill loaded = repo.getSkill("csv-sum");
             assertNotNull(loaded);
@@ -91,8 +121,7 @@ class WorkspaceSkillRepositoryTest {
             writeSkill("alpha", "Alpha description here.", "# Alpha");
             writeResource("skills/alpha/references/guide.md", "guide content");
 
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
 
             AgentSkill loaded = repo.getSkill("alpha");
             // Lazy semantics: AgentSkill.resources stays empty; runtime walks resourcesFor()
@@ -108,8 +137,7 @@ class WorkspaceSkillRepositoryTest {
             // Skill living under .archive/ should NOT be enumerated.
             writeSkillAt("skills/.archive/old-skill", "Old skill desc.", "# Old");
 
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
 
             List<String> names = repo.getAllSkillNames();
             assertEquals(1, names.size());
@@ -118,23 +146,20 @@ class WorkspaceSkillRepositoryTest {
 
         @Test
         void sourceDefaultsToWorkspace() {
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
             assertEquals("workspace", repo.getSource());
         }
 
         @Test
         void sourceOverrideRespected() {
             WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(
-                            fs, "skills", RuntimeContext::empty, "custom-src", false);
+                    new WorkspaceSkillRepository(fs, "skills", "custom-src", false);
             assertEquals("custom-src", repo.getSource());
         }
 
         @Test
         void emptyDirectoryReturnsEmptyList() {
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
             assertTrue(repo.getAllSkills().isEmpty());
             assertTrue(repo.getAllSkillNames().isEmpty());
             assertFalse(repo.skillExists("anything"));
@@ -151,8 +176,7 @@ class WorkspaceSkillRepositoryTest {
 
         @Test
         void writableDefaultsToFalseUnlessOptedIn() {
-            WorkspaceSkillRepository ro =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository ro = new WorkspaceSkillRepository(fs, "skills");
             assertFalse(ro.isWriteable());
             // Save returns false (no-op) when read-only.
             AgentSkill s =
@@ -164,8 +188,7 @@ class WorkspaceSkillRepositoryTest {
         @Test
         void saveAndLoadRoundTrip() throws IOException {
             WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(
-                            fs, "skills", RuntimeContext::empty, "wkspace", true);
+                    new WorkspaceSkillRepository(fs, "skills", "wkspace", true);
             AgentSkill s =
                     new AgentSkill(
                             "csv-sum",
@@ -190,8 +213,7 @@ class WorkspaceSkillRepositoryTest {
         @Test
         void saveRefusesDuplicateUnlessForce() {
             WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(
-                            fs, "skills", RuntimeContext::empty, "wkspace", true);
+                    new WorkspaceSkillRepository(fs, "skills", "wkspace", true);
             AgentSkill v1 =
                     new AgentSkill("dup", "First version description here.", "# v1\nBody", null);
             AgentSkill v2 =
@@ -208,8 +230,7 @@ class WorkspaceSkillRepositoryTest {
         @Test
         void deleteArchivesUnderArchivePrefix() throws IOException {
             WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(
-                            fs, "skills", RuntimeContext::empty, "wkspace", true);
+                    new WorkspaceSkillRepository(fs, "skills", "wkspace", true);
             AgentSkill s =
                     new AgentSkill(
                             "to-archive", "Will be archived shortly.", "# To Archive\nBody", null);
@@ -231,8 +252,7 @@ class WorkspaceSkillRepositoryTest {
         @Test
         void writeAndReadAndDeleteSkillFile() {
             WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(
-                            fs, "skills", RuntimeContext::empty, "wkspace", true);
+                    new WorkspaceSkillRepository(fs, "skills", "wkspace", true);
             AgentSkill s =
                     new AgentSkill(
                             "with-files", "Has sub-files for testing.", "# With Files\nBody", null);
@@ -248,16 +268,14 @@ class WorkspaceSkillRepositoryTest {
 
         @Test
         void subFileOpsRejectedWhenNotWritable() {
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
             assertFalse(repo.writeSkillFile("any", "scripts/x.py", "body"));
             assertFalse(repo.deleteSkillFile("any", "scripts/x.py"));
         }
 
         @Test
         void setWriteableToggles() {
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
             assertFalse(repo.isWriteable());
             repo.setWriteable(true);
             assertTrue(repo.isWriteable());
@@ -278,8 +296,7 @@ class WorkspaceSkillRepositoryTest {
             writeSkill("alpha", "Alpha skill desc.", "# Alpha");
             writeResource("skills/alpha/references/guide.md", "## Guide\nDetails here.");
 
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
 
             SkillResources res = repo.resourcesFor("alpha", RuntimeContext.empty());
             Optional<String> g = res.read("references/guide.md");
@@ -290,8 +307,7 @@ class WorkspaceSkillRepositoryTest {
         @Test
         void readMissingReturnsEmpty() throws IOException {
             writeSkill("alpha", "Alpha skill desc.", "# Alpha");
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
 
             SkillResources res = repo.resourcesFor("alpha", RuntimeContext.empty());
             assertTrue(res.read("does-not-exist.txt").isEmpty());
@@ -303,8 +319,7 @@ class WorkspaceSkillRepositoryTest {
             // Create a sibling file that traversal might otherwise reach.
             writeResource("skills/secret.txt", "secret");
 
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
             SkillResources res = repo.resourcesFor("alpha", RuntimeContext.empty());
 
             assertTrue(res.read("../secret.txt").isEmpty());
@@ -317,8 +332,7 @@ class WorkspaceSkillRepositoryTest {
             writeResource("skills/alpha/references/guide.md", "guide");
             writeResource("skills/alpha/scripts/run.py", "print");
 
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
             SkillResources res = repo.resourcesFor("alpha", RuntimeContext.empty());
             List<String> all = res.list();
 
@@ -329,8 +343,7 @@ class WorkspaceSkillRepositoryTest {
 
         @Test
         void emptyOrNullSkillNameReturnsEmptyAccessor() {
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
             assertTrue(repo.resourcesFor(null, RuntimeContext.empty()).list().isEmpty());
             assertTrue(repo.resourcesFor("", RuntimeContext.empty()).list().isEmpty());
         }
@@ -364,19 +377,17 @@ class WorkspaceSkillRepositoryTest {
                     workspace.resolve("tenants/bob/skills/bob-skill/SKILL.md"),
                     skillMd("bob-skill", "Bob's skill.", "# Bob"));
 
-            AtomicReference<RuntimeContext> ctxRef = new AtomicReference<>(RuntimeContext.empty());
-            WorkspaceSkillRepository repo =
-                    new WorkspaceSkillRepository(nsFs, "skills", ctxRef::get);
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(nsFs, "skills");
 
-            ctxRef.set(RuntimeContext.builder().put("tenant", "alice").build());
-            List<String> alice = repo.getAllSkillNames();
+            RuntimeContext aliceCtx = RuntimeContext.builder().put("tenant", "alice").build();
+            List<AgentSkill> alice = repo.getAllSkills(aliceCtx);
             assertEquals(1, alice.size());
-            assertEquals("alice-skill", alice.get(0));
+            assertEquals("alice-skill", alice.get(0).getName());
 
-            ctxRef.set(RuntimeContext.builder().put("tenant", "bob").build());
-            List<String> bob = repo.getAllSkillNames();
+            RuntimeContext bobCtx = RuntimeContext.builder().put("tenant", "bob").build();
+            List<AgentSkill> bob = repo.getAllSkills(bobCtx);
             assertEquals(1, bob.size());
-            assertEquals("bob-skill", bob.get(0));
+            assertEquals("bob-skill", bob.get(0).getName());
         }
     }
 

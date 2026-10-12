@@ -364,12 +364,11 @@ public class WordReader extends AbstractChunkingReader {
         }
 
         StringBuilder md = new StringBuilder();
+        // Column count follows the header row so merged/irregular data rows can be padded.
         int numCols = tableData.get(0).size();
 
         // Header row
-        md.append("| ");
-        md.append(String.join(" | ", tableData.get(0)));
-        md.append(" |\n");
+        md.append(formatMarkdownTableRow(tableData.get(0), numCols));
 
         // Separator row
         md.append("| ");
@@ -383,12 +382,29 @@ public class WordReader extends AbstractChunkingReader {
 
         // Data rows
         for (int i = 1; i < tableData.size(); i++) {
-            md.append("| ");
-            md.append(String.join(" | ", tableData.get(i)));
-            md.append(" |\n");
+            md.append(formatMarkdownTableRow(tableData.get(i), numCols));
         }
 
         return md.toString();
+    }
+
+    /**
+     * Formats a table row after padding to {@code numCols} and escaping each cell's Markdown
+     * table delimiters. Empty padded cells are empty strings passed through the same formatter.
+     */
+    private String formatMarkdownTableRow(List<String> cells, int numCols) {
+        List<String> escaped = new ArrayList<>(numCols);
+        for (int i = 0; i < numCols; i++) {
+            String cell = i < cells.size() && cells.get(i) != null ? cells.get(i) : "";
+            escaped.add(escapeMarkdownTableCell(cell));
+        }
+        return "| " + String.join(" | ", escaped) + " |\n";
+    }
+
+    /** Keeps cell text on one Markdown table row while preserving literal pipes and backslashes. */
+    private String escapeMarkdownTableCell(String cell) {
+        String normalized = cell.replace("\r\n", "\n").replace('\r', '\n');
+        return normalized.replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>");
     }
 
     /**

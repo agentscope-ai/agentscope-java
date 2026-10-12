@@ -31,6 +31,8 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.mcp.McpClientWrapperTestSupport;
+import io.agentscope.core.tool.mcp.McpTool;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
@@ -1289,5 +1291,84 @@ class ToolkitTest {
         Map<String, Object> properties =
                 (Map<String, Object>) schema.getOutputSchema().get("properties");
         assertTrue(properties.containsKey("answer"));
+    }
+
+    @Test
+    @DisplayName("ToolRegistration.propagateMeta should override the wrapper default")
+    void testRegistrationPropagateMetaOverridesWrapper() {
+        McpClientWrapper mcpClientWrapper =
+                McpClientWrapperTestSupport.mockWrapper("external-mcp-client", true);
+        when(mcpClientWrapper.initialize()).thenReturn(Mono.empty());
+        // Wrapper explicitly allows propagation; registration-level setting must win
+
+        McpSchema.Tool mcpTool = mock(McpSchema.Tool.class);
+        when(mcpTool.name()).thenReturn("external_tool");
+        when(mcpTool.description()).thenReturn("Tool from an untrusted MCP server");
+        when(mcpTool.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(mcpClientWrapper.listTools()).thenReturn(Mono.just(List.of(mcpTool)));
+
+        toolkit.registration().mcpClient(mcpClientWrapper).propagateMeta(false).apply();
+
+        AgentTool tool = toolkit.getTool("external_tool");
+        assertNotNull(tool, "Tool should be registered");
+        assertTrue(tool instanceof McpTool);
+        assertFalse(((McpTool) tool).isPropagateMeta());
+    }
+
+    @Test
+    @DisplayName("Per-tool propagateMeta should win over the registration default")
+    void testRegistrationPerToolPropagateMeta() {
+        McpClientWrapper mcpClientWrapper = mock(McpClientWrapper.class);
+        when(mcpClientWrapper.getName()).thenReturn("mixed-mcp-client");
+        when(mcpClientWrapper.initialize()).thenReturn(Mono.empty());
+
+        McpSchema.Tool trustedTool = mock(McpSchema.Tool.class);
+        when(trustedTool.name()).thenReturn("trusted_tool");
+        when(trustedTool.description()).thenReturn("Tool that still needs its callback URL");
+        when(trustedTool.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+
+        McpSchema.Tool noisyTool = mock(McpSchema.Tool.class);
+        when(noisyTool.name()).thenReturn("noisy_tool");
+        when(noisyTool.description()).thenReturn("Tool that must not leak metadata");
+        when(noisyTool.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+
+        when(mcpClientWrapper.listTools()).thenReturn(Mono.just(List.of(trustedTool, noisyTool)));
+
+        toolkit.registration()
+                .mcpClient(mcpClientWrapper)
+                .propagateMeta(false)
+                .propagateMeta("trusted_tool", true)
+                .apply();
+
+        AgentTool trusted = toolkit.getTool("trusted_tool");
+        AgentTool noisy = toolkit.getTool("noisy_tool");
+        assertNotNull(trusted);
+        assertNotNull(noisy);
+        assertTrue(trusted instanceof McpTool);
+        assertTrue(noisy instanceof McpTool);
+        assertTrue(((McpTool) trusted).isPropagateMeta());
+        assertFalse(((McpTool) noisy).isPropagateMeta());
+    }
+
+    @Test
+    @DisplayName("Per-tool propagateMeta should reject a blank tool name")
+    void testRegistrationPerToolPropagateMetaRejectsBlankName() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registration().propagateMeta("  ", false));
+    }
+
+    @Test
+    @DisplayName("Per-tool propagateMeta should reject a null tool name")
+    void testRegistrationPerToolPropagateMetaRejectsNullName() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registration().propagateMeta(null, false));
     }
 }

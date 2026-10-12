@@ -34,6 +34,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * DashScope Multi-Modal Embedding Model implementation.
@@ -119,6 +120,7 @@ public class DashScopeMultiModalEmbedding implements EmbeddingModel {
                                                 "dashscope");
                                     }
                                 })
+                        .subscribeOn(Schedulers.boundedElastic())
                         .onErrorMap(
                                 e -> {
                                     if (e instanceof EmbeddingException) {

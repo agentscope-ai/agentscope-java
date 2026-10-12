@@ -28,7 +28,7 @@
 
     <artifactId>agentscope-extensions-skill-postgresql-repository</artifactId>
     <name>AgentScope Java - Extensions - Skill PostgreSQL</name>
-    <description>AgentScope Extensions - PostgreSQL Skill Storage</description>
+    <description>DEPRECATED: use agentscope-extensions-jdbc (JdbcAgentSkillRepository) instead — AgentScope Extensions - PostgreSQL Skill Storage</description>
 
     <dependencies>
         <dependency>

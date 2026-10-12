@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -29,6 +31,7 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -44,6 +47,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 
 /**
@@ -109,7 +113,7 @@ class AgentProtocolTaskStoreHitlTest {
         // Submit context must survive awaiting_confirm so resume can reuse detail/userId.
         assertTrue(store.hasSubmitContext("hitl-1"));
 
-        store.resume("hitl-1", List.of(new RemoteConfirmDecision("tc-ask", false)));
+        store.resume("hitl-1", List.of(new RemoteConfirmDecision("tc-ask", false, "not allowed")));
 
         awaitCondition(() -> "success".equals(store.snapshot("hitl-1").get("status")), 5_000);
 
@@ -118,6 +122,16 @@ class AgentProtocolTaskStoreHitlTest {
         assertEquals("denied and done", done.get("result"));
         assertEquals(2, streamCalls.get());
         assertFalse(store.hasSubmitContext("hitl-1"));
+
+        ArgumentCaptor<Msg> messages = ArgumentCaptor.forClass(Msg.class);
+        verify(agent, times(2)).streamEvents(messages.capture(), any(RuntimeContext.class));
+        Object raw = messages.getAllValues().get(1).getMetadata().get(Msg.METADATA_CONFIRM_RESULTS);
+        assertTrue(raw instanceof List);
+        List<?> results = (List<?>) raw;
+        assertEquals(1, results.size());
+        ConfirmResult result = assertInstanceOf(ConfirmResult.class, results.get(0));
+        assertFalse(result.isConfirmed());
+        assertEquals("not allowed", result.getReason());
     }
 
     @Test

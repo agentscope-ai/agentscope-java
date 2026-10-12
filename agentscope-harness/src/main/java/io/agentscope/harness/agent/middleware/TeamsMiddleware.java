@@ -32,10 +32,12 @@ import io.agentscope.harness.agent.team.TeamWakeups;
 import io.agentscope.harness.agent.tool.TeamTool;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -106,6 +108,12 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
         if (memberKey != null) {
             BY_MEMBER.put(memberKey, this);
         }
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_REASONING);
     }
 
     /** Registers this middleware under a runtime session id for TeamEvent delivery. */

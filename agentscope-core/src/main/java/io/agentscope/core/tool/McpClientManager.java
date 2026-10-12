@@ -22,6 +22,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -148,6 +149,85 @@ class McpClientManager {
             String groupName,
             Map<String, Map<String, Object>> presetParametersMapping,
             String toolNamePrefix) {
+        return registerMcpClient(
+                mcpClientWrapper,
+                enableTools,
+                disableTools,
+                groupName,
+                presetParametersMapping,
+                toolNamePrefix,
+                null);
+    }
+
+    /**
+     * Registers an MCP client with full control over tool filtering, grouping, preset parameters,
+     * naming and metadata propagation.
+     *
+     * @param mcpClientWrapper the MCP client wrapper
+     * @param enableTools list of tool names to enable (null means enable all)
+     * @param disableTools list of tool names to disable (null means disable none)
+     * @param groupName the group name to assign MCP tools to
+     * @param presetParametersMapping map from tool name to preset parameters for that tool
+     * @param toolNamePrefix optional namespace prefix for model-facing tool names
+     * @param propagateMetaOverride registration-level default for metadata propagation on the
+     *     registered tools; {@code null} means {@code true} (the connection-level switch on the
+     *     wrapper is still applied live at call time)
+     * @return Mono that completes when registration is finished
+     */
+    Mono<Void> registerMcpClient(
+            McpClientWrapper mcpClientWrapper,
+            List<String> enableTools,
+            List<String> disableTools,
+            String groupName,
+            Map<String, Map<String, Object>> presetParametersMapping,
+            String toolNamePrefix,
+            Boolean propagateMetaOverride) {
+        return registerMcpClient(
+                mcpClientWrapper,
+                enableTools,
+                disableTools,
+                groupName,
+                presetParametersMapping,
+                toolNamePrefix,
+                propagateMetaOverride,
+                null);
+    }
+
+    /**
+     * Registers an MCP client with full control over tool filtering, grouping, preset parameters,
+     * naming and per-tool metadata propagation.
+     *
+     * @param mcpClientWrapper the MCP client wrapper
+     * @param enableTools list of tool names to enable (null means enable all)
+     * @param disableTools list of tool names to disable (null means disable none)
+     * @param groupName the group name to assign MCP tools to
+     * @param presetParametersMapping map from tool name to preset parameters for that tool
+     * @param toolNamePrefix optional namespace prefix for model-facing tool names
+     * @param propagateMetaOverride registration-level default for metadata propagation on the
+     *     registered tools; {@code null} means {@code true}
+     * @param toolPropagateMetaOverrides per-tool metadata propagation overrides keyed by the
+     *     remote MCP tool name (before any {@code toolNamePrefix}); an entry wins over
+     *     {@code propagateMetaOverride}. Keys that do not match a tool that is actually
+     *     registered from this client (unknown name, remote rename, or filtered out by
+     *     {@code enableTools}/{@code disableTools}) fail the registration with an
+     *     {@link IllegalArgumentException} so a silencing override is never lost silently
+     *
+     * <p>On any registration failure (including the unknown-tool check above) the client is
+     * closed best-effort: it was already initialized but is not tracked by this manager, so
+     * nobody else could release the underlying connection (for stdio transports, a spawned
+     * subprocess). The wrapper must not be reused after a failed registration.
+     *
+     * @return Mono that completes when registration is finished
+     */
+    Mono<Void> registerMcpClient(
+            McpClientWrapper mcpClientWrapper,
+            List<String> enableTools,
+            List<String> disableTools,
+            String groupName,
+            Map<String, Map<String, Object>> presetParametersMapping,
+            String toolNamePrefix,
+            Boolean propagateMetaOverride,
+            Map<String, Boolean> toolPropagateMetaOverrides) {
         if (mcpClientWrapper == null) {
             return Mono.error(new IllegalArgumentException("MCP client wrapper cannot be null"));
         }
@@ -166,7 +246,42 @@ class McpClientManager {
         return mcpClientWrapper
                 .initialize()
                 .then(Mono.defer(mcpClientWrapper::listTools))
-                .flatMapMany(Flux::fromIterable)
+                .flatMapMany(
+                        tools -> {
+                            // Fail loud when a per-tool propagateMeta override does not match
+                            // any tool that is actually registered from this client (unknown
+                            // name, remote rename, or filtered out by enable/disable lists).
+                            // This feature exists to keep metadata off the wire for untrusted
+                            // servers, so a silencing override must never be lost silently.
+                            if (toolPropagateMetaOverrides != null
+                                    && !toolPropagateMetaOverrides.isEmpty()) {
+                                Set<String> registeredNames =
+                                        tools.stream()
+                                                .map(tool -> tool.name())
+                                                .filter(
+                                                        toolName ->
+                                                                shouldRegisterTool(
+                                                                        toolName,
+                                                                        enableTools,
+                                                                        disableTools))
+                                                .collect(Collectors.toSet());
+                                // TreeSet so the rejected names in the user-facing error
+                                // message are deterministically ordered and pasteable.
+                                Set<String> unknown =
+                                        new TreeSet<>(toolPropagateMetaOverrides.keySet());
+                                unknown.removeAll(registeredNames);
+                                if (!unknown.isEmpty()) {
+                                    return Flux.error(
+                                            new IllegalArgumentException(
+                                                    "Unknown MCP tool(s) in propagateMeta"
+                                                            + " override for client '"
+                                                            + mcpClientWrapper.getName()
+                                                            + "': "
+                                                            + unknown));
+                                }
+                            }
+                            return Flux.fromIterable(tools);
+                        })
                 .filter(tool -> shouldRegisterTool(tool.name(), enableTools, disableTools))
                 .doOnNext(
                         mcpTool -> {
@@ -209,6 +324,23 @@ class McpClientManager {
                                             mcpClientWrapper.getName(),
                                             readOnly);
 
+                            // Per-tool metadata propagation restriction, resolved at
+                            // registration time: per-tool override > registration default >
+                            // true. The connection-level wrapper switch is NOT captured here;
+                            // McpTool reads it live on every call (logical AND), so disabling a
+                            // connection later still stops metadata immediately.
+                            Boolean perToolOverride =
+                                    toolPropagateMetaOverrides != null
+                                            ? toolPropagateMetaOverrides.get(mcpTool.name())
+                                            : null;
+                            boolean propagateMeta =
+                                    perToolOverride != null
+                                            ? perToolOverride
+                                            : propagateMetaOverride != null
+                                                    ? propagateMetaOverride
+                                                    : true;
+                            agentTool.setPropagateMeta(propagateMeta);
+
                             // Register with group, MCP client name, and preset parameters via
                             // callback
                             registrationCallback.registerAgentToolWithMcpClient(
@@ -230,7 +362,23 @@ class McpClientManager {
                                 logger.error(
                                         "Failed to register MCP client: {}",
                                         mcpClientWrapper.getName(),
-                                        e));
+                                        e))
+                .doOnError(
+                        e -> {
+                            // The client was initialized above but is only added to mcpClients
+                            // on success, so on any failure nobody else can reach or close it
+                            // (for stdio transports it owns a spawned subprocess). Best-effort
+                            // cleanup must not mask the original error.
+                            try {
+                                mcpClientWrapper.close();
+                            } catch (RuntimeException cleanupEx) {
+                                logger.debug(
+                                        "Failed to close MCP client '{}' after a failed"
+                                                + " registration",
+                                        mcpClientWrapper.getName(),
+                                        cleanupEx);
+                            }
+                        });
     }
 
     /**

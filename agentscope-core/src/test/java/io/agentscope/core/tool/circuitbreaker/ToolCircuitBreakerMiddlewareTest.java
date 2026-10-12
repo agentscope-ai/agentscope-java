@@ -21,15 +21,19 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -38,6 +42,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -518,6 +523,87 @@ class ToolCircuitBreakerMiddlewareTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new ToolCircuitBreakerMiddleware(breaker, " "));
+    }
+
+    @Test
+    void suspendedEndEventRetainsProbeUntilItsRealOutcome() {
+        ToolCircuitBreakerMiddleware middleware = middleware(1);
+        failTool(middleware, WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        RuntimeContext ctx = RuntimeContext.empty();
+        middleware
+                .onReasoning(
+                        null,
+                        ctx,
+                        new ReasoningInput(List.of(), List.of(schema(WEATHER)), null),
+                        input -> Flux.just(new ToolCallStartEvent(REPLY_ID, "suspended", WEATHER)))
+                .blockLast();
+        middleware
+                .onActing(
+                        null,
+                        ctx,
+                        new ActingInput(List.of()),
+                        input ->
+                                Flux.just(
+                                        new ToolResultEndEvent(
+                                                REPLY_ID,
+                                                "suspended",
+                                                WEATHER,
+                                                ToolResultState.SUSPENDED)))
+                .blockLast();
+        assertEquals(ToolCircuitState.HALF_OPEN, middleware.getBreaker().state(WEATHER));
+        assertTrue(middleware.getBreaker().tryAcquireProbe(WEATHER).isEmpty());
+        middleware
+                .onActing(
+                        null,
+                        ctx,
+                        new ActingInput(List.of()),
+                        input ->
+                                Flux.just(
+                                        new ToolResultEndEvent(
+                                                REPLY_ID,
+                                                "suspended",
+                                                WEATHER,
+                                                ToolResultState.SUCCESS)))
+                .blockLast();
+        assertEquals(ToolCircuitState.CLOSED, middleware.getBreaker().state(WEATHER));
+    }
+
+    @Test
+    void resultSanitizationPreservesAllEventCorrelationFields() {
+        ToolCircuitBreakerMiddleware middleware = middleware(1);
+        String privateKey = ToolCircuitBreakerMiddleware.class.getName() + ".probes.default";
+        Msg result =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("paused").build())
+                        .metadata(
+                                Map.of(privateKey, Map.of("internal", "token"), "public", "value"))
+                        .build()
+                        .withGenerateReason(GenerateReason.PERMISSION_ASKING);
+        ExecutionIdentity identity = new ExecutionIdentity("agent", "session", "turn", "run");
+        AgentResultEvent original =
+                new AgentResultEvent("result-event", "2026-01-01T00:00:00Z", result);
+        original.withSource("parent/child")
+                .withExecution(identity)
+                .withMetadata(Map.of("trace", "span"));
+        AgentResultEvent forwarded =
+                (AgentResultEvent)
+                        middleware
+                                .onAgent(
+                                        null,
+                                        RuntimeContext.empty(),
+                                        new AgentInput(List.of()),
+                                        input -> Flux.just(original))
+                                .blockLast();
+        assertEquals(original.getId(), forwarded.getId());
+        assertEquals(original.getCreatedAt(), forwarded.getCreatedAt());
+        assertEquals(original.getSource(), forwarded.getSource());
+        assertSame(identity, forwarded.getExecution());
+        assertEquals(original.getMetadata(), forwarded.getMetadata());
+        assertFalse(forwarded.getResult().getMetadata().containsKey(privateKey));
+        assertEquals("value", forwarded.getResult().getMetadata().get("public"));
+        assertTrue(original.getResult().getMetadata().containsKey(privateKey));
     }
 
     // ==================== Helpers ====================
