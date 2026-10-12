@@ -805,12 +805,15 @@ public class AgentSpawnTool {
                                 AgentEventEmitter taggedEmitter =
                                         event ->
                                                 parentEmitter.emit(
-                                                        tagForwardedEvent(event, sourcePath, taskId));
+                                                        tagForwardedEvent(
+                                                                event, sourcePath, taskId));
 
                                 parentEmitter.emit(
                                         tagForwardedEvent(
                                                 new AgentStartEvent(
-                                                        spawned.sessionId(), replyId, spawned.agentId()),
+                                                        spawned.sessionId(),
+                                                        replyId,
+                                                        spawned.agentId()),
                                                 sourcePath,
                                                 taskId));
 
@@ -846,7 +849,8 @@ public class AgentSpawnTool {
                                                     if (result != null) {
                                                         parentEmitter.emit(
                                                                 tagForwardedEvent(
-                                                                        new AgentResultEvent(result),
+                                                                        new AgentResultEvent(
+                                                                                result),
                                                                         sourcePath,
                                                                         taskId));
                                                     }
