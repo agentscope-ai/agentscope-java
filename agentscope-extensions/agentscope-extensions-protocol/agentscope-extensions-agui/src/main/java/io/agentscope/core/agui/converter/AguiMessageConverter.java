@@ -272,6 +272,13 @@ public class AguiMessageConverter {
                 addTextBlock(blocks, text.value(), aguiMessage);
             }
         } else if (content instanceof MessageContent.Blocks blocksContent) {
+            if (!aguiMessage.isUserMessage()
+                    && !aguiMessage.isToolMessage()
+                    && blocksContent.parts().stream()
+                            .allMatch(TextInputContent.class::isInstance)) {
+                throw new IllegalArgumentException(
+                        "Structured content blocks are only supported for AG-UI user messages");
+            }
             List<ContentBlock> structuredBlocks = new ArrayList<>();
             for (InputContent input : blocksContent.parts()) {
                 structuredBlocks.add(toContentBlock(input));
