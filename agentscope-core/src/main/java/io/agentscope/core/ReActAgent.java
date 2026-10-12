@@ -960,6 +960,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // ==== Grant layer: capability surface, resolved server-side at call entry ====
         // Independent of ToolRequestConfig (the caller-controlled external-tools channel);
         // runs before the system prompt is assembled so skill filtering already sees it.
+        CapabilitySurface surface;
         if (capabilityResolver != null) {
             CapabilitySurface resolved;
             try {
@@ -977,9 +978,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         e);
                 throw e;
             }
-            CapabilitySurface surface = resolved != null ? resolved : CapabilitySurface.ALLOW_ALL;
+            surface = resolved != null ? resolved : CapabilitySurface.ALLOW_ALL;
+        } else {
             CapabilitySurface inherited = ctx.get(CapabilitySurface.class);
-            if (inherited != null && inherited != surface) {
+            // No resolver: default to ALLOW_ALL only when the rc has no surface; keep
+            // inherited ones (sub-agents reuse the parent surface without re-resolving).
+            surface = inherited != null ? inherited : CapabilitySurface.ALLOW_ALL;
+        }
+        // Materialize activateOnSkill-bound groups of granted skills into the grant set.
+        // Idempotent: returns the same instance when nothing is added, so inherited
+        // surfaces are reused by reference across toolkits with identical bindings.
+        surface = expandSkillBoundGroups(surface, scope.activeToolkit);
+        if (ctx.get(CapabilitySurface.class) != surface) {
+            if (ctx.get(CapabilitySurface.class) != null) {
                 // SubAgentTool passes the parent rc instance: writing in place would
                 // pollute the parent chain. Write a derived copy and switch scope.rc
                 // (from() copies all typed attributes).
@@ -987,15 +998,48 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 scope.rc = ctx;
             }
             ctx.put(CapabilitySurface.class, surface);
-        } else if (ctx.get(CapabilitySurface.class) == null) {
-            // No resolver: default to ALLOW_ALL only when the rc has no surface; keep
-            // inherited ones (sub-agents reuse the parent surface without re-resolving).
-            ctx.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
         }
 
         scope.systemMsg = null;
         scope.interruption = control.interruption();
         return scope;
+    }
+
+    /**
+     * Materializes skill-bound tool groups into the grant set: every {@code
+     * SkillToolGroup} bound (activateOnSkill) to a granted skill joins {@code
+     * allowedToolGroups}. Mechanical enrichment done once at call entry — the surface
+     * stays pure data and every gate keeps consuming only the query methods.
+     *
+     * <p>Idempotent: returns the same instance when there is nothing to add, so
+     * sub-agent reference reuse is preserved when parent and child toolkits share the
+     * same bindings. Only a whitelist union is performed; groups bound to ungranted
+     * skills are ignored.
+     *
+     * @param surface the resolved or inherited grant set
+     * @param toolkit the agent's toolkit holding the skill bindings
+     * @return the enriched surface, or the same instance when nothing was added
+     */
+    private static CapabilitySurface expandSkillBoundGroups(
+            CapabilitySurface surface, Toolkit toolkit) {
+        Set<String> grantedSkills = surface.allowedSkills();
+        if (grantedSkills == null || grantedSkills.isEmpty()) {
+            return surface;
+        }
+        Set<String> boundGroups = new HashSet<>();
+        for (String skillName : grantedSkills) {
+            boundGroups.addAll(toolkit.findSkillToolGroupsByActivateOnSkill(skillName));
+        }
+        if (boundGroups.isEmpty()) {
+            return surface;
+        }
+        Set<String> existing = surface.allowedToolGroups();
+        if (existing != null && existing.containsAll(boundGroups)) {
+            return surface;
+        }
+        Set<String> merged = new HashSet<>(existing != null ? existing : Set.of());
+        merged.addAll(boundGroups);
+        return new CapabilitySurface(surface.allowedSkills(), merged, surface.allowedTools());
     }
 
     /**

@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -43,6 +44,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
+import io.agentscope.core.tool.SkillToolGroup;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolMergeMode;
 import io.agentscope.core.tool.ToolRequestConfig;
@@ -1068,6 +1070,159 @@ class CapabilityGrantIntegrationTest {
                         .findFirst()
                         .orElse(null);
         assertEquals("Error: Tool not found: t2", toolResultText);
+    }
+
+    // ==================== skill-bound group expansion ====================
+
+    /**
+     * Toolkit with a custom {@code SkillToolGroup} ("pdf-toolbox") bound to skill name
+     * "pdf-helper" plus one bound to an ungranted skill ("secret-box" → "other-skill").
+     */
+    private Toolkit toolkitWithBoundGroups() {
+        Toolkit toolkit = grantToolkit();
+        toolkit.registerToolGroup(
+                SkillToolGroup.skillBuilder()
+                        .name("pdf-toolbox")
+                        .description("PDF tools")
+                        .activateOnSkill("pdf-helper")
+                        .build());
+        toolkit.registerAgentTool(textTool("merge_pdf"));
+        toolkit.addToolToGroup("pdf-toolbox", "merge_pdf");
+        toolkit.registerToolGroup(
+                SkillToolGroup.skillBuilder()
+                        .name("secret-box")
+                        .description("Secret tools")
+                        .activateOnSkill("other-skill")
+                        .build());
+        toolkit.registerAgentTool(textTool("secret_op"));
+        toolkit.addToolToGroup("secret-box", "secret_op");
+        return toolkit;
+    }
+
+    @Test
+    @DisplayName("activateOnSkill-bound groups of granted skills are materialized at entry")
+    void boundGroupsOfGrantedSkillsExpanded() {
+        Toolkit toolkit = toolkitWithBoundGroups();
+        CapabilitySurface granted = new CapabilitySurface(Set.of("pdf-helper"), Set.of(), Set.of());
+        RecordingMiddleware recorder = new RecordingMiddleware();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("a")
+                        .model(new MockModel("done"))
+                        .toolkit(toolkit)
+                        .capabilityResolver((ctx, a) -> granted)
+                        .middleware(recorder)
+                        .build();
+        agent.call(userMsg("hi"), rc()).block(Duration.ofSeconds(10));
+
+        CapabilitySurface expanded = recorder.seen.get();
+        assertNotNull(expanded, "the call's rc must carry a surface");
+        assertNotSame(granted, expanded, "expansion materialized a new record");
+        assertTrue(expanded.allowedToolGroups().contains("pdf-toolbox"));
+        assertTrue(expanded.allowsToolGroup("pdf-toolbox"), "bound group granted via the skill");
+        assertFalse(expanded.allowsToolGroup("secret-box"), "ungranted skill's group stays denied");
+
+        // Schema channel: the bound tool enters, the ungranted one does not.
+        List<String> names =
+                schemaNames(
+                        toolkit.getToolSchemas(
+                                List.of("g1", "pdf-toolbox", "secret-box"), null, expanded));
+        assertTrue(names.contains("merge_pdf"));
+        assertFalse(names.contains("secret_op"));
+
+        // Execution channel: the bound tool runs, the ungranted one is denied.
+        ToolContextState tcs = ToolContextState.builder().build();
+        tcs.addActivatedGroups(List.of("pdf-toolbox", "secret-box"));
+        RuntimeContext execRc =
+                RuntimeContext.builder()
+                        .userId("u1")
+                        .sessionId("s1")
+                        .agentState(AgentState.builder().toolContext(tcs).build())
+                        .build();
+        execRc.put(CapabilitySurface.class, expanded);
+        assertEquals(
+                "ran:merge_pdf",
+                firstText(toolkit.callTool(param("merge_pdf", Map.of(), execRc)).block()));
+        assertEquals(
+                "Error: Tool not found: secret_op",
+                firstText(toolkit.callTool(param("secret_op", Map.of(), execRc)).block()));
+    }
+
+    @Test
+    @DisplayName("expansion is idempotent: nothing to add keeps the same instance")
+    void expansionIdempotentKeepsSameInstance() {
+        // No SkillToolGroup bindings at all.
+        CapabilitySurface granted =
+                new CapabilitySurface(Set.of("ghost-skill"), Set.of(), Set.of());
+        RecordingMiddleware recorder1 = new RecordingMiddleware();
+        ReActAgent plain =
+                ReActAgent.builder()
+                        .name("a")
+                        .model(new MockModel("done"))
+                        .capabilityResolver((ctx, a) -> granted)
+                        .middleware(recorder1)
+                        .build();
+        plain.call(userMsg("hi"), rc()).block(Duration.ofSeconds(10));
+        assertSame(granted, recorder1.seen.get(), "no bindings → same instance");
+
+        // Binding present but the group is already whitelisted.
+        Toolkit toolkit = toolkitWithBoundGroups();
+        CapabilitySurface covered =
+                new CapabilitySurface(Set.of("pdf-helper"), Set.of("pdf-toolbox"), Set.of());
+        RecordingMiddleware recorder2 = new RecordingMiddleware();
+        ReActAgent covering =
+                ReActAgent.builder()
+                        .name("a")
+                        .model(new MockModel("done"))
+                        .toolkit(toolkit)
+                        .capabilityResolver((ctx, a) -> covered)
+                        .middleware(recorder2)
+                        .build();
+        covering.call(userMsg("hi"), rc()).block(Duration.ofSeconds(10));
+        assertSame(covered, recorder2.seen.get(), "already covered → same instance");
+    }
+
+    @Test
+    @DisplayName("sub-agent without resolver reuses the parent's expanded surface instance")
+    void subAgentReusesExpandedParentSurface() {
+        Toolkit toolkit = toolkitWithBoundGroups();
+        RecordingMiddleware parentRecorder = new RecordingMiddleware();
+        ReActAgent parent =
+                ReActAgent.builder()
+                        .name("parent")
+                        .model(new MockModel("done"))
+                        .toolkit(toolkit)
+                        .capabilityResolver(
+                                (ctx, a) ->
+                                        new CapabilitySurface(
+                                                Set.of("pdf-helper"), Set.of(), Set.of()))
+                        .middleware(parentRecorder)
+                        .build();
+        parent.call(userMsg("hi"), rc()).block(Duration.ofSeconds(10));
+        CapabilitySurface expanded = parentRecorder.seen.get();
+        assertNotNull(expanded);
+        assertTrue(expanded.allowedToolGroups().contains("pdf-toolbox"));
+
+        // Sub-agent without a resolver, same toolkit: the inherited expanded surface is
+        // reused by reference (the per-agent expansion is a no-op).
+        RecordingMiddleware childRecorder = new RecordingMiddleware();
+        SubAgentTool subAgentTool =
+                new SubAgentTool(
+                        (SubAgentProvider<ReActAgent>)
+                                () ->
+                                        ReActAgent.builder()
+                                                .name("child")
+                                                .model(new MockModel("child done"))
+                                                .toolkit(toolkit)
+                                                .middleware(childRecorder)
+                                                .build(),
+                        SubAgentConfig.defaults());
+        callDirect(subAgentTool, Map.of("message", "do it"), rc(expanded));
+
+        assertSame(
+                expanded,
+                childRecorder.seen.get(),
+                "same bindings → expansion is a no-op → parent instance reused by reference");
     }
 
     /** A single-user-message input list. */
