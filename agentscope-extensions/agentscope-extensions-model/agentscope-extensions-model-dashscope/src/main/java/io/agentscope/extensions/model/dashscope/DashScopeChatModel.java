@@ -77,6 +77,11 @@ public class DashScopeChatModel extends ChatModelBase {
     // HTTP client for API calls
     private final DashScopeHttpClient httpClient;
 
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
+    }
+
     /**
      * Creates a new DashScope chat model instance with automatic API type detection.
      *

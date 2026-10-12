@@ -15,19 +15,23 @@
  */
 package io.agentscope.harness.agent.tool;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.harness.agent.memory.MemoryFlushManager;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.nio.file.Files;
+import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.session.SessionEvent;
+import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
-import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,95 +43,86 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class SessionSearchToolCeilingTest {
 
-    @TempDir Path workspace;
+    @TempDir Path directory;
+    private final SessionKey key = new SessionKey("u", "agent-a", "session-1");
+    private final RuntimeContext rc = RuntimeContext.builder().userId("u").build();
 
-    private static Msg message(String id, MsgRole role, String text) {
-        return Msg.builder()
-                .id(id)
-                .role(role)
-                .content(TextBlock.builder().text(text).build())
-                .build();
-    }
-
-    private void seedSession(int count) throws Exception {
-        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
-            MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, null);
-            RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
-            List<Msg> batch = new ArrayList<>();
-            for (int i = 1; i <= count; i++) {
-                batch.add(message("m" + i, MsgRole.USER, "needle item " + i));
-            }
-            flushManager.offloadMessages(rc, batch, "agent-a", "session-1");
+    private SessionSearchTool seedMessages(int count) {
+        var store = new WorkspaceSessionLogStore(new LocalFilesystem(directory));
+        var log = store.open(key, rc);
+        var writer = log.acquire("owner", Duration.ofMinutes(2));
+        var events = new ArrayList<SessionEvent>();
+        for (int i = 1; i <= count; i++) {
+            var message =
+                    Msg.builder()
+                            .id("m" + i)
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("needle item " + i).build())
+                            .build();
+            events.add(
+                    new SessionEvent(
+                            1,
+                            "m" + i,
+                            i,
+                            i,
+                            "message/user",
+                            "run",
+                            "turn",
+                            true,
+                            JsonUtils.getJsonCodec().toJson(Map.of("message", message))));
         }
-        Path context = workspace.resolve("agents/agent-a/sessions/session-1.jsonl");
-        assertTrue(Files.isRegularFile(context), "session context should be offloaded");
+        log.commit(writer, "messages", 0, events);
+        log.release(writer);
+        return new SessionSearchTool(new WorkspaceSessionLogStore(new LocalFilesystem(directory)));
+    }
+
+    private static int countMatches(String json) {
+        return (json.length() - json.replace("needle item", "").length()) / "needle item".length();
     }
 
     @Test
-    void sessionSearch_clampsModelSuppliedMaxResults() throws Exception {
-        seedSession(150);
-        SessionSearchTool tool = new SessionSearchTool(new WorkspaceManager(workspace));
-
-        String out =
-                tool.sessionSearch(
-                        RuntimeContext.builder().sessionId("session-1").build(),
-                        "needle",
-                        "agent-a",
-                        100000);
-
-        assertTrue(out.contains("Found 100 matches"), () -> "output was: " + out);
-        assertFalse(out.contains("Found 150"), () -> "output was: " + out);
+    void sessionSearchClampsModelSuppliedMaxResults() {
+        var tool = seedMessages(150);
+        var out =
+                assertText(
+                        tool.sessionSearch(rc, "needle", "agent-a", 100000),
+                        ToolResultState.SUCCESS);
+        assertEquals(100, countMatches(out));
     }
 
     @Test
-    void sessionHistory_clampsModelSuppliedLastN() throws Exception {
-        seedSession(150);
-        SessionSearchTool tool = new SessionSearchTool(new WorkspaceManager(workspace));
-
-        String out =
-                tool.sessionHistory(
-                        RuntimeContext.builder().sessionId("session-1").build(),
-                        "agent-a",
-                        "session-1",
-                        100000);
-
-        assertTrue(out.contains("showing last 100)"), () -> "history must be clamped: " + out);
+    void sessionHistoryClampsModelSuppliedLastN() {
+        var tool = seedMessages(150);
+        var out =
+                assertText(
+                        tool.sessionHistory(rc, "agent-a", "session-1", 100000),
+                        ToolResultState.SUCCESS);
+        assertEquals(100, countMatches(out));
     }
 
     @Test
-    void sessionHistory_boundary_lastN99And101() throws Exception {
-        seedSession(150);
-        SessionSearchTool tool = new SessionSearchTool(new WorkspaceManager(workspace));
-
-        String out99 =
-                tool.sessionHistory(
-                        RuntimeContext.builder().sessionId("session-1").build(),
-                        "agent-a",
-                        "session-1",
-                        99);
-        assertTrue(out99.contains("showing last 99)"), () -> "out99 was: " + out99);
-
-        String out101 =
-                tool.sessionHistory(
-                        RuntimeContext.builder().sessionId("session-1").build(),
-                        "agent-a",
-                        "session-1",
-                        101);
-        assertTrue(out101.contains("showing last 100)"), () -> "out101 was: " + out101);
+    void sessionHistoryBoundaryLastN99And101() {
+        var tool = seedMessages(150);
+        assertEquals(
+                99,
+                countMatches(
+                        assertText(
+                                tool.sessionHistory(rc, "agent-a", "session-1", 99),
+                                ToolResultState.SUCCESS)));
+        assertEquals(
+                100,
+                countMatches(
+                        assertText(
+                                tool.sessionHistory(rc, "agent-a", "session-1", 101),
+                                ToolResultState.SUCCESS)));
     }
 
     @Test
-    void defaultLimitStillApplies() throws Exception {
-        seedSession(15);
-        SessionSearchTool tool = new SessionSearchTool(new WorkspaceManager(workspace));
-
-        String out =
-                tool.sessionSearch(
-                        RuntimeContext.builder().sessionId("session-1").build(),
-                        "needle",
-                        "agent-a",
-                        null);
-
-        assertTrue(out.contains("Found 10 matches"), () -> "output was: " + out);
+    void defaultLimitStillApplies() {
+        var tool = seedMessages(15);
+        var out =
+                assertText(
+                        tool.sessionSearch(rc, "needle", "agent-a", null), ToolResultState.SUCCESS);
+        assertEquals(10, countMatches(out));
     }
 }

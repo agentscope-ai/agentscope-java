@@ -203,7 +203,7 @@ class HarnessAgentBuildServiceCacheKeyTest {
                 HarnessAgentBuildService.withManagedCollaborationTools(
                         source, executionContext, "http://control/mcp/collaboration");
 
-        McpServerConfig mcp = merged.getMcpServers().get("aistio-collaboration");
+        McpServerConfig mcp = merged.getMcpServers().get("controlplane-collaboration");
         assertThat(mcp.getTransport()).isEqualTo("http");
         assertThat(mcp.getUrl()).isEqualTo("http://control/mcp/collaboration");
         assertThat(mcp.getHeaders()).containsEntry("X-Agent-Task-Token", "fenced-token");

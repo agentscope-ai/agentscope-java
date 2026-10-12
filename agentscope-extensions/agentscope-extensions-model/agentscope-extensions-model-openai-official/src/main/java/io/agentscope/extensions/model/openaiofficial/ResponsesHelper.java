@@ -17,12 +17,18 @@ package io.agentscope.extensions.model.openaiofficial;
 
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseError;
+import com.openai.models.responses.ResponseOutputItem;
+import com.openai.models.responses.ResponseOutputMessage;
+import com.openai.models.responses.ResponseOutputText;
 import com.openai.models.responses.ResponseStatus;
 import com.openai.models.responses.ResponseUsage;
 import io.agentscope.core.model.ChatUsage;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -76,7 +82,68 @@ final class ResponsesHelper {
             metadata.put(OpenAIOfficialConstants.MD_RESPONSE_ERROR, errorMap);
         }
 
+        List<Map<String, Object>> citations = extractCitations(response);
+        if (!citations.isEmpty()) {
+            metadata.put(OpenAIOfficialConstants.MD_RESPONSE_CITATIONS, citations);
+        }
+
         return metadata;
+    }
+
+    private static List<Map<String, Object>> extractCitations(Response response) {
+        List<Map<String, Object>> citations = new ArrayList<>();
+        for (ResponseOutputItem item : response.output()) {
+            if (!item.isMessage()) {
+                continue;
+            }
+            for (ResponseOutputMessage.Content content : item.asMessage().content()) {
+                if (!content.isOutputText()) {
+                    continue;
+                }
+                for (ResponseOutputText.Annotation annotation :
+                        content.asOutputText().annotations()) {
+                    if (annotation.isUrlCitation()) {
+                        ResponseOutputText.Annotation.UrlCitation citation =
+                                annotation.asUrlCitation();
+                        Map<String, Object> citationMap = new LinkedHashMap<>();
+                        citationMap.put("type", "url_citation");
+                        citationMap.put("start_index", citation.startIndex());
+                        citationMap.put("end_index", citation.endIndex());
+                        citationMap.put("title", citation.title());
+                        citationMap.put("url", citation.url());
+                        citations.add(citationMap);
+                    } else if (annotation.isContainerFileCitation()) {
+                        ResponseOutputText.Annotation.ContainerFileCitation citation =
+                                annotation.asContainerFileCitation();
+                        Map<String, Object> citationMap = new LinkedHashMap<>();
+                        citationMap.put("type", "container_file_citation");
+                        citationMap.put("container_id", citation.containerId());
+                        citationMap.put("end_index", citation.endIndex());
+                        citationMap.put("file_id", citation.fileId());
+                        citationMap.put("filename", citation.filename());
+                        citationMap.put("start_index", citation.startIndex());
+                        citations.add(citationMap);
+                    } else if (annotation.isFileCitation()) {
+                        ResponseOutputText.Annotation.FileCitation citation =
+                                annotation.asFileCitation();
+                        Map<String, Object> citationMap = new LinkedHashMap<>();
+                        citationMap.put("type", "file_citation");
+                        citationMap.put("file_id", citation.fileId());
+                        citationMap.put("filename", citation.filename());
+                        citationMap.put("index", citation.index());
+                        citations.add(citationMap);
+                    } else if (annotation.isFilePath()) {
+                        ResponseOutputText.Annotation.FilePath citation = annotation.asFilePath();
+                        Map<String, Object> citationMap = new LinkedHashMap<>();
+                        citationMap.put("type", "file_path");
+                        citationMap.put("file_id", citation.fileId());
+                        citationMap.put("index", citation.index());
+                        citations.add(citationMap);
+                    }
+                }
+            }
+        }
+        return citations;
     }
 
     /**
