@@ -53,9 +53,16 @@ agent.call(msg, RuntimeContext.builder()
     .isolationScope(IsolationScope.SESSION))
 ```
 
-`SESSION` 是天然并发安全（每个 session 自己一份）；`USER` / `AGENT` / `GLOBAL` 多副本部署时建议配并发互斥（见下面的"并发控制"）。
+不同 `SESSION` 使用不同的状态槽，但同一隔离键的并发调用仍需要串行化。此要求适用于所有隔离范围，尤其是保留运行中的沙箱时；请使用 execution guard 或外部协调（见下面的“并发控制”）。
 
 **USER 降级逻辑：** 当 `IsolationScope.USER` 生效（不管是默认还是显式设置），但 `RuntimeContext.userId` 缺失时，框架自动降级为按 `sessionId` 隔离。不需要额外处理 userId 为空的情况——沙箱会优雅降级。
+
+E2B 支持显式配置 `releasePolicy(SandboxReleasePolicy.RETAIN)` 跨调用保留运行中的沙箱，默认仍为 `DELETE`。同一隔离键的并发调用（包括同一 `SESSION`）需要串行化；保留策略不提供隐式加锁。配置、过期恢复和显式删除见 [E2B 保留与清理](/v2/zh/docs/harness/filesystem#跨调用保留-e2b-沙箱)。
+
+保留 E2B 实例时，需要持久化状态记录并设置有限的提供方超时。若工作进程在保存实例 ID 前崩溃、
+状态记录被淘汰或隔离键改变，SDK 无法自动发现该实例，它可能持续运行并计费直到提供方超时。
+请在移除状态记录前删除不再使用的实例。显式传入状态且没有隔离键时，调用方必须自行保存更新后的状态并协调访问。
+
 
 ## 跨调用恢复 = 快照
 
@@ -151,7 +158,7 @@ mySandbox.start();
 
 SandboxContext callCtx = SandboxContext.builder()
     .client(dockerClient)
-    .externalSandbox(mySandbox)       // 框架在 call 结束时只 stop()，不 shutdown()
+    .externalSandbox(mySandbox)       // stop/快照保存与 shutdown 均由调用方负责
     .build();
 
 agent.call(msgs, RuntimeContext.builder()

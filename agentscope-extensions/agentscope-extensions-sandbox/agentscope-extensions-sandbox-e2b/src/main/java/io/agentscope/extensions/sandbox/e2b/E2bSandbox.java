@@ -59,6 +59,10 @@ public class E2bSandbox extends AbstractBaseSandbox {
      */
     private String lastCreatedSnapshotId;
 
+    // Only this start's allocation may be destroyed if initialization fails.
+    private String sandboxCreatedDuringStart;
+    private boolean workspaceProbeFailed;
+
     public E2bSandbox(E2bSandboxState state, E2bSandboxClientOptions opt) {
         super(state);
         this.e2bState = state;
@@ -68,13 +72,33 @@ public class E2bSandbox extends AbstractBaseSandbox {
 
     @Override
     public void start() throws Exception {
+        sandboxCreatedDuringStart = null;
+        workspaceProbeFailed = false;
         if (WorkspaceMountSupport.hasBindMounts(e2bState.getWorkspaceSpec())) {
             log.warn(
                     "[sandbox-e2b] WorkspaceSpec contains bind_mount entries; "
                             + "E2B does not apply host bind mounts — paths are not mounted.");
         }
+        boolean workspaceReadyBeforeStart = e2bState.isWorkspaceRootReady();
+        String projectionBeforeStart = e2bState.getWorkspaceProjectionHash();
+        // Connection failures have not touched workspace metadata. Keep them outside the
+        // workspace-start recovery path; a confirmed expiry may already have invalidated it.
         ensureSandbox();
-        super.start();
+        try {
+            super.start();
+        } catch (Exception e) {
+            if (workspaceProbeFailed && sandboxCreatedDuringStart == null) {
+                // Only a failed read-only probe proves initialization never began. Once the probe
+                // succeeds, setup, restore, entries or projection may have partially changed files.
+                e2bState.setWorkspaceRootReady(workspaceReadyBeforeStart);
+                e2bState.setWorkspaceProjectionHash(projectionBeforeStart);
+            } else {
+                // AbstractBaseSandbox has already marked the workspace unready. Also invalidate
+                // its projection so retry cannot skip reapplying it over a restored snapshot.
+                e2bState.setWorkspaceProjectionHash(null);
+            }
+            throw e;
+        }
     }
 
     /**
@@ -108,6 +132,42 @@ public class E2bSandbox extends AbstractBaseSandbox {
         }
     }
 
+    /**
+     * Returns whether this local handle is between successful start and stop, and has not been
+     * explicitly deleted. This is not a remote liveness probe: a retained instance can still exist
+     * after stop has made this method return false.
+     */
+    @Override
+    public boolean isRunning() {
+        // Explicit deletion bypasses stop() so it never uploads a final workspace snapshot.
+        return super.isRunning() && e2bState.getSandboxId() != null;
+    }
+
+    /** Attempts snapshot pruning without destroying the retained instance. */
+    @Override
+    public void onRetained() {
+        if (e2bState.isSandboxOwned()) {
+            // stop() has persisted the latest snapshot. Locked templates remain recorded so a
+            // later retained release or explicit shutdown can retry; never drop failed deletions.
+            cleanupSnapshots();
+        }
+    }
+
+    /** Destroys only the instance allocated by this start; existing retained instances survive. */
+    @Override
+    public void cleanupAfterStartFailure() throws Exception {
+        if (e2bState.isSandboxOwned() && sandboxCreatedDuringStart != null) {
+            platform.killSandbox(sandboxCreatedDuringStart);
+            if (sandboxCreatedDuringStart.equals(e2bState.getSandboxId())) {
+                e2bState.setSandboxId(null);
+                e2bState.setWorkspaceRootReady(false);
+                e2bState.setWorkspaceProjectionHash(null);
+            }
+            sandboxCreatedDuringStart = null;
+            // No snapshot GC: the stored archive still belongs to the previous successful call.
+        }
+    }
+
     @Override
     public void shutdown() throws Exception {
         if (!e2bState.isSandboxOwned()) {
@@ -117,8 +177,10 @@ public class E2bSandbox extends AbstractBaseSandbox {
         if (id != null && !id.isBlank()) {
             platform.killSandbox(id);
         }
-        // Only after killSandbox are the snapshot templates unlocked by E2B (deleting them while a
-        // sandbox restored from one runs returns 400), so clean up here to converge to retention.
+        e2bState.setSandboxId(null);
+        e2bState.setWorkspaceRootReady(false);
+        e2bState.setWorkspaceProjectionHash(null);
+        // Destroying the sandbox unlocks templates that a retained release could not prune.
         cleanupSnapshots();
     }
 
@@ -214,12 +276,39 @@ public class E2bSandbox extends AbstractBaseSandbox {
         return e2bState.getWorkspaceRoot();
     }
 
+    @Override
+    protected boolean probeWorkspaceRootForPreservedResume() {
+        try {
+            ExecResult result =
+                    doExec(
+                            null,
+                            "test -d " + shellSingleQuote(getWorkspaceRoot()),
+                            PROBE_TIMEOUT_SECONDS);
+            if (result.exitCode() == 0) {
+                return true;
+            }
+            if (result.exitCode() == 1) {
+                return false;
+            }
+            throw new SandboxException.ExecException(
+                    result.exitCode(), result.stdout(), result.stderr());
+        } catch (Exception e) {
+            workspaceProbeFailed = true;
+            // A failed probe does not prove files are missing. Restoring here could overwrite them.
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_START_ERROR,
+                    "Cannot probe retained E2B workspace",
+                    e);
+        }
+    }
+
     private void ensureSandbox() throws Exception {
         if (e2bState.getSandboxId() == null || e2bState.getSandboxId().isBlank()) {
             JsonNode n =
                     platform.createSandbox(
                             e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
             platform.applySandboxFields(e2bState, n);
+            sandboxCreatedDuringStart = e2bState.getSandboxId();
             applyDefaultDomain();
             envd = null;
             return;
@@ -229,14 +318,18 @@ public class E2bSandbox extends AbstractBaseSandbox {
                     platform.connectSandbox(
                             e2bState.getSandboxId(), opt.getSandboxTimeoutSeconds());
             platform.applySandboxFields(e2bState, n);
-        } catch (Exception e) {
-            log.warn("[sandbox-e2b] connect failed, recreating sandbox: {}", e.getMessage());
+        } catch (E2bPlatformHttp.HttpException e) {
+            if (e.statusCode() != 404) {
+                throw e;
+            }
+            log.debug("[sandbox-e2b] sandbox expired, recreating: {}", e.getMessage());
             e2bState.setWorkspaceRootReady(false);
             e2bState.setWorkspaceProjectionHash(null);
             JsonNode n =
                     platform.createSandbox(
                             e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
             platform.applySandboxFields(e2bState, n);
+            sandboxCreatedDuringStart = e2bState.getSandboxId();
         }
         applyDefaultDomain();
         envd = null;
@@ -253,6 +346,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
         JsonNode created =
                 platform.createSandbox(snapshotTemplateId, opt.getSandboxTimeoutSeconds());
         platform.applySandboxFields(e2bState, created);
+        sandboxCreatedDuringStart = e2bState.getSandboxId();
         applyDefaultDomain();
         if (e2bState.isSandboxOwned()
                 && oldId != null
@@ -274,8 +368,8 @@ public class E2bSandbox extends AbstractBaseSandbox {
             return;
         }
         // One-shot correction regardless of any earlier residue: keep the last retention ids by
-        // insertion order (most recent last) and delete the rest. E2B only unlocks the
-        // templates after killSandbox, so this runs on shutdown.
+        // insertion order (most recent last) and delete the rest. Templates still in use may
+        // reject deletion; the platform helper keeps failed ids for a later retry.
         try {
             List<String> kept = platform.cleanupSnapshots(e2bState.getSnapshotIds(), retention);
             e2bState.setSnapshotIds(kept);

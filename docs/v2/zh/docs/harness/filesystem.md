@@ -195,6 +195,91 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
+##### 跨调用保留 E2B 沙箱
+
+默认策略为 `SandboxReleasePolicy.DELETE`：框架管理的每次调用保存已配置的快照后销毁沙箱。
+要复用仍在运行的沙箱，显式选择 `RETAIN`：
+
+```java
+import io.agentscope.harness.agent.sandbox.SandboxReleasePolicy;
+import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec;
+
+E2bFilesystemSpec spec = new E2bFilesystemSpec()
+    .apiKey(System.getenv("E2B_API_KEY"))
+    .sandboxTimeoutSeconds(300)
+    .releasePolicy(SandboxReleasePolicy.RETAIN)
+    .snapshotSpec(new LocalSnapshotSpec("./sandbox-snapshots"));
+spec.isolationScope(IsolationScope.SESSION);
+// 通过 HarnessAgent.builder().filesystem(spec) 使用；每次调用提供稳定的 sessionId。
+```
+
+这个单机示例假设应用已将同一会话的调用串行化。`RETAIN` 仍执行 `stop()` 并保存已配置的快照，
+只跳过每次调用后的销毁。下一次调用使用持久化的沙箱 ID 重新连接；工作区还在时，跳过快照恢复
+和内容未变的 workspace projection。显式调用 `sandbox.close()`、`sandbox.shutdown()` 或
+`E2bSandboxClient.delete(sandbox)` 仍会销毁资源。
+
+- **隔离与所有权：** 首个支持的后端为 E2B；其他客户端未声明保留能力时会拒绝 `RETAIN`。
+  框架管理的获取流程必须能解析出稳定的隔离键。传入 `externalSandbox` 时生命周期仍完全由调用方管理；
+  显式传入 `externalSandboxState` 可以选择 `RETAIN`，但调用方必须协调访问，并在没有隔离键时保存更新后的状态。
+  初始化失败只清理本轮新分配的资源，不保存部分初始化的工作区，也不清理快照；此前保留的实例留待重试。
+  仅连接或探测失败保留原就绪标记；初始化过程中的失败会使该标记失效，使用同一状态重试时会恢复工作区并重新应用投影。
+- **并发：** 同一隔离键只允许一个写入者，包括 `SESSION`。默认 execution guard 不加锁。
+  请配置 `executionGuard(...)` 或在外部串行化调用；多副本部署必须跨副本协调。
+  锁应覆盖快照和沙箱状态保存，在两次调用之间释放。保留沙箱不会自动保证并发写入安全。
+- **过期与恢复：** `sandboxTimeoutSeconds` 会传给创建和连接接口，是提供方超时参数，
+  并非应用强制执行的绝对生命周期上限。运行资源和工作区内容保留到过期或显式删除。
+  `NoopSnapshotSpec` 无法在过期后恢复文件，需要配置可用的快照存储；上例使用本地存储。
+  仅连接接口明确返回 HTTP 404 时重建；其他错误保留原 ID 并让调用失败，以便重试。
+  工作区探测失败也会中止调用，不会把现有文件当作已丢失。
+  配置 `RemoteSnapshotSpec` 后，E2B 在框架管理的恢复流程中，将当前存储客户端重新绑定到保存的快照 ID。
+  手动恢复时，请先调用 `client.deserializeState(json, snapshotSpec)`，再调用 `client.resume(state)`；
+  单参数反序列化方法无法从 JSON 恢复存储客户端。
+- **状态记录丢失：** 使用持久化状态存储并设置有限的 `sandboxTimeoutSeconds`。工作进程在保存新 ID 前崩溃、
+  状态记录被淘汰或隔离键改变，都可能留下缺少可访问记录的运行实例，直到提供方超时前仍可能计费。
+  当前没有自动实例发现或回收机制。请保留最新 ID，在移除记录前显式删除不再使用的实例；记录丢失时需通过提供方管理工具处理。
+- **原生快照清理：** `snapshotRetention(n)` 在 `n > 0` 时，于保留模式成功保存快照后及显式销毁时尝试清理。
+  被占用或删除失败的快照 ID 保留在状态中供后续重试，因此数量限制是尽力达到的目标。
+  默认值 `0` 表示不清理。没有后台回收器：提供方让沙箱过期不会自动删除记录的快照模板，
+  不再使用的会话需要显式清理。快照保存失败时跳过清理，保护此前归档。
+  与 `DELETE` 一样，新建的原生快照若未能写入存储，可能成为无引用快照，需要外部清理。
+- **显式删除：** 使用当前句柄，或通过 `client.resume(savedState)` 重建句柄后，在同一 execution guard
+  保护下调用 `client.delete(sandbox)`，不需要先 `start()`。沙箱不存在（HTTP 404）视为成功；
+  其他失败会抛出，允许重试。该操作删除框架拥有的运行实例并按保留策略清理快照，不会删除全部备份或
+  Harness 状态存储记录；完整数据清除需要另行清理这些存储。不属于客户端的 E2B 资源不会被删除。
+
+没有隔离键的 `externalSandboxState` 由调用方负责持久化，并将调用串行化。
+以下示例使用已配置的 `client`、`snapshotSpec`、`SandboxLifecycleMiddleware lifecycle` 和此前保存的 JSON 记录。
+应在**释放之后**保存更新后的状态，因为快照及实例 ID 可能发生变化。生产环境应原子、持久地替换状态记录；
+仅保存工作区快照不能保留实例 ID。
+
+```java
+Path record = Path.of("sandbox-state.json");
+SandboxState saved = client.deserializeState(Files.readString(record), snapshotSpec);
+SandboxContext config = SandboxContext.builder()
+    .externalSandboxState(saved)
+    .releasePolicy(SandboxReleasePolicy.RETAIN)
+    .build();
+RuntimeContext callContext = RuntimeContext.empty();
+callContext.put(SandboxContext.class, config);
+
+// 调用方串行化整个获取、使用、释放、保存过程。
+lifecycle.acquireForCall(callContext);
+Sandbox current = callContext.get(SandboxAcquireResult.class).getSandbox();
+try {
+    // 在这里使用沙箱。
+} finally {
+    lifecycle.releaseForCall(callContext);
+    Files.writeString(record, client.serializeState(current.getState()));
+}
+
+// 之后从保存的记录删除实例，无须启动沙箱。
+Sandbox cleanup = client.resume(client.deserializeState(Files.readString(record), snapshotSpec));
+client.delete(cleanup);
+Files.delete(record); // 仅在删除成功后移除记录。
+```
+
+此策略不包含 `PAUSE`。保留沙箱可以省去创建和恢复工作，但总延迟仍包含快照保存和清理请求。
+
 #### Daytona 沙箱
 
 ```java

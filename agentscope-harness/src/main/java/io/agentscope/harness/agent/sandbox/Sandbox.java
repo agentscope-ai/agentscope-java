@@ -49,6 +49,24 @@ public interface Sandbox extends AutoCloseable {
         // no-op by default
     }
 
+    /**
+     * Backend maintenance after a successful stop when the harness retains the sandbox.
+     * Implementations may reconcile snapshot retention here without destroying the live sandbox.
+     * Explicit {@link #shutdown()} and {@link #close()} remain destructive operations.
+     */
+    default void onRetained() throws Exception {
+        // No maintenance by default.
+    }
+
+    /**
+     * Releases resources allocated by a failed start without persisting a partial workspace.
+     * Backends supporting retention must preserve resources that existed before this start.
+     * The default suits backends whose resources are always disposable between calls.
+     */
+    default void cleanupAfterStartFailure() throws Exception {
+        shutdown();
+    }
+
     @Override
     void close() throws Exception;
 

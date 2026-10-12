@@ -196,6 +196,106 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
+##### Retaining an E2B sandbox between calls
+
+`SandboxReleasePolicy.DELETE` is the default: each SDK-managed call saves its configured
+snapshot and destroys the sandbox. To reuse a live sandbox, explicitly select `RETAIN`:
+
+```java
+import io.agentscope.harness.agent.sandbox.SandboxReleasePolicy;
+import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec;
+
+E2bFilesystemSpec spec = new E2bFilesystemSpec()
+    .apiKey(System.getenv("E2B_API_KEY"))
+    .sandboxTimeoutSeconds(300)
+    .releasePolicy(SandboxReleasePolicy.RETAIN)
+    .snapshotSpec(new LocalSnapshotSpec("./sandbox-snapshots"));
+spec.isolationScope(IsolationScope.SESSION);
+// Pass spec to HarnessAgent.builder().filesystem(spec), and supply a stable sessionId per call.
+```
+
+This single-machine example assumes calls for the same session are serialized by the application.
+`RETAIN` still runs `stop()` and saves the configured snapshot; it skips per-call destruction.
+The next call reconnects using the persisted sandbox ID. When the workspace survives, unchanged
+workspace projection and snapshot restore are skipped. Explicit `sandbox.close()`,
+`sandbox.shutdown()`, and `E2bSandboxClient.delete(sandbox)` remain destructive.
+
+- **Scope and ownership:** E2B is the first supported backend; other clients reject `RETAIN`
+  unless they advertise retention support. Framework-managed acquisition requires a resolvable
+  isolation key. An injected `externalSandbox` remains entirely caller-managed; an explicit
+  `externalSandboxState` may opt into `RETAIN`, but its caller must coordinate access and preserve
+  the updated state when no isolation key is available. A failed start cleans up only resources
+  allocated by that start, without saving the partial workspace or pruning snapshots. Existing
+  retained instances are preserved for retry. Only connection/probe failures preserve the ready
+  metadata; failures during initialization invalidate it so retrying the same state restores the
+  workspace and reapplies its projection.
+- **Concurrency:** allow one writer per isolation key, including `SESSION`. The default execution
+  guard is a no-op. Configure `executionGuard(...)` or serialize callers externally; a multi-replica
+  deployment needs coordination across replicas. Keep the guard until snapshot and sandbox state
+  persistence finish; release it between calls. Retention does not make concurrent writes safe.
+- **Expiry and recovery:** `sandboxTimeoutSeconds` is sent on create/connect; it is a provider
+  timeout, not an application-enforced absolute lifetime. Live resources and workspace contents
+  remain until expiry or explicit deletion. `NoopSnapshotSpec` cannot restore files after expiry.
+  Only a connect response of HTTP 404 triggers recreation; other errors leave the original ID
+  intact and fail the call so it can be retried. A failed workspace probe also fails the call
+  instead of treating existing files as lost.
+  Use a working snapshot store; the example above uses local storage. With `RemoteSnapshotSpec`,
+  E2B rebinds the current storage client to the saved snapshot ID during managed resume. For manual
+  resume, use `client.deserializeState(json, snapshotSpec)` before `client.resume(state)`;
+  the one-argument deserializer cannot restore a storage client from JSON.
+- **Lost state records:** use durable state storage and a finite `sandboxTimeoutSeconds`. A worker
+  crash before saving a new ID, state-store eviction, or changing the isolation key can leave a
+  running, billed instance without a reachable record until provider expiry. There is no automatic
+  instance discovery or reconciliation. Preserve the latest ID, explicitly delete abandoned
+  instances before removing their records, and use provider-side administration if a record is lost.
+- **Native snapshot cleanup:** `snapshotRetention(n)` with `n > 0` attempts pruning after a
+  successful retained stop and on explicit destruction. Locked or failed deletions remain in the
+  state for retry, so the limit is a best-effort target. `0` (default) disables pruning. There is no
+  background collector: provider expiry alone does not delete recorded snapshot templates, and
+  abandoned sessions need explicit cleanup. Failed snapshot persistence skips pruning so the
+  previous archive remains usable. As with `DELETE`, failure to store a newly created native
+  snapshot can leave an unreferenced provider snapshot requiring external cleanup.
+- **Explicit deletion:** with the live handle, or one reconstructed by `client.resume(savedState)`,
+  call `client.delete(sandbox)` under the same execution guard. No `start()` is needed. A missing
+  sandbox (HTTP 404) counts as success; other failures are surfaced for retry. This deletes the
+  owned runtime and applies snapshot retention, not all backups or the harness state-store record.
+  Full data erasure requires separate cleanup of those stores. Non-owned E2B resources are left alone.
+
+For `externalSandboxState` without an isolation key, the caller owns persistence and serialization
+of calls. The following uses an already configured `client`, `snapshotSpec`, and
+`SandboxLifecycleMiddleware lifecycle`, and a previously saved JSON record. Save updated state
+**after release**, since snapshot and instance IDs can change. A production state store should
+replace records atomically and durably; snapshot storage alone does not preserve the instance ID.
+
+```java
+Path record = Path.of("sandbox-state.json");
+SandboxState saved = client.deserializeState(Files.readString(record), snapshotSpec);
+SandboxContext config = SandboxContext.builder()
+    .externalSandboxState(saved)
+    .releasePolicy(SandboxReleasePolicy.RETAIN)
+    .build();
+RuntimeContext callContext = RuntimeContext.empty();
+callContext.put(SandboxContext.class, config);
+
+// Caller serializes the entire acquire/use/release/save sequence.
+lifecycle.acquireForCall(callContext);
+Sandbox current = callContext.get(SandboxAcquireResult.class).getSandbox();
+try {
+    // Use the sandbox here.
+} finally {
+    lifecycle.releaseForCall(callContext);
+    Files.writeString(record, client.serializeState(current.getState()));
+}
+
+// Later, delete from the saved record without starting the sandbox.
+Sandbox cleanup = client.resume(client.deserializeState(Files.readString(record), snapshotSpec));
+client.delete(cleanup);
+Files.delete(record); // Remove only after successful deletion.
+```
+
+`PAUSE` is not part of this policy. Retaining a sandbox avoids creation/restore work; total latency
+still includes snapshot persistence and any cleanup requests.
+
 #### Daytona sandbox
 
 ```java

@@ -21,6 +21,7 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
+import io.agentscope.harness.agent.sandbox.SandboxReleasePolicy;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -137,7 +138,11 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
                 ctx.put(SandboxAcquireResult.class, null);
                 filesystemProxy.clearSandboxIfCurrent(sandbox);
                 try {
-                    sandboxManager.release(result);
+                    if (result.getReleasePolicy() == SandboxReleasePolicy.RETAIN) {
+                        sandboxManager.discard(result);
+                    } else {
+                        sandboxManager.release(result);
+                    }
                 } catch (Exception releaseErr) {
                     log.warn(
                             "[sandbox-mw] Failed to release session after pre-call failure: {}",

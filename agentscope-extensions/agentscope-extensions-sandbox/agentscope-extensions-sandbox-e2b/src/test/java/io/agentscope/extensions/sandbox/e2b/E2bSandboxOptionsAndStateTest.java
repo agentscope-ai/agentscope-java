@@ -195,7 +195,7 @@ class E2bSandboxOptionsAndStateTest {
             assertTrue(e.getMessage().contains("Expected E2bSandboxState"));
         }
 
-        // delete is no-op
+        // Deleting a not-yet-started sandbox requires no remote request
         client.delete(s);
         // serialize/deserialize round-trip with snapshotIds
         E2bSandboxState withIds = new E2bSandboxState();

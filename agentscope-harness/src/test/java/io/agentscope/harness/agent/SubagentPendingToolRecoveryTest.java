@@ -71,7 +71,9 @@ class SubagentPendingToolRecoveryTest {
     private static final String CALL_ID = "interrupted-call";
     private static final RuntimeContext CONTEXT =
             RuntimeContext.builder().userId("user").sessionId("child-session").build();
-    private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    // Native journal commits and cleanup finish before a call's terminal signal. Synchronous
+    // SQLite writes on Windows runners can exceed 10s; this bounds hangs, not recovery latency.
+    private static final Duration TIMEOUT = Duration.ofSeconds(60);
 
     @TempDir Path workspace;
 
@@ -294,11 +296,11 @@ class SubagentPendingToolRecoveryTest {
             child.call(List.of(user("initialize")), CONTEXT).block(TIMEOUT);
             Disposable subscription = child.call(List.of(user("start")), CONTEXT).subscribe();
             try {
-                assertTrue(actingSubscribed.await(10, TimeUnit.SECONDS));
+                assertTrue(actingSubscribed.await(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS));
             } finally {
                 subscription.dispose();
             }
-            assertTrue(actingCancelled.await(10, TimeUnit.SECONDS));
+            assertTrue(actingCancelled.await(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS));
             // Cancellation starts asynchronous journal cleanup; wait for its committed run/end.
             Flux.interval(Duration.ZERO, Duration.ofMillis(10))
                     .filter(

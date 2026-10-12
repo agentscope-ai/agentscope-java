@@ -27,9 +27,9 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Acquire priority: {@link SandboxContext#getExternalSandbox()} &gt; {@link
  * SandboxContext#getExternalSandboxState()} &gt; persisted {@link SandboxState} &gt; {@link
- * SandboxClient#create}. When a persisted state exists but the resume fails, the fresh-create
- * fallback keeps the persisted snapshot id so the workspace restores from the previous archive
- * instead of silently resetting.
+ * SandboxClient#create}. Under DELETE, a failed resume falls back to fresh creation while keeping
+ * the persisted snapshot id so the workspace restores from the previous archive. RETAIN propagates
+ * state-load and resume failures rather than replacing a potentially live instance.
  *
  * <p>When a {@link SandboxExecutionGuard} is configured, the manager acquires an execution
  * {@link SandboxLease} before sandbox resume/create for isolation keys that are present. The
@@ -77,19 +77,31 @@ public class SandboxManager {
             return SandboxAcquireResult.userManaged(external);
         }
 
+        SandboxReleasePolicy releasePolicy = sandboxContext.getReleasePolicy();
+        if (releasePolicy == SandboxReleasePolicy.RETAIN && !client.supportsRetention()) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "RETAIN is not supported by this sandbox client");
+        }
+
         // Priority 2: user-supplied state — guard does not apply
         if (sandboxContext.getExternalSandboxState() != null) {
             Sandbox sandbox = client.resume(sandboxContext.getExternalSandboxState());
             log.debug(
                     "[sandbox] Priority 2: resuming from explicit state: {}",
                     sandboxContext.getExternalSandboxState().getSessionId());
-            return SandboxAcquireResult.selfManaged(sandbox);
+            return SandboxAcquireResult.selfManaged(sandbox, SandboxLease.noop(), releasePolicy);
         }
 
         // Priority 3 / 4: harness-managed — apply guard when a scope key is present
         Optional<SandboxIsolationKey> scopeKey =
                 SandboxIsolationKey.resolve(
                         sandboxContext.getIsolationScope(), runtimeContext, agentId);
+
+        if (releasePolicy == SandboxReleasePolicy.RETAIN && scopeKey.isEmpty()) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "RETAIN requires a stable sandbox isolation key (userId/sessionId or"
+                            + " AGENT/GLOBAL scope)");
+        }
 
         SandboxLease lease = SandboxLease.noop();
         if (scopeKey.isPresent()) {
@@ -117,9 +129,14 @@ public class SandboxManager {
                             persistedSnapshotId = state.getSnapshot().getId();
                         }
                         Sandbox sandbox = client.resume(state);
-                        return SandboxAcquireResult.selfManaged(sandbox, lease);
+                        return SandboxAcquireResult.selfManaged(sandbox, lease, releasePolicy);
                     }
                 } catch (Exception e) {
+                    if (releasePolicy == SandboxReleasePolicy.RETAIN) {
+                        // The stored id may still name a live sandbox. Do not overwrite it with
+                        // a fresh instance when the state store or deserializer is unavailable.
+                        throw e;
+                    }
                     log.warn(
                             "[sandbox] Failed to load persisted state for scope {}, falling through"
                                     + " to fresh create: {}",
@@ -145,7 +162,7 @@ public class SandboxManager {
                             sandboxContext.getClientOptions());
             carryOverPersistedSnapshotId(
                     sandbox, persistedSnapshotId, sandboxContext.getSnapshotSpec());
-            return SandboxAcquireResult.selfManaged(sandbox, lease);
+            return SandboxAcquireResult.selfManaged(sandbox, lease, releasePolicy);
 
         } catch (Exception e) {
             // Guard must be released if acquire fails — the caller won't see the result
@@ -198,16 +215,46 @@ public class SandboxManager {
             return;
         }
 
+        boolean stopped = false;
         try {
             sandbox.stop();
+            stopped = true;
         } catch (Exception e) {
             log.warn("[sandbox] Sandbox stop failed: {}", e.getMessage(), e);
+        }
+
+        if (result.getReleasePolicy() == SandboxReleasePolicy.RETAIN) {
+            // A failed persist must not prune snapshots still referenced by the last archive.
+            if (stopped) {
+                try {
+                    sandbox.onRetained();
+                } catch (Exception e) {
+                    log.warn(
+                            "[sandbox] Retained sandbox maintenance failed: {}", e.getMessage(), e);
+                }
+            }
+            return;
         }
 
         try {
             sandbox.shutdown();
         } catch (Exception e) {
             log.warn("[sandbox] Sandbox shutdown failed: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Cleans up allocations from a failed start without overwriting the previous snapshot.
+     * The backend distinguishes new allocations from pre-existing retained resources.
+     */
+    public void discard(SandboxAcquireResult result) {
+        if (result == null || !result.isSelfManaged() || result.getSandbox() == null) {
+            return;
+        }
+        try {
+            result.getSandbox().cleanupAfterStartFailure();
+        } catch (Exception e) {
+            log.warn("[sandbox] Failed to discard sandbox: {}", e.getMessage(), e);
         }
     }
 

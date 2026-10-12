@@ -38,6 +38,11 @@ public interface SandboxClient<O extends SandboxClientOptions> {
 
     void delete(Sandbox sandbox);
 
+    /** Whether this backend supports retaining SDK-managed sandboxes between calls. */
+    default boolean supportsRetention() {
+        return false;
+    }
+
     String serializeState(SandboxState state);
 
     SandboxState deserializeState(String json);
