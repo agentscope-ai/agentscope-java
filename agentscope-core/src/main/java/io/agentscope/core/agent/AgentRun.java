@@ -18,7 +18,6 @@ package io.agentscope.core.agent;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -30,13 +29,18 @@ import reactor.core.publisher.Mono;
 /**
  * A single-use, lazy execution handle. Register it before subscribing to {@link #stream()}.
  * Each handle owns its cancellation and status; it never registers RuntimeContext on an agent.
- * A second subscription is rejected, so one runId can never identify multiple executions.
- * Cancelling a subscription also cancels this handle. Create another handle to retry.
+ * A second subscription is rejected, so one handle never runs twice (an adopted caller-supplied
+ * runId's uniqueness is the caller's). Cancelling a subscription also cancels this handle.
+ * Create another handle to retry.
  *
  * @param <T> the execution's output type (typically Msg or AgentEvent)
  */
 public final class AgentRun<T> {
-    /** Execution state. QUEUED includes setup before admission to the core lifecycle. */
+    /**
+     * Execution-handle state. COMPLETED means the publisher returned normally, including a
+     * suspended or unsuccessful semantic result. Inspect AgentResult / durable turn status for
+     * the logical outcome. QUEUED includes setup before admission to the core lifecycle.
+     */
     public enum Status {
         CREATED,
         QUEUED,
@@ -51,14 +55,13 @@ public final class AgentRun<T> {
         }
     }
 
-    private final String runId = UUID.randomUUID().toString();
     private final RunControl control;
     private final AtomicBoolean subscribed = new AtomicBoolean();
     private final AtomicReference<Supplier<? extends Publisher<T>>> pendingSource;
     private final Flux<T> stream = Flux.defer(this::subscribeOnce);
 
-    private AgentRun(String agentId, Supplier<? extends Publisher<T>> source) {
-        control = new RunControl(Objects.requireNonNull(agentId, "agentId"));
+    private AgentRun(String agentId, String runId, Supplier<? extends Publisher<T>> source) {
+        control = new RunControl(Objects.requireNonNull(agentId, "agentId"), runId);
         pendingSource = new AtomicReference<>(Objects.requireNonNull(source, "source"));
         control.termination().subscribe(status -> pendingSource.set(null));
     }
@@ -99,14 +102,26 @@ public final class AgentRun<T> {
         return invocation.get();
     }
 
-    /** Wrap an agent invocation without starting it. Prefer the agent's prepareRun/prepareCall APIs. */
+    /**
+     * Wrap an agent invocation without starting it. Prefer the agent's prepareRun/prepareCall APIs.
+     */
     public static <T> AgentRun<T> create(String agentId, Supplier<? extends Publisher<T>> source) {
-        return new AgentRun<>(agentId, source);
+        return create(agentId, null, source);
+    }
+
+    /**
+     * Wrap an agent invocation without starting it, adopting {@code runId} — typically {@code
+     * ctx.getRunId()} — so the handle and the {@link RuntimeContext} identify the same execution.
+     * Null/blank generates one.
+     */
+    public static <T> AgentRun<T> create(
+            String agentId, String runId, Supplier<? extends Publisher<T>> source) {
+        return new AgentRun<>(agentId, runId, source);
     }
 
     /** Stable opaque identifier for this single execution. */
     public String runId() {
-        return runId;
+        return control.runId();
     }
 
     /** Current execution state; a cooperative interrupt may still be RUNNING until observed. */

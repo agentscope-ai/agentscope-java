@@ -74,11 +74,12 @@ final class ActiveRequestContext {
 
     void saveState() {
         AgentState state = resolveState();
-        if (saver == null || state == null) {
-            return;
-        }
+        if (state == null) return;
+        // Native sessions persist this flag through their owning recorder's final checkpoint.
+        // A missing standalone saver must not suppress the runtime interruption marker.
+        state.setShutdownInterrupted(true);
+        if (saver == null) return;
         try {
-            state.setShutdownInterrupted(true);
             saver.save(state);
         } catch (Exception e) {
             log.warn("Failed to save agent state for request {}", requestId, e);

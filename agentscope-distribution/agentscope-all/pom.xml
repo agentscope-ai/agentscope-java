@@ -404,7 +404,7 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-aistio</artifactId>
+            <artifactId>agentscope-extensions-controlplane</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
@@ -501,6 +501,12 @@
                         <dependencySourceInclude>io.agentscope:agentscope-*</dependencySourceInclude>
                     </dependencySourceIncludes>
                     <additionalDependencies>
+                        <!-- JEV browser adapter exposes optional Playwright types in its API. -->
+                        <additionalDependency>
+                            <groupId>com.microsoft.playwright</groupId>
+                            <artifactId>playwright</artifactId>
+                            <version>1.45.0</version>
+                        </additionalDependency>
                         <additionalDependency>
                             <groupId>org.springframework</groupId>
                             <artifactId>spring-webflux</artifactId>

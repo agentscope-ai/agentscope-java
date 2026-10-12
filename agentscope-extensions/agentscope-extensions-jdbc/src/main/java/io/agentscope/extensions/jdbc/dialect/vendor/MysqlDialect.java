@@ -66,12 +66,17 @@ public class MysqlDialect extends AbstractJdbcDialect {
     public List<String> storeCreateTableDdls() {
         // Keep composite PK under InnoDB utf8mb4 3072-byte limit:
         // (512 + 255) * 4 = 3068 bytes. idx_namespace (512 * 4 = 2048 bytes) also fits.
+        // The key columns pin a binary collation: utf8mb4's default collation is
+        // case-insensitive (utf8mb4_0900_ai_ci on MySQL 8.0+, utf8mb4_general_ci on 5.7
+        // and MariaDB), which makes "README.md" and "readme.md" collide on the primary
+        // key so that the second put silently overwrites the first. Payload columns keep
+        // the table default.
         return List.of(
                 "CREATE TABLE IF NOT EXISTS "
                         + storeTableName()
                         + " ("
-                        + "  namespace_path VARCHAR(512)  NOT NULL,"
-                        + "  item_key       VARCHAR(255)  NOT NULL,"
+                        + "  namespace_path VARCHAR(512)  COLLATE utf8mb4_bin NOT NULL,"
+                        + "  item_key       VARCHAR(255)  COLLATE utf8mb4_bin NOT NULL,"
                         + "  value_json     LONGTEXT      NOT NULL,"
                         + "  version        BIGINT        NOT NULL,"
                         + "  updated_at     BIGINT        NOT NULL,"
@@ -103,11 +108,13 @@ public class MysqlDialect extends AbstractJdbcDialect {
 
     @Override
     public List<String> sessionStateCreateTableDdls() {
+        // Same reasoning as storeCreateTableDdls(): session ids and state keys are exact
+        // identifiers and must not collide under case-insensitive comparison.
         return List.of(
                 """
                 CREATE TABLE IF NOT EXISTS %s (
-                  session_id  VARCHAR(255) NOT NULL,
-                  state_key   VARCHAR(255) NOT NULL,
+                  session_id  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+                  state_key   VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
                   item_index  INT          NOT NULL DEFAULT 0,
                   state_data  LONGTEXT     NOT NULL,
                   version     BIGINT       NOT NULL DEFAULT 0,
@@ -136,28 +143,24 @@ public class MysqlDialect extends AbstractJdbcDialect {
                 stateData);
     }
 
-    @Override
-    public BoundSql sessionStateCheckTableExists(String tableName) {
-        return new BoundSql(
-                "SELECT 1 FROM INFORMATION_SCHEMA.TABLES"
-                        + " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
-                tableName);
-    }
-
     // ------------------------------------------------------------------
     //  SnapshotDialect
     // ------------------------------------------------------------------
 
     @Override
     public List<String> snapshotCreateTableDdls() {
+        // snapshot_id is the primary key and a caller-supplied identifier, so it pins the same
+        // binary collation as the other key columns: the table default is case-insensitive, and
+        // two snapshot ids differing only in letter case would otherwise share a row. The table
+        // states its charset and engine explicitly, like the store table.
         return List.of(
                 "CREATE TABLE IF NOT EXISTS "
                         + snapshotTableName()
                         + " ("
-                        + "  snapshot_id VARCHAR(512) NOT NULL PRIMARY KEY, "
+                        + "  snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL PRIMARY KEY, "
                         + "  data LONGBLOB NOT NULL, "
                         + "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                        + ")");
+                        + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     }
 
     @Override
@@ -171,6 +174,68 @@ public class MysqlDialect extends AbstractJdbcDialect {
                         + "   created_at = CURRENT_TIMESTAMP",
                 snapshotId,
                 data);
+    }
+
+    // ------------------------------------------------------------------
+    //  SkillDialect / SkillResourcesDialect
+    // ------------------------------------------------------------------
+
+    /**
+     * Skill tables ported verbatim from the deprecated skill-mysql-repository module:
+     * auto-increment id, per-namespace unique names through the inlined
+     * {@code UNIQUE KEY uk_namespace_name (namespace, name)}, utf8mb4 with unicode
+     * collation, on-update timestamp, and the resources' composite PK plus cascading FK.
+     * The {@code namespace} columns are pinned to {@code utf8mb4_bin}: the namespace is
+     * the isolation boundary and must not fold case under the table's case-insensitive
+     * default — the same rationale as the store/session key columns — while {@code name}
+     * keeps that default, preserving the legacy lookup behavior. Only the table names are
+     * resolved through the dialect instead of a hard-coded {@code database.table} prefix —
+     * tables now live in the connection's current database, like the base tables.
+     */
+    @Override
+    public List<String> skillCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + skillTableName()
+                        + " ("
+                        + "  id            BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,"
+                        + "  namespace     VARCHAR(64) COLLATE utf8mb4_bin NOT NULL"
+                        + " DEFAULT 'default',"
+                        + "  name          VARCHAR(255) NOT NULL,"
+                        + "  description   TEXT NOT NULL,"
+                        + "  skill_content LONGTEXT NOT NULL,"
+                        + "  source        VARCHAR(255) NOT NULL,"
+                        + "  metadata_json LONGTEXT NULL,"
+                        + "  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        + "    ON UPDATE CURRENT_TIMESTAMP,"
+                        + "  UNIQUE KEY uk_namespace_name (namespace, name)"
+                        + ") DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    }
+
+    @Override
+    public List<String> skillResourcesCreateTableDdls() {
+        // idx_namespace mirrors the store table's: the bulk resource statements filter by
+        // namespace on a table shared by every namespace, and PRIMARY KEY (id,
+        // resource_path) cannot serve that predicate (namespace is not a prefix).
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + skillResourcesTableName()
+                        + " ("
+                        + "  id               BIGINT NOT NULL,"
+                        + "  namespace        VARCHAR(64) COLLATE utf8mb4_bin NOT NULL"
+                        + " DEFAULT 'default',"
+                        + "  resource_path    VARCHAR(500) NOT NULL,"
+                        + "  resource_content LONGTEXT NOT NULL,"
+                        + "  created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        + "    ON UPDATE CURRENT_TIMESTAMP,"
+                        + "  PRIMARY KEY (id, resource_path),"
+                        + "  INDEX idx_namespace (namespace),"
+                        + "  FOREIGN KEY (id) REFERENCES "
+                        + skillTableName()
+                        + "(id) ON DELETE CASCADE"
+                        + ") DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     }
 
     // ------------------------------------------------------------------

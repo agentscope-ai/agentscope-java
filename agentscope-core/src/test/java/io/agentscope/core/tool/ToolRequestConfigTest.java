@@ -26,15 +26,63 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.observation.ActionObservation;
+import io.agentscope.core.observation.ActionObserver;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 /** Unit tests for per-call {@link ToolRequestConfig} composition against a shared {@link Toolkit}. */
 class ToolRequestConfigTest {
+    @Test
+    void requestOverridesAreObservedExactlyOnceForDirectAndBatchCalls() {
+        Toolkit toolkit = new Toolkit();
+        SchemaOnlyTool backend = schemaOnlyTool("overlap", "backend");
+        toolkit.registerAgentTool(backend);
+        ToolRequestConfig config =
+                new ToolRequestConfig(
+                        Map.of("overlap", schemaOnlyTool("overlap", "external")),
+                        ToolMergeMode.MERGE_EXTERNAL_PRIORITY);
+        for (boolean batch : List.of(false, true)) {
+            List<ActionObservation> recorded = new ArrayList<>();
+            ActionObserver observer =
+                    (observation, result) -> Mono.fromRunnable(() -> recorded.add(observation));
+            RuntimeContext context =
+                    RuntimeContext.builder()
+                            .toolRequestConfig(config)
+                            .put(ActionObserver.CONTEXT_KEY, observer)
+                            .build();
+            ToolUseBlock use =
+                    ToolUseBlock.builder()
+                            .id("observed")
+                            .name("overlap")
+                            .input(Map.of())
+                            .content("{}")
+                            .build();
+            ToolResultBlock result =
+                    batch
+                            ? toolkit.callTools(List.of(use), null, null, context, config, null)
+                                    .block()
+                                    .get(0)
+                            : toolkit.callTool(
+                                            ToolCallParam.builder()
+                                                    .toolUseBlock(use)
+                                                    .runtimeContext(context)
+                                                    .build())
+                                    .block();
+            assertNotNull(result);
+            assertTrue(result.isSuspended());
+            assertEquals(
+                    List.of(ActionObservation.Status.STARTED, ActionObservation.Status.SUSPENDED),
+                    recorded.stream().map(ActionObservation::status).toList());
+            assertEquals(recorded.get(0).actionId(), recorded.get(1).actionId());
+            assertSame(backend, toolkit.getTool("overlap"));
+        }
+    }
 
     @Test
     void getToolSchemas_mergeExternalPriority_overridesBackendAndLeavesRegistryUntouched() {

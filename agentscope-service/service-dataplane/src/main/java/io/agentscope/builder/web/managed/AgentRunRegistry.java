@@ -36,7 +36,12 @@ public final class AgentRunRegistry {
                         Objects.requireNonNull(sessionId),
                         Objects.requireNonNull(run));
         if (runs.putIfAbsent(run.runId(), entry) != null) {
-            throw new IllegalStateException("Run already registered: " + run.runId());
+            throw new IllegalStateException(
+                    "Run already registered: "
+                            + run.runId()
+                            + ". A RuntimeContext runId identifies one execution: do not reuse a"
+                            + " context (or an explicit runId) across concurrent runs — create a"
+                            + " fresh context or pass a new runId per run.");
         }
         run.termination().subscribe(status -> runs.remove(run.runId(), entry));
     }
