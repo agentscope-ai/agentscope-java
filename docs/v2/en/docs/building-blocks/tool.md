@@ -122,6 +122,12 @@ Common `@Tool` attributes:
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
 
+#### Explicit result states
+
+Return `ToolResultBlock.success(text)` for a successful call and `ToolResultBlock.error(message)` for a failure. Both are supported directly and inside `Mono<ToolResultBlock>`. Do not infer failure from text prefixes. `ToolResultBlock.text(text)` defaults to `RUNNING`; use `withState(...)` to set a terminal state when preserving an existing JSON or multiline output.
+
+Built-in tools now return structured results. Direct callers should inspect `getState()` and read the text blocks from `getOutput()`; `Toolkit` registration is unchanged.
+
 ### Custom tools (extending `ToolBase`)
 
 When you need a custom permission policy, external execution, or a more complex schema, extend `ToolBase`:
@@ -285,6 +291,25 @@ agent.call(List.of(new UserMessage("Greet me.")), ctx).block();
 ```
 
 The model never sees `userCtx` — it is not part of the tool's JSON schema. Full example: `agentscope-examples/documentation/.../tool/ToolExecutionContextExample.java`.
+
+### Streaming tool progress
+
+Long-running tools can publish intermediate progress through `ToolEmitter.emit()`. Progress travels as [`ToolProgressEvent`](/v2/en/docs/building-blocks/message-and-event#event-types) in the event stream — it is for display only and never sent to the LLM. The tool's return value is what the model receives, and it travels separately as `ToolResultTextDeltaEvent` / `ToolResultDataDeltaEvent`.
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    emitter.emit(ToolResultBlock.text("Scanning 3 directories..."));
+    // ... do work ...
+    emitter.emit(ToolResultBlock.text("Indexing results..."));
+    // ... do more work ...
+
+    // Only this return value is sent to the LLM as the tool result.
+    return "3 files found";
+}
+```
+
+Clients that rebuild tool results from the event stream must accumulate `ToolResult*DeltaEvent` and ignore `ToolProgressEvent`. Mixing the two would put progress text into the tool message and feed it back to the model on the next turn, contradicting `ToolEmitter`'s contract.
 
 ### Accessing context in `ToolBase.callAsync`
 

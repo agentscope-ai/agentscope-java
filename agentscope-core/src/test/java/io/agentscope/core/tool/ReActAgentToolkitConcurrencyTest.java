@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -323,12 +323,12 @@ class ReActAgentToolkitConcurrencyTest {
         Flux<AgentEvent> streamB = agent.streamEvents(List.of(userMsg("prompt-B")), rcB);
 
         Mono<List<String>> deltasA =
-                streamA.ofType(ToolResultTextDeltaEvent.class)
-                        .map(ToolResultTextDeltaEvent::getDelta)
+                streamA.ofType(ToolProgressEvent.class)
+                        .map(ToolProgressEvent::getText)
                         .collectList();
         Mono<List<String>> deltasB =
-                streamB.ofType(ToolResultTextDeltaEvent.class)
-                        .map(ToolResultTextDeltaEvent::getDelta)
+                streamB.ofType(ToolProgressEvent.class)
+                        .map(ToolProgressEvent::getText)
                         .collectList();
 
         var tuple = Mono.zip(deltasA, deltasB).block(TIMEOUT);

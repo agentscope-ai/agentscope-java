@@ -102,6 +102,11 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
     }
 
     @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
+    }
+
+    @Override
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         return ModelUtils.applyTimeoutAndRetry(
