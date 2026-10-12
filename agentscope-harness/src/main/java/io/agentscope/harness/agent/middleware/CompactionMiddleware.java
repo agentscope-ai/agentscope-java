@@ -69,12 +69,29 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private final CompactionConfig config;
+    private final boolean memoryHooksEnabled;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
+        this(workspaceManager, model, config, true);
+    }
+
+    /**
+     * Creates a compaction middleware that flushes long-term memory from the summarized prefix
+     * before compacting, unless memory hooks are disabled for the agent.
+     *
+     * @param memoryHooksEnabled whether long-term memory hooks are active; {@code false} skips the
+     *     compaction-time memory flush so no memory is written and no extra model call is spent
+     */
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            boolean memoryHooksEnabled) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.config = config;
+        this.memoryHooksEnabled = memoryHooksEnabled;
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -152,7 +169,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                     .keepTokens(0)
                                                     .flushBeforeCompact(
                                                             config.isFlushBeforeCompact())
-                                                    .build());
+                                                    .build(),
+                                            memoryHooksEnabled);
                             return forced.prepareCandidate(
                                             agent,
                                             ctx,
@@ -259,6 +277,9 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             config.withEffective(
                                     Math.max(1, trigger),
                                     Math.min(keep, Math.max(0, conversationBudget / 2)));
+                    if (!memoryHooksEnabled) {
+                        effective = effective.withoutMemoryFlush();
+                    }
                     ConversationCompactor compactor =
                             new ConversationCompactor(
                                     model, new MemoryFlushManager(workspaceManager, model));
