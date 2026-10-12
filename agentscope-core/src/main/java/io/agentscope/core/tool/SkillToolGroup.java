@@ -183,10 +183,13 @@ public class SkillToolGroup extends ToolGroup {
         }
 
         /**
-         * Marks the group as a system capability exempt from grant-layer trimming. This builder
-         * does not extend {@link ToolGroup.Builder}, so the flag is declared explicitly here.
+         * Marks the group as a system capability exempt from grant-layer trimming —
+         * group-level only (enumeration/activation); member tools are exempt only when each is
+         * itself marked system. This builder does not extend {@link ToolGroup.Builder}, so the
+         * flag is declared explicitly here.
          *
-         * @param system true to exempt this group from grant-layer trimming
+         * @param system true to exempt this group's enumeration/activation from grant-layer
+         *     trimming
          * @return This builder for method chaining
          */
         public Builder system(boolean system) {

@@ -87,6 +87,8 @@ new CapabilitySurface(Set.of(), Set.of(), Set.of());
 
 框架自身的元工具（`reset_equipped_tools`、`load_skill_through_path`）标记为 system，在任何授权面下（包括 DENY_ALL）保持可用。装配方也可将自己的工具/组/skill 标记 `system = true`（`@Tool(system = true)` 或对应 Builder）——这等同于装配方显式声明该能力免裁剪，注册时会输出 INFO 留痕。
 
+**标记只作用于被标记的对象，不传染**：工具的 `system` 豁免该工具的可见与执行；**组的 `system` 仅豁免该组自身的枚举与激活**，组内成员工具仍受授权面控制（成员需要豁免时逐一标记 `system`）；skill 的 `system` 豁免其提示词可见与加载。
+
 > **信任边界**：`system` 标记对装配方（agent 开发者）开放且可信。该授权层的威胁模型是「终端用户 vs agent 能力面」，不设防装配方自身。
 
 ## fail-closed 行为

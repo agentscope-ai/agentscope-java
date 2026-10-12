@@ -47,7 +47,11 @@ public class ToolGroup {
     private final ToolGroupScope scope;
     private final Set<String> tools; // Tool names in this group
 
-    /** Whether this is a system capability exempt from grant-layer trimming. */
+    /**
+     * Whether this is a system capability exempt from grant-layer trimming. Group-level only:
+     * exempts the group's enumeration and activation; member tools are governed by their own
+     * {@code system} markers.
+     */
     private final boolean system;
 
     /**
@@ -153,9 +157,12 @@ public class ToolGroup {
 
     /**
      * Whether this group is a system capability exempt from grant-layer (per-user capability)
-     * trimming. Independent of {@link #getScope()} (the activation-ownership axis).
+     * trimming. Group-level only: the group stays enumerable and activatable under any grant
+     * set; member tools are NOT exempt unless each is itself marked system. Independent of
+     * {@link #getScope()} (the activation-ownership axis).
      *
-     * @return {@code true} if this group bypasses grant-layer trimming; {@code false} by default
+     * @return {@code true} if this group bypasses grant-layer trimming for enumeration and
+     *     activation; {@code false} by default
      */
     public boolean isSystem() {
         return system;
@@ -291,9 +298,12 @@ public class ToolGroup {
 
         /**
          * Marks the group as a system capability exempt from grant-layer (per-user capability)
-         * trimming. Independent of {@link #scope(ToolGroupScope)}.
+         * trimming — group-level only: enumeration and activation stay available under any
+         * grant set, while member tools are exempt only when each is itself marked system.
+         * Independent of {@link #scope(ToolGroupScope)}.
          *
-         * @param system true to exempt this group from grant-layer trimming
+         * @param system true to exempt this group's enumeration/activation from grant-layer
+         *     trimming
          * @return This builder for method chaining
          */
         public Builder system(boolean system) {

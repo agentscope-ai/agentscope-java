@@ -112,6 +112,12 @@ own tools/groups/skills `system = true` (`@Tool(system = true)` or the correspon
 an explicit declaration that the capability is exempt from trimming; registration logs an INFO
 trace for auditability.
 
+**The marker applies only to the object it marks — it does not propagate**: a tool's `system`
+exempts that tool's visibility and execution; **a group's `system` exempts only the group's own
+enumeration and activation** — member tools stay governed by the grant surface (mark each
+member `system` if it needs the exemption); a skill's `system` exempts its prompt visibility
+and loading.
+
 > **Trust boundary**: the `system` marker is open to and trusted from the assembler (the agent
 > developer). The threat model is "end user vs. the agent's capability surface", not defense
 > against the assembler.
