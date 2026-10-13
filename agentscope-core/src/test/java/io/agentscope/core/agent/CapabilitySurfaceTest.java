@@ -148,6 +148,41 @@ class CapabilitySurfaceTest {
     }
 
     @Test
+    @DisplayName("skill grant entries: bare name vs repository-qualified id forms")
+    void skillGrantEntryDualForms() {
+        AgentSkill alphaCustom =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("d")
+                        .skillContent("c")
+                        .build(); // source defaults to "custom" → id "alpha__s__custom"
+        AgentSkill alphaMarket =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("d")
+                        .skillContent("c")
+                        .source("market")
+                        .build();
+
+        // Bare-name entry grants the name under any source.
+        CapabilitySurface byName = new CapabilitySurface(Set.of("alpha"), Set.of(), Set.of());
+        assertTrue(byName.allowsSkill(alphaCustom));
+        assertTrue(byName.allowsSkill(alphaMarket));
+
+        // Qualified entry grants only the exact repository's skill.
+        CapabilitySurface byId =
+                new CapabilitySurface(Set.of("alpha__s__market"), Set.of(), Set.of());
+        assertTrue(byId.allowsSkill(alphaMarket));
+        assertFalse(byId.allowsSkill(alphaCustom));
+
+        // String fallback: a bare-name input never hits a qualified entry (no source known);
+        // a full id is also granted by a bare-name entry.
+        assertFalse(byId.allowsSkill("alpha"));
+        assertTrue(byName.allowsSkill(alphaCustom.getSkillId()));
+        assertTrue(AgentSkill.parseSkillName("alpha__s__market").equals("alpha"));
+    }
+
+    @Test
     @DisplayName("toolGroup dimension: all-null = no trimming; unset or empty = no group grants")
     void toolGroupDimensionThreeStates() {
         assertTrue(new CapabilitySurface(null, null, null).allowsToolGroup("anyGroup"));

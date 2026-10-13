@@ -450,7 +450,7 @@ ReActAgent agent =
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| `skillName` | `string`（枚举：已注册的 skillName） | 要加载的 skill。 |
+| `skillId` | `string`（枚举：已注册的 skillId，通常即 skill 名） | 要加载的 skill。 |
 | `path` | `string` | 传 `"SKILL.md"` 取该 skill 的 markdown 指令；或传 skill 声明过的精确资源路径，例如 `"references/guide.md"`、`"scripts/run.py"`。不要传 `"."`、`"./"`、目录或绝对路径。 |
 
 调用示例：
@@ -458,7 +458,7 @@ ReActAgent agent =
 ```json
 {
   "name": "load_skill_through_path",
-  "input": { "skillName": "pdf-extractor", "path": "SKILL.md" }
+  "input": { "skillId": "pdf-extractor", "path": "SKILL.md" }
 }
 ```
 

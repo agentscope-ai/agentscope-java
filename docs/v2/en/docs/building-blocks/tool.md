@@ -450,7 +450,7 @@ At runtime, the agent invokes the viewer with two required arguments:
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `skillName` | `string` (enum of registered skill names) | The skill to load. |
+| `skillId` | `string` (enum of registered skill ids, normally the skill name) | The skill to load. |
 | `path` | `string` | Use `"SKILL.md"` to fetch the skill's markdown instructions, or an exact resource path declared by the skill such as `"references/guide.md"` or `"scripts/run.py"`. Do not pass `"."`, `"./"`, a directory, or an absolute path. |
 
 Example tool call payload:
@@ -458,7 +458,7 @@ Example tool call payload:
 ```json
 {
   "name": "load_skill_through_path",
-  "input": { "skillName": "pdf-extractor", "path": "SKILL.md" }
+  "input": { "skillId": "pdf-extractor", "path": "SKILL.md" }
 }
 ```
 

@@ -32,7 +32,7 @@ CapabilityResolver resolver = (ctx, agent) -> {
     // Granularity is yours: per-(userId, agentId), or ignore agentId and return one
     // surface per user — the framework treats both identically.
     return new CapabilitySurface(
-            authzService.allowedSkills(userId),      // allowed skillName values; null = not set
+            authzService.allowedSkills(userId),      // allowed skillIds (normally the skill name); null = not set
             authzService.allowedToolGroups(userId),  // allowed ToolGroup names; null = not set
             authzService.allowedTools(userId));      // allowed tool names; null = not set
 };
@@ -89,16 +89,17 @@ accessors (`allowedSkills()` etc.) still preserve the distinction.
 Positive authorization is hierarchical; matching **any set dimension** grants:
 
 - Granting a **skill** implicitly grants its manual, scripts and associated tools (the skill
-  tool group `skillName + "_skill_tools"`);
+  tool group `skillId + "_skill_tools"`, where a source-less skillId is simply the skill name);
 - Granting a **ToolGroup** implicitly grants every tool in it;
 - Granting a **tool** by name grants exactly that tool (grouping is ignored, and it does not
   amplify to sibling tools in the same group).
 
-Skills are granted and addressed **by skillName** (the industry-standard unique identity):
-`allowedSkills` holds the skillName values from the business entitlement list; the registry keys
-by skillName and enforces per-agent-catalog uniqueness (same name + same instance is idempotent,
-a different instance is rejected). The internal `name + "_" + source` storage identifier never
-enters the grant surface.
+Skills are granted and addressed **by skillId**: normally just the skill name (the
+industry-standard unique identity); the combined `name + "__s__" + source` form only when
+same-named skills come from different repositories (entitlement lists use the bare name; the
+combined form for the rare precise case). Catalogs key by skill name and enforce
+per-agent-catalog uniqueness (same name + same instance is idempotent, a different
+instance is rejected).
 
 Only whitelists are provided; there is no deny (reverse-ban) capability. Default is deny —
 anything not reachable from the enumeration does not exist.

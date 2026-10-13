@@ -51,7 +51,7 @@ class SkillUsageMiddlewareTest {
         store.markAgentDraft("csv-sum", null);
         ActingInput in =
                 new ActingInput(
-                        List.of(callOf("load_skill_through_path", Map.of("skillName", "csv-sum"))));
+                        List.of(callOf("load_skill_through_path", Map.of("skillId", "csv-sum"))));
 
         mw.onActing(null, null, in, x -> Flux.empty()).blockLast();
 
@@ -65,7 +65,7 @@ class SkillUsageMiddlewareTest {
                         List.of(
                                 callOf(
                                         "load_skill_through_path",
-                                        Map.of("skillName", "external-skill"))));
+                                        Map.of("skillId", "external-skill"))));
 
         mw.onActing(null, null, in, x -> Flux.empty()).blockLast();
 
@@ -89,8 +89,8 @@ class SkillUsageMiddlewareTest {
         ActingInput in =
                 new ActingInput(
                         List.of(
-                                callOf("load_skill_through_path", Map.of("skillName", "a")),
-                                callOf("load_skill_through_path", Map.of("skillName", "b")),
+                                callOf("load_skill_through_path", Map.of("skillId", "a")),
+                                callOf("load_skill_through_path", Map.of("skillId", "b")),
                                 callOf("read_file", Map.of("path", "/tmp/x"))));
 
         mw.onActing(null, null, in, x -> Flux.empty()).blockLast();

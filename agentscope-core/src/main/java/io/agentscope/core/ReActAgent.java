@@ -130,6 +130,7 @@ import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.shutdown.PartialReasoningPolicy;
+import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillFilter;
@@ -1027,8 +1028,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return surface;
         }
         Set<String> boundGroups = new HashSet<>();
-        for (String skillName : grantedSkills) {
-            boundGroups.addAll(toolkit.findSkillToolGroupsByActivateOnSkill(skillName));
+        for (String entry : grantedSkills) {
+            // Entries may be bare names or qualified ids; bindings match by name.
+            boundGroups.addAll(
+                    toolkit.findSkillToolGroupsByActivateOnSkill(AgentSkill.parseSkillName(entry)));
         }
         if (boundGroups.isEmpty()) {
             return surface;

@@ -35,8 +35,10 @@ import java.util.function.Function;
  * granted when it is system-marked or its name is whitelisted. Default is deny: anything
  * not reachable from the enumeration does not exist.
  *
- * @param allowedSkills allowed skill names (the business identity, e.g. from an
- *     entitlement list); {@code null} = not set (no skill grants)
+ * @param allowedSkills skill grant entries: normally the bare skill name (the business
+ *     identity, source-unrestricted); optionally the combined skillId form when a specific
+ *     repository's copy must be granted (see {@link AgentSkill#getSkillId()}); {@code null} =
+ *     not set (no skill grants)
  * @param allowedToolGroups allowed ToolGroup names; {@code null} = not set (no group grants)
  * @param allowedTools allowed tool names (per-name, grouping ignored); {@code null} = not set
  *     (no per-name grants)
@@ -71,16 +73,30 @@ public record CapabilitySurface(
     }
 
     /**
-     * Skill decision by name, grant set only. Fallback for callers that do not hold an
+     * Skill decision by skillId, grant set only. Fallback for callers that do not hold an
      * {@link AgentSkill} instance; this overload does not know the system-capability mark, so
      * such callers must apply that bypass themselves (or resolve the skill and prefer {@link
      * #allowsSkill(AgentSkill)}).
      *
-     * @param skillName the skill name to check
-     * @return {@code true} for an all-null surface or a whitelisted skill name
+     * <p>A skillId is normally just the skill name; only when a source is set does it take the
+     * combined form {@code name__s__source} (composition rules: {@link
+     * AgentSkill#getSkillId()}). A name-only skillId matches a bare-name grant entry but never
+     * a repository-qualified one — the qualified entry demands a source the caller has not
+     * supplied (fail-closed).
+     *
+     * @param skillId the skillId to check (the skill name, or the combined form)
+     * @return {@code true} for an all-null surface or a matching grant entry
      */
-    public boolean allowsSkill(String skillName) {
-        return isUnrestricted() || (allowedSkills != null && allowedSkills.contains(skillName));
+    public boolean allowsSkill(String skillId) {
+        if (isUnrestricted() || allowedSkills == null) {
+            return isUnrestricted();
+        }
+        if (allowedSkills.contains(skillId)) {
+            return true; // exact entry match (bare name or an exactly equal combined id)
+        }
+        // A combined id is also granted by a bare-name entry of its name part.
+        return skillId.contains(AgentSkill.SKILL_ID_SEPARATOR)
+                && allowedSkills.contains(AgentSkill.parseSkillName(skillId));
     }
 
     /**
@@ -88,16 +104,25 @@ public record CapabilitySurface(
      * the caller holds the {@link AgentSkill}: it applies the system-capability bypass ({@code
      * skill.isSystem()}), mirroring how {@link #allowsTool} treats system tools.
      *
+     * <p>Matches either grant-entry form: the bare skill name (source-unrestricted) or the
+     * skill's combined id (repository-qualified).
+     *
      * @param skill the skill to check; {@code null} (a registry miss) is never granted, not
      *     even on {@link #ALLOW_ALL} — fail-closed like a missing surface
-     * @return {@code true} for a system skill, an all-null surface, or a whitelisted skill
-     *     name
+     * @return {@code true} for a system skill, an all-null surface, or a matching grant entry
      */
     public boolean allowsSkill(AgentSkill skill) {
         if (skill == null) {
             return false; // registry miss: fail closed
         }
-        return skill.isSystem() || allowsSkill(skill.getName());
+        if (skill.isSystem() || isUnrestricted()) {
+            return true;
+        }
+        if (allowedSkills == null) {
+            return false;
+        }
+        return allowedSkills.contains(skill.getName())
+                || allowedSkills.contains(skill.getSkillId());
     }
 
     /**

@@ -105,7 +105,7 @@ public final class SkillLoadTool implements AgentTool {
 
     @Override
     public String getDescription() {
-        return "Load and return a skill resource by its skill name and a path relative"
+        return "Load and return a skill resource by its skillId and a path relative"
                 + " to the skill root.\n\n"
                 + "Path rules:\n"
                 + "- Use path=\"SKILL.md\" to load the skill's markdown documentation.\n"
@@ -116,30 +116,30 @@ public final class SkillLoadTool implements AgentTool {
 
     @Override
     public Map<String, Object> getParameters() {
-        Map<String, Object> skillNameSchema;
+        Map<String, Object> skillIdSchema;
         if (exposeLegacyCatalogInSchema) {
             SkillCatalog snapshot = legacyCatalogRef.get();
             List<String> ids = snapshot != null ? snapshot.ids() : List.of();
-            skillNameSchema =
+            skillIdSchema =
                     Map.of(
                             "type", "string",
-                            "description", "Unique skill name.",
+                            "description", "Unique skill identifier.",
                             "enum", ids);
         } else {
-            skillNameSchema =
+            skillIdSchema =
                     Map.of(
                             "type",
                             "string",
                             "description",
-                            "Unique skill name listed in the current <available_skills>"
+                            "Unique skill identifier listed in the current <available_skills>"
                                     + " block.");
         }
         return Map.of(
                 "type", "object",
                 "properties",
                         Map.of(
-                                "skillName",
-                                skillNameSchema,
+                                "skillId",
+                                skillIdSchema,
                                 "path",
                                 Map.of(
                                         "type",
@@ -150,18 +150,18 @@ public final class SkillLoadTool implements AgentTool {
                                                 + " instructions; do not use '.',"
                                                 + " './', directories, or absolute"
                                                 + " paths.")),
-                "required", List.of("skillName", "path"));
+                "required", List.of("skillId", "path"));
     }
 
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
         try {
             Map<String, Object> input = param.getInput();
-            String skillName = stringOrNull(input.get("skillName"));
+            String skillId = stringOrNull(input.get("skillId"));
             String path = stringOrNull(input.get("path"));
-            if (skillName == null || skillName.isEmpty()) {
+            if (skillId == null || skillId.isEmpty()) {
                 return Mono.just(
-                        ToolResultBlock.error("Missing or empty required parameter: skillName"));
+                        ToolResultBlock.error("Missing or empty required parameter: skillId"));
             }
             if (path == null || path.isEmpty()) {
                 return Mono.just(
@@ -169,12 +169,14 @@ public final class SkillLoadTool implements AgentTool {
             }
 
             SkillCatalog catalog = catalogFor(param);
-            HarnessSkillEntry entry = catalog.get(skillName);
+            // Addressing normalizes through the name part: the catalog is keyed by
+            // name, and a combined skillId carries the same name.
+            HarnessSkillEntry entry = catalog.get(AgentSkill.parseSkillName(skillId));
             if (entry == null) {
-                return Mono.just(ToolResultBlock.error(skillNotFound(skillName)));
+                return Mono.just(ToolResultBlock.error(skillNotFound(skillId)));
             }
             if (!isSkillGranted(param, entry)) {
-                return Mono.just(ToolResultBlock.error(skillNotFound(skillName)));
+                return Mono.just(ToolResultBlock.error(skillNotFound(skillId)));
             }
 
             return Mono.just(loadOne(entry, path));
@@ -204,7 +206,7 @@ public final class SkillLoadTool implements AgentTool {
             return true;
         }
         log.warn(
-                "Skill load denied (grant): skillName='{}', userId='{}', sessionId='{}'",
+                "Skill load denied (grant): skillId='{}', userId='{}', sessionId='{}'",
                 entry.skill().getName(),
                 param.getRuntimeContext().getUserId(),
                 param.getRuntimeContext().getSessionId());
@@ -212,12 +214,12 @@ public final class SkillLoadTool implements AgentTool {
     }
 
     /**
-     * @param skillName the caller-supplied skill name (authoritative for the error echo)
+     * @param skillId the caller-supplied skill identifier (authoritative for the error echo)
      * @return the not-found error text — byte-identical for unknown and un-granted skills so
      *     the model cannot distinguish existence
      */
-    private static String skillNotFound(String skillName) {
-        return "Skill not found: '" + skillName + "'. Check the available skills list.";
+    private static String skillNotFound(String skillId) {
+        return "Skill not found: '" + skillId + "'. Check the available skills list.";
     }
 
     private SkillCatalog catalogFor(ToolCallParam param) {

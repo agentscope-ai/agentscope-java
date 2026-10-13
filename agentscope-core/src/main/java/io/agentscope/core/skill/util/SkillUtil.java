@@ -53,7 +53,6 @@ import java.util.zip.ZipInputStream;
 public class SkillUtil {
 
     private static final String SKILL_FILE_NAME = "SKILL.md";
-    private static final String DEFAULT_SOURCE = "custom";
 
     /**
      * Private constructor to prevent instantiation.
@@ -64,7 +63,7 @@ public class SkillUtil {
      * Creates an AgentSkill from markdown with YAML frontmatter.
      *
      * <p>Parses the markdown to extract metadata (name, description) from YAML frontmatter
-     * and content. Uses "custom" as the default source.
+     * and content. No source is set by default.
      *
      * @param skillMd Markdown content with YAML frontmatter containing name and description
      * @param resources Supporting resources referenced by the skill (can be null)
@@ -72,7 +71,7 @@ public class SkillUtil {
      * @throws IllegalArgumentException if name or description is missing, or if content is empty
      */
     public static AgentSkill createFrom(String skillMd, Map<String, String> resources) {
-        return createFrom(skillMd, resources, DEFAULT_SOURCE);
+        return createFrom(skillMd, resources, null);
     }
 
     /**
@@ -83,7 +82,7 @@ public class SkillUtil {
      *
      * @param skillMd Markdown content with YAML frontmatter containing name and description
      * @param resources Supporting resources referenced by the skill (can be null)
-     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param source Source identifier for the skill ({@code null} = no provenance)
      * @return Created AgentSkill instance
      * @throws IllegalArgumentException if name or description is missing, or if content is empty
      */
@@ -124,7 +123,7 @@ public class SkillUtil {
      *                                  zip entries are invalid
      */
     public static AgentSkill createFromZip(byte[] zipBytes) {
-        return createFromZip(zipBytes, DEFAULT_SOURCE, StandardCharsets.UTF_8);
+        return createFromZip(zipBytes, null, StandardCharsets.UTF_8);
     }
 
     /**
@@ -139,7 +138,7 @@ public class SkillUtil {
      * @throws RuntimeException if the zip file cannot be read
      */
     public static AgentSkill createFromZip(Path zipPath) {
-        return createFromZip(zipPath, DEFAULT_SOURCE, StandardCharsets.UTF_8);
+        return createFromZip(zipPath, null, StandardCharsets.UTF_8);
     }
 
     /**
@@ -156,7 +155,7 @@ public class SkillUtil {
      * @return Created AgentSkill instance
      */
     public static AgentSkill createFromZip(Path zipPath, Charset charset) {
-        return createFromZip(zipPath, DEFAULT_SOURCE, charset);
+        return createFromZip(zipPath, null, charset);
     }
 
     /**
@@ -170,7 +169,7 @@ public class SkillUtil {
      * @throws IllegalArgumentException if zipStream is null
      */
     public static AgentSkill createFromZip(InputStream zipStream) {
-        return createFromZip(zipStream, DEFAULT_SOURCE, StandardCharsets.UTF_8);
+        return createFromZip(zipStream, null, StandardCharsets.UTF_8);
     }
 
     /**
@@ -180,7 +179,7 @@ public class SkillUtil {
      * files. The .skill and .zip extensions are aliases for the same package format.
      *
      * @param zipBytes Zip content as bytes
-     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param source Source identifier for the skill ({@code null} = no provenance)
      * @return Created AgentSkill instance
      * @throws IllegalArgumentException if zipBytes is null/empty, if no SKILL.md is found, or if
      *                                  zip entries are invalid
@@ -196,7 +195,7 @@ public class SkillUtil {
      * files. The .skill and .zip extensions are aliases for the same package format.
      *
      * @param zipBytes Zip content as bytes
-     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param source Source identifier for the skill ({@code null} = no provenance)
      * @param charset Charset used to decode zip entry names and file contents (null defaults to
      *                UTF-8). Use this when the zip was created with a non-UTF-8 charset such as
      *                GBK/GB18030 and the default overload fails during zip entry decoding with
@@ -219,7 +218,7 @@ public class SkillUtil {
      * files. The .skill and .zip extensions are aliases for the same package format.
      *
      * @param zipPath Zip file path
-     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param source Source identifier for the skill ({@code null} = no provenance)
      * @return Created AgentSkill instance
      * @throws IllegalArgumentException if zipPath is null
      * @throws RuntimeException if the zip file cannot be read
@@ -235,7 +234,7 @@ public class SkillUtil {
      * files. The .skill and .zip extensions are aliases for the same package format.
      *
      * @param zipPath Zip file path
-     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param source Source identifier for the skill ({@code null} = no provenance)
      * @param charset Charset used to decode zip entry names and file contents (null defaults to
      *                UTF-8). Use this when the zip was created with a non-UTF-8 charset such as
      *                GBK/GB18030 and the default overload fails during zip entry decoding with
@@ -262,7 +261,7 @@ public class SkillUtil {
      * files. The .skill and .zip extensions are aliases for the same package format.
      *
      * @param zipStream Zip content stream
-     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param source Source identifier for the skill ({@code null} = no provenance)
      * @return Created AgentSkill instance
      * @throws IllegalArgumentException if zipStream is null
      * @throws RuntimeException if the zip content cannot be read
@@ -278,7 +277,7 @@ public class SkillUtil {
      * files. The .skill and .zip extensions are aliases for the same package format.
      *
      * @param zipStream Zip content stream
-     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param source Source identifier for the skill ({@code null} = no provenance)
      * @param charset Charset used to decode zip entry names and file contents (null defaults to
      *                UTF-8). Use this when the zip was created with a non-UTF-8 charset such as
      *                GBK/GB18030 and the default overload fails during zip entry decoding with

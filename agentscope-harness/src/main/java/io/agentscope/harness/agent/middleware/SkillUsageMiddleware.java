@@ -124,7 +124,7 @@ public class SkillUsageMiddleware implements HarnessRuntimeMiddleware {
         if (input == null) {
             return null;
         }
-        for (String key : new String[] {"skillName", "skillId", "skill_id", "name"}) {
+        for (String key : new String[] {"skillId", "skill_id", "name"}) {
             Object v = input.get(key);
             if (v != null) {
                 String s = v.toString().trim();

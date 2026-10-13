@@ -191,7 +191,7 @@ class HarnessSkillMiddlewareGrantTest {
     /** Loads SKILL.md through the middleware's load tool and returns the result text. */
     private static String load(HarnessSkillMiddleware mw, RuntimeContext ctx, String skillId) {
         AgentTool loadTool = mw.runtime().loadTool();
-        Map<String, Object> input = Map.of("skillName", skillId, "path", "SKILL.md");
+        Map<String, Object> input = Map.of("skillId", skillId, "path", "SKILL.md");
         ToolUseBlock use =
                 ToolUseBlock.builder()
                         .id("call-" + skillId)

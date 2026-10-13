@@ -110,7 +110,7 @@ class SkillRuntimeIntegrationTest {
         assertEquals(1, first.getHooks().stream().filter(SkillHook.class::isInstance).count());
         assertEquals(1, second.getHooks().stream().filter(SkillHook.class::isInstance).count());
 
-        Map<String, Object> input = Map.of("skillName", skill.getName(), "path", "SKILL.md");
+        Map<String, Object> input = Map.of("skillId", skill.getName(), "path", "SKILL.md");
         first.getToolkit()
                 .getTool("load_skill_through_path")
                 .callAsync(
@@ -174,7 +174,7 @@ class SkillRuntimeIntegrationTest {
         // Step 3: Simulate LLM calling load_skill_through_path
         AgentTool skillLoader = toolkit.getTool("load_skill_through_path");
         Map<String, Object> loadParams = new HashMap<>();
-        loadParams.put("skillName", skillName);
+        loadParams.put("skillId", skillName);
         loadParams.put("path", "SKILL.md");
 
         ToolCallParam callParam =
@@ -351,7 +351,7 @@ class SkillRuntimeIntegrationTest {
     private void loadSkill(String skillName) {
         AgentTool skillLoader = toolkit.getTool("load_skill_through_path");
         Map<String, Object> loadParams = new HashMap<>();
-        loadParams.put("skillName", skillName);
+        loadParams.put("skillId", skillName);
         loadParams.put("path", "SKILL.md");
 
         ToolCallParam callParam =

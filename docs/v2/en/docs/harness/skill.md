@@ -281,7 +281,7 @@ When the agent reasons, it sees an `<available_skills>` block in the system prom
 <skill>
   <name>code-reviewer</name>
   <description>Use when the user asks for code review, style feedback, or PR audits.</description>
-  <skill-name>code-reviewer</skill-name>
+  <skill-id>code-reviewer__s__workspace-namespaced</skill-id>
   <files-root>/workspace/skills/code-reviewer</files-root>
 </skill>
 ...
@@ -294,8 +294,8 @@ Each entry carries just enough metadata for the agent to decide whether to load 
 
 To activate a skill the agent calls a built-in tool — `load_skill_through_path`:
 
-- `load_skill_through_path(skillName, path="SKILL.md")` returns the markdown body
-- `load_skill_through_path(skillName, path="references/style-guide.md")` returns any other file under the skill directory
+- `load_skill_through_path(skillId, path="SKILL.md")` returns the markdown body
+- `load_skill_through_path(skillId, path="references/style-guide.md")` returns any other file under the skill directory
 
 How the file gets fetched depends on where the skill came from:
 

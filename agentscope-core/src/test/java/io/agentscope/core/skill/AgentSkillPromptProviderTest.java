@@ -62,7 +62,7 @@ class AgentSkillPromptProviderTest {
         assertTrue(prompt.contains("<skill>"));
         assertTrue(prompt.contains("<name>test_skill</name>"));
         assertTrue(prompt.contains("<description>Test Skill Description</description>"));
-        assertTrue(prompt.contains("<skill-name>test_skill</skill-name>"));
+        assertTrue(prompt.contains("<skill-id>test_skill</skill-id>"));
         assertTrue(prompt.contains("</skill>"));
         assertTrue(prompt.contains("</available_skills>"));
     }
@@ -84,7 +84,7 @@ class AgentSkillPromptProviderTest {
         int homepageIndex =
                 prompt.indexOf(
                         "<homepage>https://developer.atlassian.com/cloud/trello/rest/</homepage>");
-        int skillNameIndex = prompt.indexOf("<skill-name>trello</skill-name>");
+        int skillNameIndex = prompt.indexOf("<skill-id>trello</skill-id>");
 
         assertTrue(nameIndex < descriptionIndex);
         assertTrue(descriptionIndex < homepageIndex);
@@ -142,7 +142,7 @@ class AgentSkillPromptProviderTest {
 
         assertTrue(prompt.contains("<name>trello</name>"));
         assertTrue(prompt.contains("<description>Manage Trello boards</description>"));
-        assertTrue(prompt.contains("<skill-name>trello</skill-name>"));
+        assertTrue(prompt.contains("<skill-id>trello</skill-id>"));
         assertFalse(prompt.contains("<homepage>"));
         assertFalse(prompt.contains("<metadata>"));
     }

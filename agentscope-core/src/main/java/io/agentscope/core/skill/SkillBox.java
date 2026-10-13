@@ -122,7 +122,7 @@ public class SkillBox {
     /**
      * Controls whether the skill prompt exposes all metadata fields or only the core fields.
      *
-     * <p>When disabled, only {@code name}, {@code description}, and {@code skill-name}
+     * <p>When disabled, only {@code name}, {@code description}, and {@code skill-id}
      * are included in the skill prompt.
      *
      * @param exposeAllMetadata {@code true} to expose all metadata, {@code false} to expose only
@@ -219,21 +219,21 @@ public class SkillBox {
      * point used by the shared {@code load_skill_through_path} tool: skill activation is written to
      * the per-session tool context, never to the shared group manager.
      *
-     * @param param the tool call parameters carrying {@code skillName} and {@code path}
+     * @param param the tool call parameters carrying {@code skillId} and {@code path}
      * @return the formatted resource content, or a message describing the failure
      */
     String loadSkillResource(ToolCallParam param) {
         Map<String, Object> input = param.getInput();
-        String skillName = (String) input.get("skillName");
-        if (skillName == null || skillName.trim().isEmpty()) {
-            throw new IllegalArgumentException("Missing or empty required parameter: skillName");
+        String skillId = (String) input.get("skillId");
+        if (skillId == null || skillId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Missing or empty required parameter: skillId");
         }
         String path = (String) input.get("path");
         if (path == null || path.trim().isEmpty()) {
             throw new IllegalArgumentException("Missing or empty required parameter: path");
         }
         return skillToolFactory.loadSkillResourceImpl(
-                skillName,
+                skillId,
                 path,
                 skillToolFactory.resolveToolContext(param),
                 // Not gated here: the single decision lives in loadSkillResourceImpl.
@@ -717,7 +717,7 @@ public class SkillBox {
                 continue;
             }
 
-            Path skillDir = targetDir.resolve(skillName);
+            Path skillDir = targetDir.resolve(skill.getSkillId());
 
             for (String resourcePath : resourcePaths) {
                 if (!filter.accept(resourcePath)) {

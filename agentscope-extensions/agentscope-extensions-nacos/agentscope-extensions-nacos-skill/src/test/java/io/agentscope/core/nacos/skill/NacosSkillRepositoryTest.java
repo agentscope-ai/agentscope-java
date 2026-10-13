@@ -424,7 +424,7 @@ class NacosSkillRepositoryTest {
         assertDoesNotThrow(skillBox::uploadSkillFiles);
 
         Path uploadedResource =
-                tempDir.resolve("skills").resolve(skill.getName()).resolve("scripts/run.sh");
+                tempDir.resolve("skills").resolve(skill.getSkillId()).resolve("scripts/run.sh");
         assertTrue(Files.isRegularFile(uploadedResource));
         assertEquals("echo hello", Files.readString(uploadedResource));
     }

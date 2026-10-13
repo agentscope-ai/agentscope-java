@@ -281,7 +281,7 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 <skill>
   <name>code-reviewer</name>
   <description>当用户需要代码评审、风格反馈或 PR 审核时使用。</description>
-  <skill-name>code-reviewer</skill-name>
+  <skill-id>code-reviewer__s__workspace-namespaced</skill-id>
   <files-root>/workspace/skills/code-reviewer</files-root>
 </skill>
 ...
@@ -294,8 +294,8 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 加载某个 skill 时 agent 会调用内置工具 `load_skill_through_path`：
 
-- `load_skill_through_path(skillName, path="SKILL.md")` 返回 markdown 正文
-- `load_skill_through_path(skillName, path="references/style-guide.md")` 返回该 skill 目录下的任意文件
+- `load_skill_through_path(skillId, path="SKILL.md")` 返回 markdown 正文
+- `load_skill_through_path(skillId, path="references/style-guide.md")` 返回该 skill 目录下的任意文件
 
 具体怎么取文件，取决于 skill 来自哪里：
 

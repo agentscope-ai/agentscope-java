@@ -70,7 +70,7 @@ class SkillToolFactoryDiskFallbackTest {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
         assertNotNull(tool);
 
-        Map<String, Object> input = Map.of("skillName", skill.getName(), "path", "scripts/run.sh");
+        Map<String, Object> input = Map.of("skillId", skill.getName(), "path", "scripts/run.sh");
         ToolUseBlock useBlock =
                 ToolUseBlock.builder()
                         .id("fallback-1")
@@ -116,7 +116,7 @@ class SkillToolFactoryDiskFallbackTest {
         box.registerSkillLoadTool();
 
         AgentTool tool = toolkit.getTool("load_skill_through_path");
-        Map<String, Object> input = Map.of("skillName", skill.getName(), "path", "scripts/run.sh");
+        Map<String, Object> input = Map.of("skillId", skill.getName(), "path", "scripts/run.sh");
         ToolUseBlock useBlock =
                 ToolUseBlock.builder()
                         .id("precedence-1")
@@ -161,8 +161,7 @@ class SkillToolFactoryDiskFallbackTest {
         box.registerSkillLoadTool();
 
         AgentTool tool = toolkit.getTool("load_skill_through_path");
-        Map<String, Object> input =
-                Map.of("skillName", skill.getName(), "path", "../forbidden.txt");
+        Map<String, Object> input = Map.of("skillId", skill.getName(), "path", "../forbidden.txt");
         ToolUseBlock useBlock =
                 ToolUseBlock.builder()
                         .id("traversal-1")

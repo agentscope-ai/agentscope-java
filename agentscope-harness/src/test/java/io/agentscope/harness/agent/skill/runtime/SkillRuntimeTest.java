@@ -156,10 +156,10 @@ class SkillRuntimeTest {
         }
 
         @Test
-        void rendersSkillNameAndOmitsFilesRootWhenAbsent() {
+        void rendersSkillIdAndOmitsFilesRootWhenAbsent() {
             HarnessSkillEntry e = HarnessSkillEntry.of(skill("alpha", "wkspace"), null);
             String out = new SkillPromptBuilder().render(SkillCatalog.of(List.of(e)));
-            assertTrue(out.contains("<skill-name>alpha</skill-name>"));
+            assertTrue(out.contains("<skill-id>alpha__s__wkspace</skill-id>"));
             // No actual <files-root>...</files-root> element rendered.
             // (The header text mentions "<files-root>" descriptively without a closing tag.)
             assertFalse(out.contains("</files-root>"));
@@ -199,8 +199,8 @@ class SkillRuntimeTest {
             SkillFilter only = SkillFilter.only("visible");
 
             String out = new SkillPromptBuilder().render(cat, only);
-            assertTrue(out.contains("<skill-name>visible</skill-name>"));
-            assertFalse(out.contains("<skill-name>hidden</skill-name>"));
+            assertTrue(out.contains("<skill-id>visible__s__src</skill-id>"));
+            assertFalse(out.contains("<skill-id>hidden__s__src</skill-id>"));
         }
 
         @Test
@@ -225,8 +225,12 @@ class SkillRuntimeTest {
             SkillFilter only = SkillFilter.only("host-forensics-client");
 
             String out = new SkillPromptBuilder().render(cat, only);
-            assertTrue(out.contains("<skill-name>host-forensics-client</skill-name>"));
-            assertFalse(out.contains("<skill-name>other-skill</skill-name>"));
+            assertTrue(
+                    out.contains(
+                            "<skill-id>host-forensics-client__s__filesystem-agentscope_skills</skill-id>"));
+            assertFalse(
+                    out.contains(
+                            "<skill-id>other-skill__s__filesystem-agentscope_skills</skill-id>"));
         }
     }
 
@@ -321,7 +325,7 @@ class SkillRuntimeTest {
                                                     .input(Map.of())
                                                     .build())
                                     .block());
-            assertTrue(err1.contains("skillName"));
+            assertTrue(err1.contains("skillId"));
         }
 
         private ToolResultBlock invoke(
@@ -329,7 +333,7 @@ class SkillRuntimeTest {
             ToolCallParam p =
                     ToolCallParam.builder()
                             .runtimeContext(ctx)
-                            .input(Map.of("skillName", skillName, "path", path))
+                            .input(Map.of("skillId", skillName, "path", path))
                             .build();
             return r.loadTool().callAsync(p).block();
         }
@@ -457,7 +461,7 @@ class SkillRuntimeTest {
             AtomicReference<SkillCatalog> ref =
                     new AtomicReference<>(SkillCatalog.of(List.of(legacy)));
             SkillLoadTool tool = new SkillLoadTool(ref);
-            Map<String, Object> input = Map.of("skillName", "legacy", "path", "SKILL.md");
+            Map<String, Object> input = Map.of("skillId", "legacy", "path", "SKILL.md");
 
             ToolResultBlock contextFree =
                     tool.callAsync(ToolCallParam.builder().input(input).build()).block();
@@ -479,7 +483,7 @@ class SkillRuntimeTest {
                     .callAsync(
                             ToolCallParam.builder()
                                     .runtimeContext(ctx)
-                                    .input(Map.of("skillName", skillName, "path", path))
+                                    .input(Map.of("skillId", skillName, "path", path))
                                     .build())
                     .block();
         }

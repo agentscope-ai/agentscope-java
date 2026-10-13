@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -62,7 +63,7 @@ class SkillUtilTest {
             assertEquals("test_skill", skill.getName());
             assertEquals("A test skill for validation", skill.getDescription());
             assertTrue(skill.getSkillContent().contains("Skill Content"));
-            assertEquals("custom", skill.getSource());
+            assertNull(skill.getSource());
             assertEquals(1, skill.getResources().size());
         }
 
@@ -100,7 +101,7 @@ class SkillUtilTest {
 
             AgentSkill skill = SkillUtil.createFrom(skillMd, null, null);
 
-            assertEquals("custom", skill.getSource());
+            assertNull(skill.getSource());
         }
 
         @Test
