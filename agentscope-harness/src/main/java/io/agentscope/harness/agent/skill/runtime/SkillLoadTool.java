@@ -169,9 +169,7 @@ public final class SkillLoadTool implements AgentTool {
             }
 
             SkillCatalog catalog = catalogFor(param);
-            // Addressing normalizes through the name part: the catalog is keyed by
-            // name, and a combined skillId carries the same name.
-            HarnessSkillEntry entry = catalog.get(AgentSkill.parseSkillName(skillId));
+            HarnessSkillEntry entry = catalog.get(skillId);
             if (entry == null) {
                 return Mono.just(ToolResultBlock.error(skillNotFound(skillId)));
             }
@@ -270,7 +268,7 @@ public final class SkillLoadTool implements AgentTool {
     private String formatSkillMarkdown(HarnessSkillEntry entry) {
         AgentSkill skill = entry.skill();
         StringBuilder sb = new StringBuilder();
-        sb.append("Successfully loaded skill: ").append(skill.getName()).append("\n\n");
+        sb.append("Successfully loaded skill: ").append(skill.getSkillId()).append("\n\n");
         sb.append("Name: ").append(skill.getName()).append("\n");
         sb.append("Description: ").append(skill.getDescription()).append("\n");
         sb.append("Source: ").append(skill.getSource()).append("\n");

@@ -21,11 +21,13 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Pure storage layer for {@link AgentSkill}s, keyed by skill name.
+ * Pure storage layer for {@link AgentSkill}s, keyed by skillId.
  *
- * <p>The skill name is the business identity (industry-standard unique skill naming) and must be
- * unique within one catalog; re-registering the same instance is idempotent, while registering a
- * different instance under an already-used name fails fast.
+ * <p>The key is {@link AgentSkill#getSkillId()}: the skill name when no source is set, or the
+ * combined {@code name__s__source} form when one is — so same-named skills from different
+ * repositories coexist as separate entries, while re-registering under the same key (same name
+ * and source) replaces the previous instance (version override). Lookups are exact: a bare name
+ * is itself a skillId (the source-less form) and never resolves a sourced copy.
  *
  * <p>The skill activation state is not stored here: it is the per-session {@code activatedGroups}
  * on {@link io.agentscope.core.state.ToolContextState}.
@@ -36,59 +38,57 @@ class SkillRegistry {
     // ==================== Registration ====================
 
     /**
-     * Registers a skill under its name.
+     * Registers a skill under its skillId. Same-named skills from different sources coexist;
+     * re-registering the same skillId replaces the previous instance.
      *
-     * @param skillName The unique skill name (must not be null)
+     * @param skillId the skill's identifier (its own key, see {@link AgentSkill#getSkillId()})
      * @param skill The skill implementation (must not be null)
-     * @throws IllegalArgumentException when the name is already taken by a different instance
      */
-    void registerSkill(String skillName, AgentSkill skill) {
-        AgentSkill existing = skills.putIfAbsent(skillName, skill);
-        if (existing != null && existing != skill) {
-            throw new IllegalArgumentException(
-                    "Duplicate skill name: '" + skillName + "' is already registered");
-        }
+    void registerSkill(String skillId, AgentSkill skill) {
+        skills.put(skillId, skill);
     }
 
     // ==================== Query Operations ====================
 
     /**
-     * Gets a skill by name.
+     * Gets a skill by its exact skillId.
      *
-     * @param skillName The skill name (must not be null)
-     * @return The skill instance, or null if not found
+     * @param skillId the skillId (a bare name is the source-less form)
+     * @return The matching skill instance, or null if not found
      */
-    AgentSkill getSkill(String skillName) {
-        return skills.get(skillName);
+    AgentSkill getSkill(String skillId) {
+        return skillId == null ? null : skills.get(skillId);
     }
 
     /**
-     * Gets all skill names.
+     * Gets all registered skillIds (each unique in this catalog).
      *
-     * @return Set of skill names (never null, may be empty)
+     * @return Set of skillIds (never null, may be empty)
      */
-    Set<String> getSkillNames() {
+    Set<String> getSkillIds() {
         return new TreeSet<>(skills.keySet());
     }
 
     /**
-     * Checks if a skill exists.
+     * Checks if a skill with this exact skillId exists.
      *
-     * @param skillName The skill name (must not be null)
+     * @param skillId the skillId (a bare name is the source-less form)
      * @return true if the skill exists, false otherwise
      */
-    boolean exists(String skillName) {
-        return skills.containsKey(skillName);
+    boolean exists(String skillId) {
+        return skillId != null && skills.containsKey(skillId);
     }
 
     // ==================== Removal Operations ====================
 
     /**
-     * Removes a skill completely.
+     * Removes the skill with this exact skillId (no-op when absent).
      *
-     * @param skillName The skill name (must not be null)
+     * @param skillId the skillId (a bare name is the source-less form)
      */
-    void removeSkill(String skillName) {
-        skills.remove(skillName);
+    void removeSkill(String skillId) {
+        if (skillId != null) {
+            skills.remove(skillId);
+        }
     }
 }

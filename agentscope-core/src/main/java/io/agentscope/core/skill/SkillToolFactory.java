@@ -140,11 +140,7 @@ class SkillToolFactory {
                                                         "type",
                                                         "string",
                                                         "description",
-                                                        "The skill identifier (normally the"
-                                                                + " skill name; the combined"
-                                                                + " name__s__source form only"
-                                                                + " when same-named skills come"
-                                                                + " from different repositories)."),
+                                                        "The unique identifier of the skill."),
                                         "path",
                                                 Map.of(
                                                         "type",
@@ -219,13 +215,7 @@ class SkillToolFactory {
 
             @Override
             public Map<String, Object> getParameters() {
-                // The catalog is keyed by name; the skillId equals the name unless a
-                // source differentiates same-named skills.
-                List<String> availableSkillIds =
-                        new ArrayList<>(
-                                skillRegistry.getSkillNames().stream()
-                                        .map(n -> skillRegistry.getSkill(n).getSkillId())
-                                        .toList());
+                List<String> availableSkillIds = new ArrayList<>(skillRegistry.getSkillIds());
 
                 return Map.of(
                         "type", "object",
@@ -236,8 +226,7 @@ class SkillToolFactory {
                                                         "type",
                                                         "string",
                                                         "description",
-                                                        "The skill identifier (normally the"
-                                                                + " skill name).",
+                                                        "The unique identifier of the skill.",
                                                         "enum",
                                                         availableSkillIds),
                                         "path",
@@ -521,20 +510,11 @@ class SkillToolFactory {
      * @throws IllegalStateException if the skill cannot be loaded after validation
      */
     private AgentSkill validateSkillExists(String skillId) {
-        // The catalog is keyed by name; a combined skillId carries the same name.
-        String skillName = AgentSkill.parseSkillName(skillId);
-        if (!skillRegistry.exists(skillName)) {
+        // Exact skillId lookup; a bare name is itself the source-less id form.
+        AgentSkill skill = skillRegistry.getSkill(skillId);
+        if (skill == null) {
             throw new IllegalArgumentException(
                     String.format("Skill not found: '%s'. Please check the skill ID.", skillId));
-        }
-        // Get skill
-        AgentSkill skill = skillRegistry.getSkill(skillName);
-        if (skill == null) {
-            throw new IllegalStateException(
-                    String.format(
-                            "Failed to load skill '%s' after validation. This is an internal"
-                                    + " error.",
-                            skillId));
         }
         return skill;
     }

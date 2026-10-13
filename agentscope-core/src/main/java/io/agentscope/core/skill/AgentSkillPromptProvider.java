@@ -183,8 +183,8 @@ public class AgentSkillPromptProvider {
     public String getSkillSystemPrompt(SkillFilter filter) {
         SkillFilter effectiveFilter = filter != null ? filter : SkillFilter.all();
 
-        Set<String> skillNames = skillRegistry.getSkillNames();
-        if (skillNames.isEmpty()) {
+        Set<String> skillIds = skillRegistry.getSkillIds();
+        if (skillIds.isEmpty()) {
             return "";
         }
 
@@ -193,11 +193,11 @@ public class AgentSkillPromptProvider {
         int visibleCount = 0;
         int withOriginDir = 0;
 
-        for (String skillName : skillNames) {
-            if (!effectiveFilter.isAllowed(skillName)) {
+        for (String skillId : skillIds) {
+            if (!effectiveFilter.isAllowed(skillId)) {
                 continue;
             }
-            AgentSkill skill = skillRegistry.getSkill(skillName);
+            AgentSkill skill = skillRegistry.getSkill(skillId);
             if (skill == null) {
                 continue;
             }

@@ -812,7 +812,8 @@ class CapabilityGrantIntegrationTest {
                         false,
                         null);
 
-        // Qualified entry "alpha__s__market" grants exactly that copy.
+        // Qualified entry "alpha__s__market" grants exactly that copy; the same-named
+        // source-less copy coexists in the catalog but stays ungranted.
         String prompt =
                 mw.onSystemPrompt(
                                 null,
@@ -821,6 +822,9 @@ class CapabilityGrantIntegrationTest {
                         .block();
         assertNotNull(prompt);
         assertTrue(prompt.contains("from market"), "the qualified copy is granted");
+        assertFalse(
+                prompt.contains("Skill alpha"),
+                "the coexisting source-less copy stays ungranted by the qualified entry");
 
         // A qualified entry for the source-less copy does not grant the market copy.
         String mismatched =
@@ -923,10 +927,10 @@ class CapabilityGrantIntegrationTest {
         assertNotNull(box1);
         assertNotNull(box2);
         assertTrue(box1 != box2, "different grants must materialize different boxes");
-        assertTrue(box1.getAllSkillNames().contains("alpha"));
-        assertFalse(box1.getAllSkillNames().contains("beta"));
-        assertTrue(box2.getAllSkillNames().contains("beta"));
-        assertFalse(box2.getAllSkillNames().contains("alpha"));
+        assertTrue(box1.getAllSkillIds().contains("alpha"));
+        assertFalse(box1.getAllSkillIds().contains("beta"));
+        assertTrue(box2.getAllSkillIds().contains("beta"));
+        assertFalse(box2.getAllSkillIds().contains("alpha"));
     }
 
     // ==================== tool execution gate ====================

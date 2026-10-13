@@ -74,8 +74,8 @@ public class SkillBox {
     }
 
     private SkillBox(SkillBox source, Toolkit toolkit) {
-        for (String name : source.getAllSkillNames()) {
-            skillRegistry.registerSkill(name, source.getSkill(name));
+        for (String skillId : source.getAllSkillIds()) {
+            skillRegistry.registerSkill(skillId, source.getSkill(skillId));
         }
         skillPromptProvider = source.skillPromptProvider.copyFor(skillRegistry);
         skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
@@ -201,17 +201,18 @@ public class SkillBox {
             throw new IllegalArgumentException("AgentSkill cannot be null");
         }
 
-        String skillName = skill.getName();
-        skillRegistry.registerSkill(skillName, skill);
-        logger.info("Registered skill '{}'", skillName);
+        String skillId = skill.getSkillId();
+        skillRegistry.registerSkill(skillId, skill);
+        logger.info("Registered skill '{}'", skillId);
     }
 
     /**
-     * Gets all skill names (the skill's business identity, unique in this box).
-     * @return All skill names
+     * Gets all registered skillIds — the skill name when no source is set, or the combined
+     * {@code name__s__source} form when one is. Unique in this box.
+     * @return All skillIds
      */
-    public Set<String> getAllSkillNames() {
-        return skillRegistry.getSkillNames();
+    public Set<String> getAllSkillIds() {
+        return skillRegistry.getSkillIds();
     }
 
     /**
@@ -241,9 +242,9 @@ public class SkillBox {
     }
 
     /**
-     * Gets a skill by name (the skill's business identity).
+     * Gets a skill by its exact skillId (a bare name is the source-less form).
      *
-     * @param skillName The skill name
+     * @param skillName The skillId
      * @return The skill instance, or null if not found
      * @throws IllegalArgumentException if skillName is null
      */
@@ -701,8 +702,8 @@ public class SkillBox {
         SkillFileFilter filter = fileFilter != null ? fileFilter : SkillFileFilter.acceptAll();
         int fileCount = 0;
 
-        for (String skillName : getAllSkillNames()) {
-            AgentSkill skill = getSkill(skillName);
+        for (String skillId : getAllSkillIds()) {
+            AgentSkill skill = getSkill(skillId);
 
             // Skills with a populated originDir already live on disk at a known absolute path,
             // which the prompt provider exposes as <files-root>. Re-materialising them under
@@ -726,7 +727,7 @@ public class SkillBox {
 
                 String content = skill.getResource(resourcePath);
                 if (content == null) {
-                    logger.warn("Resource not found: {} in skill {}", resourcePath, skillName);
+                    logger.warn("Resource not found: {} in skill {}", resourcePath, skillId);
                     continue;
                 }
 

@@ -217,7 +217,7 @@ class SkillBoxTest {
         @Test
         @DisplayName("Should return empty set when no skills are registered")
         void testGetAllSkillIdsWhenEmpty() {
-            var skillNames = skillBox.getAllSkillNames();
+            var skillNames = skillBox.getAllSkillIds();
 
             assertNotNull(skillNames, "Skill names set should not be null");
             assertTrue(
@@ -236,7 +236,7 @@ class SkillBoxTest {
             skillBox.registerSkill(skill2);
             skillBox.registerSkill(skill3);
 
-            var skillNames = skillBox.getAllSkillNames();
+            var skillNames = skillBox.getAllSkillIds();
 
             assertNotNull(skillNames, "Skill names set should not be null");
             assertEquals(3, skillNames.size(), "Should have exactly three skill names");

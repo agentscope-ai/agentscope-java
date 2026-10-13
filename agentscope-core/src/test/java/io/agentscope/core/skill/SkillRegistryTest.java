@@ -19,7 +19,6 @@ package io.agentscope.core.skill;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -51,23 +50,41 @@ class SkillRegistryTest {
     }
 
     @Test
-    @DisplayName("Should re-registering the same instance be idempotent")
-    void testRegisterSameInstanceIsIdempotent() {
-        AgentSkill skill = createSkill("v1");
-        registry.registerSkill("test", skill);
-        registry.registerSkill("test", skill);
+    @DisplayName("Should re-registering the same skillId replace the previous instance")
+    void testRegisterSameSkillIdReplaces() {
+        AgentSkill v1 = createSkill("v1");
+        AgentSkill v2 = createSkill("v2");
+        registry.registerSkill("test", v1);
+        registry.registerSkill("test", v2); // same id: version override, later wins
         assertTrue(registry.exists("test"));
-        assertEquals(skill, registry.getSkill("test"));
+        assertEquals(v2, registry.getSkill("test"));
     }
 
     @Test
-    @DisplayName("Should reject a different instance under an already-used name")
-    void testRegisterDuplicateNameDifferentInstanceRejected() {
-        registry.registerSkill("test", createSkill("v1"));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> registry.registerSkill("test", createSkill("v2")));
-        assertTrue(registry.exists("test"));
+    @DisplayName("Should same-named skills from different sources coexist")
+    void testSameNameDifferentSourceCoexist() {
+        AgentSkill internal =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("d")
+                        .skillContent("c")
+                        .source("internal")
+                        .build();
+        AgentSkill market =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("d")
+                        .skillContent("c")
+                        .source("market")
+                        .build();
+        registry.registerSkill(internal.getSkillId(), internal);
+        registry.registerSkill(market.getSkillId(), market);
+
+        assertEquals(2, registry.getSkillIds().size());
+        assertEquals(internal, registry.getSkill("alpha__s__internal"));
+        assertEquals(market, registry.getSkill("alpha__s__market"));
+        // A bare name is itself the source-less id form: it never resolves a sourced copy.
+        assertNull(registry.getSkill("alpha"));
     }
 
     @Test
@@ -76,10 +93,10 @@ class SkillRegistryTest {
         registry.registerSkill("test1", createSkill("test1"));
         registry.registerSkill("test2", createSkill("test2"));
 
-        var skillNames = registry.getSkillNames();
-        assertEquals(2, skillNames.size());
-        assertTrue(skillNames.contains("test1"));
-        assertTrue(skillNames.contains("test2"));
+        var skillIds = registry.getSkillIds();
+        assertEquals(2, skillIds.size());
+        assertTrue(skillIds.contains("test1"));
+        assertTrue(skillIds.contains("test2"));
     }
 
     @Test

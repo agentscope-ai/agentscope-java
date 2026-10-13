@@ -164,7 +164,7 @@ class DynamicSkillMiddlewareTest {
         RuntimeContext rcB = grantRc();
         mw.onSystemPrompt(null, rcA, "").block();
         SkillBox boxA = rcA.get(SkillBox.class);
-        String id = boxA.getAllSkillNames().iterator().next();
+        String id = boxA.getAllSkillIds().iterator().next();
         Path fileA = boxA.getUploadDir().resolve(id).resolve("data.txt");
         repo.skills = List.of(b);
         mw.onSystemPrompt(null, rcB, "").block();

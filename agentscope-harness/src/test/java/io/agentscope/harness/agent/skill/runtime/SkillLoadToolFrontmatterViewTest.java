@@ -56,7 +56,7 @@ class SkillLoadToolFrontmatterViewTest {
         RuntimeContext ctx = RuntimeContext.empty();
         ctx.put(SkillCatalog.class, catalog);
 
-        String text = runTool(tool, ctx, Map.of("skillId", skill.getName(), "path", "SKILL.md"));
+        String text = runTool(tool, ctx, Map.of("skillId", skill.getSkillId(), "path", "SKILL.md"));
 
         assertTrue(
                 text.contains("name: alpha"),
@@ -91,7 +91,7 @@ class SkillLoadToolFrontmatterViewTest {
         ctx.put(SkillCatalog.class, catalog);
 
         String text =
-                runTool(tool, ctx, Map.of("skillId", skill.getName(), "path", "scripts/run.sh"));
+                runTool(tool, ctx, Map.of("skillId", skill.getSkillId(), "path", "scripts/run.sh"));
 
         assertTrue(text.contains("scripts/run.sh"), "resource path should appear in header");
         assertTrue(text.contains("echo hi"), "resource body should be present");
