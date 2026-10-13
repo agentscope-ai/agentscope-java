@@ -160,6 +160,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * HarnessAgent is the user-facing harness API that wraps a {@link ReActAgent} with workspace /
@@ -1007,18 +1008,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private Mono<Msg> wrappedCall(
             List<Msg> msgs, RuntimeContext effective, Supplier<Mono<Msg>> inner) {
         return Mono.using(
-                () -> {
-                    if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.acquireForCall(effective);
-                    }
-                    return effective;
-                },
-                eff -> inner.get(),
-                eff -> {
-                    if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.releaseForCall(eff);
-                    }
-                });
+                        () -> {
+                            if (sandboxLifecycleMw != null) {
+                                sandboxLifecycleMw.acquireForCall(effective);
+                            }
+                            return effective;
+                        },
+                        eff -> inner.get(),
+                        eff -> {
+                            if (sandboxLifecycleMw != null) {
+                                sandboxLifecycleMw.releaseForCall(eff);
+                            }
+                        })
+                // Cancelling runs the upstream cleanup chain (recorder appends and flushes)
+                // synchronously; deliver it on a worker so a caller that may be a Reactor event
+                // loop never blocks on recorder storage interactions.
+                .cancelOn(Schedulers.boundedElastic());
     }
 
     /**
@@ -1028,35 +1033,43 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.0.0", forRemoval = true)
     private Flux<Event> wrappedStream(RuntimeContext effective, Supplier<Flux<Event>> inner) {
         return Flux.using(
-                () -> {
-                    if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.acquireForCall(effective);
-                    }
-                    return effective;
-                },
-                eff -> inner.get(),
-                eff -> {
-                    if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.releaseForCall(eff);
-                    }
-                });
+                        () -> {
+                            if (sandboxLifecycleMw != null) {
+                                sandboxLifecycleMw.acquireForCall(effective);
+                            }
+                            return effective;
+                        },
+                        eff -> inner.get(),
+                        eff -> {
+                            if (sandboxLifecycleMw != null) {
+                                sandboxLifecycleMw.releaseForCall(eff);
+                            }
+                        })
+                // Cancelling runs the upstream cleanup chain (recorder appends and flushes)
+                // synchronously; deliver it on a worker so a caller that may be a Reactor event
+                // loop never blocks on recorder storage interactions.
+                .cancelOn(Schedulers.boundedElastic());
     }
 
     private Flux<AgentEvent> wrappedStreamEvents(
             RuntimeContext effective, Supplier<Flux<AgentEvent>> inner) {
         return Flux.using(
-                () -> {
-                    if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.acquireForCall(effective);
-                    }
-                    return effective;
-                },
-                eff -> inner.get(),
-                eff -> {
-                    if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.releaseForCall(eff);
-                    }
-                });
+                        () -> {
+                            if (sandboxLifecycleMw != null) {
+                                sandboxLifecycleMw.acquireForCall(effective);
+                            }
+                            return effective;
+                        },
+                        eff -> inner.get(),
+                        eff -> {
+                            if (sandboxLifecycleMw != null) {
+                                sandboxLifecycleMw.releaseForCall(eff);
+                            }
+                        })
+                // Cancelling runs the upstream cleanup chain (recorder appends and flushes)
+                // synchronously; deliver it on a worker so a caller that may be a Reactor event
+                // loop never blocks on recorder storage interactions.
+                .cancelOn(Schedulers.boundedElastic());
     }
 
     /**

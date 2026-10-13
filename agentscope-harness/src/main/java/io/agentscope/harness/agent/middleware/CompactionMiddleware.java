@@ -19,6 +19,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ModelCallInput;
@@ -199,7 +200,12 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
         ModelCallInput retryInput =
                 new ModelCallInput(retryMessages, view.tools(), view.options(), executionModel);
         return forced.prepareCandidate(
-                        agent, ctx, retryInput, CompactionConfig.FALLBACK_TRIGGER_TOKENS, before)
+                        agent,
+                        ctx,
+                        retryInput,
+                        CompactionConfig.FALLBACK_TRIGGER_TOKENS,
+                        before,
+                        "EMERGENCY")
                 .flatMapMany(
                         candidate -> {
                             // Accept the recovery only when compaction actually reduced the
@@ -266,6 +272,42 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             ModelCallInput input,
             int conversationBudget,
             List<Msg> canonical) {
+        return prepareCandidate(agent, ctx, input, conversationBudget, canonical, "NORMAL");
+    }
+
+    /**
+     * Boundary compaction with an explicit lifecycle {@code mode} used for the safe
+     * {@code context_compaction_started}/{@code context_compaction_finished} stream events. The
+     * {@link AgentEventEmitter} is resolved from the Reactor context, so it is present only on the
+     * {@code streamEvents()} path; {@code call()} runs compaction without emitting.
+     */
+    public Mono<Candidate> prepareCandidate(
+            Agent agent,
+            RuntimeContext ctx,
+            ModelCallInput input,
+            int conversationBudget,
+            List<Msg> canonical,
+            String mode) {
+        return Mono.deferContextual(
+                contextView ->
+                        prepareCandidateMono(
+                                agent,
+                                ctx,
+                                input,
+                                conversationBudget,
+                                canonical,
+                                AgentEventEmitter.fromContext(contextView).orElse(null),
+                                mode));
+    }
+
+    private Mono<Candidate> prepareCandidateMono(
+            Agent agent,
+            RuntimeContext ctx,
+            ModelCallInput input,
+            int conversationBudget,
+            List<Msg> canonical,
+            AgentEventEmitter emitter,
+            String mode) {
         return Mono.defer(
                 () -> {
                     RuntimeContext rc = ctx == null ? RuntimeContext.empty() : ctx;
@@ -310,7 +352,9 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                     conversation,
                                     effective,
                                     agent.getName(),
-                                    rc.getSessionId() == null ? "default" : rc.getSessionId())
+                                    rc.getSessionId() == null ? "default" : rc.getSessionId(),
+                                    emitter,
+                                    mode)
                             .onErrorResume(
                                     error -> {
                                         if (ExceptionUtils.containsInterruptedException(error)

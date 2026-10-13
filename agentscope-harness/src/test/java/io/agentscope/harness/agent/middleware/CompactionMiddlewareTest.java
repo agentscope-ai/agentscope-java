@@ -27,6 +27,7 @@ import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -39,6 +40,9 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
@@ -143,6 +147,53 @@ class CompactionMiddlewareTest {
         assertTrue(
                 events.stream().anyMatch(event -> event.getType() == AgentEventType.AGENT_END),
                 "stream must terminate with an AGENT_END event");
+    }
+
+    /**
+     * Overflow recovery driven through a real agent stream must surface the compaction lifecycle as
+     * EMERGENCY CustomEvents, independent of the session log store.
+     */
+    @Test
+    void overflowRecoveryEmitsCompactionLifecycleEvents() {
+        AtomicInteger calls = new AtomicInteger();
+        var recovery = new CompactionMiddleware(null, new SuccessfulSummaryModel(), fixedConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("overflow-lifecycle-test")
+                        .model(new OverflowOnceModel(calls, "answer"))
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                context("user", "lifecycle-session"))
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(events);
+        List<CustomEvent> compactionEvents =
+                events.stream()
+                        .filter(CustomEvent.class::isInstance)
+                        .map(CustomEvent.class::cast)
+                        .filter(
+                                event ->
+                                        ConversationCompactor.STARTED_EVENT_NAME.equals(
+                                                        event.getName())
+                                                || ConversationCompactor.FINISHED_EVENT_NAME.equals(
+                                                        event.getName()))
+                        .toList();
+        assertEquals(2, compactionEvents.size());
+        CustomEvent started = compactionEvents.get(0);
+        CustomEvent finished = compactionEvents.get(1);
+        assertEquals(ConversationCompactor.STARTED_EVENT_NAME, started.getName());
+        assertEquals(ConversationCompactor.FINISHED_EVENT_NAME, finished.getName());
+        assertEquals("EMERGENCY", started.getValue().get("mode"));
+        assertEquals("EMERGENCY", finished.getValue().get("mode"));
+        assertEquals("started", started.getValue().get("status"));
+        assertTrue(
+                Set.of("completed", "skipped").contains(finished.getValue().get("status")),
+                "settled status must be completed or skipped");
+        assertEquals(
+                started.getValue().get("compactionId"), finished.getValue().get("compactionId"));
     }
 
     /** A retry that overflows again must propagate the provider error without another call. */
