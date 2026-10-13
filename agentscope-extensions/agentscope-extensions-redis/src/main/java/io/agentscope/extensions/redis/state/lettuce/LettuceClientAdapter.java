@@ -70,6 +70,7 @@ import org.slf4j.LoggerFactory;
  * // Use with RedisAgentStateStore
  * AgentStateStore stateStore = RedisAgentStateStore.builder()
  *     .lettuceClusterClient(clusterClient)
+ *     .keyLayoutVersion(RedisAgentStateStore.KeyLayoutVersion.V1)
  *     .build();
  * }</pre>
  *

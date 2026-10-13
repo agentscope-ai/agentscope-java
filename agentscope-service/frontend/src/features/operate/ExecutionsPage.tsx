@@ -227,7 +227,7 @@ export default function ExecutionsPage() {
       {!loading && !filtered.length ? (
         <EmptyState
           title={groups.length ? 'No matching executions' : 'No executions yet'}
-          description={groups.length ? 'Try a different search or filter.' : 'Assign an Issue, invoke an Endpoint job, or start a Workflow.'}
+          description={groups.length ? 'Try a different search or filter.' : 'Assign an Issue, invoke an Session task, or start a Workflow.'}
         />
       ) : (
         <Card className="overflow-hidden">

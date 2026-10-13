@@ -2,6 +2,7 @@
 title: Subagent
 description: Declare subagents, sync/background calls, auto push-back, remote subagents,
   streaming forwarding
+zh_link: /v2/zh/docs/harness/subagent
 ---
 
 ## Role
@@ -120,7 +121,7 @@ compaction:
 
 Supported mapping fields are `triggerMessages`, `triggerTokens`, `reserved`, `keepMessages`,
 `keepTokens`, `keepTokensMin`, `keepTokensMax`, `keepTokensRatio`, `summaryPrompt`,
-`flushBeforeCompact`, and `offloadBeforeCompact`. Field names are case-sensitive. Invalid types
+and `flushBeforeCompact`. Field names are case-sensitive. Invalid types
 or unknown fields produce a warning; the subagent remains available and inherits the parent's
 compaction settings. An absent or null `compaction` also inherits the parent.
 

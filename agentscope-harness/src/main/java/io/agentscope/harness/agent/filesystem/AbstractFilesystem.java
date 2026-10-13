@@ -42,6 +42,11 @@ import java.util.Map;
  * should pass {@link RuntimeContext#empty()}.
  */
 public interface AbstractFilesystem {
+    /** Optional durable atomic storage capability. No silent fallback to local or unversioned writes. */
+    default io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext context) {
+        throw new UnsupportedOperationException(
+                "Filesystem does not support durable session storage: " + getClass().getName());
+    }
 
     /**
      * List all files in a directory with metadata.

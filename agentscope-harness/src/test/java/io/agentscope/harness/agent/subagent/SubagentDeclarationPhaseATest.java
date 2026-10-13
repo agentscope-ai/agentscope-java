@@ -47,7 +47,6 @@ class SubagentDeclarationPhaseATest {
                           keepTokensRatio: 0.2
                           summaryPrompt: 'Summarize {messages}'
                           flushBeforeCompact: false
-                          offloadBeforeCompact: false
                         ---
                         body
                         """,
@@ -66,7 +65,6 @@ class SubagentDeclarationPhaseATest {
         assertEquals(0.2, config.getKeepTokensRatio());
         assertEquals("Summarize {messages}", config.getSummaryPrompt());
         assertFalse(config.isFlushBeforeCompact());
-        assertFalse(config.isOffloadBeforeCompact());
         assertFalse(decl.isCompactionDisabled());
     }
 
@@ -228,6 +226,16 @@ class SubagentDeclarationPhaseATest {
         assertEquals(0.85, decl.getTopP());
         assertEquals("thinking", decl.getVariant());
         assertEquals(15, decl.getSteps());
+    }
+
+    @Test
+    void loader_parsesUtf8BomBeforeFrontmatter() {
+        String md = "\uFEFF---\ndescription: A test agent with BOM\n---\nBody content.\n";
+        SubagentDeclaration decl = AgentSpecLoader.parse(md, "bom-agent", null);
+        assertNotNull(decl);
+        assertEquals("bom-agent", decl.getName());
+        assertEquals("A test agent with BOM", decl.getDescription());
+        assertEquals("Body content.", decl.getInlineAgentsBody());
     }
 
     @Test

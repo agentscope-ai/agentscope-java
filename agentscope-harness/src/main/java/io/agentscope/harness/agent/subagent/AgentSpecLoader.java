@@ -220,17 +220,21 @@ public final class AgentSpecLoader {
      */
     @SuppressWarnings("unchecked")
     public static SubagentDeclaration parse(String markdown, String name, Path mainWorkspace) {
-        if (markdown == null || markdown.isBlank() || !markdown.startsWith("---")) {
+        String content =
+                markdown != null && markdown.startsWith("\uFEFF")
+                        ? markdown.substring(1)
+                        : markdown;
+        if (content == null || content.isBlank() || !content.startsWith("---")) {
             return null;
         }
-        int endIdx = markdown.indexOf("---", 3);
+        int endIdx = content.indexOf("---", 3);
         if (endIdx == -1) {
             log.warn("Agent declaration front matter not closed with --- in '{}'", name);
             return null;
         }
 
-        String frontMatterStr = markdown.substring(3, endIdx).trim();
-        String body = markdown.substring(endIdx + 3).trim();
+        String frontMatterStr = content.substring(3, endIdx).trim();
+        String body = content.substring(endIdx + 3).trim();
 
         Map<String, Object> fm;
         try {
@@ -409,15 +413,11 @@ public final class AgentSpecLoader {
                     }
                     config.summaryPrompt(prompt);
                 }
-                case "flushBeforeCompact", "offloadBeforeCompact" -> {
+                case "flushBeforeCompact" -> {
                     if (!(setting instanceof Boolean enabled)) {
                         throw new IllegalArgumentException(key + " must be a boolean");
                     }
-                    if ("flushBeforeCompact".equals(key)) {
-                        config.flushBeforeCompact(enabled);
-                    } else {
-                        config.offloadBeforeCompact(enabled);
-                    }
+                    config.flushBeforeCompact(enabled);
                 }
                 default -> throw new IllegalArgumentException("Unknown compaction field: " + key);
             }

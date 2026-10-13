@@ -1,6 +1,7 @@
 ---
 title: FAQ
 description: Frequently asked questions about AgentScope Java 2.0
+zh_link: /v2/zh/docs/others/faq
 ---
 
 <Accordion title="Is AgentScope Java 2.0 compatible with 1.0?">

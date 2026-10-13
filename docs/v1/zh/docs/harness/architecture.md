@@ -1,5 +1,6 @@
 ---
 title: 架构
+en_link: /v1/en/docs/harness/architecture
 ---
 
 [概览](/v1/zh/docs/harness/overview) 从"解决什么问题"入手介绍 harness 的能力。本文换一个视角，**解释架构本身**：为什么这样设计、各层职责是什么、一次 `call()` 究竟经历了什么，以及状态如何在系统中流动。

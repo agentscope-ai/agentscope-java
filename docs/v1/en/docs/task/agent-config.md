@@ -1,5 +1,6 @@
 ---
 title: Agent Configuration
+zh_link: /v1/zh/docs/task/agent-config
 ---
 
 ## Overview

@@ -1,6 +1,7 @@
 ---
 title: 子 Agent（Subagent）
 description: 声明子 agent、同步/后台调用、自动反向通知、远程子 agent、流式转发
+en_link: /v2/en/docs/harness/subagent
 ---
 
 ## 作用
@@ -117,7 +118,7 @@ compaction:
 
 支持的字段包括 `triggerMessages`、`triggerTokens`、`reserved`、`keepMessages`、
 `keepTokens`、`keepTokensMin`、`keepTokensMax`、`keepTokensRatio`、`summaryPrompt`、
-`flushBeforeCompact` 和 `offloadBeforeCompact`。字段名区分大小写。类型错误或未知字段会记录警告，
+和 `flushBeforeCompact`。字段名区分大小写。类型错误或未知字段会记录警告，
 但子 agent 声明仍会加载，并继承父 agent 的压缩配置。省略 `compaction` 或设置为 null 时也继承父配置。
 
 Java 中可调用 `SubagentDeclaration.Builder` 的 `.compaction(config)` 或 `.disableCompaction()`，

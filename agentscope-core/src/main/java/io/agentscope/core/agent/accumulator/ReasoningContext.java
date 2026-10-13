@@ -21,6 +21,7 @@ import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -49,8 +50,7 @@ public class ReasoningContext {
     private final TextAccumulator textAcc = new TextAccumulator();
     private final ThinkingAccumulator thinkingAcc = new ThinkingAccumulator();
     private final ToolCallsAccumulator toolCallsAcc = new ToolCallsAccumulator();
-
-    private final List<Msg> allStreamedChunks = new ArrayList<>();
+    private final ServerToolResultAccumulator serverToolResults = new ServerToolResultAccumulator();
 
     // ChatUsage
     private int inputTokens = 0;
@@ -62,7 +62,6 @@ public class ReasoningContext {
     private double time = 0;
 
     // Provider-specific response metadata to propagate to the final message
-    // (e.g. openai.reasoning.encrypted_content for reasoning replay)
     private final Map<String, Object> responseMetadata = new HashMap<>();
 
     public ReasoningContext(String agentName) {
@@ -112,7 +111,6 @@ public class ReasoningContext {
                 // Emit text block immediately
                 Msg msg = buildChunkMsg(tb);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
 
             } else if (block instanceof ThinkingBlock tb) {
                 thinkingAcc.add(tb);
@@ -120,7 +118,6 @@ public class ReasoningContext {
                 // Emit thinking block immediately
                 Msg msg = buildChunkMsg(tb);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
 
             } else if (block instanceof ToolUseBlock tub) {
                 // Accumulate tool calls and emit immediately for real-time streaming
@@ -134,7 +131,14 @@ public class ReasoningContext {
                 ToolUseBlock outputBlock = enrichToolUseBlockWithId(tub);
                 Msg msg = buildChunkMsg(outputBlock);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
+
+            } else if (block instanceof ToolResultBlock trb && trb.isServerTool()) {
+                // Server tool results arrive as part of the assistant response; keep them so
+                // they end up in the final message and can be echoed back on later turns.
+                serverToolResults.add(trb);
+
+                Msg msg = buildChunkMsg(trb);
+                streamingMsgs.add(msg);
             }
         }
 
@@ -172,9 +176,9 @@ public class ReasoningContext {
             blocks.add(textAcc.buildAggregated());
         }
 
-        // Add all tool calls
+        // Add all tool calls, placing server tool results right after their calls
         List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
-        blocks.addAll(toolCalls);
+        blocks.addAll(serverToolResults.placeAfterToolCalls(toolCalls));
 
         // If no content at all, return null
         if (blocks.isEmpty()) {
@@ -244,6 +248,7 @@ public class ReasoningContext {
                 .input(block.getInput())
                 .content(block.getContent())
                 .metadata(block.getMetadata())
+                .state(block.getState())
                 .build();
     }
 

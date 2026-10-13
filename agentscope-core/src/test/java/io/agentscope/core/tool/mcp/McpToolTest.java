@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,12 +48,46 @@ class McpToolTest {
 
     @BeforeEach
     void setUp() {
-        mockClientWrapper = mock(McpClientWrapper.class);
-        when(mockClientWrapper.getName()).thenReturn("test-client");
+        // McpTool.callAsync reads the connection-level switch live; default it to on.
+        mockClientWrapper = McpClientWrapperTestSupport.mockWrapper("test-client", true);
 
         parameters = new HashMap<>();
         parameters.put("type", "object");
         parameters.put("properties", new HashMap<>());
+    }
+
+    @Test
+    void testMergeArguments_NullInputWithoutPresetReturnsEmptyMap() {
+        McpTool tool = new McpTool("test-tool", "A test tool", parameters, mockClientWrapper);
+
+        Map<String, Object> result = tool.mergeArguments(null);
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testMergeArguments_NullInputWithPresetReturnsPresetCopy() {
+        Map<String, Object> preset = new HashMap<>();
+        preset.put("presetKey", "presetValue");
+        McpTool tool =
+                new McpTool(
+                        "test-tool",
+                        "A test tool",
+                        parameters,
+                        null,
+                        mockClientWrapper,
+                        preset,
+                        "test-client",
+                        false);
+
+        Map<String, Object> result = tool.mergeArguments(null);
+
+        assertEquals(1, result.size());
+        assertEquals("presetValue", result.get("presetKey"));
+        // The result must be a defensive copy: mutating it must not affect the preset
+        result.put("mutated", "value");
+        assertFalse(preset.containsKey("mutated"));
     }
 
     @Test

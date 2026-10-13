@@ -1,5 +1,6 @@
 ---
 title: Sandbox
+zh_link: /v1/zh/docs/harness/sandbox/index
 ---
 
 [Filesystem](/v1/en/docs/harness/filesystem) explains where an agent's "files and commands" come from. When these operations must be **isolated from the host process**, executed in a **replaceable execution environment** (local Unix, Docker, etc.), and able to **restore the same workspace state** across multiple `call`s, use the **sandbox mode** described here (`filesystem(SandboxFilesystemSpec)`).

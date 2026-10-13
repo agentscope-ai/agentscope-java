@@ -1,5 +1,6 @@
 ---
 title: AgentScope Java 1.1 · Harness
+en_link: /v2/en/blogs/agentscope-v1-harness
 ---
 
 书接上回，我在之前的一篇文章中深入分析了 OpenClaw 及其背后的 Harness Engineering 实践，同时构想了一套 “Harness Framework” 来讲解如何将这套理念应用到企业级智能体开发中。
