@@ -94,6 +94,7 @@ class OllamaChatModelTest {
     void testBasicModelCreation() {
         assertNotNull(model, "Model should be created");
         assertEquals(TEST_MODEL_NAME, model.getModelName());
+        assertTrue(model.supportsToolChoiceSpecific());
 
         // Test builder pattern with minimal args
         OllamaChatModel simpleModel =

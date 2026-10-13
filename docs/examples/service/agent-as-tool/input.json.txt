@@ -1,0 +1,19 @@
+{
+  "title": "Verify supplier V-101 evidence",
+  "input": {
+    "request": "Assess only the supplied supplier evidence. Return confirmed facts, missing evidence and questions. Do not approve a purchase.",
+    "supplier_id": "V-101",
+    "sources": [
+      {
+        "id": "profile",
+        "version": "v1",
+        "text": "Fictional supplier: 12 staff and web support, as self-reported."
+      },
+      {
+        "id": "review",
+        "version": "v1",
+        "text": "No independent security review or delivery SLA has been supplied."
+      }
+    ]
+  }
+}

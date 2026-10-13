@@ -102,7 +102,7 @@ This mode **does not provide shell** — on purpose: for shell, use mode 2 (sand
 | Implementation | Description |
 |---------------|-------------|
 | `RedisStore` | Jedis-based, for low-latency high-concurrency | `agentscope-extensions-redis` |
-| `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 | `agentscope-extensions-mysql` |
+| `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
 | `InMemoryStore` | In-memory, for testing | `agentscope-harness` |
 
 ---

@@ -30,6 +30,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -63,6 +64,7 @@ class HarnessSkillManageNamespaceTest {
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
+                        .sessionLogStore(new InMemorySessionLogStore())
                         .model(neverRespondingModel())
                         .workspace(workspace)
                         .enableSkillManageTool(SkillManageConfig.defaults())
@@ -161,6 +163,7 @@ class HarnessSkillManageNamespaceTest {
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
+                        .sessionLogStore(new InMemorySessionLogStore())
                         .model(neverRespondingModel())
                         .workspace(workspace)
                         .enableSkillManageTool(SkillManageConfig.defaults())

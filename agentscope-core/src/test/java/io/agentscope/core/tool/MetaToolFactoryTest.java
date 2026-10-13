@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.ToolContextState;
@@ -472,6 +473,7 @@ class MetaToolFactoryTest {
         ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
+        assertEquals(ToolResultState.ERROR, result.getState());
         String resultText = text(result);
         assertTrue(resultText.contains("Error:"));
         assertTrue(resultText.contains("not manageable"));
@@ -613,6 +615,7 @@ class MetaToolFactoryTest {
 
         // Assert - fast fail, never mutate the shared group manager
         assertNotNull(result);
+        assertEquals(ToolResultState.ERROR, result.getState());
         String resultText = text(result);
         assertTrue(resultText.contains("Error:"));
         assertTrue(resultText.contains("requires a per-session runtime context"));
