@@ -346,7 +346,7 @@ class AgentSkillPromptProviderTest {
 
     @Test
     @DisplayName("Should match SkillFilter against skill name instead of composite skill id")
-    void testFilterWithBareNameMatchesCompositeId() {
+    void testBareNameFilterMatchesSkillWithCompositeId() {
         AgentSkill visible =
                 new AgentSkill(
                         "host-forensics-client",
