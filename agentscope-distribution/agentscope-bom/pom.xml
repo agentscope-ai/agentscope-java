@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>2.0.5-SNAPSHOT</revision>
+        <revision>2.1.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -71,7 +71,7 @@
 
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
-        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
+        <maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
         <central.publishing.maven.version>0.10.0</central.publishing.maven.version>
 
         <maven.deploy.skip>false</maven.deploy.skip>
@@ -303,10 +303,10 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope aistio BYO data-plane SDK -->
+            <!-- AgentScope controlplane BYO data-plane SDK -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-aistio</artifactId>
+                <artifactId>agentscope-extensions-controlplane</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -478,6 +478,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-openai-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope OpenAI Official Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-openai-official-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

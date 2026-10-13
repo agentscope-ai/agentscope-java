@@ -122,6 +122,12 @@ toolkit.registerTool(new SimpleTools());
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
 | `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |
 
+#### 显式返回执行状态
+
+工具调用成功时返回 `ToolResultBlock.success(text)`，失败时返回 `ToolResultBlock.error(message)`；两者既可直接返回，也可包装在 `Mono<ToolResultBlock>` 中。不要通过文本前缀判断失败。`ToolResultBlock.text(text)` 默认是 `RUNNING`；如需保留既有 JSON 或多行输出，请用 `withState(...)` 明确终态。
+
+内置工具已改为结构化结果。直接调用时用 `getState()` 判断状态，用 `getOutput()` 读取文本；`Toolkit` 注册方式不变。
+
 ### 自定义 Tool（继承 `ToolBase`）
 
 需要自定义权限策略、外部执行或更复杂的 schema 时，继承 `ToolBase`：
@@ -285,6 +291,25 @@ agent.call(List.of(new UserMessage("Greet me.")), ctx).block();
 ```
 
 模型不需要把 `userCtx` 写进 JSON 参数——schema 里也不会出现它。完整示例：`agentscope-examples/documentation/.../tool/ToolExecutionContextExample.java`。
+
+### 工具进度流式输出
+
+长时间运行的工具可以通过 `ToolEmitter.emit()` 发布中间进度。进度以 [`ToolProgressEvent`](/v2/zh/docs/building-blocks/message-and-event#事件类型) 的形式出现在事件流中——仅用于展示，不会发送给 LLM。工具的返回值才是模型实际接收到的内容，它以 `ToolResultTextDeltaEvent` / `ToolResultDataDeltaEvent` 的形式单独传递。
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    emitter.emit(ToolResultBlock.text("正在扫描 3 个目录..."));
+    // ... 执行工作 ...
+    emitter.emit(ToolResultBlock.text("正在索引结果..."));
+    // ... 继续执行 ...
+
+    // 只有这个返回值会作为工具结果发送给 LLM。
+    return "3 files found";
+}
+```
+
+从事件流重建工具结果的客户端必须累积 `ToolResult*DeltaEvent`，并忽略 `ToolProgressEvent`。如果混用两者，进度文本会进入工具消息并在下一轮被送回模型，违背 `ToolEmitter` 的契约。
 
 ### `ToolBase.callAsync` 中访问
 

@@ -83,6 +83,11 @@ public class GeminiChatModel extends ChatModelBase {
             formatter;
     private final List<GeminiServerTool> serverTools;
 
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
+    }
+
     /**
      * Creates a new Gemini chat model instance.
      *

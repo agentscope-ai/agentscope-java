@@ -44,7 +44,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         include:
@@ -59,13 +59,17 @@ jobs:
       JAVA_VERSION: '17'
 
     steps:
+      - name: Enable Git long paths on Windows
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
       - uses: actions/checkout@v4
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
-          cache: 'maven'
+          # No cache: 'maven' here — the explicit actions/cache step below caches the
+          # same ~/.m2/repository path; a second copy only adds ~35s restore and ~0.86GB storage.
 
       - name: Cache Maven repository [${{ runner.os }}]
         uses: actions/cache@v4
@@ -114,8 +118,10 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           # -T1: single-threaded build so reactor order is respected (see Linux step).
-          # -Dmvnd.maxLostKeepAlive=120: avoid StaleAddressException on long javadoc phases (mvnd#161).
-          & "~\.mvnd\bin\mvnd.cmd" -B -T1 "-Dmvnd.maxLostKeepAlive=120" clean verify
+          # Skip release-only artifacts (javadoc/source jars) and JaCoCo: coverage is only
+          # uploaded from Linux, so instrumentation on Windows is pure overhead.
+          # -Dmvnd.maxLostKeepAlive=120: avoid StaleAddressException on long build phases (mvnd#161).
+          & "~\.mvnd\bin\mvnd.cmd" -B -T1 "-Dmaven.javadoc.skip=true" "-Dmaven.source.skip=true" "-Djacoco.skip=true" "-Dmvnd.maxLostKeepAlive=120" clean verify
 
       - name: Upload coverage reports to Codecov
         if: runner.os == 'Linux'

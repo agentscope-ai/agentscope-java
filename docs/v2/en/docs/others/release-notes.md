@@ -144,7 +144,7 @@ This release introduces Anthropic prompt caching, a `deliver_artifact` tool for 
 ### Refactored
 
 - Move `AguiRuntimeContextRequest` / `AguiRuntimeContextResolver` / `AguiRequestBodyParser` down from the example layer into the `extensions-agui` protocol layer ([#2822](https://github.com/agentscope-ai/agentscope-java/pull/2822))
-- Replace the Java service control plane with the Go `aistiod` control plane, keeping the Java gateway, data, and scheduler planes; the `agentscope-builder` example is promoted to the top-level `agentscope-service` module
+- Replace the Java service control plane with the Go `service-controlplane` control plane, keeping the Java gateway, data, and scheduler planes; the `agentscope-builder` example is promoted to the top-level `agentscope-service` module
 - Isolate HITL sessions by user — key `ThreadSessionManager` / `AgentResolver` by `(userId, threadId)` so `hasMemory` and agent reuse no longer mix tenants, and unwrap harness/stop interrupts via `AguiUtil.asReActAgent` so demo `stopThread` and processor interrupts target the live session ([#2856](https://github.com/agentscope-ai/agentscope-java/pull/2856), [#2855](https://github.com/agentscope-ai/agentscope-java/issues/2855))
 - Introduce `agentscope-extensions-jdbc` with a dialect abstraction (`AbstractJdbcDialect` / `StoreDialect` / `SessionStateDialect` / `SnapshotDialect`) and vendor implementations for MySQL, PostgreSQL, H2, and SQLite; the existing `MysqlDistributedStore` and `PostgresDistributedStore` now delegate to the unified JDBC module ([#2759](https://github.com/agentscope-ai/agentscope-java/pull/2759), [#2503](https://github.com/agentscope-ai/agentscope-java/issues/2503))
 
