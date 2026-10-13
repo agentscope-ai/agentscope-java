@@ -76,18 +76,18 @@ public record MsgContext(
     /** Stable key for session routing: same logical conversation maps to the same gateway session id. */
     public String canonicalKey() {
         StringBuilder sb = new StringBuilder(64);
-        sb.append(Objects.requireNonNullElse(channel, "default"));
+        sb.append(escape(Objects.requireNonNullElse(channel, "default")));
         if (group != null && !group.isBlank()) {
-            sb.append("|g:").append(group.trim());
+            sb.append("|g:").append(escape(group.trim()));
         }
         if (room != null && !room.isBlank()) {
-            sb.append("|r:").append(room.trim());
+            sb.append("|r:").append(escape(room.trim()));
         }
         if (threadId != null && !threadId.isBlank()) {
-            sb.append("|t:").append(threadId.trim());
+            sb.append("|t:").append(escape(threadId.trim()));
         }
         if (threadTs != null && !threadTs.isBlank()) {
-            sb.append("|ts:").append(threadTs.trim());
+            sb.append("|ts:").append(escape(threadTs.trim()));
         }
         if (!extra.isEmpty()) {
             extra.entrySet().stream()
@@ -95,10 +95,18 @@ public record MsgContext(
                     .forEach(
                             e ->
                                     sb.append("|x:")
-                                            .append(e.getKey())
+                                            .append(escape(e.getKey()))
                                             .append('=')
-                                            .append(e.getValue()));
+                                            .append(escape(e.getValue())));
         }
         return sb.toString();
+    }
+
+    /**
+     * Escapes the reserved key separators so a component value can never be mistaken for
+     * structural syntax. {@code %} is escaped first so the escaping itself is unambiguous.
+     */
+    private static String escape(String value) {
+        return value.replace("%", "%25").replace("|", "%7C");
     }
 }
