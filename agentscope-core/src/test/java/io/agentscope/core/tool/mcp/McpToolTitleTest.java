@@ -16,7 +16,6 @@
 package io.agentscope.core.tool.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -145,12 +144,15 @@ class McpToolTitleTest {
         String title = "y".repeat(116) + "\uD83D\uDE00tail";
         String resolved = McpTool.resolveDisplayTitle(toolWith(title, null));
 
-        assertEquals("y".repeat(116) + "...", resolved);
-        for (int i = 0; i < resolved.length(); i++) {
-            assertFalse(
-                    Character.isSurrogate(resolved.charAt(i)),
-                    "a lone surrogate would corrupt every consumer that re-encodes the label");
-        }
+        // The cap counts code points, so an emoji at the boundary survives whole.
+        assertEquals("y".repeat(116) + "\uD83D\uDE00" + "...", resolved);
+        assertTrue(
+                resolved.codePoints()
+                        .noneMatch(
+                                cp ->
+                                        cp >= Character.MIN_SURROGATE
+                                                && cp <= Character.MAX_SURROGATE),
+                "an unpaired surrogate would corrupt every consumer that re-encodes the label");
     }
 
     @Test
@@ -173,7 +175,7 @@ class McpToolTitleTest {
 
         assertEquals("DeleteAll Data now", tool.getTitle());
         assertTrue(
-                tool.getTitle().length() <= 120,
+                tool.getTitle().codePointCount(0, tool.getTitle().length()) <= 120,
                 "the stored title is already display-safe for a prompt");
     }
 
