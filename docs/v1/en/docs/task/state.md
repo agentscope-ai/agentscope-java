@@ -1,5 +1,6 @@
 ---
 title: State Management
+zh_link: /v1/zh/docs/task/state
 ---
 
 State provides serialization and deserialization capabilities for component state, serving as the foundation for Session persistence.

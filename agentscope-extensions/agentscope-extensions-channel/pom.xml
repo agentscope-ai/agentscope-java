@@ -37,6 +37,7 @@
         <module>agentscope-extensions-channel-github</module>
         <module>agentscope-extensions-channel-gitlab</module>
         <module>agentscope-extensions-channel-wecom</module>
+        <module>agentscope-extensions-channel-weixin</module>
     </modules>
 
 </project>

@@ -10,8 +10,14 @@ function fixture(t, options = {}) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dir, 'v2/en'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'v2/en/intro.md'), '---\ntitle: Home\n---\n\n## Setup\n' + (options.body || ''));
+  if (options.zhPage) {
+    fs.mkdirSync(path.join(dir, 'v2/zh'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'v2/zh/intro.md'), options.zhPage);
+  }
+  const languages = [{ language: 'en', versions: [{ version: 'v2', tabs: [{ tab: 'Home', pages: options.pages || ['v2/en/intro'] }] }] }];
+  if (options.zhPage) languages.push({ language: 'zh', versions: [{ version: 'v2', tabs: [{ tab: '首页', pages: ['v2/zh/intro'] }] }] });
   fs.writeFileSync(path.join(dir, 'docs.json'), JSON.stringify({
-    navigation: { languages: [{ language: 'en', versions: [{ version: 'v2', tabs: [{ tab: 'Home', pages: options.pages || ['v2/en/intro'] }] }] }] },
+    navigation: { languages },
     redirects: options.redirects || [],
   }));
   return dir;
@@ -43,6 +49,18 @@ test('broken assets and anchors fail even when the page exists', (t) => {
   assert(result.errors.some((e) => e.includes('missing local target')));
 });
 
+test('translated pages require exact reciprocal language links', (t) => {
+  const dir = fixture(t, { zhPage: '---\ntitle: 首页\nen_link: /v2/en/wrong\n---\n' });
+  let result = checkSite(dir);
+  assert(result.errors.includes('/v2/en/intro: zh_link must be /v2/zh/intro'));
+  assert(result.errors.includes('/v2/zh/intro: en_link must be /v2/en/intro'));
+
+  fs.writeFileSync(path.join(dir, 'v2/en/intro.md'), '---\ntitle: Home\nzh_link: /v2/zh/intro\n---\n');
+  fs.writeFileSync(path.join(dir, 'v2/zh/intro.md'), '---\ntitle: 首页\nen_link: /v2/en/intro\n---\n');
+  result = checkSite(dir);
+  assert.deepEqual(result.errors, []);
+});
+
 test('legacy HTML redirects preserve valid fragments', (t) => {
   const result = checkSite(fixture(t, { body: '[Old link](/v2/en/intro.html#setup)', redirects: [{ source: '/v2/en/intro.html', destination: '/v2/en/intro' }] }));
   assert.deepEqual(result.errors, []);
@@ -52,6 +70,14 @@ test('redirect cycles and duplicate sources fail', (t) => {
   const result = checkSite(fixture(t, { redirects: [{ source: '/a', destination: '/b' }, { source: '/b', destination: '/a' }, { source: '/a', destination: '/b' }] }));
   assert(result.errors.some((e) => e.includes('Duplicate redirect')));
   assert(result.errors.some((e) => e.includes('redirect cycle')));
+});
+
+test('external Helm index redirects are valid local link targets', (t) => {
+  const result = checkSite(fixture(t, {
+    body: '[Chart index](/helm/index.yaml)',
+    redirects: [{ source: '/helm/index.yaml', destination: 'https://chickenlj.github.io/helm-charts/index.yaml' }],
+  }));
+  assert.deepEqual(result.errors, []);
 });
 
 test('MyST directives cannot silently become visible prose', () => {

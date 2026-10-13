@@ -27,16 +27,23 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolProgressEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -305,6 +312,70 @@ class ReActAgentNewLoopE2ETest {
     }
 
     @Test
+    void actingStopReturnsHookRedactedResults() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse(
+                                                        "secret-1", "respond", "private"))));
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(new AlwaysAllowTool("respond"));
+        MiddlewareBase stop =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .concatWith(Flux.just(new RequestStopEvent("done")));
+                    }
+                };
+        Hook redact =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostActingEvent post) {
+                            post.setToolResultMsg(
+                                    post.getToolResultMsg()
+                                            .withContent(
+                                                    List.of(ToolResultBlock.text("redacted"))));
+                            post.stopAgent();
+                        }
+                        return Mono.just(event);
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(stop)
+                        .hook(redact)
+                        .build();
+        Msg result = agent.call(List.of()).block();
+        assertNotNull(result);
+        assertEquals(1, model.calls.get());
+        assertEquals(
+                "redacted",
+                result.getContentBlocks(ToolResultBlock.class).get(0).getOutput().stream()
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .findFirst()
+                        .orElseThrow()
+                        .getText());
+        assertEquals(
+                result.getContentBlocks(ToolResultBlock.class),
+                agent.getAgentState()
+                        .getContext()
+                        .get(agent.getAgentState().getContext().size() - 1)
+                        .getContentBlocks(ToolResultBlock.class));
+    }
+
+    @Test
     void actingMiddlewareStopPersistsCompletedToolResult() {
         ScriptedModel model =
                 new ScriptedModel(
@@ -521,5 +592,107 @@ class ReActAgentNewLoopE2ETest {
         assertEquals(1L, events.stream().filter(ToolResultEndEvent.class::isInstance).count());
         assertTrue(events.get(0) instanceof AgentStartEvent);
         assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
+    }
+
+    @Test
+    void progressAndResultTravelOnTheirOwnEventTypes() {
+        List<AgentEvent> events = runWithProgressTool(ToolResultBlock.text("fingerprint enrolled"));
+
+        List<String> progress =
+                events.stream()
+                        .filter(ToolProgressEvent.class::isInstance)
+                        .map(ToolProgressEvent.class::cast)
+                        .map(ToolProgressEvent::getText)
+                        .toList();
+        assertTrue(
+                progress.contains("scanning 3 dirs"),
+                "the emitted chunk has to reach the stream as progress");
+
+        List<String> resultDeltas =
+                events.stream()
+                        .filter(ToolResultTextDeltaEvent.class::isInstance)
+                        .map(e -> ((ToolResultTextDeltaEvent) e).getDelta())
+                        .toList();
+        assertEquals(
+                List.of("fingerprint enrolled"),
+                resultDeltas,
+                "deltas carry only what the model received, so progress must not appear here");
+    }
+
+    @Test
+    void imageOnlyReturnValueIsCarriedAsDataDelta() {
+        // An image return value has no text, so the delta stream carries it as a data delta
+        // rather than dropping it from the result.
+        List<AgentEvent> events =
+                runWithProgressTool(
+                        ToolResultBlock.of(
+                                ImageBlock.builder()
+                                        .source(new URLSource("https://example.com/chart.png"))
+                                        .build()));
+
+        List<AgentEvent> dataDeltas =
+                events.stream().filter(ToolResultDataDeltaEvent.class::isInstance).toList();
+        assertEquals(1, dataDeltas.size(), "the image is emitted as one data delta");
+        ToolResultDataDeltaEvent dataDelta = (ToolResultDataDeltaEvent) dataDeltas.get(0);
+        assertTrue(dataDelta.getData() instanceof ImageBlock);
+    }
+
+    private List<AgentEvent> runWithProgressTool(ToolResultBlock returnValue) {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "enroll", "alpha")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new ProgressTool("enroll", returnValue));
+
+        List<AgentEvent> events =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .build()
+                        .streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("run enroll")
+                                                .build()))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+        return events;
+    }
+
+    /** Streams one progress chunk, then returns {@code returnValue}: the {@code ToolEmitter} deal. */
+    private static final class ProgressTool extends ToolBase {
+        private final ToolResultBlock returnValue;
+
+        ProgressTool(String name, ToolResultBlock returnValue) {
+            super(
+                    name,
+                    "streams progress then returns",
+                    AlwaysAllowTool.schema(),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+            this.returnValue = returnValue;
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("ok"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            param.getEmitter().emit(ToolResultBlock.text("scanning 3 dirs"));
+            return Mono.just(returnValue);
+        }
     }
 }

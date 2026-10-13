@@ -21,6 +21,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.ollama.dto.OllamaFunction;
 import io.agentscope.extensions.model.ollama.dto.OllamaMessage;
@@ -72,6 +73,9 @@ public class OllamaResponseParser {
                         // If Ollama doesn't provide ID, we generate a random UUID to satisfy
                         // AgentScope requirement.
                         String callId = UUID.randomUUID().toString();
+                        if (!ToolValidator.requireNonBlank("Ollama", fn.getName(), callId)) {
+                            continue;
+                        }
 
                         // Convert input to JSON string for validation in ToolExecutor
                         // For tools with no parameters, input will be null or an empty map {}

@@ -42,6 +42,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
+import io.agentscope.core.state.LegacyStateLoader;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.legacy.ToolkitState;
 import io.agentscope.core.tool.Toolkit;
@@ -145,8 +146,8 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
-    @DisplayName("legacy empty tool groups remain explicitly empty")
-    void legacyEmptyToolGroupsAreNotMistakenForMissingState() {
+    @DisplayName("legacy keys require explicit import before activation")
+    void legacyKeysRequireExplicitImport() {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
         store.save("u1", "legacy-empty", "toolkit_activeGroups", new ToolkitState(List.of()));
 
@@ -161,12 +162,22 @@ class ReActAgentPerSessionStateTest {
                         .stateStore(store)
                         .build();
 
+        assertEquals(
+                List.of("default-active"),
+                agent.getAgentState("u1", "legacy-empty").getToolContext().getActivatedGroups(),
+                "Normal activation must not read v1 keys");
+        store.save(
+                "u1",
+                "legacy-empty",
+                "agent_state",
+                LegacyStateLoader.loadFromLegacySession(store, "u1", "legacy-empty"));
+        agent.clearStateCache("u1", "legacy-empty");
         assertTrue(
                 agent.getAgentState("u1", "legacy-empty")
                         .getToolContext()
                         .getActivatedGroups()
                         .isEmpty(),
-                "A present v1 toolkit_activeGroups=[] value must override fresh defaults");
+                "Explicitly imported empty groups must remain empty");
     }
 
     @Test

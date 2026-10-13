@@ -1,5 +1,6 @@
 ---
 title: 安装
+en_link: /v1/en/docs/quickstart/installation
 ---
 
 AgentScope Java 支持多种模型、RAG 后端和扩展功能，各自需要不同的第三方 SDK。把所有依赖打包到一起会让项目变得臃肿，所以我们提供了两种引入方式：

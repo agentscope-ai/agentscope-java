@@ -1,113 +1,161 @@
 ---
-title: "SSE format and task feedback"
+title: "SSE and event replay"
+description: "Observe tasks with snapshots and SSE, recover progress after disconnection, and receive backend Webhook notifications."
+zh_link: /v2/zh/service/sse-events
 ---
 
-<Note>
-This is preview documentation. The official release is not yet available.
-</Note>
+After submitting a task, an application needs to show its background progress to the user. The Session API preserves snapshots and an event log: a snapshot restores work that has already happened, and subsequent events update messages, tool calls, and pending actions. SSE delivers those events continuously, so an application can follow the same task after a page refresh or network interruption. Closing the connection does not cancel execution.
 
-After submitting work through an Endpoint, subscribe to the returned `eventsUrl` and query `statusUrl` for results. Follow [Endpoint integration](/v2/en/service/endpoints) to publish and submit requests. Console users handle notifications, approvals and acceptance in [Inbox](/v2/en/service/inbox).
+Start with [Integrate applications with the Session API](/v2/en/service/service-api) to create a Session and submit a Turn. The examples below reuse its `SESSION_URL` and application credential. If your backend needs notifications while users are offline, go to the [Webhook section](#webhooks). Webhook notifications can be used alongside page-level SSE subscriptions.
 
-## Submit, subscribe and query
+## Restore a snapshot before applying events
 
-1. Submit a Conversation or Job request. Save `invocationId`, `eventsUrl` and `statusUrl`; Conversation also returns identifiers such as `conversationId` and `turnId`.
-2. GET `eventsUrl` with the same credential and `Accept: text/event-stream`.
-3. Parse SSE frames, persist processed cursors and update the UI according to event type.
-4. Query `statusUrl` when the stream ends or disconnects to determine the invocation's status and result.
+When opening a page, read the Session `/snapshot`, restore its messages, tools, and actions, then pass its `as_of` as `after` to `/events/stream`. Persist a cursor only after successfully applying the event. Reconnect from the last applied cursor. If local page state is also lost, reload the snapshot first.
 
-`202 Accepted` acknowledges submission. SSE transports events; receiving an event or observing a closed connection does not by itself prove successful completion.
-
-## SSE frames
-
-Each business event contains `id`, `event` and JSON `data`, terminated by a blank line. This Conversation example uses demonstration identifiers, timestamps and content:
-
-```text
-id: 7
-event: assistant.message
-data: {"id":145,"sessionFk":"11111111-1111-4111-8111-111111111111","seq":7,"eventType":"assistant.message","role":"assistant","content":"The action list is ready.","occurredAt":"2026-09-10T09:00:00Z"}
-
-```
-
-| Field | Handling |
-| --- | --- |
-| SSE `id` | Ordered stream cursor for resumption, not the invocation ID |
-| SSE `event` | Event type; dispatch by type and tolerate unknown types |
-| SSE `data` | A JSON event object; parse Conversation and Job structures separately |
-| Blank line | End of a frame; a network chunk need not contain exactly one complete frame |
-
-While waiting for events, the service may send a `: heartbeat` comment. Ignore it rather than parsing it as JSON or treating it as work progress.
-
-```text
-: heartbeat
-
-```
-
-The transport uses standard SSE framing. Business events are Service Session or orchestration events, so do not assume a model vendor's token-delta payload or a fixed `[DONE]` marker.
-
-## Conversation and Job payloads
-
-| | Conversation | Job |
-| --- | --- | --- |
-| Source | Runtime Session events | Run orchestration events |
-| Field corresponding to SSE `id` | `seq` | `sequence` |
-| Type field | `eventType` | `type` |
-| Correlation | `sessionFk`; runtimes may supply `frameworkMeta` | `runId`, with optional `nodeId`, `agentTaskId`, `attemptId` |
-| Common content | `role`, `content`, `toolName`, `toolInput`, `toolOutput` | `actor`, `payload`, `occurredAt` |
-| Example types | `assistant.message`, `turn.completed`, `turn.failed` | `run.started`, `node.succeeded`, `node.failed` |
-
-Fields and event types depend on the execution path; providers need not emit the same types or granularity. Optional fields may be absent. Conversation JSON `id` identifies a stored record; resume using SSE `id` / `seq`. A Job JSON `id` likewise cannot replace `sequence`.
-
-Example Job event fields:
-
-```text
-id: 1
-event: run.started
-data: {"id":"22222222-2222-4222-8222-222222222222","runId":"33333333-3333-4333-8333-333333333333","tenant":"default","namespace":"default","sequence":1,"type":"run.started","actor":{"type":"system","ref":"endpoint:example"},"occurredAt":"2026-09-10T09:00:00Z"}
-
-```
-
-Conversation events are read by Session cursor. The returned URL's `invocationId` associates stream termination with the current invocation; it does not filter Session history to that turn. Starting at cursor 0 can replay earlier events. Preserve processed cursors and use available correlation such as `frameworkMeta.turnId` to distinguish turns rather than displaying old output as a new reply.
-
-## Subscribe and resume
-
-Set `BASE_URL` to the Gateway origin, `ENDPOINT_TOKEN` to the credential used for submission, and `EVENTS_PATH` to the full returned relative `eventsUrl`, including query parameters:
+This example uses an application credential. An authorized platform Bearer token can perform the same reads.
 
 ```bash
-curl -N --fail-with-body "$BASE_URL$EVENTS_PATH" \
-  -H "X-API-Key: $ENDPOINT_TOKEN" \
-  -H 'Accept: text/event-stream'
+SNAPSHOT=$(
+  curl -sS --fail-with-body "$SESSION_URL/snapshot" \
+    -H "X-API-Key: $AGENTSCOPE_API_KEY"
+)
+CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
 ```
-
-For `platform` authentication, replace the authentication header with `Authorization: Bearer $ENDPOINT_TOKEN`. Use an absolute returned URL directly instead of prefixing BASE_URL.
-
-Save the SSE `id` after successfully processing a frame. Query status after disconnection, then resubscribe if events are still needed. Use the same URL and credential; set `LAST_EVENT_ID` to the last processed cursor:
 
 ```bash
-curl -N --fail-with-body "$BASE_URL$EVENTS_PATH" \
-  -H "X-API-Key: $ENDPOINT_TOKEN" \
-  -H 'Accept: text/event-stream' \
-  -H "Last-Event-ID: $LAST_EVENT_ID"
+curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
+  -H "Accept: text/event-stream" \
+  --data-urlencode "after=$CURSOR"
 ```
 
-Both interfaces also accept an `after` query parameter. When both are present, they use the greater valid value and read subsequent events. Scope cursors to the corresponding Session or Run; never reuse them across unrelated streams. A client can disconnect after processing but before saving its cursor, so deduplicate by stream identity and SSE ID to avoid repeated notifications or business actions.
+For a view of one task, pair `/turns/{turnId}/snapshot` with `/turns/{turnId}/events/stream`. Sessions, Turns, and subagents have separate journals, and a cursor belongs only to its source resource. It is not a timestamp or an event sequence clients should decode. `Last-Event-ID` takes precedence over the query parameter.
 
-Resubscription does not resubmit work. Use the original Idempotency-Key when retrying submission. Resolve authentication or authorization errors before reconnecting after 401/403. Proxies must forward events promptly, disable event-stream buffering and allow sufficiently long read timeouts.
+<Accordion title="Subscribe to a Turn and reconnect">
 
-## Retrieve results and files
-
-Set `STATUS_PATH` to the submission response's `statusUrl`:
+To observe one Turn, use this matching pair:
 
 ```bash
-curl --fail-with-body "$BASE_URL$STATUS_PATH" \
-  -H "X-API-Key: $ENDPOINT_TOKEN"
+TURN_URL="$SESSION_URL/turns/$TURN_ID"
+TURN_SNAPSHOT=$(
+  curl -sS --fail-with-body "$TURN_URL/snapshot" \
+    -H "X-API-Key: $AGENTSCOPE_API_KEY"
+)
+TURN_CURSOR=$(jq -er '.as_of' <<< "$TURN_SNAPSHOT")
 ```
 
-- **Conversation**: the response contains `conversation` and `turns`. Match a returned turn's `id` to the submitted `invocationId` and inspect its status and error. Session events provide reply content.
-- **Job**: inspect `invocation.status`. Read `invocation.result` after `completed`, or `errorCode` and `errorMessage` on failure. The response may also include `run` and `issue` summaries.
-- **Deliverable files**: GET `/invoke/v1/jobs/{invocationId}/artifacts`, then download using the returned `downloadUrl` and the same credential.
+```bash
+curl -sS --fail-with-body -N -G "$TURN_URL/events/stream" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
+  -H "Accept: text/event-stream" \
+  --data-urlencode "after=$TURN_CURSOR"
+```
 
-`accepted`, `dispatching`, `running` and `waiting` are nonterminal. `completed` indicates invocation completion; `failed`, `cancelled` and `timed_out` are unsuccessful terminal outcomes. One successful node does not complete a Run. Check Job results against the published output schema and business criteria, including whether partial success is sufficient.
+To reconnect a Session stream, replace `LAST_APPLIED_CURSOR` with the last successfully applied Session event cursor. This uses the header without an `after` query parameter:
 
-Handle human approvals or deliverable acceptance in [console Inbox](/v2/en/service/inbox) according to work policy. Reading SSE does not approve operations or accept deliverables.
+```bash
+LAST_APPLIED_CURSOR="LAST_APPLIED_SESSION_CURSOR"
+curl -sS --fail-with-body -N "$SESSION_URL/events/stream" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
+  -H "Accept: text/event-stream" \
+  -H "Last-Event-ID: $LAST_APPLIED_CURSOR"
+```
 
-Use a Job from the [fulfillment case](/v2/en/service/cases/order-fulfillment) to practice progress subscription, cursor persistence, and final-result queries. Resume the original invocation with its own cursor.
+</Accordion>
+
+## Interpret events and status
+
+An SSE frame's `id` is a replay cursor, `event` is its type, and `data` contains JSON. Public events include `schema_version`, `id`, `type`, `session_id`, `created_at`, `cursor`, and `data`. Task-associated events also carry `turn_id`. Deduplicate by event ID and update existing resources by ID instead of adding another card for each notification.
+
+`item.delta` appends message content, while `item.completed` supplies accumulated content and should replace it. Otherwise a client can display the same text twice. Tool events describe individual tool calls, `required_action.*` describes interactions, and `step.*` describes collaboration or workflow steps. Only the target Turn's explicit state establishes task completion; a tool or child finishing is not sufficient.
+
+Managed Session snapshots expose runtime resource arrays, including inputs, subagents, and execution attempts. Generic Turn, Team, and Workflow snapshots use collections indexed by ID. Reuse `agentSessions.ts` and `agentSessionView.ts` for Managed views, or `serviceSessions.ts` for generic Turn views. These snapshot shapes are not identical structures.
+
+## Pagination, reconnects, and expiration
+
+Use `GET /events?after=...&limit=100` when a persistent connection is unnecessary. `next_cursor` continues pagination and `has_more` indicates immediately available events. An empty page does not establish completion; read Turn status or wait for further events.
+
+```bash
+EVENT_PAGE=$(
+  curl -sS --fail-with-body -G "$SESSION_URL/events" \
+    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
+    --data-urlencode "after=$CURSOR" \
+    --data-urlencode "limit=100"
+)
+jq . <<< "$EVENT_PAGE"
+```
+
+Fetch the next page immediately only when `has_more` is true. Advance the cursor after processing the current page.
+
+```bash
+if jq -e '.has_more == true' <<< "$EVENT_PAGE" > /dev/null; then
+  NEXT_CURSOR=$(jq -er '.next_cursor' <<< "$EVENT_PAGE")
+  curl -sS --fail-with-body -G "$SESSION_URL/events" \
+    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
+    --data-urlencode "after=$NEXT_CURSOR" \
+    --data-urlencode "limit=100"
+fi
+```
+
+A `410` response with `cursor_expired` means the resource's incremental history is no longer retained. Load a fresh snapshot and resume from its `as_of`. Do not resubmit a task just to restore observation. Cursors from other resources are rejected.
+
+<span id="webhooks"></span>
+
+## Notify a backend while users are offline
+
+Register under a Session's `/webhooks` for events across its tasks, or under a Turn's `/webhooks` for just that task. Application credentials need `webhooks:write`. Replace the example URL with an HTTPS receiver you have deployed:
+
+```bash
+WEBHOOKS_URL="$SESSION_URL/webhooks"
+WEBHOOK_JSON=$(
+  curl -sS --fail-with-body "$WEBHOOKS_URL" \
+    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notifications-001" \
+    --data-binary @- <<'JSON'
+{
+  "url": "https://your-app.example/agent-events",
+  "event_types": [
+    "turn.completed",
+    "turn.failed",
+    "required_action.created"
+  ]
+}
+JSON
+)
+WEBHOOK_ID=$(jq -er '.webhook.id' <<< "$WEBHOOK_JSON")
+SIGNING_SECRET=$(jq -er '.signing_secret' <<< "$WEBHOOK_JSON")
+```
+
+Store the returned `signing_secret` on the backend. Compute HMAC-SHA256 over `timestamp + '.' + raw request body` and compare it with `X-AgentScope-Signature: t=<seconds>,v1=<hex>`. Also check timestamp freshness and deduplicate event IDs. Verify the original bytes before parsing or reserializing JSON.
+
+For one Turn, set `WEBHOOKS_URL="$SESSION_URL/turns/$TURN_ID/webhooks"` before registering. The management requests below reuse that registration URL and returned `WEBHOOK_ID`.
+
+Delivery is at least once, so receivers may see duplicates. Persist the notification before acknowledging success, then read the latest Session or Turn state as needed. Inspect delivery with `GET /webhooks`, retry through `POST /webhooks/{webhookId}/retry`, or revoke with `DELETE`. Notification delivery does not make business operations idempotent or establish that an external transaction committed.
+
+<Accordion title="Inspect, retry, and disable a Webhook">
+
+Inspect subscriptions and delivery status:
+
+```bash
+curl -sS --fail-with-body "$WEBHOOKS_URL" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+```
+
+After recovering the receiver, retry failed delivery when needed:
+
+```bash
+curl -sS --fail-with-body -X POST "$WEBHOOKS_URL/$WEBHOOK_ID/retry" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+```
+
+Disable a subscription when notifications are no longer needed:
+
+```bash
+curl -sS --fail-with-body -X DELETE "$WEBHOOKS_URL/$WEBHOOK_ID" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+```
+
+</Accordion>
+
+Automation inbound Webhooks trigger work; these outbound Webhooks notify receivers about its progress. See [Automation](/v2/en/service/automation) and [Operations](/v2/en/service/operations).
