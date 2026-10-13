@@ -284,13 +284,11 @@ class HttpSelfRegistrationTest {
         HttpSelfRegistration registration = newRegistered(server);
         try {
             registration.start();
-            assertTrue(
-                    heartbeat.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS));
+            assertTrue(heartbeat.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS));
 
             // Force the exact state heartbeatSafe() leaves behind on a failed
             // heartbeat (404 / exception): registered cleared, identity still set.
-            Field registeredField =
-                    HttpSelfRegistration.class.getDeclaredField("registered");
+            Field registeredField = HttpSelfRegistration.class.getDeclaredField("registered");
             registeredField.setAccessible(true);
             ((AtomicBoolean) registeredField.get(registration)).set(false);
 
@@ -354,19 +352,15 @@ class HttpSelfRegistrationTest {
         HttpSelfRegistration registration = newRegistered(server);
         try {
             registration.start();
-            assertTrue(
-                    heartbeat.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS));
-            assertNotNull(
-                    registration.identity(), "identity should be present while registered");
+            assertTrue(heartbeat.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS));
+            assertNotNull(registration.identity(), "identity should be present while registered");
         } finally {
             registration.close();
         }
         assertTrue(
                 deleted.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS),
                 "close() must send the control-plane DELETE");
-        assertNull(
-                registration.identity(),
-                "identity must be cleared once the instance is closed");
+        assertNull(registration.identity(), "identity must be cleared once the instance is closed");
         assertThrows(
                 IllegalStateException.class,
                 registration::start,
@@ -469,8 +463,7 @@ class HttpSelfRegistrationTest {
             Field closedField = HttpSelfRegistration.class.getDeclaredField("closed");
             closedField.setAccessible(true);
             ((AtomicBoolean) closedField.get(registration)).set(true);
-            Field idField =
-                    HttpSelfRegistration.class.getDeclaredField("registeredInstanceId");
+            Field idField = HttpSelfRegistration.class.getDeclaredField("registeredInstanceId");
             idField.setAccessible(true);
             ((AtomicReference<String>) idField.get(registration)).set(null);
             // Release the held registration: it now completes after `closed` was set,
