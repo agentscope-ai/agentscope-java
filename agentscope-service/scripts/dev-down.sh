@@ -19,7 +19,7 @@ managed_plane_name() {
     command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
     [ -n "$command" ] || return 1
     case "$command" in
-        *"$ROOT/aistio/bin/aistiod"*) echo control ;;
+        *"$ROOT/service-controlplane/bin/service-controlplane"*) echo control ;;
         *"$ROOT/service-dataplane/target/service-dataplane-"*.jar*) echo data ;;
         *"$ROOT/service-scheduler/target/service-scheduler-"*.jar*) echo scheduler ;;
         *"$ROOT/service-gateway/target/service-gateway-"*.jar*) echo gateway ;;

@@ -27,7 +27,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,20 +38,16 @@ class HarnessSkillMiddlewareContextIsolationTest {
     void usesCallContextWhenSharedActiveContextPointsToAnotherSession() throws IOException {
         RuntimeContext alice =
                 RuntimeContext.builder().sessionId("alice-session").put("tenant", "alice").build();
-        RuntimeContext bob =
-                RuntimeContext.builder().sessionId("bob-session").put("tenant", "bob").build();
         NamespaceFactory namespaces =
                 ctx -> List.of("tenants", ctx != null ? (String) ctx.get("tenant") : "anonymous");
         LocalFilesystem filesystem = new LocalFilesystem(workspace, false, 64, namespaces);
         writeSkill("alice", "alice-skill", "Alice private description", "Alice private body");
         writeSkill("bob", "bob-skill", "Bob private description", "Bob private body");
 
-        // Reproduces the concurrent interleaving where session B overwrites ReActAgent.activeRc
-        // immediately before session A builds its skill catalog.
-        AtomicReference<RuntimeContext> sharedActiveContext = new AtomicReference<>(bob);
+        // The repository no longer carries a shared "current" context: per-call context flows
+        // through mergeRepositories, so alice's catalog never resolves bob's namespace.
         WorkspaceSkillRepository repository =
-                new WorkspaceSkillRepository(
-                        filesystem, "skills", sharedActiveContext::get, "workspace", false);
+                new WorkspaceSkillRepository(filesystem, "skills", "workspace", false);
         HarnessSkillMiddleware middleware =
                 new HarnessSkillMiddleware(List.of(repository), new Toolkit());
 

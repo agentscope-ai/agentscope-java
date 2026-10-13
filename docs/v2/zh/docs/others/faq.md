@@ -1,6 +1,7 @@
 ---
 title: FAQ
 description: AgentScope Java 2.0 常见问题
+en_link: /v2/en/docs/others/faq
 ---
 
 <Accordion title="AgentScope Java 2.0 与 1.0 兼容吗？">

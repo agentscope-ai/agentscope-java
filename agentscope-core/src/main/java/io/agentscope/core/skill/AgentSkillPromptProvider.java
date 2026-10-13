@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -155,6 +156,15 @@ public class AgentSkillPromptProvider {
                         : instruction;
     }
 
+    AgentSkillPromptProvider copyFor(SkillRegistry registry) {
+        AgentSkillPromptProvider copy = new AgentSkillPromptProvider(registry, instruction);
+        copy.exposeAllMetadata = exposeAllMetadata;
+        copy.codeExecutionEnabled = codeExecutionEnabled;
+        copy.uploadDir = uploadDir;
+        copy.codeExecutionInstruction = codeExecutionInstruction;
+        return copy;
+    }
+
     /**
      * Gets the skill system prompt for the agent with all skills included.
      *
@@ -167,13 +177,18 @@ public class AgentSkillPromptProvider {
     /**
      * Gets the skill system prompt filtered by the given {@link SkillFilter}.
      *
+     * <p>The filter matches skills by {@link AgentSkill#getName() skill name}, not by the composite
+     * registry id, so {@code only("x")} / {@code disable("x")} apply to every source variant of
+     * {@code x}, and a composite id such as {@code "x_custom"} does not match.
+     *
      * @param filter the filter deciding which skills to include (null treated as all)
      * @return The skill system prompt, or empty string if no skills pass the filter
      */
     public String getSkillSystemPrompt(SkillFilter filter) {
         SkillFilter effectiveFilter = filter != null ? filter : SkillFilter.all();
 
-        if (skillRegistry.getAllRegisteredSkills().isEmpty()) {
+        Set<String> skillIds = skillRegistry.getSkillIds();
+        if (skillIds.isEmpty()) {
             return "";
         }
 
@@ -182,13 +197,9 @@ public class AgentSkillPromptProvider {
         int visibleCount = 0;
         int withOriginDir = 0;
 
-        for (RegisteredSkill registered : skillRegistry.getAllRegisteredSkills().values()) {
-            String skillId = registered.getSkillId();
-            if (!effectiveFilter.isAllowed(skillId)) {
-                continue;
-            }
+        for (String skillId : skillIds) {
             AgentSkill skill = skillRegistry.getSkill(skillId);
-            if (skill == null) {
+            if (skill == null || !effectiveFilter.isAllowed(skill.getName())) {
                 continue;
             }
             if (!hasSkills) {

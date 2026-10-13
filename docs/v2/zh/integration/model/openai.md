@@ -1,5 +1,6 @@
 ---
 title: OpenAI
+en_link: /v2/en/integration/model/openai
 ---
 
 `agentscope-extensions-model-openai` 接入 OpenAI Chat Completions 风格的模型。OpenAI 兼容端点也使用这个适配模块，例如 DeepSeek、GLM、Kimi、MiniMax 等遵循 OpenAI API 载荷格式的服务。

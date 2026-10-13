@@ -215,7 +215,6 @@ export interface TeamOverview {
     readiness: { state: string; mode?: string; reason: string; activeBindingId?: string };
   }>;
   runs: { total: number; activeTasks: number };
-  endpoints: { total: number; published: number };
 }
 export interface InboxItem {
   id: string;
