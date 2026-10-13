@@ -190,6 +190,41 @@ A bare ReAct loop solves one reasoning turn. **HarnessAgent** layers engineering
 - **Auto context management** — structured compaction preserves goals / state / findings / next steps; oversized tool results offload to disk
 - **Plan Mode** — read-only planning state for long tasks, plan files persist and drive execution
 
+Harness registers Tavily-backed `web_search` by default, using `TAVILY_API_KEY`.
+To select [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) instead,
+add `.parallelWebSearch()` to `HarnessAgent.builder()`. This connects to
+`https://search.parallel.ai/mcp` over Streamable HTTP during `build()`, without a Parallel
+account or API key. Queries go to Parallel's anonymous endpoint, which is free and rate
+limited. The canonical `web_search` tool uses Parallel's discovered schema:
+
+```json
+{
+  "objective": "Find the official AgentScope Java documentation",
+  "search_queries": ["AgentScope Java documentation"]
+}
+```
+
+Both fields are required; Tavily's `query` and `max_results` do not apply to this provider.
+Search inputs and any supplied metadata go to Parallel. Requests identify this project as
+`agentscope-java/<version>` for aggregate usage measurement. See Parallel's
+[terms](https://parallel.ai/customer-terms) and [privacy policy](https://parallel.ai/privacy-policy).
+
+The option fails open, so an outage of a third-party endpoint degrades search instead of
+breaking the agent. If the handshake fails, or it succeeds but the server no longer advertises
+`web_search`, Harness logs a warning and registers the built-in Tavily `web_search` instead —
+`build()` always produces an agent with a search tool. Connecting is bounded by a 10s
+initialization timeout and searches by a 30s request timeout, rather than the MCP client
+defaults (30s / 120s). `web_search` is pinned read-only on this path regardless of the
+server's `annotations.readOnlyHint`, matching the built-in tool, so Plan Mode and the
+permission engine keep treating search as a non-mutating call.
+
+The built-in `web_fetch` stays unchanged, and `disableWebTools()` suppresses both tools and
+the Parallel connection, in this agent and in its local subagents. `webHttpClient(...)`
+customizes built-in fetch and Tavily search; it does **not** apply to the Parallel path, which
+uses the MCP transport's own client. Local subagents inherit the selected search provider and
+reuse the parent's connection, so a fan-out of subagents does not open one anonymous
+connection per spawn.
+
 ### 2 · Enterprise-grade distributed deployment
 
 Production agents must serve many tenants, run untrusted code safely, and survive rolling restarts. AgentScope 2.0 is built for stateless horizontal scaling:

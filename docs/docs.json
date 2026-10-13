@@ -75,6 +75,7 @@
                       "v2/en/docs/harness/subagent",
                       "v2/en/docs/harness/skill",
                       "v2/en/docs/harness/plan-mode",
+                      "v2/en/docs/harness/web-tools",
                       "v2/en/docs/harness/channel"
                     ]
                   },
@@ -534,6 +535,7 @@
                       "v2/zh/docs/harness/subagent",
                       "v2/zh/docs/harness/skill",
                       "v2/zh/docs/harness/plan-mode",
+                      "v2/zh/docs/harness/web-tools",
                       "v2/zh/docs/harness/channel"
                     ]
                   },

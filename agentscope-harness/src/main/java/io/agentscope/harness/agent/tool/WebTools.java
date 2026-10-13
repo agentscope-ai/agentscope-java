@@ -111,6 +111,10 @@ public final class WebTools {
     }
 
     public static final class WebSearchTool {
+
+        /** Model-facing name, shared with the alternative search providers that replace it. */
+        public static final String NAME = "web_search";
+
         private static final String TAVILY_API = "https://api.tavily.com/search";
         private final ObjectMapper mapper = new ObjectMapper();
         private final HttpClient client;
@@ -125,7 +129,7 @@ public final class WebTools {
         }
 
         @Tool(
-                name = "web_search",
+                name = NAME,
                 readOnly = true,
                 description =
                         "Search the web for information. Requires TAVILY_API_KEY. Returns titles,"

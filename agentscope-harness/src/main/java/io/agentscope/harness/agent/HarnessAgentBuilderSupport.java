@@ -27,6 +27,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
+import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
@@ -57,6 +58,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -305,6 +307,43 @@ final class HarnessAgentBuilderSupport {
     }
 
     /**
+     * Whether children of {@code b} should resolve {@code web_search} through Parallel.
+     *
+     * <p>Shared by the general-purpose and declared-subagent paths so the two cannot drift: both
+     * must agree on what happens when {@code disableWebTools()} and {@code parallelWebSearch()}
+     * are combined, which is that no search tool is registered anywhere.
+     */
+    static boolean resolveParallelWebSearch(HarnessAgent.Builder b) {
+        return b.parallelWebSearch && !b.disableWebTools;
+    }
+
+    /**
+     * Gives a child the parent's resolved {@code web_search} when one is available.
+     *
+     * <p>Spawning is on the critical path of a turn and a fan-out creates several children at
+     * once; without this each one would repeat the parent's {@code initialize} / {@code
+     * tools/list} handshake against an anonymous, rate-limited endpoint.
+     */
+    private static void applyWebSearchProvider(
+            HarnessAgent.Builder sub,
+            boolean disableWebTools,
+            boolean parallelWebSearch,
+            AtomicReference<AgentTool> parentWebSearch) {
+        if (disableWebTools) {
+            sub.disableWebTools();
+            return;
+        }
+        if (!parallelWebSearch) {
+            return;
+        }
+        sub.parallelWebSearch();
+        AgentTool shared = parentWebSearch.get();
+        if (shared != null) {
+            sub.inheritWebSearchTool(shared);
+        }
+    }
+
+    /**
      * Builds a factory for the built-in general-purpose subagent.
      */
     static SubagentFactory buildGeneralPurposeFactory(
@@ -340,6 +379,9 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final var capturedWebHttpClient = b.webHttpClient;
+        final boolean capturedDisableWebTools = b.disableWebTools;
+        final boolean capturedParallelWebSearch = resolveParallelWebSearch(b);
+        final AtomicReference<AgentTool> capturedParentWebSearch = b.resolvedWebSearchTool;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
         final boolean capturedPlanModeEnabled = b.planModeEnabled;
@@ -398,6 +440,11 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
+            applyWebSearchProvider(
+                    sub,
+                    capturedDisableWebTools,
+                    capturedParallelWebSearch,
+                    capturedParentWebSearch);
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
             if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
             configurePlanMode(
@@ -466,6 +513,9 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final var capturedWebHttpClient = b.webHttpClient;
+        final boolean capturedDisableWebTools = b.disableWebTools;
+        final boolean capturedParallelWebSearch = resolveParallelWebSearch(b);
+        final AtomicReference<AgentTool> capturedParentWebSearch = b.resolvedWebSearchTool;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedPlanModeEnabled = b.planModeEnabled;
         final boolean capturedPlanModeAllowShell = b.planModeAllowShell;
@@ -573,6 +623,11 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
+            applyWebSearchProvider(
+                    sub,
+                    capturedDisableWebTools,
+                    capturedParallelWebSearch,
+                    capturedParentWebSearch);
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
             configurePlanMode(
                     sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);
