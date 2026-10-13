@@ -12,7 +12,7 @@ Environment 为 Managed Agent 选择文件、Shell 等工具的执行后端。�
 
 Environment 与 [Workspace](/v2/zh/service/workspaces) 一起参与执行，但分工不同：Workspace 提供指令、Skills 和工具定义，Environment 决定文件和命令实际在哪里执行。即使使用 self_hosted Worker，Managed Agent 的模型调用和推理仍由 Dataplane 承担。Hosted Agent 的 Runtime Host 则负责运行另一类 Agent 运行时，不能用它的注册凭据代替 Environment Worker 凭据。
 
-下面沿用[部署指南](/v2/zh/service/quickstart)中的平台身份变量，并使用[第一个托管 Agent](/v2/zh/service/create-managed-agent)的 `AGENT_ID` 验证文件工具。如果已有合适的 Environment，可以直接取得它的 ID，跳到“绑定与配置”。自行创建时，需要同时准备对应的执行后端；资源创建成功不代表 Worker 已经上线或沙箱凭据已经可用。
+下面沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的平台身份变量，并使用[第一个托管 Agent](/v2/zh/service/create-managed-agent)的 `AGENT_ID` 验证文件工具。如果已有合适的 Environment，可以直接取得它的 ID，跳到“绑定与配置”。自行创建时，需要同时准备对应的执行后端；资源创建成功不代表 Worker 已经上线或沙箱凭据已经可用。
 
 ## 选择类型
 
@@ -145,7 +145,7 @@ Environment 的 `config` 是资源级配置，PATCH 会替换整个对象，因�
 
 ## 管理 API
 
-使用平台用户 Bearer token 和 `X-AgentScope-Tenant`、`X-AgentScope-Namespace` 请求头，变量准备见[部署准备](/v2/zh/service/quickstart)。列表按当前身份可检查的资源过滤；读取需要 inspect，修改需要 edit，创建需要空间资源创建权限。
+使用平台用户 Bearer token 和 `X-AgentScope-Tenant`、`X-AgentScope-Namespace` 请求头，变量准备见[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)。列表按当前身份可检查的资源过滤；读取需要 inspect，修改需要 edit，创建需要空间资源创建权限。
 
 | 操作 | API | 参数与响应 |
 | --- | --- | --- |

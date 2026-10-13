@@ -175,6 +175,7 @@ sequenceDiagram
         rect rgba(200, 200, 100, 0.1)
             Note over Client,Agent: ToolResultBlock (toolCallId)
             Agent->>Client: ToolResultStartEvent
+            Agent->>Client: ToolProgressEvent (×N, from ToolEmitter)
             Agent->>Client: ToolResultTextDeltaEvent (×N)
             Agent->>Client: ToolResultDataDeltaEvent (×N)
             Agent->>Client: ToolResultEndEvent
@@ -299,9 +300,11 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
 **ToolResultStartEvent** — tool starts executing (carries `toolCallId`, `toolCallName`).
 
-    **ToolResultTextDeltaEvent** — incremental text output from the tool; `getDelta()` returns a text fragment.
+    **ToolProgressEvent** — an intermediate update published by a running tool through `ToolEmitter`. Progress is for display only and is never sent to the LLM; it must not be treated as part of the tool result.
 
-    **ToolResultDataDeltaEvent** — incremental binary output from the tool; similar to `DataBlockDeltaEvent` with `mediaType` / `data` / `url`.
+    **ToolResultTextDeltaEvent** — incremental text output from the tool's return value; `getDelta()` returns a text fragment. This is what the LLM receives as the tool result.
+
+    **ToolResultDataDeltaEvent** — incremental binary or structured output from the tool's return value; similar to `DataBlockDeltaEvent` with `mediaType` / `data` / `url`.
 
     **ToolResultEndEvent** — tool completes.
 

@@ -31,6 +31,9 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.util.ArrayList;
 import java.util.List;
@@ -162,6 +165,96 @@ class ConversationCompactorTest {
                                 "session-id"))
                 .expectError(InterruptedException.class)
                 .verify();
+    }
+
+    /** Verifies that the durable compaction end event contains before and after metrics. */
+    @Test
+    void compactIfNeeded_recordsCompactionMetrics() {
+        InMemorySessionLogStore store = new InMemorySessionLogStore();
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder().userId("user").sessionId("session").build();
+        var log = store.open(new SessionKey("user", "agent-id", "session"), runtimeContext);
+        SessionRecorder recorder = new SessionRecorder(log, "turn");
+        runtimeContext.put(SessionRecorder.CONTEXT_KEY, recorder);
+
+        List<Msg> input = compactableMessages();
+        MemoryFlushManager flushManager = new MemoryFlushManager(null, null);
+        try {
+            List<Msg> compacted =
+                    new ConversationCompactor(new RecordingModel(), flushManager)
+                            .compactIfNeeded(
+                                    runtimeContext, input, config(false), "agent-id", "session")
+                            .block()
+                            .orElseThrow();
+
+            var end =
+                    log.readAfter(0, 100).stream()
+                            .filter(event -> event.type().equals("compaction/end"))
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals("completed", end.data().get("status"));
+            assertEquals(input.size(), end.data().get("beforeMsgCount"));
+            assertEquals(
+                    TokenCounterUtil.calculateToken(input), end.data().get("beforeTokenCount"));
+            assertEquals(compacted.size(), end.data().get("afterMsgCount"));
+            assertEquals(
+                    TokenCounterUtil.calculateToken(compacted), end.data().get("afterTokenCount"));
+        } finally {
+            recorder.close();
+        }
+    }
+
+    /** Verifies that failed compaction records only metrics known before execution. */
+    @Test
+    void compactIfNeeded_failedEventOmitsAfterMetrics() {
+        InMemorySessionLogStore store = new InMemorySessionLogStore();
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder().userId("user").sessionId("session").build();
+        var log = store.open(new SessionKey("user", "agent-id", "failed-session"), runtimeContext);
+        SessionRecorder recorder = new SessionRecorder(log, "turn");
+        runtimeContext.put(SessionRecorder.CONTEXT_KEY, recorder);
+        Model failingModel =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.error(new IllegalStateException("summary failed"));
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "failing-model";
+                    }
+                };
+
+        List<Msg> input = compactableMessages();
+        try {
+            StepVerifier.create(
+                            new ConversationCompactor(
+                                            failingModel, new MemoryFlushManager(null, null))
+                                    .compactIfNeeded(
+                                            runtimeContext,
+                                            input,
+                                            config(false),
+                                            "agent-id",
+                                            "failed-session"))
+                    .expectErrorMessage("summary failed")
+                    .verify();
+
+            var end =
+                    log.readAfter(0, 100).stream()
+                            .filter(event -> event.type().equals("compaction/end"))
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals("failed", end.data().get("status"));
+            assertEquals(input.size(), end.data().get("beforeMsgCount"));
+            assertEquals(
+                    TokenCounterUtil.calculateToken(input), end.data().get("beforeTokenCount"));
+            assertFalse(end.data().containsKey("afterMsgCount"));
+            assertFalse(end.data().containsKey("afterTokenCount"));
+        } finally {
+            recorder.close();
+        }
     }
 
     /** Creates a regular user message. */
