@@ -22,8 +22,10 @@ import com.openai.models.responses.ResponseErrorEvent;
 import com.openai.models.responses.ResponseFailedEvent;
 import com.openai.models.responses.ResponseFunctionCallArgumentsDeltaEvent;
 import com.openai.models.responses.ResponseFunctionToolCall;
+import com.openai.models.responses.ResponseImageGenCallPartialImageEvent;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.ResponseOutputItemAddedEvent;
+import com.openai.models.responses.ResponseOutputItemDoneEvent;
 import com.openai.models.responses.ResponseOutputMessage;
 import com.openai.models.responses.ResponseReasoningItem;
 import com.openai.models.responses.ResponseReasoningSummaryTextDeltaEvent;
@@ -33,10 +35,12 @@ import com.openai.models.responses.ResponseTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.ToolValidator;
+import io.agentscope.extensions.model.openaiofficial.tool.ResponsesServerToolHelper;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -87,16 +91,14 @@ final class ResponsesStreamingAssembler {
 
         return Flux.fromStream(streamResponse.stream())
                 .doFinally(signal -> closeQuietly(streamResponse))
-                .<ChatResponse>handle(
-                        (event, sink) -> {
+                .concatMap(
+                        event -> {
                             try {
-                                for (ChatResponse response : state.processEvent(event)) {
-                                    sink.next(response);
-                                }
+                                return Flux.fromIterable(state.processEvent(event));
                             } catch (OpenAIOfficialModelException e) {
-                                sink.error(e);
+                                return Flux.error(e);
                             } catch (RuntimeException e) {
-                                sink.error(OpenAIErrorTranslator.translate(e, modelName));
+                                return Flux.error(OpenAIErrorTranslator.translate(e, modelName));
                             }
                         })
                 .onErrorMap(e -> OpenAIErrorTranslator.translate(e, modelName));
@@ -117,6 +119,8 @@ final class ResponsesStreamingAssembler {
         private final Instant startTime;
         private final Map<String, ToolCallInfo> itemRegistry = new HashMap<>();
         private final StringBuilder reasoningTextAccumulator = new StringBuilder();
+        private final ResponsesServerToolHelper.HostedToolSearchPairing toolSearchPairing =
+                new ResponsesServerToolHelper.HostedToolSearchPairing();
 
         StreamingState(String modelName, Instant startTime) {
             this.modelName = modelName;
@@ -134,6 +138,12 @@ final class ResponsesStreamingAssembler {
 
             if (event.isOutputItemAdded()) {
                 handleOutputItemAdded(event.asOutputItemAdded());
+            } else if (event.isOutputItemDone()) {
+                results.addAll(handleOutputItemDone(event.asOutputItemDone()));
+            } else if (event.isImageGenerationCallPartialImage()) {
+                results.add(
+                        handleImageGenerationPartialImage(
+                                event.asImageGenerationCallPartialImage()));
             } else if (event.isOutputTextDelta()) {
                 ResponseTextDeltaEvent deltaEvent = event.asOutputTextDelta();
                 if (!deltaEvent.delta().isEmpty()) {
@@ -162,10 +172,7 @@ final class ResponsesStreamingAssembler {
             } else if (event.isError()) {
                 throw handleErrorEvent(event.asError());
             }
-            // All other events (text.done, reasoning_summary.done, reasoning_text.done,
-            // function_arguments.done, output_item.done, refusal.delta, refusal.done)
-            // produce no ChatResponse blocks.
-
+            // All other events produce no ChatResponse blocks.
             return results;
         }
 
@@ -181,7 +188,10 @@ final class ResponsesStreamingAssembler {
                             "OpenAI official", call.name(), call.callId())) {
                         return;
                     }
-                    itemRegistry.put(itemIdOpt.get(), new ToolCallInfo(call.callId(), call.name()));
+                    itemRegistry.put(
+                            itemIdOpt.get(),
+                            new ToolCallInfo(
+                                    call.callId(), call.name(), call.namespace().orElse(null)));
                 } else {
                     log.warn(
                             "Function call output item missing item ID; subsequent argument"
@@ -190,6 +200,20 @@ final class ResponsesStreamingAssembler {
                             call.name());
                 }
             }
+        }
+
+        private List<ChatResponse> handleOutputItemDone(ResponseOutputItemDoneEvent event) {
+            ResponseOutputItem item = event.item();
+            String companionCallId = toolSearchPairing.companionCallId(item);
+            return ResponsesServerToolHelper.decodeBlocks(item, companionCallId).stream()
+                    .map(block -> ChatResponse.builder().content(List.of(block)).build())
+                    .toList();
+        }
+
+        private ChatResponse handleImageGenerationPartialImage(
+                ResponseImageGenCallPartialImageEvent event) {
+            ToolResultBlock result = ResponsesServerToolHelper.decodePartialImage(event);
+            return ChatResponse.builder().content(List.of(result)).build();
         }
 
         private ChatResponse handleTextDelta(ResponseTextDeltaEvent event) {
@@ -217,6 +241,10 @@ final class ResponsesStreamingAssembler {
             ToolCallInfo info = itemRegistry.get(event.itemId());
             String callId = info != null ? info.callId() : "";
             String name = info != null ? info.name() : FRAGMENT_PLACEHOLDER;
+            Map<String, Object> metadata = new HashMap<>();
+            if (info != null && info.namespace() != null) {
+                metadata.put(OpenAIOfficialConstants.MD_FUNCTION_CALL_NAMESPACE, info.namespace());
+            }
             List<ContentBlock> content = new ArrayList<>();
             content.add(
                     ToolUseBlock.builder()
@@ -224,19 +252,20 @@ final class ResponsesStreamingAssembler {
                             .name(name)
                             .input(new HashMap<>())
                             .content(event.delta())
+                            .metadata(metadata.isEmpty() ? null : metadata)
                             .build());
             return ChatResponse.builder().content(content).build();
         }
 
         private ChatResponse handleTerminal(Response response) {
-            // Step 0: refusal gate
+            // Refusal gate
             String refusal = extractRefusal(response);
             if (!refusal.isEmpty()) {
                 throw new OpenAIOfficialModelException(
                         "Model response was refused: " + refusal, null, modelName);
             }
 
-            // Step 1: re-extraction from terminal response.output()
+            // Re-extraction from terminal response.output()
             String encryptedContent = null;
             for (ResponseOutputItem item : response.output()) {
                 if (item.isReasoning()) {
@@ -257,8 +286,7 @@ final class ResponsesStreamingAssembler {
             String finishReason = (String) metadata.get(OpenAIOfficialConstants.MD_RESPONSE_STATUS);
             ChatUsage usage = ResponsesHelper.extractUsage(response, startTime);
 
-            // Reasoning metadata is placed on a ThinkingBlock in the terminal
-            // content for reasoning replay.
+            // Reasoning metadata is placed on a ThinkingBlock for reasoning replay
             List<ContentBlock> terminalContent = new ArrayList<>();
             if (encryptedContent != null || !reasoningText.isEmpty()) {
                 Map<String, Object> thinkingMetadata = new HashMap<>();
@@ -323,5 +351,5 @@ final class ResponsesStreamingAssembler {
         }
     }
 
-    private record ToolCallInfo(String callId, String name) {}
+    private record ToolCallInfo(String callId, String name, String namespace) {}
 }

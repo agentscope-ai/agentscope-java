@@ -96,6 +96,15 @@ class GeminiChatModelTest {
     }
 
     @Test
+    @DisplayName("Should support forcing a specific tool")
+    void testSupportsSpecificToolChoice() {
+        GeminiChatModel model =
+                GeminiChatModel.builder().apiKey(mockApiKey).modelName("gemini-2.0-flash").build();
+
+        assertTrue(model.supportsToolChoiceSpecific());
+    }
+
+    @Test
     @DisplayName("Should retry Gemini response streams according to execution config")
     void testRetriesRequestThroughStreamEntryPoint() {
         AtomicInteger attempts = new AtomicInteger();

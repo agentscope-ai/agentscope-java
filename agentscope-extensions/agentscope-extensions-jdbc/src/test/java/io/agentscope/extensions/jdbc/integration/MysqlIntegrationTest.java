@@ -16,14 +16,17 @@
 package io.agentscope.extensions.jdbc.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mysql.cj.jdbc.MysqlDataSource;
+import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.JdbcDistributedStore;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
+import io.agentscope.extensions.jdbc.skill.JdbcAgentSkillRepository;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
@@ -140,6 +143,85 @@ class MysqlIntegrationTest {
 
         assertTrue(exception.getMessage().contains("version"), exception.getMessage());
         assertTrue(exception.getMessage().contains("agentscope_sessions"), exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("07: skill repository round-trip on the skill table group")
+    void skillRepositoryRoundTrip() {
+        DataSource ds = createDataSource();
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).enableSkillTables(true).build();
+        var repo = new JdbcAgentSkillRepository(ds, dialect);
+
+        var skill =
+                new AgentSkill(
+                        Map.of(
+                                "name", "mysql-skill",
+                                "description", "integration skill",
+                                "homepage", "https://example.com"),
+                        "content",
+                        Map.of("readme.md", "hello"),
+                        "integration");
+        assertTrue(repo.save(List.of(skill), false));
+
+        AgentSkill loaded = repo.getSkill("mysql-skill");
+        assertEquals("https://example.com", loaded.getMetadataValue("homepage"));
+        assertEquals("hello", loaded.getResource("readme.md"));
+        assertTrue(repo.delete("mysql-skill"));
+        assertFalse(repo.skillExists("mysql-skill"));
+    }
+
+    @Test
+    @DisplayName("08: namespaced skills coexist, and the documented index rebuild enables them")
+    void namespacedSkillIsolation() {
+        DataSource ds = createDataSource();
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).enableSkillTables(true).build();
+        var repo = new JdbcAgentSkillRepository(ds, dialect);
+
+        var teamA =
+                new AgentSkill(
+                        Map.of("name", "mysql-ns-skill", "description", "team-a"),
+                        "content-a",
+                        Map.of("docs/a.md", "a"),
+                        "integration");
+        var teamB =
+                new AgentSkill(
+                        Map.of("name", "mysql-ns-skill", "description", "team-b"),
+                        "content-b",
+                        Map.of("docs/b.md", "b"),
+                        "integration");
+        assertTrue(repo.save("team-a", List.of(teamA), false));
+        assertTrue(
+                repo.save("team-b", List.of(teamB), false),
+                "UNIQUE(namespace, name) must admit the same name in another namespace");
+        assertEquals("content-a", repo.getSkill("team-a", "mysql-ns-skill").getSkillContent());
+        assertEquals("content-b", repo.getSkill("team-b", "mysql-ns-skill").getSkillContent());
+
+        // Delete and clear stay inside their namespace; name comparisons still run under
+        // MySQL's case-insensitive collation, which the local H2/SQLite tests cannot cover.
+        assertTrue(repo.delete("team-b", "mysql-ns-skill"));
+        assertEquals("a", repo.getSkill("team-a", "mysql-ns-skill").getResource("docs/a.md"));
+        repo.clearAllSkills("team-a");
+        assertTrue(repo.getAllSkillNames("team-a").isEmpty());
+        assertTrue(repo.getAllSkillNames("team-b").isEmpty());
+
+        // Case-differing namespaces are distinct scopes on MySQL: the namespace columns
+        // are pinned to utf8mb4_bin (like the store/session key columns), so 'Team-a'
+        // and 'team-a' coexist instead of collapsing into one under the case-insensitive
+        // table default.
+        var caseSkill =
+                new AgentSkill(
+                        Map.of("name", "case-skill", "description", "d"),
+                        "content",
+                        Map.of(),
+                        "integration");
+        assertTrue(repo.save("Team-a", List.of(caseSkill), false));
+        assertTrue(
+                repo.save("team-a", List.of(caseSkill), false),
+                "utf8mb4_bin namespace must treat 'Team-a' and 'team-a' as distinct scopes");
+        assertEquals(1, repo.getAllSkillNames("Team-a").size());
+        assertEquals(1, repo.getAllSkillNames("team-a").size());
+        repo.clearAllSkills("Team-a");
+        repo.clearAllSkills("team-a");
     }
 
     /**

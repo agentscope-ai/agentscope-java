@@ -101,7 +101,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | 实现 | 说明 |
 |------|------|
 | `RedisStore` | 基于 Jedis，适合低延迟高并发 | `agentscope-extensions-redis` |
-| `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 | `agentscope-extensions-mysql` |
+| `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
 | `InMemoryStore` | 内存实现，适合测试 | `agentscope-harness` |
 
 ---

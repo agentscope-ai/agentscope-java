@@ -55,8 +55,10 @@ import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
 import java.time.Duration;
 import java.util.LinkedList;
 import java.util.List;
@@ -427,6 +429,126 @@ class AgentScopeAgentExecutorTest {
                     Boolean.TRUE,
                     toolPart.getMetadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
             assertEquals("trace-1", toolPart.getMetadata().get("traceId"));
+        }
+
+        @Test
+        @DisplayName("Should forward tool progress while inner events are enabled")
+        void testToolProgressReachesClientWhenInnerEventsEnabled() throws JSONRPCError {
+            AgentExecuteProperties properties =
+                    AgentExecuteProperties.builder().requireInnerMessage(true).build();
+            executor = new AgentScopeAgentExecutor(mockAgentRunner, properties);
+            doMockForContext(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.just(
+                                    new ToolProgressEvent(
+                                            "reply-id",
+                                            "tool-call-id",
+                                            "search",
+                                            TextBlock.builder().text("scanning 3 dirs").build())));
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+
+            executor.execute(mockContext, mockEventQueue);
+
+            List<Artifact> artifacts =
+                    messageRef.get().stream()
+                            .filter(TaskArtifactUpdateEvent.class::isInstance)
+                            .map(TaskArtifactUpdateEvent.class::cast)
+                            .map(TaskArtifactUpdateEvent::getArtifact)
+                            .toList();
+            assertEquals(
+                    1,
+                    artifacts.size(),
+                    "progress moved to its own event type but still reaches the client");
+            DataPart part = assertInstanceOf(DataPart.class, artifacts.get(0).parts().get(0));
+            assertEquals(
+                    Boolean.TRUE,
+                    part.getMetadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+        }
+
+        @Test
+        @DisplayName("Should withhold tool progress when inner events are disabled")
+        void testToolProgressIsWithheldWhenInnerEventsDisabled() throws JSONRPCError {
+            doMockForContext(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.just(
+                                    new ToolProgressEvent(
+                                            "reply-id",
+                                            "tool-call-id",
+                                            "search",
+                                            TextBlock.builder().text("scanning 3 dirs").build())));
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+
+            executor.execute(mockContext, mockEventQueue);
+
+            List<Artifact> artifacts =
+                    messageRef.get().stream()
+                            .filter(TaskArtifactUpdateEvent.class::isInstance)
+                            .map(TaskArtifactUpdateEvent.class::cast)
+                            .map(TaskArtifactUpdateEvent::getArtifact)
+                            .toList();
+            assertTrue(
+                    artifacts.isEmpty(),
+                    "the default configuration must not start streaming progress: " + artifacts);
+        }
+
+        @Test
+        @DisplayName("Should exclude tool progress from the completed message")
+        void testToolProgressIsExcludedFromCompletedMessage() throws JSONRPCError {
+            AgentExecuteProperties properties =
+                    AgentExecuteProperties.builder()
+                            .requireInnerMessage(true)
+                            .completeWithMessage(true)
+                            .build();
+            executor = new AgentScopeAgentExecutor(mockAgentRunner, properties);
+            doMockForContext(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.just(
+                                    new ToolProgressEvent(
+                                            "reply-id",
+                                            "tool-call-id",
+                                            "search",
+                                            TextBlock.builder().text("scanning 3 dirs").build()),
+                                    new ToolResultTextDeltaEvent(
+                                            "reply-id", "tool-call-id", "search", "3 files found"),
+                                    new AgentResultEvent(
+                                            Msg.builder().textContent("3 files found").build())));
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+
+            executor.execute(mockContext, mockEventQueue);
+
+            // The artifact carries progress for live rendering, but the completed message
+            // must contain only the tool result.
+            List<Artifact> artifacts =
+                    messageRef.get().stream()
+                            .filter(TaskArtifactUpdateEvent.class::isInstance)
+                            .map(TaskArtifactUpdateEvent.class::cast)
+                            .map(TaskArtifactUpdateEvent::getArtifact)
+                            .toList();
+            assertTrue(artifacts.size() >= 1, "progress is still forwarded as an artifact");
+
+            TaskStatusUpdateEvent completed =
+                    messageRef.get().stream()
+                            .filter(TaskStatusUpdateEvent.class::isInstance)
+                            .map(TaskStatusUpdateEvent.class::cast)
+                            .filter(event -> TaskState.COMPLETED.equals(event.getStatus().state()))
+                            .findFirst()
+                            .orElseThrow();
+            DataPart toolPart =
+                    assertInstanceOf(
+                            DataPart.class, completed.getStatus().message().getParts().get(0));
+            String messageText =
+                    String.valueOf(
+                            toolPart.getData()
+                                    .get(MessageConstants.TOOL_RESULT_OUTPUT_METADATA_KEY));
+            assertTrue(
+                    messageText.contains("3 files found"),
+                    "the completed message carries the tool result: " + messageText);
+            assertFalse(
+                    messageText.contains("scanning 3 dirs"),
+                    "progress must not be merged into the completed message: " + messageText);
         }
 
         @Test

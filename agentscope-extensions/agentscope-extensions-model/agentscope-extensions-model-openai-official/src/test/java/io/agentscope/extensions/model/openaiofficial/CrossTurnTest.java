@@ -91,7 +91,14 @@ class CrossTurnTest {
             int contextWindowSize) {
         OpenAIResponsesChatModel model =
                 new OpenAIResponsesChatModel(
-                        client, configured, API_KEY, null, strictTools, strictJsonSchema, null);
+                        client,
+                        configured,
+                        API_KEY,
+                        null,
+                        strictTools,
+                        strictJsonSchema,
+                        null,
+                        null);
         model.applyNativeStructuredOutputDefaults();
         // contextWindowSize set via Builder in production; here we only verify constancy
         return model;
@@ -673,6 +680,7 @@ class CrossTurnTest {
             ResponseCreateParams params =
                     ResponsesRequestMapper.map(
                             messages,
+                            null,
                             null,
                             options,
                             null,

@@ -16,6 +16,7 @@
 
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -94,8 +95,36 @@ class WebToolsTest {
         server.start();
         try {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
-            String out = new WebTools.WebFetchTool().webFetch(url, null);
+            String out =
+                    assertText(
+                            new WebTools.WebFetchTool().webFetch(url, null),
+                            ToolResultState.SUCCESS);
             assertTrue(out.contains("hello from http/1.1"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void non2xxResponseIsAToolErrorAndKeepsStatusAndBody() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/missing",
+                exchange -> {
+                    byte[] body = "resource not found".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(404, body.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(body);
+                    }
+                });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/missing";
+            String output =
+                    assertText(
+                            new WebTools.WebFetchTool().webFetch(url, null), ToolResultState.ERROR);
+            assertTrue(output.contains("status=404"));
+            assertTrue(output.contains("resource not found"));
         } finally {
             server.stop(0);
         }
@@ -124,7 +153,10 @@ class WebToolsTest {
             HttpClient custom =
                     HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
-            String out = new WebTools.WebFetchTool(custom).webFetch(url, null);
+            String out =
+                    assertText(
+                            new WebTools.WebFetchTool(custom).webFetch(url, null),
+                            ToolResultState.SUCCESS);
             assertTrue(out.contains("custom client hit"));
         } finally {
             server.stop(0);
@@ -147,18 +179,17 @@ class WebToolsTest {
         server.start();
         try {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
-            IllegalStateException error =
-                    assertThrows(
-                            IllegalStateException.class,
-                            () -> new WebTools.WebFetchTool().webFetch(url, null));
-
-            assertTrue(error.getMessage().contains("HTTP 422"));
-            assertTrue(error.getMessage().contains("validation failed"));
-            assertTrue(error.getMessage().contains("\n...[truncated]"));
+            String output =
+                    assertText(
+                            call(new WebTools.WebFetchTool(), "web_fetch", Map.of("url", url)),
+                            ToolResultState.ERROR);
+            assertTrue(output.contains("status=422"));
+            assertTrue(output.contains("validation failed"));
+            assertTrue(output.contains("\n...[truncated]"));
             // The echoed body is server-controlled, so it is labelled rather than presented as
             // framework output.
-            assertTrue(error.getMessage().contains("response body (untrusted): "));
-            assertTrue(error.getMessage().length() < 2_100);
+            assertTrue(output.contains("response body (untrusted): "));
+            assertTrue(output.length() < 2_100);
         } finally {
             server.stop(0);
         }
@@ -182,13 +213,43 @@ class WebToolsTest {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
             WebTools.WebFetchTool tool = new WebTools.WebFetchTool();
 
-            assertEquals("status=200\n\nxxxxx\n...[truncated]", tool.webFetch(url, 5));
+            assertEquals(
+                    "status=200\n\nxxxxx\n...[truncated]",
+                    assertText(tool.webFetch(url, 5), ToolResultState.SUCCESS));
             assertEquals(
                     "status=200\n\n" + "x".repeat(20_000) + "\n...[truncated]",
-                    tool.webFetch(url, 0));
+                    assertText(tool.webFetch(url, 0), ToolResultState.SUCCESS));
             assertEquals(
                     "status=200\n\n" + "x".repeat(100_000) + "\n...[truncated]",
-                    tool.webFetch(url, 200_000));
+                    assertText(tool.webFetch(url, 200_000), ToolResultState.SUCCESS));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void redirectWithoutLocationRemainsAnErrorAndHonorsRequestedLimit() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    byte[] body = "😀ab".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(302, body.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(body);
+                    }
+                });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
+            assertEquals(
+                    "status=302\n\nresponse body (untrusted): 😀\n...[truncated]",
+                    assertText(
+                            call(
+                                    new WebTools.WebFetchTool(),
+                                    "web_fetch",
+                                    Map.of("url", url, "max_chars", 1)),
+                            ToolResultState.ERROR));
         } finally {
             server.stop(0);
         }
@@ -206,12 +267,11 @@ class WebToolsTest {
         server.start();
         try {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
-            IllegalStateException error =
-                    assertThrows(
-                            IllegalStateException.class,
-                            () -> new WebTools.WebFetchTool().webFetch(url, null));
-
-            assertEquals("web_fetch failed: HTTP 503", error.getMessage());
+            assertEquals(
+                    "status=503",
+                    assertText(
+                            new WebTools.WebFetchTool().webFetch(url, null),
+                            ToolResultState.ERROR));
         } finally {
             server.stop(0);
         }
@@ -235,8 +295,12 @@ class WebToolsTest {
             WebTools.WebFetchTool tool = new WebTools.WebFetchTool();
 
             // The astral character counts as one, and the cut never lands inside the pair.
-            assertEquals("status=200\n\na😀\n...[truncated]", tool.webFetch(url, 2));
-            assertEquals("status=200\n\na😀b", tool.webFetch(url, 3));
+            assertEquals(
+                    "status=200\n\na😀\n...[truncated]",
+                    assertText(tool.webFetch(url, 2), ToolResultState.SUCCESS));
+            assertEquals(
+                    "status=200\n\na😀b",
+                    assertText(tool.webFetch(url, 3), ToolResultState.SUCCESS));
         } finally {
             server.stop(0);
         }
@@ -262,7 +326,8 @@ class WebToolsTest {
             // return a lone surrogate either.
             assertEquals(
                     "status=200\n\n😀\n...[truncated]",
-                    new WebTools.WebFetchTool().webFetch(url, 1));
+                    assertText(
+                            new WebTools.WebFetchTool().webFetch(url, 1), ToolResultState.SUCCESS));
         } finally {
             server.stop(0);
         }

@@ -24,9 +24,8 @@ import org.slf4j.LoggerFactory;
  * {@code HarnessAgent.close()} can wait for them to quiesce before releasing resources.
  *
  * <p>The middleware instances that dispatch these tasks are created per agent call, so they
- * cannot be reached from the agent's {@code close()} method. Like
- * {@link io.agentscope.harness.agent.memory.session.SessionTree#awaitMirrorQuiescence}, the
- * in-flight count is process-wide: {@code close()} blocks until every background task started
+ * cannot be reached from the agent's {@code close()} method. The in-flight count is
+ * process-wide: {@code close()} blocks until every background task started
  * before the call has finished, so async workspace writes do not race with resource cleanup
  * (e.g. temp workspace deletion in tests).
  */

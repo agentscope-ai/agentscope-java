@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.openai.compat.deepseek;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 import java.util.ArrayList;
@@ -28,7 +29,8 @@ import java.util.List;
  * <ul>
  *   <li>System/user/assistant {@code name} fields are allowed</li>
  *   <li>Omits strict parameter in tool definitions</li>
- *   <li>In thinking mode, reasoning_content is preserved for segments with tool calls</li>
+ *   <li>reasoning_content is preserved for all assistant messages and backfilled when
+ *       missing</li>
  * </ul>
  *
  * <p>Usage:
@@ -64,7 +66,12 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
 
     @Override
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
-        List<OpenAIMessage> messages = super.doFormat(msgs);
+        return doFormat(msgs, null);
+    }
+
+    @Override
+    protected List<OpenAIMessage> doFormat(List<Msg> msgs, GenerateOptions options) {
+        List<OpenAIMessage> messages = super.doFormat(msgs, options);
         messages = applyDeepSeekFixes(messages);
         if (appendEmptyUserIfEndsWithAssistant) {
             messages = appendEmptyUserIfNeeded(messages);
@@ -80,62 +87,21 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
     /**
      * Apply DeepSeek-specific message format fixes.
      *
-     * <p>DeepSeek API requires:
-     * <ul>
-     *   <li>Name fields preserved</li>
-     *   <li>In thinking mode, reasoning_content preserved for segments with tool calls</li>
-     *   <li>reasoning_content removed for segments without tool calls in thinking mode</li>
-     * </ul>
-     *
-     * <p>This method is static to allow sharing with {@link DeepSeekMultiAgentFormatter}.
-     *
-     * @param messages the original OpenAI messages
-     * @return the fixed messages for DeepSeek API
+     * <p>DeepSeek API requires (thinking mode, requests carrying tools): reasoning_content
+     * must be fully passed back for <b>all</b> assistant turns — even turns without tool
+     * calls; otherwise the API returns HTTP 400 ("The reasoning_content in the thinking mode
+     * must be passed back to the API").
+     * @see <a href="https://api-docs.deepseek.com/guides/thinking_mode#tool-calls">DeepSeek
+     *     Thinking Mode / Tool Calls</a>
      */
     static List<OpenAIMessage> applyDeepSeekFixes(List<OpenAIMessage> messages) {
-        int lastUserIndex = findLastUserIndex(messages);
-        boolean thinkingMode = messages.stream().anyMatch(m -> m.getReasoningContent() != null);
-        boolean[] segHasTool = thinkingMode ? computeSegmentToolFlags(messages) : null;
-
-        List<OpenAIMessage> result = new ArrayList<>(messages.size());
-        for (int i = 0; i < messages.size(); i++) {
-            boolean isCurrentTurn = i >= lastUserIndex;
-            boolean needReasoning =
-                    thinkingMode
-                            ? (isCurrentTurn || (segHasTool != null && segHasTool[i]))
-                            : isCurrentTurn;
-            result.add(fixMessage(messages.get(i), needReasoning));
-        }
-        return result;
-    }
-
-    /**
-     * Scans messages in a single pass to identify segments (between consecutive
-     * user messages) that contain tool calls. Messages within such segments
-     * are flagged to preserve their reasoning_content.
-     */
-    private static boolean[] computeSegmentToolFlags(List<OpenAIMessage> messages) {
-        boolean[] flags = new boolean[messages.size()];
-        int prevUser = -1;
-        for (int i = 0; i <= messages.size(); i++) {
-            if (i == messages.size() || "user".equals(messages.get(i).getRole())) {
-                if (prevUser >= 0) {
-                    // Check if segment (prevUser, i) has any tool call
-                    boolean hasTool = false;
-                    for (int j = prevUser + 1; j < i && !hasTool; j++) {
-                        OpenAIMessage m = messages.get(j);
-                        hasTool = m.getToolCalls() != null && !m.getToolCalls().isEmpty();
-                    }
-                    if (hasTool) {
-                        for (int j = prevUser + 1; j < i; j++) {
-                            flags[j] = true;
-                        }
-                    }
-                }
-                prevUser = i;
+        for (OpenAIMessage msg : messages) {
+            // Backfill missing reasoning_content
+            if ("assistant".equals(msg.getRole()) && msg.getReasoningContent() == null) {
+                msg.setReasoningContent("");
             }
         }
-        return flags;
+        return messages;
     }
 
     /**
@@ -153,38 +119,6 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
         }
         List<OpenAIMessage> result = new ArrayList<>(messages);
         result.add(OpenAIMessage.builder().role("user").content("").build());
-        return result;
-    }
-
-    private static int findLastUserIndex(List<OpenAIMessage> messages) {
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            if ("user".equals(messages.get(i).getRole())) {
-                return i;
-            }
-        }
-        return 0; // No user message found, treat all as current turn
-    }
-
-    private static OpenAIMessage fixMessage(OpenAIMessage msg, boolean needReasoning) {
-        boolean hasReasoning = msg.getReasoningContent() != null;
-        // needReasoning is determined by applyDeepSeekFixes:
-        // true = current turn, or segment had tool calls in thinking mode
-        boolean shouldRemoveReasoning = hasReasoning && !needReasoning;
-
-        if (!shouldRemoveReasoning) {
-            return msg;
-        }
-        OpenAIMessage result = new OpenAIMessage();
-        result.setRole(msg.getRole());
-        Object content = msg.getContent();
-        if (content instanceof String || content instanceof List) {
-            result.setContent(content);
-        }
-        if (msg.getName() != null && !"tool".equals(msg.getRole())) {
-            result.setName(msg.getName());
-        }
-        result.setToolCalls(msg.getToolCalls());
-        result.setToolCallId(msg.getToolCallId());
         return result;
     }
 }
