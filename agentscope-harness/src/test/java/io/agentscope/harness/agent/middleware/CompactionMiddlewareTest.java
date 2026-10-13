@@ -33,12 +33,16 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.harness.agent.context.ContextBudgetExceededException;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -52,6 +56,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.publisher.Signal;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
@@ -258,6 +263,58 @@ class CompactionMiddlewareTest {
         assertEquals("answer", reply.getTextContent());
         assertEquals(3, calls.get());
         assertEquals(1, summaryCalls.get());
+    }
+
+    /**
+     * The emergency retry must not commit compacted history ahead of the final request preparer:
+     * when that preparer rejects the reduced retry request, the durable history must stay exactly
+     * as it was before the overflow.
+     */
+    @Test
+    void rejectedEmergencyRetryLeavesHistoryUntouched() {
+        AtomicInteger calls = new AtomicInteger();
+        var recovery =
+                new CompactionMiddleware(null, new SuccessfulSummaryModel(), noCompactionConfig());
+        AtomicInteger prepareCalls = new AtomicInteger();
+        List<Msg> historyAtRejection = new ArrayList<>();
+        ModelRequestPreparer preparer =
+                (agent, ctx, input, callId, purpose) -> {
+                    if (prepareCalls.getAndIncrement() == 0) return Mono.just(input);
+                    AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
+                    if (state != null) historyAtRejection.addAll(List.copyOf(state.getContext()));
+                    return Mono.error(new ContextBudgetExceededException(10, 5));
+                };
+        var agent =
+                ReActAgent.builder()
+                        .name("rejected-retry-test")
+                        .model(new OverflowOnceModel(calls, "answer"))
+                        .middleware(recovery.overflowRecovery())
+                        .modelRequestPreparer(preparer)
+                        .build();
+        var ctx = context("user", "rejected-retry-session");
+        List<Signal<AgentEvent>> signals =
+                agent.streamEvents(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                ctx)
+                        .materialize()
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(signals);
+        Signal<AgentEvent> terminal = signals.get(signals.size() - 1);
+        assertTrue(terminal.isOnError(), "stream must terminate with an error signal");
+        assertTrue(
+                terminal.getThrowable() instanceof ContextBudgetExceededException,
+                "the rejection from the final request preparer must propagate");
+        assertEquals(1, calls.get(), "the rejected retry must not reach the provider again");
+        // The emergency summarization succeeded, but its candidate history must not be written
+        // before the final request preparer validated the retry request.
+        assertEquals(2, historyAtRejection.size());
+        assertEquals("old context", historyAtRejection.get(0).getTextContent());
+        assertEquals("latest request", historyAtRejection.get(1).getTextContent());
+        AgentState state = ctx.getAgentState();
+        assertNotNull(state, "the call-scoped state remains readable after the failed run");
+        assertEquals(2, state.getContext().size());
+        assertEquals("old context", state.getContext().get(0).getTextContent());
     }
 
     /** An ordinary compaction failure skips compaction and invokes original reasoning once. */

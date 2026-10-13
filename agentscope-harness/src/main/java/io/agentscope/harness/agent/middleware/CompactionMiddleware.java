@@ -210,12 +210,13 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                         candidate -> {
                             // Accept the recovery only when compaction actually reduced the
                             // model view, and only while no concurrent state change happened.
-                            // Durable history stays untouched when it carries synthetics that
-                            // can never re-commit; the reduced view still unblocks the retry.
+                            // The candidate is never written to durable history here: the retry
+                            // goes through the final request preparer, which validates budget and
+                            // tool pairing and owns the only commit point. Durable history stays
+                            // untouched when it carries synthetics that can never re-commit; the
+                            // reduced view still unblocks the retry.
                             if (candidate.input().messages().equals(retryMessages)
                                     || !state.getContext().equals(before)) return Flux.error(error);
-                            if (!candidate.history().equals(before))
-                                applyToContext(state, candidate.history());
                             // next creates a new model call; the turn, execution and writer
                             // stay unchanged.
                             return next.apply(
