@@ -292,6 +292,25 @@ agent.call(List.of(new UserMessage("Greet me.")), ctx).block();
 
 模型不需要把 `userCtx` 写进 JSON 参数——schema 里也不会出现它。完整示例：`agentscope-examples/documentation/.../tool/ToolExecutionContextExample.java`。
 
+### 工具进度流式输出
+
+长时间运行的工具可以通过 `ToolEmitter.emit()` 发布中间进度。进度以 [`ToolProgressEvent`](/v2/zh/docs/building-blocks/message-and-event#事件类型) 的形式出现在事件流中——仅用于展示，不会发送给 LLM。工具的返回值才是模型实际接收到的内容，它以 `ToolResultTextDeltaEvent` / `ToolResultDataDeltaEvent` 的形式单独传递。
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    emitter.emit(ToolResultBlock.text("正在扫描 3 个目录..."));
+    // ... 执行工作 ...
+    emitter.emit(ToolResultBlock.text("正在索引结果..."));
+    // ... 继续执行 ...
+
+    // 只有这个返回值会作为工具结果发送给 LLM。
+    return "3 files found";
+}
+```
+
+从事件流重建工具结果的客户端必须累积 `ToolResult*DeltaEvent`，并忽略 `ToolProgressEvent`。如果混用两者，进度文本会进入工具消息并在下一轮被送回模型，违背 `ToolEmitter` 的契约。
+
 ### `ToolBase.callAsync` 中访问
 
 继承 `ToolBase` 的 tool 通过 `ToolCallParam` 取 context：
