@@ -60,6 +60,7 @@ public abstract class ToolBase implements AgentTool {
 
     private final String name;
     private final String description;
+    private final String title;
     private final Map<String, Object> inputSchema;
     private final boolean concurrencySafe;
     private final boolean readOnly;
@@ -81,6 +82,7 @@ public abstract class ToolBase implements AgentTool {
         this(
                 builder.name,
                 builder.description,
+                builder.title,
                 builder.inputSchema,
                 builder.readOnly,
                 builder.concurrencySafe,
@@ -114,6 +116,7 @@ public abstract class ToolBase implements AgentTool {
         this(
                 name,
                 description,
+                null,
                 inputSchema,
                 readOnly,
                 concurrencySafe,
@@ -127,6 +130,7 @@ public abstract class ToolBase implements AgentTool {
     private ToolBase(
             String name,
             String description,
+            String title,
             Map<String, Object> inputSchema,
             boolean readOnly,
             boolean concurrencySafe,
@@ -137,6 +141,7 @@ public abstract class ToolBase implements AgentTool {
             boolean returnDirect) {
         this.name = Objects.requireNonNull(name, "name must not be null");
         this.description = Objects.requireNonNull(description, "description must not be null");
+        this.title = title;
         this.inputSchema = Objects.requireNonNull(inputSchema, "inputSchema must not be null");
         this.readOnly = readOnly;
         this.concurrencySafe = concurrencySafe;
@@ -158,6 +163,11 @@ public abstract class ToolBase implements AgentTool {
     @Override
     public final String getDescription() {
         return description;
+    }
+
+    @Override
+    public final String getTitle() {
+        return title;
     }
 
     @Override
@@ -313,6 +323,7 @@ public abstract class ToolBase implements AgentTool {
     public static final class Builder {
         private String name;
         private String description;
+        private String title;
         private Map<String, Object> inputSchema;
         private boolean readOnly = false;
         private boolean concurrencySafe = true;
@@ -333,6 +344,12 @@ public abstract class ToolBase implements AgentTool {
 
         public Builder description(String description) {
             this.description = description;
+            return this;
+        }
+
+        /** Sets the human-readable display name surfaced through {@link #getTitle()}. */
+        public Builder title(String title) {
+            this.title = title;
             return this;
         }
 
