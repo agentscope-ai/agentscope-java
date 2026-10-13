@@ -34,7 +34,6 @@ import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.ExecResult;
-import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import java.io.ByteArrayInputStream;
 import java.lang.reflect.Field;
@@ -52,15 +51,20 @@ class E2bSandboxFileTransferTest {
         E2bSandboxState state = new E2bSandboxState();
         WorkspaceSpec workspaceSpec = new WorkspaceSpec();
         workspaceSpec.setRoot("/home/user/workspace");
+        state.setWorkspaceRoot("/home/user/workspace");
         state.setWorkspaceSpec(workspaceSpec);
         return new E2bSandbox(state, new E2bSandboxClientOptions());
     }
 
     @Test
-    void supportsFileTransferAcceptsAbsolutePaths() {
+    void supportsFileTransferOnlyAcceptsWorkspaceFilePaths() {
         E2bSandbox sandbox = sandbox();
-        assertTrue(sandbox.supportsFileTransfer("/tmp/a.txt"));
         assertTrue(sandbox.supportsFileTransfer("/home/user/workspace/MEMORY.md"));
+        assertFalse(sandbox.supportsFileTransfer("/tmp/a.txt"));
+        assertFalse(sandbox.supportsFileTransfer("/home/user/workspace"));
+        assertFalse(sandbox.supportsFileTransfer("/home/user/workspace/"));
+        assertFalse(sandbox.supportsFileTransfer("/home/user/workspace/../secret"));
+        assertFalse(sandbox.supportsFileTransfer("/home/user/workspace//MEMORY.md"));
     }
 
     @Test
@@ -74,16 +78,18 @@ class E2bSandboxFileTransferTest {
     @Test
     void nativeUploadIsPreferredBySandboxBackedFilesystem() throws Exception {
         E2bSandbox sandbox = mock(E2bSandbox.class);
-        when(sandbox.supportsFileTransfer("/tmp/a.txt")).thenReturn(true);
+        when(sandbox.supportsFileTransfer("/home/user/workspace/a.txt")).thenReturn(true);
         SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
         fs.setSandbox(sandbox);
 
         List<Map.Entry<String, byte[]>> files =
-                List.of(new AbstractMap.SimpleEntry<>("/tmp/a.txt", "data".getBytes()));
+                List.of(
+                        new AbstractMap.SimpleEntry<>(
+                                "/home/user/workspace/a.txt", "data".getBytes()));
 
         List<FileUploadResponse> results = fs.uploadFiles(RT, files);
 
-        verify(sandbox).uploadFile("/tmp/a.txt", "data".getBytes());
+        verify(sandbox).uploadFile("/home/user/workspace/a.txt", "data".getBytes());
         assertEquals(1, results.size());
         assertTrue(results.get(0).isSuccess());
     }
@@ -91,15 +97,17 @@ class E2bSandboxFileTransferTest {
     @Test
     void nativeUploadFailureIsReported() throws Exception {
         E2bSandbox sandbox = mock(E2bSandbox.class);
-        when(sandbox.supportsFileTransfer("/tmp/a.txt")).thenReturn(true);
+        when(sandbox.supportsFileTransfer("/home/user/workspace/a.txt")).thenReturn(true);
         doThrow(new RuntimeException("upload failed"))
                 .when(sandbox)
-                .uploadFile("/tmp/a.txt", "data".getBytes());
+                .uploadFile("/home/user/workspace/a.txt", "data".getBytes());
         SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
         fs.setSandbox(sandbox);
 
         List<Map.Entry<String, byte[]>> files =
-                List.of(new AbstractMap.SimpleEntry<>("/tmp/a.txt", "data".getBytes()));
+                List.of(
+                        new AbstractMap.SimpleEntry<>(
+                                "/home/user/workspace/a.txt", "data".getBytes()));
 
         List<FileUploadResponse> results = fs.uploadFiles(RT, files);
 
@@ -111,27 +119,23 @@ class E2bSandboxFileTransferTest {
     @Test
     void nativeDownloadIsPreferredBySandboxBackedFilesystem() throws Exception {
         E2bSandbox sandbox = mock(E2bSandbox.class);
-        when(sandbox.supportsFileTransfer("/tmp/a.txt")).thenReturn(true);
-        when(sandbox.downloadFile("/tmp/a.txt")).thenReturn("hello".getBytes());
+        when(sandbox.supportsFileTransfer("/home/user/workspace/a.txt")).thenReturn(true);
+        when(sandbox.downloadFile("/home/user/workspace/a.txt")).thenReturn("hello".getBytes());
         SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
         fs.setSandbox(sandbox);
 
-        List<FileDownloadResponse> results = fs.downloadFiles(RT, List.of("/tmp/a.txt"));
+        List<FileDownloadResponse> results =
+                fs.downloadFiles(RT, List.of("/home/user/workspace/a.txt"));
 
-        verify(sandbox).downloadFile("/tmp/a.txt");
+        verify(sandbox).downloadFile("/home/user/workspace/a.txt");
         assertEquals(1, results.size());
         assertArrayEquals("hello".getBytes(), results.get(0).content());
     }
 
     @Test
-    void relativePathFallsBackToExecStrategy() throws Exception {
-        SandboxState state = mock(SandboxState.class);
-        WorkspaceSpec workspaceSpec = new WorkspaceSpec();
-        workspaceSpec.setRoot("/home/user/workspace");
-        when(state.getWorkspaceSpec()).thenReturn(workspaceSpec);
-        E2bSandbox sandbox = mock(E2bSandbox.class);
-        when(sandbox.supportsFileTransfer("MEMORY.md")).thenReturn(false);
-        when(sandbox.getState()).thenReturn(state);
+    void relativePathUsesNativeWorkspaceTransfer() throws Exception {
+        E2bEnvdProcessClient envd = mock(E2bEnvdProcessClient.class);
+        E2bSandbox sandbox = sandboxWithMockEnvd(envd);
         SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
         fs.setSandbox(sandbox);
 
@@ -140,9 +144,33 @@ class E2bSandboxFileTransferTest {
 
         List<FileUploadResponse> results = fs.uploadFiles(RT, files);
 
-        verify(sandbox, never()).uploadFile(any(), any());
+        ArgumentCaptor<String> uploadPath = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<byte[]> uploadContent = ArgumentCaptor.forClass(byte[].class);
+        verify(envd).uploadFile(any(), uploadPath.capture(), uploadContent.capture());
+        assertEquals("/home/user/workspace/MEMORY.md", uploadPath.getValue());
+        assertArrayEquals("data".getBytes(), uploadContent.getValue());
         assertEquals(1, results.size());
         assertTrue(results.get(0).isSuccess());
+    }
+
+    @Test
+    void uploadFileRejectsPathOutsideWorkspace() throws Exception {
+        E2bEnvdProcessClient envd = mock(E2bEnvdProcessClient.class);
+        E2bSandbox sandbox = sandboxWithMockEnvd(envd);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> sandbox.uploadFile("/tmp/a.txt", "data".getBytes()));
+        verify(envd, never()).uploadFile(any(), any(), any());
+    }
+
+    @Test
+    void downloadFileRejectsPathOutsideWorkspace() throws Exception {
+        E2bEnvdProcessClient envd = mock(E2bEnvdProcessClient.class);
+        E2bSandbox sandbox = sandboxWithMockEnvd(envd);
+
+        assertThrows(IllegalArgumentException.class, () -> sandbox.downloadFile("/tmp/a.txt"));
+        verify(envd, never()).downloadFile(any(), any());
     }
 
     @Test
