@@ -38,9 +38,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -158,8 +160,10 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     /**
      * Retries a provider context overflow inside the same execution, before its recorder is
      * closed: compact the latest durable history, then replay the reasoning step exactly once.
-     * Non-overflow errors, user interruptions, session-log failures and second overflows
-     * propagate unchanged.
+     * Non-overflow errors, user interruptions and session-log failures propagate untouched. A
+     * failed retry propagates its own error with the first overflow attached as its cause (or as
+     * suppressed when the retry error already carries one), so the first overflow stays the
+     * primary cause; cancellations are never rewritten.
      */
     private Flux<AgentEvent> recoverFromOverflow(
             Agent agent,
@@ -220,11 +224,39 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             // next creates a new model call; the turn, execution and writer
                             // stay unchanged.
                             return next.apply(
-                                    new ReasoningInput(
-                                            candidate.input().messages(),
-                                            candidate.input().tools(),
-                                            candidate.input().options()));
+                                            new ReasoningInput(
+                                                    candidate.input().messages(),
+                                                    candidate.input().tools(),
+                                                    candidate.input().options()))
+                                    .onErrorResume(
+                                            retryError ->
+                                                    Flux.error(
+                                                            associateFirstOverflow(
+                                                                    error, retryError)));
                         });
+    }
+
+    /**
+     * Keeps the first provider overflow as the primary cause of a failed single retry without
+     * replacing the retry's own error. Cancellations, fatal errors and interruptions are never
+     * rewritten so Reactor cancellation semantics survive.
+     */
+    private static Throwable associateFirstOverflow(Throwable first, Throwable retryError) {
+        if (retryError == first
+                || retryError.getCause() == first
+                || retryError instanceof CancellationException
+                || Exceptions.isCancel(retryError)
+                || Exceptions.isFatal(retryError)
+                || ExceptionUtils.containsInterruptedException(retryError)) return retryError;
+        for (Throwable suppressed : retryError.getSuppressed()) {
+            if (suppressed == first) return retryError;
+        }
+        if (retryError.getCause() == null) {
+            retryError.initCause(first);
+            return retryError;
+        }
+        retryError.addSuppressed(first);
+        return retryError;
     }
 
     public static boolean isContextOverflowError(Throwable error) {
