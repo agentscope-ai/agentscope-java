@@ -95,7 +95,19 @@ class SubagentDeclarationPhaseATest {
                     "{keepTokens: 1.5}",
                     "{keepTokens: 4294967296}",
                     "{flushBeforeCompact: nope}",
-                    "{summaryPrompt: 42}"
+                    "{summaryPrompt: 42}",
+                    "{summaryPrompt: 'Summarize the conversation'}",
+                    "{keepMessages: -1}",
+                    "{triggerMessages: -1}",
+                    "{triggerTokens: -1}",
+                    "{reserved: -1}",
+                    "{keepTokens: -2}",
+                    "{keepTokensMin: -1}",
+                    "{keepTokensMax: -1}",
+                    "{keepTokensMin: 9000, keepTokensMax: 2000}",
+                    "{keepTokensRatio: 0}",
+                    "{keepTokensRatio: -0.1}",
+                    "{keepTokensRatio: 1.1}"
                 }) {
             SubagentDeclaration decl =
                     AgentSpecLoader.parse(
@@ -113,6 +125,26 @@ class SubagentDeclarationPhaseATest {
                         "---\ndescription: worker\ncompaction: {keepTokensRatio: .nan}\n---\nbody",
                         "worker",
                         null));
+    }
+
+    @Test
+    void loader_acceptsDocumentedCompactionBoundaryValues() {
+        SubagentDeclaration decl =
+                AgentSpecLoader.parse(
+                        "---\n"
+                            + "description: worker\n"
+                            + "compaction: {triggerMessages: 0, triggerTokens: 0, reserved: 0,"
+                            + " keepMessages: 0, keepTokens: -1, keepTokensMin: 0, keepTokensMax:"
+                            + " 0, keepTokensRatio: 1, summaryPrompt: '{messages}'}\n"
+                            + "---\n"
+                            + "body",
+                        "worker",
+                        null);
+        assertNotNull(decl);
+        assertNotNull(decl.getCompactionConfig());
+        assertEquals(0, decl.getCompactionConfig().getTriggerMessages());
+        assertEquals(-1, decl.getCompactionConfig().getKeepTokens());
+        assertEquals(1, decl.getCompactionConfig().getKeepTokensRatio());
     }
 
     @Test

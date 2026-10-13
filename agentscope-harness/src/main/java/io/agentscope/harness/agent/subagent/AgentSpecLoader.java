@@ -393,11 +393,19 @@ public final class AgentSpecLoader {
                             || !Double.isFinite(number.doubleValue())) {
                         throw new IllegalArgumentException(key + " must be a finite number");
                     }
+                    if (number.doubleValue() <= 0 || number.doubleValue() > 1) {
+                        throw new IllegalArgumentException(
+                                key + " must be greater than 0 and at most 1");
+                    }
                     config.keepTokensRatio(number.doubleValue());
                 }
                 case "summaryPrompt" -> {
                     if (!(setting instanceof String prompt)) {
                         throw new IllegalArgumentException(key + " must be a string");
+                    }
+                    if (!prompt.contains("{messages}")) {
+                        throw new IllegalArgumentException(
+                                key + " must contain the {messages} placeholder");
                     }
                     config.summaryPrompt(prompt);
                 }
@@ -414,12 +422,21 @@ public final class AgentSpecLoader {
                 default -> throw new IllegalArgumentException("Unknown compaction field: " + key);
             }
         }
-        declaration.compaction(config.build());
+        CompactionConfig built = config.build();
+        if (built.getKeepTokensMin() > built.getKeepTokensMax()) {
+            throw new IllegalArgumentException("keepTokensMin must not exceed keepTokensMax");
+        }
+        declaration.compaction(built);
     }
 
     private static int compactionInt(String key, Object value) {
         if (value instanceof Number number && number.doubleValue() == number.intValue()) {
-            return number.intValue();
+            int setting = number.intValue();
+            int minimum = "keepTokens".equals(key) ? -1 : 0;
+            if (setting < minimum) {
+                throw new IllegalArgumentException(key + " must be at least " + minimum);
+            }
+            return setting;
         }
         throw new IllegalArgumentException(key + " must be a 32-bit integer");
     }
