@@ -84,7 +84,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             throw new IllegalArgumentException(
                     "Expected E2bSandboxState but got: " + state.getClass().getName());
         }
-        E2bSandboxClientOptions resumed = merge(null);
+        E2bSandboxClientOptions resumed = copy(defaultOptions);
         resumed.setCodec(e2b.getCodec());
         return new E2bSandbox(e2b, resumed);
     }
