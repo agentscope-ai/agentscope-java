@@ -1190,6 +1190,11 @@ public class AgentSpawnTool {
      * spawns of the same subagent type — whose {@code source} paths are identical — stay
      * correlatable to distinct child sessions. Mirrors {@link #tagRemoteForwardedEvent} for the
      * local {@code streamEvents()} path.
+     *
+     * <p>An already-present {@code childSessionId} entry is preserved: when a subagent spawns a
+     * nested subagent, the inner forwarding hop stamps the innermost originating instance and
+     * outer hops must not overwrite it (analogous to the keep-if-present semantics of
+     * {@code AgentEvent#withExecution} on main).
      */
     static AgentEvent tagLocalForwardedEvent(
             AgentEvent event, String sourcePath, String childSessionId) {
@@ -1197,7 +1202,11 @@ public class AgentSpawnTool {
             return null;
         }
         event.withSource(sourcePath);
-        if (childSessionId != null && !childSessionId.isBlank()) {
+        if (childSessionId != null
+                && !childSessionId.isBlank()
+                && (event.getMetadata() == null
+                        || !event.getMetadata()
+                                .containsKey(AgentEvent.METADATA_CHILD_SESSION_ID))) {
             event.withMetadataEntry(AgentEvent.METADATA_CHILD_SESSION_ID, childSessionId);
         }
         return event;

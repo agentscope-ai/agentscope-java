@@ -70,4 +70,21 @@ class AgentSpawnToolLocalForwardingTest {
     void tagLocalForwardedEvent_nullEventReturnsNull() {
         assertNull(AgentSpawnTool.tagLocalForwardedEvent(null, "main/worker", "sub-abc"));
     }
+
+    @Test
+    void tagLocalForwardedEvent_preservesNestedInnermostChildSessionId() {
+        // inner hop (nested spawn) stamps the grandchild identity first
+        TextBlockDeltaEvent inner = new TextBlockDeltaEvent(null, "b1", "hello");
+        AgentEvent taggedInner =
+                AgentSpawnTool.tagLocalForwardedEvent(inner, "child-sess/helper", "sub-grandchild");
+        // outer hop must not overwrite the innermost originating identity
+        AgentEvent taggedOuter =
+                AgentSpawnTool.tagLocalForwardedEvent(
+                        taggedInner, "parent-sess/researcher", "sub-child");
+
+        assertEquals(
+                "sub-grandchild",
+                taggedOuter.getMetadata().get(AgentEvent.METADATA_CHILD_SESSION_ID));
+        assertEquals("parent-sess/researcher", taggedOuter.getSource());
+    }
 }
