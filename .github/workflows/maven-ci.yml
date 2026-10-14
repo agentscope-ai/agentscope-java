@@ -13,6 +13,12 @@ on:
       - main
   pull_request:
 
+# Cancel superseded runs on the same PR; pushes to main run to completion
+# (separate group, and the expression is only true for pull_request events).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   license:
     name: "Check License"
