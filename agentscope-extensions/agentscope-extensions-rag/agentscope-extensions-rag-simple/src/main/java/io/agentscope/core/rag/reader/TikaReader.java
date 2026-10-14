@@ -89,7 +89,7 @@ public class TikaReader extends AbstractChunkingReader {
      *     constructor reuses the supplied handler across read subscriptions, which can carry
      *     content over between documents when the handler is stateful.
      */
-    @Deprecated(since = "2.0.4")
+    @Deprecated(since = "2.0.5")
     public TikaReader(
             int chunkSize, SplitStrategy splitStrategy, int overlapSize, ContentHandler handler) {
         super(chunkSize, splitStrategy, overlapSize);
