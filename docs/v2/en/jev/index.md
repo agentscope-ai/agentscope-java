@@ -1,228 +1,39 @@
 ---
-title: Jev
+title: Build Agent Harnesses with JEV
 zh_link: /v2/zh/jev/index
 ---
 
-The `agentscope-extensions-jev` module, grouped under the `agentscope-extensions-judge` parent, provides a Java HTTP client for [TypeSafe System One](https://docs.typesafe.ai/) and Jev. Jev is not a chat model and is not registered as an AgentScope `Model` provider; use it when application code needs a fast, typed, calibrated decision such as routing, scoring, or classification.
+JEV adds typed semantic decisions to your Harness: tool selection, response review, context retention, routing and task supervision. Use components directly, register middleware or tools, or configure supported capabilities through AgentScope Service.
 
-## When to use
+For example, a support agent can select order tools, check a conditional refund before dispatch, review its final reply against policy evidence, and evaluate the completed trace. Enable each step independently; a semantic approval never proves that the refund was executed.
 
-- You want to turn unstructured input into a typed `Noul`, `Choice`, or `Score` result.
-- You need calibrated probabilities and confidence rather than generated prose.
-- You want a cheap pre-check before invoking a larger reasoning model.
+## Capabilities
 
-## Add the dependency
+| Area | User guide |
+|---|---|
+| Agent trace evaluation and reusable definitions | [Trace evaluation](/v2/zh/jev/guides/trace-evaluation-api), [definitions](/v2/zh/jev/guides/metric-definitions) |
+| Context governance and recovery | [Compaction](/v2/zh/jev/guides/context-compaction-api), [archives](/v2/zh/jev/guides/context-archive), [memory admission](/v2/zh/jev/guides/memory-api) |
+| Long-running task supervision | [Progress observation](/v2/zh/jev/guides/supervision-api), [verification evidence](/v2/zh/jev/guides/supervision-evidence) |
+| Tool selection and execution checks | [Selection](/v2/zh/jev/guides/tool-selection-api), [pre-execution checks](/v2/zh/jev/guides/tool-guard-api) |
+| Model, stage and team routing | [Model routing](/v2/zh/jev/guides/model-routing-api), [stages](/v2/zh/jev/guides/phase-routing-api), [team recommendations](/v2/zh/jev/guides/team-routing) |
+| Retrieval evidence and answer quality | [Evidence processing](/v2/zh/jev/guides/evidence-pipeline-api), [content checks](/v2/zh/jev/guides/content-guardrail-api), [draft revision](/v2/zh/jev/guides/answer-refinement-api) |
+| Code review and browser tasks | [Code evidence](/v2/zh/jev/guides/code-review-api), [read-only navigation](/v2/zh/jev/guides/browser-execution-api) |
+| Business classification and support | [Candidate selection](/v2/zh/jev/guides/application-api), [support review](/v2/zh/jev/guides/support-api) |
 
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-jev</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
+Detailed guides are currently available in Chinese. Each explains the supported behavior, application inputs and APIs.
+
+## Start with an offline example
+
+```bash
+mvn -pl agentscope-dependencies-bom,agentscope-distribution/agentscope-bom,agentscope-examples/jev -am install -DskipTests
+mvn -pl agentscope-examples/jev dependency:build-classpath -Dmdep.outputFile=/tmp/jev-examples-cp.txt
+java -cp "agentscope-examples/jev/target/classes:$(cat /tmp/jev-examples-cp.txt)" io.agentscope.examples.jev.JevIntegrationExample
 ```
 
-## Quickstart
+This example uses scripted generation and judgment responses; no API key is required. The final reply retains the unused-order and seven-day conditions. The example checks that revision uses no tools. See the [scenario catalog](/v2/zh/jev/guides/agent-integration-example) for focused examples and their API guides. Runnable examples live in `agentscope-examples/jev`. Add `agentscope-extensions-jev` to your application and the same-version `agentscope-harness` dependency when using Harness integrations.
 
-```java
-import io.agentscope.extensions.judge.jev.ChoiceQuestion;
-import io.agentscope.extensions.judge.jev.JevClient;
-import io.agentscope.extensions.judge.jev.JevRetryPolicy;
-import io.agentscope.extensions.judge.jev.SystemOneRequest;
-import io.agentscope.extensions.judge.jev.SystemOneResult;
-import io.agentscope.extensions.judge.jev.ChoiceAnswer;
-import java.time.Duration;
-import java.util.Map;
+## Adopt decisions explicitly
 
-JevClient client =
-        JevClient.builder()
-                .apiKey(System.getenv("TYPESAFE_API_KEY"))
-                .baseUrl("https://api.typesafe.ai")
-                .model("jev-latest")
-                .retryPolicy(new JevRetryPolicy(2, Duration.ofMillis(500)))
-                .build();
+Middleware defaults to OFF. SHADOW records recommendations while preserving downstream input; ENFORCE applies the component-specific policy. Trace evaluation and ongoing supervision support only OFF/SHADOW. Direct Judge calls evaluate when invoked.
 
-SystemOneRequest request =
-        SystemOneRequest.builder()
-                .state("My payouts have been failing for 3 days.")
-                .question(
-                        "team",
-                        new ChoiceQuestion(
-                                "Which team should handle this?",
-                                Map.of(
-                                        "billing", "Payments and refunds",
-                                        "technical", "Bugs and integrations")))
-                .build();
-
-SystemOneResult result = client.systemOneBlocking(request);
-
-ChoiceAnswer answer = (ChoiceAnswer) result.answers().get("team");
-if (answer.confidence() < 0.75) {
-    // route to human review
-} else {
-    // route to answer.choice()
-}
-```
-
-## Supported question types
-
-| Type | Result |
-| --- | --- |
-| `NoulQuestion` | Probability that a yes/no statement is true |
-| `ChoiceQuestion` | Selected option, every option's probability, and confidence |
-| `ScoreQuestion` | Probability-weighted score, level legend, every level's probability, and confidence |
-
-## Spring Boot starter
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-jev-spring-boot-starter</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
-
-```yaml
-agentscope:
-  jev:
-    api-key: ${TYPESAFE_API_KEY:}
-    base-url: https://api.typesafe.ai
-    model: jev-latest
-    timeout: 5s
-    retry:
-      max-retries: 2
-      initial-backoff: 500ms
-```
-
-`agentscope.jev.api-key` is optional. When it is not set, the client falls back to the
-`TYPESAFE_API_KEY` and `JEV_API_KEY` environment variables.
-
-For advanced configuration, define a `JevClientBuilderCustomizer` bean.
-
-## Client behavior
-
-- Calls `POST /v1/systemone`.
-- Defaults to `https://api.typesafe.ai` and `jev-latest`.
-- Reads `TYPESAFE_API_KEY` when no API key is set on the builder; `JEV_API_KEY` is still accepted as a fallback.
-- Uses AgentScope's shared `HttpTransport`.
-- Applies a 5-second per-attempt timeout by default; configure it with `timeout(Duration)`.
-- Retries HTTP `429`, `529`, and `5xx` responses with exponential backoff.
-- Validates that answer keys, answer types, probabilities, and score legends match the request.
-- Throws `JevException` for non-retryable client errors, exhausted retries, and invalid responses.
-
-## Example middlewares
-
-The `io.agentscope.extensions.judge.jev.example` package ships three reference middlewares. They can
-be attached directly with `ReActAgent.builder().middleware(...)`, or copied into a project and
-tuned:
-
-| Middleware | Interception point | Purpose |
-| --- | --- | --- |
-| `JevToolSelectionMiddleware` | `onReasoning` | Filter and rank tools sent to the primary model |
-| `JevModelRouterMiddleware` | `onAgent` / `onModelCall` | Route between multiple models |
-| `JevAutoModeMiddleware` | `onActing` | Assess risk before tool execution |
-
-### Select tools
-
-`JevToolSelectionMiddleware` reduces the tool schema list sent to the primary model. It preserves
-core tools and ranks optional tools with Jev.
-
-```java
-JevToolSelectionMiddleware toolSelection =
-        JevToolSelectionMiddleware.builder(client)
-                .alwaysIncludeTools(Set.of("load_skill_through_path", "reset_tools"))
-                .maxTools(3)
-                .confidenceThreshold(0.5)
-                .failOpen(true)
-                .build();
-
-ReActAgent agent =
-        ReActAgent.builder()
-                .name("assistant")
-                .model(model)
-                .toolkit(toolkit)
-                .middleware(toolSelection)
-                .build();
-```
-
-Behavior:
-
-- Runs in `onReasoning`, before the model call.
-- Preserves `load_skill_through_path`, `reset_tools`, and `generate_response` by default.
-- Keeps optional tools whose probability is above the synthetic `__none__` option, up to `maxTools`.
-- Re-runs on every reasoning step and sends the full `input.messages()` state to Jev.
-- Chunks tool sets larger than 254 tools and reranks the chunk winners.
-- Falls back to the original tool list when Jev fails and `failOpen(true)` is set.
-
-### Route models
-
-`JevModelRouterMiddleware` asks Jev to choose between configured models before the agent calls
-them. Each candidate has routing criteria, and Jev returns a closed-set choice with calibrated
-probabilities and confidence.
-
-```java
-JevModelRouterMiddleware modelRouter =
-        JevModelRouterMiddleware.builder(client)
-                .choice("fast", fastModel, "Direct lookups, extraction, and localized changes.")
-                .choice("powerful", powerfulModel, "Architecture and high-stakes decisions.")
-                .instructions("Choose the least costly model that can complete the task.")
-                .confidenceThreshold(0.75)
-                .failOpen(true)
-                .build();
-
-ReActAgent agent =
-        ReActAgent.builder()
-                .name("assistant")
-                .model(fallbackModel)
-                .middleware(modelRouter)
-                .build();
-```
-
-Behavior:
-
-- Reads the latest user message and makes one choice per agent invocation.
-- Reuses that choice for model calls in the same invocation, so intermediate tool results cannot
-  switch the model mid-run.
-- Replaces only `ModelCallInput.model`; messages, tools, and generation options pass through.
-- Stores the selected model, option probabilities, and confidence as
-  `JevModelRouterMiddleware.decision(ctx)`.
-- Falls back to the model configured on the agent when there is no user text, confidence is below
-  the threshold, Jev fails while `failOpen(true)` is set, or the answer is unusable.
-- Supports up to 255 model choices; larger candidate sets fail during configuration.
-
-### Guard tool execution
-
-`JevAutoModeMiddleware` decides, before a tool runs, whether a high-risk call is safe enough to
-execute automatically.
-
-```java
-JevAutoModeMiddleware autoMode =
-        JevAutoModeMiddleware.builder(client)
-                .guardedTool("bash")
-                .safetyThreshold(0.5)
-                .failOpen(true)
-                .build();
-
-ReActAgent agent =
-        ReActAgent.builder()
-                .name("assistant")
-                .model(model)
-                .toolkit(toolkit)
-                .middleware(autoMode)
-                .build();
-```
-
-Behavior:
-
-- Runs in `onActing`, before tool execution and ahead of the deterministic `PermissionEngine`
-  pipeline.
-- For calls whose name matches `guardedTools` and whose state is not `ALLOWED`, sends a yes/no
-  risk question (`NoulQuestion`) to Jev. The request state includes the full conversation history
-  and the tool input.
-- Batches multiple guarded calls into a single Jev request, one question per call.
-- `NoulAnswer.noul()` is P(safe); calls below `safetyThreshold` are denied.
-- Denied calls never execute: a synthetic `DENIED` `ToolResultBlock` is written to the
-  conversation state, and only safe calls are passed to the execution pipeline.
-- Calls already confirmed as `ALLOWED` through HITL skip the Jev check, so human confirmation
-  takes precedence.
-- With `failOpen(true)`, a Jev failure lets the call through; with `failOpen(false)`, the failure
-  propagates.
+Semantic decisions do not grant permissions or prove execution succeeded. Keep deterministic authorization, ACLs and completion checks in your application. Calibrate thresholds using your own labeled data. See [client setup](/v2/zh/jev/guides/client), [runtime modes](/v2/zh/jev/guides/harness-runtime), [evaluation](/v2/zh/jev/evaluation) and [Service configuration](/v2/zh/jev/guides/service-api).

@@ -73,7 +73,7 @@ agent.call(msg, RuntimeContext.builder()
 | `LocalSnapshotSpec` | 宿主本地文件（单机长期运行） |
 | `OssSnapshotSpec` | OSS / S3 兼容存储（多副本） |
 | `RedisSnapshotSpec` | Redis（低延迟、小工作区） |
-| `JdbcSnapshotSpec` | MySQL / JDBC BLOB（已有关系型数据库） |
+| `JdbcSnapshotSpec` | JDBC BLOB（已有关系型数据库） |
 
 ```java
 .filesystem(new DockerFilesystemSpec()

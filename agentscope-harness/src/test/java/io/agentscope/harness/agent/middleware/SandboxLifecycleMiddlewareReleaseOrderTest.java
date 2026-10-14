@@ -96,12 +96,16 @@ class SandboxLifecycleMiddlewareReleaseOrderTest {
                         .build();
 
         mw.acquireForCall(ctx);
+        RuntimeContext copied = RuntimeContext.builder(ctx).build();
+        SandboxAcquireResult acquired = copied.get(SandboxAcquireResult.class);
         mw.releaseForCall(ctx);
+        assertTrue(acquired.isReleased(), "native execution context copies must see release");
+        mw.releaseForCall(copied);
 
         assertEquals(
                 List.of("release", "persist"),
                 order,
-                "release (stop) must run before state persist");
+                "release and persist must run once, even with copied runtime contexts");
         assertTrue(
                 mutationVisibleAtPersist.get(),
                 "mutations made during stop must be visible to the persist below");

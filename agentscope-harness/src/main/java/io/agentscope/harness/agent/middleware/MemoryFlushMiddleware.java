@@ -30,9 +30,11 @@ import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -42,13 +44,13 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Middleware that triggers memory flush and message offload at the end of each agent call.
+ * Middleware that triggers memory extraction at the end of each agent call.
  *
  * <p>Runs in {@link #onAgent}'s {@code doOnComplete} so long-term memories are extracted and
  * persisted after every call, even when conversation compaction was not triggered during that
  * call. The flush is <em>fire-and-forget</em>: the agent stream completes immediately while the
  * extraction runs on a background scheduler. When {@link CompactionMiddleware} is active, it
- * handles flush/offload for the messages it summarizes; this middleware covers the remaining
+ * handles memory extraction for the messages it summarizes; this middleware covers the remaining
  * tail of messages that were kept verbatim.
  *
  * <p>Flush is gated by a {@link MemoryConfig.FlushTrigger}:
@@ -60,9 +62,8 @@ import reactor.core.scheduler.Schedulers;
  *       {@link MemoryConfig.FlushTrigger#minGap()}.</li>
  * </ul>
  *
- * <p>Session transcript append is <b>not</b> handled here — see {@link TranscriptMiddleware},
- * which runs independently of memory flush so history stays complete even when flush is
- * disabled.
+ * <p>Native session logging runs independently of memory extraction, so disabling memory
+ * flush does not affect durable execution history.
  *
  * <p>Concurrent flushes for the same isolation key are serialised: at most one flush runs per
  * key at a time, and pending flushes of the same conversation coalesce into a single queued
@@ -147,6 +148,12 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 flushTrigger != null ? flushTrigger : MemoryConfig.FlushTrigger.always();
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
     }
 
     @Override

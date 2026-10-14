@@ -17,391 +17,183 @@
 package io.agentscope.extensions.judge.jev.example;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.ReasoningInput;
-import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.extensions.judge.jev.Answer;
-import io.agentscope.extensions.judge.jev.ChoiceAnswer;
-import io.agentscope.extensions.judge.jev.SystemOneRequest;
+import io.agentscope.extensions.judge.jev.JevExecution;
+import io.agentscope.extensions.judge.jev.NoulAnswer;
 import io.agentscope.extensions.judge.jev.SystemOneResult;
-import io.agentscope.extensions.judge.jev.Usage;
+import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-/**
- * Unit tests for {@link JevToolSelectionMiddleware}. Jev is mocked with a stub function; the
- * filtered tool list is verified through the {@code ReasoningInput} captured by {@code next}.
- */
 class JevToolSelectionMiddlewareTest {
+    private ReasoningInput input(String... names) {
+        return new ReasoningInput(
+                List.of(new UserMessage("request")),
+                java.util.Arrays.stream(names)
+                        .map(n -> ToolSchema.builder().name(n).description(n).build())
+                        .toList(),
+                null);
+    }
 
-    @Test
-    void filtersOptionalToolsAndPreservesCoreTools() {
-        RuntimeContext ctx = RuntimeContext.empty();
-        AtomicInteger calls = new AtomicInteger();
-        Function<SystemOneRequest, Mono<SystemOneResult>> jevCall =
-                request -> {
-                    calls.incrementAndGet();
-                    return Mono.just(
-                            result(
-                                    Map.of(
-                                            "tools_0",
-                                            choice(
-                                                    "search",
-                                                    Map.of(
-                                                            "search",
-                                                            0.7,
-                                                            "read_file",
-                                                            0.2,
-                                                            JevSelectionSupport.NONE_OPTION,
-                                                            0.1),
-                                                    0.9))));
-                };
-
-        JevToolSelectionMiddleware middleware =
-                JevToolSelectionMiddleware.builder(jevCall)
-                        .maxTools(1)
-                        .alwaysIncludeTools(java.util.Set.of("load_skill_through_path"))
-                        .build();
-
-        ReasoningInput input =
-                new ReasoningInput(
-                        List.of(new UserMessage("Search the web")),
-                        List.of(
-                                tool("load_skill_through_path", "Load a skill"),
-                                tool("search", "Search the web"),
-                                tool("read_file", "Read a file")),
-                        GenerateOptions.builder().build());
-        AtomicReference<ReasoningInput> captured = new AtomicReference<>();
-
+    private ReasoningInput run(JevToolSelectionMiddleware middleware, ReasoningInput input) {
+        AtomicReference<ReasoningInput> next = new AtomicReference<>();
         middleware
                 .onReasoning(
                         null,
-                        ctx,
+                        RuntimeContext.empty(),
                         input,
-                        next -> {
-                            captured.set(next);
-                            return reactor.core.publisher.Flux.empty();
+                        i -> {
+                            next.set(i);
+                            return Flux.empty();
                         })
-                .then()
-                .block();
+                .blockLast();
+        return next.get();
+    }
 
-        assertEquals(1, calls.get());
+    private JevExecution.Options options(JevExecution.Mode mode) {
+        return new JevExecution.Options(mode, Duration.ofSeconds(2), "test", (c, r) -> {});
+    }
+
+    private JevToolSelectionMiddleware middleware(JevExecution.Mode mode, double... scores) {
+        return JevToolSelectionMiddleware.builder(
+                        r -> {
+                            Map<String, Answer> answers = new LinkedHashMap<>();
+                            for (int i = 0; i < scores.length; i++)
+                                answers.put("tool_" + i, new NoulAnswer(scores[i]));
+                            return Mono.just(new SystemOneResult("fake", answers, null));
+                        })
+                .execution(options(mode))
+                .build();
+    }
+
+    @Test
+    void defaultOffNeverCalls() {
+        var input = input("refund");
+        assertSame(
+                input,
+                run(
+                        JevToolSelectionMiddleware.builder(
+                                        r -> {
+                                            throw new AssertionError();
+                                        })
+                                .build(),
+                        input));
+    }
+
+    @Test
+    void shadowDoesNotChangeInput() {
+        var input = input("refund");
+        assertSame(input, run(middleware(JevExecution.Mode.SHADOW, 0.01), input));
+    }
+
+    @Test
+    void singleCandidateCanBeRejected() {
         assertEquals(
-                List.of("load_skill_through_path", "search"),
-                captured.get().tools().stream().map(ToolSchema::getName).toList());
+                0,
+                run(middleware(JevExecution.Mode.ENFORCE, 0.01), input("refund")).tools().size());
     }
 
     @Test
-    void callsJevForEachReasoningStepWithSameOptionalToolSet() {
-        RuntimeContext ctx = RuntimeContext.empty();
-        AtomicInteger calls = new AtomicInteger();
-        Function<SystemOneRequest, Mono<SystemOneResult>> jevCall =
-                request -> {
-                    calls.incrementAndGet();
-                    return Mono.just(
-                            result(
-                                    Map.of(
-                                            "tools_0",
-                                            choice(
-                                                    "search",
-                                                    Map.of(
-                                                            "search",
-                                                            0.7,
-                                                            JevSelectionSupport.NONE_OPTION,
-                                                            0.3),
-                                                    0.9))));
-                };
-        JevToolSelectionMiddleware middleware =
-                JevToolSelectionMiddleware.builder(jevCall)
-                        .maxTools(1)
-                        .alwaysIncludeTools(java.util.Set.of("load_skill_through_path"))
-                        .build();
-
-        ReasoningInput input =
-                new ReasoningInput(
-                        List.of(new UserMessage("Search the web")),
-                        List.of(
-                                tool("load_skill_through_path", "Load a skill"),
-                                tool("search", "Search the web"),
-                                tool("read_file", "Read a file")),
-                        GenerateOptions.builder().build());
-
-        middleware
-                .onReasoning(null, ctx, input, next -> reactor.core.publisher.Flux.empty())
-                .then()
-                .block();
-        middleware
-                .onReasoning(null, ctx, input, next -> reactor.core.publisher.Flux.empty())
-                .then()
-                .block();
-
-        assertEquals(2, calls.get());
+    void nonePreservesNecessaryToolsOnly() {
+        assertEquals(
+                List.of("generate_response"),
+                run(
+                                middleware(JevExecution.Mode.ENFORCE, 0.01),
+                                input("refund", "generate_response"))
+                        .tools()
+                        .stream()
+                        .map(ToolSchema::getName)
+                        .toList());
     }
 
     @Test
-    void reselectsToolsForEachReasoningStepUsingFullMessages() {
-        RuntimeContext ctx = RuntimeContext.empty();
-        AtomicInteger calls = new AtomicInteger();
-        List<SystemOneRequest> requests = new java.util.ArrayList<>();
-        Function<SystemOneRequest, Mono<SystemOneResult>> jevCall =
-                request -> {
-                    calls.incrementAndGet();
-                    requests.add(request);
-                    return Mono.just(
-                            result(
-                                    Map.of(
-                                            "tools_0",
-                                            choice(
-                                                    "search",
-                                                    Map.of(
-                                                            "search",
-                                                            0.7,
-                                                            "read_file",
-                                                            0.2,
-                                                            JevSelectionSupport.NONE_OPTION,
-                                                            0.1),
-                                                    0.9))));
-                };
-
-        JevToolSelectionMiddleware middleware =
-                JevToolSelectionMiddleware.builder(jevCall).maxTools(1).build();
-
-        ReasoningInput first =
-                new ReasoningInput(
-                        List.of(new UserMessage("Search the web")),
-                        List.of(tool("search", "Search the web"), tool("read_file", "Read a file")),
-                        GenerateOptions.builder().build());
-        ReasoningInput second =
-                new ReasoningInput(
-                        List.of(
-                                new UserMessage("Search the web"),
-                                new UserMessage("Then read the result")),
-                        List.of(tool("search", "Search the web"), tool("read_file", "Read a file")),
-                        GenerateOptions.builder().build());
-
-        middleware
-                .onReasoning(null, ctx, first, next -> reactor.core.publisher.Flux.empty())
-                .then()
-                .block();
-        middleware
-                .onReasoning(null, ctx, second, next -> reactor.core.publisher.Flux.empty())
-                .then()
-                .block();
-
-        assertEquals(2, calls.get());
-        assertEquals(2, requests.size());
-        Object state = requests.get(1).state();
-        assertTrue(state instanceof Map);
-        Object messages = ((Map<?, ?>) state).get("messages");
-        assertTrue(messages instanceof List);
-        assertEquals(2, ((List<?>) messages).size());
+    void multipleUsefulToolsSurvive() {
+        assertEquals(
+                2,
+                run(
+                                middleware(JevExecution.Mode.ENFORCE, 0.9, 0.95, 0.01),
+                                input("order", "refund", "email"))
+                        .tools()
+                        .size());
     }
 
     @Test
-    void keepsAllToolsWhenThereIsNoUserText() {
-        RuntimeContext ctx = RuntimeContext.empty();
-        AtomicInteger calls = new AtomicInteger();
-        JevToolSelectionMiddleware middleware =
+    void uncertaintyAndInvalidAnswerRestoreOriginal() {
+        var input = input("refund");
+        assertSame(input, run(middleware(JevExecution.Mode.ENFORCE, 0.5), input));
+        assertSame(input, run(middleware(JevExecution.Mode.ENFORCE, Double.NaN), input));
+        assertSame(input, run(middleware(JevExecution.Mode.ENFORCE), input));
+    }
+
+    @Test
+    void failureRestoresOriginal() {
+        var input = input("refund");
+        assertSame(
+                input,
+                run(
+                        JevToolSelectionMiddleware.builder(
+                                        r -> Mono.error(new IllegalStateException()))
+                                .execution(options(JevExecution.Mode.ENFORCE))
+                                .build(),
+                        input));
+    }
+
+    @Test
+    void emptyCandidateSkips() {
+        run(
                 JevToolSelectionMiddleware.builder(
-                                request -> {
-                                    calls.incrementAndGet();
-                                    return Mono.error(new IllegalStateException("should not call"));
+                                r -> {
+                                    throw new AssertionError();
                                 })
-                        .maxTools(1)
-                        .build();
-
-        ReasoningInput input =
-                new ReasoningInput(
-                        List.of(),
-                        List.of(tool("search", "Search the web"), tool("read_file", "Read a file")),
-                        GenerateOptions.builder().build());
-        AtomicReference<ReasoningInput> captured = new AtomicReference<>();
-
-        middleware
-                .onReasoning(
-                        null,
-                        ctx,
-                        input,
-                        next -> {
-                            captured.set(next);
-                            return reactor.core.publisher.Flux.empty();
-                        })
-                .then()
-                .block();
-
-        assertEquals(0, calls.get());
-        assertEquals(2, captured.get().tools().size());
+                        .execution(options(JevExecution.Mode.ENFORCE))
+                        .build(),
+                input());
     }
 
     @Test
-    void failsOpenAndKeepsAllTools() {
-        RuntimeContext ctx = RuntimeContext.empty();
-        JevToolSelectionMiddleware middleware =
-                JevToolSelectionMiddleware.builder(
-                                request -> Mono.error(new IllegalStateException("offline")))
-                        .maxTools(1)
-                        .build();
-
-        ReasoningInput input =
-                new ReasoningInput(
-                        List.of(new UserMessage("Search the web")),
-                        List.of(tool("search", "Search the web"), tool("read_file", "Read a file")),
-                        GenerateOptions.builder().build());
-        AtomicReference<ReasoningInput> captured = new AtomicReference<>();
-
-        middleware
-                .onReasoning(
-                        null,
-                        ctx,
-                        input,
-                        next -> {
-                            captured.set(next);
-                            return reactor.core.publisher.Flux.empty();
-                        })
-                .then()
-                .block();
-
-        assertEquals(2, captured.get().tools().size());
-    }
-
-    @Test
-    void keepsAllToolsWhenJevReturnsNoSelection() {
-        RuntimeContext ctx = RuntimeContext.empty();
-        JevToolSelectionMiddleware middleware =
-                JevToolSelectionMiddleware.builder(
-                                request ->
-                                        Mono.just(
-                                                result(
-                                                        Map.of(
-                                                                "tools_0",
-                                                                choice(
-                                                                        JevSelectionSupport
-                                                                                .NONE_OPTION,
-                                                                        Map.of(
-                                                                                "search",
-                                                                                0.1,
-                                                                                JevSelectionSupport
-                                                                                        .NONE_OPTION,
-                                                                                0.9),
-                                                                        0.9)))))
-                        .maxTools(1)
-                        .build();
-
-        ReasoningInput input =
-                new ReasoningInput(
-                        List.of(new UserMessage("Search the web")),
-                        List.of(tool("search", "Search the web"), tool("read_file", "Read a file")),
-                        GenerateOptions.builder().build());
-        AtomicReference<ReasoningInput> captured = new AtomicReference<>();
-
-        middleware
-                .onReasoning(
-                        null,
-                        ctx,
-                        input,
-                        next -> {
-                            captured.set(next);
-                            return reactor.core.publisher.Flux.empty();
-                        })
-                .then()
-                .block();
-
-        assertEquals(2, captured.get().tools().size());
-    }
-
-    @Test
-    void chunksAndReranksLargeToolSets() {
-        List<ToolSchema> tools = new java.util.ArrayList<>();
-        for (int i = 0; i < 255; i++) {
-            tools.add(tool("tool_" + i, "Tool " + i));
-        }
+    void batchesKeepUsefulCandidatesAcrossChunksAndLimitByScore() {
         AtomicInteger calls = new AtomicInteger();
-        Function<SystemOneRequest, Mono<SystemOneResult>> jevCall =
-                request -> {
-                    if (calls.incrementAndGet() == 1) {
-                        return Mono.just(
-                                result(
-                                        Map.of(
-                                                "tools_0",
-                                                choice(
-                                                        "tool_0",
-                                                        Map.of(
-                                                                "tool_0",
-                                                                0.7,
-                                                                JevSelectionSupport.NONE_OPTION,
-                                                                0.3),
-                                                        0.9),
-                                                "tools_1",
-                                                choice(
-                                                        "tool_254",
-                                                        Map.of(
-                                                                "tool_254",
-                                                                0.7,
-                                                                JevSelectionSupport.NONE_OPTION,
-                                                                0.3),
-                                                        0.9))));
-                    }
-                    return Mono.just(
-                            result(
-                                    Map.of(
-                                            "tools",
-                                            choice(
-                                                    "tool_0",
-                                                    Map.of(
-                                                            "tool_0",
-                                                            0.8,
-                                                            "tool_254",
-                                                            0.1,
-                                                            JevSelectionSupport.NONE_OPTION,
-                                                            0.1),
-                                                    0.95))));
-                };
-
-        RuntimeContext ctx = RuntimeContext.empty();
-        JevToolSelectionMiddleware middleware =
-                JevToolSelectionMiddleware.builder(jevCall).maxTools(1).build();
-        AtomicReference<ReasoningInput> captured = new AtomicReference<>();
-
-        middleware
-                .onReasoning(
-                        null,
-                        ctx,
-                        new ReasoningInput(
-                                List.of(new UserMessage("Use tool 0")),
-                                tools,
-                                GenerateOptions.builder().build()),
-                        next -> {
-                            captured.set(next);
-                            return reactor.core.publisher.Flux.empty();
-                        })
-                .then()
-                .block();
-
-        assertEquals(2, calls.get());
-        assertEquals(
-                List.of("tool_0"),
-                captured.get().tools().stream().map(ToolSchema::getName).toList());
-    }
-
-    private static ToolSchema tool(String name, String description) {
-        return ToolSchema.builder().name(name).description(description).build();
-    }
-
-    private static ChoiceAnswer choice(
-            String selected, Map<String, Double> probabilities, double confidence) {
-        return new ChoiceAnswer(selected, probabilities, confidence);
-    }
-
-    private static SystemOneResult result(Map<String, Answer> answers) {
-        return new SystemOneResult("jev-test", answers, new Usage(1, 1));
+        var middleware =
+                JevToolSelectionMiddleware.builder(
+                                r -> {
+                                    int batch = calls.getAndIncrement();
+                                    Map<String, Answer> answers = new LinkedHashMap<>();
+                                    r.questions()
+                                            .keySet()
+                                            .forEach(
+                                                    id ->
+                                                            answers.put(
+                                                                    id,
+                                                                    new NoulAnswer(
+                                                                            id.equals("tool_0")
+                                                                                    ? (batch == 0
+                                                                                            ? 0.9
+                                                                                            : 0.99)
+                                                                                    : 0.01)));
+                                    return Mono.just(new SystemOneResult("fake", answers, null));
+                                })
+                        .execution(options(JevExecution.Mode.ENFORCE))
+                        .maxTools(1)
+                        .alwaysIncludeTools(Set.of())
+                        .build();
+        String[] names =
+                java.util.stream.IntStream.range(0, 130)
+                        .mapToObj(i -> "tool" + i)
+                        .toArray(String[]::new);
+        assertEquals("tool64", run(middleware, input(names)).tools().get(0).getName());
+        assertEquals(3, calls.get());
     }
 }
