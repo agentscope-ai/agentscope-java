@@ -52,6 +52,19 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Price provider-level default response schemas through the real adapter classes. -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-ollama</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-openai-official</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- YAML parsing for subagent config -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>

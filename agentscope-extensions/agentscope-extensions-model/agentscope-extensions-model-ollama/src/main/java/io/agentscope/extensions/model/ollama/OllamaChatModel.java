@@ -16,6 +16,8 @@
 package io.agentscope.extensions.model.ollama;
 
 import io.agentscope.core.formatter.Formatter;
+import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
@@ -37,6 +39,7 @@ import io.agentscope.extensions.model.ollama.formatter.OllamaMultiAgentFormatter
 import io.agentscope.extensions.model.ollama.options.OllamaOptions;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -133,6 +136,25 @@ public class OllamaChatModel extends ChatModelBase {
     @Override
     public String getModelName() {
         return this.modelName;
+    }
+
+    @Override
+    public GenerateOptions getDefaultOptions() {
+        GenerateOptions converted = defaultOptions.toGenerateOptions();
+        Object format = defaultOptions.getFormat();
+        if (format instanceof Map<?, ?> schemaMap) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> schema = (Map<String, Object>) schemaMap;
+            converted =
+                    GenerateOptions.mergeOptions(
+                            GenerateOptions.builder()
+                                    .responseFormat(
+                                            ResponseFormat.jsonSchema(
+                                                    JsonSchema.builder().schema(schema).build()))
+                                    .build(),
+                            converted);
+        }
+        return converted;
     }
 
     @Override
