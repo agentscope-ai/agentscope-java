@@ -854,6 +854,61 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertToolMessageWithUnknownStatusFallsBackToError() {
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-1",
+                        "tool",
+                        new MessageContent.Text("out"),
+                        null,
+                        "tc-1",
+                        null,
+                        "failed");
+
+        ToolResultBlock result =
+                converter.toMsg(aguiMsg).getFirstContentBlock(ToolResultBlock.class);
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+    }
+
+    @Test
+    void testConvertToolMessageWithoutToolCallIdPreservesStatusMetadata() {
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-1",
+                        "tool",
+                        new MessageContent.Text("out"),
+                        null,
+                        null,
+                        null,
+                        "failed");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        assertFalse(msg.hasContentBlocks(ToolResultBlock.class));
+        assertEquals(Map.of("agui.toolResultStatus", "failed"), msg.getMetadata());
+    }
+
+    @Test
+    void testConvertStructuredToolMessageWithStatusExtensionPreservesMetadata() {
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-1",
+                        "tool",
+                        new MessageContent.Blocks(List.of(new TextInputContent("out"))),
+                        null,
+                        "  ",
+                        null,
+                        "interrupted");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertFalse(msg.hasContentBlocks(ToolResultBlock.class));
+        assertEquals(Map.of("agui.toolResultStatus", "interrupted"), msg.getMetadata());
+    }
+
+    @Test
     void testConvertMsgWithToolResultNoOutput() {
         Msg msg =
                 Msg.builder()

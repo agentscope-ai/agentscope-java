@@ -67,6 +67,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Converter between AG-UI messages and AgentScope messages.
@@ -75,6 +77,8 @@ import java.util.stream.Collectors;
  * message format and AgentScope's internal message format.
  */
 public class AguiMessageConverter {
+
+    private static final Logger logger = LoggerFactory.getLogger(AguiMessageConverter.class);
 
     /** AG-UI resume payload key: user approved the tool call. */
     private static final String RESUME_PAYLOAD_APPROVED = "approved";
@@ -306,7 +310,17 @@ public class AguiMessageConverter {
             }
         }
 
-        return Msg.builder().id(aguiMessage.getId()).role(role).content(blocks).build();
+        Msg.Builder msgBuilder = Msg.builder().id(aguiMessage.getId()).role(role).content(blocks);
+        if (aguiMessage.isToolMessage()
+                && !hasToolCallId(aguiMessage)
+                && aguiMessage.getStatus() != null
+                && !aguiMessage.getStatus().isBlank()
+                && resolveToolResultState(aguiMessage) != ToolResultState.SUCCESS) {
+            // Tool messages without a tool call id cannot carry a ToolResultBlock; keep the
+            // reported status as metadata instead of silently dropping it.
+            msgBuilder.metadata(Map.of("agui.toolResultStatus", aguiMessage.getStatus()));
+        }
+        return msgBuilder.build();
     }
 
     /**
@@ -446,7 +460,12 @@ public class AguiMessageConverter {
         return toolCallId != null && !toolCallId.isBlank();
     }
 
-    /** Resolve the optional AG-UI status extension, retaining successful legacy behavior. */
+    /**
+     * Resolve the optional AG-UI status extension, retaining successful legacy behavior.
+     *
+     * <p>Unrecognized status values fall back to {@link ToolResultState#ERROR} so an unknown
+     * tool-result status is never reported as success.
+     */
     private ToolResultState resolveToolResultState(AguiMessage aguiMessage) {
         String status = aguiMessage.getStatus();
         if (status == null || status.isBlank()) {
@@ -460,7 +479,11 @@ public class AguiMessageConverter {
                     return state;
                 }
             }
-            return ToolResultState.SUCCESS;
+            logger.warn(
+                    "Unrecognized AG-UI tool result status '{}'; treating the tool result as"
+                            + " ERROR",
+                    status);
+            return ToolResultState.ERROR;
         }
     }
 

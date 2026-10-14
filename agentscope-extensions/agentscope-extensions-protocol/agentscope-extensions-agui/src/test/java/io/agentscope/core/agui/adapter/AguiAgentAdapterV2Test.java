@@ -88,6 +88,7 @@ import io.agentscope.core.tool.ToolRequestConfig;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.lang.reflect.Field;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -2167,6 +2168,25 @@ class AguiAgentAdapterV2Test {
                             .block();
 
             assertStartupErrorRun(events, input, "boom", "INTERNAL_ERROR");
+        }
+
+        @Test
+        void testRunConvertsMalformedToolPayloadToRunError() {
+            ReActAgent agent = mock(ReActAgent.class);
+            when(agent.getToolkit()).thenReturn(new Toolkit());
+            RunAgentInput input = inputBuilder().tools(Arrays.asList((AguiTool) null)).build();
+
+            List<AguiEvent> events =
+                    new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                            .run(input)
+                            .collectList()
+                            .block();
+
+            assertEquals(
+                    List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR), types(events));
+            AguiEvent.RunError runError = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
+            assertEquals("INTERNAL_ERROR", runError.code());
+            assertNotNull(runError.message());
         }
 
         @Test

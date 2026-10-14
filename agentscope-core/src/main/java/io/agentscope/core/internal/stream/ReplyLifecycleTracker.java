@@ -42,8 +42,8 @@ import org.slf4j.LoggerFactory;
  * io.agentscope.core.middleware}) can share one set of reply/source correlation rules. It is not part
  * of the supported API surface and may change without notice; do not use it outside this project.
  * Instances are scoped to one subscription and must be accessed serially by that stream; the
- * tracker is intentionally not synchronized. When the child-source cap is reached, the least
- * recently used child is evicted; subsequent events for that source are treated as unclassified
+ * tracker is intentionally not synchronized. When the child-source cap is reached, the
+ * oldest-created child is evicted; subsequent events for that source are treated as unclassified
  * until a new model call starts it again.
  */
 public final class ReplyLifecycleTracker {

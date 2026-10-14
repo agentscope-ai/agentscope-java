@@ -145,9 +145,6 @@ public class AguiAgentAdapter {
                     String threadId = input.getThreadId();
                     String runId = input.getRunId();
 
-                    RuntimeContext effectiveRuntimeContext =
-                            buildRuntimeContext(input, runtimeContext);
-
                     // Create stream options - use incremental mode for true streaming
                     StreamOptions options =
                             StreamOptions.builder()
@@ -158,8 +155,11 @@ public class AguiAgentAdapter {
                     List<Msg> msgs;
                     AgentStream agentStream;
                     try {
-                        // Convert input inside the guarded assembly block so malformed AG-UI
-                        // payloads use the same RUN_ERROR protocol as stream setup failures.
+                        // Assemble the runtime context and convert the input inside the guarded
+                        // block so malformed AG-UI payloads use the same RUN_ERROR protocol as
+                        // stream setup failures.
+                        RuntimeContext effectiveRuntimeContext =
+                                buildRuntimeContext(input, runtimeContext);
                         msgs =
                                 messageConverter.toMsgList(
                                         input, resumeInterrupts(effectiveRuntimeContext));
