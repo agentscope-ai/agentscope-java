@@ -142,7 +142,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `exposedPorts(int...)` | Exposed ports | none |
 | `environment(Map)` | Container environment variables | none |
 | `workspaceRoot(String)` | Workspace mount point inside the container | `/workspace` |
-| `additionalRunArgs(String...)` | Extra `docker run` arguments | none |
+| `additionalRunArgs(String...)` / `additionalRunArgs(List)` | Extra `docker run` arguments; repeated calls append | none |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` (no snapshots) |
 | `workspaceSpec(WorkspaceSpec)` | Workspace mount rules | default |
 | `executionGuard(SandboxExecutionGuard)` | Concurrency guard for AGENT / GLOBAL scope | none |
