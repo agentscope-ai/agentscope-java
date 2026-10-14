@@ -45,6 +45,9 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.context.ContextBudgetExceededException;
+import io.agentscope.harness.agent.context.ContextPolicy;
+import io.agentscope.harness.agent.context.ContextTokenEstimator;
+import io.agentscope.harness.agent.context.HarnessContextBuilder;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -127,6 +130,41 @@ class CompactionMiddlewareTest {
         assertNotNull(reply);
         assertEquals("answer", reply.getTextContent());
         assertEquals(2, calls.get());
+    }
+
+    /**
+     * The overflow guard skips the retry when there is no durable state to compact: a null state
+     * and an empty context both propagate the provider error untouched and spend no summary call.
+     */
+    @Test
+    void overflowGuardSkipsRetryWithoutDurableState() {
+        AtomicInteger summaryCalls = new AtomicInteger();
+        var companion =
+                new CompactionMiddleware(
+                                null, new CountingSummaryModel(summaryCalls), noCompactionConfig())
+                        .overflowRecovery();
+        var input = new ReasoningInput(List.of(userMessage("latest request")), List.of(), null);
+
+        IllegalStateException noState = new IllegalStateException("context_length_exceeded");
+        StepVerifier.create(
+                        companion.onReasoning(
+                                null,
+                                RuntimeContext.empty(),
+                                input,
+                                ignored -> Flux.error(noState)))
+                .expectErrorSatisfies(error -> assertSame(noState, error))
+                .verify();
+
+        IllegalStateException emptyContext = new IllegalStateException("context_length_exceeded");
+        RuntimeContext emptyState =
+                RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        StepVerifier.create(
+                        companion.onReasoning(
+                                null, emptyState, input, ignored -> Flux.error(emptyContext)))
+                .expectErrorSatisfies(error -> assertSame(emptyContext, error))
+                .verify();
+
+        assertEquals(0, summaryCalls.get(), "the guard must not spend a summary call");
     }
 
     /**
@@ -286,6 +324,61 @@ class CompactionMiddlewareTest {
                 overflows.get(0),
                 terminal.getThrowable().getCause(),
                 "the first overflow must remain the primary cause");
+    }
+
+    /**
+     * Provider errors built with an explicit null cause reject {@code initCause()}: the first
+     * overflow must fall back to suppressed and the retry error must stay terminal instead of being
+     * replaced by the resulting IllegalStateException.
+     */
+    @Test
+    void nullCauseRetryErrorKeepsFirstOverflowAsSuppressed() {
+        AtomicInteger calls = new AtomicInteger();
+        List<Throwable> errors = new ArrayList<>();
+        ChatModelBase model =
+                new ChatModelBase() {
+                    public String getModelName() {
+                        return "overflow-null-cause";
+                    }
+
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        Throwable error =
+                                calls.getAndIncrement() == 0
+                                        ? new IllegalStateException("context_length_exceeded")
+                                        : new IllegalStateException("retry failed", null);
+                        errors.add(error);
+                        return Flux.error(error);
+                    }
+                };
+        var recovery =
+                new CompactionMiddleware(null, new SuccessfulSummaryModel(), noCompactionConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("overflow-null-cause-test")
+                        .model(model)
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        List<Signal<AgentEvent>> signals =
+                agent.streamEvents(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                context("user", "overflow-null-cause-session"))
+                        .materialize()
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(signals);
+        Signal<AgentEvent> terminal = signals.get(signals.size() - 1);
+        assertTrue(terminal.isOnError(), "the retry failure must terminate the stream");
+        assertEquals(2, errors.size(), "exactly one retry is attempted");
+        assertSame(errors.get(1), terminal.getThrowable(), "the retry error stays terminal");
+        assertNull(
+                terminal.getThrowable().getCause(),
+                "the pre-initialized null cause cannot be replaced");
+        assertEquals(1, terminal.getThrowable().getSuppressed().length);
+        assertSame(
+                errors.get(0),
+                terminal.getThrowable().getSuppressed()[0],
+                "the first overflow must be attached as suppressed");
     }
 
     /** A cancelled retry must keep Reactor cancellation semantics and never be rewritten. */
@@ -463,6 +556,50 @@ class CompactionMiddlewareTest {
         assertNotNull(state, "the call-scoped state remains readable after the failed run");
         assertEquals(2, state.getContext().size());
         assertEquals("old context", state.getContext().get(0).getTextContent());
+    }
+
+    /**
+     * Real preparer chain for the same contract: the emergency candidate is validated by an actual
+     * {@link HarnessContextBuilder}, whose budget check rejects the oversized summary itself; the
+     * builder's own rejection propagates and the canonical history stays untouched.
+     */
+    @Test
+    void realContextBuilderRejectsOversizedEmergencyCandidateAndKeepsHistory() {
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger summaryCalls = new AtomicInteger();
+        var recovery =
+                new CompactionMiddleware(
+                        null, new LargeSummaryModel(summaryCalls), noCompactionConfig());
+        var policy = new ContextPolicy(100, 0, 0, ContextTokenEstimator.approximate(), m -> {});
+        var agent =
+                ReActAgent.builder()
+                        .name("real-chain-rejected-retry")
+                        .model(new OverflowOnceModel(calls, "answer"))
+                        .middleware(recovery.overflowRecovery())
+                        .modelRequestPreparer(new HarnessContextBuilder(policy, null, null))
+                        .build();
+        var ctx = context("user", "real-chain-rejected-session");
+        List<Signal<AgentEvent>> signals =
+                agent.streamEvents(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                ctx)
+                        .materialize()
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(signals);
+        Signal<AgentEvent> terminal = signals.get(signals.size() - 1);
+        assertTrue(terminal.isOnError(), "stream must terminate with an error signal");
+        assertTrue(
+                terminal.getThrowable() instanceof ContextBudgetExceededException,
+                "the real context builder must reject the oversized emergency candidate, but got: "
+                        + terminal.getThrowable());
+        assertEquals(1, summaryCalls.get(), "the emergency summary must actually run");
+        assertEquals(1, calls.get(), "the rejected retry must not reach the provider again");
+        AgentState state = ctx.getAgentState();
+        assertNotNull(state, "the call-scoped state remains readable after the failed run");
+        assertEquals(2, state.getContext().size());
+        assertEquals("old context", state.getContext().get(0).getTextContent());
+        assertEquals("latest request", state.getContext().get(1).getTextContent());
     }
 
     /** An ordinary compaction failure skips compaction and invokes original reasoning once. */
@@ -956,6 +1093,30 @@ class CompactionMiddlewareTest {
             return Flux.just(
                     ChatResponse.builder()
                             .content(List.of(TextBlock.builder().text("summary").build()))
+                            .build());
+        }
+    }
+
+    /** Emits a summary large enough to push the emergency retry candidate over a tiny budget. */
+    private static final class LargeSummaryModel extends ChatModelBase {
+        private final AtomicInteger calls;
+
+        private LargeSummaryModel(AtomicInteger calls) {
+            this.calls = calls;
+        }
+
+        @Override
+        public String getModelName() {
+            return "large-summary";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            calls.incrementAndGet();
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("S".repeat(2400)).build()))
                             .build());
         }
     }

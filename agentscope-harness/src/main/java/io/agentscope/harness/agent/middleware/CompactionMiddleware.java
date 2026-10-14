@@ -49,7 +49,10 @@ import reactor.core.publisher.Mono;
 /**
  * Middleware that performs conversation compaction before each LLM reasoning call.
  *
- * <p>Fires on {@link #onReasoning}. When the compaction threshold is exceeded:
+ * <p>Normal boundary compaction is owned by the final-request preparer, which calls
+ * {@link #prepareCandidate} with the request's conversation allowance and commits the only
+ * candidate that may replace durable history; the harness runtime itself installs only the
+ * {@link #overflowRecovery()} companion. When the compaction threshold is exceeded:
  * <ol>
  *   <li>Long-term memories are flushed from the prefix via {@link MemoryFlushManager}.</li>
  *   <li>The native session log retains the complete conversation before compaction.</li>
@@ -60,10 +63,11 @@ import reactor.core.publisher.Mono;
  *       {@code [systemMsg] + [summaryMsg] + preservedTail}.</li>
  * </ol>
  *
- * <p>When {@link CompactionConfig#getTriggerTokens()} is 0 (dynamic mode, the default), the
- * effective trigger threshold is computed as {@code model.getContextWindowSize() - reserved}.
- * If the model does not report its context window, falls back to
- * {@link CompactionConfig#FALLBACK_TRIGGER_TOKENS}.
+ * <p>When {@link CompactionConfig#getTriggerTokens()} is 0 (dynamic mode, the default), that
+ * conversation allowance is the effective trigger threshold. If {@link #onReasoning} is
+ * registered standalone instead, the threshold falls back to
+ * {@code model.getContextWindowSize() - reserved}, and to
+ * {@link CompactionConfig#FALLBACK_TRIGGER_TOKENS} when the model reports no window.
  */
 public class CompactionMiddleware implements HarnessRuntimeMiddleware {
 
@@ -237,9 +241,10 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Keeps the first provider overflow as the primary cause of a failed single retry without
-     * replacing the retry's own error. Cancellations, fatal errors and interruptions are never
-     * rewritten so Reactor cancellation semantics survive.
+     * Keeps the first provider overflow associated with a failed single retry without replacing the
+     * retry's own error: as the primary cause when the cause slot is free, otherwise as a
+     * suppressed exception. Cancellations, fatal errors and interruptions are never rewritten so
+     * Reactor cancellation semantics survive.
      */
     private static Throwable associateFirstOverflow(Throwable first, Throwable retryError) {
         if (retryError == first
@@ -252,8 +257,13 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             if (suppressed == first) return retryError;
         }
         if (retryError.getCause() == null) {
-            retryError.initCause(first);
-            return retryError;
+            try {
+                retryError.initCause(first);
+                return retryError;
+            } catch (IllegalStateException alreadyInitialized) {
+                // Providers build errors with an explicit null cause; that slot rejects
+                // initCause(), so fall through and attach the overflow as suppressed.
+            }
         }
         retryError.addSuppressed(first);
         return retryError;
