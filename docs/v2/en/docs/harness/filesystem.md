@@ -196,6 +196,16 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
+Self-hosted E2B-compatible backends (e.g. CubeSandbox) that front the data plane with a single fixed gateway address can set `envdSandboxUrl` — the equivalent of the official SDK's `E2B_SANDBOX_URL`. Every sandbox's envd traffic then goes to that URL, and routing relies on the `E2b-Sandbox-Id` / `E2b-Sandbox-Port` request headers (sent automatically, like the official SDKs), so no wildcard DNS is required:
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .apiBaseUrl("http://10.0.0.1:3000")     // control plane
+    .envdSandboxUrl("http://10.0.0.1:8080") // data plane (gateway must route by the E2B headers)
+    ...)
+```
+
 #### Daytona sandbox
 
 ```java

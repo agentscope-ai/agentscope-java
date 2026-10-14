@@ -195,6 +195,16 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
+对接自建 E2B 兼容后端（如 CubeSandbox）时，如果数据面由单一固定网关地址承载，可以设置 `envdSandboxUrl`——等价于官方 SDK 的 `E2B_SANDBOX_URL`。设置后所有沙箱的 envd 流量都打到该地址，路由依赖请求头 `E2b-Sandbox-Id` / `E2b-Sandbox-Port`（与官方 SDK 一样自动携带），因此不需要泛域名 DNS：
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .apiBaseUrl("http://10.0.0.1:3000")     // 控制面
+    .envdSandboxUrl("http://10.0.0.1:8080") // 数据面（网关需按 E2B header 路由）
+    ...)
+```
+
 #### Daytona 沙箱
 
 ```java
