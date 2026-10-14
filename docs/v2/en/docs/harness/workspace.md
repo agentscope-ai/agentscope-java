@@ -164,7 +164,7 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 | `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips memory material in `HARNESS_CONTEXT` (`MEMORY.md`) injection |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt |
 | `disableSubagents()` | the entire subagent subsystem |
-| `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
+| `disableDynamicSkills()` | per-call skill re-merge; falls back to one-shot merge at build time |
 | `disableToolsConfig()` | reading `tools.json` |
 | `disableSessionPersistence()` | Compatibility no-op; does not disable native history. See session history modes |
 
@@ -386,7 +386,7 @@ There are four registration layers (low → high priority):
 3. `workspace/skills/` — workspace shared
 4. `<userId>/skills/` — per-user (overrides all above)
 
-Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each turn, `DynamicSkillMiddleware` re-merges and renders an `<available_skills>` block (name + description only) into the system prompt. The agent calls `load_skill_through_path` to pull full details when relevant. Full mechanics in [Skills](/v2/en/docs/harness/skill).
+Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each call, `HarnessSkillMiddleware` re-merges and renders an `<available_skills>` block (name + description only) into the system prompt. The agent calls `load_skill_through_path` to pull full details when relevant. Full mechanics in [Skills](/v2/en/docs/harness/skill).
 
 ### `subagents/`
 

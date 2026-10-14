@@ -478,12 +478,12 @@ workspace/
 
 ### Skills
 
-`DynamicSkillMiddleware` merges skills from the repository list before each reasoning turn and renders them into the system prompt. Skill file loading goes through the `AbstractFilesystem` interface, so it works transparently across all three modes:
+`HarnessSkillMiddleware` merges skills from the repository list before each call and renders them into the system prompt. Skill file loading goes through the `AbstractFilesystem` interface, so it works transparently across all three modes:
 
 | Mode | How skills load |
 |------|----------------|
 | Local | Read directly from `workspace/skills/` on local disk; `<userId>/skills/` for per-user overrides |
-| Shared store | `skills/` routes to KV — checks remote first, falls back to local template. Admin edits take effect on the next reasoning turn across all replicas |
+| Shared store | `skills/` routes to KV — checks remote first, falls back to local template. Admin edits take effect on the next call across all replicas |
 | Sandbox | Host `skills/` are injected into the sandbox's `/workspace/skills/` via workspace projection at startup |
 
 The four-layer priority is unchanged (low → high): `projectGlobalSkillsDir` → `skillRepository` → `workspace/skills/` → `<userId>/skills/`.
