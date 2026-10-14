@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.ollama;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
@@ -31,6 +32,8 @@ import io.agentscope.core.model.transport.HttpTransportConfig;
 import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.ollama.dto.OllamaMessage;
 import io.agentscope.extensions.model.ollama.dto.OllamaRequest;
 import io.agentscope.extensions.model.ollama.dto.OllamaResponse;
@@ -140,33 +143,60 @@ public class OllamaChatModel extends ChatModelBase {
 
     @Override
     public GenerateOptions getDefaultOptions() {
-        return structuredSchemaOptions(defaultOptions);
+        return withSchemaProjection(defaultOptions.toGenerateOptions(), defaultOptions.getFormat());
     }
 
     @Override
     public GenerateOptions resolveOptions(GenerateOptions requestOptions) {
         OllamaOptions effective =
                 requestOptions == null ? defaultOptions : defaultOptions.merge(requestOptions);
-        return structuredSchemaOptions(effective);
+        return withSchemaProjection(effective.toGenerateOptions(), effective.getFormat());
     }
 
     /**
      * Mirrors the send path's effective {@code format} semantics: the request only clears the
      * default schema when it maps to a non-null format (json_schema, json_object, or a raw
      * {@code format} body parameter), exactly as {@code fromGenerateOptions} and
-     * {@code additionalBodyParams} behave before the default merge.
+     * {@code additionalBodyParams} behave before the default merge. The converted options keep
+     * every mapped field; an object-shaped format is additionally projected as the response
+     * format the budget prices.
      */
-    private static GenerateOptions structuredSchemaOptions(OllamaOptions effective) {
-        Object format = effective.getFormat();
+    private static GenerateOptions withSchemaProjection(GenerateOptions converted, Object format) {
+        ResponseFormat schemaFormat = objectSchemaFormat(format);
+        if (schemaFormat == null) {
+            return converted;
+        }
+        return GenerateOptions.mergeOptions(
+                GenerateOptions.builder().responseFormat(schemaFormat).build(), converted);
+    }
+
+    /**
+     * Recognizes a raw {@code format} whose JSON representation is an object, i.e. the schema the
+     * provider actually sends. Values like {@code "json"}, arrays or scalars carry no schema and
+     * are left to the send path untouched.
+     */
+    private static ResponseFormat objectSchemaFormat(Object format) {
+        Map<String, Object> schema = toSchemaMap(format);
+        return schema == null
+                ? null
+                : ResponseFormat.jsonSchema(JsonSchema.builder().schema(schema).build());
+    }
+
+    private static Map<String, Object> toSchemaMap(Object format) {
         if (format instanceof Map<?, ?> schemaMap) {
             @SuppressWarnings("unchecked")
             Map<String, Object> schema = (Map<String, Object>) schemaMap;
-            return GenerateOptions.builder()
-                    .responseFormat(
-                            ResponseFormat.jsonSchema(JsonSchema.builder().schema(schema).build()))
-                    .build();
+            return schema;
         }
-        return GenerateOptions.builder().build();
+        if (format == null) {
+            return null;
+        }
+        try {
+            return JsonUtils.getJsonCodec()
+                    .convertValue(format, new TypeReference<Map<String, Object>>() {});
+        } catch (JsonException e) {
+            return null;
+        }
     }
 
     @Override
