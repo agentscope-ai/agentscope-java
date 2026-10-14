@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
@@ -58,7 +59,12 @@ public class GLMFormatter extends OpenAIChatFormatter {
 
     @Override
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
-        List<OpenAIMessage> messages = super.doFormat(msgs);
+        return doFormat(msgs, null);
+    }
+
+    @Override
+    protected List<OpenAIMessage> doFormat(List<Msg> msgs, GenerateOptions options) {
+        List<OpenAIMessage> messages = super.doFormat(msgs, options);
         return ensureUserMessage(messages);
     }
 

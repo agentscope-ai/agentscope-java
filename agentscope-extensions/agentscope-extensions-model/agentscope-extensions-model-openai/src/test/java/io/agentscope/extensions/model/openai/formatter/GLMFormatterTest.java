@@ -144,4 +144,50 @@ class GLMFormatterTest {
         assertEquals(2, result.size());
         assertEquals("user", result.get(1).getRole());
     }
+
+    @Test
+    @DisplayName("Deprecated GLMFormatter should ensure a user message on the two-arg path")
+    void testFormatEnsuresUserMessageOnTwoArgPath() {
+        GLMFormatter formatter = new GLMFormatter();
+
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text("You are helpful")
+                                                        .build()))
+                                .build());
+
+        List<OpenAIMessage> result = formatter.format(messages, null);
+
+        assertEquals(2, result.size());
+        assertEquals("system", result.get(0).getRole());
+        assertEquals("user", result.get(1).getRole());
+    }
+
+    @Test
+    @DisplayName(
+            "Deprecated GLMMultiAgentFormatter should ensure a user message on the two-arg path")
+    void testMultiAgentFormatEnsuresUserMessageOnTwoArgPath() {
+        GLMMultiAgentFormatter formatter = new GLMMultiAgentFormatter();
+
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text("You are helpful")
+                                                        .build()))
+                                .build());
+
+        List<OpenAIMessage> result = formatter.format(messages, null);
+
+        assertEquals(2, result.size());
+        assertEquals("user", result.get(1).getRole());
+    }
 }

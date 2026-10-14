@@ -462,5 +462,28 @@ class DeepSeekMultiAgentFormatterTest {
             // Strict should not be applied for DeepSeek
             assertNull(request.getTools().get(0).getFunction().getStrict());
         }
+
+        @Test
+        @DisplayName("Should apply DeepSeek fixes on the two-arg production path")
+        void testFormatTwoArgAppliesDeepSeekFixes() {
+            List<Msg> messages =
+                    List.of(
+                            Msg.builder()
+                                    .role(MsgRole.USER)
+                                    .content(List.of(TextBlock.builder().text("Hello").build()))
+                                    .build(),
+                            Msg.builder()
+                                    .role(MsgRole.ASSISTANT)
+                                    .name("agent-a")
+                                    .content(List.of(TextBlock.builder().text("Hi").build()))
+                                    .build());
+
+            List<OpenAIMessage> result = formatter.format(messages, null);
+
+            assertNotNull(result);
+            for (OpenAIMessage message : result) {
+                assertNull(message.getName());
+            }
+        }
     }
 }

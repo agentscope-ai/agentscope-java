@@ -223,8 +223,8 @@ class DeepSeekFormatterTest {
         }
 
         @Test
-        @DisplayName("Should remove reasoning_content for previous turns")
-        void testRemoveReasoningContentForPreviousTurns() {
+        @DisplayName("Should preserve reasoning_content for previous turns")
+        void testPreserveReasoningContentForPreviousTurns() {
             List<OpenAIMessage> messages =
                     List.of(
                             OpenAIMessage.builder().role("user").content("First question").build(),
@@ -243,9 +243,9 @@ class DeepSeekFormatterTest {
             List<OpenAIMessage> result = DeepSeekFormatter.applyDeepSeekFixes(messages);
 
             assertEquals(4, result.size());
-            // Previous turn should have reasoning_content removed
-            assertNull(result.get(1).getReasoningContent());
-            // Current turn should keep reasoning_content
+            // Previous turn reasoning_content is preserved (never stripped)
+            assertEquals("First thinking", result.get(1).getReasoningContent());
+            // Current turn keeps reasoning_content
             assertEquals("Second thinking", result.get(3).getReasoningContent());
         }
 
@@ -326,6 +326,25 @@ class DeepSeekFormatterTest {
             assertEquals(1, result.size());
             // Same object reference if no changes
             assertEquals(original, result.get(0));
+        }
+
+        @Test
+        @DisplayName("Should backfill empty reasoning_content for assistant traces missing it")
+        void testBackfillEmptyReasoningContentForAssistantTraces() {
+            List<OpenAIMessage> messages =
+                    List.of(
+                            OpenAIMessage.builder().role("user").content("Q").build(),
+                            OpenAIMessage.builder().role("assistant").content("A").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .content("notification")
+                                    .reasoningContent("thinking")
+                                    .build());
+
+            List<OpenAIMessage> result = DeepSeekFormatter.applyDeepSeekFixes(messages);
+
+            assertEquals("", result.get(1).getReasoningContent());
+            assertEquals("thinking", result.get(2).getReasoningContent());
         }
     }
 
@@ -446,8 +465,9 @@ class DeepSeekFormatterTest {
         }
 
         @Test
-        @DisplayName("Should only preserve reasoning_content for segments that had tool calls")
-        void testShouldOnlyPreserveReasoningForSegmentsWithToolCalls() {
+        @DisplayName(
+                "Should preserve reasoning_content for text-only turns as well as tool-call turns")
+        void testShouldPreserveReasoningForSegmentsWithAndWithoutToolCalls() {
             // Round 1: text only, no tool calls → reasoning not needed, should be removed
             // Round 2: has tool calls → reasoning must be preserved
             // Round 3: has tool calls → reasoning must be preserved
@@ -500,7 +520,7 @@ class DeepSeekFormatterTest {
             List<OpenAIMessage> result = DeepSeekFormatter.applyDeepSeekFixes(messages);
 
             assertEquals(8, result.size());
-            assertNull(result.get(1).getReasoningContent());
+            assertEquals("Just greeting, reply directly", result.get(1).getReasoningContent());
             assertEquals("Need to call search tool", result.get(3).getReasoningContent());
             assertEquals("Query wiki", result.get(5).getReasoningContent());
             assertEquals("Summarizing results", result.get(7).getReasoningContent());
@@ -566,10 +586,10 @@ class DeepSeekFormatterTest {
         }
 
         @Test
-        @DisplayName("Should remove reasoning_content for previous turns without tool calls")
-        void testShouldRemoveReasoningForPreviousTurnsWithoutToolCalls() {
-            // Previous-turn text-only messages without tool calls should have
-            // reasoning_content removed to save context space.
+        @DisplayName("Should preserve reasoning_content for previous turns without tool calls")
+        void testShouldPreserveReasoningForPreviousTurnsWithoutToolCalls() {
+            // Previous-turn text-only messages without tool calls keep their
+            // reasoning_content: DeepSeek requires all assistant turns passed back.
             List<OpenAIMessage> messages =
                     List.of(
                             OpenAIMessage.builder().role("user").content("Hello").build(),
@@ -588,8 +608,8 @@ class DeepSeekFormatterTest {
             List<OpenAIMessage> result = DeepSeekFormatter.applyDeepSeekFixes(messages);
 
             assertEquals(4, result.size());
-            // Previous turn text-only → reasoning removed
-            assertNull(result.get(1).getReasoningContent());
+            // Previous turn text-only → reasoning preserved
+            assertEquals("Just greeting, reply directly", result.get(1).getReasoningContent());
             // Current turn → reasoning preserved
             assertEquals("User is saying goodbye", result.get(3).getReasoningContent());
         }
@@ -705,6 +725,30 @@ class DeepSeekFormatterTest {
             assertEquals("system", result.get(0).getRole());
             // Name removed
             assertNull(result.get(1).getName());
+        }
+
+        @Test
+        @DisplayName("Should apply all DeepSeek fixes on the two-arg production path")
+        void testFormatTwoArgAppliesFixes() {
+            List<Msg> messages =
+                    List.of(
+                            Msg.builder()
+                                    .role(MsgRole.USER)
+                                    .name("Alice")
+                                    .content(List.of(TextBlock.builder().text("Hello").build()))
+                                    .build(),
+                            Msg.builder()
+                                    .role(MsgRole.ASSISTANT)
+                                    .content(List.of(TextBlock.builder().text("Hi").build()))
+                                    .build());
+
+            List<OpenAIMessage> result = formatter.format(messages, null);
+
+            assertEquals(2, result.size());
+            // Name removed
+            assertNull(result.get(0).getName());
+            // Missing reasoning_content backfilled for the assistant turn
+            assertEquals("", result.get(1).getReasoningContent());
         }
 
         @Test

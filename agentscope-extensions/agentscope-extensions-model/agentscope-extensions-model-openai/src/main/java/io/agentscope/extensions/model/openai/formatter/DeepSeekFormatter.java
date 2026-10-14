@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.openai.dto.OpenAIContentPart;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import java.util.ArrayList;
@@ -28,7 +29,8 @@ import java.util.List;
  * <ul>
  *   <li>No name field in messages (returns HTTP 400 if present)</li>
  *   <li>Does NOT support strict parameter in tool definitions</li>
- *   <li>In thinking mode, reasoning_content is preserved for segments with tool calls</li>
+ *   <li>reasoning_content is preserved for all assistant messages and backfilled when
+ *       missing</li>
  * </ul>
  *
  * <p>Usage:
@@ -66,7 +68,12 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
 
     @Override
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
-        List<OpenAIMessage> messages = super.doFormat(msgs);
+        return doFormat(msgs, null);
+    }
+
+    @Override
+    protected List<OpenAIMessage> doFormat(List<Msg> msgs, GenerateOptions options) {
+        List<OpenAIMessage> messages = super.doFormat(msgs, options);
         messages = applyDeepSeekFixes(messages);
         if (appendEmptyUserIfEndsWithAssistant) {
             messages = appendEmptyUserIfNeeded(messages);
@@ -82,12 +89,16 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
     /**
      * Apply DeepSeek-specific message format fixes.
      *
-     * <p>DeepSeek API requires:
-     * <ul>
-     *   <li>No name field in messages</li>
-     *   <li>In thinking mode, reasoning_content preserved for segments with tool calls</li>
-     *   <li>reasoning_content removed for segments without tool calls in thinking mode</li>
-     * </ul>
+     * <p>DeepSeek API requires (thinking mode, requests carrying tools): reasoning_content
+     * must be fully passed back for <b>all</b> assistant turns — even turns without tool
+     * calls; otherwise the API returns HTTP 400 ("The reasoning_content in the thinking mode
+     * must be passed back to the API").
+     *
+     * <p>This deprecated formatter additionally removes the legacy {@code name} field, which
+     * the old DeepSeek endpoint rejects with HTTP 400.
+     *
+     * <p>Fixes mutate the freshly converted message list in place; the input {@link Msg}
+     * objects and persisted history are not touched.
      *
      * <p>This method is static to allow sharing with {@link DeepSeekMultiAgentFormatter}.
      *
@@ -95,49 +106,16 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
      * @return the fixed messages for DeepSeek API
      */
     static List<OpenAIMessage> applyDeepSeekFixes(List<OpenAIMessage> messages) {
-        int lastUserIndex = findLastUserIndex(messages);
-        boolean thinkingMode = messages.stream().anyMatch(m -> m.getReasoningContent() != null);
-        boolean[] segHasTool = thinkingMode ? computeSegmentToolFlags(messages) : null;
-
         List<OpenAIMessage> result = new ArrayList<>(messages.size());
-        for (int i = 0; i < messages.size(); i++) {
-            boolean isCurrentTurn = i >= lastUserIndex;
-            boolean needReasoning =
-                    thinkingMode
-                            ? (isCurrentTurn || (segHasTool != null && segHasTool[i]))
-                            : isCurrentTurn;
-            result.add(fixMessage(messages.get(i), needReasoning));
+        for (OpenAIMessage msg : messages) {
+            OpenAIMessage fixed = fixMessage(msg);
+            // Backfill missing reasoning_content
+            if ("assistant".equals(fixed.getRole()) && fixed.getReasoningContent() == null) {
+                fixed.setReasoningContent("");
+            }
+            result.add(fixed);
         }
         return result;
-    }
-
-    /**
-     * Scans messages in a single pass to identify segments (between consecutive
-     * user messages) that contain tool calls. Messages within such segments
-     * are flagged to preserve their reasoning_content.
-     */
-    private static boolean[] computeSegmentToolFlags(List<OpenAIMessage> messages) {
-        boolean[] flags = new boolean[messages.size()];
-        int prevUser = -1;
-        for (int i = 0; i <= messages.size(); i++) {
-            if (i == messages.size() || "user".equals(messages.get(i).getRole())) {
-                if (prevUser >= 0) {
-                    // Check if segment (prevUser, i) has any tool call
-                    boolean hasTool = false;
-                    for (int j = prevUser + 1; j < i && !hasTool; j++) {
-                        OpenAIMessage m = messages.get(j);
-                        hasTool = m.getToolCalls() != null && !m.getToolCalls().isEmpty();
-                    }
-                    if (hasTool) {
-                        for (int j = prevUser + 1; j < i; j++) {
-                            flags[j] = true;
-                        }
-                    }
-                }
-                prevUser = i;
-            }
-        }
-        return flags;
     }
 
     /**
@@ -158,28 +136,13 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
         return result;
     }
 
-    private static int findLastUserIndex(List<OpenAIMessage> messages) {
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            if ("user".equals(messages.get(i).getRole())) {
-                return i;
-            }
-        }
-        return 0; // No user message found, treat all as current turn
-    }
-
     @SuppressWarnings("unchecked")
-    private static OpenAIMessage fixMessage(OpenAIMessage msg, boolean needReasoning) {
-        boolean hasName = msg.getName() != null;
-        boolean hasReasoning = msg.getReasoningContent() != null;
-        // needReasoning is determined by applyDeepSeekFixes:
-        // true = current turn, or segment had tool calls in thinking mode
-        boolean shouldRemoveReasoning = hasReasoning && !needReasoning;
-
-        if (!hasName && !shouldRemoveReasoning) {
+    private static OpenAIMessage fixMessage(OpenAIMessage msg) {
+        if (msg.getName() == null) {
             return msg;
         }
 
-        // Build new message without the name field or stale reasoning content
+        // Build new message without the name field
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role(msg.getRole());
 
         Object content = msg.getContent();
@@ -195,8 +158,7 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
         if (msg.getToolCallId() != null) {
             builder.toolCallId(msg.getToolCallId());
         }
-
-        if (needReasoning && hasReasoning) {
+        if (msg.getReasoningContent() != null) {
             builder.reasoningContent(msg.getReasoningContent());
         }
 
