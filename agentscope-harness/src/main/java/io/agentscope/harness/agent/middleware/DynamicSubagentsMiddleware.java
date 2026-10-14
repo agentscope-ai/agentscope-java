@@ -31,6 +31,7 @@ import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
+import io.agentscope.harness.agent.workspace.WorkspaceDefinitionAuthority;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -74,6 +75,7 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
 
     private final List<SubagentEntry> staticEntries;
     private final AbstractFilesystem filesystem;
+    private WorkspaceDefinitionAuthority definitionAuthority;
     private final Path mainWorkspace;
     private final Function<SubagentDeclaration, SubagentFactory> factoryBuilder;
     private final DefaultAgentManager agentManager;
@@ -101,6 +103,12 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
                         ? subagentTool
                         : new AgentSpawnTool(agentManager, taskRepository, 0);
         this.taskTool = new TaskTool(taskRepository);
+    }
+
+    public DynamicSubagentsMiddleware setDefinitionAuthority(
+            WorkspaceDefinitionAuthority authority) {
+        this.definitionAuthority = authority;
+        return this;
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -232,7 +240,10 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
     private List<SubagentDeclaration> loadDeclarationsViaFilesystem(RuntimeContext rc) {
         GlobResult glob;
         try {
-            glob = filesystem.glob(rc, SUBAGENT_GLOB, SUBAGENTS_DIR);
+            glob =
+                    definitionAuthority != null
+                            ? definitionAuthority.glob(rc, filesystem, SUBAGENT_GLOB, SUBAGENTS_DIR)
+                            : filesystem.glob(rc, SUBAGENT_GLOB, SUBAGENTS_DIR);
         } catch (Exception e) {
             log.debug("Filesystem glob for subagents failed: {}", e.getMessage());
             return Collections.emptyList();
@@ -256,7 +267,11 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
                 continue;
             }
             try {
-                ReadResult rr = filesystem.read(rc, path, 0, 0);
+                AbstractFilesystem source =
+                        definitionAuthority != null
+                                ? definitionAuthority.readFilesystem(path, filesystem)
+                                : filesystem;
+                ReadResult rr = source.read(rc, path, 0, 0);
                 if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
                     continue;
                 }

@@ -27,6 +27,7 @@ import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.workspace.WorkspaceDefinitionAuthority;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -74,6 +75,7 @@ public class WorkspaceSkillRepository
     private static final String ARCHIVE_PREFIX = ".archive";
 
     private final AbstractFilesystem filesystem;
+    private WorkspaceDefinitionAuthority definitionAuthority;
     private final String skillsRelativeDir;
 
     private final String source;
@@ -109,6 +111,17 @@ public class WorkspaceSkillRepository
         this.skillsRelativeDir = Objects.requireNonNull(skillsRelativeDir, "skillsRelativeDir");
         this.source = (source == null || source.isBlank()) ? DEFAULT_SOURCE : source;
         this.writable = writable;
+    }
+
+    /** Applies host authority only to configured definition roots. Tool writes are unchanged. */
+    public void setDefinitionAuthority(WorkspaceDefinitionAuthority authority) {
+        this.definitionAuthority = authority;
+    }
+
+    private AbstractFilesystem readFilesystem(String path) {
+        return definitionAuthority != null
+                ? definitionAuthority.readFilesystem(path, filesystem)
+                : filesystem;
     }
 
     // =========================================================================
@@ -151,12 +164,23 @@ public class WorkspaceSkillRepository
         RuntimeContext ctx = context != null ? context : RuntimeContext.empty();
         GlobResult glob;
         try {
-            glob = filesystem.glob(ctx, SKILL_FILE, skillsRelativeDir);
+            glob =
+                    definitionAuthority != null
+                            ? definitionAuthority.glob(
+                                    ctx, filesystem, SKILL_FILE, skillsRelativeDir)
+                            : filesystem.glob(ctx, SKILL_FILE, skillsRelativeDir);
         } catch (Exception e) {
             log.debug("Filesystem glob for skills failed: {}", e.getMessage());
             return Collections.emptyList();
         }
-        if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
+        if (!glob.isSuccess()) {
+            log.warn(
+                    "Filesystem glob for skills in '{}' failed: {}",
+                    skillsRelativeDir,
+                    glob.error());
+            return Collections.emptyList();
+        }
+        if (glob.matches() == null || glob.matches().isEmpty()) {
             return Collections.emptyList();
         }
 
@@ -170,7 +194,7 @@ public class WorkspaceSkillRepository
                 continue;
             }
             try {
-                ReadResult rr = filesystem.read(ctx, path, 0, 0);
+                ReadResult rr = readFilesystem(path).read(ctx, path, 0, 0);
                 if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
                     continue;
                 }
@@ -225,7 +249,8 @@ public class WorkspaceSkillRepository
             return SkillResources.empty();
         }
         RuntimeContext effectiveCtx = ctx != null ? ctx : RuntimeContext.empty();
-        return new FilesystemSkillResources(filesystem, skillDirRelative(skillName), effectiveCtx);
+        return new FilesystemSkillResources(
+                filesystem, skillDirRelative(skillName), effectiveCtx, definitionAuthority);
     }
 
     // =========================================================================
@@ -327,7 +352,8 @@ public class WorkspaceSkillRepository
         String path = skillDirRelative(skillName) + "/" + relPath;
         try {
             ReadResult rr =
-                    filesystem.read(context != null ? context : RuntimeContext.empty(), path, 0, 0);
+                    readFilesystem(path)
+                            .read(context != null ? context : RuntimeContext.empty(), path, 0, 0);
             if (rr.isSuccess() && rr.fileData() != null) {
                 return rr.fileData().content();
             }
@@ -567,8 +593,14 @@ public class WorkspaceSkillRepository
         private final AbstractFilesystem fs;
         private final String skillDir;
         private final RuntimeContext capturedCtx;
+        private final WorkspaceDefinitionAuthority authority;
 
-        FilesystemSkillResources(AbstractFilesystem fs, String skillDir, RuntimeContext ctx) {
+        FilesystemSkillResources(
+                AbstractFilesystem fs,
+                String skillDir,
+                RuntimeContext ctx,
+                WorkspaceDefinitionAuthority authority) {
+            this.authority = authority;
             this.fs = fs;
             this.skillDir = skillDir;
             this.capturedCtx = ctx;
@@ -581,7 +613,8 @@ public class WorkspaceSkillRepository
                 return Optional.empty();
             }
             try {
-                ReadResult r = fs.read(capturedCtx, skillDir + "/" + safe, 0, 0);
+                String path = skillDir + "/" + safe;
+                ReadResult r = readFilesystem(path).read(capturedCtx, path, 0, 0);
                 if (r.isSuccess() && r.fileData() != null && r.fileData().content() != null) {
                     return Optional.of(r.fileData().content());
                 }
@@ -599,7 +632,8 @@ public class WorkspaceSkillRepository
             }
             String full = skillDir + "/" + safe;
             try {
-                List<FileDownloadResponse> resps = fs.downloadFiles(capturedCtx, List.of(full));
+                List<FileDownloadResponse> resps =
+                        readFilesystem(full).downloadFiles(capturedCtx, List.of(full));
                 if (resps == null || resps.isEmpty()) {
                     return Optional.empty();
                 }
@@ -616,7 +650,10 @@ public class WorkspaceSkillRepository
         @Override
         public List<String> list() {
             try {
-                GlobResult g = fs.glob(capturedCtx, "**/*", skillDir);
+                GlobResult g =
+                        authority != null
+                                ? authority.glob(capturedCtx, fs, "**/*", skillDir)
+                                : fs.glob(capturedCtx, "**/*", skillDir);
                 if (!g.isSuccess() || g.matches() == null || g.matches().isEmpty()) {
                     return Collections.emptyList();
                 }
@@ -637,6 +674,10 @@ public class WorkspaceSkillRepository
                 log.debug("SkillResources.list() failed: {}", e.getMessage());
                 return Collections.emptyList();
             }
+        }
+
+        private AbstractFilesystem readFilesystem(String path) {
+            return authority != null ? authority.readFilesystem(path, fs) : fs;
         }
 
         private static String sanitize(String relativePath) {

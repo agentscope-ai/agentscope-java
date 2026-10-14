@@ -29,6 +29,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Declarative sandbox filesystem configuration.
@@ -37,6 +39,7 @@ import java.util.Objects;
  * It only describes how to create a sandbox-backed filesystem at build time.
  */
 public abstract class SandboxFilesystemSpec {
+    private static final Logger log = LoggerFactory.getLogger(SandboxFilesystemSpec.class);
 
     private static final List<String> DEFAULT_WORKSPACE_PROJECTION_ROOTS =
             List.of("AGENTS.md", "skills", "subagents", "knowledge", ".skills-cache");
@@ -45,6 +48,7 @@ public abstract class SandboxFilesystemSpec {
     private SandboxSnapshotSpec snapshotSpecOverride;
     private SandboxExecutionGuard executionGuard;
     private boolean workspaceProjectionEnabled = true;
+    private boolean hostAuthoritativeDefinitions = true;
     private List<String> workspaceProjectionRoots = DEFAULT_WORKSPACE_PROJECTION_ROOTS;
 
     protected abstract SandboxClient<?> createClient();
@@ -94,6 +98,27 @@ public abstract class SandboxFilesystemSpec {
         return executionGuard;
     }
 
+    /**
+     * Keeps projected definitions authoritative on the host (default). Set false to restore
+     * legacy sandbox overrides and host-hash-only projection checks.
+     */
+    public SandboxFilesystemSpec hostAuthoritativeDefinitions(boolean enabled) {
+        this.hostAuthoritativeDefinitions = enabled;
+        return this;
+    }
+
+    public boolean isHostAuthoritativeDefinitions() {
+        return hostAuthoritativeDefinitions;
+    }
+
+    public boolean isWorkspaceProjectionEnabled() {
+        return workspaceProjectionEnabled;
+    }
+
+    public List<String> getWorkspaceProjectionRoots() {
+        return workspaceProjectionRoots;
+    }
+
     public SandboxFilesystemSpec workspaceProjectionEnabled(boolean enabled) {
         this.workspaceProjectionEnabled = enabled;
         return this;
@@ -130,9 +155,35 @@ public abstract class SandboxFilesystemSpec {
         if (!workspaceProjectionEnabled || hostWorkspaceRoot == null) {
             return effective;
         }
+        if (hostAuthoritativeDefinitions) {
+            log.info(
+                    "[sandbox] Host-authoritative projected definitions enabled for roots: {}",
+                    workspaceProjectionRoots);
+            boolean projectsMemory =
+                    workspaceProjectionRoots.stream()
+                            .filter(root -> root != null && !root.isBlank())
+                            .anyMatch(
+                                    root -> {
+                                        String normalized =
+                                                Path.of(root.replace('\\', '/'))
+                                                        .normalize()
+                                                        .toString()
+                                                        .replace('\\', '/');
+                                        return normalized.isEmpty()
+                                                || normalized.equals(".")
+                                                || normalized.equals("MEMORY.md");
+                                    });
+            if (projectsMemory) {
+                log.warn(
+                        "[sandbox] MEMORY.md is host-authoritative, but memory API writes still"
+                            + " target the runtime filesystem; those writes will not update trusted"
+                            + " memory context");
+            }
+        }
         WorkspaceProjectionEntry projection = new WorkspaceProjectionEntry();
         projection.setSourceRoot(hostWorkspaceRoot.toAbsolutePath().normalize().toString());
         projection.setIncludeRoots(workspaceProjectionRoots);
+        projection.setHostAuthoritativeDefinitions(hostAuthoritativeDefinitions);
 
         Map<String, WorkspaceEntry> entries = new LinkedHashMap<>(effective.getEntries());
         entries.put("__workspace_projection__", projection);

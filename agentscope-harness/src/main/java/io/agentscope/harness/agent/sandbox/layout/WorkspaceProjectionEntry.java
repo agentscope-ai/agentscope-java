@@ -30,7 +30,17 @@ import java.util.List;
 public class WorkspaceProjectionEntry extends WorkspaceEntry {
 
     private String sourceRoot;
+    private boolean hostAuthoritativeDefinitions = true;
     private List<String> includeRoots = new ArrayList<>();
+
+    /** Whether projected definitions use host-authoritative reads and live-copy verification. */
+    public boolean isHostAuthoritativeDefinitions() {
+        return hostAuthoritativeDefinitions;
+    }
+
+    public void setHostAuthoritativeDefinitions(boolean enabled) {
+        this.hostAuthoritativeDefinitions = enabled;
+    }
 
     /**
      * Absolute host-side workspace root used as source for projection.

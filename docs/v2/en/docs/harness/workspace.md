@@ -196,7 +196,9 @@ for message examples, dynamic sources and budgeting.
 
 ### Two-layer reads (filesystem-first + local fallback)
 
-For every "file injected into the prompt" (`AGENTS.md` / `MEMORY.md` / `knowledge/KNOWLEDGE.md` / `additionalContextFile`), `WorkspaceManager.readWithOverride()` does a **two-layer read**:
+In sandbox mode, the default is different for paths owned by configured `workspaceProjectionRoots(...)`: trusted context reads use the host exclusively, including when a host file is missing or empty. Knowledge listings beneath projected roots likewise exclude sandbox-only files. Unprojected runtime data, including default `MEMORY.md`, retains the two-layer behavior below. Explicit filesystem prefix routes keep precedence. See [host-authoritative projected definitions](/v2/en/docs/harness/filesystem#host-authoritative-projected-definitions) for projection, migration, and the legacy opt-out.
+
+Outside the projected-definition exception, for every "file injected into the prompt" (`AGENTS.md` / `MEMORY.md` / `knowledge/KNOWLEDGE.md` / `additionalContextFile`), `WorkspaceManager.readWithOverride()` does a **two-layer read**:
 
 ```
 1. Ask the configured AbstractFilesystem: do you have this relative path?

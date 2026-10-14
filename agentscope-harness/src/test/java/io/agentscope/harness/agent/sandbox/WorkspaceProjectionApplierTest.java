@@ -88,4 +88,18 @@ class WorkspaceProjectionApplierTest {
         assertNotNull(p2);
         assertNotEquals(p1.hash(), p2.hash());
     }
+
+    @Test
+    void projectionFlagDefaultsSecureForLegacyJsonAndRoundTripsOptOut() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        WorkspaceProjectionEntry entry =
+                mapper.readValue(
+                        "{\"type\":\"workspace_projection\",\"sourceRoot\":\"/host\",\"includeRoots\":[\"AGENTS.md\"]}",
+                        WorkspaceProjectionEntry.class);
+        org.junit.jupiter.api.Assertions.assertTrue(entry.isHostAuthoritativeDefinitions());
+        entry.setHostAuthoritativeDefinitions(false);
+        var copy =
+                mapper.readValue(mapper.writeValueAsString(entry), WorkspaceProjectionEntry.class);
+        org.junit.jupiter.api.Assertions.assertFalse(copy.isHostAuthoritativeDefinitions());
+    }
 }

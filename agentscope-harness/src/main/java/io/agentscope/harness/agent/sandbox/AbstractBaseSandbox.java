@@ -55,6 +55,7 @@ public abstract class AbstractBaseSandbox implements Sandbox {
     private final SandboxState state;
     private final WorkspaceSpecApplier workspaceSpecApplier;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private boolean projectionVerificationUnsupported;
 
     protected AbstractBaseSandbox(SandboxState state) {
         this.state = state;
@@ -264,13 +265,38 @@ public abstract class AbstractBaseSandbox implements Sandbox {
      */
     protected abstract String getWorkspaceRoot();
 
+    private boolean projectionMatchesSandbox(WorkspaceProjectionApplier.ProjectionPayload payload) {
+        if (payload.fileHashes().isEmpty()) return true;
+        if (projectionVerificationUnsupported) return false;
+        try {
+            return WorkspaceProjectionApplier.matchesSandbox(payload, this, getWorkspaceRoot());
+        } catch (WorkspaceProjectionApplier.UnsupportedVerificationException e) {
+            projectionVerificationUnsupported = true;
+            log.warn(
+                    "[sandbox] Live projection verification requires sha256sum and test;"
+                            + " rehydrating host definitions on each start: {}",
+                    e.getMessage());
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[sandbox] Projection verification interrupted; rehydrating host definitions");
+            return false;
+        } catch (Exception e) {
+            log.warn(
+                    "[sandbox] Projection verification failed; rehydrating host definitions: {}",
+                    e.getMessage());
+            return false;
+        }
+    }
+
     private void applyWorkspaceProjectionIfChanged(WorkspaceSpec spec) throws Exception {
         WorkspaceProjectionApplier.ProjectionPayload payload =
                 WorkspaceProjectionApplier.build(spec);
         if (payload == null) {
             return;
         }
-        if (Objects.equals(payload.hash(), state.getWorkspaceProjectionHash())) {
+        if (Objects.equals(payload.hash(), state.getWorkspaceProjectionHash())
+                && projectionMatchesSandbox(payload)) {
             log.debug("[sandbox] Workspace projection unchanged, skipping");
             return;
         }

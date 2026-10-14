@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.workspace.WorkspaceDefinitionAuthority;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -150,11 +151,23 @@ public final class AgentSpecLoader {
      */
     public static List<SubagentDeclaration> loadFromFilesystem(
             AbstractFilesystem filesystem, RuntimeContext runtimeContext, Path mainWorkspace) {
+        return loadFromFilesystem(filesystem, runtimeContext, mainWorkspace, null);
+    }
+
+    /** Loads projected declarations from the host while preserving unowned runtime paths. */
+    public static List<SubagentDeclaration> loadFromFilesystem(
+            AbstractFilesystem filesystem,
+            RuntimeContext runtimeContext,
+            Path mainWorkspace,
+            WorkspaceDefinitionAuthority authority) {
         if (filesystem == null) {
             return Collections.emptyList();
         }
         RuntimeContext ctx = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        GlobResult glob = filesystem.glob(ctx, "*.md", "subagents");
+        GlobResult glob =
+                authority != null
+                        ? authority.glob(ctx, filesystem, "*.md", "subagents")
+                        : filesystem.glob(ctx, "*.md", "subagents");
         if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
             return Collections.emptyList();
         }
@@ -169,7 +182,9 @@ public final class AgentSpecLoader {
                 continue;
             }
             try {
-                ReadResult rr = filesystem.read(ctx, path, 0, 0);
+                AbstractFilesystem source =
+                        authority != null ? authority.readFilesystem(path, filesystem) : filesystem;
+                ReadResult rr = source.read(ctx, path, 0, 0);
                 if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
                     continue;
                 }

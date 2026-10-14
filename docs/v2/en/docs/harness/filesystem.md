@@ -387,6 +387,29 @@ The agent can read/write files under `/Users/alice/my-project` and `/Users/alice
 
 ---
 
+### Host-authoritative projected definitions
+
+Sandbox mode defaults to `hostAuthoritativeDefinitions(true)`. Agent context reads, workspace skill discovery, and lazy skill-resource reads use the host for paths owned by `workspaceProjectionRoots(...)`; sandbox edits and sandbox-only skills beneath those roots do not override the trusted definitions. Explicit `.filesystem(prefix, backend)` routes retain precedence.
+
+The default projection roots remain `AGENTS.md`, `skills`, `subagents`, `knowledge`, and `.skills-cache`. `MEMORY.md` is not added: its normal runtime reads, writes, and persistence are unchanged. Explicitly projecting `MEMORY.md` makes its context reads host-authoritative too; memory API writes still use the runtime filesystem.
+
+On each sandbox start, an unchanged host payload is skipped only after checking the current projected file contents. Divergence or failed verification triggers hydration from the host. Extra sandbox files are retained, but cannot enter the trusted catalog beneath projected roots. Ordinary unprojected files and shell execution remain writable.
+
+**Migration:** the new default changes where trusted definitions are read on upgrade. Host-authored user skills still override shared host skills according to the configured isolation namespace; sandbox-only overrides under owned roots no longer do. Promote trusted changes to the host, narrow projection roots, or use the legacy opt-out below.
+
+Live verification requires `sha256sum` and the shell `test` command. If unavailable, the sandbox logs one warning, remembers that verification is unsupported for that sandbox instance, and rehydrates on every start. Other verification failures also force hydration; debug logs identify the affected file or batch. This fallback preserves the security default but incurs transfer overhead on resumed calls.
+
+Explicitly projecting `MEMORY.md` emits a configuration warning: memory API writes still target the runtime filesystem and will not update the host-authoritative memory context. Leave it out of projection roots for normal writable memory; its default behavior is unchanged.
+
+For applications that intentionally depend on sandbox definition overrides, opt back into the legacy behavior:
+
+```java
+.filesystem(new DockerFilesystemSpec()
+    .hostAuthoritativeDefinitions(false))
+```
+
+The opt-out restores filesystem-first definition reads, sandbox skill overrides, and host-hash-only projection checks. Alternatively, narrow `workspaceProjectionRoots(...)` to keep selected paths under runtime ownership. Disabling projection also leaves the existing runtime semantics intact.
+
 ## IsolationScope — bucketing across users and replicas
 
 Both mode 1 (shared store) and mode 2 (sandbox) use the same `IsolationScope` concept to decide **who shares state with whom**:

@@ -2676,6 +2676,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             WorkspaceManager wsManager =
                     new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
+            if (sandboxFilesystemSpec != null
+                    && sandboxFilesystemSpec.isWorkspaceProjectionEnabled()
+                    && sandboxFilesystemSpec.isHostAuthoritativeDefinitions()) {
+                wsManager.setDefinitionAuthority(
+                        new io.agentscope.harness.agent.workspace.WorkspaceDefinitionAuthority(
+                                resolvedWorkspace,
+                                sandboxFilesystemSpec.getWorkspaceProjectionRoots(),
+                                filesystem));
+            }
             wsManager.validate();
 
             final AbstractFilesystem sharedFilesystemRef = filesystem;
@@ -2690,7 +2699,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         AbstractFilesystem ctxFs =
                                 new io.agentscope.harness.agent.filesystem.BakedContextFilesystem(
                                         sharedFilesystemRef, bakedRc);
-                        return new WorkspaceManager(capturedWorkspace, ctxFs, capturedIndex, ctxNs);
+                        WorkspaceManager contextual =
+                                new WorkspaceManager(
+                                        capturedWorkspace, ctxFs, capturedIndex, ctxNs);
+                        contextual.setDefinitionAuthority(wsManager.getDefinitionAuthority());
+                        return contextual;
                     };
 
             // ---- MessageBus / AsyncToolRegistry: workspace defaults ----
@@ -3003,6 +3016,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 WorkspaceSkillRepository draftsWritableRepo =
                         new WorkspaceSkillRepository(
                                 filesystem, smConfig.draftsDir(), "workspace-drafts");
+                var skillAuthority = HarnessAgentBuilderSupport.skillDefinitionAuthority(wsManager);
+                mainWritableRepo.setDefinitionAuthority(skillAuthority);
+                draftsWritableRepo.setDefinitionAuthority(skillAuthority);
                 SkillUsageStore usageStore =
                         distributedStore != null
                                 ? SkillUsageStore.baseStore(distributedStore.baseStore())
