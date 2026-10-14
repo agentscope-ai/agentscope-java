@@ -16,12 +16,16 @@
 package io.agentscope.harness.agent.memory.compaction;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.session.SessionRecorder;
@@ -356,7 +360,8 @@ public class ConversationCompactor {
     /**
      * Determines the cutoff index separating the prefix-to-summarize from the tail-to-keep.
      *
-     * <p>The cutoff is adjusted so that ASSISTANT/TOOL pairs are never split.
+     * <p>The cutoff is adjusted so that ASSISTANT/TOOL pairs are never split and so that messages
+     * carrying raw media are never deleted by summarization.
      */
     private static int determineCutoffIndex(
             List<Msg> messages, int totalTokens, CompactionConfig config) {
@@ -366,7 +371,72 @@ public class ConversationCompactor {
         } else {
             rawCutoff = findMessageBasedCutoff(messages, config.getKeepMessages());
         }
-        return findSafeCutoffPoint(messages, rawCutoff);
+        int cutoff = findSafeCutoffPoint(messages, rawCutoff);
+        return findRetentionSafeCutoff(messages, cutoff);
+    }
+
+    /**
+     * Moves the cutoff before the earliest retention-protected message so raw media blocks are not
+     * removed from the working history by summarization.
+     *
+     * <p>When the tool-group rule cannot keep the protected message without splitting its pair,
+     * the cutoff collapses to 0 and the caller falls back to the lightweight non-summarizing
+     * result: media is never sacrificed to satisfy the budget.
+     */
+    private static int findRetentionSafeCutoff(List<Msg> messages, int cutoffIndex) {
+        if (cutoffIndex <= 0) {
+            return cutoffIndex;
+        }
+        int protectedIndex = -1;
+        for (int i = 0; i < cutoffIndex; i++) {
+            if (isRetentionProtected(messages.get(i))) {
+                protectedIndex = i;
+                break;
+            }
+        }
+        if (protectedIndex < 0) {
+            return cutoffIndex;
+        }
+        int adjusted = findSafeCutoffPoint(messages, protectedIndex);
+        if (adjusted > protectedIndex) {
+            // Orphaned tool results would push the protected message back into the prefix.
+            return 0;
+        }
+        return adjusted;
+    }
+
+    /** Returns true when deleting this message via summarization would drop media. */
+    private static boolean isRetentionProtected(Msg msg) {
+        if (msg == null) {
+            return false;
+        }
+        List<ContentBlock> blocks = msg.getContent();
+        if (blocks == null) {
+            return false;
+        }
+        for (ContentBlock block : blocks) {
+            if (containsMediaBlock(block)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsMediaBlock(ContentBlock block) {
+        if (block instanceof ImageBlock
+                || block instanceof AudioBlock
+                || block instanceof VideoBlock
+                || block instanceof DataBlock) {
+            return true;
+        }
+        if (block instanceof ToolResultBlock tr && tr.getOutput() != null) {
+            for (ContentBlock child : tr.getOutput()) {
+                if (containsMediaBlock(child)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** Returns the earliest index such that {@code messages[index:]} fits within the token budget. */
@@ -496,45 +566,16 @@ public class ConversationCompactor {
      * Formats a list of messages as a human-readable text block for the summarization LLM.
      *
      * <p>Renders TEXT blocks verbatim; TOOL_USE and TOOL_RESULT blocks as concise inline
-     * representations so the summarizer understands what actions were taken.
+     * representations; Image/Data/Audio/Video blocks as stable placeholders so media semantics
+     * are preserved without leaking binary data, URLs or file paths into the summary.
      */
     static String formatMessagesForSummary(List<Msg> messages) {
+        CompactionMediaRenderer renderer = new CompactionMediaRenderer();
         return messages.stream()
                 .filter(m -> m.getRole() != null && m.getRole() != MsgRole.SYSTEM)
-                .map(ConversationCompactor::renderMessageForSummary)
+                .map(renderer::renderMessage)
                 .filter(s -> !s.isBlank())
                 .collect(Collectors.joining("\n\n"));
-    }
-
-    private static String renderMessageForSummary(Msg msg) {
-        String roleLabel =
-                switch (msg.getRole()) {
-                    case USER -> "Human";
-                    case ASSISTANT -> "AI";
-                    case TOOL -> "Tool";
-                    default -> msg.getRole().name();
-                };
-
-        StringBuilder sb = new StringBuilder(roleLabel).append(": ");
-        boolean first = true;
-        for (ContentBlock block : msg.getContent()) {
-            if (!first) sb.append(" ");
-            first = false;
-            if (block instanceof TextBlock tb && tb.getText() != null && !tb.getText().isBlank()) {
-                sb.append(tb.getText().strip());
-            } else if (block instanceof ToolUseBlock tu) {
-                sb.append("[tool_call: ").append(tu.getName()).append("]");
-            } else if (block instanceof ToolResultBlock tr) {
-                String text = extractToolResultText(tr);
-                sb.append("[tool_result: ")
-                        .append(tr.getName() != null ? tr.getName() : "?")
-                        .append("] ");
-                if (!text.isBlank()) {
-                    sb.append(text.length() > 500 ? text.substring(0, 500) + "..." : text);
-                }
-            }
-        }
-        return sb.toString().strip();
     }
 
     private static String extractToolResultText(ToolResultBlock tr) {
@@ -544,6 +585,13 @@ public class ConversationCompactor {
                 .map(b -> ((TextBlock) b).getText())
                 .filter(t -> t != null && !t.isBlank())
                 .collect(Collectors.joining(" "));
+    }
+
+    private static boolean containsNonTextBlock(ToolResultBlock tr) {
+        if (tr.getOutput() == null) {
+            return false;
+        }
+        return tr.getOutput().stream().anyMatch(b -> !(b instanceof TextBlock));
     }
 
     // -------------------------------------------------------------------------
@@ -659,6 +707,11 @@ public class ConversationCompactor {
                     protectedTokens += tokens;
                     continue;
                 }
+                // Unregistered media inside a tool result must not be silently dropped by a
+                // text-only preview. Skip pruning for this block; the text stays intact.
+                if (containsNonTextBlock(tr)) {
+                    continue;
+                }
                 if (text.length() > maxChars) {
                     prunableTokens += tokens;
                     toPrune.add(new int[] {i, j});
@@ -686,19 +739,11 @@ public class ConversationCompactor {
                             .output(List.of(TextBlock.builder().text(preview).build()))
                             .metadata(tr.getMetadata())
                             .state(tr.getState())
+                            .executionDetails(tr.getExecutionDetails())
                             .build();
             newBlocks.set(blockIdx, pruned);
-            result.set(
-                    msgIdx,
-                    Msg.builder()
-                            .id(msg.getId())
-                            .name(msg.getName())
-                            .role(msg.getRole())
-                            .content(newBlocks)
-                            .metadata(msg.getMetadata())
-                            .timestamp(msg.getTimestamp())
-                            .usage(msg.getUsage())
-                            .build());
+            // withContent keeps id/name/role/metadata/timestamp/usage of the carrying message.
+            result.set(msgIdx, msg.withContent(newBlocks));
         }
 
         log.info("Pruned {} tool results (~{} tokens freed)", toPrune.size(), prunableTokens);
@@ -815,7 +860,7 @@ public class ConversationCompactor {
         if (!anyModified) {
             return msg;
         }
-        return Msg.builder().role(msg.getRole()).name(msg.getName()).content(newBlocks).build();
+        return msg.withContent(newBlocks);
     }
 
     /**
@@ -832,7 +877,10 @@ public class ConversationCompactor {
         Map<String, Object> newInput = new HashMap<>(input);
         for (Map.Entry<String, Object> entry : input.entrySet()) {
             if (entry.getValue() instanceof String s && s.length() > cfg.getMaxArgLength()) {
-                newInput.put(entry.getKey(), s.substring(0, 20) + cfg.getTruncationText());
+                newInput.put(
+                        entry.getKey(),
+                        s.substring(0, Math.min(cfg.getPreviewChars(), s.length()))
+                                + cfg.getTruncationText());
                 anyModified = true;
             }
         }
@@ -840,6 +888,13 @@ public class ConversationCompactor {
         if (!anyModified) {
             return tu;
         }
-        return ToolUseBlock.builder().id(tu.getId()).name(tu.getName()).input(newInput).build();
+        return ToolUseBlock.builder()
+                .id(tu.getId())
+                .name(tu.getName())
+                .input(newInput)
+                .content(tu.getContent())
+                .metadata(tu.getMetadata())
+                .state(tu.getState())
+                .build();
     }
 }
