@@ -425,6 +425,7 @@ public class CompactionConfig {
         private final int keepMessages;
         private final int keepTokens;
         private final int maxArgLength;
+        private final int previewChars;
         private final String truncationText;
 
         private TruncateArgsConfig(TruncateArgsBuilder b) {
@@ -433,6 +434,7 @@ public class CompactionConfig {
             this.keepMessages = b.keepMessages;
             this.keepTokens = b.keepTokens;
             this.maxArgLength = b.maxArgLength;
+            this.previewChars = b.previewChars;
             this.truncationText = b.truncationText;
         }
 
@@ -457,7 +459,12 @@ public class CompactionConfig {
             return maxArgLength;
         }
 
-        /** Suffix appended after the first 20 characters of a truncated argument. */
+        /** Number of characters kept at the start of a truncated argument (default 20). */
+        public int getPreviewChars() {
+            return previewChars;
+        }
+
+        /** Suffix appended after the preview characters of a truncated argument. */
         public String getTruncationText() {
             return truncationText;
         }
@@ -473,6 +480,7 @@ public class CompactionConfig {
             private int keepMessages = 20;
             private int keepTokens = 0;
             private int maxArgLength = 2_000;
+            private int previewChars = 20;
             private String truncationText = "...(argument truncated)";
 
             public TruncateArgsBuilder triggerMessages(int triggerMessages) {
@@ -497,6 +505,11 @@ public class CompactionConfig {
 
             public TruncateArgsBuilder maxArgLength(int maxArgLength) {
                 this.maxArgLength = maxArgLength;
+                return this;
+            }
+
+            public TruncateArgsBuilder previewChars(int previewChars) {
+                this.previewChars = previewChars;
                 return this;
             }
 
