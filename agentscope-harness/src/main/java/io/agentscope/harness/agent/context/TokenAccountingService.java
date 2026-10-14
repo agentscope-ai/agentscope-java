@@ -77,6 +77,32 @@ public final class TokenAccountingService {
         return estimate(new TokenSurface(messages, List.of())).totalTokens();
     }
 
+    /** Cost of a set of content blocks, excluding per-message overhead. */
+    public long countBlocks(List<ContentBlock> blocks) {
+        long total = 0;
+        if (blocks != null) {
+            for (ContentBlock block : blocks) {
+                BlockCounts counts = countBlock(block);
+                total =
+                        saturatedAdd(
+                                total,
+                                saturatedAdd(
+                                        counts.text(),
+                                        saturatedAdd(counts.media(), counts.overhead())));
+            }
+        }
+        return total;
+    }
+
+    /** Per-message overhead only (fixed cost plus role/name text), without block costs. */
+    public long messageOverhead(Msg msg) {
+        if (msg == null) {
+            return 0;
+        }
+        return saturatedAdd(
+                MESSAGE_OVERHEAD, saturatedAdd(countText(roleName(msg)), countText(msg.getName())));
+    }
+
     /** Estimates a full request including tool schemas; used by the final budget check. */
     public TokenEstimate estimate(TokenSurface surface) {
         long text = 0;

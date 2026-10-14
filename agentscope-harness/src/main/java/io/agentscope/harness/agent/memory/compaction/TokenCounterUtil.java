@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.memory.compaction;
 
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.context.TokenAccountingService;
 import java.util.List;
@@ -41,6 +42,21 @@ public class TokenCounterUtil {
             return 0;
         }
         long tokens = SERVICE.countMessages(messages);
+        return tokens > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tokens;
+    }
+
+    /**
+     * Calculates the estimated token cost of a set of content blocks, excluding per-message
+     * overhead. Used to price only the selected blocks that pruning will actually shrink.
+     */
+    public static int calculateBlockToken(List<ContentBlock> blocks) {
+        long tokens = SERVICE.countBlocks(blocks);
+        return tokens > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tokens;
+    }
+
+    /** Calculates the per-message overhead only (fixed cost plus role/name text). */
+    public static int calculateMessageOverhead(Msg msg) {
+        long tokens = SERVICE.messageOverhead(msg);
         return tokens > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tokens;
     }
 }

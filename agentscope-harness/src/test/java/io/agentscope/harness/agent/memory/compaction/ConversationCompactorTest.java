@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.memory.compaction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -24,9 +25,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolExecutionDetails;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -37,7 +42,9 @@ import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -257,6 +264,50 @@ class ConversationCompactorTest {
         }
     }
 
+    /**
+     * A message carrying one prunable result and one far larger excluded result must not borrow the
+     * excluded result's tokens to cross the minimum-prune threshold.
+     */
+    @Test
+    void pruneBudgetIgnoresUnselectedBlocksInTheSameMessage() {
+        ConversationCompactor compactor =
+                new ConversationCompactor(new RecordingModel(), mock(MemoryFlushManager.class));
+        ToolResultBlock candidate =
+                toolResult(
+                        "call:a",
+                        "tool_candidate",
+                        List.of(TextBlock.builder().text("x".repeat(400)).build()),
+                        Map.of(),
+                        ToolResultState.SUCCESS,
+                        null);
+        ToolResultBlock excluded =
+                toolResult(
+                        "call:big",
+                        "tool_big",
+                        List.of(TextBlock.builder().text("y".repeat(50_000)).build()),
+                        Map.of(),
+                        ToolResultState.SUCCESS,
+                        null);
+        Msg message =
+                Msg.builderForRole(MsgRole.TOOL)
+                        .id("msg-mixed")
+                        .content(candidate, excluded)
+                        .build();
+        CompactionConfig.PruneConfig pruneConfig =
+                CompactionConfig.PruneConfig.builder()
+                        .protectTokens(0)
+                        .minimumTokens(1_000)
+                        .maxOutputChars(10)
+                        .excludedTools(Set.of("tool_big"))
+                        .build();
+
+        List<Msg> result = compactor.pruneToolResults(List.of(message), pruneConfig);
+
+        // Only the ~candidate tokens count, well under the 1_000 threshold, so nothing is pruned.
+        assertSame(message, result.get(0));
+        assertFalse(toolOutput(result.get(0)).contains("chars pruned"));
+    }
+
     /** Creates a regular user message. */
     private static Msg message(String text) {
         return Msg.builder()
@@ -301,6 +352,36 @@ class ConversationCompactorTest {
     /** Returns message texts for concise routing assertions. */
     private static List<String> texts(List<Msg> messages) {
         return messages.stream().map(ConversationCompactorTest::text).toList();
+    }
+
+    /** Builds a {@link ToolResultBlock} with full metadata for preservation checks. */
+    private static ToolResultBlock toolResult(
+            String id,
+            String name,
+            List<ContentBlock> output,
+            Map<String, Object> metadata,
+            ToolResultState state,
+            ToolExecutionDetails details) {
+        return ToolResultBlock.builder()
+                .id(id)
+                .name(name)
+                .output(output)
+                .metadata(metadata)
+                .state(state)
+                .executionDetails(details)
+                .build();
+    }
+
+    /** Concatenates text output from a tool result message. */
+    private static String toolOutput(Msg message) {
+        ToolResultBlock result = message.getContentBlocks(ToolResultBlock.class).get(0);
+        StringBuilder output = new StringBuilder();
+        for (ContentBlock block : result.getOutput()) {
+            if (block instanceof TextBlock text && text.getText() != null) {
+                output.append(text.getText());
+            }
+        }
+        return output.toString();
     }
 
     /** Holds isolated compactor dependencies and invocation records for each test. */
