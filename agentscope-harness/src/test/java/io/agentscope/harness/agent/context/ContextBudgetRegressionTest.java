@@ -18,12 +18,15 @@ package io.agentscope.harness.agent.context;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import java.util.List;
@@ -99,5 +102,31 @@ class ContextBudgetRegressionTest {
                 BUDGET.estimate(new ModelCallInput(messages, List.of(tool), null, null)).tokens();
 
         assertTrue(withTools > trigger);
+    }
+
+    @Test
+    void responseFormatRaisesOnlyTheBudgetPath() {
+        List<Msg> messages = List.of(Msg.builder().role(MsgRole.USER).textContent("hello").build());
+        ResponseFormat format =
+                ResponseFormat.jsonSchema(
+                        JsonSchema.builder()
+                                .name("Answer")
+                                .schema(Map.of("type", "object", "description", "x".repeat(400)))
+                                .build());
+
+        long trigger = TokenCounterUtil.calculateToken(messages);
+        long without =
+                BUDGET.estimate(new ModelCallInput(messages, List.of(), null, null)).tokens();
+        long with =
+                BUDGET.estimate(
+                                new ModelCallInput(
+                                        messages,
+                                        List.of(),
+                                        GenerateOptions.builder().responseFormat(format).build(),
+                                        null))
+                        .tokens();
+
+        assertEquals(trigger, without, "the trigger path never carries a response format");
+        assertTrue(with > without, "the final budget path must price the schema");
     }
 }

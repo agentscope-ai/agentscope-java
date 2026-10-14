@@ -25,6 +25,8 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -44,6 +46,7 @@ import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
@@ -180,6 +183,168 @@ class HarnessContextBuilderTest {
                                 ModelRequestPreparer.Purpose.REASONING))
                 .expectError(ContextBudgetExceededException.class)
                 .verify();
+    }
+
+    @Test
+    void responseFormatSchemaIsCountedOnceInTheFinalBudget() {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var builder = new HarnessContextBuilder(policy, null, null);
+        var agent = mock(Agent.class);
+        builder.prepare(
+                        agent,
+                        RuntimeContext.empty(),
+                        input(1000, "hello"),
+                        "1",
+                        ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        ResponseFormat format =
+                ResponseFormat.jsonSchema(
+                        JsonSchema.builder()
+                                .name("Answer")
+                                .schema(Map.of("type", "object", "description", "x".repeat(200)))
+                                .build());
+        var original = input(1000, "hello");
+        var request =
+                new ModelCallInput(
+                        original.messages(),
+                        List.of(),
+                        GenerateOptions.builder().maxTokens(20).responseFormat(format).build(),
+                        original.model());
+        builder.prepare(
+                        agent,
+                        RuntimeContext.empty(),
+                        request,
+                        "2",
+                        ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        long formatTokens =
+                TokenAccountingService.defaults()
+                        .estimate(
+                                new TokenAccountingService.TokenSurface(
+                                        List.of(), List.of(), format))
+                        .totalTokens();
+        assertTrue(formatTokens > 0);
+        assertEquals(2, manifests.size());
+        assertEquals(
+                manifests.get(0).estimatedInputTokens() + formatTokens,
+                manifests.get(1).estimatedInputTokens(),
+                "the schema must be counted exactly once in the final budget");
+    }
+
+    @Test
+    void largeResponseFormatPushesTheRequestOverBudget() {
+        var builder = new HarnessContextBuilder(ContextPolicy.defaults(), null, null);
+        var agent = mock(Agent.class);
+        builder.prepare(
+                        agent,
+                        RuntimeContext.empty(),
+                        input(1000, "hello"),
+                        "1",
+                        ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        ResponseFormat format =
+                ResponseFormat.jsonSchema(
+                        JsonSchema.builder()
+                                .name("Payload")
+                                .schema(
+                                        Map.of(
+                                                "type",
+                                                "object",
+                                                "properties",
+                                                Map.of(
+                                                        "answer",
+                                                        Map.of(
+                                                                "type",
+                                                                "string",
+                                                                "description",
+                                                                "x".repeat(4000)))))
+                                .build());
+        var original = input(1000, "hello");
+        var request =
+                new ModelCallInput(
+                        original.messages(),
+                        List.of(),
+                        GenerateOptions.builder().maxTokens(20).responseFormat(format).build(),
+                        original.model());
+        StepVerifier.create(
+                        builder.prepare(
+                                agent,
+                                RuntimeContext.empty(),
+                                request,
+                                "2",
+                                ModelRequestPreparer.Purpose.REASONING))
+                .expectError(ContextBudgetExceededException.class)
+                .verify();
+    }
+
+    @Test
+    void responseFormatShrinksTheConversationBudgetAndTriggersCompaction() {
+        var summaryCalls = new AtomicInteger();
+        Model summary =
+                new Model() {
+                    public String getModelName() {
+                        return "summary";
+                    }
+
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        summaryCalls.incrementAndGet();
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("summary")
+                                                                .build()))
+                                        .build());
+                    }
+                };
+        var config = CompactionConfig.builder().flushBeforeCompact(false).prune(null).build();
+        var compaction = new CompactionMiddleware(null, summary, config);
+        var builder = new HarnessContextBuilder(ContextPolicy.defaults(), compaction, null);
+        var agent = mock(Agent.class);
+        List<Msg> conversation =
+                List.of(
+                        Msg.builder().role(MsgRole.USER).textContent("a".repeat(1250)).build(),
+                        Msg.builder().role(MsgRole.USER).textContent("go").build());
+        builder.prepare(
+                        agent,
+                        RuntimeContext.empty(),
+                        new ModelCallInput(
+                                conversation,
+                                List.of(),
+                                GenerateOptions.builder().maxTokens(100).build(),
+                                model(1000)),
+                        "1",
+                        ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        assertEquals(0, summaryCalls.get(), "without a schema the request fits without compaction");
+        ResponseFormat format =
+                ResponseFormat.jsonSchema(
+                        JsonSchema.builder()
+                                .name("Answer")
+                                .schema(Map.of("type", "object", "description", "x".repeat(1000)))
+                                .build());
+        builder.prepare(
+                        agent,
+                        RuntimeContext.empty(),
+                        new ModelCallInput(
+                                conversation,
+                                List.of(),
+                                GenerateOptions.builder()
+                                        .maxTokens(100)
+                                        .responseFormat(format)
+                                        .build(),
+                                model(1000)),
+                        "2",
+                        ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        assertEquals(
+                1,
+                summaryCalls.get(),
+                "the schema cost must shrink the conversation budget and trigger compaction");
     }
 
     @Test

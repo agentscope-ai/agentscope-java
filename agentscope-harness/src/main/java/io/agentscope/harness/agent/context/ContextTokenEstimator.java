@@ -32,10 +32,13 @@ public interface ContextTokenEstimator {
     static ContextTokenEstimator approximate() {
         TokenAccountingService service = TokenAccountingService.defaults();
         return input -> {
+            var options = input.options();
             var estimate =
                     service.estimate(
                             new TokenAccountingService.TokenSurface(
-                                    input.messages(), input.tools()));
+                                    input.messages(),
+                                    input.tools(),
+                                    options == null ? null : options.getResponseFormat()));
             return new Estimate(estimate.totalTokens(), estimate.method(), estimate.exact());
         };
     }

@@ -18,6 +18,8 @@ package io.agentscope.harness.agent.context;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -128,6 +130,53 @@ class TokenAccountingServiceTest {
     }
 
     @Test
+    void responseFormatIsCountedOnceInItsOwnBucket() {
+        Msg message = Msg.builder().role(MsgRole.USER).textContent("hello").build();
+        ToolSchema tool =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+        ResponseFormat format =
+                ResponseFormat.jsonSchema(
+                        JsonSchema.builder()
+                                .name("Answer")
+                                .schema(
+                                        Map.of(
+                                                "type",
+                                                "object",
+                                                "properties",
+                                                Map.of(
+                                                        "answer",
+                                                        Map.of(
+                                                                "type",
+                                                                "string",
+                                                                "description",
+                                                                "x".repeat(600)))))
+                                .strict(true)
+                                .build());
+
+        var without =
+                service.estimate(
+                        new TokenAccountingService.TokenSurface(List.of(message), List.of(tool)));
+        var with =
+                service.estimate(
+                        new TokenAccountingService.TokenSurface(
+                                List.of(message), List.of(tool), format));
+
+        assertTrue(with.responseFormatTokens() > 0, "schema must carry a cost");
+        assertEquals(
+                with.responseFormatTokens(),
+                with.totalTokens() - without.totalTokens(),
+                "schema must be counted exactly once");
+        assertEquals(without.textTokens(), with.textTokens());
+        assertEquals(without.toolSchemaTokens(), with.toolSchemaTokens());
+        assertEquals(without.mediaTokens(), with.mediaTokens());
+        assertEquals(without.overheadTokens(), with.overheadTokens());
+    }
+
+    @Test
     void breakdownSumsToTotal() {
         Msg message =
                 Msg.builder()
@@ -140,12 +189,20 @@ class TokenAccountingServiceTest {
                                         .input(Map.of("q", "x"))
                                         .build())
                         .build();
+        ResponseFormat format =
+                ResponseFormat.jsonSchema(
+                        JsonSchema.builder()
+                                .name("Answer")
+                                .schema(Map.of("type", "object"))
+                                .build());
 
         var estimate =
-                service.estimate(new TokenAccountingService.TokenSurface(List.of(message), null));
+                service.estimate(
+                        new TokenAccountingService.TokenSurface(List.of(message), null, format));
         assertEquals(
                 estimate.textTokens()
                         + estimate.toolSchemaTokens()
+                        + estimate.responseFormatTokens()
                         + estimate.mediaTokens()
                         + estimate.overheadTokens(),
                 estimate.totalTokens());

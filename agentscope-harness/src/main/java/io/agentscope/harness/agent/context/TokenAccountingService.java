@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.context;
 
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -47,6 +48,7 @@ public final class TokenAccountingService {
     private static final long TOOL_USE_OVERHEAD = 10;
     private static final long TOOL_RESULT_OVERHEAD = 8;
     private static final long TOOL_SCHEMA_OVERHEAD = 16;
+    private static final long RESPONSE_FORMAT_OVERHEAD = 16;
     private static final String METHOD = "unified-ascii2.5-cjk1-supp2-v1";
 
     private final MediaTokenEstimator mediaEstimator;
@@ -59,13 +61,20 @@ public final class TokenAccountingService {
         return new TokenAccountingService(MediaTokenEstimator.defaults());
     }
 
-    /** Full request surface: messages plus tool schemas. */
-    public record TokenSurface(List<Msg> messages, List<ToolSchema> tools) {}
+    /** Full request surface: messages, tool schemas and the structured-output response format. */
+    public record TokenSurface(
+            List<Msg> messages, List<ToolSchema> tools, ResponseFormat responseFormat) {
+        /** Convenience for surfaces without a structured-output schema. */
+        public TokenSurface(List<Msg> messages, List<ToolSchema> tools) {
+            this(messages, tools, null);
+        }
+    }
 
     /** Breakdown of an estimate; {@code totalTokens} is the value budget checks consume. */
     public record TokenEstimate(
             long textTokens,
             long toolSchemaTokens,
+            long responseFormatTokens,
             long mediaTokens,
             long overheadTokens,
             long totalTokens,
@@ -138,8 +147,21 @@ public final class TokenAccountingService {
                                         countText(JsonUtils.getJsonCodec().toJson(tool))));
             }
         }
-        long total = saturatedAdd(saturatedAdd(text, toolSchema), saturatedAdd(media, overhead));
-        return new TokenEstimate(text, toolSchema, media, overhead, total, METHOD, false);
+        // A structured-output response format travels with the request, so the final budget must
+        // price the actual schema representation exactly once; the trigger path never carries it.
+        long responseFormat = 0;
+        if (surface.responseFormat() != null) {
+            responseFormat =
+                    saturatedAdd(
+                            RESPONSE_FORMAT_OVERHEAD,
+                            countText(JsonUtils.getJsonCodec().toJson(surface.responseFormat())));
+        }
+        long total =
+                saturatedAdd(
+                        saturatedAdd(saturatedAdd(text, toolSchema), saturatedAdd(media, overhead)),
+                        responseFormat);
+        return new TokenEstimate(
+                text, toolSchema, responseFormat, media, overhead, total, METHOD, false);
     }
 
     private record BlockCounts(long text, long media, long overhead) {}
