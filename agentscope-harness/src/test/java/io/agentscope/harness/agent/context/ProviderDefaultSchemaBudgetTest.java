@@ -33,8 +33,10 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ModelRequestPreparer;
+import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
@@ -48,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 /**
@@ -248,6 +251,70 @@ class ProviderDefaultSchemaBudgetTest {
                                         ModelRequestPreparer.Purpose.REASONING))
                 .expectError(ContextBudgetExceededException.class)
                 .verify();
+    }
+
+    @Test
+    void modelDefaultOutputCapIsReservedInTheInputLimit() {
+        // Window 16000 with a model default output cap of 12000 and no request-level cap: the
+        // effective limit must reserve the default (16000 - 12000 - 320 = 3680), so an input of
+        // roughly 8000 tokens is rejected instead of passing through a 13680 limit.
+        Model model = outputCapModel(16000, 12000);
+        var policy = new ContextPolicy(0, 0, 0, BUDGET, m -> {});
+
+        var oversized = AgentState.builder().build();
+        List<Msg> big =
+                List.of(Msg.builder().role(MsgRole.USER).textContent("a".repeat(20_000)).build());
+        oversized.contextMutable().addAll(big);
+        StepVerifier.create(
+                        new HarnessContextBuilder(policy, null, null)
+                                .prepare(
+                                        mock(Agent.class),
+                                        RuntimeContext.builder().agentState(oversized).build(),
+                                        new ModelCallInput(big, List.of(), null, model),
+                                        "c",
+                                        ModelRequestPreparer.Purpose.REASONING))
+                .expectError(ContextBudgetExceededException.class)
+                .verify();
+
+        var withinBudget = AgentState.builder().build();
+        List<Msg> small =
+                List.of(Msg.builder().role(MsgRole.USER).textContent("a".repeat(5_000)).build());
+        withinBudget.contextMutable().addAll(small);
+        StepVerifier.create(
+                        new HarnessContextBuilder(policy, null, null)
+                                .prepare(
+                                        mock(Agent.class),
+                                        RuntimeContext.builder().agentState(withinBudget).build(),
+                                        new ModelCallInput(small, List.of(), null, model),
+                                        "c",
+                                        ModelRequestPreparer.Purpose.REASONING))
+                .expectNextCount(1)
+                .verifyComplete();
+    }
+
+    private static Model outputCapModel(int window, int maxTokens) {
+        return new Model() {
+            @Override
+            public String getModelName() {
+                return "output-cap-model";
+            }
+
+            @Override
+            public Flux<ChatResponse> stream(
+                    List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                throw new UnsupportedOperationException("estimation only");
+            }
+
+            @Override
+            public int getContextWindowSize() {
+                return window;
+            }
+
+            @Override
+            public GenerateOptions getDefaultOptions() {
+                return GenerateOptions.builder().maxTokens(maxTokens).build();
+            }
+        };
     }
 
     private static long estimate(GenerateOptions options, Model model) {

@@ -17,7 +17,10 @@ package io.agentscope.harness.agent.context;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Msg;
@@ -26,15 +29,18 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 
 /**
  * Guards the invariant that the compaction trigger and the final request budget derive their token
@@ -179,6 +185,54 @@ class ContextBudgetRegressionTest {
 
         assertEquals(
                 smallOnly, overridden, "an explicit request schema wins over the model default");
+    }
+
+    @Test
+    void unknownWindowFallsBackToTheSixtyFourKInputLimit() {
+        var policy = new ContextPolicy(0, 0, 0, BUDGET, m -> {});
+        Model windowless =
+                new Model() {
+                    @Override
+                    public String getModelName() {
+                        return "unknown-window-model";
+                    }
+
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        throw new UnsupportedOperationException("estimation only");
+                    }
+                };
+
+        var withinLimit = AgentState.builder().build();
+        List<Msg> fits =
+                List.of(Msg.builder().role(MsgRole.USER).textContent("a".repeat(120_000)).build());
+        withinLimit.contextMutable().addAll(fits);
+        StepVerifier.create(
+                        new HarnessContextBuilder(policy, null, null)
+                                .prepare(
+                                        mock(Agent.class),
+                                        RuntimeContext.builder().agentState(withinLimit).build(),
+                                        new ModelCallInput(fits, List.of(), null, windowless),
+                                        "c",
+                                        ModelRequestPreparer.Purpose.REASONING))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        var overLimit = AgentState.builder().build();
+        List<Msg> exceeds =
+                List.of(Msg.builder().role(MsgRole.USER).textContent("a".repeat(200_000)).build());
+        overLimit.contextMutable().addAll(exceeds);
+        StepVerifier.create(
+                        new HarnessContextBuilder(policy, null, null)
+                                .prepare(
+                                        mock(Agent.class),
+                                        RuntimeContext.builder().agentState(overLimit).build(),
+                                        new ModelCallInput(exceeds, List.of(), null, windowless),
+                                        "c",
+                                        ModelRequestPreparer.Purpose.REASONING))
+                .expectError(ContextBudgetExceededException.class)
+                .verify();
     }
 
     private static ResponseFormat responseFormat(int descriptionLength) {
