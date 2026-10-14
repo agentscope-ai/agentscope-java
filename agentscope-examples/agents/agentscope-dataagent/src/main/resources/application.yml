@@ -68,9 +68,9 @@ spring:
 # Property prefix is `dataagent.*`. Env vars use `DATAAGENT_*`.
 # --------------------------------------------------------------------------
 dataagent:
-  # JWT signing secret (>= 32 chars). MUST be overridden in production.
+  # Required JWT signing secret (>= 32 bytes); no shared default in any profile.
   jwt:
-    secret: ${DATAAGENT_JWT_SECRET:dataagent-default-dev-secret-change-in-production-32chars}
+    secret: ${DATAAGENT_JWT_SECRET:}
 
   # Working directory. If blank, defaults to the JVM's current working
   # directory. .agentscope/agentscope.json is read from (or auto-created in)
