@@ -217,31 +217,35 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
         if (toolName != null && config.getExcludedToolNames().contains(toolName)) {
             return null;
         }
+        // Only text-only tool results are evicted. If the result contains media or other
+        // non-text blocks, skip eviction so unregistered media is not silently replaced by a
+        // text placeholder.
+        if (containsNonTextBlock(toolResult)) {
+            return null;
+        }
         String fullText = extractText(toolResult);
         if (fullText.length() <= config.getMaxResultChars()) {
             return null;
         }
-        String toolCallId = toolResult.getId();
+        String toolCallId = toolResult.getId() != null ? toolResult.getId() : "unknown";
         try {
             String evictionPath = buildEvictionPath(agentName, toolCallId, fullText);
             WriteResult writeResult = filesystem.write(rc, evictionPath, fullText);
             if (!writeResult.isSuccess()) {
                 log.warn(
-                        "[{}] Failed to evict tool result [tool={}, id={}]: {}",
+                        "[{}] Failed to evict tool result [tool={}, id={}]",
                         agentName,
                         toolName,
-                        toolCallId,
-                        writeResult.error());
+                        toolCallId);
                 return null;
             }
             String placeholder = buildPlaceholder(fullText, evictionPath);
             log.info(
-                    "[{}] Evicted large tool result [tool={}, id={}, chars={} -> {}]",
+                    "[{}] Evicted large tool result [tool={}, id={}, chars={}]",
                     agentName,
                     toolName,
                     toolCallId,
-                    fullText.length(),
-                    evictionPath);
+                    fullText.length());
             return placeholder;
         } catch (Exception e) {
             log.warn(
@@ -249,7 +253,7 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
                     agentName,
                     toolName,
                     toolCallId,
-                    e.getMessage());
+                    e.getClass().getSimpleName());
             return null;
         }
     }
@@ -259,7 +263,11 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private ToolResultBlock withPlaceholder(ToolResultBlock toolResult, String placeholder) {
-        Map<String, Object> metadata = new LinkedHashMap<>(toolResult.getMetadata());
+        Map<String, Object> originalMetadata = toolResult.getMetadata();
+        Map<String, Object> metadata =
+                originalMetadata == null
+                        ? new LinkedHashMap<>()
+                        : new LinkedHashMap<>(originalMetadata);
         metadata.put(EVICTED_METADATA_KEY, true);
         return new ToolResultBlock(
                 toolResult.getId(),
@@ -281,6 +289,13 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
             }
         }
         return sb.toString();
+    }
+
+    private boolean containsNonTextBlock(ToolResultBlock toolResult) {
+        if (toolResult.getOutput() == null) {
+            return false;
+        }
+        return toolResult.getOutput().stream().anyMatch(b -> !(b instanceof TextBlock));
     }
 
     private String buildEvictionPath(String agentName, String toolCallId, String fullText) {
