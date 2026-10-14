@@ -34,7 +34,10 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -69,37 +72,103 @@ class WaitAsyncResultsToolTest {
     @Test
     @DisplayName("timeout_seconds > 120 is clamped — wait finishes within cap")
     void timeoutClampedToMax() throws Exception {
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus());
-        long start = System.currentTimeMillis();
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(emptyBus(), null);
         String result = text(tool.waitForResults(600, ctx()));
-        long elapsed = System.currentTimeMillis() - start;
 
-        assertTrue(result.contains("Timeout"), "should timeout, got: " + result);
-        // Clamped to 120s, but we expect it to finish much faster in tests
-        // since we pass 600 which gets clamped. We can't wait 120s in a unit test,
-        // so we verify the tool accepted the call and returned a timeout.
-        // The real assertion is that it didn't wait 600s.
-        assertTrue(elapsed < 130_000, "should not wait 600s, elapsed: " + elapsed + "ms");
+        assertTrue(result.contains("Timeout after 120s"), "got: " + result);
+        assertEquals(120_000, time.elapsedMillis);
     }
 
     @Test
     @DisplayName("null timeout uses default 60s behavior")
     void nullTimeoutUsesDefault() throws Exception {
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus());
-        long start = System.currentTimeMillis();
-        // Pass a very short effective timeout by using a custom tool instance
-        // Just verify null doesn't throw and produces a timeout message
-        String result = text(tool.waitForResults(1, ctx()));
-        long elapsed = System.currentTimeMillis() - start;
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(emptyBus(), null);
+        String result = text(tool.waitForResults(null, ctx()));
 
-        assertTrue(result.contains("Timeout"), "should timeout with short wait");
-        assertTrue(elapsed < 5_000, "1s timeout should finish quickly");
+        assertTrue(result.contains("Timeout after 60s"), "got: " + result);
+        assertEquals(60_000, time.elapsedMillis);
+    }
+
+    @Test
+    void shortTimeoutDoesNotSleepBeyondRemainingBudget() {
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(emptyBus(), null);
+
+        assertTrue(text(tool.waitForResults(1, ctx())).contains("Timeout after 1s"));
+        assertEquals(1_000, time.elapsedMillis);
+    }
+
+    @Test
+    void interruptedPollPreservesInterruptAndDoesNotConsumeEmptyWaitBudget() {
+        VirtualTime time = new VirtualTime();
+        AtomicBoolean interruptNextSleep = new AtomicBoolean(true);
+        WaitAsyncResultsTool tool =
+                new WaitAsyncResultsTool(
+                        emptyBus(),
+                        null,
+                        () -> time.elapsedMillis,
+                        millis -> {
+                            if (interruptNextSleep.getAndSet(false)) {
+                                throw new InterruptedException("canceled wait");
+                            }
+                            time.advance(millis);
+                        });
+        assertFalse(Thread.currentThread().isInterrupted());
+        try {
+            ToolResultBlock result = tool.waitForResults(1, ctx());
+            assertEquals(ToolResultState.INTERRUPTED, result.getState());
+            assertTrue(Thread.currentThread().isInterrupted());
+            assertEquals(0, time.elapsedMillis);
+        } finally {
+            Thread.interrupted();
+        }
+        assertTrue(text(tool.waitForResults(1, ctx())).contains("empty wait 1/2"));
+    }
+
+    @Test
+    @DisplayName("real polling stops on thread interruption")
+    void realPollingWaitStopsOnThreadInterruption() throws Exception {
+        CountDownLatch polled = new CountDownLatch(1);
+        MessageBus bus =
+                new StubMessageBus(false) {
+                    @Override
+                    public Mono<Boolean> queuePeek(String key) {
+                        polled.countDown();
+                        return Mono.just(false);
+                    }
+                };
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(bus);
+        AtomicReference<ToolResultBlock> result = new AtomicReference<>();
+        AtomicBoolean interrupted = new AtomicBoolean();
+        Thread waiter =
+                new Thread(
+                        () -> {
+                            result.set(tool.waitForResults(null, ctx()));
+                            interrupted.set(Thread.currentThread().isInterrupted());
+                        },
+                        "wait-async-interruption-test");
+        waiter.setDaemon(true);
+        try {
+            waiter.start();
+            assertTrue(polled.await(5, TimeUnit.SECONDS), "wait loop did not start");
+            waiter.interrupt();
+            waiter.join(5_000);
+            assertFalse(waiter.isAlive(), "interruption must terminate the real wait");
+            assertEquals(ToolResultState.INTERRUPTED, result.get().getState());
+            assertTrue(interrupted.get());
+        } finally {
+            waiter.interrupt();
+            waiter.join(5_000);
+        }
     }
 
     @Test
     @DisplayName("consecutive empty waits are rejected after budget exhausted")
     void consecutiveEmptyWaitsRejected() throws Exception {
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus());
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(emptyBus(), null);
 
         // First empty wait — allowed
         String r1 = text(tool.waitForResults(1, ctx()));
@@ -112,14 +181,15 @@ class WaitAsyncResultsToolTest {
         assertTrue(r2.contains("2/2"), "should show 2/2 empty waits");
 
         // Third empty wait — rejected immediately
-        long start = System.currentTimeMillis();
+        long start = time.elapsedMillis;
         String r3 = text(tool.waitForResults(1, ctx()));
-        long elapsed = System.currentTimeMillis() - start;
+        long elapsed = time.elapsedMillis - start;
 
         assertTrue(r3.contains("Wait budget exhausted"), "third wait should be rejected");
         assertTrue(r3.contains("task_list"), "should suggest task_list alternative");
         assertTrue(r3.contains("task_output"), "should suggest task_output alternative");
-        assertTrue(elapsed < 1_000, "rejected call should return immediately");
+        assertEquals(0, elapsed, "rejected call must not perform a polling sleep");
+        assertEquals(2_000, time.elapsedMillis);
     }
 
     @Test
@@ -290,7 +360,8 @@ class WaitAsyncResultsToolTest {
                         List.of(
                                 new BackgroundTask("t1", "agent-1", completed),
                                 new BackgroundTask("t2", "agent-2", running)));
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(emptyBus(), repo);
 
         String result = text(tool.waitForResults(1, "t1,t2", null, ctx()));
 
@@ -298,6 +369,7 @@ class WaitAsyncResultsToolTest {
         assertTrue(
                 result.contains("not all terminal yet"),
                 "should explain barrier condition, got: " + result);
+        assertEquals(1_000, time.elapsedMillis);
     }
 
     @Test
@@ -396,6 +468,19 @@ class WaitAsyncResultsToolTest {
         WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), null);
         String result = text(tool.waitForResults(1, ctx()));
         assertTrue(result.contains("Timeout"), "should proceed to wait and timeout");
+    }
+
+    private static final class VirtualTime {
+        private long elapsedMillis;
+
+        WaitAsyncResultsTool tool(MessageBus bus, TaskRepository repository) {
+            return new WaitAsyncResultsTool(bus, repository, () -> elapsedMillis, this::advance);
+        }
+
+        void advance(long millis) {
+            assertTrue(millis > 0, "polling must make progress");
+            elapsedMillis += millis;
+        }
     }
 
     private static void sleep(long millis) {
