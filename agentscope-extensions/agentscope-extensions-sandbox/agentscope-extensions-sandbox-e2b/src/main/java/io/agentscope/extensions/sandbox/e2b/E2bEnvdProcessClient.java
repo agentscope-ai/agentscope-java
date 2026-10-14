@@ -612,7 +612,11 @@ final class E2bEnvdProcessClient {
         return String.valueOf(message.getField(field));
     }
 
-    private static String envdHost(E2bSandboxState state) {
+    private String envdHost(E2bSandboxState state) {
+        String override = opt.getEnvdSandboxUrl();
+        if (override != null && !override.isBlank()) {
+            return E2bPlatformHttp.trimSlash(override.trim());
+        }
         String id = state.getSandboxId();
         String dom =
                 state.getSandboxDomain() != null && !state.getSandboxDomain().isBlank()

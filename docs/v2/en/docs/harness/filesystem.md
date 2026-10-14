@@ -142,7 +142,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `exposedPorts(int...)` | Exposed ports | none |
 | `environment(Map)` | Container environment variables | none |
 | `workspaceRoot(String)` | Workspace mount point inside the container | `/workspace` |
-| `additionalRunArgs(String...)` | Extra `docker run` arguments | none |
+| `additionalRunArgs(String...)` / `additionalRunArgs(List)` | Extra `docker run` arguments; repeated calls append | none |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` (no snapshots) |
 | `workspaceSpec(WorkspaceSpec)` | Workspace mount rules | default |
 | `executionGuard(SandboxExecutionGuard)` | Concurrency guard for AGENT / GLOBAL scope | none |
@@ -194,6 +194,16 @@ HarnessAgent agent = HarnessAgent.builder()
         .sandboxTimeoutSeconds(300)
         .isolationScope(IsolationScope.SESSION))
     .build();
+```
+
+Self-hosted E2B-compatible backends (e.g. CubeSandbox) that front the data plane with a single fixed gateway address can set `envdSandboxUrl` — the equivalent of the official SDK's `E2B_SANDBOX_URL`. Every sandbox's envd traffic then goes to that URL, and routing relies on the `E2b-Sandbox-Id` / `E2b-Sandbox-Port` request headers (sent automatically, like the official SDKs), so no wildcard DNS is required:
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .apiBaseUrl("http://10.0.0.1:3000")     // control plane
+    .envdSandboxUrl("http://10.0.0.1:8080") // data plane (gateway must route by the E2B headers)
+    ...)
 ```
 
 #### Daytona sandbox

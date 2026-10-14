@@ -50,6 +50,20 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    /**
+     * Sets a fixed envd gateway URL, equivalent to the official SDK's {@code E2B_SANDBOX_URL}.
+     * When configured, envd traffic for every sandbox is sent to this gateway and routed by the
+     * {@code E2b-Sandbox-Id}/{@code E2b-Sandbox-Port} request headers instead of wildcard-DNS
+     * hosts derived from {@code domain}.
+     *
+     * @param envdSandboxUrl fixed data-plane gateway URL for envd requests
+     * @return this spec
+     */
+    public E2bFilesystemSpec envdSandboxUrl(String envdSandboxUrl) {
+        options.setEnvdSandboxUrl(envdSandboxUrl);
+        return this;
+    }
+
     public E2bFilesystemSpec templateId(String templateId) {
         options.setTemplateId(templateId);
         return this;
