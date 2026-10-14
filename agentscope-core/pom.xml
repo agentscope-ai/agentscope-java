@@ -206,7 +206,77 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- Non-filtered default, excluding the version file so this block never writes the
+                 same target path as the filtered block below. If both blocks copied
+                 META-INF/agentscope/version.properties, the unfiltered copy (which runs first and
+                 rewrites the target with a newer timestamp than the source) would make the
+                 filtered copy be skipped by maven-resources-plugin (default overwrite=false),
+                 silently packaging the literal ${project.version} placeholder. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>META-INF/agentscope/version.properties</exclude>
+                </excludes>
+            </resource>
+            <!-- Filter only the version file so ${project.version} is resolved. This block is the
+                 sole writer of the target version.properties. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>META-INF/agentscope/version.properties</include>
+                </includes>
+            </resource>
+        </resources>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>agentscope-test-version.properties</exclude>
+                </excludes>
+            </testResource>
+            <testResource>
+                <directory>src/test/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>agentscope-test-version.properties</include>
+                </includes>
+            </testResource>
+        </testResources>
         <plugins>
+            <!-- Fail the build loudly if the filtered version resource still contains the
+                 ${project.version} placeholder (i.e. Maven resource filtering did not apply).
+                 Without this check the packaged jar would silently carry an unfiltered literal,
+                 and Version.resolveVersionFrom would mask it by returning "unknown". -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <id>verify-version-resource-filtered</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <fail message="META-INF/agentscope/version.properties still contains the unfiltered 'dollar-brace' placeholder (the Maven project.version expression was not resolved): Maven resource filtering did not apply. Check the resource filtering configuration in agentscope-core/pom.xml.">
+                                    <condition>
+                                        <!-- A single '$' is enough to detect the unmapped
+                                             ${project.version} placeholder: the filtered file is
+                                             just 'version=2.0.3-SNAPSHOT' and contains none. -->
+                                        <resourcecontains resource="${project.build.outputDirectory}/META-INF/agentscope/version.properties" substring="$" />
+                                    </condition>
+                                </fail>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <!-- Publish a test-jar so downstream modules (agentscope-harness) can reuse the
                  shared test fixtures (MockModel, MockToolkit, TestConstants, TestUtils). -->
             <plugin>

@@ -1,5 +1,6 @@
 ---
 title: Hook System
+zh_link: /v1/zh/docs/task/hook
 ---
 
 Hooks provide extension points to monitor and modify agent behavior at specific execution stages.

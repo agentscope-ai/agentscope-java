@@ -257,9 +257,6 @@ public class DashScopeModelConfig implements ModelConfig {
         /**
          * Set whether streaming should be enabled (optional, default: true).
          *
-         * <p>This setting is ignored if enableThinking is set to true, as thinking mode
-         * automatically enables streaming.
-         *
          * @param stream true to enable streaming, false for non-streaming
          * @return This builder
          */
@@ -270,8 +267,6 @@ public class DashScopeModelConfig implements ModelConfig {
 
         /**
          * Set whether thinking mode should be enabled (optional, default: false).
-         *
-         * <p>When enabled, this automatically enables streaming and may override the stream setting.
          * Thinking mode allows the model to show its reasoning process.
          *
          * @param enableThinking true to enable thinking mode, false to disable

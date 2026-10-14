@@ -47,6 +47,10 @@ public class OpenAIUsage {
     @JsonProperty("total_tokens")
     private Integer totalTokens;
 
+    /** Prompt tokens served from the cache (DeepSeek OpenAI-compatible responses). */
+    @JsonProperty("prompt_cache_hit_tokens")
+    private Integer promptCacheHitTokens;
+
     /** Detailed breakdown of prompt tokens (optional). */
     @JsonProperty("prompt_tokens_details")
     private PromptTokensDetails promptTokensDetails;
@@ -77,6 +81,14 @@ public class OpenAIUsage {
         return totalTokens;
     }
 
+    public Integer getPromptCacheHitTokens() {
+        return promptCacheHitTokens;
+    }
+
+    public void setPromptCacheHitTokens(Integer promptCacheHitTokens) {
+        this.promptCacheHitTokens = promptCacheHitTokens;
+    }
+
     public void setTotalTokens(Integer totalTokens) {
         this.totalTokens = totalTokens;
     }
@@ -105,6 +117,10 @@ public class OpenAIUsage {
         @JsonProperty("cached_tokens")
         private Integer cachedTokens;
 
+        /** Prompt tokens written to the cache. */
+        @JsonProperty("cache_write_tokens")
+        private Integer cacheWriteTokens;
+
         @JsonProperty("audio_tokens")
         private Integer audioTokens;
 
@@ -114,6 +130,14 @@ public class OpenAIUsage {
 
         public void setCachedTokens(Integer cachedTokens) {
             this.cachedTokens = cachedTokens;
+        }
+
+        public Integer getCacheWriteTokens() {
+            return cacheWriteTokens;
+        }
+
+        public void setCacheWriteTokens(Integer cacheWriteTokens) {
+            this.cacheWriteTokens = cacheWriteTokens;
         }
 
         public Integer getAudioTokens() {

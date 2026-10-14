@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -39,6 +40,17 @@ import org.junit.jupiter.api.Test;
 @Tag("unit")
 @DisplayName("ToolValidator Tests")
 class ToolValidatorTest {
+
+    @Test
+    @DisplayName("Should validate provider tool names")
+    void testRequireNonBlankToolName() {
+        assertTrue(ToolValidator.requireNonBlank("Gemini", "google_search", "call-1"));
+
+        assertFalse(ToolValidator.requireNonBlank("Gemini", null, "call-1"));
+        assertFalse(ToolValidator.requireNonBlank("Gemini", "", "call-1"));
+        assertFalse(ToolValidator.requireNonBlank("Gemini", "   ", "call-1"));
+        assertTrue(ToolValidator.requireNonBlank("Gemini", "tool", null));
+    }
 
     static class BeanPayload {
         @ToolParam(name = "requiredField", description = "required field", required = true)

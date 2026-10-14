@@ -1,5 +1,6 @@
 ---
 title: Nacos
+en_link: /v2/en/integration/infrastructure/nacos
 ---
 
 `agentscope-extensions-nacos` 把 [Nacos](https://nacos.io/) 用作 AgentScope 的统一控制面：注册发现 A2A Agent、动态加载 Prompt、托管 Skill。包含三个子模块，按需组合使用。

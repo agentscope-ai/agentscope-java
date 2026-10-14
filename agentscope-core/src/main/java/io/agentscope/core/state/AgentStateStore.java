@@ -110,7 +110,10 @@ public interface AgentStateStore {
      * Compare-and-swap write of a single state value.
      *
      * <ul>
-     *   <li>{@code expectedVersion == 0} — create-if-absent (fails if the key already exists).
+     *   <li>{@code expectedVersion == 0} — create-if-absent. If the key already exists but its
+     *       stored version is still {@code 0} (e.g. a row backfilled by a schema migration),
+     *       the CAS is satisfied and the value is written at version {@code 1}. Fails only when
+     *       the key exists at a non-zero version.
      *   <li>{@code expectedVersion == }{@link #UNVERSIONED} — unconditional overwrite (same as
      *       {@link #save}).
      *   <li>otherwise — write only when the stored version equals {@code expectedVersion}.

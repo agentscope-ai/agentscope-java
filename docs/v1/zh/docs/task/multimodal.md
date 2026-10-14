@@ -1,5 +1,6 @@
 ---
 title: 多模态
+en_link: /v1/en/docs/task/multimodal
 ---
 
 多模态功能使 Agent 能够理解和生成图像、音频、视频等多种媒体内容。

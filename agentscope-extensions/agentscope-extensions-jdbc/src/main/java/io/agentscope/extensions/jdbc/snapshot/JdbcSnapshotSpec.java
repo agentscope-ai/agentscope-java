@@ -28,24 +28,13 @@ import javax.sql.DataSource;
 public class JdbcSnapshotSpec extends RemoteSnapshotSpec {
 
     /**
-     * Creates a snapshot spec with auto table creation.
+     * Creates a snapshot spec. The wrapped client never touches the schema — the table is
+     * created and validated once by {@code AbstractJdbcDialect.from(dataSource).build()}.
      *
      * @param dataSource the JDBC data source
      * @param dialect the snapshot dialect
      */
     public JdbcSnapshotSpec(DataSource dataSource, SnapshotDialect dialect) {
-        super(new JdbcRemoteSnapshotClient(dataSource, dialect, true));
-    }
-
-    /**
-     * Creates a snapshot spec with explicit table creation control.
-     *
-     * @param dataSource the JDBC data source
-     * @param dialect the snapshot dialect
-     * @param initializeSchema when true, auto-creates the table
-     */
-    public JdbcSnapshotSpec(
-            DataSource dataSource, SnapshotDialect dialect, boolean initializeSchema) {
-        super(new JdbcRemoteSnapshotClient(dataSource, dialect, initializeSchema));
+        super(new JdbcRemoteSnapshotClient(dataSource, dialect));
     }
 }

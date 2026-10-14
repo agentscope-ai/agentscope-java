@@ -1,5 +1,6 @@
 ---
 title: Infrastructure
+zh_link: /v2/zh/integration/infrastructure/index
 ---
 
 Choose a guide below to configure and use infrastructure.

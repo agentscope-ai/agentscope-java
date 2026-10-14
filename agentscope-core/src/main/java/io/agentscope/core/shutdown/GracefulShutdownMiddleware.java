@@ -22,6 +22,8 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,6 +60,12 @@ public final class GracefulShutdownMiddleware implements MiddlewareBase {
 
     public GracefulShutdownMiddleware(GracefulShutdownManager manager) {
         this.manager = manager;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_REASONING, ExtensionPoint.ON_ACTING);
     }
 
     @Override

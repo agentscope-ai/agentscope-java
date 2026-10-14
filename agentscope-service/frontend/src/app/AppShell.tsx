@@ -108,7 +108,6 @@ const routeLabels: Array<[string, string]> = [
   ['/agent-center/agents', 'Agents'],
   ['/agent-center/teams', 'Teams'],
   ['/agent-center/workflows', 'Workflows'],
-  ['/agent-center/endpoints', 'API details'],
   ['/agent-center/entrypoints', 'Channels'],
   ['/agent-center/workspaces', 'Workspaces'],
   ['/agent-center/environments', 'Environments'],

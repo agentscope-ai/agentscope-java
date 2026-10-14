@@ -113,7 +113,13 @@ public class JdkHttpTransport implements HttpTransport {
     private static HttpClient buildClient(HttpTransportConfig config) {
         HttpClient.Builder builder =
                 HttpClient.newBuilder()
-                        .version(config.getHttpVersion().toJdkHttpVersion())
+                        // Client-level HTTP/2 serves https via ALPN; cleartext requests are
+                        // downgraded per request in buildJdkRequest, so one connection per
+                        // version per origin — intentional.
+                        .version(
+                                config.getHttpVersion() != null
+                                        ? config.getHttpVersion().toJdkHttpVersion()
+                                        : HttpClient.Version.HTTP_2)
                         .followRedirects(Redirect.NORMAL)
                         .connectTimeout(config.getConnectTimeout());
 
@@ -384,6 +390,11 @@ public class JdkHttpTransport implements HttpTransport {
 
         var builder = java.net.http.HttpRequest.newBuilder().uri(uri);
 
+        HttpClient.Version requestVersion = resolveRequestVersion(config.getHttpVersion(), uri);
+        if (requestVersion != null) {
+            builder.version(requestVersion);
+        }
+
         if (!isStreaming && config.getReadTimeout() != null) {
             builder.timeout(config.getReadTimeout());
         }
@@ -413,6 +424,24 @@ public class JdkHttpTransport implements HttpTransport {
         }
 
         return builder.build();
+    }
+
+    /**
+     * Resolves the per-request HTTP version: explicit values win verbatim (including HTTP_2 on
+     * cleartext as an h2c opt-in); null (auto) downgrades cleartext requests to HTTP/1.1 (the
+     * JDK's h2c upgrade makes some servers drop the request body) and lets https requests
+     * return null to inherit the client-level version (HTTP/2 via ALPN).
+     *
+     * @param configured the configured version, or null for auto
+     * @param uri the request URI
+     * @return the version to set on the request, or null to inherit the client version
+     */
+    static HttpClient.Version resolveRequestVersion(HttpVersion configured, URI uri) {
+        if (configured != null) {
+            return configured.toJdkHttpVersion();
+        }
+        boolean isCleartext = uri == null || !"https".equalsIgnoreCase(uri.getScheme());
+        return isCleartext ? HttpClient.Version.HTTP_1_1 : null;
     }
 
     private java.net.http.HttpRequest.BodyPublisher bodyPublisher(String body) {
