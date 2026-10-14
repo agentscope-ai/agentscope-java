@@ -82,7 +82,10 @@ class WakeupDispatcherTest {
 
         messageBus.enqueueWakeup("user-1", "sess-running", "agent-main").block();
 
-        Thread.sleep(500);
+        // The wakeup entry is consumed by the first 50ms tick after this point (drain deletes
+        // it), so a wrong dispatch can only surface within ~1-2 ticks; 300ms covers that with
+        // headroom for CI contention.
+        Thread.sleep(300);
         assertTrue(target.wokenSessions.isEmpty(), "Running session should not be woken");
     }
 
@@ -93,7 +96,8 @@ class WakeupDispatcherTest {
 
         messageBus.enqueueWakeup("user-1", "sess-unknown", "agent-main").block();
 
-        Thread.sleep(500);
+        // Same grounded window as above: first tick after enqueue decides, 300ms observes it.
+        Thread.sleep(300);
         assertTrue(target.wokenSessions.isEmpty(), "Unknown session should not be woken");
     }
 

@@ -270,7 +270,7 @@ class WorkspaceMessageBusTest {
                         .take(1)
                         .subscribe(m -> latch.countDown());
         try {
-            // First tick arrives after POLL_INTERVAL (3s); allow headroom.
+            // First tick arrives after the configured 50ms heartbeat; allow headroom.
             assertTrue(latch.await(5, TimeUnit.SECONDS), "no tick within 5s");
             assertNotNull(thread.get());
             assertTrue(

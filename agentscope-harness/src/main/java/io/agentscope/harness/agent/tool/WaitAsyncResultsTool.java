@@ -84,8 +84,8 @@ public class WaitAsyncResultsTool {
 
     /**
      * Same as {@link #WaitAsyncResultsTool(MessageBus, TaskRepository)}, with a custom polling
-     * granularity for tests: mid-budget task completion is noticed after one interval instead of
-     * one production interval.
+     * granularity for tests: mid-budget task completion is noticed after one test interval instead
+     * of one production interval.
      */
     WaitAsyncResultsTool(
             MessageBus messageBus, TaskRepository taskRepository, long pollIntervalMs) {
