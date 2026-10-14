@@ -64,7 +64,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -116,9 +115,13 @@ public class AguiMessageConverter {
      * into one AG-UI tool message per result, preserving each result's {@code toolCallId},
      * content, and error state.
      *
-     * <p>Each generated AG-UI message receives a unique ID in the format
-     * {@code agui::sourceId-UUID}. An ID that already carries the prefix is reused, so repeated
-     * conversions do not append another marker.
+     * <p>Message IDs are preserved: a one-to-one conversion keeps the source ID unchanged, and
+     * an expansion keeps the source ID on exactly one sibling — the standard message of a
+     * reasoning split, the last result of a multi-result tool message — while every other
+     * sibling receives a deterministic derived ID of the form {@code sourceId::qualifier}
+     * ({@code reasoning}, or the sibling's {@code toolCallId}). Sibling IDs stay distinct and
+     * stable across repeated conversions, and the source ID survives the Msg → AG-UI → Msg
+     * round trip, which is the anchor basis for input message deduplication.
      *
      * @param msg The AgentScope message to convert
      * @return The converted AG-UI messages, never empty
@@ -128,8 +131,13 @@ public class AguiMessageConverter {
             List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
             if (toolResults.size() > 1) {
                 List<AguiMessage> messages = new ArrayList<>();
-                for (ToolResultBlock toolResult : toolResults) {
-                    messages.add(toolResultMessage(msg, toolResult));
+                for (int i = 0; i < toolResults.size(); i++) {
+                    ToolResultBlock toolResult = toolResults.get(i);
+                    String id =
+                            i == toolResults.size() - 1
+                                    ? msg.getId()
+                                    : derivedMessageId(msg, toolResultQualifier(toolResult, i));
+                    messages.add(toolResultMessage(msg, id, toolResult));
                 }
                 return List.copyOf(messages);
             }
@@ -175,8 +183,7 @@ public class AguiMessageConverter {
                 && content.length() == 0
                 && toolCalls.isEmpty()
                 && toolCallId == null) {
-            return AguiMessage.reasoningMessage(
-                    generatedMessageId(msg), reasoningContent.toString());
+            return AguiMessage.reasoningMessage(msg.getId(), reasoningContent.toString());
         }
 
         // The protocol lists `content` as required on a tool message and does not accept null
@@ -185,7 +192,7 @@ public class AguiMessageConverter {
                 contentText.isEmpty() && !toolMessage ? null : new MessageContent.Text(contentText);
 
         return new AguiMessage(
-                generatedMessageId(msg),
+                msg.getId(),
                 role,
                 wireContent,
                 toolCalls.isEmpty() ? null : toolCalls,
@@ -196,9 +203,8 @@ public class AguiMessageConverter {
     /**
      * Convert a list of AgentScope messages to AG-UI messages.
      *
-     * <p>Each generated AG-UI message receives a unique ID in the format
-     * {@code agui::sourceId-UUID}. An ID that already carries the prefix is reused, so repeated
-     * conversions do not append another marker.
+     * <p>Message IDs are preserved: see {@link #toAguiMessages(Msg)} for how one-to-one
+     * conversions and expansions assign source and derived IDs.
      *
      * <p>The output list may contain more messages than the input list because messages that mix
      * reasoning with other content or contain multiple tool results are expanded.
@@ -418,9 +424,11 @@ public class AguiMessageConverter {
 
     /**
      * Build one AG-UI tool message from a single AgentScope tool result.
+     *
+     * @param id the caller-assigned message ID (source ID for the last sibling, derived for
+     *     the others)
      */
-    private AguiMessage toolResultMessage(Msg msg, ToolResultBlock result) {
-        String id = generatedMessageId(msg);
+    private AguiMessage toolResultMessage(Msg msg, String id, ToolResultBlock result) {
         String text = toolResultText(result);
         boolean error = result.getState() == ToolResultState.ERROR;
         MessageContent content =
@@ -435,13 +443,23 @@ public class AguiMessageConverter {
             return List.of(standardMessage);
         }
         return List.of(
-                AguiMessage.reasoningMessage(generatedMessageId(msg), reasoningContent),
+                AguiMessage.reasoningMessage(derivedMessageId(msg, "reasoning"), reasoningContent),
                 standardMessage);
     }
 
-    private static String generatedMessageId(Msg msg) {
-        String id = msg.getId();
-        return id.startsWith("agui::") ? id : "agui::" + id + "-" + UUID.randomUUID();
+    /**
+     * Derives a stable sibling ID from the source message ID: {@code sourceId::qualifier}.
+     * Deterministic derivation keeps repeated conversions of the same message consistent and
+     * keeps the source ID itself free for the sibling that carries it.
+     */
+    private static String derivedMessageId(Msg msg, String qualifier) {
+        return msg.getId() + "::" + qualifier;
+    }
+
+    /** Qualifier for a derived tool-result sibling: its tool call ID when present, else its position. */
+    private static String toolResultQualifier(ToolResultBlock result, int index) {
+        String toolCallId = result.getId();
+        return toolCallId == null || toolCallId.isBlank() ? "result-" + index : toolCallId;
     }
 
     private static String thinkingContent(Msg msg) {
