@@ -4764,7 +4764,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     core)
                             .apply(new ActingInput(deniedToolCalls));
 
-            return stream.doOnNext(
+            return stream.doOnNext(this::publishEvent)
+                    .doOnNext(
                             ev -> {
                                 if (ev instanceof RequestStopEvent rs) {
                                     stopRef.compareAndSet(null, rs);
@@ -4778,13 +4779,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             Msg lastMsg =
                                                     MessageUtils.lastAssistantMessage(
                                                             state.contextMutable());
-                                            GenerateReason reason =
-                                                    rs.getGenerateReason() != null
-                                                            ? rs.getGenerateReason()
-                                                            : GenerateReason.ALL_TOOLS_DENIED;
+                                            // Never null: all RequestStopEvent
+                                            // constructors coalesce a null reason.
+                                            GenerateReason reason = rs.getGenerateReason();
                                             if (lastMsg != null) {
-                                                return Mono.just(
-                                                        lastMsg.withGenerateReason(reason));
+                                                Msg tagged = lastMsg.withGenerateReason(reason);
+                                                // Write the terminal reason back so the
+                                                // persisted session keeps the ALL_TOOLS_DENIED
+                                                // fact across state-store recreation;
+                                                // withGenerateReason builds a new message,
+                                                // so the context still holds the untagged
+                                                // original (#2141). The replace cannot miss:
+                                                // lastMsg was just read from the same live
+                                                // list in this same synchronous block.
+                                                MessageUtils.replaceLastMessageByRole(
+                                                        state.contextMutable(),
+                                                        MsgRole.ASSISTANT,
+                                                        tagged);
+                                                return Mono.just(tagged);
                                             }
                                             return Mono.just(
                                                     Msg.builder()
