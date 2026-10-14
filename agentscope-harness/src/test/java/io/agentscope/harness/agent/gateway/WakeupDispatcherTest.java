@@ -22,6 +22,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,7 +45,10 @@ class WakeupDispatcherTest {
 
     @BeforeEach
     void setUp() {
-        messageBus = new WorkspaceMessageBus(new LocalFilesystem(tmpDir, true, 10), "/bus");
+        // 50ms heartbeat: signal-driven assertions no longer wait out the 3s production tick.
+        messageBus =
+                new WorkspaceMessageBus(
+                        new LocalFilesystem(tmpDir, true, 10), "/bus", Duration.ofMillis(50));
         target = new StubTarget();
         dispatcher = new WakeupDispatcher(messageBus, target);
     }

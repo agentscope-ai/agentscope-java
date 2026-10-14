@@ -326,7 +326,7 @@ class WaitAsyncResultsToolTest {
                         List.of(
                                 new BackgroundTask("t1", "agent-1", t1),
                                 new BackgroundTask("t2", "agent-2", t2)));
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo, 50L);
 
         Thread completer =
                 new Thread(
@@ -398,7 +398,7 @@ class WaitAsyncResultsToolTest {
         CompletableFuture<String> running = new CompletableFuture<>();
         MutableTaskRepository repo =
                 new MutableTaskRepository(List.of(new BackgroundTask("t1", "agent-1", running)));
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo, 50L);
 
         Thread completer =
                 new Thread(

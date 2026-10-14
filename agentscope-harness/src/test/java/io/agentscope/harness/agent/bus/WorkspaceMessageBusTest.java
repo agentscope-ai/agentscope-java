@@ -27,6 +27,7 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -45,7 +46,8 @@ class WorkspaceMessageBusTest {
     @BeforeEach
     void setUp() {
         LocalFilesystem fs = new LocalFilesystem(tempDir, true, 10);
-        bus = new WorkspaceMessageBus(fs, "/bus");
+        // 50ms heartbeat so the subscribe() tick tests do not wait out the 3s default.
+        bus = new WorkspaceMessageBus(fs, "/bus", Duration.ofMillis(50));
     }
 
     // ---- Mode A: drain queue ----
