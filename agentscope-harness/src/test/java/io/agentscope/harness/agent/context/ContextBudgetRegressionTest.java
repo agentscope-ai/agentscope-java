@@ -23,11 +23,18 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.model.ChatResponse;
@@ -188,6 +195,99 @@ class ContextBudgetRegressionTest {
     }
 
     @Test
+    void triggerAndBudgetAgreeWithTopLevelMediaTypes() {
+        List<Msg> messages =
+                List.of(
+                        Msg.builder().role(MsgRole.USER).textContent("see media").build(),
+                        mediaMessage(
+                                ImageBlock.builder()
+                                        .source(
+                                                new URLSource(
+                                                        "https://example.com/a.png", "image/png"))
+                                        .build()),
+                        mediaMessage(
+                                AudioBlock.builder()
+                                        .source(new Base64Source("audio/mp3", "YXVkaW8="))
+                                        .build()),
+                        mediaMessage(
+                                VideoBlock.builder()
+                                        .source(new Base64Source("video/mp4", "dmlkZW8="))
+                                        .build()),
+                        mediaMessage(
+                                DataBlock.builder()
+                                        .id("doc-1")
+                                        .name("report.pdf")
+                                        .source(new Base64Source("application/pdf", "cGRm"))
+                                        .build()));
+
+        long trigger = TokenCounterUtil.calculateToken(messages);
+        long budget = BUDGET.estimate(new ModelCallInput(messages, List.of(), null, null)).tokens();
+
+        assertEquals(trigger, budget);
+        var estimate =
+                TokenAccountingService.defaults()
+                        .estimate(new TokenAccountingService.TokenSurface(messages, List.of()));
+        assertEquals(4 * MediaTokenEstimator.DEFAULT_MEDIA_TOKENS, estimate.mediaTokens());
+    }
+
+    @Test
+    void triggerAndBudgetAgreeWithNestedToolMedia() {
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        ToolUseBlock.builder()
+                                                .id("call-1")
+                                                .name("read_media")
+                                                .input(Map.of())
+                                                .build())
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.TOOL)
+                                .content(
+                                        ToolResultBlock.builder()
+                                                .id("call-1")
+                                                .name("read_media")
+                                                .output(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("ok")
+                                                                        .build(),
+                                                                AudioBlock.builder()
+                                                                        .source(
+                                                                                new Base64Source(
+                                                                                        "audio/mp3",
+                                                                                        "YXVkaW8="))
+                                                                        .build(),
+                                                                VideoBlock.builder()
+                                                                        .source(
+                                                                                new Base64Source(
+                                                                                        "video/mp4",
+                                                                                        "dmlkZW8="))
+                                                                        .build(),
+                                                                DataBlock.builder()
+                                                                        .id("doc-2")
+                                                                        .name("r.bin")
+                                                                        .source(
+                                                                                new Base64Source(
+                                                                                        "application/octet-stream",
+                                                                                        "Ymlu"))
+                                                                        .build()))
+                                                .build())
+                                .build());
+
+        long trigger = TokenCounterUtil.calculateToken(messages);
+        long budget = BUDGET.estimate(new ModelCallInput(messages, List.of(), null, null)).tokens();
+
+        assertEquals(trigger, budget);
+        var estimate =
+                TokenAccountingService.defaults()
+                        .estimate(new TokenAccountingService.TokenSurface(messages, List.of()));
+        assertEquals(3 * MediaTokenEstimator.DEFAULT_MEDIA_TOKENS, estimate.mediaTokens());
+    }
+
+    @Test
     void unknownWindowFallsBackToTheSixtyFourKInputLimit() {
         var policy = new ContextPolicy(0, 0, 0, BUDGET, m -> {});
         Model windowless =
@@ -233,6 +333,10 @@ class ContextBudgetRegressionTest {
                                         ModelRequestPreparer.Purpose.REASONING))
                 .expectError(ContextBudgetExceededException.class)
                 .verify();
+    }
+
+    private static Msg mediaMessage(ContentBlock block) {
+        return Msg.builder().role(MsgRole.USER).content(block).build();
     }
 
     private static ResponseFormat responseFormat(int descriptionLength) {
