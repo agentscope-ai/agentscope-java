@@ -64,7 +64,12 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -765,6 +770,60 @@ class AgentScopeAgentExecutorTest {
                 assertTrue(isCancelled.get());
             } finally {
                 taskThread.interrupt();
+            }
+        }
+
+        @Test
+        @DisplayName("Cancel should end a streaming execution without completing the task")
+        void testCancelEndsStreamingExecution() throws Exception {
+            assertCancelEndsExecution(doMockForContext(true, false, false));
+        }
+
+        @Test
+        @DisplayName("Cancel should end a blocking execution without returning a result")
+        void testCancelEndsBlockingExecution() throws Exception {
+            assertCancelEndsExecution(doMockForContext(false, true, false));
+        }
+
+        private void assertCancelEndsExecution(String taskId) throws Exception {
+            CountDownLatch firstEvent = new CountDownLatch(1);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.<AgentEvent>just(
+                                            new TextBlockDeltaEvent("reply-id", "block-id", "part"))
+                                    .doOnNext(event -> firstEvent.countDown())
+                                    .concatWith(Flux.never()));
+            List<Object> events = new CopyOnWriteArrayList<>();
+            doAnswer(
+                            invocation -> {
+                                events.add(invocation.getArgument(0));
+                                return null;
+                            })
+                    .when(mockEventQueue)
+                    .enqueueEvent(any());
+            ExecutorService executionThread = Executors.newSingleThreadExecutor();
+            try {
+                Future<?> execution =
+                        executionThread.submit(() -> executor.execute(mockContext, mockEventQueue));
+                assertTrue(firstEvent.await(5, TimeUnit.SECONDS));
+
+                executor.cancel(mockContext, mockEventQueue);
+
+                execution.get(5, TimeUnit.SECONDS);
+                verify(mockAgentRunner).stop(taskId);
+                assertFalse(
+                        events.stream().anyMatch(Message.class::isInstance),
+                        "a cancelled task must not send a result message");
+                assertFalse(
+                        events.stream()
+                                .filter(TaskStatusUpdateEvent.class::isInstance)
+                                .map(TaskStatusUpdateEvent.class::cast)
+                                .anyMatch(
+                                        update ->
+                                                update.getStatus().state() == TaskState.COMPLETED),
+                        "a cancelled task must not be reported as completed");
+            } finally {
+                executionThread.shutdownNow();
             }
         }
 

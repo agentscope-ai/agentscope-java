@@ -20,6 +20,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.a2a.server.requesthandlers.DefaultRequestHandler;
 import io.a2a.spec.AgentCard;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
@@ -29,7 +30,10 @@ import io.agentscope.spring.boot.a2a.controller.AgentCardController;
 import io.agentscope.spring.boot.a2a.listener.ServerReadyListener;
 import io.agentscope.spring.boot.a2a.properties.A2aAgentCardProperties;
 import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
+import java.lang.reflect.Field;
 import java.time.Duration;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
@@ -261,5 +265,51 @@ class AgentscopeA2aAutoConfigurationTest {
                     Assertions.assertTrue(a2aCommonProperties.isCompleteWithMessage());
                     Assertions.assertTrue(a2aCommonProperties.isRequireInnerMessage());
                 });
+    }
+
+    @Test
+    void shouldApplyTimeoutPropertiesAndCloseServerWithContext() {
+        AtomicReference<ExecutorService> executionExecutor = new AtomicReference<>();
+        contextRunner
+                .withPropertyValues(
+                        "agentscope.a2a.server.agent-completion-timeout-seconds=120",
+                        "agentscope.a2a.server.consumption-completion-timeout-seconds=30")
+                .run(
+                        context -> {
+                            Object requestHandler =
+                                    readField(
+                                            AgentScopeA2aServer.class,
+                                            context.getBean(AgentScopeA2aServer.class),
+                                            "requestHandler");
+                            assertThat(
+                                            readField(
+                                                    DefaultRequestHandler.class,
+                                                    requestHandler,
+                                                    "agentCompletionTimeoutSeconds"))
+                                    .isEqualTo(120);
+                            assertThat(
+                                            readField(
+                                                    DefaultRequestHandler.class,
+                                                    requestHandler,
+                                                    "consumptionCompletionTimeoutSeconds"))
+                                    .isEqualTo(30);
+                            executionExecutor.set(
+                                    (ExecutorService)
+                                            readField(
+                                                    DefaultRequestHandler.class,
+                                                    requestHandler,
+                                                    "executor"));
+                            assertThat(executionExecutor.get().isShutdown()).isFalse();
+                        });
+
+        // The context is closed when run() returns; the server must release its thread pools.
+        assertThat(executionExecutor.get().isShutdown()).isTrue();
+    }
+
+    private static Object readField(Class<?> owner, Object target, String name)
+            throws ReflectiveOperationException {
+        Field field = owner.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
     }
 }

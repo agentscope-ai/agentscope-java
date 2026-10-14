@@ -45,6 +45,7 @@ import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -80,7 +81,7 @@ import org.slf4j.LoggerFactory;
  * </ol>
  */
 @SuppressWarnings("rawtypes")
-public class AgentScopeA2aServer {
+public class AgentScopeA2aServer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeA2aServer.class);
 
@@ -92,15 +93,24 @@ public class AgentScopeA2aServer {
 
     private final AgentRegistryService agentRegistry;
 
+    private final AgentScopeA2aRequestHandler requestHandler;
+
+    /** Transport executor created by the builder; {@code null} when the caller supplied one. */
+    private final ExecutorService ownedExecutor;
+
     private AgentScopeA2aServer(
             Map<String, TransportWrapper> transportWrappers,
             Set<TransportProperties> transportProperties,
             AgentCard agentCard,
-            AgentRegistryService agentRegistry) {
+            AgentRegistryService agentRegistry,
+            AgentScopeA2aRequestHandler requestHandler,
+            ExecutorService ownedExecutor) {
         this.transportWrappers = transportWrappers;
         this.transportProperties = transportProperties;
         this.agentCard = agentCard;
         this.agentRegistry = agentRegistry;
+        this.requestHandler = requestHandler;
+        this.ownedExecutor = ownedExecutor;
     }
 
     /**
@@ -160,6 +170,19 @@ public class AgentScopeA2aServer {
      */
     public void postEndpointReady() {
         agentRegistry.register(agentCard, transportProperties);
+    }
+
+    /**
+     * Release the thread pools this server created: the one running agent executions and, unless
+     * one was set with {@link Builder#executor(Executor)}, the transport executor. Executions that
+     * are still running are interrupted. An executor set by the caller is left to the caller.
+     */
+    @Override
+    public void close() {
+        requestHandler.close();
+        if (null != ownedExecutor) {
+            ownedExecutor.shutdownNow();
+        }
     }
 
     /**
@@ -369,16 +392,26 @@ public class AgentScopeA2aServer {
             }
             AgentScopeAgentExecutor agentExecutor =
                     new AgentScopeAgentExecutor(agentRunner, agentExecuteProperties);
-            AgentScopeA2aRequestHandler requestHandler =
+            AgentScopeA2aRequestHandler.Builder requestHandlerBuilder =
                     AgentScopeA2aRequestHandler.builder()
                             .agentExecutor(agentExecutor)
                             .taskStore(taskStore)
                             .queueManager(queueManager)
                             .pushConfigStore(pushConfigStore)
-                            .pushSender(pushSender)
-                            .build();
+                            .pushSender(pushSender);
+            if (null != agentExecuteProperties.getAgentCompletionTimeoutSeconds()) {
+                requestHandlerBuilder.agentCompletionTimeoutSeconds(
+                        agentExecuteProperties.getAgentCompletionTimeoutSeconds());
+            }
+            if (null != agentExecuteProperties.getConsumptionCompletionTimeoutSeconds()) {
+                requestHandlerBuilder.consumptionCompletionTimeoutSeconds(
+                        agentExecuteProperties.getConsumptionCompletionTimeoutSeconds());
+            }
+            AgentScopeA2aRequestHandler requestHandler = requestHandlerBuilder.build();
+            ExecutorService ownedExecutor = null;
             if (null == executor) {
-                executor = Executors.newCachedThreadPool();
+                ownedExecutor = Executors.newCachedThreadPool();
+                executor = ownedExecutor;
             }
             if (null == agentCard) {
                 agentCard = new ConfigurableAgentCard.Builder().build();
@@ -414,7 +447,12 @@ public class AgentScopeA2aServer {
             }
             AgentRegistryService agentRegistryService = new AgentRegistryService(agentRegistries);
             return new AgentScopeA2aServer(
-                    transportWrappers, availableTransports, a2aAgentCard, agentRegistryService);
+                    transportWrappers,
+                    availableTransports,
+                    a2aAgentCard,
+                    agentRegistryService,
+                    requestHandler,
+                    ownedExecutor);
         }
 
         private Map<String, TransportWrapperBuilder> loadTransportBuilders() {

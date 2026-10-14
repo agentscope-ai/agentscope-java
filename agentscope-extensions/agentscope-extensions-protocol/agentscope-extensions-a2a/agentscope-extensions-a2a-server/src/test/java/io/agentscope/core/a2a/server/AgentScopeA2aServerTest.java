@@ -16,9 +16,12 @@
 
 package io.agentscope.core.a2a.server;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -26,6 +29,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.a2a.server.events.QueueManager;
+import io.a2a.server.requesthandlers.DefaultRequestHandler;
 import io.a2a.server.requesthandlers.RequestHandler;
 import io.a2a.server.tasks.PushNotificationConfigStore;
 import io.a2a.server.tasks.PushNotificationSender;
@@ -42,7 +46,10 @@ import io.agentscope.core.a2a.server.transport.TransportProperties;
 import io.agentscope.core.a2a.server.transport.TransportWrapper;
 import io.agentscope.core.a2a.server.transport.TransportWrapperBuilder;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
+import java.lang.reflect.Field;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -386,6 +393,87 @@ class AgentScopeA2aServerTest {
     }
 
     @SuppressWarnings("rawtypes")
+    @Nested
+    @DisplayName("Close Tests")
+    class CloseTests {
+
+        private AgentScopeA2aServer.Builder serverBuilder() {
+            return AgentScopeA2aServer.builder(agentRunner)
+                    .withTransport(TransportProperties.builder("MOCK_SUCCESS").build());
+        }
+
+        @Test
+        @DisplayName("Should shut down the thread pools it created on close")
+        void testCloseShutsDownCreatedExecutors() throws Exception {
+            AgentScopeA2aServer server = serverBuilder().build();
+            ExecutorService transportExecutor =
+                    (ExecutorService) readField(AgentScopeA2aServer.class, server, "ownedExecutor");
+            ExecutorService executionExecutor =
+                    (ExecutorService)
+                            readField(
+                                    DefaultRequestHandler.class,
+                                    readField(AgentScopeA2aServer.class, server, "requestHandler"),
+                                    "executor");
+
+            server.close();
+
+            assertTrue(transportExecutor.isShutdown());
+            assertTrue(executionExecutor.isShutdown());
+        }
+
+        @Test
+        @DisplayName("Should leave an executor set by the caller running on close")
+        void testCloseKeepsCallerExecutor() {
+            ExecutorService callerExecutor = Executors.newSingleThreadExecutor();
+            try {
+                AgentScopeA2aServer server = serverBuilder().executor(callerExecutor).build();
+
+                server.close();
+
+                assertFalse(callerExecutor.isShutdown());
+            } finally {
+                callerExecutor.shutdownNow();
+            }
+        }
+
+        @Test
+        @DisplayName("Should pass configured timeouts to the request handler")
+        void testTimeoutsReachRequestHandler() throws Exception {
+            AgentScopeA2aServer server =
+                    serverBuilder()
+                            .agentExecuteProperties(
+                                    AgentExecuteProperties.builder()
+                                            .agentCompletionTimeoutSeconds(120)
+                                            .consumptionCompletionTimeoutSeconds(30)
+                                            .build())
+                            .build();
+            try {
+                Object requestHandler =
+                        readField(AgentScopeA2aServer.class, server, "requestHandler");
+                assertEquals(
+                        120,
+                        readField(
+                                DefaultRequestHandler.class,
+                                requestHandler,
+                                "agentCompletionTimeoutSeconds"));
+                assertEquals(
+                        30,
+                        readField(
+                                DefaultRequestHandler.class,
+                                requestHandler,
+                                "consumptionCompletionTimeoutSeconds"));
+            } finally {
+                server.close();
+            }
+        }
+
+        private Object readField(Class<?> owner, Object target, String name) throws Exception {
+            Field field = owner.getDeclaredField(name);
+            field.setAccessible(true);
+            return field.get(target);
+        }
+    }
+
     public static class MockTransportWrapperBuilder
             implements TransportWrapperBuilder<TransportWrapper> {
 

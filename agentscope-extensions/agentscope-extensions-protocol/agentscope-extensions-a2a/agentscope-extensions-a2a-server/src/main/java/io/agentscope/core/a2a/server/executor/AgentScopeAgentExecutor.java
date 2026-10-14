@@ -58,11 +58,12 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
+import reactor.core.publisher.Sinks;
 
 /**
  * Implementation of A2A {@link AgentExecutor} for AgentScope.
@@ -73,7 +74,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeAgentExecutor.class);
 
-    private final Map<String, Subscription> subscriptions;
+    private final Map<String, Sinks.Empty<Void>> cancelSignals;
 
     private final AgentRunner agentRunner;
 
@@ -83,7 +84,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             AgentRunner agentRunner, AgentExecuteProperties agentExecuteProperties) {
         this.agentRunner = agentRunner;
         this.agentExecuteProperties = agentExecuteProperties;
-        this.subscriptions = new ConcurrentHashMap<>();
+        this.cancelSignals = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -93,12 +94,12 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
             taskUpdater.cancel();
             agentRunner.stop(taskUpdater.getTaskId());
-            Subscription subscription = subscriptions.get(taskUpdater.getTaskId());
-            if (null == subscription) {
+            Sinks.Empty<Void> cancelSignal = cancelSignals.get(taskUpdater.getTaskId());
+            if (null == cancelSignal) {
                 log.warn("[{}] Not found Subscription for Task.", taskUpdater.getTaskId());
                 return;
             }
-            subscription.cancel();
+            cancelSignal.tryEmitEmpty();
         } catch (Exception e) {
             log.error("[{}] Error while cancelling task.", context.getTaskId(), e);
         }
@@ -192,11 +193,12 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                 new BlockingFluxEventHandler(context, agentExecuteProperties, eventQueue);
         log.info("[{}] Starting blocking request processing", context.getTaskId());
         resultFlux
-                .doOnSubscribe(s -> saveSubscription(context.getTaskId(), s))
+                .doOnSubscribe(s -> logSubscribed(context.getTaskId()))
                 .doOnNext(eventHandler::doOnNext)
                 .doOnComplete(eventHandler::doOnComplete)
                 .doOnError(eventHandler::doOnError)
-                .doFinally(signal -> removeSubscription(context.getTaskId(), signal))
+                .takeUntilOther(registerCancelSignal(context.getTaskId()))
+                .doFinally(signal -> removeCancelSignal(context.getTaskId(), signal))
                 .blockLast();
     }
 
@@ -233,24 +235,38 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         resultFlux
                 .doOnSubscribe(
                         s -> {
-                            saveSubscription(taskUpdater.getTaskId(), s);
+                            logSubscribed(taskUpdater.getTaskId());
                             taskUpdater.startWork();
                         })
                 .doOnNext(eventHandler::doOnNext)
                 .doOnComplete(eventHandler::doOnComplete)
                 .doOnError(eventHandler::doOnError)
-                .doFinally(signal -> removeSubscription(taskUpdater.getTaskId(), signal))
+                .takeUntilOther(registerCancelSignal(taskUpdater.getTaskId()))
+                .doFinally(signal -> removeCancelSignal(taskUpdater.getTaskId(), signal))
                 .blockLast();
     }
 
-    private void saveSubscription(String taskId, Subscription subscription) {
+    private void logSubscribed(String taskId) {
         log.info("[{}] Subscribed to executeFunction result stream", taskId);
-        subscriptions.put(taskId, subscription);
     }
 
-    private void removeSubscription(String taskId, SignalType signal) {
+    /**
+     * Registers the signal {@link #cancel} uses to stop the execution of a task.
+     *
+     * <p>It is applied with {@code takeUntilOther} after the event handlers: cancelling stops the
+     * agent stream and completes the downstream, so {@code blockLast()} returns and the handlers'
+     * {@code doOnComplete} is not run for the cancelled task. Cancelling the upstream subscription
+     * alone would leave {@code blockLast()} waiting forever.
+     */
+    private Mono<Void> registerCancelSignal(String taskId) {
+        Sinks.Empty<Void> cancelSignal = Sinks.empty();
+        cancelSignals.put(taskId, cancelSignal);
+        return cancelSignal.asMono();
+    }
+
+    private void removeCancelSignal(String taskId, SignalType signal) {
         log.info("[{}] Subscribe and process stream output terminated: {}", taskId, signal);
-        subscriptions.remove(taskId);
+        cancelSignals.remove(taskId);
     }
 
     private abstract static class BaseFluxEventHandler {

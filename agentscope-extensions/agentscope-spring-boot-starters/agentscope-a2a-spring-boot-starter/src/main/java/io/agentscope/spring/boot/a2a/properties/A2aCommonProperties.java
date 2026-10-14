@@ -27,12 +27,13 @@ public class A2aCommonProperties {
     private boolean enabled = true;
 
     /**
-     * The timeout seconds for agent to complete a task,
+     * The timeout seconds for agent to complete a task in a blocking request. Default 60.
      */
     private Integer agentCompletionTimeoutSeconds;
 
     /**
-     * The timeout seconds for a2a server to consume stream output from agent completed task.
+     * The timeout seconds for a2a server to consume stream output from agent completed task in a
+     * blocking request. Default 10.
      */
     private Integer consumptionCompletionTimeoutSeconds;
 

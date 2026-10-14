@@ -36,6 +36,7 @@ import io.a2a.spec.Task;
 import io.a2a.spec.TaskState;
 import io.a2a.spec.TaskStatus;
 import java.lang.reflect.Field;
+import java.util.concurrent.ExecutorService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -392,6 +393,64 @@ class AgentScopeA2aRequestHandlerTest {
             assertEquals(
                     "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
                     taskStateProvider.getClass().getName());
+        }
+    }
+
+    @Nested
+    @DisplayName("Timeout And Close Tests")
+    class TimeoutAndCloseTests {
+
+        @Test
+        @DisplayName("Should wait 60s for the agent and 10s for consumption by default")
+        void testDefaultTimeouts() throws Exception {
+            AgentScopeA2aRequestHandler handler =
+                    AgentScopeA2aRequestHandler.builder()
+                            .agentExecutor(mock(AgentExecutor.class))
+                            .build();
+            try {
+                assertEquals(60, readField(handler, "agentCompletionTimeoutSeconds"));
+                assertEquals(10, readField(handler, "consumptionCompletionTimeoutSeconds"));
+            } finally {
+                handler.close();
+            }
+        }
+
+        @Test
+        @DisplayName("Should apply configured timeouts")
+        void testConfiguredTimeouts() throws Exception {
+            AgentScopeA2aRequestHandler handler =
+                    AgentScopeA2aRequestHandler.builder()
+                            .agentExecutor(mock(AgentExecutor.class))
+                            .agentCompletionTimeoutSeconds(120)
+                            .consumptionCompletionTimeoutSeconds(30)
+                            .build();
+            try {
+                assertEquals(120, readField(handler, "agentCompletionTimeoutSeconds"));
+                assertEquals(30, readField(handler, "consumptionCompletionTimeoutSeconds"));
+            } finally {
+                handler.close();
+            }
+        }
+
+        @Test
+        @DisplayName("Should shut down the execution thread pool on close")
+        void testCloseShutsDownExecutor() throws Exception {
+            AgentScopeA2aRequestHandler handler =
+                    AgentScopeA2aRequestHandler.builder()
+                            .agentExecutor(mock(AgentExecutor.class))
+                            .build();
+            ExecutorService executor = (ExecutorService) readField(handler, "executor");
+            assertFalse(executor.isShutdown());
+
+            handler.close();
+
+            assertTrue(executor.isShutdown());
+        }
+
+        private Object readField(DefaultRequestHandler handler, String name) throws Exception {
+            Field field = DefaultRequestHandler.class.getDeclaredField(name);
+            field.setAccessible(true);
+            return field.get(handler);
         }
     }
 }

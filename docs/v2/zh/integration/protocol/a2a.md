@@ -95,6 +95,9 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 // ... Spring/Quarkus controller 转发到 wrapper.handle(...)
 
 server.postEndpointReady();   // Web 服务监听端口后再调用，触发注册等动作
+
+// 应用关闭时：释放 server 自己创建的线程池（仍在执行的任务会被中断）
+server.close();
 ```
 
 `AgentScopeA2aServer` 本身不监听端口、不暴露 endpoint，只负责构建组件、组装请求处理链；具体监听由你的 Web 框架完成。这样可以无缝接入 Spring Boot、Quarkus、Vert.x 等。
