@@ -15,8 +15,10 @@
  */
 package io.agentscope.harness.agent.skill.runtime;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -93,6 +95,29 @@ public final class MarketplaceStager {
 
     /** Segment used when the caller has no isolation identity to key on. */
     public static final String SHARED_SCOPE = "_shared";
+
+    /** Resolves the identity used by staging; USER falls back to the session identity. */
+    public static String scopeKeyFor(RuntimeContext ctx, IsolationScope isolationScope) {
+        IsolationScope scope = isolationScope != null ? isolationScope : IsolationScope.USER;
+        return switch (scope) {
+            case USER -> {
+                String uid = ctx != null ? ctx.getUserId() : null;
+                if (uid != null && !uid.isBlank()) yield uid;
+                String sid = ctx != null ? ctx.getSessionId() : null;
+                yield sid != null && !sid.isBlank() ? sid : null;
+            }
+            case SESSION -> {
+                String sid = ctx != null ? ctx.getSessionId() : null;
+                yield sid != null && !sid.isBlank() ? sid : null;
+            }
+            case AGENT, GLOBAL -> null;
+        };
+    }
+
+    /** Returns the exact derived cache subtree, including collision-safe identity encoding. */
+    public static String cacheScopeRootFor(RuntimeContext ctx, IsolationScope isolationScope) {
+        return CACHE_DIR + "/" + scopeSegment(scopeKeyFor(ctx, isolationScope));
+    }
 
     private final Path workspaceRoot;
     private final Duration orphanGrace;

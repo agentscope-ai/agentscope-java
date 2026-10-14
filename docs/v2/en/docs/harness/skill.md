@@ -325,7 +325,7 @@ So the agent's shell call is always `execute("python3 <files-root>/scripts/foo.p
 Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each call (during PreCall, in the same `onSystemPrompt` pass that builds `<available_skills>`):
 
 - Per-file SHA-256 dedup — only changed files are rewritten
-- Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass
+- When staging runs, eligible orphan directories can be reclaimed after the configured grace period (30 minutes by default)
 - In sandbox mode, `.skills-cache` is in the default workspace projection roots, so the staged tree is hydrated into the sandbox alongside `workspace/skills/` at sandbox start time (and on content change)
 
 Workspace skills (Layer 3 / Layer 4) need no staging — they already live in the workspace tree.
@@ -350,7 +350,7 @@ Two classes of skills can run in the container, with different staging points:
 Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each call (during PreCall), `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<source>/<name>/`:
 
 - **Per-file SHA-256 dedup** — only changed files are rewritten; unchanged ones are skipped.
-- **Orphan cleanup** — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass.
+- **Orphan cleanup** — when staging runs, eligible directories left by unpublished skills or removed repositories can be reclaimed after the configured grace period (30 minutes by default).
 - **Exec-bit recovery** — ingestion turns resources into Strings and discards POSIX mode, so the stager re-derives `+x` heuristically: a shebang (`#!`) at byte 0, or a known script suffix (`.sh`/`.bash`/`.py`/`.rb`/`.pl`/`.js`/`.mjs`), adds the execute bit (following `chmod +x` semantics — only bits that already have read get execute). Pure static assets (`.json`/`.md`/`.txt`) stay 644.
 
 Workspace skills (Layer 3 / Layer 4) skip this step — they already live in the workspace tree.
@@ -370,7 +370,12 @@ Tunables (on `DockerFilesystemSpec` / `KubernetesFilesystemSpec` / other sandbox
 | Method | Effect |
 |--------|--------|
 | `workspaceProjectionRoots(List)` | customize which roots are projected (default includes `skills`, `.skills-cache`) |
+| `workspaceProjectionSyncRoots(List)` | opt in to deletion of stale sandbox entries only in explicitly owned `.skills-cache/<scope>` subtrees; defaults to empty and requires a guarded harness-managed sandbox |
 | `workspaceProjectionEnabled(false)` | disable projection entirely — with it off there are no skill files in the sandbox, so scripts can't run |
+
+Cache reconciliation follows the host payload, including an empty payload after host reclamation. It preserves the host stager's 30-minute orphan grace and does not make repository offboarding immediate. Scripts should write persistent outputs outside synchronized cache roots. Ownership, supported environments and guard requirements are documented in the filesystem guide's Workspace projection section.
+
+Sandbox synchronization observes files already absent from the host projection; it does not trigger host GC or validate the entire repository offboarding flow. The middleware currently skips host GC when the merged skill set is empty; that separate issue is addressed by [PR #2665](https://github.com/agentscope-ai/agentscope-java/pull/2665). Removing a repository skill, reclaiming its host cache, and removing the sandbox copy are separate steps.
 
 ### Step 3: execute scripts inside the container
 

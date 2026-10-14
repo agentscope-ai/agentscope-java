@@ -300,6 +300,14 @@ agent.call(Msg.user("npm run build"), rc).block();
 
 投影按内容 SHA-256 做增量比对，没变的文件跳过 hydrate。可通过 `workspaceProjectionRoots(List)` 自定义包含哪些路径，或用 `workspaceProjectionEnabled(false)` 完全关闭。
 
+投影默认使用追加、覆盖语义。可通过 `workspaceProjectionSyncRoots(List.of(".skills-cache/{scope}"))` 显式开启同步。每次调用使用与 MarketplaceStager 相同的身份及防碰撞编码解析 scope；USER 使用 userId，缺失时回退到 sessionId；SESSION 使用 sessionId；AGENT/GLOBAL 使用 agent 工作区内的共享 scope。静态路径仍支持，但必须属于本次调用。开启同步后只投影当前 scope 的缓存，旧快照中已有的其他 scope 缓存不会自动删除。SESSION 标识需在不同用户之间保持唯一，不同 agent 或隔离布局不应共用一个宿主工作区。
+
+当前同步仅支持新建、由 Harness 管理、只有框架空闲 sh/sleep 进程的 Docker 容器，镜像须可信，工作区须私有。已有容器和其他后端拒绝启用。环境需为 Linux x86_64/aarch64、支持 openat2 的内核（5.6+）和 Python 3，没有 find 降级路径。脚本及 JSON 计划通过带长度帧的 stdin 传输，argv 不随文件数量增长；验证阶段不携带文件清单。描述符相对遍历拒绝链接和挂载穿越，包括同设备 bind mount 与未声明挂载。恢复快照之前及删除之前都会检查挂载拓扑；清理也位于 hash 跳过判断之前，零文件投影仍执行。校验或删除失败时启动失败，不记录成功 hash，已发生的部分缓存删除不会回滚。维护期间不允许独立进程或管理员修改工作区。
+
+预物化现在位于 execution lease 获取之后，stop 和状态保存之后才释放 lease。executionGuard 必须串行化完整调用，多副本时须跨副本协调。框架只会拒绝已知的 no-op 单例，无法证明自定义 guard 一定互斥；实现正确性、续租和多副本协调依赖使用者。scope 外文件保持原覆盖行为，scope 内生成的依赖和产物可能被清理。宿主 GC 的 30 分钟宽限期保持不变，下架不保证即时生效。
+
+同步根和已解析调用身份仅存在于运行时，不写入 WorkspaceSpec JSON；旧读取器收到原有结构，恢复的状态不能自行授权删除。包含上一阶段 syncRoots 字段的实验性本地状态会被新读取器忽略，重新保存后移除该字段。滚动升级期间旧副本仍使用 overlay，所有相关副本切换配置之前不能承诺删除一致性。
+
 ---
 
 ### 模式 3：本机 + shell（默认）

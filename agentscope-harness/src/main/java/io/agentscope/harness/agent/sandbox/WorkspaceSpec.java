@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -45,6 +46,15 @@ public class WorkspaceSpec {
     private String root = "/workspace";
     private Map<String, WorkspaceEntry> entries = new LinkedHashMap<>();
     private Map<String, String> environment = new LinkedHashMap<>();
+    @JsonIgnore private transient String cacheProjectionScope;
+
+    String cacheProjectionScope() {
+        return cacheProjectionScope;
+    }
+
+    void bindCacheProjectionScope(String scope) {
+        this.cacheProjectionScope = scope;
+    }
 
     public WorkspaceSpec() {}
 
@@ -81,6 +91,7 @@ public class WorkspaceSpec {
         copy.root = this.root;
         copy.entries = new LinkedHashMap<>(this.entries);
         copy.environment = new LinkedHashMap<>(this.environment);
+        copy.cacheProjectionScope = this.cacheProjectionScope;
         return copy;
     }
 }
