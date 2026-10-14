@@ -141,7 +141,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `exposedPorts(int...)` | 暴露端口 | 无 |
 | `environment(Map)` | 容器环境变量 | 无 |
 | `workspaceRoot(String)` | 容器内工作区挂载点 | `/workspace` |
-| `additionalRunArgs(String...)` | 额外的 `docker run` 参数 | 无 |
+| `additionalRunArgs(String...)` / `additionalRunArgs(List)` | 额外的 `docker run` 参数，多次调用会追加 | 无 |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec`（不快照） |
 | `workspaceSpec(WorkspaceSpec)` | 工作区挂载规则 | 默认 |
 | `executionGuard(SandboxExecutionGuard)` | 并发执行守卫（用于 AGENT / GLOBAL scope） | 无 |
