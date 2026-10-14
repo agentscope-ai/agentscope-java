@@ -79,7 +79,27 @@ public final class TokenAccountingService {
             long overheadTokens,
             long totalTokens,
             String method,
-            boolean exact) {}
+            boolean exact) {
+        /** Compatibility constructor for surfaces without a structured-output schema. */
+        public TokenEstimate(
+                long textTokens,
+                long toolSchemaTokens,
+                long mediaTokens,
+                long overheadTokens,
+                long totalTokens,
+                String method,
+                boolean exact) {
+            this(
+                    textTokens,
+                    toolSchemaTokens,
+                    0L,
+                    mediaTokens,
+                    overheadTokens,
+                    totalTokens,
+                    method,
+                    exact);
+        }
+    }
 
     /** Estimates conversation messages only (no tool schemas); used by the compaction trigger. */
     public long countMessages(List<Msg> messages) {
