@@ -159,7 +159,7 @@ env:
 | `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `HARNESS_CONTEXT` 中的 memory 材料（`MEMORY.md`） |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导 |
 | `disableSubagents()` | 整个子 agent 子系统 |
-| `disableDynamicSkills()` | 每轮重新合并技能；改成 build 时一次 |
+| `disableDynamicSkills()` | 每次 call 重新合并技能；改成 build 时一次 |
 | `disableToolsConfig()` | 不读 `tools.json` |
 | `disableSessionPersistence()` | 兼容 no-op；不能用它关闭原生 Session Log，模式选择见会话日志指南 |
 
@@ -380,7 +380,7 @@ skills/code-reviewer/
 3. `workspace/skills/` —— 工作区共用
 4. `<userId>/skills/` —— 用户隔离（覆盖以上所有）
 
-下层独有的 skill 都保留，重名时上层覆盖。每轮推理前 `DynamicSkillMiddleware` 重新合成 → 在 system prompt 里渲染成 `<available_skills>` 块（只列 name + description），agent 看到觉得相关才会 `load_skill_through_path` 拉详情。完整工作机制见 [技能](/v2/zh/docs/harness/skill)。
+下层独有的 skill 都保留，重名时上层覆盖。每次 call 前 `HarnessSkillMiddleware` 重新合成 → 在 system prompt 里渲染成 `<available_skills>` 块（只列 name + description），agent 看到觉得相关才会 `load_skill_through_path` 拉详情。完整工作机制见 [技能](/v2/zh/docs/harness/skill)。
 
 ### `subagents/`
 
