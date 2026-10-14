@@ -13,6 +13,12 @@ on:
       - main
   pull_request:
 
+# Cancel superseded runs on the same PR; pushes to main run to completion
+# (separate group, and the expression is only true for pull_request events).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   license:
     name: "Check License"
@@ -80,11 +86,16 @@ jobs:
       - name: Build and Test with Coverage [Linux]
         if: runner.os == 'Linux'
         shell: bash
+        env:
+          # PRs optimize for speed: skip release-only jars. Pushes to main still run
+          # javadoc (doclint) so breakage surfaces before a release. Local builds and
+          # releases are unaffected — this lives in CI config only, not the pom.
+          PR_SKIP_FLAGS: ${{ github.event_name == 'pull_request' && '-Dmaven.javadoc.skip=true -Dmaven.source.skip=true' || '' }}
         run: |
           # -T1C: one thread per core; Maven schedules parallel builds by the dependency
           # graph, so reactor ordering is guaranteed in parallel mode (the old -T1
           # rationale was an mvnd-specific spotless lock issue, not an ordering problem).
-          mvn -B -T1C clean verify
+          mvn -B -T1C $PR_SKIP_FLAGS clean verify
 
       - name: Build and Test with Coverage [Windows]
         if: runner.os == 'Windows'
