@@ -68,6 +68,7 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
         List<Boolean> awaitingSnapshots = new CopyOnWriteArrayList<>();
         FakeTransport transport = new FakeTransport(statusCalls, 2);
         repo.setTransport(transport);
+        repo.setAwaitingConfirmPollMs(50);
 
         AtomicReference<String> completedResult = new AtomicReference<>();
         repo.setCompletionCallback(
@@ -125,6 +126,7 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
         // often.
         FakeTransport transport = new FakeTransport(statusCalls, 5);
         repo.setTransport(transport);
+        repo.setAwaitingConfirmPollMs(50);
 
         String session = "sess-no-rewrite";
         String taskId = "task-no-rewrite";
