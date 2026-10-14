@@ -15,13 +15,7 @@
  */
 package io.agentscope.harness.agent.context;
 
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ModelCallInput;
-import io.agentscope.core.util.JsonUtils;
 
 /** Replace with an adapter-specific tokenizer when available. Estimates are not provider usage. */
 @FunctionalInterface
@@ -36,39 +30,13 @@ public interface ContextTokenEstimator {
     }
 
     static ContextTokenEstimator approximate() {
+        TokenAccountingService service = TokenAccountingService.defaults();
         return input -> {
-            long count = 0;
-            for (var msg : input.messages()) {
-                count += 12 + text(msg.getName());
-                for (var block : msg.getContent()) count += block(block);
-            }
-            for (var tool : input.tools()) {
-                count += 16 + text(JsonUtils.getJsonCodec().toJson(tool));
-            }
-            return new Estimate(count, "mixed-text-2.5chars-media-2048-v1", false);
+            var estimate =
+                    service.estimate(
+                            new TokenAccountingService.TokenSurface(
+                                    input.messages(), input.tools()));
+            return new Estimate(estimate.totalTokens(), estimate.method(), estimate.exact());
         };
-    }
-
-    private static long text(String value) {
-        return value == null ? 0 : (long) Math.ceil(value.length() / 2.5);
-    }
-
-    private static long block(ContentBlock block) {
-        if (block instanceof TextBlock text) return text(text.getText());
-        if (block instanceof ThinkingBlock thinking) return text(thinking.getThinking());
-        if (block instanceof ToolUseBlock use) {
-            return 12
-                    + text(use.getId())
-                    + text(use.getName())
-                    + text(JsonUtils.getJsonCodec().toJson(use.getInput()))
-                    + text(use.getContent());
-        }
-        if (block instanceof ToolResultBlock result) {
-            long tokens = 12 + text(result.getId()) + text(result.getName());
-            for (var output : result.getOutput()) tokens += block(output);
-            return tokens;
-        }
-        // Explicitly approximate: media cost depends on provider, resolution and duration.
-        return 2048;
     }
 }
