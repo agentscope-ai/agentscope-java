@@ -93,7 +93,7 @@ Common options:
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
 | `model` | `null` (uses the agent's primary model) | Dedicated model for the compaction summarization call |
 
-**Auto-recovery on overflow**: when the model returns `context_length_exceeded` or a similar error, the framework attempts forced compaction unless compaction is disabled. In the default `EVENT_LOG` execution mode, it retries the current reasoning step once within the same execution. No explicit `.compaction(...)` call is needed to enable this; a repeated overflow propagates to the caller.
+**Auto-recovery on overflow**: when the model returns `context_length_exceeded` or a similar error, the framework runs an emergency compaction from the latest committed history and retries the current reasoning step once within the same execution, unless compaction is disabled. No explicit `.compaction(...)` call is needed to enable this. The reduced view serves only that retry: recovery itself never rewrites durable history — whether the candidate is committed is still decided by the regular request preparation, and a cancelled or failed retry leaves working history untouched. If the retry still fails, the first overflow is retained as the primary cause to aid diagnosis; if no further reduction is possible, the error propagates to the caller.
 
 ### Want it lighter? Trim arguments first
 

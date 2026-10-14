@@ -265,8 +265,19 @@ and `beforeTokenCount`; message content is never copied into the event. The `com
 payload includes `compactionId`, `status`, `beforeMsgCount`, `beforeTokenCount`, and
 `durationMs`. When `status` is `completed`, it also includes `afterMsgCount` and
 `afterTokenCount`, calculated from the effective post-compaction conversation. When `status` is
-`failed`, it includes `errorType` (the exception class name only) instead of after metrics.
-Cancelled compactions also omit after metrics because no post-compaction state is available.
+`skipped` (the check passed but produced no candidate), it reports the unchanged counts instead.
+When `status` is `failed`, it includes `errorType` (the exception class name only) instead of
+after metrics. Cancelled compactions also omit after metrics because no post-compaction state is
+available.
+
+`completed` means a candidate compaction result was produced — **not that it was committed to
+working history**: the commit happens later, after request-preparation validation (budget and
+tool pairing both pass, with no concurrent state change). When investigating “compaction ran but
+history looks unchanged”, read these records together with the same call's `context/build` or
+`request/prepared` entries. On the `streamEvents()` path these stored records have live
+counterparts, `context_compaction_started` and `context_compaction_finished` (which also carry
+`mode`, distinguishing regular compaction from overflow-recovery emergency compaction); see
+[Context management](/v2/en/docs/harness/context).
 
 <Accordion title="SessionEvent envelope">
 
