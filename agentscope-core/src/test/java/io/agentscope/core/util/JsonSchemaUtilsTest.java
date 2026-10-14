@@ -18,12 +18,10 @@ package io.agentscope.core.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
@@ -149,51 +147,6 @@ class JsonSchemaUtilsTest {
         assertThrows(
                 RuntimeException.class,
                 () -> JsonSchemaUtils.convertToObject(invalidData, SimpleModel.class));
-    }
-
-    @Test
-    void testValidateJsonOutputAcceptsConformingPayload() {
-        Map<String, Object> schema =
-                Map.of(
-                        "type",
-                        "object",
-                        "properties",
-                        Map.of("name", Map.of("type", "string")),
-                        "required",
-                        List.of("name"));
-        JsonNode output = JsonUtils.getJsonCodec().fromJson("{\"name\":\"Alice\"}", JsonNode.class);
-
-        assertNull(JsonSchemaUtils.validateJsonOutput(output, schema));
-    }
-
-    @Test
-    void testValidateJsonOutputRejectsExplicitNullOptionalField() {
-        Map<String, Object> schema =
-                Map.of("type", "object", "properties", Map.of("name", Map.of("type", "string")));
-        JsonNode output = JsonUtils.getJsonCodec().fromJson("{\"name\":null}", JsonNode.class);
-
-        String error = JsonSchemaUtils.validateJsonOutput(output, schema);
-
-        assertNotNull(error);
-        assertTrue(error.contains("name"));
-    }
-
-    @Test
-    void testValidateJsonOutputRejectsTypeMismatch() {
-        Map<String, Object> schema =
-                Map.of(
-                        "type",
-                        "object",
-                        "properties",
-                        Map.of("age", Map.of("type", "integer")),
-                        "required",
-                        List.of("age"));
-        JsonNode output = JsonUtils.getJsonCodec().fromJson("{\"age\":\"30\"}", JsonNode.class);
-
-        String error = JsonSchemaUtils.validateJsonOutput(output, schema);
-
-        assertNotNull(error);
-        assertTrue(error.contains("age"));
     }
 
     @Test

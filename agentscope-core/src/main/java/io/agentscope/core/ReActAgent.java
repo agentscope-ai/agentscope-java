@@ -266,6 +266,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final GenerateOptions generateOptions;
 
     /**
+     * Whether native structured-output responses are validated against the requested JSON Schema.
+     * Enabled by default; {@link Builder#validateStructuredOutput(boolean)} can restore the
+     * legacy trust-the-provider behavior.
+     */
+    private final boolean validateStructuredOutput;
+
+    /**
      * Agent-owned toolkit (a deep copy made at {@code build()} time, isolated per agent instance).
      * Shared across this agent's concurrent calls; per-call structured-output tools are NOT
      * registered here — they live on the per-call {@link CallExecution} scope.
@@ -397,6 +404,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.generateOptions = builder.generateOptions;
+        this.validateStructuredOutput = builder.validateStructuredOutput;
         this.toolExecutionContext = builder.toolExecutionContext;
         this.enablePendingToolRecovery = builder.enablePendingToolRecovery;
         List<MiddlewareBase> mws = new ArrayList<>();
@@ -1744,10 +1752,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     "Native structured output is not valid JSON: " + e.getMessage(), e);
         }
 
-        String validationError = JsonSchemaUtils.validateJsonOutput(payload, schema.getSchema());
-        if (validationError != null) {
-            throw new IllegalArgumentException(
-                    "Native structured output failed schema validation: " + validationError);
+        if (validateStructuredOutput) {
+            String validationError = ToolValidator.validateJsonOutput(payload, schema.getSchema());
+            if (validationError != null) {
+                throw new IllegalArgumentException(
+                        "Native structured output failed schema validation: " + validationError);
+            }
         }
 
         Object parsed = JsonUtils.getJsonCodec().convertValue(payload, Object.class);
@@ -5684,6 +5694,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         ExecutionConfig modelExecutionConfig;
         ExecutionConfig toolExecutionConfig;
         GenerateOptions generateOptions;
+        private boolean validateStructuredOutput = true;
         final Set<Hook> hooks = new LinkedHashSet<>();
         private final List<MiddlewareBase> middlewares = new ArrayList<>();
         private ModelRequestPreparer modelRequestPreparer;
@@ -5799,6 +5810,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             copy.modelExecutionConfig = this.modelExecutionConfig;
             copy.toolExecutionConfig = this.toolExecutionConfig;
             copy.generateOptions = this.generateOptions;
+            copy.validateStructuredOutput = this.validateStructuredOutput;
             copy.modelRequestPreparer = this.modelRequestPreparer;
             copy.actionObserver = this.actionObserver;
             copy.enableMetaTool = this.enableMetaTool;
@@ -6113,6 +6125,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder generateOptions(GenerateOptions generateOptions) {
             this.generateOptions = generateOptions;
+            return this;
+        }
+
+        /**
+         * Controls whether native structured-output responses are validated against the requested
+         * JSON Schema after the model returns. Enabled by default. When disabled, the agent still
+         * requires valid JSON and still attaches the parsed payload as structured data, but it
+         * trusts the provider to enforce schema conformance.
+         *
+         * @param validateStructuredOutput whether to validate native structured output
+         * @return This builder instance for method chaining
+         */
+        public Builder validateStructuredOutput(boolean validateStructuredOutput) {
+            this.validateStructuredOutput = validateStructuredOutput;
             return this;
         }
 

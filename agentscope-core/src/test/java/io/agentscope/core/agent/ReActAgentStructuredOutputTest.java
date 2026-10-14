@@ -976,6 +976,58 @@ class ReActAgentStructuredOutputTest {
                                 + "\"condition\":null}"));
     }
 
+    @Test
+    @DisplayName("Native structured-output validation can be explicitly disabled")
+    void testNativeStructuredOutputValidationCanBeDisabled() {
+        AtomicInteger calls = new AtomicInteger();
+        List<GenerateOptions> seenOptions = new CopyOnWriteArrayList<>();
+
+        Model model =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        calls.incrementAndGet();
+                        seenOptions.add(options);
+                        return Flux.just(
+                                textResponse(
+                                        "native_schema_invalid",
+                                        "{\"location\":\"San Francisco\","
+                                                + "\"temperature\":\"72°F\","
+                                                + "\"condition\":null}"));
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "native-mock";
+                    }
+
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("weather-agent")
+                        .sysPrompt("You are a weather assistant")
+                        .model(model)
+                        .toolkit(new Toolkit())
+                        .validateStructuredOutput(false)
+                        .build();
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+
+        assertNotNull(responseMsg);
+        assertTrue(responseMsg.hasStructuredData());
+        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
+        assertNotNull(result);
+        assertEquals("San Francisco", result.location);
+        assertNull(result.condition);
+        assertEquals(1, calls.get());
+        assertNotNull(seenOptions.get(0).getResponseFormat());
+    }
+
     // ==================== Helpers ====================
 
     /** Builds a weather agent bound to the given mock model. */

@@ -26,15 +26,9 @@ import com.github.victools.jsonschema.generator.SchemaGeneratorConfigBuilder;
 import com.github.victools.jsonschema.generator.SchemaVersion;
 import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
-import com.networknt.schema.Error;
-import com.networknt.schema.Schema;
-import com.networknt.schema.SchemaRegistry;
-import com.networknt.schema.SpecificationVersion;
 import io.agentscope.core.tool.ToolSchemaModule;
 import java.lang.reflect.Type;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * Utility class for JSON Schema operations.
@@ -159,35 +153,6 @@ public class JsonSchemaUtils {
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to generate JSON schema for " + type.getTypeName(), e);
-        }
-    }
-
-    /**
-     * Validates an already-parsed JSON payload against a JSON Schema.
-     *
-     * @param output the parsed model output
-     * @param schema the JSON Schema to validate against
-     * @return {@code null} when the output conforms, otherwise a newline-separated error list
-     */
-    public static String validateJsonOutput(JsonNode output, Map<String, Object> schema) {
-        if (schema == null || schema.isEmpty()) {
-            return null;
-        }
-
-        try {
-            JsonNode schemaNode = JsonUtils.getJsonCodec().convertValue(schema, JsonNode.class);
-            Schema compiledSchema =
-                    SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
-                            .getSchema(schemaNode);
-            List<Error> errors = compiledSchema.validate(output);
-            if (errors == null || errors.isEmpty()) {
-                return null;
-            }
-            return errors.stream()
-                    .map(error -> error.getInstanceLocation() + ": " + error.getMessage())
-                    .collect(Collectors.joining("\n"));
-        } catch (Exception e) {
-            return "Schema validation error: " + e.getMessage();
         }
     }
 

@@ -382,6 +382,8 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 
 当 native 路径失败（例如提供商拒绝请求，或输出为空、不是合法 JSON、不符合 schema）时，框架会**自动降级**到 fallback 路径，无需用户干预。被拒绝的 native 响应不会保留在会话上下文中。
 
+Native 响应校验默认开启。如果提供商已保证 schema 合规，并希望避免客户端侧校验及其降级行为，可以使用 `ReActAgent.builder().validateStructuredOutput(false)` 显式关闭。
+
 Native structured output 默认不会强制 schema 进入 strict 模式。OpenAI 与 OpenAI Official
 厂商可以通过 `strictJsonSchema(true)` 显式开启；schema 内的 `strict` 值优先。
 

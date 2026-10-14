@@ -384,6 +384,8 @@ The framework provides two structured output paths:
 
 If the native path fails (for example, the provider rejects the request, or the output is empty, invalid JSON, or schema-invalid), the framework **automatically falls back** to the synthetic tool path — no user intervention needed. The rejected native response is not kept in the conversation context.
 
+Native response validation is enabled by default. Use `ReActAgent.builder().validateStructuredOutput(false)` when a provider already guarantees schema conformance and you want to avoid the client-side check and its fallback behavior.
+
 Native structured output does not force a schema to strict mode. OpenAI and OpenAI Official
 manufacturer can enable it explicitly with `strictJsonSchema(true)`; a schema-level `strict` value
 always takes precedence.
