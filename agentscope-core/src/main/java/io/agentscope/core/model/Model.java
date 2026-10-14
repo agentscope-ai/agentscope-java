@@ -101,4 +101,16 @@ public interface Model {
     default int getContextWindowSize() {
         return 0;
     }
+
+    /**
+     * Returns the generation options this model applies when a request does not override them, or
+     * {@code null} if unknown. Providers merge these defaults into the effective request after
+     * the harness-layer budget check; exposing them lets estimation price defaults such as a
+     * response schema that would otherwise escape accounting.
+     *
+     * @return default generation options, or {@code null} when the model has none
+     */
+    default GenerateOptions getDefaultOptions() {
+        return null;
+    }
 }

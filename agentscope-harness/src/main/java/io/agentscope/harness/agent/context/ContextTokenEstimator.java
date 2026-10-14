@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.context;
 
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.model.GenerateOptions;
 
 /** Replace with an adapter-specific tokenizer when available. Estimates are not provider usage. */
 @FunctionalInterface
@@ -32,7 +33,12 @@ public interface ContextTokenEstimator {
     static ContextTokenEstimator approximate() {
         TokenAccountingService service = TokenAccountingService.defaults();
         return input -> {
-            var options = input.options();
+            GenerateOptions options = input.options();
+            GenerateOptions modelDefaults =
+                    input.model() == null ? null : input.model().getDefaultOptions();
+            if (modelDefaults != null) {
+                options = GenerateOptions.mergeOptions(options, modelDefaults);
+            }
             var estimate =
                     service.estimate(
                             new TokenAccountingService.TokenSurface(

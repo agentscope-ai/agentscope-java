@@ -26,12 +26,15 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 /**
  * Guards the invariant that the compaction trigger and the final request budget derive their token
@@ -128,5 +131,86 @@ class ContextBudgetRegressionTest {
 
         assertEquals(trigger, without, "the trigger path never carries a response format");
         assertTrue(with > without, "the final budget path must price the schema");
+    }
+
+    @Test
+    void modelDefaultResponseFormatIsPricedLikeAnExplicitOne() {
+        List<Msg> messages = List.of(Msg.builder().role(MsgRole.USER).textContent("hello").build());
+        ResponseFormat format = responseFormat(400);
+
+        long explicit =
+                BUDGET.estimate(
+                                new ModelCallInput(
+                                        messages,
+                                        List.of(),
+                                        GenerateOptions.builder().responseFormat(format).build(),
+                                        null))
+                        .tokens();
+        long viaDefault =
+                BUDGET.estimate(
+                                new ModelCallInput(
+                                        messages, List.of(), null, modelWithDefaultFormat(format)))
+                        .tokens();
+
+        assertEquals(explicit, viaDefault, "model-level default schema must reach the budget path");
+    }
+
+    @Test
+    void explicitResponseFormatOverridesModelDefaultForBudget() {
+        List<Msg> messages = List.of(Msg.builder().role(MsgRole.USER).textContent("hello").build());
+        ResponseFormat small = responseFormat(10);
+
+        long smallOnly =
+                BUDGET.estimate(
+                                new ModelCallInput(
+                                        messages,
+                                        List.of(),
+                                        GenerateOptions.builder().responseFormat(small).build(),
+                                        null))
+                        .tokens();
+        long overridden =
+                BUDGET.estimate(
+                                new ModelCallInput(
+                                        messages,
+                                        List.of(),
+                                        GenerateOptions.builder().responseFormat(small).build(),
+                                        modelWithDefaultFormat(responseFormat(4000))))
+                        .tokens();
+
+        assertEquals(
+                smallOnly, overridden, "an explicit request schema wins over the model default");
+    }
+
+    private static ResponseFormat responseFormat(int descriptionLength) {
+        return ResponseFormat.jsonSchema(
+                JsonSchema.builder()
+                        .name("Answer")
+                        .schema(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "description",
+                                        "x".repeat(descriptionLength)))
+                        .build());
+    }
+
+    private static Model modelWithDefaultFormat(ResponseFormat format) {
+        return new Model() {
+            @Override
+            public String getModelName() {
+                return "default-format-model";
+            }
+
+            @Override
+            public Flux<ChatResponse> stream(
+                    List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                throw new UnsupportedOperationException("estimation only");
+            }
+
+            @Override
+            public GenerateOptions getDefaultOptions() {
+                return GenerateOptions.builder().responseFormat(format).build();
+            }
+        };
     }
 }

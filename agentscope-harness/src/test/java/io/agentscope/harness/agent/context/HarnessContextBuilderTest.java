@@ -124,6 +124,34 @@ class HarnessContextBuilderTest {
     }
 
     @Test
+    void modelDefaultResponseFormatIsRejectedByLocalBudget() {
+        var state = AgentState.builder().build();
+        List<Msg> history = List.of(Msg.builder().role(MsgRole.USER).textContent("hello").build());
+        state.contextMutable().addAll(history);
+        ResponseFormat format =
+                ResponseFormat.jsonSchema(
+                        JsonSchema.builder()
+                                .name("Answer")
+                                .schema(Map.of("type", "object", "description", "x".repeat(4000)))
+                                .build());
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("default-schema");
+        when(model.getDefaultOptions())
+                .thenReturn(GenerateOptions.builder().responseFormat(format).build());
+        var policy = new ContextPolicy(100, 20, 1, ContextTokenEstimator.approximate(), m -> {});
+        StepVerifier.create(
+                        new HarnessContextBuilder(policy, null, null)
+                                .prepare(
+                                        mock(Agent.class),
+                                        RuntimeContext.builder().agentState(state).build(),
+                                        new ModelCallInput(history, List.of(), null, model),
+                                        "c",
+                                        ModelRequestPreparer.Purpose.REASONING))
+                .expectError(ContextBudgetExceededException.class)
+                .verify();
+    }
+
+    @Test
     void numericPolicyRejectsUnknownNegativeAndFractionalLimits() {
         assertEquals(1200, ContextPolicy.fromMap(Map.of("maxInputTokens", 1200)).maxInputTokens());
         assertThrows(
