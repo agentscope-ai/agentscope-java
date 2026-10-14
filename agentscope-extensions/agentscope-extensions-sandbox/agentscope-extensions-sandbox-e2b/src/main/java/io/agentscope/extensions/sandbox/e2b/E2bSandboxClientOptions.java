@@ -27,6 +27,15 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
     private String apiBaseUrl = "https://api.e2b.app";
     private String domain = "e2b.app";
 
+    /**
+     * Fixed data-plane URL replacing the per-sandbox {@code <port>-<sandboxId>.<domain>} envd
+     * address — the equivalent of the official SDK's {@code E2B_SANDBOX_URL}. The gateway behind
+     * it must route by the {@code E2b-Sandbox-Id}/{@code E2b-Sandbox-Port} request headers (sent
+     * on every envd request). When set, the data plane ignores {@code domain}; control-plane
+     * calls still use {@link #getApiBaseUrl()}.
+     */
+    private String envdSandboxUrl;
+
     /** E2B template id (or snapshot id when creating from a snapshot). */
     private String templateId = "base";
 
@@ -107,8 +116,27 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
         return domain;
     }
 
+    /**
+     * Sets the fallback envd domain used to build per-sandbox data-plane URLs such as {@code
+     * https://<port>-<sandboxId>.<domain>} when {@link #getEnvdSandboxUrl()} is unset. This does
+     * not affect the control-plane base URL, which remains {@link #getApiBaseUrl()}.
+     */
     public void setDomain(String domain) {
         this.domain = domain;
+    }
+
+    public String getEnvdSandboxUrl() {
+        return envdSandboxUrl;
+    }
+
+    /**
+     * Sets a fixed data-plane gateway URL, equivalent to the official SDK's {@code
+     * E2B_SANDBOX_URL}. When present, envd requests go to this gateway and route by the {@code
+     * E2b-Sandbox-Id}/{@code E2b-Sandbox-Port} headers instead of composing a per-sandbox host
+     * from {@link #getDomain()}; control-plane calls still use {@link #getApiBaseUrl()}.
+     */
+    public void setEnvdSandboxUrl(String envdSandboxUrl) {
+        this.envdSandboxUrl = envdSandboxUrl;
     }
 
     public String getTemplateId() {
