@@ -219,7 +219,9 @@ class ChatSessionsTest {
                         workspace,
                         new DemoChatModel(Duration.ofMillis(2), Duration.ofMillis(40)))) {
             sessions.submit("conversation", "multi-step", "/slow replay everything");
-            completed = await(sessions, s -> lastStatus(s).equals("completed"));
+            // Multi-step demo with streamed tool progress can exceed 15 seconds on Windows runners.
+            completed =
+                    await(sessions, s -> lastStatus(s).equals("completed"), Duration.ofSeconds(60));
             var tools =
                     completed.items().stream().filter(item -> item.kind().equals("tool")).toList();
             assertEquals(3, tools.size());
