@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -136,7 +137,7 @@ class HarnessContextBuilderTest {
                                 .build());
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("default-schema");
-        when(model.getDefaultOptions())
+        when(model.resolveOptions(any()))
                 .thenReturn(GenerateOptions.builder().responseFormat(format).build());
         var policy = new ContextPolicy(100, 20, 1, ContextTokenEstimator.approximate(), m -> {});
         StepVerifier.create(
@@ -168,6 +169,7 @@ class HarnessContextBuilderTest {
         Model model = mock(Model.class);
         when(model.getContextWindowSize()).thenReturn(window);
         when(model.getModelName()).thenReturn("test");
+        when(model.resolveOptions(any())).thenAnswer(invocation -> invocation.getArgument(0));
         return model;
     }
 

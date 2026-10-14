@@ -82,6 +82,38 @@ class ProviderDefaultSchemaBudgetTest {
     }
 
     @Test
+    void ollamaTextRequestStillPaysForTheStoredDefaultSchema() {
+        OllamaChatModel model =
+                new OllamaChatModel(
+                        "qwen3.5:9b",
+                        "http://localhost:11434",
+                        OllamaOptions.builder().format(schema("x".repeat(4000))).build());
+        GenerateOptions request =
+                GenerateOptions.builder().responseFormat(ResponseFormat.text()).build();
+
+        long defaultOnly = estimate(null, model);
+        long withTextRequest = estimate(request, model);
+
+        assertEquals(defaultOnly, withTextRequest);
+    }
+
+    @Test
+    void ollamaBodyParamFormatOverrideDropsTheStoredDefaultSchema() {
+        OllamaChatModel model =
+                new OllamaChatModel(
+                        "qwen3.5:9b",
+                        "http://localhost:11434",
+                        OllamaOptions.builder().format(schema("x".repeat(4000))).build());
+        GenerateOptions request =
+                GenerateOptions.builder().additionalBodyParam("format", "json").build();
+
+        long requestOnly = estimate(request, null);
+        long withModelDefault = estimate(request, model);
+
+        assertEquals(requestOnly, withModelDefault);
+    }
+
+    @Test
     void openAIResponsesConfiguredSchemaIsPricedLikeAnExplicitOne() {
         Map<String, Object> schema = schema("x".repeat(4000));
         OpenAIResponsesChatModel model =

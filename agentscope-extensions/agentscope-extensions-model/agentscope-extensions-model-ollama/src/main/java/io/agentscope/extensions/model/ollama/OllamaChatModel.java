@@ -140,21 +140,33 @@ public class OllamaChatModel extends ChatModelBase {
 
     @Override
     public GenerateOptions getDefaultOptions() {
-        GenerateOptions converted = defaultOptions.toGenerateOptions();
-        Object format = defaultOptions.getFormat();
+        return structuredSchemaOptions(defaultOptions);
+    }
+
+    @Override
+    public GenerateOptions resolveOptions(GenerateOptions requestOptions) {
+        OllamaOptions effective =
+                requestOptions == null ? defaultOptions : defaultOptions.merge(requestOptions);
+        return structuredSchemaOptions(effective);
+    }
+
+    /**
+     * Mirrors the send path's effective {@code format} semantics: the request only clears the
+     * default schema when it maps to a non-null format (json_schema, json_object, or a raw
+     * {@code format} body parameter), exactly as {@code fromGenerateOptions} and
+     * {@code additionalBodyParams} behave before the default merge.
+     */
+    private static GenerateOptions structuredSchemaOptions(OllamaOptions effective) {
+        Object format = effective.getFormat();
         if (format instanceof Map<?, ?> schemaMap) {
             @SuppressWarnings("unchecked")
             Map<String, Object> schema = (Map<String, Object>) schemaMap;
-            converted =
-                    GenerateOptions.mergeOptions(
-                            GenerateOptions.builder()
-                                    .responseFormat(
-                                            ResponseFormat.jsonSchema(
-                                                    JsonSchema.builder().schema(schema).build()))
-                                    .build(),
-                            converted);
+            return GenerateOptions.builder()
+                    .responseFormat(
+                            ResponseFormat.jsonSchema(JsonSchema.builder().schema(schema).build()))
+                    .build();
         }
-        return converted;
+        return GenerateOptions.builder().build();
     }
 
     @Override

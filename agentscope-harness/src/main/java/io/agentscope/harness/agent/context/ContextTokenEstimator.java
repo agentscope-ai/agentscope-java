@@ -33,12 +33,10 @@ public interface ContextTokenEstimator {
     static ContextTokenEstimator approximate() {
         TokenAccountingService service = TokenAccountingService.defaults();
         return input -> {
-            GenerateOptions options = input.options();
-            GenerateOptions modelDefaults =
-                    input.model() == null ? null : input.model().getDefaultOptions();
-            if (modelDefaults != null) {
-                options = GenerateOptions.mergeOptions(options, modelDefaults);
-            }
+            GenerateOptions options =
+                    input.model() == null
+                            ? input.options()
+                            : input.model().resolveOptions(input.options());
             var estimate =
                     service.estimate(
                             new TokenAccountingService.TokenSurface(
