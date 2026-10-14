@@ -653,7 +653,8 @@ public class ConversationCompactor {
                 if (text.isBlank()) {
                     continue;
                 }
-                int tokens = TokenCounterUtil.calculateToken(List.of(msg));
+                // Charge this result only, not every sibling in a batched tool message.
+                int tokens = TokenCounterUtil.calculateToken(List.of(msg.withContent(List.of(tr))));
                 if (protectedTokens < protectBudget) {
                     protectedTokens += tokens;
                     continue;
