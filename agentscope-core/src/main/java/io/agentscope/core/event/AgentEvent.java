@@ -54,6 +54,7 @@ import java.util.UUID;
     @JsonSubTypes.Type(value = ToolCallDeltaEvent.class, name = "TOOL_CALL_DELTA"),
     @JsonSubTypes.Type(value = ToolCallEndEvent.class, name = "TOOL_CALL_END"),
     @JsonSubTypes.Type(value = ToolResultStartEvent.class, name = "TOOL_RESULT_START"),
+    @JsonSubTypes.Type(value = ToolProgressEvent.class, name = "TOOL_PROGRESS"),
     @JsonSubTypes.Type(value = ToolResultTextDeltaEvent.class, name = "TOOL_RESULT_TEXT_DELTA"),
     @JsonSubTypes.Type(value = ToolResultDataDeltaEvent.class, name = "TOOL_RESULT_DATA_DELTA"),
     @JsonSubTypes.Type(value = ToolResultEndEvent.class, name = "TOOL_RESULT_END"),
