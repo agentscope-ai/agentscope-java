@@ -1,0 +1,18 @@
+{
+  "synthetic": true,
+  "orders": [
+    {
+      "id": "O-1001",
+      "owner": "alice",
+      "status": "awaiting_stock",
+      "guaranteed_arrival": false
+    },
+    {
+      "id": "O-2001",
+      "owner": "bob",
+      "status": "shipped",
+      "guaranteed_arrival": false
+    }
+  ],
+  "policy": "Only read orders owned by the authenticated user. Ticket creation requires confirmation."
+}

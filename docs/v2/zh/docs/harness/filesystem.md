@@ -101,7 +101,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | 实现 | 说明 |
 |------|------|
 | `RedisStore` | 基于 Jedis，适合低延迟高并发 | `agentscope-extensions-redis` |
-| `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 | `agentscope-extensions-mysql` |
+| `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
 | `InMemoryStore` | 内存实现，适合测试 | `agentscope-harness` |
 
 ---
@@ -141,7 +141,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `exposedPorts(int...)` | 暴露端口 | 无 |
 | `environment(Map)` | 容器环境变量 | 无 |
 | `workspaceRoot(String)` | 容器内工作区挂载点 | `/workspace` |
-| `additionalRunArgs(String...)` | 额外的 `docker run` 参数 | 无 |
+| `additionalRunArgs(String...)` / `additionalRunArgs(List)` | 额外的 `docker run` 参数，多次调用会追加 | 无 |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec`（不快照） |
 | `workspaceSpec(WorkspaceSpec)` | 工作区挂载规则 | 默认 |
 | `executionGuard(SandboxExecutionGuard)` | 并发执行守卫（用于 AGENT / GLOBAL scope） | 无 |
@@ -193,6 +193,16 @@ HarnessAgent agent = HarnessAgent.builder()
         .sandboxTimeoutSeconds(300)
         .isolationScope(IsolationScope.SESSION))
     .build();
+```
+
+对接自建 E2B 兼容后端（如 CubeSandbox）时，如果数据面由单一固定网关地址承载，可以设置 `envdSandboxUrl`——等价于官方 SDK 的 `E2B_SANDBOX_URL`。设置后所有沙箱的 envd 流量都打到该地址，路由依赖请求头 `E2b-Sandbox-Id` / `E2b-Sandbox-Port`（与官方 SDK 一样自动携带），因此不需要泛域名 DNS：
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .apiBaseUrl("http://10.0.0.1:3000")     // 控制面
+    .envdSandboxUrl("http://10.0.0.1:8080") // 数据面（网关需按 E2B header 路由）
+    ...)
 ```
 
 #### Daytona 沙箱

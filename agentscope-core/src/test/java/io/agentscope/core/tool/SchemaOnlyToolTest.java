@@ -75,6 +75,21 @@ class SchemaOnlyToolTest {
     }
 
     @Test
+    @DisplayName("Should preserve deferLoading when creating from ToolSchema")
+    void testDeferLoadingPreservedFromToolSchema() {
+        ToolSchema deferredSchema =
+                ToolSchema.builder()
+                        .name("deferred_query_database")
+                        .description("Query an external database")
+                        .parameters(Map.of("type", "object"))
+                        .deferLoading(true)
+                        .build();
+
+        SchemaOnlyTool tool = new SchemaOnlyTool(deferredSchema);
+        assertEquals(Boolean.TRUE, tool.getDeferLoading());
+    }
+
+    @Test
     @DisplayName("Should create SchemaOnlyTool with name, description, parameters")
     void testCreateWithParameters() {
         Map<String, Object> params =
@@ -157,6 +172,20 @@ class SchemaOnlyToolTest {
         SchemaOnlyTool toolUnspecifiedStrict =
                 new SchemaOnlyTool("get_user", "Get user", params, null);
         assertNull(toolUnspecifiedStrict.getStrict());
+    }
+
+    @Test
+    @DisplayName("Should support deferLoading configuration via 5-arg constructor")
+    void testDeferLoadingConfiguration() {
+        Map<String, Object> params =
+                Map.of("type", "object", "properties", Map.of("id", Map.of("type", "integer")));
+
+        SchemaOnlyTool deferredTool =
+                new SchemaOnlyTool("get_user", "Get user", params, null, true);
+        assertEquals(Boolean.TRUE, deferredTool.getDeferLoading());
+
+        SchemaOnlyTool unspecifiedTool = new SchemaOnlyTool("get_user", "Get user", params, null);
+        assertNull(unspecifiedTool.getDeferLoading());
     }
 
     @Test

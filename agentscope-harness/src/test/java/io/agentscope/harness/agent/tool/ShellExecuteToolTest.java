@@ -19,9 +19,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolExecutionDetails;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import java.nio.file.Path;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -39,32 +44,51 @@ class ShellExecuteToolTest {
         tool = new ShellExecuteTool(sandbox);
     }
 
+    /** Extracts the concatenated text output of a tool result. */
+    private static String textOf(ToolResultBlock result) {
+        return result.getOutput().stream()
+                .filter(b -> b instanceof TextBlock)
+                .map(b -> ((TextBlock) b).getText())
+                .collect(Collectors.joining());
+    }
+
     @Test
     void execute_omittedTimeout_defaultsTo30() {
-        String result = tool.execute(RT, "ls", null, null);
+        ToolResultBlock result = tool.execute(RT, "ls", null, null);
 
-        assertTrue(result.contains("Exit code: 0"));
+        assertTrue(textOf(result).contains("Exit code: 0"));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         assertEquals("ls", sandbox.command);
         assertEquals(30, sandbox.timeoutSeconds);
     }
 
     @Test
     void execute_explicitTimeout_isPassedThrough() {
-        String result = tool.execute(RT, "ls", null, 90);
+        ToolResultBlock result = tool.execute(RT, "ls", null, 90);
 
-        assertTrue(result.contains("Exit code: 0"));
+        assertTrue(textOf(result).contains("Exit code: 0"));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         assertEquals("ls", sandbox.command);
         assertEquals(90, sandbox.timeoutSeconds);
     }
 
     @Test
     void execute_withWorkingDirectory_prefixesCd() {
-        String result = tool.execute(RT, "ls", "sub", null);
+        ToolResultBlock result = tool.execute(RT, "ls", "sub", null);
 
-        assertTrue(result.contains("Exit code: 0"));
+        assertTrue(textOf(result).contains("Exit code: 0"));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         assertTrue(sandbox.command.startsWith("cd "));
         assertTrue(sandbox.command.endsWith(" && ls"));
         assertEquals(30, sandbox.timeoutSeconds);
+    }
+
+    @Test
+    void execute_rejectsAbsoluteWorkingDirectory() {
+        ToolResultBlock result = tool.execute(RT, "ls", "/etc", null);
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertTrue(textOf(result).contains("must be a relative path"));
     }
 
     @Test
@@ -81,10 +105,29 @@ class ShellExecuteToolTest {
                 ShellExecuteTool.commandWithWorkingDirectory("workspace dir", "ls", false));
     }
 
+    @Test
+    void preservesFailureAndTruncationAsFacts() {
+        sandbox.response = new ExecuteResponse("failed", 2, true);
+        var result = tool.execute(RT, "test", null, null);
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals(
+                new ToolExecutionDetails("shell", ToolExecutionDetails.Outcome.FAILED, 2, true),
+                result.getExecutionDetails());
+    }
+
+    @Test
+    void missingExitCodeIsNotSuccess() {
+        sandbox.response = new ExecuteResponse("unknown", null, false);
+        var result = tool.execute(RT, "test", null, null);
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals(ToolExecutionDetails.Outcome.UNKNOWN, result.getExecutionDetails().outcome());
+    }
+
     private static final class RecordingSandbox extends LocalFilesystemWithShell {
 
         private String command;
         private Integer timeoutSeconds;
+        private ExecuteResponse response = new ExecuteResponse("out", 0, false);
 
         private RecordingSandbox() {
             super(Path.of(System.getProperty("java.io.tmpdir")));
@@ -95,7 +138,7 @@ class ShellExecuteToolTest {
                 RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
             this.command = command;
             this.timeoutSeconds = timeoutSeconds;
-            return new ExecuteResponse("out", 0, false);
+            return response;
         }
     }
 }

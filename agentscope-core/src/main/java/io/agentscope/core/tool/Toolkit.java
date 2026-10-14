@@ -429,6 +429,7 @@ public class Toolkit {
                             .description(tool.getDescription())
                             .parameters(tool.getParameters())
                             .strict(tool.getStrict())
+                            .deferLoading(tool.getDeferLoading())
                             .outputSchema(tool.getOutputSchema())
                             .build());
         }

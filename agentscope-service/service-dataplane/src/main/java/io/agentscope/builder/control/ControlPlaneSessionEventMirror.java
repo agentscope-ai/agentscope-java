@@ -27,20 +27,21 @@ package io.agentscope.builder.control;
 
 import io.agentscope.builder.web.managed.SessionEventDto;
 import io.agentscope.builder.web.managed.service.SessionEventMirror;
+import io.agentscope.builder.web.managed.service.SessionEventScope;
 import org.springframework.stereotype.Component;
 
-/** Projects data-plane session events into the aistiod runtime event store. */
+/** Projects data-plane session events into the service-controlplane runtime event store. */
 @Component
 public class ControlPlaneSessionEventMirror implements SessionEventMirror {
 
-    private final ControlPlaneClient controlPlaneClient;
+    private final ManagedEventOutbox outbox;
 
-    public ControlPlaneSessionEventMirror(ControlPlaneClient controlPlaneClient) {
-        this.controlPlaneClient = controlPlaneClient;
+    public ControlPlaneSessionEventMirror(ManagedEventOutbox outbox) {
+        this.outbox = outbox;
     }
 
     @Override
-    public void mirror(SessionEventDto event) {
-        controlPlaneClient.appendSessionEvent(event);
+    public void mirror(SessionEventDto event, SessionEventScope scope) {
+        outbox.enqueue(event, scope);
     }
 }
