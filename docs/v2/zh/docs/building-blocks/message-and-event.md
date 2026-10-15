@@ -175,6 +175,7 @@ sequenceDiagram
         rect rgba(200, 200, 100, 0.1)
             Note over Client,Agent: ToolResultBlock (toolCallId)
             Agent->>Client: ToolResultStartEvent
+            Agent->>Client: ToolProgressEvent (×N, 来自 ToolEmitter)
             Agent->>Client: ToolResultTextDeltaEvent (×N)
             Agent->>Client: ToolResultDataDeltaEvent (×N)
             Agent->>Client: ToolResultEndEvent
@@ -299,9 +300,11 @@ sequenceDiagram
 
 **ToolResultStartEvent** — 工具开始执行（带 `toolCallId`、`toolCallName`）。
 
-    **ToolResultTextDeltaEvent** — 工具的增量文本输出；`getDelta()` 返回文本片段。
+    **ToolProgressEvent** — 工具执行过程中通过 `ToolEmitter` 发布的中间进度。进度仅用于展示，不会发送给 LLM，也不属于工具结果的一部分。
 
-    **ToolResultDataDeltaEvent** — 工具的二进制数据输出；与 `DataBlockDeltaEvent` 类似，包含 `mediaType` / `data` / `url` 字段。
+    **ToolResultTextDeltaEvent** — 工具返回值的增量文本输出；`getDelta()` 返回文本片段。这是 LLM 实际接收到的工具结果。
+
+    **ToolResultDataDeltaEvent** — 工具返回值的二进制或结构化输出；与 `DataBlockDeltaEvent` 类似，包含 `mediaType` / `data` / `url` 字段。
 
     **ToolResultEndEvent** — 工具执行完成。
 

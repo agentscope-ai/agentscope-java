@@ -53,6 +53,7 @@ import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
@@ -275,6 +276,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final CapabilityResolver capabilityResolver;
 
     /**
+     * Whether native structured-output responses are validated against the requested JSON Schema.
+     * Enabled by default; {@link Builder#validateStructuredOutput(boolean)} can restore the
+     * legacy trust-the-provider behavior.
+     */
+    private final boolean validateStructuredOutput;
+
+    /**
      * Agent-owned toolkit (a deep copy made at {@code build()} time, isolated per agent instance).
      * Shared across this agent's concurrent calls; per-call structured-output tools are NOT
      * registered here — they live on the per-call {@link CallExecution} scope.
@@ -407,6 +415,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.generateOptions = builder.generateOptions;
         this.capabilityResolver = builder.capabilityResolver;
+        this.validateStructuredOutput = builder.validateStructuredOutput;
         this.toolExecutionContext = builder.toolExecutionContext;
         this.enablePendingToolRecovery = builder.enablePendingToolRecovery;
         List<MiddlewareBase> mws = new ArrayList<>();
@@ -1740,7 +1749,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     return scope.doCallInner(msgs)
                             .flatMap(
                                     result -> {
-                                        Msg out = wrapNativeStructuredResult(result);
+                                        Msg out =
+                                                wrapNativeStructuredResult(
+                                                        result,
+                                                        scope.nativeResponseFormat.getJsonSchema());
                                         return saveStateToSession(scope).thenReturn(out);
                                     })
                             .switchIfEmpty(
@@ -1817,31 +1829,46 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 });
     }
 
-    private Msg wrapNativeStructuredResult(Msg result) {
+    private Msg wrapNativeStructuredResult(Msg result, JsonSchema schema) {
         if (result == null) {
             return null;
         }
         String text = result.getTextContent();
         if (text == null || text.isBlank()) {
-            return result;
+            throw new IllegalArgumentException("Native structured output is empty");
         }
+        if (schema == null || schema.getSchema() == null) {
+            throw new IllegalArgumentException("Native structured output schema is required");
+        }
+
+        JsonNode payload;
         try {
-            Object parsed = JsonUtils.getJsonCodec().fromJson(text, Object.class);
-            Map<String, Object> metadata =
-                    new HashMap<>(result.getMetadata() != null ? result.getMetadata() : Map.of());
-            metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, parsed);
-            return Msg.builderForRole(result.getRole())
-                    .id(result.getId())
-                    .name(result.getName())
-                    .content(result.getContent())
-                    .metadata(metadata)
-                    .timestamp(result.getTimestamp())
-                    .usage(result.getUsage())
-                    .build();
+            payload = JsonUtils.getJsonCodec().fromJson(text, JsonNode.class);
         } catch (Exception e) {
-            log.warn("Failed to parse native structured output as JSON: {}", e.getMessage());
-            return result;
+            throw new IllegalArgumentException(
+                    "Native structured output is not valid JSON: " + e.getMessage(), e);
         }
+
+        if (validateStructuredOutput) {
+            String validationError = ToolValidator.validateJsonOutput(payload, schema.getSchema());
+            if (validationError != null) {
+                throw new IllegalArgumentException(
+                        "Native structured output failed schema validation: " + validationError);
+            }
+        }
+
+        Object parsed = JsonUtils.getJsonCodec().convertValue(payload, Object.class);
+        Map<String, Object> metadata =
+                new HashMap<>(result.getMetadata() != null ? result.getMetadata() : Map.of());
+        metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, parsed);
+        return Msg.builderForRole(result.getRole())
+                .id(result.getId())
+                .name(result.getName())
+                .content(result.getContent())
+                .metadata(metadata)
+                .timestamp(result.getTimestamp())
+                .usage(result.getUsage())
+                .build();
     }
 
     /**
@@ -2055,9 +2082,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, responseData);
             metadata.remove("response");
             return Msg.builderForRole(responseMsg.getRole())
+                    .id(responseMsg.getId())
                     .name(responseMsg.getName())
                     .content(responseMsg.getContent())
                     .metadata(metadata)
+                    .timestamp(responseMsg.getTimestamp())
+                    .usage(responseMsg.getUsage())
                     .build();
         }
         return responseMsg;
@@ -3834,47 +3864,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                     tool.getName()));
                                                 }
 
-                                                Set<String> chunkedToolIds =
-                                                        ConcurrentHashMap.newKeySet();
-
                                                 BiConsumer<ToolUseBlock, ToolResultBlock>
                                                         internalChunkCallback =
                                                                 (toolUse, chunk) -> {
                                                                     if (chunk.getOutput() != null
                                                                             && !chunk.getOutput()
                                                                                     .isEmpty()) {
-                                                                        chunkedToolIds.add(
-                                                                                toolUse.getId());
                                                                         for (ContentBlock block :
                                                                                 chunk.getOutput()) {
-                                                                            if (block
-                                                                                    instanceof
-                                                                                    TextBlock tb) {
-                                                                                sink.next(
-                                                                                        new ToolResultTextDeltaEvent(
-                                                                                                        replyId,
-                                                                                                        toolUse
-                                                                                                                .getId(),
-                                                                                                        toolUse
-                                                                                                                .getName(),
-                                                                                                        tb
-                                                                                                                .getText())
-                                                                                                .withMetadata(
-                                                                                                        chunk
-                                                                                                                .getMetadata()));
-                                                                            } else {
-                                                                                sink.next(
-                                                                                        new ToolResultDataDeltaEvent(
-                                                                                                        replyId,
-                                                                                                        toolUse
-                                                                                                                .getId(),
-                                                                                                        toolUse
-                                                                                                                .getName(),
-                                                                                                        block)
-                                                                                                .withMetadata(
-                                                                                                        chunk
-                                                                                                                .getMetadata()));
-                                                                            }
+                                                                            sink.next(
+                                                                                    new ToolProgressEvent(
+                                                                                                    replyId,
+                                                                                                    toolUse
+                                                                                                            .getId(),
+                                                                                                    toolUse
+                                                                                                            .getName(),
+                                                                                                    block)
+                                                                                            .withMetadata(
+                                                                                                    chunk
+                                                                                                            .getMetadata()));
                                                                         }
                                                                     }
                                                                     hookDispatcher
@@ -3952,8 +3960,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                 emitToolResultDelta(
                                                                                         sink,
                                                                                         replyId,
-                                                                                        entry,
-                                                                                        chunkedToolIds);
+                                                                                        entry);
                                                                                 ToolResultState
                                                                                         state =
                                                                                                 determineToolResultState(
@@ -4091,21 +4098,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Emit delta events for tool results that were NOT already streamed via the chunk
-         * callback. For non-streaming tools the chunk callback is never invoked, so the
-         * event stream would otherwise contain only START and END with no content.
+         * Emit delta events carrying the tool method's return value.
          */
         private void emitToolResultDelta(
                 FluxSink<AgentEvent> sink,
                 String replyId,
-                Map.Entry<ToolUseBlock, ToolResultBlock> entry,
-                Set<String> chunkedToolIds) {
+                Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
             String toolId = entry.getKey().getId();
             String toolName = entry.getKey().getName();
             ToolResultBlock toolResult = entry.getValue();
-            if (chunkedToolIds.contains(toolId)) {
-                return;
-            }
             List<ContentBlock> output = toolResult.getOutput();
             if (output == null || output.isEmpty()) {
                 return;
@@ -5794,6 +5795,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         ExecutionConfig modelExecutionConfig;
         ExecutionConfig toolExecutionConfig;
         GenerateOptions generateOptions;
+        private boolean validateStructuredOutput = true;
         final Set<Hook> hooks = new LinkedHashSet<>();
         private final List<MiddlewareBase> middlewares = new ArrayList<>();
         private ModelRequestPreparer modelRequestPreparer;
@@ -5913,6 +5915,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             copy.toolExecutionConfig = this.toolExecutionConfig;
             copy.generateOptions = this.generateOptions;
             copy.capabilityResolver = this.capabilityResolver;
+            copy.validateStructuredOutput = this.validateStructuredOutput;
             copy.modelRequestPreparer = this.modelRequestPreparer;
             copy.actionObserver = this.actionObserver;
             copy.enableMetaTool = this.enableMetaTool;
@@ -6227,6 +6230,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder generateOptions(GenerateOptions generateOptions) {
             this.generateOptions = generateOptions;
+            return this;
+        }
+
+        /**
+         * Controls whether native structured-output responses are validated against the requested
+         * JSON Schema after the model returns. Enabled by default. When disabled, the agent still
+         * requires valid JSON and still attaches the parsed payload as structured data, but it
+         * trusts the provider to enforce schema conformance.
+         *
+         * @param validateStructuredOutput whether to validate native structured output
+         * @return This builder instance for method chaining
+         */
+        public Builder validateStructuredOutput(boolean validateStructuredOutput) {
+            this.validateStructuredOutput = validateStructuredOutput;
             return this;
         }
 
