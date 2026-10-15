@@ -16,6 +16,20 @@
 
 package io.agentscope.spring.boot.a2a;
 
+import io.a2a.spec.APIKeySecurityScheme;
+import io.a2a.spec.AgentInterface;
+import io.a2a.spec.AgentProvider;
+import io.a2a.spec.AgentSkill;
+import io.a2a.spec.AuthorizationCodeOAuthFlow;
+import io.a2a.spec.ClientCredentialsOAuthFlow;
+import io.a2a.spec.HTTPAuthSecurityScheme;
+import io.a2a.spec.ImplicitOAuthFlow;
+import io.a2a.spec.MutualTLSSecurityScheme;
+import io.a2a.spec.OAuth2SecurityScheme;
+import io.a2a.spec.OAuthFlows;
+import io.a2a.spec.OpenIdConnectSecurityScheme;
+import io.a2a.spec.PasswordOAuthFlow;
+import io.a2a.spec.SecurityScheme;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
@@ -34,7 +48,10 @@ import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
 import io.agentscope.spring.boot.a2a.properties.Constants;
 import io.agentscope.spring.boot.a2a.properties.JSONRPCProperties;
 import io.agentscope.spring.boot.a2a.runner.ReActAgentWithStarterRunner;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -140,18 +157,133 @@ public class AgentscopeA2aAutoConfiguration {
                 .name(agentCardProperties.getName())
                 .description(agentCardProperties.getDescription())
                 .url(agentCardProperties.getUrl())
-                .provider(agentCardProperties.getProvider())
+                .provider(toAgentProvider(agentCardProperties.getProvider()))
                 .version(agentCardProperties.getVersion())
                 .documentationUrl(agentCardProperties.getDocumentationUrl())
                 .defaultInputModes(agentCardProperties.getDefaultInputModes())
                 .defaultOutputModes(agentCardProperties.getDefaultOutputModes())
-                .skills(agentCardProperties.getSkills())
-                .securitySchemes(agentCardProperties.getSecuritySchemes())
+                .skills(
+                        mapList(
+                                agentCardProperties.getSkills(),
+                                AgentscopeA2aAutoConfiguration::toAgentSkill))
+                .securitySchemes(toSecuritySchemes(agentCardProperties.getSecuritySchemes()))
                 .security(agentCardProperties.getSecurity())
                 .iconUrl(agentCardProperties.getIconUrl())
-                .additionalInterfaces(agentCardProperties.getAdditionalInterfaces())
+                .additionalInterfaces(
+                        mapList(
+                                agentCardProperties.getAdditionalInterfaces(),
+                                each -> new AgentInterface(each.transport(), each.url())))
                 .preferredTransport(agentCardProperties.getPreferredTransport())
                 .build();
+    }
+
+    private static AgentProvider toAgentProvider(A2aAgentCardProperties.Provider provider) {
+        return null == provider ? null : new AgentProvider(provider.organization(), provider.url());
+    }
+
+    private static AgentSkill toAgentSkill(A2aAgentCardProperties.Skill skill) {
+        return new AgentSkill(
+                skill.id(),
+                skill.name(),
+                skill.description(),
+                skill.tags(),
+                skill.examples(),
+                skill.inputModes(),
+                skill.outputModes(),
+                skill.security());
+    }
+
+    private static Map<String, SecurityScheme> toSecuritySchemes(
+            Map<String, A2aAgentCardProperties.SecurityScheme> schemes) {
+        if (null == schemes) {
+            return null;
+        }
+        Map<String, SecurityScheme> result = new LinkedHashMap<>();
+        schemes.forEach((name, scheme) -> result.put(name, toSecurityScheme(name, scheme)));
+        return result;
+    }
+
+    private static SecurityScheme toSecurityScheme(
+            String name, A2aAgentCardProperties.SecurityScheme scheme) {
+        return switch (String.valueOf(scheme.type())) {
+            case APIKeySecurityScheme.API_KEY ->
+                    new APIKeySecurityScheme(
+                            apiKeyLocation(name, scheme.in()), scheme.name(), scheme.description());
+            case HTTPAuthSecurityScheme.HTTP ->
+                    new HTTPAuthSecurityScheme(
+                            scheme.bearerFormat(), scheme.scheme(), scheme.description());
+            case OAuth2SecurityScheme.OAUTH2 ->
+                    new OAuth2SecurityScheme(
+                            toOAuthFlows(scheme.flows()),
+                            scheme.description(),
+                            scheme.oauth2MetadataUrl());
+            case OpenIdConnectSecurityScheme.OPENID_CONNECT ->
+                    new OpenIdConnectSecurityScheme(
+                            scheme.openIdConnectUrl(), scheme.description());
+            case MutualTLSSecurityScheme.MUTUAL_TLS ->
+                    new MutualTLSSecurityScheme(scheme.description());
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported type '"
+                                    + scheme.type()
+                                    + "' of security scheme '"
+                                    + name
+                                    + "', expected one of: apiKey, http, oauth2, openIdConnect,"
+                                    + " mutualTLS");
+        };
+    }
+
+    private static String apiKeyLocation(String name, String in) {
+        if ("header".equals(in) || "query".equals(in) || "cookie".equals(in)) {
+            return in;
+        }
+        throw new IllegalArgumentException(
+                "Unsupported location '"
+                        + in
+                        + "' of API key security scheme '"
+                        + name
+                        + "', expected one of: header, query, cookie");
+    }
+
+    private static OAuthFlows toOAuthFlows(A2aAgentCardProperties.OAuthFlows flows) {
+        if (null == flows) {
+            return null;
+        }
+        A2aAgentCardProperties.OAuthFlow code = flows.authorizationCode();
+        A2aAgentCardProperties.OAuthFlow client = flows.clientCredentials();
+        A2aAgentCardProperties.OAuthFlow implicit = flows.implicit();
+        A2aAgentCardProperties.OAuthFlow password = flows.password();
+        return new OAuthFlows(
+                null == code
+                        ? null
+                        : new AuthorizationCodeOAuthFlow(
+                                code.authorizationUrl(),
+                                code.refreshUrl(),
+                                scopes(code),
+                                code.tokenUrl()),
+                null == client
+                        ? null
+                        : new ClientCredentialsOAuthFlow(
+                                client.refreshUrl(), scopes(client), client.tokenUrl()),
+                null == implicit
+                        ? null
+                        : new ImplicitOAuthFlow(
+                                implicit.authorizationUrl(),
+                                implicit.refreshUrl(),
+                                scopes(implicit)),
+                null == password
+                        ? null
+                        : new PasswordOAuthFlow(
+                                password.refreshUrl(), scopes(password), password.tokenUrl()));
+    }
+
+    /** An empty YAML map, {@code scopes: {}}, binds as null; a flow may have no scopes. */
+    private static Map<String, String> scopes(A2aAgentCardProperties.OAuthFlow flow) {
+        return null == flow.scopes() ? Map.of() : flow.scopes();
+    }
+
+    private static <T, R> List<R> mapList(List<T> values, Function<T, R> mapper) {
+        return null == values ? null : values.stream().map(mapper).toList();
     }
 
     private DeploymentProperties buildDeploymentProperties(Environment environment) {

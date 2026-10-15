@@ -16,6 +16,7 @@
 
 package io.agentscope.core.a2a.server;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -32,6 +33,7 @@ import io.a2a.server.tasks.PushNotificationSender;
 import io.a2a.server.tasks.TaskStore;
 import io.a2a.spec.AgentCard;
 import io.a2a.spec.TransportProtocol;
+import io.a2a.util.Utils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
@@ -155,6 +157,19 @@ class AgentScopeA2aServerTest {
 
             assertSame(builder, result);
             assertNotNull(builder.build().getAgentCard());
+        }
+
+        @Test
+        @DisplayName("Should serve the agent card as JSON written by the A2A SDK")
+        void testAgentCardJson() throws Exception {
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .deploymentProperties(deploymentProperties)
+                            .build();
+
+            assertEquals(
+                    server.getAgentCard(),
+                    Utils.OBJECT_MAPPER.readValue(server.getAgentCardJson(), AgentCard.class));
         }
 
         @Test

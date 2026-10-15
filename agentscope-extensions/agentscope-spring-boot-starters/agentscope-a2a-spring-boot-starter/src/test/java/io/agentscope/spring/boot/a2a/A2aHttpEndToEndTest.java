@@ -20,6 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.AppenderBase;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.a2a.client.config.ClientConfig;
 import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.agent.A2aAgent;
@@ -44,6 +46,11 @@ import io.agentscope.core.message.ToolResultBlock;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -88,11 +95,20 @@ class A2aHttpEndToEndTest {
 
     private static final String BASE_URL = "http://" + HOST + ":" + PORT;
 
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     @DynamicPropertySource
     static void serverProperties(DynamicPropertyRegistry registry) {
         registry.add("server.port", () -> PORT);
         registry.add("server.address", () -> HOST);
         registry.add("agentscope.a2a.server.require-inner-message", () -> true);
+        // A2A JSON must not follow the application's Jackson settings.
+        registry.add("spring.jackson.property-naming-strategy", () -> "SNAKE_CASE");
+        // A non-ASCII card field, to check the card is always sent as UTF-8.
+        registry.add("agentscope.a2a.server.card.skills[0].id", () -> "translate");
+        registry.add("agentscope.a2a.server.card.skills[0].name", () -> "翻译");
+        registry.add("agentscope.a2a.server.card.skills[0].description", () -> "中英互译");
+        registry.add("agentscope.a2a.server.card.skills[0].tags[0]", () -> "language");
     }
 
     @Autowired private ScriptedAgentRunner runner;
@@ -110,6 +126,25 @@ class A2aHttpEndToEndTest {
         assertThat(card.description()).isEqualTo(ScriptedAgentRunner.DESCRIPTION);
         assertThat(card.url()).contains(HOST + ":" + PORT);
         assertThat(card.capabilities().streaming()).isTrue();
+    }
+
+    @Test
+    void agentCardIsUtf8WhateverTheRequestedCharset() throws Exception {
+        HttpRequest request =
+                HttpRequest.newBuilder(URI.create(BASE_URL + "/" + ".well-known/agent-card.json"))
+                        .timeout(TIMEOUT)
+                        .header("Accept", "application/json;charset=ISO-8859-1")
+                        .GET()
+                        .build();
+
+        HttpResponse<byte[]> response =
+                HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("Content-Type"))
+                .hasValueSatisfying(type -> assertThat(type).doesNotContain("ISO-8859-1"));
+        JsonNode card = JSON.readTree(new String(response.body(), StandardCharsets.UTF_8));
+        assertThat(card.path("skills").path(0).path("name").asText()).isEqualTo("翻译");
     }
 
     @Test
@@ -133,6 +168,69 @@ class A2aHttpEndToEndTest {
 
         assertThat(result).isNotNull();
         assertThat(result.getTextContent()).isEqualTo("final reply");
+    }
+
+    @Test
+    void blockingCallKeepsNonAsciiText() {
+        runner.script(messages -> reply("你好，世界", "你好，", "世界"));
+        ClientConfig blocking = new ClientConfig.Builder().setStreaming(false).build();
+
+        Msg result = newAgent(blocking).call(userMsg("你好")).block(TIMEOUT);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTextContent()).isEqualTo("你好，世界");
+        assertThat(texts(runner.requests().get(0))).containsExactly("你好");
+    }
+
+    @Test
+    void nonStreamingResponseIsJsonForJsonOrSseAccept() throws Exception {
+        String request =
+                "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"tasks/get\","
+                        + "\"params\":{\"id\":\"missing-task\"}}";
+        for (String accept :
+                new String[] {
+                    null,
+                    "*/*",
+                    "application/json",
+                    "application/json, text/event-stream",
+                    "text/event-stream",
+                    "text/event-stream, application/json;q=0.5"
+                }) {
+            HttpResponse<byte[]> response = postJsonRpc(request, accept);
+
+            assertThat(response.statusCode()).as("Accept: %s", accept).isEqualTo(200);
+            assertThat(response.headers().firstValue("Content-Type"))
+                    .as("Accept: %s", accept)
+                    .hasValueSatisfying(type -> assertThat(type).startsWith("application/json"));
+            JsonNode body = JSON.readTree(response.body());
+            assertThat(body.path("id").asText()).as("Accept: %s", accept).isEqualTo("1");
+            assertThat(body.has("error")).as("Accept: %s", accept).isTrue();
+        }
+        // Other media types are not served at all.
+        assertThat(postJsonRpc(request, "application/xml").statusCode()).isEqualTo(406);
+    }
+
+    @Test
+    void nonStreamingResponseIsUtf8WhateverTheRequestedCharset() throws Exception {
+        runner.script(messages -> reply("你好，世界", "你好，", "世界"));
+        String request =
+                "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"method\":\"message/send\","
+                        + "\"params\":{\"message\":{\"kind\":\"message\",\"messageId\":\"m-1\","
+                        + "\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"你好\"}]},"
+                        + "\"configuration\":{\"blocking\":true}}}";
+
+        HttpResponse<byte[]> response =
+                postJsonRpc(request, "text/event-stream;charset=ISO-8859-1");
+
+        assertThat(response.headers().firstValue("Content-Type"))
+                .hasValueSatisfying(
+                        type ->
+                                assertThat(type)
+                                        .startsWith("application/json")
+                                        .doesNotContain("ISO-8859-1"));
+        JsonNode body = JSON.readTree(new String(response.body(), StandardCharsets.UTF_8));
+        assertThat(body.path("result").path("parts").path(0).path("text").asText())
+                .isEqualTo("你好，世界");
     }
 
     @Test
@@ -264,6 +362,19 @@ class A2aHttpEndToEndTest {
                 executionEnd.detach();
             }
         }
+    }
+
+    private static HttpResponse<byte[]> postJsonRpc(String body, String accept) throws Exception {
+        HttpRequest.Builder request =
+                HttpRequest.newBuilder(URI.create(BASE_URL))
+                        .timeout(TIMEOUT)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
+        if (accept != null) {
+            request.header("Accept", accept);
+        }
+        return HttpClient.newHttpClient()
+                .send(request.build(), HttpResponse.BodyHandlers.ofByteArray());
     }
 
     private static A2aAgent newAgent(ClientConfig clientConfig) {
