@@ -26,6 +26,7 @@ import io.a2a.spec.JSONRPCError;
 import io.a2a.spec.Message;
 import io.a2a.spec.Part;
 import io.a2a.spec.Task;
+import io.a2a.spec.TaskNotCancelableError;
 import io.a2a.spec.TaskState;
 import io.a2a.spec.TaskStatus;
 import io.a2a.spec.TextPart;
@@ -89,27 +90,27 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     @Override
     public void cancel(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
+        String taskId = context.getTaskId();
+        RunningExecution execution = executions.get(taskId);
         try {
-            log.info("[{}] Start to Cancel Task", context.getTaskId());
+            log.info("[{}] Start to Cancel Task", taskId);
             TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
-            RunningExecution execution = executions.get(taskUpdater.getTaskId());
-            if (null != execution && !execution.cancel()) {
-                log.info("[{}] Task already finished, nothing to cancel.", taskUpdater.getTaskId());
-                return;
-            }
-            try {
+            if (null == execution) {
+                log.warn("[{}] Not found Subscription for Task.", taskId);
                 taskUpdater.cancel();
-                agentRunner.stop(taskUpdater.getTaskId());
-            } finally {
-                if (null == execution) {
-                    log.warn("[{}] Not found Subscription for Task.", taskUpdater.getTaskId());
-                } else {
-                    // End the execution even if stop() failed or left the agent stream running.
-                    execution.end();
-                }
+            } else if (!execution.cancel(taskUpdater::cancel)) {
+                // Completion or failure was published first. A JSONRPCError, so not caught below.
+                throw new TaskNotCancelableError(
+                        "Task cannot be canceled - it has already finished");
             }
+            agentRunner.stop(taskId);
         } catch (Exception e) {
-            log.error("[{}] Error while cancelling task.", context.getTaskId(), e);
+            log.error("[{}] Error while cancelling task.", taskId, e);
+        } finally {
+            if (null != execution && execution.isCancelled()) {
+                // End the execution even if stop() failed or left the agent stream running.
+                execution.end();
+            }
         }
     }
 
@@ -138,13 +139,13 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             log.info("[{}] Agent execution completed successfully", context.getTaskId());
         } catch (Exception e) {
             log.error("[{}] Agent execution failed", context.getTaskId(), e);
-            if (!execution.isCancelled()) {
-                eventQueue.enqueueEvent(
-                        A2A.createAgentTextMessage(
-                                "Agent execution failed: " + e.getMessage(),
-                                context.getContextId(),
-                                context.getTaskId()));
-            }
+            execution.failUnlessCancelled(
+                    () ->
+                            eventQueue.enqueueEvent(
+                                    A2A.createAgentTextMessage(
+                                            "Agent execution failed: " + e.getMessage(),
+                                            context.getContextId(),
+                                            context.getTaskId())));
         } finally {
             executions.remove(context.getTaskId(), execution);
         }
@@ -234,16 +235,16 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             processStreamingOutput(resultFlux, taskUpdater, context, execution);
         } catch (Exception e) {
             log.error("[{}] Error processing streaming output", context.getTaskId(), e);
-            // Skip when doOnError or cancel already decided the terminal state.
-            if (execution.finish()) {
-                taskUpdater.fail(
-                        taskUpdater.newAgentMessage(
-                                List.of(
-                                        new TextPart(
-                                                "Error processing streaming output: "
-                                                        + e.getMessage())),
-                                Map.of()));
-            }
+            // Skipped when doOnError or cancel already decided the terminal state.
+            execution.finish(
+                    () ->
+                            taskUpdater.fail(
+                                    taskUpdater.newAgentMessage(
+                                            List.of(
+                                                    new TextPart(
+                                                            "Error processing streaming output: "
+                                                                    + e.getMessage())),
+                                            Map.of())));
         }
     }
 
@@ -262,9 +263,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                 .doOnSubscribe(
                         s -> {
                             logSubscribed(taskUpdater.getTaskId());
-                            if (!execution.isFinished()) {
-                                taskUpdater.startWork();
-                            }
+                            execution.publishIfRunning(taskUpdater::startWork);
                         })
                 .doOnNext(eventHandler::doOnNext)
                 .doOnComplete(eventHandler::complete)
@@ -283,42 +282,68 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     /**
-     * State of one running execution, shared by {@link #execute} and {@link #cancel}.
+     * State of one execution, shared by {@link #execute} and {@link #cancel}.
      *
-     * <p>Cancelling, completing and failing all publish a terminal state for the task; {@link
-     * #finish()} lets only the first of them do it. {@link #ended()} is applied with {@code
-     * takeUntilOther} after the event handlers, so {@link #end()} stops the agent stream and
-     * completes the downstream: {@code blockLast()} returns without running the handlers' completion.
-     * Cancelling the upstream subscription alone would leave {@code blockLast()} waiting forever.
+     * <p>Cancelling, completing and failing each publish a terminal state for the task. State
+     * checks and the events they guard are published under this object's lock, so the task gets
+     * one terminal state and no output after it. Never call the agent runner while holding the
+     * lock: it may call back into the event handlers.
+     *
+     * <p>{@link #ended()} is applied with {@code takeUntilOther} after the event handlers, so
+     * {@link #end()} stops the agent stream and completes the downstream: {@code blockLast()}
+     * returns without running the handlers' completion. Cancelling the upstream subscription alone
+     * would leave {@code blockLast()} waiting forever.
      */
     private static final class RunningExecution {
 
-        private final AtomicBoolean finished = new AtomicBoolean();
+        private enum State {
+            RUNNING,
+            FINISHED,
+            CANCELLED
+        }
 
         private final Sinks.Empty<Void> endSignal = Sinks.empty();
 
-        private volatile boolean cancelled;
+        private State state = State.RUNNING;
 
-        /** Claims the right to publish the terminal state; {@code true} for the first caller. */
-        boolean finish() {
-            return finished.compareAndSet(false, true);
+        /** Publishes output while the task is running; drops it once the task has ended. */
+        synchronized void publishIfRunning(Runnable publish) {
+            if (state == State.RUNNING) {
+                publish.run();
+            }
         }
 
-        boolean isFinished() {
-            return finished.get();
-        }
-
-        /** Claims the terminal state for a cancellation; {@code false} if the task already ended. */
-        boolean cancel() {
-            if (!finish()) {
+        /** Completes or fails the running task with {@code publish}; {@code false} if it ended. */
+        synchronized boolean finish(Runnable publish) {
+            if (state != State.RUNNING) {
                 return false;
             }
-            cancelled = true;
+            state = State.FINISHED;
+            publish.run();
             return true;
         }
 
-        boolean isCancelled() {
-            return cancelled;
+        /** Cancels the running task with {@code publish}; {@code false} if it already ended. */
+        synchronized boolean cancel(Runnable publish) {
+            if (state != State.RUNNING) {
+                return false;
+            }
+            state = State.CANCELLED;
+            publish.run();
+            return true;
+        }
+
+        /** Reports a failure with {@code publish} unless the task was cancelled. */
+        synchronized void failUnlessCancelled(Runnable publish) {
+            if (state == State.CANCELLED) {
+                return;
+            }
+            state = State.FINISHED;
+            publish.run();
+        }
+
+        synchronized boolean isCancelled() {
+            return state == State.CANCELLED;
         }
 
         void end() {
@@ -338,7 +363,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         protected final AgentExecuteProperties executeProperties;
 
-        private final RunningExecution execution;
+        protected final RunningExecution execution;
 
         private final Set<AgentEventType> requiredEventTypes;
 
@@ -373,10 +398,6 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
          * @param output output event from agent stream execute.
          */
         void doOnNext(AgentEvent output) {
-            if (execution.isFinished()) {
-                // The task already has its terminal state (e.g. cancelled); drop late output.
-                return;
-            }
             LoggerUtil.debug(
                     log, "[{}] Handle Agent execute output event: {}", context.getTaskId(), output);
             Msg responseMessage = convertToResponseMessage(output);
@@ -390,16 +411,12 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         /** Completes the task, unless cancel or an error already ended it. */
         void complete() {
-            if (execution.finish()) {
-                doOnComplete();
-            }
+            execution.finish(this::doOnComplete);
         }
 
         /** Fails the task, unless cancel or completion already ended it. */
         void fail(Throwable t) {
-            if (execution.finish()) {
-                doOnError(t);
-            }
+            execution.finish(() -> doOnError(t));
         }
 
         /**
@@ -632,13 +649,16 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             List<Part<?>> responseParts =
                     MessageConvertUtil.convertFromContentBlocks(
                             responseMessage, isStreamingChunk(output));
-            taskUpdater.addArtifact(
-                    responseParts,
-                    artifactId,
-                    "agent-response",
-                    responseMessage.getMetadata(),
-                    !isFirstArtifact.getAndSet(false),
-                    false);
+            // Dropped if the task was cancelled while this event was being converted.
+            execution.publishIfRunning(
+                    () ->
+                            taskUpdater.addArtifact(
+                                    responseParts,
+                                    artifactId,
+                                    "agent-response",
+                                    responseMessage.getMetadata(),
+                                    !isFirstArtifact.getAndSet(false),
+                                    false));
         }
 
         private boolean isStreamingChunk(AgentEvent output) {

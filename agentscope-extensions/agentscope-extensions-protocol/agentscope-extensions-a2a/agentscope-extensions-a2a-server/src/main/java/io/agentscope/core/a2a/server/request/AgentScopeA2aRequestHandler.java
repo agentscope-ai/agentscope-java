@@ -54,8 +54,8 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler
 
     /**
      * Shuts down the thread pool that runs agent executions with {@link
-     * ExecutorService#shutdownNow()}: executions still running are interrupted, without waiting
-     * for them to finish.
+     * ExecutorService#shutdownNow()}, which requests interruption of executions still running and
+     * does not wait for them to finish.
      */
     @Override
     public void close() {

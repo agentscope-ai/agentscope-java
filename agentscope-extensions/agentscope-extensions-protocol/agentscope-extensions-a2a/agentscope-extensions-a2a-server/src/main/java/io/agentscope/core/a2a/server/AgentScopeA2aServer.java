@@ -175,8 +175,8 @@ public class AgentScopeA2aServer implements AutoCloseable {
     /**
      * Release the thread pools this server created: the one running agent executions and, unless
      * one was set with {@link Builder#executor(Executor)}, the transport executor. They are shut
-     * down with {@link ExecutorService#shutdownNow()}, which interrupts executions still running
-     * but does not wait for them to finish. An executor set by the caller is left to the caller.
+     * down with {@link ExecutorService#shutdownNow()}, which requests interruption of executions
+     * still running and does not wait for them to finish. An executor set by the caller is left to the caller.
      * The Spring Boot starter calls this when the application context closes.
      */
     @Override
