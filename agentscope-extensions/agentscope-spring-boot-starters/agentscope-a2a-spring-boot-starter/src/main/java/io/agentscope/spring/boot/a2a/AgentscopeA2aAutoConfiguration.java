@@ -177,6 +177,9 @@ public class AgentscopeA2aAutoConfiguration {
         return AgentExecuteProperties.builder()
                 .completeWithMessage(commonProperties.isCompleteWithMessage())
                 .requireInnerMessage(commonProperties.isRequireInnerMessage())
+                .agentCompletionTimeoutSeconds(commonProperties.getAgentCompletionTimeoutSeconds())
+                .consumptionCompletionTimeoutSeconds(
+                        commonProperties.getConsumptionCompletionTimeoutSeconds())
                 .build();
     }
 }

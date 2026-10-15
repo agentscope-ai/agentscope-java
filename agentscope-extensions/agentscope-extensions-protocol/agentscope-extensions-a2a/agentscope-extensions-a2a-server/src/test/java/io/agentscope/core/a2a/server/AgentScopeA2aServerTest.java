@@ -16,9 +16,14 @@
 
 package io.agentscope.core.a2a.server;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -26,6 +31,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.a2a.server.events.QueueManager;
+import io.a2a.server.requesthandlers.DefaultRequestHandler;
 import io.a2a.server.requesthandlers.RequestHandler;
 import io.a2a.server.tasks.PushNotificationConfigStore;
 import io.a2a.server.tasks.PushNotificationSender;
@@ -42,7 +48,13 @@ import io.agentscope.core.a2a.server.transport.TransportProperties;
 import io.agentscope.core.a2a.server.transport.TransportWrapper;
 import io.agentscope.core.a2a.server.transport.TransportWrapperBuilder;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -69,6 +81,19 @@ class AgentScopeA2aServerTest {
     private AgentRunner agentRunner;
     private TransportProperties transportProperties;
     private DeploymentProperties deploymentProperties;
+
+    private final List<AgentScopeA2aServer> servers = new ArrayList<>();
+
+    /** Registers a server so that it is closed after the test, whatever the outcome. */
+    private AgentScopeA2aServer track(AgentScopeA2aServer server) {
+        servers.add(server);
+        return server;
+    }
+
+    @AfterEach
+    void closeServers() {
+        servers.forEach(AgentScopeA2aServer::close);
+    }
 
     @BeforeEach
     void setUp() {
@@ -99,7 +124,8 @@ class AgentScopeA2aServerTest {
             when(deploymentProperties.port()).thenReturn(8080);
             AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentBuilder);
             assertNotNull(builder);
-            AgentScopeA2aServer server = builder.deploymentProperties(deploymentProperties).build();
+            AgentScopeA2aServer server =
+                    track(builder.deploymentProperties(deploymentProperties).build());
             assertNotNull(server);
         }
 
@@ -110,7 +136,8 @@ class AgentScopeA2aServerTest {
             when(deploymentProperties.port()).thenReturn(8080);
             AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
             assertNotNull(builder);
-            AgentScopeA2aServer server = builder.deploymentProperties(deploymentProperties).build();
+            AgentScopeA2aServer server =
+                    track(builder.deploymentProperties(deploymentProperties).build());
             assertNotNull(server);
         }
 
@@ -121,9 +148,10 @@ class AgentScopeA2aServerTest {
             when(deploymentProperties.port()).thenReturn(8080);
 
             AgentScopeA2aServer server =
-                    AgentScopeA2aServer.builder(agentRunner)
-                            .deploymentProperties(deploymentProperties)
-                            .build();
+                    track(
+                            AgentScopeA2aServer.builder(agentRunner)
+                                    .deploymentProperties(deploymentProperties)
+                                    .build());
 
             assertNotNull(server);
         }
@@ -154,7 +182,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.agentCard(configurableAgentCard);
 
             assertSame(builder, result);
-            assertNotNull(builder.build().getAgentCard());
+            assertNotNull(track(builder.build()).getAgentCard());
         }
 
         @Test
@@ -164,7 +192,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.withTransport(transportProperties);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -179,7 +207,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.taskStore(taskStore);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -194,7 +222,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.queueManager(queueManager);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -209,7 +237,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.pushConfigStore(pushConfigStore);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -224,7 +252,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.pushSender(pushSender);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -238,7 +266,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.executor(executor);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -248,7 +276,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.deploymentProperties(deploymentProperties);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -258,7 +286,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.deploymentProperties(8080);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -272,7 +300,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.withAgentRegistry(agentRegistry);
 
             assertSame(builder, result);
-            builder.build().postEndpointReady();
+            track(builder.build()).postEndpointReady();
             verify(agentRegistry).register(any(), any());
         }
     }
@@ -322,7 +350,7 @@ class AgentScopeA2aServerTest {
             TransportProperties transportProperties =
                     TransportProperties.builder("MOCK_SUCCESS").build();
             builder.withTransport(transportProperties);
-            AgentScopeA2aServer agentScopeA2aServer = builder.build();
+            AgentScopeA2aServer agentScopeA2aServer = track(builder.build());
             assertNotNull(
                     agentScopeA2aServer.getTransportWrapper(
                             "MOCK_SUCCESS", TransportWrapper.class));
@@ -335,7 +363,7 @@ class AgentScopeA2aServerTest {
             TransportProperties transportProperties =
                     TransportProperties.builder("MOCK_SUCCESS").build();
             builder.withTransport(transportProperties);
-            AgentScopeA2aServer agentScopeA2aServer = builder.build();
+            AgentScopeA2aServer agentScopeA2aServer = track(builder.build());
             assertThrows(
                     ClassCastException.class,
                     () ->
@@ -350,7 +378,7 @@ class AgentScopeA2aServerTest {
             TransportProperties transportProperties =
                     TransportProperties.builder("MOCK_EXCEPTION").build();
             builder.withTransport(transportProperties);
-            AgentScopeA2aServer agentScopeA2aServer = builder.build();
+            AgentScopeA2aServer agentScopeA2aServer = track(builder.build());
             assertThrows(
                     IllegalArgumentException.class,
                     () -> agentScopeA2aServer.getTransportWrapper("MOCK_EXCEPTION"));
@@ -374,7 +402,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder builder =
                     AgentScopeA2aServer.builder(agentRunner)
                             .deploymentProperties(deploymentProperties);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -386,6 +414,126 @@ class AgentScopeA2aServerTest {
     }
 
     @SuppressWarnings("rawtypes")
+    @Nested
+    @DisplayName("Close Tests")
+    class CloseTests {
+
+        private AgentScopeA2aServer.Builder serverBuilder() {
+            return AgentScopeA2aServer.builder(agentRunner)
+                    .withTransport(TransportProperties.builder("MOCK_SUCCESS").build());
+        }
+
+        @Test
+        @DisplayName("Should shut down the thread pools it created on close")
+        void testCloseShutsDownCreatedExecutors() throws Exception {
+            AgentScopeA2aServer server = track(serverBuilder().build());
+            ExecutorService transportExecutor = ownedExecutor(server);
+            ExecutorService executionExecutor = executionExecutor(server);
+
+            server.close();
+
+            assertTrue(transportExecutor.isShutdown());
+            assertTrue(executionExecutor.isShutdown());
+        }
+
+        @Test
+        @DisplayName("Should leave an executor set by the caller running on close")
+        void testCloseKeepsCallerExecutor() throws Exception {
+            ExecutorService callerExecutor = Executors.newSingleThreadExecutor();
+            try {
+                AgentScopeA2aServer server =
+                        track(serverBuilder().executor(callerExecutor).build());
+                assertNull(ownedExecutor(server));
+
+                server.close();
+
+                assertFalse(callerExecutor.isShutdown());
+            } finally {
+                callerExecutor.shutdownNow();
+            }
+        }
+
+        @Test
+        @DisplayName("Servers built from the same builder should each own their thread pools")
+        void testSameBuilderBuildsIndependentServers() throws Exception {
+            AgentScopeA2aServer.Builder builder = serverBuilder();
+            AgentScopeA2aServer first = track(builder.build());
+            AgentScopeA2aServer second = track(builder.build());
+            ExecutorService firstExecutor = ownedExecutor(first);
+            ExecutorService secondExecutor = ownedExecutor(second);
+            assertNotNull(firstExecutor);
+            assertNotNull(secondExecutor);
+            assertNotSame(firstExecutor, secondExecutor);
+
+            second.close();
+
+            assertTrue(secondExecutor.isShutdown());
+            assertFalse(firstExecutor.isShutdown());
+            assertFalse(executionExecutor(first).isShutdown());
+        }
+
+        @Test
+        @DisplayName("A retry after a failed build should own its default thread pool")
+        void testRetryAfterFailedBuildOwnsExecutor() throws Exception {
+            AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
+            assertThrows(IllegalArgumentException.class, builder::build);
+
+            AgentScopeA2aServer server =
+                    track(
+                            builder.withTransport(
+                                            TransportProperties.builder("MOCK_SUCCESS").build())
+                                    .build());
+
+            assertNotNull(ownedExecutor(server));
+        }
+
+        @Test
+        @DisplayName("Should pass configured timeouts to the request handler")
+        void testTimeoutsReachRequestHandler() throws Exception {
+            AgentScopeA2aServer server =
+                    track(
+                            serverBuilder()
+                                    .agentExecuteProperties(
+                                            AgentExecuteProperties.builder()
+                                                    .agentCompletionTimeoutSeconds(120)
+                                                    .consumptionCompletionTimeoutSeconds(30)
+                                                    .build())
+                                    .build());
+            Object requestHandler = readField(AgentScopeA2aServer.class, server, "requestHandler");
+
+            assertEquals(
+                    120,
+                    readField(
+                            DefaultRequestHandler.class,
+                            requestHandler,
+                            "agentCompletionTimeoutSeconds"));
+            assertEquals(
+                    30,
+                    readField(
+                            DefaultRequestHandler.class,
+                            requestHandler,
+                            "consumptionCompletionTimeoutSeconds"));
+        }
+
+        private ExecutorService ownedExecutor(AgentScopeA2aServer server) throws Exception {
+            return (ExecutorService) readField(AgentScopeA2aServer.class, server, "ownedExecutor");
+        }
+
+        private ExecutorService executionExecutor(AgentScopeA2aServer server) throws Exception {
+            return (ExecutorService)
+                    readField(
+                            DefaultRequestHandler.class,
+                            readField(AgentScopeA2aServer.class, server, "requestHandler"),
+                            "executor");
+        }
+
+        private Object readField(Class<?> owner, Object target, String name) throws Exception {
+            Field field = owner.getDeclaredField(name);
+            field.setAccessible(true);
+            return field.get(target);
+        }
+    }
+
     public static class MockTransportWrapperBuilder
             implements TransportWrapperBuilder<TransportWrapper> {
 

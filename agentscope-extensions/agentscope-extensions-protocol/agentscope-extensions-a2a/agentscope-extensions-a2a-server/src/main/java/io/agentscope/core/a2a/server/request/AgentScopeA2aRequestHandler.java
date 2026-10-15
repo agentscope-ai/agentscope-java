@@ -30,13 +30,16 @@ import io.a2a.server.tasks.TaskStateProvider;
 import io.a2a.server.tasks.TaskStore;
 import io.a2a.spec.Task;
 import java.lang.reflect.Field;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
  * The Wrapper for Default {@link RequestHandler} implementation.
  */
-public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implements RequestHandler {
+public class AgentScopeA2aRequestHandler extends DefaultRequestHandler
+        implements RequestHandler, AutoCloseable {
+
+    private final ExecutorService executor;
 
     private AgentScopeA2aRequestHandler(
             AgentExecutor agentExecutor,
@@ -44,8 +47,19 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
             QueueManager queueManager,
             PushNotificationConfigStore pushConfigStore,
             PushNotificationSender pushSender,
-            Executor executor) {
+            ExecutorService executor) {
         super(agentExecutor, taskStore, queueManager, pushConfigStore, pushSender, executor);
+        this.executor = executor;
+    }
+
+    /**
+     * Shuts down the thread pool that runs agent executions with {@link
+     * ExecutorService#shutdownNow()}, which requests interruption of executions still running and
+     * does not wait for them to finish.
+     */
+    @Override
+    public void close() {
+        executor.shutdownNow();
     }
 
     public static Builder builder() {
@@ -63,6 +77,10 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
         private PushNotificationConfigStore pushConfigStore;
 
         private PushNotificationSender pushSender;
+
+        private int agentCompletionTimeoutSeconds = 60;
+
+        private int consumptionCompletionTimeoutSeconds = 10;
 
         public Builder agentExecutor(AgentExecutor agentExecutor) {
             this.agentExecutor = agentExecutor;
@@ -86,6 +104,30 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
 
         public Builder pushSender(PushNotificationSender pushSender) {
             this.pushSender = pushSender;
+            return this;
+        }
+
+        /**
+         * Set how long a blocking request waits for the agent to finish, in seconds. Default 60.
+         *
+         * @param agentCompletionTimeoutSeconds timeout in seconds
+         * @return this builder
+         */
+        public Builder agentCompletionTimeoutSeconds(int agentCompletionTimeoutSeconds) {
+            this.agentCompletionTimeoutSeconds = agentCompletionTimeoutSeconds;
+            return this;
+        }
+
+        /**
+         * Set how long a blocking request waits for the produced events to be consumed after the
+         * agent finished, in seconds. Default 10.
+         *
+         * @param consumptionCompletionTimeoutSeconds timeout in seconds
+         * @return this builder
+         */
+        public Builder consumptionCompletionTimeoutSeconds(
+                int consumptionCompletionTimeoutSeconds) {
+            this.consumptionCompletionTimeoutSeconds = consumptionCompletionTimeoutSeconds;
             return this;
         }
 
@@ -130,19 +172,18 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
          * If no timeout property setting, the blocking A2A request will return innerError immediately.
          * </p>
          */
-        private static void setTimeoutProperties(DefaultRequestHandler requestHandler) {
-            // TODO support config timeout properties by user input properties.
+        private void setTimeoutProperties(DefaultRequestHandler requestHandler) {
             try {
                 Field field =
                         DefaultRequestHandler.class.getDeclaredField(
                                 "agentCompletionTimeoutSeconds");
                 field.setAccessible(true);
-                field.set(requestHandler, 60);
+                field.set(requestHandler, agentCompletionTimeoutSeconds);
                 field =
                         DefaultRequestHandler.class.getDeclaredField(
                                 "consumptionCompletionTimeoutSeconds");
                 field.setAccessible(true);
-                field.set(requestHandler, 10);
+                field.set(requestHandler, consumptionCompletionTimeoutSeconds);
             } catch (Exception ignored) {
             }
         }

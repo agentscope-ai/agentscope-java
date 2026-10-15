@@ -45,6 +45,7 @@ import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -80,7 +81,7 @@ import org.slf4j.LoggerFactory;
  * </ol>
  */
 @SuppressWarnings("rawtypes")
-public class AgentScopeA2aServer {
+public class AgentScopeA2aServer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeA2aServer.class);
 
@@ -92,15 +93,24 @@ public class AgentScopeA2aServer {
 
     private final AgentRegistryService agentRegistry;
 
+    private final AgentScopeA2aRequestHandler requestHandler;
+
+    /** Transport executor created by the builder; {@code null} when the caller supplied one. */
+    private final ExecutorService ownedExecutor;
+
     private AgentScopeA2aServer(
             Map<String, TransportWrapper> transportWrappers,
             Set<TransportProperties> transportProperties,
             AgentCard agentCard,
-            AgentRegistryService agentRegistry) {
+            AgentRegistryService agentRegistry,
+            AgentScopeA2aRequestHandler requestHandler,
+            ExecutorService ownedExecutor) {
         this.transportWrappers = transportWrappers;
         this.transportProperties = transportProperties;
         this.agentCard = agentCard;
         this.agentRegistry = agentRegistry;
+        this.requestHandler = requestHandler;
+        this.ownedExecutor = ownedExecutor;
     }
 
     /**
@@ -160,6 +170,21 @@ public class AgentScopeA2aServer {
      */
     public void postEndpointReady() {
         agentRegistry.register(agentCard, transportProperties);
+    }
+
+    /**
+     * Release the thread pools this server created: the one running agent executions and, unless
+     * one was set with {@link Builder#executor(Executor)}, the transport executor. They are shut
+     * down with {@link ExecutorService#shutdownNow()}, which requests interruption of executions
+     * still running and does not wait for them to finish. An executor set by the caller is left to the caller.
+     * The Spring Boot starter calls this when the application context closes.
+     */
+    @Override
+    public void close() {
+        requestHandler.close();
+        if (null != ownedExecutor) {
+            ownedExecutor.shutdownNow();
+        }
     }
 
     /**
@@ -367,19 +392,6 @@ public class AgentScopeA2aServer {
             if (null == agentExecuteProperties) {
                 agentExecuteProperties = AgentExecuteProperties.builder().build();
             }
-            AgentScopeAgentExecutor agentExecutor =
-                    new AgentScopeAgentExecutor(agentRunner, agentExecuteProperties);
-            AgentScopeA2aRequestHandler requestHandler =
-                    AgentScopeA2aRequestHandler.builder()
-                            .agentExecutor(agentExecutor)
-                            .taskStore(taskStore)
-                            .queueManager(queueManager)
-                            .pushConfigStore(pushConfigStore)
-                            .pushSender(pushSender)
-                            .build();
-            if (null == executor) {
-                executor = Executors.newCachedThreadPool();
-            }
             if (null == agentCard) {
                 agentCard = new ConfigurableAgentCard.Builder().build();
             }
@@ -406,15 +418,55 @@ public class AgentScopeA2aServer {
             AgentCard a2aAgentCard =
                     new AgentScopeAgentCardConverter()
                             .createAgentCard(agentCard, agentRunner, availableTransports);
+            // Thread pools are created after all checks, so a failed build leaves nothing behind.
+            // The default transport executor stays local: storing it in this builder would make
+            // the next build() share it without owning it.
+            AgentScopeA2aRequestHandler requestHandler = buildRequestHandler();
+            ExecutorService ownedExecutor = null;
+            Executor transportExecutor = executor;
+            if (null == transportExecutor) {
+                ownedExecutor = Executors.newCachedThreadPool();
+                transportExecutor = ownedExecutor;
+            }
             Map<String, TransportWrapper> transportWrappers =
                     buildTransportWrappers(
-                            requestHandler, availableTransports, allBuilders, a2aAgentCard);
+                            requestHandler,
+                            transportExecutor,
+                            availableTransports,
+                            allBuilders,
+                            a2aAgentCard);
             if (transportWrappers.isEmpty()) {
                 log.warn("No one TransportWrapper actually, a2a request will not be handle.");
             }
             AgentRegistryService agentRegistryService = new AgentRegistryService(agentRegistries);
             return new AgentScopeA2aServer(
-                    transportWrappers, availableTransports, a2aAgentCard, agentRegistryService);
+                    transportWrappers,
+                    availableTransports,
+                    a2aAgentCard,
+                    agentRegistryService,
+                    requestHandler,
+                    ownedExecutor);
+        }
+
+        private AgentScopeA2aRequestHandler buildRequestHandler() {
+            AgentScopeAgentExecutor agentExecutor =
+                    new AgentScopeAgentExecutor(agentRunner, agentExecuteProperties);
+            AgentScopeA2aRequestHandler.Builder requestHandlerBuilder =
+                    AgentScopeA2aRequestHandler.builder()
+                            .agentExecutor(agentExecutor)
+                            .taskStore(taskStore)
+                            .queueManager(queueManager)
+                            .pushConfigStore(pushConfigStore)
+                            .pushSender(pushSender);
+            if (null != agentExecuteProperties.getAgentCompletionTimeoutSeconds()) {
+                requestHandlerBuilder.agentCompletionTimeoutSeconds(
+                        agentExecuteProperties.getAgentCompletionTimeoutSeconds());
+            }
+            if (null != agentExecuteProperties.getConsumptionCompletionTimeoutSeconds()) {
+                requestHandlerBuilder.consumptionCompletionTimeoutSeconds(
+                        agentExecuteProperties.getConsumptionCompletionTimeoutSeconds());
+            }
+            return requestHandlerBuilder.build();
         }
 
         private Map<String, TransportWrapperBuilder> loadTransportBuilders() {
@@ -457,6 +509,7 @@ public class AgentScopeA2aServer {
 
         private Map<String, TransportWrapper> buildTransportWrappers(
                 AgentScopeA2aRequestHandler requestHandler,
+                Executor transportExecutor,
                 Set<TransportProperties> availableTransports,
                 Map<String, TransportWrapperBuilder> allBuilders,
                 AgentCard a2aAgentCard) {
@@ -467,7 +520,7 @@ public class AgentScopeA2aServer {
                         allBuilders.get(transportProperties.transportType());
                 try {
                     TransportWrapper transportWrapper =
-                            builder.build(a2aAgentCard, requestHandler, executor);
+                            builder.build(a2aAgentCard, requestHandler, transportExecutor);
                     result.put(transportProperties.transportType(), transportWrapper);
                 } catch (Exception e) {
                     log.warn(

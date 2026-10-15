@@ -95,6 +95,10 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 // ... Spring/Quarkus controller forwards to wrapper.handle(...)
 
 server.postEndpointReady();   // call after the web server is listening — triggers registration etc.
+
+// On shutdown: release the thread pools the server created. Running executions are asked to stop
+// (interrupted); close() does not wait for them. The Spring Boot starter does this for you.
+server.close();
 ```
 
 `AgentScopeA2aServer` does not bind a port or expose endpoints itself; it only assembles components and the request-handling chain. You wire transport into Spring Boot, Quarkus, Vert.x, etc. as you prefer.
