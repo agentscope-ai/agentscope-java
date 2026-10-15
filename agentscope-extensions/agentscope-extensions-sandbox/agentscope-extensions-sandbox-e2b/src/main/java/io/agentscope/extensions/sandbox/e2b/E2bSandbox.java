@@ -25,8 +25,11 @@ import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
 import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -230,7 +233,9 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         if (e2bState.getSandboxId() == null || e2bState.getSandboxId().isBlank()) {
             sandbox =
                     platform.createSandbox(
-                            e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
+                            e2bState.getTemplateId(),
+                            opt.getSandboxTimeoutSeconds(),
+                            resolveEnvVars());
         } else {
             try {
                 sandbox =
@@ -242,11 +247,33 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
                 e2bState.setWorkspaceProjectionHash(null);
                 sandbox =
                         platform.createSandbox(
-                                e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
+                                e2bState.getTemplateId(),
+                                opt.getSandboxTimeoutSeconds(),
+                                resolveEnvVars());
             }
         }
         platform.applySandboxFields(e2bState, sandbox);
         applyDefaultDomain();
+    }
+
+    /**
+     * Resolves configured env suppliers at sandbox-creation time. Suppliers are re-evaluated on
+     * every creation so short-lived values stay fresh; {@code null} or empty values are skipped.
+     */
+    Map<String, String> resolveEnvVars() {
+        Map<String, Supplier<String>> configured = opt.getEnvs();
+        if (configured == null || configured.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> resolved = new LinkedHashMap<>();
+        configured.forEach(
+                (name, supplier) -> {
+                    String value = supplier != null ? supplier.get() : null;
+                    if (value != null && !value.isEmpty()) {
+                        resolved.put(name, value);
+                    }
+                });
+        return resolved;
     }
 
     private void applyDefaultDomain() {
@@ -258,7 +285,8 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     private void restoreSandboxFromSnapshotTemplate(String snapshotTemplateId) throws Exception {
         String oldId = e2bState.getSandboxId();
         JsonNode created =
-                platform.createSandbox(snapshotTemplateId, opt.getSandboxTimeoutSeconds());
+                platform.createSandbox(
+                        snapshotTemplateId, opt.getSandboxTimeoutSeconds(), resolveEnvVars());
         platform.applySandboxFields(e2bState, created);
         applyDefaultDomain();
         if (e2bState.isSandboxOwned()
