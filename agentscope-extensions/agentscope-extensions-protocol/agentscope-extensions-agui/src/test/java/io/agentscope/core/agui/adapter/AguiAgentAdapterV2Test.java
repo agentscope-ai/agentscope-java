@@ -79,7 +79,9 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolMergeMode;
 import io.agentscope.core.tool.ToolRequestConfig;
 import io.agentscope.core.tool.Toolkit;
@@ -93,6 +95,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unchecked")
 class AguiAgentAdapterV2Test {
@@ -1374,6 +1377,126 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testPermissionConfirmInterruptCarriesDisplayTitle() {
+            // The title comes from the tool definition (AgentTool#getTitle), resolved through the
+            // live toolkit by tool name — the programmatic name stays available for callers that
+            // key off it.
+            Toolkit toolkit = new Toolkit();
+            toolkit.registerAgentTool(titledTool("repair__create_ticket", "Create a ticket"));
+            ToolUseBlock pending =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("repair__create_ticket")
+                            .input(Map.of("severity", "high"))
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            toolkit,
+                            AguiAdapterConfig.defaultConfig(),
+                            input(),
+                            new AgentStartEvent("thread-v2", "reply-confirm", "react"),
+                            new RequireUserConfirmEvent("reply-confirm", List.of(pending)),
+                            new AgentEndEvent("reply-confirm"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            AguiEvent.Interrupt interrupt = outcome.interrupts().get(0);
+            assertEquals("Create a ticket", interrupt.metadata().get("toolTitle"));
+            assertEquals("repair__create_ticket", interrupt.metadata().get("toolName"));
+        }
+
+        @Test
+        void testPermissionConfirmInterruptOmitsTitleWhenToolHasNone() {
+            // Local @Tool-style tools return a null title. The metadata must then look exactly as
+            // it did before titles were surfaced, so no existing consumer sees a new key.
+            Toolkit toolkit = new Toolkit();
+            toolkit.registerAgentTool(titledTool("echo", null));
+            ToolUseBlock pending =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("echo")
+                            .input(Map.of("message", "hello"))
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            toolkit,
+                            AguiAdapterConfig.defaultConfig(),
+                            input(),
+                            new AgentStartEvent("thread-v2", "reply-confirm", "react"),
+                            new RequireUserConfirmEvent("reply-confirm", List.of(pending)),
+                            new AgentEndEvent("reply-confirm"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            Map<String, Object> metadata = outcome.interrupts().get(0).metadata();
+            assertFalse(metadata.containsKey("toolTitle"));
+            assertEquals("echo", metadata.get("toolName"));
+        }
+
+        @Test
+        void testPermissionConfirmInterruptTreatsBlankTitleAsAbsent() {
+            // A whitespace-only title would render as an empty label, which is worse than no
+            // label at all; it must be reported as absent rather than passed through.
+            Toolkit toolkit = new Toolkit();
+            toolkit.registerAgentTool(titledTool("echo", "   "));
+            ToolUseBlock pending =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("echo")
+                            .input(Map.of("message", "hello"))
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            toolkit,
+                            AguiAdapterConfig.defaultConfig(),
+                            input(),
+                            new AgentStartEvent("thread-v2", "reply-confirm", "react"),
+                            new RequireUserConfirmEvent("reply-confirm", List.of(pending)),
+                            new AgentEndEvent("reply-confirm"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            assertFalse(outcome.interrupts().get(0).metadata().containsKey("toolTitle"));
+        }
+
+        @Test
+        void testPermissionConfirmInterruptOmitsTitleWithoutToolkit() {
+            // No live toolkit means nothing to resolve against; the interrupt must fall back to the
+            // name-only shape rather than guessing from the tool name.
+            ToolUseBlock pending =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("echo")
+                            .input(Map.of("message", "hello"))
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-confirm", "react"),
+                            new RequireUserConfirmEvent("reply-confirm", List.of(pending)),
+                            new AgentEndEvent("reply-confirm"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            assertFalse(outcome.interrupts().get(0).metadata().containsKey("toolTitle"));
+        }
+
+        @Test
         void testPermissionConfirmEventEmitsOneInterruptPerPendingToolCall() {
             ToolUseBlock first =
                     ToolUseBlock.builder()
@@ -2585,5 +2708,35 @@ class AguiAgentAdapterV2Test {
                                         "properties",
                                         Map.of("query", Map.of("type", "string"))))
                         .build());
+    }
+
+    /** A tool whose definition carries the given display title (a {@code null} title means none). */
+    private static AgentTool titledTool(String name, String title) {
+        return new AgentTool() {
+            @Override
+            public String getName() {
+                return name;
+            }
+
+            @Override
+            public String getDescription() {
+                return "Test tool";
+            }
+
+            @Override
+            public String getTitle() {
+                return title;
+            }
+
+            @Override
+            public Map<String, Object> getParameters() {
+                return Map.of("type", "object");
+            }
+
+            @Override
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                return Mono.just(ToolResultBlock.text("ok"));
+            }
+        };
     }
 }
