@@ -919,6 +919,54 @@ class BaseSandboxFilesystemTest {
             assertEquals("Hello Java", Files.readString(file));
         }
 
+        // ==================== heredoc quoting edges — the file path is the last piece of
+        // user input that still passes through shell quoting ====================
+
+        @Test
+        void edit_pathContainingSingleQuote_editsTheRightFile() throws IOException {
+            Path file = tmpDir.resolve("it's a file.txt");
+            Files.writeString(file, "Hello World");
+            // A sibling whose name is one substitution away: if quoting broke, the edit could
+            // land here instead.
+            Path decoy = tmpDir.resolve("its a file.txt");
+            Files.writeString(decoy, "Hello World");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "World", "Java", false);
+
+            assertTrue(result.isSuccess(), "single-quoted path should edit: " + result.error());
+            assertEquals("Hello Java", Files.readString(file));
+            assertEquals("Hello World", Files.readString(decoy), "decoy must be untouched");
+        }
+
+        @Test
+        void edit_pathContainingBacktick_doesNotTriggerCommandSubstitution() throws IOException {
+            Path file = tmpDir.resolve("`id`.txt");
+            Files.writeString(file, "Hello World");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "World", "Java", false);
+
+            assertTrue(result.isSuccess(), "backtick path should edit: " + result.error());
+            assertEquals("Hello Java", Files.readString(file));
+        }
+
+        @Test
+        void edit_paramsEndingWithNewline_surviveEncodingAndHeredoc() throws IOException {
+            Path file = tmpDir.resolve("trailing.txt");
+            Files.writeString(file, "keep\nreplace me\n");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            // old carries a trailing newline: a newline in a command argument would split the
+            // command into extra lines, so this pins the encoding end-to-end.
+            EditResult result = fs.edit(RT, file.toString(), "replace me\n", "done\n", false);
+
+            assertTrue(
+                    result.isSuccess(), "trailing-newline params should edit: " + result.error());
+            assertEquals(1, result.occurrences());
+            assertEquals("keep\ndone\n", Files.readString(file));
+        }
+
         @Test
         void edit_crlfFile_matchesLfPattern() throws IOException {
             Path file = tmpDir.resolve("crlf.txt");
