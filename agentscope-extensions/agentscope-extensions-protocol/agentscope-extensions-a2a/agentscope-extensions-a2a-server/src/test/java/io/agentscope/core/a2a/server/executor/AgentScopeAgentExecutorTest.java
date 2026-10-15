@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -74,6 +75,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -81,6 +83,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.Answer;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.util.function.Tuple2;
 
 @DisplayName("AgentScopeAgentExecutor Tests")
@@ -776,23 +779,178 @@ class AgentScopeAgentExecutorTest {
         @Test
         @DisplayName("Cancel should end a streaming execution without completing the task")
         void testCancelEndsStreamingExecution() throws Exception {
-            assertCancelEndsExecution(doMockForContext(true, false, false));
+            assertCancelledOnce(cancelRunningExecution(true, agentStream -> {}));
         }
 
         @Test
         @DisplayName("Cancel should end a blocking execution without returning a result")
         void testCancelEndsBlockingExecution() throws Exception {
-            assertCancelEndsExecution(doMockForContext(false, true, false));
+            assertCancelledOnce(cancelRunningExecution(false, agentStream -> {}));
         }
 
-        private void assertCancelEndsExecution(String taskId) throws Exception {
+        @Test
+        @DisplayName("Cancel should end the execution even if stopping the agent fails")
+        void testCancelEndsExecutionWhenStopFails() throws Exception {
+            assertCancelledOnce(
+                    cancelRunningExecution(
+                            true,
+                            agentStream -> {
+                                throw new IllegalStateException("stop failed");
+                            }));
+        }
+
+        @Test
+        @DisplayName("Cancel should win when stopping the agent completes its stream")
+        void testCancelWinsWhenStopCompletesStream() throws Exception {
+            assertCancelledOnce(cancelRunningExecution(true, Sinks.Many::tryEmitComplete));
+            assertCancelledOnce(cancelRunningExecution(false, Sinks.Many::tryEmitComplete));
+        }
+
+        @Test
+        @DisplayName("Cancel should win when stopping the agent fails its stream")
+        void testCancelWinsWhenStopFailsStream() throws Exception {
+            assertCancelledOnce(
+                    cancelRunningExecution(
+                            true,
+                            agentStream -> agentStream.tryEmitError(new IllegalStateException())));
+            assertCancelledOnce(
+                    cancelRunningExecution(
+                            false,
+                            agentStream -> agentStream.tryEmitError(new IllegalStateException())));
+        }
+
+        @Test
+        @DisplayName("Output emitted after cancel should be dropped")
+        void testCancelDropsLateOutput() throws Exception {
+            List<Object> events =
+                    cancelRunningExecution(
+                            true,
+                            agentStream -> {
+                                agentStream.tryEmitNext(
+                                        new TextBlockDeltaEvent("reply-id", "block-id", "late"));
+                                agentStream.tryEmitComplete();
+                            });
+
+            assertCancelledOnce(events);
+            assertFalse(
+                    events.stream()
+                            .filter(TaskArtifactUpdateEvent.class::isInstance)
+                            .flatMap(
+                                    event ->
+                                            ((TaskArtifactUpdateEvent) event)
+                                                    .getArtifact().parts().stream())
+                            .anyMatch(
+                                    part ->
+                                            part instanceof TextPart textPart
+                                                    && textPart.getText().contains("late")),
+                    "output emitted after cancel must not be sent");
+        }
+
+        @Test
+        @DisplayName("Cancel after the task completed should change nothing")
+        void testCancelAfterCompletionIsIgnored() throws Exception {
+            String taskId = doMockForContext(false, true, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(mockFlux(false, true, false));
+            List<Object> events = new CopyOnWriteArrayList<>();
+            doAnswer(
+                            invocation -> {
+                                Object event = invocation.getArgument(0);
+                                events.add(event);
+                                if (event instanceof Message) {
+                                    // The result is out; a cancel arriving now is too late.
+                                    executor.cancel(mockContext, mockEventQueue);
+                                }
+                                return null;
+                            })
+                    .when(mockEventQueue)
+                    .enqueueEvent(any());
+
+            runExecution(() -> {});
+
+            assertEquals(1, events.stream().filter(Message.class::isInstance).count());
+            assertFalse(statesOf(events).contains(TaskState.CANCELED));
+            verify(mockAgentRunner, never()).stop(taskId);
+        }
+
+        @Test
+        @DisplayName("Cancel before the agent stream is subscribed should start nothing")
+        void testCancelBeforeSubscription() throws Exception {
+            doMockForContext(true, false, false);
+            List<Object> events = recordEnqueuedEvents();
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                // The cancel request arrives while execute() is still preparing.
+                                executor.cancel(mockContext, mockEventQueue);
+                                return Flux.<AgentEvent>just(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-id", "block-id", "part"))
+                                        .concatWith(Flux.never());
+                            });
+
+            runExecution(() -> {});
+
+            assertCancelledOnce(events);
+            assertFalse(
+                    statesOf(events).contains(TaskState.WORKING),
+                    "a cancelled task must not start working");
+            assertFalse(
+                    events.stream().anyMatch(TaskArtifactUpdateEvent.class::isInstance),
+                    "a cancelled task must not stream output");
+        }
+
+        /**
+         * Starts an execution whose agent stream stays open, cancels it once the first event is
+         * emitted and waits for the execution to return.
+         */
+        private List<Object> cancelRunningExecution(
+                boolean streaming, Consumer<Sinks.Many<AgentEvent>> onStop) throws Exception {
+            setUp();
+            String taskId = doMockForContext(streaming, !streaming, false);
+            Sinks.Many<AgentEvent> agentStream = Sinks.many().unicast().onBackpressureBuffer();
+            agentStream.tryEmitNext(new TextBlockDeltaEvent("reply-id", "block-id", "part"));
             CountDownLatch firstEvent = new CountDownLatch(1);
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(
-                            Flux.<AgentEvent>just(
-                                            new TextBlockDeltaEvent("reply-id", "block-id", "part"))
-                                    .doOnNext(event -> firstEvent.countDown())
-                                    .concatWith(Flux.never()));
+                    .thenReturn(agentStream.asFlux().doOnNext(event -> firstEvent.countDown()));
+            doAnswer(
+                            invocation -> {
+                                onStop.accept(agentStream);
+                                return null;
+                            })
+                    .when(mockAgentRunner)
+                    .stop(taskId);
+            List<Object> events = recordEnqueuedEvents();
+
+            runExecution(
+                    () -> {
+                        assertTrue(firstEvent.await(5, TimeUnit.SECONDS));
+                        executor.cancel(mockContext, mockEventQueue);
+                    });
+
+            verify(mockAgentRunner).stop(taskId);
+            return events;
+        }
+
+        /** Runs execute() on its own thread, calls {@code whileRunning} and waits for it to end. */
+        private void runExecution(ThrowingRunnable whileRunning) throws Exception {
+            ExecutorService executionThread = Executors.newSingleThreadExecutor();
+            try {
+                Future<?> execution =
+                        executionThread.submit(() -> executor.execute(mockContext, mockEventQueue));
+                whileRunning.run();
+                execution.get(5, TimeUnit.SECONDS);
+            } finally {
+                executionThread.shutdownNow();
+                try {
+                    executionThread.awaitTermination(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+
+        private List<Object> recordEnqueuedEvents() {
             List<Object> events = new CopyOnWriteArrayList<>();
             doAnswer(
                             invocation -> {
@@ -801,30 +959,28 @@ class AgentScopeAgentExecutorTest {
                             })
                     .when(mockEventQueue)
                     .enqueueEvent(any());
-            ExecutorService executionThread = Executors.newSingleThreadExecutor();
-            try {
-                Future<?> execution =
-                        executionThread.submit(() -> executor.execute(mockContext, mockEventQueue));
-                assertTrue(firstEvent.await(5, TimeUnit.SECONDS));
+            return events;
+        }
 
-                executor.cancel(mockContext, mockEventQueue);
+        private List<TaskState> statesOf(List<Object> events) {
+            return events.stream()
+                    .filter(TaskStatusUpdateEvent.class::isInstance)
+                    .map(event -> ((TaskStatusUpdateEvent) event).getStatus().state())
+                    .toList();
+        }
 
-                execution.get(5, TimeUnit.SECONDS);
-                verify(mockAgentRunner).stop(taskId);
-                assertFalse(
-                        events.stream().anyMatch(Message.class::isInstance),
-                        "a cancelled task must not send a result message");
-                assertFalse(
-                        events.stream()
-                                .filter(TaskStatusUpdateEvent.class::isInstance)
-                                .map(TaskStatusUpdateEvent.class::cast)
-                                .anyMatch(
-                                        update ->
-                                                update.getStatus().state() == TaskState.COMPLETED),
-                        "a cancelled task must not be reported as completed");
-            } finally {
-                executionThread.shutdownNow();
-            }
+        private void assertCancelledOnce(List<Object> events) {
+            List<TaskState> states = statesOf(events);
+            assertEquals(
+                    1,
+                    states.stream().filter(TaskState.CANCELED::equals).count(),
+                    "exactly one CANCELED, got " + states);
+            assertFalse(
+                    states.contains(TaskState.COMPLETED) || states.contains(TaskState.FAILED),
+                    "a cancelled task must not also complete or fail, got " + states);
+            assertFalse(
+                    events.stream().anyMatch(Message.class::isInstance),
+                    "a cancelled task must not send a result or error message");
         }
 
         @Test
@@ -870,6 +1026,11 @@ class AgentScopeAgentExecutorTest {
 
         // Then
         verify(mockEventQueue).enqueueEvent(any(Message.class));
+    }
+
+    @FunctionalInterface
+    private interface ThrowingRunnable {
+        void run() throws Exception;
     }
 
     private Flux<AgentEvent> mockFlux(

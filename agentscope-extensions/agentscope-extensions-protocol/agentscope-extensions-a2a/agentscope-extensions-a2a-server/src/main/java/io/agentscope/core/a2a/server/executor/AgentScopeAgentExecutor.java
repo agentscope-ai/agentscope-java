@@ -74,7 +74,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeAgentExecutor.class);
 
-    private final Map<String, Sinks.Empty<Void>> cancelSignals;
+    private final Map<String, RunningExecution> executions;
 
     private final AgentRunner agentRunner;
 
@@ -84,7 +84,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             AgentRunner agentRunner, AgentExecuteProperties agentExecuteProperties) {
         this.agentRunner = agentRunner;
         this.agentExecuteProperties = agentExecuteProperties;
-        this.cancelSignals = new ConcurrentHashMap<>();
+        this.executions = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -92,14 +92,22 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         try {
             log.info("[{}] Start to Cancel Task", context.getTaskId());
             TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
-            taskUpdater.cancel();
-            agentRunner.stop(taskUpdater.getTaskId());
-            Sinks.Empty<Void> cancelSignal = cancelSignals.get(taskUpdater.getTaskId());
-            if (null == cancelSignal) {
-                log.warn("[{}] Not found Subscription for Task.", taskUpdater.getTaskId());
+            RunningExecution execution = executions.get(taskUpdater.getTaskId());
+            if (null != execution && !execution.cancel()) {
+                log.info("[{}] Task already finished, nothing to cancel.", taskUpdater.getTaskId());
                 return;
             }
-            cancelSignal.tryEmitEmpty();
+            try {
+                taskUpdater.cancel();
+                agentRunner.stop(taskUpdater.getTaskId());
+            } finally {
+                if (null == execution) {
+                    log.warn("[{}] Not found Subscription for Task.", taskUpdater.getTaskId());
+                } else {
+                    // End the execution even if stop() failed or left the agent stream running.
+                    execution.end();
+                }
+            }
         } catch (Exception e) {
             log.error("[{}] Error while cancelling task.", context.getTaskId(), e);
         }
@@ -107,6 +115,8 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     @Override
     public void execute(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
+        RunningExecution execution = new RunningExecution();
+        executions.put(context.getTaskId(), execution);
         try {
             List<Msg> inputMessages =
                     MessageConvertUtil.convertFromMessageToMsgs(context.getMessage());
@@ -121,18 +131,22 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                 log.info("[{}] Using existing task.", task.getId());
             }
             if (isBlockRequest(context)) {
-                processTaskBlocking(context, eventQueue, task, resultFlux);
+                processTaskBlocking(context, eventQueue, task, resultFlux, execution);
             } else {
-                processTaskNonBlocking(context, eventQueue, task, resultFlux);
+                processTaskNonBlocking(context, eventQueue, task, resultFlux, execution);
             }
             log.info("[{}] Agent execution completed successfully", context.getTaskId());
         } catch (Exception e) {
             log.error("[{}] Agent execution failed", context.getTaskId(), e);
-            eventQueue.enqueueEvent(
-                    A2A.createAgentTextMessage(
-                            "Agent execution failed: " + e.getMessage(),
-                            context.getContextId(),
-                            context.getTaskId()));
+            if (!execution.isCancelled()) {
+                eventQueue.enqueueEvent(
+                        A2A.createAgentTextMessage(
+                                "Agent execution failed: " + e.getMessage(),
+                                context.getContextId(),
+                                context.getTaskId()));
+            }
+        } finally {
+            executions.remove(context.getTaskId(), execution);
         }
     }
 
@@ -188,30 +202,40 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private void processTaskBlocking(
-            RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
+            RequestContext context,
+            EventQueue eventQueue,
+            Task task,
+            Flux<AgentEvent> resultFlux,
+            RunningExecution execution) {
         BlockingFluxEventHandler eventHandler =
-                new BlockingFluxEventHandler(context, agentExecuteProperties, eventQueue);
+                new BlockingFluxEventHandler(
+                        context, agentExecuteProperties, execution, eventQueue);
         log.info("[{}] Starting blocking request processing", context.getTaskId());
         resultFlux
                 .doOnSubscribe(s -> logSubscribed(context.getTaskId()))
                 .doOnNext(eventHandler::doOnNext)
-                .doOnComplete(eventHandler::doOnComplete)
-                .doOnError(eventHandler::doOnError)
-                .takeUntilOther(registerCancelSignal(context.getTaskId()))
-                .doFinally(signal -> removeCancelSignal(context.getTaskId(), signal))
+                .doOnComplete(eventHandler::complete)
+                .doOnError(eventHandler::fail)
+                .takeUntilOther(execution.ended())
+                .doFinally(signal -> logTerminated(context.getTaskId(), signal))
                 .blockLast();
     }
 
     private void processTaskNonBlocking(
-            RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
+            RequestContext context,
+            EventQueue eventQueue,
+            Task task,
+            Flux<AgentEvent> resultFlux,
+            RunningExecution execution) {
         TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
         try {
             eventQueue.enqueueEvent(task);
             log.info("[{}] Starting streaming request processing", context.getTaskId());
-            processStreamingOutput(resultFlux, taskUpdater, context);
+            processStreamingOutput(resultFlux, taskUpdater, context, execution);
         } catch (Exception e) {
             log.error("[{}] Error processing streaming output", context.getTaskId(), e);
-            try {
+            // Skip when doOnError or cancel already decided the terminal state.
+            if (execution.finish()) {
                 taskUpdater.fail(
                         taskUpdater.newAgentMessage(
                                 List.of(
@@ -219,8 +243,6 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                                                 "Error processing streaming output: "
                                                         + e.getMessage())),
                                 Map.of()));
-            } catch (IllegalStateException ignored) {
-                // doOnError already transitioned the task to a terminal state; nothing to do.
             }
         }
     }
@@ -229,20 +251,26 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
      * Process streaming output data
      */
     private void processStreamingOutput(
-            Flux<AgentEvent> resultFlux, TaskUpdater taskUpdater, RequestContext context) {
+            Flux<AgentEvent> resultFlux,
+            TaskUpdater taskUpdater,
+            RequestContext context,
+            RunningExecution execution) {
         StreamingFluxEventHandler eventHandler =
-                new StreamingFluxEventHandler(context, agentExecuteProperties, taskUpdater);
+                new StreamingFluxEventHandler(
+                        context, agentExecuteProperties, execution, taskUpdater);
         resultFlux
                 .doOnSubscribe(
                         s -> {
                             logSubscribed(taskUpdater.getTaskId());
-                            taskUpdater.startWork();
+                            if (!execution.isFinished()) {
+                                taskUpdater.startWork();
+                            }
                         })
                 .doOnNext(eventHandler::doOnNext)
-                .doOnComplete(eventHandler::doOnComplete)
-                .doOnError(eventHandler::doOnError)
-                .takeUntilOther(registerCancelSignal(taskUpdater.getTaskId()))
-                .doFinally(signal -> removeCancelSignal(taskUpdater.getTaskId(), signal))
+                .doOnComplete(eventHandler::complete)
+                .doOnError(eventHandler::fail)
+                .takeUntilOther(execution.ended())
+                .doFinally(signal -> logTerminated(taskUpdater.getTaskId(), signal))
                 .blockLast();
     }
 
@@ -250,23 +278,56 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         log.info("[{}] Subscribed to executeFunction result stream", taskId);
     }
 
-    /**
-     * Registers the signal {@link #cancel} uses to stop the execution of a task.
-     *
-     * <p>It is applied with {@code takeUntilOther} after the event handlers: cancelling stops the
-     * agent stream and completes the downstream, so {@code blockLast()} returns and the handlers'
-     * {@code doOnComplete} is not run for the cancelled task. Cancelling the upstream subscription
-     * alone would leave {@code blockLast()} waiting forever.
-     */
-    private Mono<Void> registerCancelSignal(String taskId) {
-        Sinks.Empty<Void> cancelSignal = Sinks.empty();
-        cancelSignals.put(taskId, cancelSignal);
-        return cancelSignal.asMono();
+    private void logTerminated(String taskId, SignalType signal) {
+        log.info("[{}] Subscribe and process stream output terminated: {}", taskId, signal);
     }
 
-    private void removeCancelSignal(String taskId, SignalType signal) {
-        log.info("[{}] Subscribe and process stream output terminated: {}", taskId, signal);
-        cancelSignals.remove(taskId);
+    /**
+     * State of one running execution, shared by {@link #execute} and {@link #cancel}.
+     *
+     * <p>Cancelling, completing and failing all publish a terminal state for the task; {@link
+     * #finish()} lets only the first of them do it. {@link #ended()} is applied with {@code
+     * takeUntilOther} after the event handlers, so {@link #end()} stops the agent stream and
+     * completes the downstream: {@code blockLast()} returns without running the handlers' completion.
+     * Cancelling the upstream subscription alone would leave {@code blockLast()} waiting forever.
+     */
+    private static final class RunningExecution {
+
+        private final AtomicBoolean finished = new AtomicBoolean();
+
+        private final Sinks.Empty<Void> endSignal = Sinks.empty();
+
+        private volatile boolean cancelled;
+
+        /** Claims the right to publish the terminal state; {@code true} for the first caller. */
+        boolean finish() {
+            return finished.compareAndSet(false, true);
+        }
+
+        boolean isFinished() {
+            return finished.get();
+        }
+
+        /** Claims the terminal state for a cancellation; {@code false} if the task already ended. */
+        boolean cancel() {
+            if (!finish()) {
+                return false;
+            }
+            cancelled = true;
+            return true;
+        }
+
+        boolean isCancelled() {
+            return cancelled;
+        }
+
+        void end() {
+            endSignal.tryEmitEmpty();
+        }
+
+        Mono<Void> ended() {
+            return endSignal.asMono();
+        }
     }
 
     private abstract static class BaseFluxEventHandler {
@@ -277,12 +338,17 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         protected final AgentExecuteProperties executeProperties;
 
+        private final RunningExecution execution;
+
         private final Set<AgentEventType> requiredEventTypes;
 
         private BaseFluxEventHandler(
-                RequestContext context, AgentExecuteProperties executeProperties) {
+                RequestContext context,
+                AgentExecuteProperties executeProperties,
+                RunningExecution execution) {
             this.context = context;
             this.executeProperties = executeProperties;
+            this.execution = execution;
             this.accumulatedOutput = new LinkedList<>();
             this.requiredEventTypes = generateRequiredEventTypes(executeProperties);
         }
@@ -307,6 +373,10 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
          * @param output output event from agent stream execute.
          */
         void doOnNext(AgentEvent output) {
+            if (execution.isFinished()) {
+                // The task already has its terminal state (e.g. cancelled); drop late output.
+                return;
+            }
             LoggerUtil.debug(
                     log, "[{}] Handle Agent execute output event: {}", context.getTaskId(), output);
             Msg responseMessage = convertToResponseMessage(output);
@@ -316,6 +386,20 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                 accumulatedOutput.add(responseMessage);
             }
             handleEvent(output, responseMessage);
+        }
+
+        /** Completes the task, unless cancel or an error already ended it. */
+        void complete() {
+            if (execution.finish()) {
+                doOnComplete();
+            }
+        }
+
+        /** Fails the task, unless cancel or completion already ended it. */
+        void fail(Throwable t) {
+            if (execution.finish()) {
+                doOnError(t);
+            }
         }
 
         /**
@@ -464,8 +548,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         private BlockingFluxEventHandler(
                 RequestContext context,
                 AgentExecuteProperties executeProperties,
+                RunningExecution execution,
                 EventQueue eventQueue) {
-            super(context, executeProperties);
+            super(context, executeProperties, execution);
             this.eventQueue = eventQueue;
             this.resultMessageRef = new AtomicReference<>();
         }
@@ -516,8 +601,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         private StreamingFluxEventHandler(
                 RequestContext context,
                 AgentExecuteProperties executeProperties,
+                RunningExecution execution,
                 TaskUpdater taskUpdater) {
-            super(context, executeProperties);
+            super(context, executeProperties, execution);
             this.taskUpdater = taskUpdater;
             this.artifactId = UUID.randomUUID().toString();
             this.isFirstArtifact = new AtomicBoolean(true);
