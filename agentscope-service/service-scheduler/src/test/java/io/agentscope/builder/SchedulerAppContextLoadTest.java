@@ -36,6 +36,10 @@ import org.springframework.test.context.TestPropertySource;
             "builder.internal-token=test-internal-token-must-be-at-least-32-chars",
             "builder.control-plane-url=http://localhost:8081",
             "builder.data-plane-url=http://localhost:8082",
+            // Nothing listens on the test control-plane URL, so SchedulerChannelRuntime.start()
+            // would sleep through its default 12 retries x 5s backoff before giving up; one
+            // attempt fails fast with the same "zero channels" outcome.
+            "builder.scheduler.channel-config-retries=1",
             "builder.workspace=${java.io.tmpdir}/agentscope-builder-scheduler-ctx",
             // INIT pre-creates the dp schema required by hibernate.default_schema (see
             // application.yml); without it schema-qualified H2 statements fail.

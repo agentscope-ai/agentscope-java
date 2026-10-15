@@ -16,16 +16,15 @@
 package io.agentscope.extensions.sandbox.e2b;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.AbstractBaseSandbox;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
 import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -34,22 +33,21 @@ import org.slf4j.LoggerFactory;
 /**
  * {@link io.agentscope.harness.agent.sandbox.Sandbox} backed by E2B cloud sandboxes.
  *
- * <p>Execution uses envd {@code process.Process/Start} over HTTPS (Connect+protobuf). Workspace
- * tar is streamed as binary stdout for {@link E2bPersistenceMode#TAR}; {@link
- * E2bPersistenceMode#NATIVE_SNAPSHOT} uses the platform snapshot API and {@link E2bSnapshotRefs}
- * marker bytes in the Harness snapshot stream.
+ * <p>Execution uses envd {@code process.Process/Start} over HTTPS (Connect+protobuf). For {@link
+ * E2bPersistenceMode#TAR}, the workspace tar is written to a temp file and moved through the
+ * envd Filesystem REST API; {@link E2bPersistenceMode#NATIVE_SNAPSHOT} uses the platform
+ * snapshot API and {@link E2bSnapshotRefs} marker bytes in the Harness snapshot stream.
  */
-public class E2bSandbox extends AbstractBaseSandbox {
+public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransfer {
 
     private static final Logger log = LoggerFactory.getLogger(E2bSandbox.class);
 
     private static final int TAR_TIMEOUT_SECONDS = 300;
-    private static final int B64_CHUNK = 4000;
 
     private final E2bSandboxState e2bState;
     private final E2bSandboxClientOptions opt;
     private final E2bPlatformHttp platform;
-    private E2bEnvdProcessClient envd;
+    private volatile E2bEnvdProcessClient envd;
 
     /**
      * Snapshot id created by the workspace persist in flight on this instance, or {@code null} when
@@ -143,15 +141,42 @@ public class E2bSandbox extends AbstractBaseSandbox {
             return new ByteArrayInputStream(E2bSnapshotRefs.encodeSnapshotId(id));
         }
         String root = e2bState.getWorkspaceRoot();
-        StringBuilder script = new StringBuilder("tar ");
-        for (String ex :
-                WorkspaceMountSupport.tarExcludeArgsForBindMounts(e2bState.getWorkspaceSpec())) {
-            script.append(ex).append(' ');
+        String tarPath = newTempTarPath();
+        String script = buildTarCommand(true, tarPath, root);
+        try {
+            envd().runShell(e2bState, root, script, TAR_TIMEOUT_SECONDS);
+            byte[] tar = envd().downloadFile(e2bState, tarPath);
+            return new ByteArrayInputStream(tar);
+        } finally {
+            removeTempFileBestEffort(tarPath);
         }
-        script.append("-cf - -C ").append(shellSingleQuote(root)).append(" .");
-        String cmd = script.toString();
-        byte[] tar = envd().runShellBinaryStdout(e2bState, root, cmd, TAR_TIMEOUT_SECONDS);
-        return new ByteArrayInputStream(tar);
+    }
+
+    @Override
+    public boolean supportsFileTransfer(String absolutePath) {
+        return workspaceTransferPath(absolutePath) != null;
+    }
+
+    /**
+     * Upload a file to the sandbox filesystem via the E2B Filesystem REST API.
+     *
+     * @param absolutePath absolute destination path inside the sandbox
+     * @param content      file content
+     */
+    @Override
+    public void uploadFile(String absolutePath, byte[] content) throws Exception {
+        envd().uploadFile(e2bState, requireWorkspaceTransferPath(absolutePath), content);
+    }
+
+    /**
+     * Download a file from the sandbox filesystem via the E2B Filesystem REST API.
+     *
+     * @param absolutePath absolute path inside the sandbox
+     * @return file content
+     */
+    @Override
+    public byte[] downloadFile(String absolutePath) throws Exception {
+        return envd().downloadFile(e2bState, requireWorkspaceTransferPath(absolutePath));
     }
 
     @Override
@@ -162,29 +187,15 @@ public class E2bSandbox extends AbstractBaseSandbox {
             restoreSandboxFromSnapshotTemplate(nativeId);
             return;
         }
+        String tarPath = newTempTarPath();
         String root = e2bState.getWorkspaceRoot();
-        String b64 = Base64.getEncoder().encodeToString(all);
-        envd().runShell(e2bState, root, "rm -f /tmp/agentscope-ws.b64", 30);
-        ObjectMapper om = new ObjectMapper();
-        for (int i = 0; i < b64.length(); i += B64_CHUNK) {
-            String chunk = b64.substring(i, Math.min(b64.length(), i + B64_CHUNK));
-            String lit = om.writeValueAsString(chunk);
-            String py =
-                    "import pathlib; pathlib.Path('/tmp/agentscope-ws.b64').open('a').write("
-                            + lit
-                            + ")";
-            envd().runShell(e2bState, root, "python3 -c " + shellSingleQuote(py), 120);
+        String script = buildTarCommand(false, tarPath, root);
+        try {
+            envd().uploadFile(e2bState, tarPath, all);
+            envd().runShell(e2bState, root, script, TAR_TIMEOUT_SECONDS);
+        } finally {
+            removeTempFileBestEffort(tarPath);
         }
-        String pyFin =
-                "import base64,pathlib,subprocess; d="
-                        + om.writeValueAsString(root)
-                        + "; raw=base64.standard_b64decode(pathlib.Path('/tmp/agentscope-ws.b64').read_text());"
-                        + " subprocess.run(['tar','xf','-','-C',d],input=raw,check=True)";
-        envd().runShell(
-                        e2bState,
-                        root,
-                        "python3 -c " + shellSingleQuote(pyFin),
-                        TAR_TIMEOUT_SECONDS);
     }
 
     @Override
@@ -215,31 +226,27 @@ public class E2bSandbox extends AbstractBaseSandbox {
     }
 
     private void ensureSandbox() throws Exception {
+        JsonNode sandbox;
         if (e2bState.getSandboxId() == null || e2bState.getSandboxId().isBlank()) {
-            JsonNode n =
+            sandbox =
                     platform.createSandbox(
                             e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
-            platform.applySandboxFields(e2bState, n);
-            applyDefaultDomain();
-            envd = null;
-            return;
+        } else {
+            try {
+                sandbox =
+                        platform.connectSandbox(
+                                e2bState.getSandboxId(), opt.getSandboxTimeoutSeconds());
+            } catch (Exception e) {
+                log.warn("[sandbox-e2b] connect failed, recreating sandbox: {}", e.getMessage());
+                e2bState.setWorkspaceRootReady(false);
+                e2bState.setWorkspaceProjectionHash(null);
+                sandbox =
+                        platform.createSandbox(
+                                e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
+            }
         }
-        try {
-            JsonNode n =
-                    platform.connectSandbox(
-                            e2bState.getSandboxId(), opt.getSandboxTimeoutSeconds());
-            platform.applySandboxFields(e2bState, n);
-        } catch (Exception e) {
-            log.warn("[sandbox-e2b] connect failed, recreating sandbox: {}", e.getMessage());
-            e2bState.setWorkspaceRootReady(false);
-            e2bState.setWorkspaceProjectionHash(null);
-            JsonNode n =
-                    platform.createSandbox(
-                            e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
-            platform.applySandboxFields(e2bState, n);
-        }
+        platform.applySandboxFields(e2bState, sandbox);
         applyDefaultDomain();
-        envd = null;
     }
 
     private void applyDefaultDomain() {
@@ -265,7 +272,6 @@ public class E2bSandbox extends AbstractBaseSandbox {
                         "[sandbox-e2b] failed to delete old sandbox {}: {}", oldId, e.getMessage());
             }
         }
-        envd = null;
     }
 
     private void cleanupSnapshots() {
@@ -308,6 +314,71 @@ public class E2bSandbox extends AbstractBaseSandbox {
             }
         }
         return c;
+    }
+
+    private void removeTempFileBestEffort(String tarPath) {
+        try {
+            envd().runShell(e2bState, e2bState.getWorkspaceRoot(), "rm -f " + tarPath, 30);
+        } catch (Exception e) {
+            log.debug("[sandbox-e2b] remove temp tar best-effort: {}", e.getMessage());
+        }
+    }
+
+    private static String newTempTarPath() {
+        return "/tmp/agentscope-ws-" + UUID.randomUUID() + ".tar";
+    }
+
+    private String buildTarCommand(boolean create, String tarPath, String root) {
+        StringBuilder script = new StringBuilder("tar ");
+        for (String ex :
+                WorkspaceMountSupport.tarExcludeArgsForBindMounts(e2bState.getWorkspaceSpec())) {
+            script.append(ex).append(' ');
+        }
+        script.append(create ? "-cf " : "-xf ")
+                .append(tarPath)
+                .append(" -C ")
+                .append(shellSingleQuote(root));
+        if (create) {
+            script.append(" .");
+        }
+        return script.toString();
+    }
+
+    private String requireWorkspaceTransferPath(String path) {
+        String transferPath = workspaceTransferPath(path);
+        if (transferPath == null) {
+            throw new IllegalArgumentException(
+                    "Path is outside the sandbox workspace or invalid: " + path);
+        }
+        return transferPath;
+    }
+
+    private String workspaceTransferPath(String path) {
+        if (path == null || path.isBlank() || !path.startsWith("/")) {
+            return null;
+        }
+        String root = e2bState.getWorkspaceRoot();
+        if (root == null || root.isBlank() || !root.startsWith("/")) {
+            return null;
+        }
+        String normalizedRoot = root.replace('\\', '/');
+        while (normalizedRoot.length() > 1 && normalizedRoot.endsWith("/")) {
+            normalizedRoot = normalizedRoot.substring(0, normalizedRoot.length() - 1);
+        }
+        String rootPrefix = "/".equals(normalizedRoot) ? "/" : normalizedRoot + "/";
+        if (!path.startsWith(rootPrefix)) {
+            return null;
+        }
+        String relative = path.substring(rootPrefix.length());
+        if (relative.isEmpty()) {
+            return null;
+        }
+        for (String part : relative.split("/", -1)) {
+            if (part.isEmpty() || ".".equals(part) || "..".equals(part)) {
+                return null;
+            }
+        }
+        return rootPrefix + relative;
     }
 
     private static String shellSingleQuote(String s) {
