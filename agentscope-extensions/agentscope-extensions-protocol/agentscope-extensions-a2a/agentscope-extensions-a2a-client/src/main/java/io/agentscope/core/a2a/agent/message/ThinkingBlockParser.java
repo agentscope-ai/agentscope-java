@@ -16,7 +16,6 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.ThinkingBlock;
 import org.a2aproject.sdk.spec.Part;
 import org.a2aproject.sdk.spec.TextPart;
@@ -30,6 +29,6 @@ public class ThinkingBlockParser implements ContentBlockParser<ThinkingBlock> {
     public Part<?> parse(ThinkingBlock contentBlock) {
         return new TextPart(
                 contentBlock.getThinking(),
-                MessageConvertUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_THINKING));
+                MetadataUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_THINKING));
     }
 }

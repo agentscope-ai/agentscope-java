@@ -16,7 +16,6 @@
 
 package io.agentscope.core.a2a.server.request;
 
-import java.lang.reflect.Field;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Flow;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTasksResult;
@@ -235,32 +234,9 @@ public class AgentScopeA2aRequestHandler implements RequestHandler {
                             // required and no provider, every task operation is rejected.
                             .authorizationRequired(false)
                             .build();
-            setTimeoutProperties(delegate);
+            // 60/10 seconds, as before: the SDK builder sets a few seconds, too short for models.
+            SdkInternals.setTimeouts(delegate, 60, 10);
             return new AgentScopeA2aRequestHandler(delegate);
-        }
-
-        /**
-         * A2A Server Request Handler don't provider configurable way to set timeout. So temp use reflection to do.
-         *
-         * <p>
-         * If no timeout property setting, the blocking A2A request will return innerError immediately.
-         * </p>
-         */
-        private static void setTimeoutProperties(DefaultRequestHandler requestHandler) {
-            // TODO support config timeout properties by user input properties.
-            try {
-                Field field =
-                        DefaultRequestHandler.class.getDeclaredField(
-                                "agentCompletionTimeoutSeconds");
-                field.setAccessible(true);
-                field.set(requestHandler, 60);
-                field =
-                        DefaultRequestHandler.class.getDeclaredField(
-                                "consumptionCompletionTimeoutSeconds");
-                field.setAccessible(true);
-                field.set(requestHandler, 10);
-            } catch (Exception ignored) {
-            }
         }
     }
 

@@ -16,6 +16,10 @@
 
 package io.agentscope.core.a2a.agent.utils;
 
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.metadataValue;
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.toJsonValues;
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.withMetadata;
+
 import io.agentscope.core.a2a.agent.message.ContentBlockParserRouter;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.PartParserRouter;
@@ -24,7 +28,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.util.JsonUtils;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -32,11 +35,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.a2aproject.sdk.spec.Artifact;
-import org.a2aproject.sdk.spec.DataPart;
-import org.a2aproject.sdk.spec.FilePart;
 import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.Part;
-import org.a2aproject.sdk.spec.TextPart;
 
 /**
  * Message Converter between Agentscope {@link Msg} and A2A {@link Message} or {@link Artifact}.
@@ -160,67 +160,6 @@ public class MessageConvertUtil {
         return Message.Role.ROLE_USER;
     }
 
-    /**
-     * Get the metadata of a {@link Part}.
-     *
-     * @param part the part
-     * @return the metadata, or {@code null} if the part has none
-     */
-    public static Map<String, Object> metadataOf(Part<?> part) {
-        if (part instanceof TextPart textPart) {
-            return textPart.metadata();
-        }
-        if (part instanceof DataPart dataPart) {
-            return dataPart.metadata();
-        }
-        if (part instanceof FilePart filePart) {
-            return filePart.metadata();
-        }
-        return null;
-    }
-
-    /**
-     * Copy a {@link Part} with {@code extra} added to its metadata. Parts are immutable. The
-     * metadata, and the data of a {@link DataPart}, are converted with {@link #toJsonValues(Map)}.
-     *
-     * @param part the part to copy
-     * @param extra the metadata to add, overriding entries with the same key
-     * @return the copy
-     */
-    public static Part<?> withMetadata(Part<?> part, Map<String, Object> extra) {
-        Map<String, Object> metadata = new HashMap<>();
-        if (metadataOf(part) != null) {
-            metadata.putAll(metadataOf(part));
-        }
-        metadata.putAll(extra);
-        if (part instanceof TextPart textPart) {
-            return new TextPart(textPart.text(), toJsonValues(metadata));
-        }
-        if (part instanceof DataPart dataPart) {
-            return new DataPart(toJsonValue(dataPart.data()), toJsonValues(metadata));
-        }
-        if (part instanceof FilePart filePart) {
-            return new FilePart(filePart.file(), toJsonValues(metadata));
-        }
-        return part;
-    }
-
-    /**
-     * Convert values to JSON values: maps, lists, strings, numbers, booleans and {@code null}. The
-     * A2A SDK writes any other object, such as a POJO or an enum, as {@code null}.
-     *
-     * @param values the values to convert
-     * @return the converted values, or {@code null} if {@code values} is {@code null}
-     */
-    @SuppressWarnings("unchecked")
-    public static Map<String, Object> toJsonValues(Map<String, Object> values) {
-        return (Map<String, Object>) toJsonValue(values);
-    }
-
-    private static Object toJsonValue(Object value) {
-        return JsonUtils.getJsonCodec().convertValue(value, Object.class);
-    }
-
     private static boolean isNotEmptyCollection(Collection<?> collection) {
         return null != collection && !collection.isEmpty();
     }
@@ -245,7 +184,7 @@ public class MessageConvertUtil {
                 continue;
             }
 
-            String msgId = getMetadataValue(part, MessageConstants.MSG_ID_METADATA_KEY);
+            String msgId = metadataValue(part, MessageConstants.MSG_ID_METADATA_KEY);
             if (accumulator != null && accumulator.matches(msgId, kind)) {
                 accumulator.append(block);
             } else {
@@ -263,17 +202,8 @@ public class MessageConvertUtil {
     }
 
     private static boolean isStreamingChunk(Part<?> part) {
-        String value = getMetadataValue(part, MessageConstants.STREAM_CHUNK_METADATA_KEY);
+        String value = metadataValue(part, MessageConstants.STREAM_CHUNK_METADATA_KEY);
         return Boolean.TRUE.toString().equalsIgnoreCase(value);
-    }
-
-    private static String getMetadataValue(Part<?> part, String key) {
-        Map<String, Object> metadata = metadataOf(part);
-        if (metadata == null) {
-            return null;
-        }
-        Object value = metadata.get(key);
-        return value == null ? null : value.toString();
     }
 
     private static String getMergeableChunkKind(ContentBlock block) {
@@ -318,17 +248,5 @@ public class MessageConvertUtil {
             }
             return TextBlock.builder().text(text.toString()).build();
         }
-    }
-
-    /**
-     * Build metadata with content block type in {@link Part}.
-     *
-     * @param type the content block type, see {@link ContentBlock}.
-     * @return metadata with content block type.
-     */
-    public static Map<String, Object> buildTypeMetadata(String type) {
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put(MessageConstants.BLOCK_TYPE_METADATA_KEY, type);
-        return metadata;
     }
 }

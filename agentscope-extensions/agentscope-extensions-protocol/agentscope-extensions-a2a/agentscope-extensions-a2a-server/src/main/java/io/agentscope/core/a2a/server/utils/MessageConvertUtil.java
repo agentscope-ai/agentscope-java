@@ -16,10 +16,10 @@
 
 package io.agentscope.core.a2a.server.utils;
 
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.metadataValue;
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.toJsonValues;
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.withMetadata;
 import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.convertFromMsg;
-import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.metadataOf;
-import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.toJsonValues;
-import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.withMetadata;
 
 import io.agentscope.core.a2a.agent.message.ContentBlockParserRouter;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
@@ -120,6 +120,16 @@ public class MessageConvertUtil {
                 .taskId(taskId)
                 .contextId(contextId)
                 .build();
+    }
+
+    /**
+     * Convert the metadata of a {@link Msg} to the metadata of an A2A artifact.
+     *
+     * @param msg the Msg whose metadata to convert
+     * @return the metadata as JSON values, or {@code null} if the Msg has none
+     */
+    public static Map<String, Object> convertMetadata(Msg msg) {
+        return toJsonValues(msg.getMetadata());
     }
 
     /**
@@ -269,32 +279,21 @@ public class MessageConvertUtil {
     }
 
     private static String getMsgId(Part<?> part) {
-        Map<String, Object> metadata = metadataOf(part);
-        if (null == metadata || null == metadata.get(MessageConstants.MSG_ID_METADATA_KEY)) {
-            return UUID.randomUUID().toString();
-        }
-        return metadata.get(MessageConstants.MSG_ID_METADATA_KEY).toString();
+        String msgId = metadataValue(part, MessageConstants.MSG_ID_METADATA_KEY);
+        return null == msgId ? UUID.randomUUID().toString() : msgId;
     }
 
     private static String getMsgName(Part<?> part) {
-        Map<String, Object> metadata = metadataOf(part);
-        if (null == metadata || null == metadata.get(MessageConstants.SOURCE_NAME_METADATA_KEY)) {
-            return null;
-        }
-        return metadata.get(MessageConstants.SOURCE_NAME_METADATA_KEY).toString();
+        return metadataValue(part, MessageConstants.SOURCE_NAME_METADATA_KEY);
     }
 
     private static MsgRole getMsgRole(Part<?> part) {
-        Map<String, Object> metadata = metadataOf(part);
-        if (null == metadata) {
-            return null;
-        }
-        Object role = metadata.get(MessageConstants.MSG_ROLE_METADATA_KEY);
+        String role = metadataValue(part, MessageConstants.MSG_ROLE_METADATA_KEY);
         if (role == null) {
             return null;
         }
         try {
-            return MsgRole.valueOf(role.toString());
+            return MsgRole.valueOf(role);
         } catch (IllegalArgumentException ignored) {
             return null;
         }

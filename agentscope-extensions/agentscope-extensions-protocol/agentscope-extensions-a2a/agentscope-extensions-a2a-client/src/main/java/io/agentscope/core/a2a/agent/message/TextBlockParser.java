@@ -16,7 +16,6 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.TextBlock;
 import org.a2aproject.sdk.spec.Part;
 import org.a2aproject.sdk.spec.TextPart;
@@ -30,6 +29,6 @@ public class TextBlockParser implements ContentBlockParser<TextBlock> {
     public Part<?> parse(TextBlock contentBlock) {
         return new TextPart(
                 contentBlock.getText(),
-                MessageConvertUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_TEXT));
+                MetadataUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_TEXT));
     }
 }

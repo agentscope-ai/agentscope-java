@@ -16,8 +16,6 @@
 
 package io.agentscope.core.a2a.server.executor;
 
-import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.toJsonValues;
-
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
@@ -531,7 +529,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                     responseParts,
                     artifactId,
                     "agent-response",
-                    toJsonValues(responseMessage.getMetadata()),
+                    MessageConvertUtil.convertMetadata(responseMessage),
                     !isFirstArtifact.getAndSet(false),
                     false);
         }

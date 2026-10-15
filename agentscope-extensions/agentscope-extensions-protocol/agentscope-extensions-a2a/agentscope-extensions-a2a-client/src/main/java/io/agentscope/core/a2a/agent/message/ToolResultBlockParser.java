@@ -16,7 +16,6 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.util.JsonUtils;
 import java.util.List;
@@ -32,8 +31,7 @@ public class ToolResultBlockParser implements ContentBlockParser<ToolResultBlock
     @Override
     public Part<?> parse(ToolResultBlock contentBlock) {
         Map<String, Object> metadata =
-                MessageConvertUtil.buildTypeMetadata(
-                        MessageConstants.BlockContent.TYPE_TOOL_RESULT);
+                MetadataUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_TOOL_RESULT);
         metadata.put(MessageConstants.TOOL_NAME_METADATA_KEY, contentBlock.getName());
         metadata.put(MessageConstants.TOOL_CALL_ID_METADATA_KEY, contentBlock.getId());
         metadata.putAll(contentBlock.getMetadata());

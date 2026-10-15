@@ -16,7 +16,6 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.HintBlock;
 import java.util.Map;
 import org.a2aproject.sdk.spec.Part;
@@ -30,7 +29,7 @@ public class HintBlockParser implements ContentBlockParser<HintBlock> {
     @Override
     public Part<?> parse(HintBlock contentBlock) {
         Map<String, Object> metadata =
-                MessageConvertUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_HINT);
+                MetadataUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_HINT);
         if (contentBlock.getId() != null) {
             metadata.put(MessageConstants.HINT_ID_METADATA_KEY, contentBlock.getId());
         }
