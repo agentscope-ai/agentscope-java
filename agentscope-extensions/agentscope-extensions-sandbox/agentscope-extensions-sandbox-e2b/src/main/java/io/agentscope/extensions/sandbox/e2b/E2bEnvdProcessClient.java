@@ -207,9 +207,6 @@ final class E2bEnvdProcessClient {
     private record ShellCapture(
             int exitCode, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr) {}
 
-    /** Connect envelope flag marking the terminal end-stream frame. */
-    private static final int END_STREAM_FLAG = 0x02;
-
     /** Connect error code envd returns when the server-side exec deadline fires. */
     private static final String CONNECT_DEADLINE_EXCEEDED = "deadline_exceeded";
 
@@ -225,10 +222,6 @@ final class E2bEnvdProcessClient {
      * agent retry interval and buy nothing further.
      */
     private static final long CLIENT_TIMEOUT_SLACK_MILLIS = 5000;
-
-    private static final Logger log = LoggerFactory.getLogger(E2bEnvdProcessClient.class);
-
-    private record ConnectError(String code, String message) {}
 
     /** End-stream frame carrying a Connect error (e.g. server-side timeout kill). */
     static final class ConnectStreamException extends IOException {
@@ -248,31 +241,6 @@ final class E2bEnvdProcessClient {
     static final class MissingExitCodeException extends IOException {
         MissingExitCodeException() {
             super("envd process stream ended before receiving a process exit code");
-        }
-    }
-
-    /**
-     * Decodes a Connect end-stream error frame. The payload is always JSON regardless of the
-     * negotiated codec: connect-go hardcodes {@code json.Marshal} in {@code MarshalEndStream}
-     * (the end-stream message is not routed through the codec). Verified against a live envd —
-     * {@code application/connect+proto} and {@code application/connect+json} both return the
-     * identical 76-byte JSON frame {@code {"error":{"code":"deadline_exceeded",...}}}.
-     */
-    private static ConnectError parseEndStreamError(byte[] data) {
-        try {
-            JsonNode root = JSON.readTree(data);
-            JsonNode error = root.path("error");
-            if (error.isMissingNode() || error.isNull()) {
-                return null;
-            }
-            String code = error.path("code").asText(null);
-            if (code == null || code.isBlank()) {
-                return null;
-            }
-            return new ConnectError(code, error.path("message").asText(""));
-        } catch (Exception e) {
-            log.debug("[e2b] unparsable end-stream frame, falling through: {}", e.toString());
-            return null;
         }
     }
 

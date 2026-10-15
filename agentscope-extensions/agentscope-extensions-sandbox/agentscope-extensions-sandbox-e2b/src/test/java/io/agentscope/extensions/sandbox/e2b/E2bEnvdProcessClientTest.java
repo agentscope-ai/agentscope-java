@@ -1107,9 +1107,9 @@ class E2bEnvdProcessClientTest {
         E2bEnvdProcessClient client =
                 clientWithBody(options(E2bCodec.JSON), endStreamFrame(payload));
 
-        IOException e =
+        SandboxException.SandboxRuntimeException e =
                 assertThrows(
-                        IOException.class,
+                        SandboxException.SandboxRuntimeException.class,
                         () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
         assertTrue(e.getMessage().contains("unavailable"), "code must survive: " + e.getMessage());
     }
@@ -1185,13 +1185,11 @@ class E2bEnvdProcessClientTest {
                         options(E2bCodec.JSON),
                         endStreamFrame("%%%not-json%%%".getBytes(StandardCharsets.UTF_8)));
 
-        IOException e =
-                assertThrows(
-                        IOException.class,
-                        () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
-        assertTrue(
-                e.getMessage().contains("before receiving a process exit code"),
-                "unparsable end frame keeps #2828 semantics: " + e.getMessage());
+        // A corrupt end-stream envelope fails loud: the stream trailer is
+        // untrustworthy, so the parse error propagates instead of degrading to a
+        // missing-exit-code error.
+        assertThrows(
+                IOException.class, () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
     }
 
     @Test
