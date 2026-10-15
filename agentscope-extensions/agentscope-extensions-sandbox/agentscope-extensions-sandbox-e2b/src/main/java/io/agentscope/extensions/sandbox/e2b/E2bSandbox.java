@@ -27,9 +27,12 @@ import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -272,6 +275,26 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     }
 
     /**
+     * Resolves configured env suppliers at sandbox-creation time. Suppliers are re-evaluated on
+     * every creation so short-lived values stay fresh; {@code null} or empty values are skipped.
+     */
+    Map<String, String> resolveEnvVars() {
+        Map<String, Supplier<String>> configured = opt.getEnvs();
+        if (configured == null || configured.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> resolved = new LinkedHashMap<>();
+        configured.forEach(
+                (name, supplier) -> {
+                    String value = supplier != null ? supplier.get() : null;
+                    if (value != null && !value.isEmpty()) {
+                        resolved.put(name, value);
+                    }
+                });
+        return resolved;
+    }
+
+    /**
      * Creates the sandbox from the cheapest usable source: a restorable native snapshot when one is
      * present, the configured original template otherwise.
      */
@@ -279,7 +302,8 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         NativeSnapshotPeek peek = peekNativeSnapshot();
         if (peek.unavailable()) {
             nativeSnapshotPlan = NativeSnapshotPlan.UNAVAILABLE;
-            return platform.createSandbox(e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
+            return platform.createSandbox(
+                    e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
         }
         String snapshotId = peek.snapshotId();
         if (snapshotId != null) {
@@ -292,15 +316,18 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
                         e.getMessage());
                 nativeSnapshotPlan = NativeSnapshotPlan.UNAVAILABLE;
                 return platform.createSandbox(
-                        e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
+                        e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
             }
         }
         nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
-        return platform.createSandbox(e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
+        return platform.createSandbox(
+                e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
     }
 
     private JsonNode createFromSnapshot(String snapshotId, byte[] archive) throws IOException {
-        JsonNode created = platform.createSandbox(snapshotId, opt.getSandboxTimeoutSeconds());
+        JsonNode created =
+                platform.createSandbox(
+                        snapshotId, opt.getSandboxTimeoutSeconds(), resolveEnvVars());
         nativeSnapshotPlan = NativeSnapshotPlan.restored(snapshotId, archive);
         return created;
     }
