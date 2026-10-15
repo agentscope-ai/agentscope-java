@@ -97,13 +97,14 @@ class OpenAITextEmbeddingEmbedTest {
 
             StepVerifier.create(model.embed(textBlock))
                     .assertNext(
-                            embedding -> {
-                                assertNotNull(embedding);
+                            response -> {
+                                assertNotNull(response);
+                                assertNotNull(response.getEmbedding());
                                 // 返回的向量长度等于返回数据长度（3），覆盖维度不匹配分支
-                                assertEquals(3, embedding.length);
-                                assertEquals(0.1, embedding[0], 0.001);
-                                assertEquals(0.2, embedding[1], 0.001);
-                                assertEquals(0.3, embedding[2], 0.001);
+                                assertEquals(3, response.getEmbedding().length);
+                                assertEquals(0.1, response.getEmbedding()[0], 0.001);
+                                assertEquals(0.2, response.getEmbedding()[1], 0.001);
+                                assertEquals(0.3, response.getEmbedding()[2], 0.001);
                             })
                     .verifyComplete();
         }

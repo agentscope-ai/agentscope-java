@@ -23,10 +23,14 @@ import com.openai.models.embeddings.EmbeddingCreateParams;
 import io.agentscope.core.Version;
 import io.agentscope.core.embedding.EmbeddingException;
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
+import io.agentscope.core.embedding.EmbeddingUsage;
 import io.agentscope.core.embedding.EmbeddingUtils;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,7 +91,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
     }
 
     @Override
-    public Mono<double[]> embed(ContentBlock block) {
+    public Mono<EmbeddingResponse> embed(ContentBlock block) {
         if (block == null) {
             return Mono.error(
                     new EmbeddingException("ContentBlock cannot be null", modelName, "openai"));
@@ -109,10 +113,11 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                             "TextBlock text cannot be null or empty", modelName, "openai"));
         }
 
-        Mono<double[]> embeddingMono =
+        Mono<EmbeddingResponse> embeddingMono =
                 Mono.fromCallable(
                                 () -> {
                                     try {
+                                        Instant startTime = Instant.now();
                                         // Initialize OpenAI client
                                         OpenAIOkHttpClient.Builder clientBuilder =
                                                 OpenAIOkHttpClient.builder();
@@ -190,7 +195,8 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                                                     embeddingArray.length);
                                         }
 
-                                        return embeddingArray;
+                                        EmbeddingUsage usage = extractUsage(result, startTime);
+                                        return new EmbeddingResponse(embeddingArray, usage);
                                     } catch (EmbeddingException e) {
                                         throw e;
                                     } catch (Exception e) {
@@ -216,6 +222,27 @@ public class OpenAITextEmbedding implements EmbeddingModel {
         // Apply timeout and retry
         return EmbeddingUtils.applyTimeoutAndRetry(
                 embeddingMono, defaultExecutionConfig, modelName, "openai", log);
+    }
+
+    /**
+     * Extracts token usage from the OpenAI embedding response.
+     *
+     * @param result the response returned by the SDK
+     * @param startTime the request start time for elapsed time calculation
+     * @return usage information, or null when the provider does not report usage
+     */
+    private static EmbeddingUsage extractUsage(CreateEmbeddingResponse result, Instant startTime) {
+        if (result == null || result.usage() == null) {
+            return null;
+        }
+        long promptTokens = result.usage().promptTokens();
+        long totalTokens = result.usage().totalTokens();
+        double elapsedSeconds = Duration.between(startTime, Instant.now()).toMillis() / 1000.0;
+        return EmbeddingUsage.builder()
+                .inputTokens((int) promptTokens)
+                .totalTokens((int) totalTokens)
+                .time(elapsedSeconds)
+                .build();
     }
 
     @Override
