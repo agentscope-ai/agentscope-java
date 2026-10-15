@@ -101,6 +101,10 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 // AgentCard 端点直接返回 server.getAgentCardJson()。
 
 server.postEndpointReady();   // Web 服务监听端口后再调用，触发注册等动作
+
+// 关闭时：停止请求处理器的线程。正在运行的执行会被要求停止（中断），close() 不等待它们结束。
+// 使用 Spring Boot Starter 时会自动调用。
+server.close();
 ```
 
 `AgentScopeA2aServer` 本身不监听端口、不暴露 endpoint，只负责构建组件、组装请求处理链；具体监听由你的 Web 框架完成。这样可以无缝接入 Spring Boot、Quarkus、Vert.x 等。

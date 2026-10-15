@@ -34,6 +34,7 @@ import org.a2aproject.sdk.server.ServerCallContext;
 import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
 import org.a2aproject.sdk.server.auth.UnauthenticatedUser;
 import org.a2aproject.sdk.server.events.InMemoryQueueManager;
+import org.a2aproject.sdk.server.events.MainEventBus;
 import org.a2aproject.sdk.server.events.QueueManager;
 import org.a2aproject.sdk.server.requesthandlers.DefaultRequestHandler;
 import org.a2aproject.sdk.server.tasks.InMemoryPushNotificationConfigStore;
@@ -101,6 +102,49 @@ class AgentScopeA2aRequestHandlerTest {
                 InMemoryQueueManager.class.getDeclaredField("taskStateProvider");
         taskStateProviderField.setAccessible(true);
         return (TaskStateProvider) taskStateProviderField.get(queueManager);
+    }
+
+    /** Live event processor threads, one per open request handler. */
+    static long processorThreads() {
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(t -> t.isAlive() && "MainEventBusProcessor".equals(t.getName()))
+                .count();
+    }
+
+    @Nested
+    @DisplayName("Lifecycle Tests")
+    class LifecycleTests {
+
+        @Test
+        @DisplayName("Should stop its event processor thread on close")
+        void testCloseStopsProcessorThread() {
+            long before = processorThreads();
+            AgentScopeA2aRequestHandler handler =
+                    AgentScopeA2aRequestHandler.builder()
+                            .agentExecutor(mock(AgentExecutor.class))
+                            .build();
+            assertEquals(before + 1, processorThreads());
+
+            handler.close();
+            handler.close();
+
+            assertEquals(before, processorThreads());
+        }
+
+        @Test
+        @DisplayName("Should reject a custom queue manager without the event bus it uses")
+        void testQueueManagerRequiresEventBus() {
+            InMemoryTaskStore taskStore = new InMemoryTaskStore();
+            AgentScopeA2aRequestHandler.Builder builder =
+                    AgentScopeA2aRequestHandler.builder()
+                            .agentExecutor(mock(AgentExecutor.class))
+                            .taskStore(taskStore)
+                            .queueManager(new InMemoryQueueManager(taskStore, new MainEventBus()));
+
+            IllegalArgumentException exception =
+                    assertThrows(IllegalArgumentException.class, builder::build);
+            assertTrue(exception.getMessage().contains("mainEventBus"), exception.getMessage());
+        }
     }
 
     @Nested

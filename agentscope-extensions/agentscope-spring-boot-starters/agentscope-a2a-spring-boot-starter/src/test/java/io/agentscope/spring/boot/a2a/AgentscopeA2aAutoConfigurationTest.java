@@ -284,6 +284,26 @@ class AgentscopeA2aAutoConfigurationTest {
     }
 
     @Test
+    void shouldStopServerThreadsWhenContextCloses() {
+        long before = processorThreads();
+
+        contextRunner.run(
+                context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(processorThreads()).isEqualTo(before + 1);
+                });
+
+        assertThat(processorThreads()).isEqualTo(before);
+    }
+
+    /** Live A2A event processor threads, one per open server. */
+    private static long processorThreads() {
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(t -> t.isAlive() && "MainEventBusProcessor".equals(t.getName()))
+                .count();
+    }
+
+    @Test
     void shouldServeConfiguredSecuritySchemes() {
         contextRunner
                 .withPropertyValues(

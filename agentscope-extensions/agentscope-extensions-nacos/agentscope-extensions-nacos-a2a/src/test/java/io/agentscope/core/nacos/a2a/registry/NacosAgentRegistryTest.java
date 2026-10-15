@@ -230,7 +230,7 @@ class NacosAgentRegistryTest {
         AgentInterface overwritten = new AgentInterface("JSONRPC", "https://localhost:8080/agent");
         AgentCard agentCard =
                 AgentCard.builder(mockAgentCard())
-                        .supportedInterfaces(List.of(CARD_INTERFACE, overwritten))
+                        .supportedInterfaces(List.of(overwritten, CARD_INTERFACE, overwritten))
                         .build();
 
         nacosAgentRegistry.register(agentCard, mockTransportProperties("JSONRPC"));

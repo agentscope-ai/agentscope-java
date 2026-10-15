@@ -101,6 +101,10 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 // as SSE events. Serve server.getAgentCardJson() at the agent card endpoint.
 
 server.postEndpointReady();   // call after the web server is listening — triggers registration etc.
+
+// On shutdown: stop the threads of the request handler. Running executions are asked to stop
+// (interrupted); close() does not wait for them. The Spring Boot starter does this for you.
+server.close();
 ```
 
 `AgentScopeA2aServer` does not bind a port or expose endpoints itself; it only assembles components and the request-handling chain. You wire transport into Spring Boot, Quarkus, Vert.x, etc. as you prefer.

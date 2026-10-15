@@ -17,6 +17,8 @@
 package io.agentscope.core.a2a.server.request;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import org.a2aproject.sdk.server.events.MainEventBusProcessor;
 import org.a2aproject.sdk.server.requesthandlers.DefaultRequestHandler;
 
 /**
@@ -49,6 +51,23 @@ final class SdkInternals {
                     consumptionCompletionTimeoutSeconds);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Failed to set the A2A request timeouts", e);
+        }
+    }
+
+    /**
+     * Stop the thread that persists and dispatches events. Not public: the SDK stops it through
+     * CDI.
+     *
+     * @param processor the event processor
+     * @throws IllegalStateException if the SDK has no such method
+     */
+    static void stop(MainEventBusProcessor processor) {
+        try {
+            Method stop = MainEventBusProcessor.class.getDeclaredMethod("stop");
+            stop.setAccessible(true);
+            stop.invoke(processor);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to stop the A2A event processor", e);
         }
     }
 

@@ -16,6 +16,7 @@
 
 package io.agentscope.core.a2a.server.request;
 
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Flow;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTasksResult;
@@ -56,12 +57,25 @@ import org.a2aproject.sdk.spec.UnsupportedOperationError;
  * The {@link RequestHandler} of an AgentScope A2A server, backed by the SDK's {@link
  * DefaultRequestHandler} and the components it needs.
  */
-public class AgentScopeA2aRequestHandler implements RequestHandler {
+public class AgentScopeA2aRequestHandler implements RequestHandler, AutoCloseable {
 
     private final DefaultRequestHandler delegate;
 
-    private AgentScopeA2aRequestHandler(DefaultRequestHandler delegate) {
+    private final ExecutorService executor;
+
+    private final ExecutorService eventConsumerExecutor;
+
+    private final MainEventBusProcessor mainEventBusProcessor;
+
+    private AgentScopeA2aRequestHandler(
+            DefaultRequestHandler delegate,
+            ExecutorService executor,
+            ExecutorService eventConsumerExecutor,
+            MainEventBusProcessor mainEventBusProcessor) {
         this.delegate = delegate;
+        this.executor = executor;
+        this.eventConsumerExecutor = eventConsumerExecutor;
+        this.mainEventBusProcessor = mainEventBusProcessor;
     }
 
     @Override
@@ -138,6 +152,19 @@ public class AgentScopeA2aRequestHandler implements RequestHandler {
         delegate.authorizeTaskAccess(requestedTaskId, context, operation);
     }
 
+    /**
+     * Stops the thread that persists and dispatches events, which the SDK starts when the handler
+     * is built, and shuts down the thread pools that run agent executions and consume their events
+     * with {@link ExecutorService#shutdownNow()}: executions still running are asked to stop, and
+     * this method does not wait for them. Calling it again has no effect.
+     */
+    @Override
+    public void close() {
+        executor.shutdownNow();
+        eventConsumerExecutor.shutdownNow();
+        SdkInternals.stop(mainEventBusProcessor);
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -181,7 +208,7 @@ public class AgentScopeA2aRequestHandler implements RequestHandler {
 
         /**
          * Set the queue manager. It must be created with the {@link #mainEventBus(MainEventBus)
-         * event bus} of this handler.
+         * event bus} of this handler, which then has to be set too.
          *
          * @param queueManager the queue manager
          * @return this builder
@@ -191,6 +218,14 @@ public class AgentScopeA2aRequestHandler implements RequestHandler {
             return this;
         }
 
+        /**
+         * Set the push config store. Push notifications are not supported yet: new push configs
+         * are not accepted, but the configs it already holds are still sent with the {@link
+         * #pushSender(PushNotificationSender) push sender}.
+         *
+         * @param pushConfigStore the push config store
+         * @return this builder
+         */
         public Builder pushConfigStore(PushNotificationConfigStore pushConfigStore) {
             this.pushConfigStore = pushConfigStore;
             return this;
@@ -204,6 +239,12 @@ public class AgentScopeA2aRequestHandler implements RequestHandler {
         public AgentScopeA2aRequestHandler build() {
             if (null == agentExecutor) {
                 throw new IllegalArgumentException("AgentExecutor is required.");
+            }
+            if (null != queueManager && null == mainEventBus) {
+                // Events of its queues would go to a bus nobody consumes.
+                throw new IllegalArgumentException(
+                        "A custom QueueManager needs the MainEventBus it was created with, set by"
+                                + " mainEventBus(...).");
             }
             if (null == taskStore) {
                 taskStore = new InMemoryTaskStore();
@@ -228,6 +269,8 @@ public class AgentScopeA2aRequestHandler implements RequestHandler {
             }
             MainEventBusProcessor mainEventBusProcessor =
                     new MainEventBusProcessor(mainEventBus, taskStore, pushSender, queueManager);
+            ExecutorService executor = Executors.newCachedThreadPool();
+            ExecutorService eventConsumerExecutor = Executors.newCachedThreadPool();
             DefaultRequestHandler delegate =
                     DefaultRequestHandler.builder()
                             .agentExecutor(agentExecutor)
@@ -236,8 +279,8 @@ public class AgentScopeA2aRequestHandler implements RequestHandler {
                             .pushConfigStore(pushConfigStore)
                             .mainEventBusProcessor(mainEventBusProcessor)
                             // TODO support custom executor.
-                            .executor(Executors.newCachedThreadPool())
-                            .eventConsumerExecutor(Executors.newCachedThreadPool())
+                            .executor(executor)
+                            .eventConsumerExecutor(eventConsumerExecutor)
                             // AgentScope does not authenticate callers yet; with authorization
                             // required and no provider, every task operation is rejected.
                             .authorizationRequired(false)
@@ -245,9 +288,19 @@ public class AgentScopeA2aRequestHandler implements RequestHandler {
                             // still keeps the push config sent along with a message.
                             .pushNotificationsEnabled(false)
                             .build();
-            // 60/10 seconds, as before: the SDK builder sets a few seconds, too short for models.
-            SdkInternals.setTimeouts(delegate, 60, 10);
-            return new AgentScopeA2aRequestHandler(delegate);
+            // Building the delegate has started the event processor thread.
+            AgentScopeA2aRequestHandler result =
+                    new AgentScopeA2aRequestHandler(
+                            delegate, executor, eventConsumerExecutor, mainEventBusProcessor);
+            try {
+                // 60/10 seconds, as before: the SDK builder sets a few seconds, too short for
+                // models.
+                SdkInternals.setTimeouts(delegate, 60, 10);
+            } catch (RuntimeException e) {
+                result.close();
+                throw e;
+            }
+            return result;
         }
     }
 
