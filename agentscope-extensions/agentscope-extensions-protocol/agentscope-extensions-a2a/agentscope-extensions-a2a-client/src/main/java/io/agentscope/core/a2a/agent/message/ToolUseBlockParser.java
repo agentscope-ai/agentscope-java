@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.DataPart;
-import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Map;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.Part;
 
 /**
  * Parser for {@link ToolUseBlock} to {@link DataPart}.

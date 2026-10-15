@@ -16,9 +16,6 @@
 
 package io.agentscope.core.a2a.agent.utils;
 
-import io.a2a.spec.Artifact;
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.message.ContentBlockParserRouter;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.PartParserRouter;
@@ -27,12 +24,19 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 
 /**
  * Message Converter between Agentscope {@link Msg} and A2A {@link Message} or {@link Artifact}.
@@ -89,11 +93,11 @@ public class MessageConvertUtil {
      */
     public static Msg convertFromMessage(Message message, String agentName) {
         Msg.Builder builder = Msg.builder();
-        builder.id(message.getMessageId());
+        builder.id(message.messageId());
         builder.name(agentName);
-        builder.metadata(null != message.getMetadata() ? message.getMetadata() : Map.of());
+        builder.metadata(null != message.metadata() ? message.metadata() : Map.of());
         builder.role(MsgRole.ASSISTANT);
-        builder.content(convertFromParts(message.getParts()));
+        builder.content(convertFromParts(message.parts()));
         return builder.build();
     }
 
@@ -104,7 +108,7 @@ public class MessageConvertUtil {
      * @return the converted Message object
      */
     public static Message convertFromMsg(List<Msg> msgs) {
-        Message.Builder builder = new Message.Builder();
+        Message.Builder builder = Message.builder();
         Map<String, Object> metadata = new HashMap<>();
         List<Part<?>> parts = new LinkedList<>();
         msgs.stream()
@@ -113,32 +117,22 @@ public class MessageConvertUtil {
                 .forEach(
                         msg -> {
                             if (null != msg.getMetadata() && !msg.getMetadata().isEmpty()) {
-                                metadata.put(msg.getId(), msg.getMetadata());
+                                metadata.put(msg.getId(), toJsonValues(msg.getMetadata()));
+                            }
+                            Map<String, Object> msgMetadata = new HashMap<>();
+                            msgMetadata.put(MessageConstants.MSG_ID_METADATA_KEY, msg.getId());
+                            msgMetadata.put(
+                                    MessageConstants.SOURCE_NAME_METADATA_KEY, msg.getName());
+                            if (msg.getRole() != null) {
+                                msgMetadata.put(
+                                        MessageConstants.MSG_ROLE_METADATA_KEY,
+                                        msg.getRole().name());
                             }
                             parts.addAll(
                                     msg.getContent().stream()
                                             .map(CONTENT_BLOCK_PARSER::parse)
                                             .filter(Objects::nonNull)
-                                            .peek(
-                                                    part -> {
-                                                        part.getMetadata()
-                                                                .put(
-                                                                        MessageConstants
-                                                                                .MSG_ID_METADATA_KEY,
-                                                                        msg.getId());
-                                                        part.getMetadata()
-                                                                .put(
-                                                                        MessageConstants
-                                                                                .SOURCE_NAME_METADATA_KEY,
-                                                                        msg.getName());
-                                                        if (msg.getRole() != null) {
-                                                            part.getMetadata()
-                                                                    .put(
-                                                                            MessageConstants
-                                                                                    .MSG_ROLE_METADATA_KEY,
-                                                                            msg.getRole().name());
-                                                        }
-                                                    })
+                                            .map(part -> withMetadata(part, msgMetadata))
                                             .toList());
                         });
         return builder.parts(parts).metadata(metadata).role(resolveMessageRole(msgs)).build();
@@ -156,14 +150,75 @@ public class MessageConvertUtil {
         if (roles.size() == 1) {
             return roles.get(0);
         }
-        return Message.Role.USER;
+        return Message.Role.ROLE_USER;
     }
 
     private static Message.Role convertRole(MsgRole role) {
         if (role == MsgRole.ASSISTANT || role == MsgRole.TOOL) {
-            return Message.Role.AGENT;
+            return Message.Role.ROLE_AGENT;
         }
-        return Message.Role.USER;
+        return Message.Role.ROLE_USER;
+    }
+
+    /**
+     * Get the metadata of a {@link Part}.
+     *
+     * @param part the part
+     * @return the metadata, or {@code null} if the part has none
+     */
+    public static Map<String, Object> metadataOf(Part<?> part) {
+        if (part instanceof TextPart textPart) {
+            return textPart.metadata();
+        }
+        if (part instanceof DataPart dataPart) {
+            return dataPart.metadata();
+        }
+        if (part instanceof FilePart filePart) {
+            return filePart.metadata();
+        }
+        return null;
+    }
+
+    /**
+     * Copy a {@link Part} with {@code extra} added to its metadata. Parts are immutable. The
+     * metadata, and the data of a {@link DataPart}, are converted with {@link #toJsonValues(Map)}.
+     *
+     * @param part the part to copy
+     * @param extra the metadata to add, overriding entries with the same key
+     * @return the copy
+     */
+    public static Part<?> withMetadata(Part<?> part, Map<String, Object> extra) {
+        Map<String, Object> metadata = new HashMap<>();
+        if (metadataOf(part) != null) {
+            metadata.putAll(metadataOf(part));
+        }
+        metadata.putAll(extra);
+        if (part instanceof TextPart textPart) {
+            return new TextPart(textPart.text(), toJsonValues(metadata));
+        }
+        if (part instanceof DataPart dataPart) {
+            return new DataPart(toJsonValue(dataPart.data()), toJsonValues(metadata));
+        }
+        if (part instanceof FilePart filePart) {
+            return new FilePart(filePart.file(), toJsonValues(metadata));
+        }
+        return part;
+    }
+
+    /**
+     * Convert values to JSON values: maps, lists, strings, numbers, booleans and {@code null}. The
+     * A2A SDK writes any other object, such as a POJO or an enum, as {@code null}.
+     *
+     * @param values the values to convert
+     * @return the converted values, or {@code null} if {@code values} is {@code null}
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> toJsonValues(Map<String, Object> values) {
+        return (Map<String, Object>) toJsonValue(values);
+    }
+
+    private static Object toJsonValue(Object value) {
+        return JsonUtils.getJsonCodec().convertValue(value, Object.class);
     }
 
     private static boolean isNotEmptyCollection(Collection<?> collection) {
@@ -213,7 +268,7 @@ public class MessageConvertUtil {
     }
 
     private static String getMetadataValue(Part<?> part, String key) {
-        Map<String, Object> metadata = part.getMetadata();
+        Map<String, Object> metadata = metadataOf(part);
         if (metadata == null) {
             return null;
         }

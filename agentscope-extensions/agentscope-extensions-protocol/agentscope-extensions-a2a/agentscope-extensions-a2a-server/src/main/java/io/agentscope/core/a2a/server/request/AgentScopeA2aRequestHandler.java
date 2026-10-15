@@ -16,36 +16,119 @@
 
 package io.agentscope.core.a2a.server.request;
 
-import io.a2a.server.agentexecution.AgentExecutor;
-import io.a2a.server.events.InMemoryQueueManager;
-import io.a2a.server.events.QueueManager;
-import io.a2a.server.requesthandlers.DefaultRequestHandler;
-import io.a2a.server.requesthandlers.RequestHandler;
-import io.a2a.server.tasks.BasePushNotificationSender;
-import io.a2a.server.tasks.InMemoryPushNotificationConfigStore;
-import io.a2a.server.tasks.InMemoryTaskStore;
-import io.a2a.server.tasks.PushNotificationConfigStore;
-import io.a2a.server.tasks.PushNotificationSender;
-import io.a2a.server.tasks.TaskStateProvider;
-import io.a2a.server.tasks.TaskStore;
-import io.a2a.spec.Task;
 import java.lang.reflect.Field;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Flow;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTasksResult;
+import org.a2aproject.sdk.server.ServerCallContext;
+import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
+import org.a2aproject.sdk.server.auth.TaskOperation;
+import org.a2aproject.sdk.server.events.InMemoryQueueManager;
+import org.a2aproject.sdk.server.events.MainEventBus;
+import org.a2aproject.sdk.server.events.MainEventBusProcessor;
+import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.requesthandlers.DefaultRequestHandler;
+import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
+import org.a2aproject.sdk.server.tasks.BasePushNotificationSender;
+import org.a2aproject.sdk.server.tasks.DefaultPushNotificationUrlValidator;
+import org.a2aproject.sdk.server.tasks.InMemoryPushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationSender;
+import org.a2aproject.sdk.server.tasks.TaskStateProvider;
+import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.A2AError;
+import org.a2aproject.sdk.spec.CancelTaskParams;
+import org.a2aproject.sdk.spec.DeleteTaskPushNotificationConfigParams;
+import org.a2aproject.sdk.spec.EventKind;
+import org.a2aproject.sdk.spec.GetTaskPushNotificationConfigParams;
+import org.a2aproject.sdk.spec.ListTaskPushNotificationConfigsParams;
+import org.a2aproject.sdk.spec.ListTaskPushNotificationConfigsResult;
+import org.a2aproject.sdk.spec.ListTasksParams;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.StreamingEventKind;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskIdParams;
+import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
+import org.a2aproject.sdk.spec.TaskQueryParams;
 
 /**
- * The Wrapper for Default {@link RequestHandler} implementation.
+ * The {@link RequestHandler} of an AgentScope A2A server, backed by the SDK's {@link
+ * DefaultRequestHandler} and the components it needs.
  */
-public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implements RequestHandler {
+public class AgentScopeA2aRequestHandler implements RequestHandler {
 
-    private AgentScopeA2aRequestHandler(
-            AgentExecutor agentExecutor,
-            TaskStore taskStore,
-            QueueManager queueManager,
-            PushNotificationConfigStore pushConfigStore,
-            PushNotificationSender pushSender,
-            Executor executor) {
-        super(agentExecutor, taskStore, queueManager, pushConfigStore, pushSender, executor);
+    private final DefaultRequestHandler delegate;
+
+    private AgentScopeA2aRequestHandler(DefaultRequestHandler delegate) {
+        this.delegate = delegate;
+    }
+
+    @Override
+    public Task onGetTask(TaskQueryParams params, ServerCallContext context) throws A2AError {
+        return delegate.onGetTask(params, context);
+    }
+
+    @Override
+    public ListTasksResult onListTasks(ListTasksParams params, ServerCallContext context)
+            throws A2AError {
+        return delegate.onListTasks(params, context);
+    }
+
+    @Override
+    public Task onCancelTask(CancelTaskParams params, ServerCallContext context) throws A2AError {
+        return delegate.onCancelTask(params, context);
+    }
+
+    @Override
+    public EventKind onMessageSend(MessageSendParams params, ServerCallContext context)
+            throws A2AError {
+        return delegate.onMessageSend(params, context);
+    }
+
+    @Override
+    public Flow.Publisher<StreamingEventKind> onMessageSendStream(
+            MessageSendParams params, ServerCallContext context) throws A2AError {
+        return delegate.onMessageSendStream(params, context);
+    }
+
+    @Override
+    public TaskPushNotificationConfig onCreateTaskPushNotificationConfig(
+            TaskPushNotificationConfig params, ServerCallContext context) throws A2AError {
+        return delegate.onCreateTaskPushNotificationConfig(params, context);
+    }
+
+    @Override
+    public TaskPushNotificationConfig onGetTaskPushNotificationConfig(
+            GetTaskPushNotificationConfigParams params, ServerCallContext context) throws A2AError {
+        return delegate.onGetTaskPushNotificationConfig(params, context);
+    }
+
+    @Override
+    public Flow.Publisher<StreamingEventKind> onSubscribeToTask(
+            TaskIdParams params, ServerCallContext context) throws A2AError {
+        return delegate.onSubscribeToTask(params, context);
+    }
+
+    @Override
+    public ListTaskPushNotificationConfigsResult onListTaskPushNotificationConfigs(
+            ListTaskPushNotificationConfigsParams params, ServerCallContext context)
+            throws A2AError {
+        return delegate.onListTaskPushNotificationConfigs(params, context);
+    }
+
+    @Override
+    public void onDeleteTaskPushNotificationConfig(
+            DeleteTaskPushNotificationConfigParams params, ServerCallContext context)
+            throws A2AError {
+        delegate.onDeleteTaskPushNotificationConfig(params, context);
+    }
+
+    @Override
+    public void authorizeTaskAccess(
+            String requestedTaskId, ServerCallContext context, TaskOperation operation)
+            throws A2AError {
+        delegate.authorizeTaskAccess(requestedTaskId, context, operation);
     }
 
     public static Builder builder() {
@@ -57,6 +140,8 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
         private AgentExecutor agentExecutor;
 
         private TaskStore taskStore;
+
+        private MainEventBus mainEventBus;
 
         private QueueManager queueManager;
 
@@ -74,6 +159,26 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
             return this;
         }
 
+        /**
+         * Set the bus that carries events from the queues to the processor that persists and
+         * dispatches them. A custom {@link #queueManager(QueueManager) queue manager} must be
+         * created with this bus. By default, a new bus is created.
+         *
+         * @param mainEventBus the event bus
+         * @return this builder
+         */
+        public Builder mainEventBus(MainEventBus mainEventBus) {
+            this.mainEventBus = mainEventBus;
+            return this;
+        }
+
+        /**
+         * Set the queue manager. It must be created with the {@link #mainEventBus(MainEventBus)
+         * event bus} of this handler.
+         *
+         * @param queueManager the queue manager
+         * @return this builder
+         */
         public Builder queueManager(QueueManager queueManager) {
             this.queueManager = queueManager;
             return this;
@@ -96,31 +201,42 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
             if (null == taskStore) {
                 taskStore = new InMemoryTaskStore();
             }
+            if (null == mainEventBus) {
+                mainEventBus = new MainEventBus();
+            }
             if (null == queueManager) {
-                if (taskStore instanceof InMemoryTaskStore inMemoryTaskStore) {
-                    queueManager = new InMemoryQueueManager(inMemoryTaskStore);
-                } else {
-                    queueManager =
-                            new InMemoryQueueManager(new AgentScopeTaskStateProvider(taskStore));
-                }
+                TaskStateProvider stateProvider =
+                        taskStore instanceof TaskStateProvider provider
+                                ? provider
+                                : new AgentScopeTaskStateProvider(taskStore);
+                queueManager = new InMemoryQueueManager(stateProvider, mainEventBus);
             }
             if (null == pushConfigStore) {
                 pushConfigStore = new InMemoryPushNotificationConfigStore();
             }
             if (null == pushSender) {
-                pushSender = new BasePushNotificationSender(pushConfigStore);
+                pushSender =
+                        new BasePushNotificationSender(
+                                pushConfigStore, new DefaultPushNotificationUrlValidator());
             }
-            AgentScopeA2aRequestHandler result =
-                    new AgentScopeA2aRequestHandler(
-                            agentExecutor,
-                            taskStore,
-                            queueManager,
-                            pushConfigStore,
-                            pushSender,
+            MainEventBusProcessor mainEventBusProcessor =
+                    new MainEventBusProcessor(mainEventBus, taskStore, pushSender, queueManager);
+            DefaultRequestHandler delegate =
+                    DefaultRequestHandler.builder()
+                            .agentExecutor(agentExecutor)
+                            .taskStore(taskStore)
+                            .queueManager(queueManager)
+                            .pushConfigStore(pushConfigStore)
+                            .mainEventBusProcessor(mainEventBusProcessor)
                             // TODO support custom executor.
-                            Executors.newCachedThreadPool());
-            setTimeoutProperties(result);
-            return result;
+                            .executor(Executors.newCachedThreadPool())
+                            .eventConsumerExecutor(Executors.newCachedThreadPool())
+                            // AgentScope does not authenticate callers yet; with authorization
+                            // required and no provider, every task operation is rejected.
+                            .authorizationRequired(false)
+                            .build();
+            setTimeoutProperties(delegate);
+            return new AgentScopeA2aRequestHandler(delegate);
         }
 
         /**
@@ -157,9 +273,9 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
                 return false;
             }
             // Task is active if not in final state
-            return task.getStatus() == null
-                    || task.getStatus().state() == null
-                    || !task.getStatus().state().isFinal();
+            return task.status() == null
+                    || task.status().state() == null
+                    || !task.status().state().isFinal();
         }
 
         @Override
@@ -169,9 +285,9 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
                 return false;
             }
             // Task is finalized if in final state (ignores grace period)
-            return task.getStatus() != null
-                    && task.getStatus().state() != null
-                    && task.getStatus().state().isFinal();
+            return task.status() != null
+                    && task.status().state() != null
+                    && task.status().state().isFinal();
         }
     }
 }

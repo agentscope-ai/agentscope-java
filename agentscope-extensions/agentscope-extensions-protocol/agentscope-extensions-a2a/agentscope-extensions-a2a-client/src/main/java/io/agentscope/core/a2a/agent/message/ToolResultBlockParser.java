@@ -16,11 +16,13 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.DataPart;
-import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.util.JsonUtils;
+import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.Part;
 
 /**
  * Parser for {@link ToolResultBlock} to {@link DataPart}.
@@ -35,8 +37,15 @@ public class ToolResultBlockParser implements ContentBlockParser<ToolResultBlock
         metadata.put(MessageConstants.TOOL_NAME_METADATA_KEY, contentBlock.getName());
         metadata.put(MessageConstants.TOOL_CALL_ID_METADATA_KEY, contentBlock.getId());
         metadata.putAll(contentBlock.getMetadata());
+        // Plain JSON values: the SDK writes data with Gson, which ignores the block type
+        // annotations.
+        // Each block is converted on its own, so that its type is written.
+        List<Object> outputJson =
+                contentBlock.getOutput().stream()
+                        .map(block -> JsonUtils.getJsonCodec().convertValue(block, Object.class))
+                        .toList();
         Map<String, Object> output =
-                Map.of(MessageConstants.TOOL_RESULT_OUTPUT_METADATA_KEY, contentBlock.getOutput());
+                Map.of(MessageConstants.TOOL_RESULT_OUTPUT_METADATA_KEY, outputJson);
         return new DataPart(output, metadata);
     }
 }

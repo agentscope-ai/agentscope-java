@@ -3,12 +3,14 @@ title: A2A
 en_link: /v2/en/integration/protocol/a2a
 ---
 
-`agentscope-extensions-a2a` 实现了 [A2A 协议](https://a2aproject.github.io/A2A/)，包含两个子模块：
+`agentscope-extensions-a2a` 基于 A2A Java SDK 实现了 [A2A 协议](https://a2aproject.github.io/A2A/) 1.0 版本，包含两个子模块：
 
 - `agentscope-extensions-a2a-client`：把一个远端 A2A Agent 包装成本地 `Agent`，可以直接 `agent.call(...)`。
 - `agentscope-extensions-a2a-server`：把本地 `ReActAgent` 暴露成 A2A Server。
 
 两个模块完全独立，可以单用其一。
+
+不支持 A2A 0.3：客户端无法调用 A2A 0.3 的 Agent；A2A 0.3 客户端的请求不带 `A2A-Version` 请求头，服务端会以版本错误拒绝。
 
 ## 客户端：调用远端 A2A Agent
 
@@ -25,12 +27,14 @@ en_link: /v2/en/integration/protocol/a2a
 ### 直接传入 AgentCard
 
 ```java
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.agent.A2aAgent;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
 
 AgentCard card = AgentCard.builder()
     .name("remote-translator")
-    .url("http://other-service:8080")
+    // 第一个接口是首选接口
+    .supportedInterfaces(List.of(new AgentInterface("JSONRPC", "http://other-service:8080")))
     // ...
     .build();
 
@@ -104,7 +108,7 @@ server.postEndpointReady();   // Web 服务监听端口后再调用，触发注�
 ### 可选组件
 
 - `TaskStore` / `QueueManager`：任务和事件队列存储，默认是内存实现，生产可换成持久化版本。
-- `PushNotificationConfigStore` / `PushNotificationSender`：推送通知。
+- `PushNotificationConfigStore` / `PushNotificationSender`：推送通知。默认的发送器只向非内网的 HTTPS 地址推送。
 - `AgentRegistry`：把 `AgentCard` 注册到外部注册中心（如 Nacos，见 [Nacos](/v2/zh/integration/infrastructure/nacos)）。
 
 ## Spring Boot Starter
@@ -129,6 +133,8 @@ agentscope:
         security:
           - bearerAuth: []
 ```
+
+OAuth 2.0 方案支持 `authorization-code`（可设 `pkce-required`）、`client-credentials` 和 `device-code` 三种流程。A2A 1.0 没有 `implicit` 和 `password` 流程，配置了会启动失败。
 
 Map 的键含特殊字符时（例如 OAuth scope 名 `read:user` 或 URL），请用引号加方括号写成 `"[read:user]": 读取用户信息`。不加方括号时，`:`、`/` 等字符会被去掉；`security-schemes` 的名称如果含 `.`，会被当作嵌套路径，该方案不会生效。
 

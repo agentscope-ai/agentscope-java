@@ -26,14 +26,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.server.events.QueueManager;
-import io.a2a.server.requesthandlers.RequestHandler;
-import io.a2a.server.tasks.PushNotificationConfigStore;
-import io.a2a.server.tasks.PushNotificationSender;
-import io.a2a.server.tasks.TaskStore;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.TransportProtocol;
-import io.a2a.util.Utils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
@@ -45,6 +37,14 @@ import io.agentscope.core.a2a.server.transport.TransportWrapper;
 import io.agentscope.core.a2a.server.transport.TransportWrapperBuilder;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.concurrent.Executor;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
+import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
+import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationSender;
+import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -169,7 +169,7 @@ class AgentScopeA2aServerTest {
 
             assertEquals(
                     server.getAgentCard(),
-                    Utils.OBJECT_MAPPER.readValue(server.getAgentCardJson(), AgentCard.class));
+                    JsonUtil.fromJson(server.getAgentCardJson(), AgentCard.class));
         }
 
         @Test
