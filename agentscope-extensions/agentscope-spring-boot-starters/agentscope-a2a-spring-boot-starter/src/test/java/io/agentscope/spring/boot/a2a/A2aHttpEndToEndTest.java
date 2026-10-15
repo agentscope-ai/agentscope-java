@@ -213,10 +213,6 @@ class A2aHttpEndToEndTest {
     }
 
     @Test
-    @Disabled(
-            "AgentScopeAgentExecutor.cancel() cancels the upstream subscription, so the blocking"
-                    + " execution never receives a terminal signal and stays blocked; re-enable"
-                    + " once cancellation releases the execution (#3546)")
     void interruptCancelsRemoteTask() throws Exception {
         Sinks.Empty<Void> release = Sinks.empty();
         runner.script(
