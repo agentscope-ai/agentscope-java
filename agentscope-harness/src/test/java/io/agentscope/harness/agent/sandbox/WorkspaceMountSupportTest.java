@@ -75,4 +75,25 @@ class WorkspaceMountSupportTest {
         assertEquals(
                 "/workspace/repo", WorkspaceMountSupport.containerMountPath("/workspace/", "repo"));
     }
+
+    @Test
+    void tarExcludeArgsForAbsolutePaths_onlyNestedMounts() {
+        assertEquals(
+                List.of("--exclude=./data"),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(
+                        "/home/user", List.of("/home/user/data")));
+        assertEquals(
+                List.of(),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(
+                        "/home/user", List.of("/home/user")));
+        assertEquals(
+                List.of(),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(
+                        "/home/user", List.of("/mnt/data", "/home/user-x")));
+        assertEquals(
+                List.of("--exclude=./a/b"),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(
+                        "/home/user/", List.of("/home/user/a/b/")));
+        assertEquals(List.of(), WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(null, null));
+    }
 }
