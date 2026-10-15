@@ -365,16 +365,18 @@ class AgentSkillPromptProviderTest {
 
         assertTrue(
                 prompt.contains(
-                        "<skill-id>host-forensics-client_filesystem-agentscope_skills</skill-id>"));
+                        "<skill-id>host-forensics-client__s__filesystem-agentscope_skills"
+                                + "</skill-id>"));
         assertFalse(
-                prompt.contains("<skill-id>other-skill_filesystem-agentscope_skills</skill-id>"));
+                prompt.contains(
+                        "<skill-id>other-skill__s__filesystem-agentscope_skills</skill-id>"));
     }
 
     @Test
     @DisplayName("Should hide skill disabled by name")
     void testFilterDisableByNameHidesSkill() {
-        AgentSkill visible = new AgentSkill("visible", "visible", "# Content", null);
-        AgentSkill hidden = new AgentSkill("hidden", "hidden", "# Content", null);
+        AgentSkill visible = new AgentSkill("visible", "visible", "# Content", null, "demo");
+        AgentSkill hidden = new AgentSkill("hidden", "hidden", "# Content", null, "demo");
         skillRegistry.registerSkill(visible.getSkillId(), visible);
         skillRegistry.registerSkill(hidden.getSkillId(), hidden);
 
@@ -382,8 +384,8 @@ class AgentSkillPromptProviderTest {
                 provider.getSkillSystemPrompt(
                         SkillFilter.all().overlay(SkillFilter.disable("hidden")));
 
-        assertTrue(prompt.contains("<skill-id>visible_custom</skill-id>"));
-        assertFalse(prompt.contains("<skill-id>hidden_custom</skill-id>"));
+        assertTrue(prompt.contains("<skill-id>visible__s__demo</skill-id>"));
+        assertFalse(prompt.contains("<skill-id>hidden__s__demo</skill-id>"));
     }
 
     @Test
