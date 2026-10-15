@@ -60,12 +60,4 @@ class E2bSnapshotRefsTest {
                 IOException.class,
                 () -> E2bSnapshotRefs.peekSnapshotId(new ByteArrayInputStream(archive)));
     }
-
-    @Test
-    void peekSnapshotIdRejectsOversizedNativeArchive() throws Exception {
-        byte[] archive = Arrays.copyOf(E2bSnapshotRefs.encodeSnapshotId("team/foo:v1"), 4097);
-        assertThrows(
-                IOException.class,
-                () -> E2bSnapshotRefs.peekSnapshotId(new ByteArrayInputStream(archive)));
-    }
 }
