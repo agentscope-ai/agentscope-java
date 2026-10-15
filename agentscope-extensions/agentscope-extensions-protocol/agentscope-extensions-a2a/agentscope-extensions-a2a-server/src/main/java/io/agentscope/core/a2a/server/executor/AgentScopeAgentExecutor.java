@@ -92,14 +92,21 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     public void cancel(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
         String taskId = context.getTaskId();
         RunningExecution execution = executions.get(taskId);
+        AtomicBoolean cancelledHere = new AtomicBoolean();
         try {
             log.info("[{}] Start to Cancel Task", taskId);
             TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
             if (null == execution) {
                 log.warn("[{}] Not found Subscription for Task.", taskId);
                 taskUpdater.cancel();
-            } else if (!execution.cancel(taskUpdater::cancel)) {
-                // Completion or failure was published first. A JSONRPCError, so not caught below.
+            } else if (!execution.cancel(
+                    () -> {
+                        cancelledHere.set(true);
+                        taskUpdater.cancel();
+                    })) {
+                // Completion or failure was published first. The SDK only drains and closes this
+                // queue when cancel returns, so close it here. A JSONRPCError, not caught below.
+                eventQueue.close();
                 throw new TaskNotCancelableError(
                         "Task cannot be canceled - it has already finished");
             }
@@ -107,7 +114,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         } catch (Exception e) {
             log.error("[{}] Error while cancelling task.", taskId, e);
         } finally {
-            if (null != execution && execution.isCancelled()) {
+            if (cancelledHere.get()) {
                 // End the execution even if stop() failed or left the agent stream running.
                 execution.end();
             }
@@ -230,7 +237,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             RunningExecution execution) {
         TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
         try {
-            eventQueue.enqueueEvent(task);
+            execution.publishIfRunning(() -> eventQueue.enqueueEvent(task));
             log.info("[{}] Starting streaming request processing", context.getTaskId());
             processStreamingOutput(resultFlux, taskUpdater, context, execution);
         } catch (Exception e) {
@@ -285,9 +292,10 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
      * State of one execution, shared by {@link #execute} and {@link #cancel}.
      *
      * <p>Cancelling, completing and failing each publish a terminal state for the task. State
-     * checks and the events they guard are published under this object's lock, so the task gets
-     * one terminal state and no output after it. Never call the agent runner while holding the
-     * lock: it may call back into the event handlers.
+     * checks and the events they guard are published under this object's lock: once the task is
+     * cancelled nothing else is published, and cancelling after completion or failure is rejected.
+     * Never call the agent runner while holding the lock: it may call back into the event
+     * handlers.
      *
      * <p>{@link #ended()} is applied with {@code takeUntilOther} after the event handlers, so
      * {@link #end()} stops the agent stream and completes the downstream: {@code blockLast()}
@@ -340,10 +348,6 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             }
             state = State.FINISHED;
             publish.run();
-        }
-
-        synchronized boolean isCancelled() {
-            return state == State.CANCELLED;
         }
 
         void end() {

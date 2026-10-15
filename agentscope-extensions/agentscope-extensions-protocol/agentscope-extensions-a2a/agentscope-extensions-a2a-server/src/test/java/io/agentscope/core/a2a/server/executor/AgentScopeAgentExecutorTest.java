@@ -885,6 +885,7 @@ class AgentScopeAgentExecutorTest {
             assertEquals(1, events.stream().filter(Message.class::isInstance).count());
             assertFalse(statesOf(events).contains(TaskState.CANCELED));
             verify(mockAgentRunner, never()).stop(taskId);
+            verify(mockEventQueue).close();
         }
 
         @Test
@@ -948,6 +949,7 @@ class AgentScopeAgentExecutorTest {
             assertInstanceOf(TaskNotCancelableError.class, cancelResult.get());
             assertEquals(1, events.size(), "only the failure message, got " + events);
             assertInstanceOf(Message.class, events.get(0));
+            verify(mockEventQueue).close();
         }
 
         @Test
@@ -966,6 +968,61 @@ class AgentScopeAgentExecutorTest {
             runExecution(() -> {});
 
             assertCancelledOnce(events);
+        }
+
+        @Test
+        @DisplayName("A rejected second cancel should leave ending the execution to the first")
+        void testRejectedSecondCancelLeavesExecutionToFirst() throws Exception {
+            String taskId = doMockForContext(true, false, false);
+            CountDownLatch firstEvent = new CountDownLatch(1);
+            List<String> order = new CopyOnWriteArrayList<>();
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.<AgentEvent>just(
+                                            new TextBlockDeltaEvent("reply-id", "block-id", "part"))
+                                    .concatWith(Flux.never())
+                                    .doOnNext(event -> firstEvent.countDown())
+                                    .doOnCancel(() -> order.add("agent stream cancelled")));
+            CountDownLatch firstStopping = new CountDownLatch(1);
+            CountDownLatch secondReturned = new CountDownLatch(1);
+            doAnswer(
+                            invocation -> {
+                                firstStopping.countDown();
+                                awaitQuietly(secondReturned);
+                                order.add("agent stopped");
+                                return null;
+                            })
+                    .when(mockAgentRunner)
+                    .stop(taskId);
+            recordEnqueuedEvents();
+            AtomicReference<Throwable> secondResult = new AtomicReference<>();
+
+            runExecution(
+                    () -> {
+                        assertTrue(firstEvent.await(5, TimeUnit.SECONDS));
+                        withThread(
+                                cancelThread -> {
+                                    Future<?> first =
+                                            cancelThread.submit(
+                                                    () -> {
+                                                        executor.cancel(
+                                                                mockContext, mockEventQueue);
+                                                        return null;
+                                                    });
+                                    assertTrue(firstStopping.await(5, TimeUnit.SECONDS));
+                                    try {
+                                        executor.cancel(mockContext, mockEventQueue);
+                                    } catch (Throwable t) {
+                                        secondResult.set(t);
+                                    }
+                                    secondReturned.countDown();
+                                    first.get(5, TimeUnit.SECONDS);
+                                });
+                    });
+
+            assertInstanceOf(TaskNotCancelableError.class, secondResult.get());
+            verify(mockAgentRunner).stop(taskId);
+            assertEquals(List.of("agent stopped", "agent stream cancelled"), order);
         }
 
         @Test
@@ -1070,6 +1127,10 @@ class AgentScopeAgentExecutorTest {
             assertFalse(
                     events.stream().anyMatch(Message.class::isInstance),
                     "a cancelled task must not send a result or error message");
+            assertTrue(
+                    events.get(events.size() - 1) instanceof TaskStatusUpdateEvent last
+                            && last.getStatus().state() == TaskState.CANCELED,
+                    "nothing may be published after CANCELED, got " + events);
         }
 
         @Test
