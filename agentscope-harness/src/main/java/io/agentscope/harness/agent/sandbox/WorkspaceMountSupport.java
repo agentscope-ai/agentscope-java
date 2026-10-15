@@ -95,19 +95,44 @@ public final class WorkspaceMountSupport {
                 || absoluteMountPaths.isEmpty()) {
             return List.of();
         }
-        String root = stripTrailingSlash(workspaceRoot.replace('\\', '/'));
+        String root = normalizeVirtualPath(workspaceRoot);
         List<String> args = new ArrayList<>();
         for (String raw : absoluteMountPaths) {
             if (raw == null || raw.isBlank()) {
                 continue;
             }
-            String mount = stripTrailingSlash(raw.replace('\\', '/'));
-            if (!mount.startsWith("/") || mount.equals(root) || !mount.startsWith(root + "/")) {
+            String mount = normalizeVirtualPath(raw);
+            if (!mount.startsWith("/") || mount.equals(root) || !isBeneath(root, mount)) {
                 continue;
             }
-            args.add("--exclude=./" + mount.substring(root.length() + 1));
+            args.add("--exclude=./" + mount.substring(root.equals("/") ? 1 : root.length() + 1));
         }
         return args;
+    }
+
+    private static boolean isBeneath(String root, String mount) {
+        if (root.equals("/")) {
+            return mount.length() > 1;
+        }
+        return mount.startsWith(root + "/");
+    }
+
+    /**
+     * Shared normalizer for absolute POSIX paths used as sandbox workspace roots or mount paths:
+     * trims surrounding whitespace, converts backslashes to slashes, collapses repeated slashes
+     * and strips a trailing slash (except for the root {@code /} itself). Blank or empty input
+     * yields {@code /}.
+     *
+     * @param raw raw path (may be null or blank)
+     * @return normalized absolute path
+     */
+    public static String normalizeVirtualPath(String raw) {
+        // Collapse repeated slashes first, then drop the (single) trailing slash: the other
+        // order leaves a trailing slash behind for inputs like "//mnt//data//".
+        String normalized =
+                stripTrailingSlash(
+                        raw == null ? "" : raw.strip().replace('\\', '/').replaceAll("/+", "/"));
+        return normalized.isEmpty() ? "/" : normalized;
     }
 
     private static String stripTrailingSlash(String s) {

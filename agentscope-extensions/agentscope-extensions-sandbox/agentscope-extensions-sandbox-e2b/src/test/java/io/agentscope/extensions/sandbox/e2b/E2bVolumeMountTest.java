@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import io.agentscope.harness.agent.sandbox.layout.BindMountEntry;
 import java.util.Collections;
 import java.util.List;
 import okhttp3.mockwebserver.MockResponse;
@@ -303,6 +304,91 @@ class E2bVolumeMountTest {
         assertTrue(
                 script.contains("'--exclude=./my data'"),
                 "exclude with spaces must be shell-quoted, got: " + script);
+        String extract = (String) m.invoke(sandbox, false, "/tmp/ws.tar", "/home/user");
+        assertTrue(
+                extract.contains("'--exclude=./my data'"),
+                "volume excludes must apply to the -xf branch too, got: " + extract);
+    }
+
+    @Test
+    void tarCommandQuotesBindMountExcludeArgs() throws Exception {
+        E2bSandboxState state = new E2bSandboxState();
+        WorkspaceSpec ws = workspaceSpec();
+        BindMountEntry bind = new BindMountEntry();
+        bind.setHostPath("/host/shared dir");
+        bind.setReadOnly(false);
+        ws.getEntries().put("my shares", bind);
+        state.setWorkspaceSpec(ws);
+        state.setWorkspaceRoot("/home/user");
+        E2bSandbox sandbox = new E2bSandbox(state, options());
+
+        java.lang.reflect.Method m =
+                E2bSandbox.class.getDeclaredMethod(
+                        "buildTarCommand", boolean.class, String.class, String.class);
+        m.setAccessible(true);
+        String script = (String) m.invoke(sandbox, true, "/tmp/ws.tar", "/home/user");
+        assertTrue(
+                script.contains("'--exclude=./my shares'"),
+                "bind-mount exclude with spaces must be shell-quoted, got: " + script);
+        String extract = (String) m.invoke(sandbox, false, "/tmp/ws.tar", "/home/user");
+        assertTrue(
+                extract.contains("'--exclude=./my shares'"),
+                "bind-mount excludes must be quoted on the -xf branch too, got: " + extract);
+    }
+
+    @Test
+    void workspaceOnVolumeBranchesAreNoOpsWithoutEnvd() throws Exception {
+        E2bSandboxState state = new E2bSandboxState();
+        state.setWorkspaceSpec(workspaceSpec());
+        state.setWorkspaceRoot("/mnt/data/ws");
+        state.setVolumeMounts(List.of(new E2bVolumeMount("vol-a", "/mnt/data")));
+        state.setWorkspaceOnVolume(true);
+        // No sandboxId and no reachable envd: any backend call would fail,
+        // proving the no-op branches short-circuit before touching envd.
+        E2bSandbox sandbox = new E2bSandbox(state, options());
+
+        try (java.io.InputStream archive = sandbox.persistWorkspace()) {
+            assertEquals(0, archive.readAllBytes().length);
+        }
+        sandbox.hydrateWorkspace(java.io.InputStream.nullInputStream());
+        invokeDoDestroyWorkspace(sandbox);
+    }
+
+    @Test
+    void stateRejectsDuplicateMountPaths() {
+        E2bSandboxState state = new E2bSandboxState();
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () ->
+                        state.setVolumeMounts(
+                                List.of(
+                                        new E2bVolumeMount("vol-a", "/mnt/data"),
+                                        new E2bVolumeMount("vol-b", "/mnt/data/"))));
+    }
+
+    @Test
+    void serdeIgnoresUnknownFieldsForForwardCompat() {
+        E2bSandboxClient client = new E2bSandboxClient();
+        E2bSandboxState read =
+                (E2bSandboxState)
+                        client.deserializeState(
+                                "{\"type\":\"e2b\",\"sessionId\":\"fwd\",\"workspaceRoot\":\"/home/user\","
+                                    + "\"someFutureField\":1}");
+        assertEquals("fwd", read.getSessionId());
+        assertTrue(read.getVolumeMounts().isEmpty());
+    }
+
+    private static void invokeDoDestroyWorkspace(E2bSandbox sandbox) throws Exception {
+        java.lang.reflect.Method m = E2bSandbox.class.getDeclaredMethod("doDestroyWorkspace");
+        m.setAccessible(true);
+        try {
+            m.invoke(sandbox);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            if (e.getCause() instanceof Exception cause) {
+                throw cause;
+            }
+            throw e;
+        }
     }
 
     private E2bSandboxClientOptions options() {

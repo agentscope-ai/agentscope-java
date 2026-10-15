@@ -224,10 +224,11 @@ Platform 400s (no beta access, unknown volume name) propagate with the response 
 
 When `workspaceRoot` sits on a volume mount, TAR workspace persistence becomes a no-op
 (the bytes are already durable) and destroy skips `rm -rf`; native snapshots still run so
-the software environment (installed deps, system state) is preserved. Volume lifecycle
+the software environment (installed deps, system state) is preserved. E2B volumes are
+read-write and can be mounted by multiple sandboxes at once with no locking guarantees —
+treat the workspace-on-volume layout as single-writer. Volume lifecycle
 management (create/delete/list) stays in the E2B dashboard/SDK — this covers attach-at-create
 only.
-
 
 #### Daytona sandbox
 

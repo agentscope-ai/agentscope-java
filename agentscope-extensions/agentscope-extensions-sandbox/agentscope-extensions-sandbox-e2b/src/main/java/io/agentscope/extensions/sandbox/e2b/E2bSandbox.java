@@ -175,7 +175,10 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
             return new ByteArrayInputStream(E2bSnapshotRefs.encodeSnapshotId(id));
         }
         if (e2bState.isWorkspaceOnVolume()) {
-            // Workspace bytes are durable via the volume — nothing to archive.
+            // Workspace bytes are durable via the volume — nothing to archive. The empty stream
+            // doubles as the no-op marker read back by doHydrateWorkspace: a session flipping
+            // between volume-backed and plain persistence replaces a real archive with this
+            // empty one, meaning "hydrate nothing, the volume already holds the files".
             return InputStream.nullInputStream();
         }
         String root = e2bState.getWorkspaceRoot();
@@ -206,8 +209,9 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     protected void doHydrateWorkspace(InputStream archive) throws Exception {
         byte[] all = archive.readAllBytes();
         if (all.length == 0) {
-            // Volume-backed workspaces persist nothing to hydrate; an empty archive is the
-            // expected no-op marker, not an error.
+            // Volume-backed workspaces persist nothing to hydrate (see doPersistWorkspace); the
+            // empty archive is an intentional no-op marker, not an error, and must not overwrite
+            // what a previous non-volume archive contained.
             return;
         }
         String nativeId = E2bSnapshotRefs.decodeSnapshotIdIfPresent(all);
@@ -240,19 +244,11 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
 
     @Override
     protected void doDestroyWorkspace() throws Exception {
-        if (e2bState.isWorkspaceOnVolume()) {
-            // Do not destroy volume-backed workspaces; the mount is shared/persistent.
-            return;
-        }
-        try {
-            envd().runShell(
-                            e2bState,
-                            getWorkspaceRoot(),
-                            "rm -rf " + shellSingleQuote(e2bState.getWorkspaceRoot()),
-                            30);
-        } catch (Exception e) {
-            log.debug("[sandbox-e2b] destroy workspace best-effort: {}", e.getMessage());
-        }
+        // No-op by contract. An E2B workspace's lifetime is bounded by the sandbox itself, so
+        // destruction is delegated to sandbox teardown; running "rm -rf" here beforehand would
+        // stretch a deletion through any nested volume mount into shared, persistent data
+        // without ever having an observable effect (the disk vanishes with the sandbox).
+        log.debug("[sandbox-e2b] workspace destruction is a no-op; sandbox teardown releases it");
     }
 
     @Override
@@ -584,10 +580,13 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
             // Quote: exclude args derive from user-configured paths and may contain spaces.
             script.append(shellSingleQuote(ex)).append(' ');
         }
-        if (create) {
-            for (String ex : volumeTarExcludeArgs()) {
-                script.append(shellSingleQuote(ex)).append(' ');
-            }
+        // Apply volume-mount excludes on both branches. The create branch must not re-duplicate
+        // volume bytes into the archive; the extract branch must not let archive entries that
+        // predate the current mount configuration (e.g. a NATIVE_SNAPSHOT archive written before
+        // the volume was mounted under the workspace root) write through the mount point into
+        // the shared volume.
+        for (String ex : volumeTarExcludeArgs()) {
+            script.append(shellSingleQuote(ex)).append(' ');
         }
         script.append(create ? "-cf " : "-xf ")
                 .append(tarPath)
@@ -616,10 +615,7 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         if (root == null || root.isBlank() || !root.startsWith("/")) {
             return null;
         }
-        String normalizedRoot = root.replace('\\', '/');
-        while (normalizedRoot.length() > 1 && normalizedRoot.endsWith("/")) {
-            normalizedRoot = normalizedRoot.substring(0, normalizedRoot.length() - 1);
-        }
+        String normalizedRoot = WorkspaceMountSupport.normalizeVirtualPath(root);
         String rootPrefix = "/".equals(normalizedRoot) ? "/" : normalizedRoot + "/";
         if (!path.startsWith(rootPrefix)) {
             return null;

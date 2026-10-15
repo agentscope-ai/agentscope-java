@@ -15,7 +15,10 @@
  */
 package io.agentscope.extensions.sandbox.e2b;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -30,7 +33,12 @@ import java.util.Objects;
  * volume name, {@code path} is the absolute in-sandbox mount path. E2B volumes are read-write
  * and the platform defines no mount-path prefix whitelist, so validation only enforces
  * non-blank {@code name} and an absolute {@code path}.
+ *
+ * <p>Unknown JSON properties are ignored: the {@code @JsonIgnoreProperties} on
+ * {@code E2bSandboxState} does not cover this nested type, and a future field inside a mount
+ * entry must not fail deserialization of the whole persisted state.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class E2bVolumeMount {
 
     private String name;
@@ -83,8 +91,9 @@ public class E2bVolumeMount {
     }
 
     /**
-     * Normalizes an in-sandbox mount path: trims whitespace, collapses duplicate slashes and
-     * strips a trailing slash (except for the root {@code /} itself).
+     * Normalizes an in-sandbox mount path: trims whitespace, converts backslashes to slashes,
+     * collapses duplicate slashes and strips a trailing slash (except for the root {@code /}
+     * itself), sharing the single normalizer in {@link WorkspaceMountSupport#normalizeVirtualPath}.
      *
      * @param path raw mount path
      * @return normalized absolute path
@@ -95,13 +104,10 @@ public class E2bVolumeMount {
             throw new SandboxException.SandboxConfigurationException(
                     "E2B volume mount path must be set (absolute in-sandbox path, e.g. /mnt/data)");
         }
-        String normalized = path.strip().replace('\\', '/').replaceAll("/+", "/");
+        String normalized = WorkspaceMountSupport.normalizeVirtualPath(path);
         if (!normalized.startsWith("/")) {
             throw new SandboxException.SandboxConfigurationException(
                     "E2B volume mount path must be absolute but was: " + path);
-        }
-        if (normalized.length() > 1 && normalized.endsWith("/")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
         }
         return normalized;
     }
@@ -128,6 +134,31 @@ public class E2bVolumeMount {
             return true;
         }
         return root.equals(mount) || root.startsWith(mount + "/");
+    }
+
+    /**
+     * Validates that no two mounts share the same in-sandbox path.
+     *
+     * @param mounts mounts to check (null entries are ignored)
+     * @throws SandboxException.SandboxConfigurationException when a path is duplicated
+     */
+    public static void requireDistinctMountPaths(List<E2bVolumeMount> mounts) {
+        if (mounts == null) {
+            return;
+        }
+        for (int i = 0; i < mounts.size(); i++) {
+            if (mounts.get(i) == null) {
+                continue;
+            }
+            for (int j = i + 1; j < mounts.size(); j++) {
+                if (mounts.get(j) != null
+                        && mounts.get(i).getPath().equals(mounts.get(j).getPath())) {
+                    throw new SandboxException.SandboxConfigurationException(
+                            "E2B volume mounts must use distinct paths, duplicated: "
+                                    + mounts.get(i).getPath());
+                }
+            }
+        }
     }
 
     @Override

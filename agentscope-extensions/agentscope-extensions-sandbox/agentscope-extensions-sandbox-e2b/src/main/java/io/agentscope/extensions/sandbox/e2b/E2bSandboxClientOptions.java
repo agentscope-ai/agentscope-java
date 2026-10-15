@@ -17,7 +17,6 @@ package io.agentscope.extensions.sandbox.e2b;
 
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
-import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -235,7 +234,7 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
                 checked.add(new E2bVolumeMount(m.getName(), m.getPath()));
             }
         }
-        requireDistinctMountPaths(checked);
+        E2bVolumeMount.requireDistinctMountPaths(checked);
         this.volumeMounts = checked;
     }
 
@@ -251,18 +250,6 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
             return this;
         }
         return addVolumeMount(mount.getName(), mount.getPath());
-    }
-
-    private static void requireDistinctMountPaths(List<E2bVolumeMount> mounts) {
-        for (int i = 0; i < mounts.size(); i++) {
-            for (int j = i + 1; j < mounts.size(); j++) {
-                if (mounts.get(i).getPath().equals(mounts.get(j).getPath())) {
-                    throw new SandboxException.SandboxConfigurationException(
-                            "E2B volume mounts must use distinct paths, duplicated: "
-                                    + mounts.get(i).getPath());
-                }
-            }
-        }
     }
 
     public int getConnectTimeoutSeconds() {
