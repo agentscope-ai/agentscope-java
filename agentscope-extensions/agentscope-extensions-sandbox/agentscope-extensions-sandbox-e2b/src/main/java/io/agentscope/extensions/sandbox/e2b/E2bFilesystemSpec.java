@@ -21,6 +21,7 @@ import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.function.Supplier;
 
 /** {@link SandboxFilesystemSpec} for E2B cloud sandboxes. */
 public class E2bFilesystemSpec extends SandboxFilesystemSpec {
@@ -81,6 +82,21 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
 
     public E2bFilesystemSpec runUser(String runUser) {
         options.setRunUser(runUser);
+        return this;
+    }
+
+    /** Registers a sandbox-creation environment variable with a fixed value. */
+    public E2bFilesystemSpec env(String name, String value) {
+        options.env(name, value);
+        return this;
+    }
+
+    /**
+     * Registers a sandbox-creation environment variable whose value is resolved on every sandbox
+     * creation — use this for short-lived values such as access tokens.
+     */
+    public E2bFilesystemSpec env(String name, Supplier<String> valueSupplier) {
+        options.env(name, valueSupplier);
         return this;
     }
 

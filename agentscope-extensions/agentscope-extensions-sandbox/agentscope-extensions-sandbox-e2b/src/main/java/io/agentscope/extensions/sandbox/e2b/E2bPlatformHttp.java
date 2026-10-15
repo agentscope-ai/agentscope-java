@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import okhttp3.HttpUrl;
@@ -60,9 +61,18 @@ final class E2bPlatformHttp {
     }
 
     JsonNode createSandbox(String templateId, int timeoutSeconds) throws IOException {
+        return createSandbox(templateId, timeoutSeconds, Map.of());
+    }
+
+    JsonNode createSandbox(String templateId, int timeoutSeconds, Map<String, String> envVars)
+            throws IOException {
         ObjectNode body = json.createObjectNode();
         body.put("templateID", templateId);
         body.put("timeout", timeoutSeconds);
+        if (envVars != null && !envVars.isEmpty()) {
+            ObjectNode envs = body.putObject("envVars");
+            envVars.forEach(envs::put);
+        }
         String url = trimSlash(opt.getApiBaseUrl()) + "/sandboxes";
         return E2bRetry.withRetries(
                 opt.getMaxRetries(), () -> postJson(url, body, /* apiKey */ true));
