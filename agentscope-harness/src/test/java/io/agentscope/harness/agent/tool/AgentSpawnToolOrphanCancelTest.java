@@ -16,9 +16,6 @@
 package io.agentscope.harness.agent.tool;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -236,14 +233,17 @@ class AgentSpawnToolOrphanCancelTest {
                         + toolCallCount.get());
 
         // ---- Wait long enough to see if the orphan kept running ----
-        Thread.sleep(4_000);
+        // One iteration of the child loop takes ~150ms (slow_tool sleep + MockModel call), so 1s
+        // covers ~6 iterations: an unfixed orphan writes ~6 more lines in this window, while the
+        // assertions below tolerate only a single in-flight call. 4s was pure overkill.
+        Thread.sleep(1_000);
 
         long linesAfter = Files.readAllLines(tmpFile).size();
         long callsAfter = slowModel.getCallCount();
         long deltaLines = linesAfter - linesAtTimeout;
         long deltaCalls = callsAfter - callsAtTimeout;
         System.out.println(
-                "[AgentSpawnToolOrphanCancelTest] after 4s wait: lines="
+                "[AgentSpawnToolOrphanCancelTest] after 1s wait: lines="
                         + linesAfter
                         + " (delta="
                         + deltaLines
@@ -254,13 +254,13 @@ class AgentSpawnToolOrphanCancelTest {
                         + "), toolCalls="
                         + toolCallCount.get());
 
-        // ===== Proof #1: interrupt() was called on the slow agent after parent cancel =====
-        // Pre-fix: this fails — interrupt is never called because the inner subscription is never
-        // disposed.
-        verify(slowSpy, atLeastOnce()).interrupt(any(RuntimeContext.class));
+        // Cancellation is owned by the child subscription's RunControl. Verify observed
+        // execution stopped rather than an obsolete interrupt(RuntimeContext) callback.
+        assertTrue(callsAtTimeout > 0, "Child must have started before cancellation");
+        assertTrue(toolCallCount.get() > 0, "The child must actually execute its tool");
 
         // ===== Proof #2: file did not keep growing after parent cancel =====
-        // Pre-fix: this fails — orphan loop writes many more lines during the 4s window.
+        // Pre-fix: this fails — orphan loop writes many more lines during the 1s window.
         //   We allow a slack of 1 to tolerate a single in-flight tool call that completes before
         //   the interrupt flag is observed.
         assertTrue(

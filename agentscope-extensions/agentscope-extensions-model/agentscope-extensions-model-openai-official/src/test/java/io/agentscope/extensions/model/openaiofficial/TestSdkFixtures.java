@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.openaiofficial;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.openai.core.JsonValue;
 import com.openai.core.http.Headers;
 import com.openai.core.http.StreamResponse;
 import com.openai.errors.BadRequestException;
@@ -34,6 +35,7 @@ import com.openai.errors.UnexpectedStatusCodeException;
 import com.openai.errors.UnprocessableEntityException;
 import com.openai.models.ErrorObject;
 import com.openai.models.responses.Response;
+import com.openai.models.responses.ResponseCodeInterpreterToolCall;
 import com.openai.models.responses.ResponseCompletedEvent;
 import com.openai.models.responses.ResponseError;
 import com.openai.models.responses.ResponseErrorEvent;
@@ -42,9 +44,12 @@ import com.openai.models.responses.ResponseFileSearchToolCall;
 import com.openai.models.responses.ResponseFunctionCallArgumentsDeltaEvent;
 import com.openai.models.responses.ResponseFunctionCallArgumentsDoneEvent;
 import com.openai.models.responses.ResponseFunctionToolCall;
+import com.openai.models.responses.ResponseFunctionWebSearch;
+import com.openai.models.responses.ResponseImageGenCallPartialImageEvent;
 import com.openai.models.responses.ResponseIncompleteEvent;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.ResponseOutputItemAddedEvent;
+import com.openai.models.responses.ResponseOutputItemDoneEvent;
 import com.openai.models.responses.ResponseOutputMessage;
 import com.openai.models.responses.ResponseOutputRefusal;
 import com.openai.models.responses.ResponseOutputText;
@@ -54,10 +59,14 @@ import com.openai.models.responses.ResponseReasoningTextDeltaEvent;
 import com.openai.models.responses.ResponseStatus;
 import com.openai.models.responses.ResponseStreamEvent;
 import com.openai.models.responses.ResponseTextDeltaEvent;
+import com.openai.models.responses.ResponseToolSearchCall;
+import com.openai.models.responses.ResponseToolSearchOutputItem;
 import com.openai.models.responses.ResponseUsage;
+import com.openai.models.responses.Tool;
 import com.openai.models.responses.ToolChoiceOptions;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
@@ -362,6 +371,64 @@ public final class TestSdkFixtures {
         return ResponseOutputItem.ofMessage(builder.build());
     }
 
+    /** Builds a ResponseOutputMessage with one URL-cited OutputText content part. */
+    public static ResponseOutputItem messageItemWithUrlCitation(
+            String text, String title, String url, long startIndex, long endIndex) {
+        ResponseOutputText.Annotation.UrlCitation citation =
+                ResponseOutputText.Annotation.UrlCitation.builder()
+                        .startIndex(startIndex)
+                        .endIndex(endIndex)
+                        .title(title)
+                        .url(url)
+                        .build();
+        ResponseOutputMessage msg =
+                ResponseOutputMessage.builder()
+                        .id(DEFAULT_MSG_ID)
+                        .addContent(
+                                ResponseOutputText.builder()
+                                        .text(text)
+                                        .annotations(
+                                                List.of(
+                                                        ResponseOutputText.Annotation.ofUrlCitation(
+                                                                citation)))
+                                        .build())
+                        .status(ResponseOutputMessage.Status.COMPLETED)
+                        .build();
+        return ResponseOutputItem.ofMessage(msg);
+    }
+
+    /** Builds a ResponseOutputMessage with one container-file-cited OutputText content part. */
+    public static ResponseOutputItem messageItemWithContainerFileCitation(
+            String text,
+            String containerId,
+            String fileId,
+            String filename,
+            long startIndex,
+            long endIndex) {
+        ResponseOutputText.Annotation.ContainerFileCitation citation =
+                ResponseOutputText.Annotation.ContainerFileCitation.builder()
+                        .containerId(containerId)
+                        .endIndex(endIndex)
+                        .fileId(fileId)
+                        .filename(filename)
+                        .startIndex(startIndex)
+                        .build();
+        ResponseOutputMessage msg =
+                ResponseOutputMessage.builder()
+                        .id(DEFAULT_MSG_ID)
+                        .addContent(
+                                ResponseOutputText.builder()
+                                        .text(text)
+                                        .annotations(
+                                                List.of(
+                                                        ResponseOutputText.Annotation
+                                                                .ofContainerFileCitation(citation)))
+                                        .build())
+                        .status(ResponseOutputMessage.Status.COMPLETED)
+                        .build();
+        return ResponseOutputItem.ofMessage(msg);
+    }
+
     /** Builds a ResponseReasoningItem with summary, encrypted content, and reasoning text. */
     public static ResponseOutputItem reasoningItem(
             String summaryText, String encryptedContent, String reasoningText) {
@@ -397,6 +464,99 @@ public final class TestSdkFixtures {
                         .id("fs_test_001")
                         .queries(List.of("test query"))
                         .status(ResponseFileSearchToolCall.Status.COMPLETED)
+                        .build());
+    }
+
+    /** Builds a completed web_search_call output item. */
+    public static ResponseOutputItem webSearchItem() {
+        return webSearchItem("OpenAI Responses");
+    }
+
+    /** Builds a completed web_search_call output item with the given query. */
+    public static ResponseOutputItem webSearchItem(String query) {
+        return ResponseOutputItem.ofWebSearchCall(
+                ResponseFunctionWebSearch.builder()
+                        .id("ws_test_001")
+                        .action(
+                                ResponseFunctionWebSearch.Action.ofSearch(
+                                        ResponseFunctionWebSearch.Action.Search.builder()
+                                                .query(query)
+                                                .build()))
+                        .status(ResponseFunctionWebSearch.Status.COMPLETED)
+                        .build());
+    }
+
+    /** Builds a completed code_interpreter_call output item. */
+    public static ResponseOutputItem codeInterpreterItem() {
+        return ResponseOutputItem.ofCodeInterpreterCall(
+                ResponseCodeInterpreterToolCall.builder()
+                        .id("ci_test_001")
+                        .code("print('hello')")
+                        .containerId("container_001")
+                        .addLogsOutput("hello")
+                        .status(ResponseCodeInterpreterToolCall.Status.COMPLETED)
+                        .build());
+    }
+
+    /** Builds a completed code_interpreter_call output item with logs and an image. */
+    public static ResponseOutputItem codeInterpreterItemWithImageOutput() {
+        return ResponseOutputItem.ofCodeInterpreterCall(
+                ResponseCodeInterpreterToolCall.builder()
+                        .id("ci_image_001")
+                        .code("print('hello')")
+                        .containerId("container_image_001")
+                        .addLogsOutput("hello")
+                        .addImageOutput("https://example.com/generated-image.png")
+                        .status(ResponseCodeInterpreterToolCall.Status.COMPLETED)
+                        .build());
+    }
+
+    /** Builds a completed image_generation_call output item. */
+    public static ResponseOutputItem imageGenerationItem() {
+        return ResponseOutputItem.ofImageGenerationCall(
+                ResponseOutputItem.ImageGenerationCall.builder()
+                        .id("ig_test_001")
+                        .result("image-result")
+                        .status(ResponseOutputItem.ImageGenerationCall.Status.COMPLETED)
+                        .build());
+    }
+
+    /** Builds a hosted tool_search_call item (server execution, null call_id). */
+    public static ResponseOutputItem toolSearchCallItem() {
+        return toolSearchCallItem("ts_call_001");
+    }
+
+    /** Builds a hosted tool_search_call item with the given item id (server execution). */
+    public static ResponseOutputItem toolSearchCallItem(String id) {
+        return ResponseOutputItem.ofToolSearchCall(
+                ResponseToolSearchCall.builder()
+                        .id(id)
+                        .arguments(JsonValue.from(Map.of("query", "weather")))
+                        .callId((String) null)
+                        .execution(ResponseToolSearchCall.Execution.SERVER)
+                        .status(ResponseToolSearchCall.Status.COMPLETED)
+                        .build());
+    }
+
+    /** Builds the separate hosted tool_search_output item (server execution, null call_id). */
+    public static ResponseOutputItem toolSearchOutputItem() {
+        return toolSearchOutputItem("ts_output_001");
+    }
+
+    /** Builds the separate hosted tool_search_output item with the given item id. */
+    public static ResponseOutputItem toolSearchOutputItem(String id) {
+        return ResponseOutputItem.ofToolSearchOutput(
+                ResponseToolSearchOutputItem.builder()
+                        .id(id)
+                        .callId((String) null)
+                        .execution(ResponseToolSearchOutputItem.Execution.SERVER)
+                        .status(ResponseToolSearchOutputItem.Status.COMPLETED)
+                        .tools(
+                                List.of(
+                                        Tool.ofCodeInterpreter(
+                                                Tool.CodeInterpreter.builder()
+                                                        .container("container_1")
+                                                        .build())))
                         .build());
     }
 
@@ -502,13 +662,11 @@ public final class TestSdkFixtures {
         return event;
     }
 
-    public static ResponseStreamEvent functionCallArgsDoneEvent(
-            String arguments, String itemId, String name) {
+    public static ResponseStreamEvent functionCallArgsDoneEvent(String arguments, String itemId) {
         ResponseFunctionCallArgumentsDoneEvent evt =
                 ResponseFunctionCallArgumentsDoneEvent.builder()
                         .arguments(arguments)
                         .itemId(itemId)
-                        .name(name)
                         .outputIndex(0L)
                         .sequenceNumber(0L)
                         .build();
@@ -530,6 +688,38 @@ public final class TestSdkFixtures {
         when(event.isOutputItemAdded()).thenReturn(true);
         when(event.outputItemAdded()).thenReturn(Optional.of(evt));
         when(event.asOutputItemAdded()).thenReturn(evt);
+        return event;
+    }
+
+    public static ResponseStreamEvent outputItemDoneEvent(ResponseOutputItem item) {
+        ResponseOutputItemDoneEvent evt =
+                ResponseOutputItemDoneEvent.builder()
+                        .item(item)
+                        .outputIndex(0L)
+                        .sequenceNumber(0L)
+                        .build();
+        ResponseStreamEvent event = mock(ResponseStreamEvent.class);
+        when(event.isOutputItemDone()).thenReturn(true);
+        when(event.outputItemDone()).thenReturn(Optional.of(evt));
+        when(event.asOutputItemDone()).thenReturn(evt);
+        return event;
+    }
+
+    public static ResponseStreamEvent imageGenerationPartialImageEvent(
+            String itemId, long partialImageIndex, String base64, String outputFormat) {
+        ResponseImageGenCallPartialImageEvent evt =
+                ResponseImageGenCallPartialImageEvent.builder()
+                        .itemId(itemId)
+                        .outputIndex(0L)
+                        .partialImageB64(base64)
+                        .partialImageIndex(partialImageIndex)
+                        .sequenceNumber(0L)
+                        .outputFormat(outputFormat)
+                        .build();
+        ResponseStreamEvent event = mock(ResponseStreamEvent.class);
+        when(event.isImageGenerationCallPartialImage()).thenReturn(true);
+        when(event.imageGenerationCallPartialImage()).thenReturn(Optional.of(evt));
+        when(event.asImageGenerationCallPartialImage()).thenReturn(evt);
         return event;
     }
 

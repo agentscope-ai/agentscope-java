@@ -59,6 +59,11 @@ public class InMemoryStore implements BaseStore {
      * @return {@code true} if the item was written, {@code false} if the version did not match
      */
     @Override
+    public boolean supportsAtomicSessionStorage() {
+        return true;
+    }
+
+    @Override
     public boolean putIfVersion(
             List<String> namespace, String key, Map<String, Object> value, long expectedVersion) {
         String ck = compoundKey(namespace, key);

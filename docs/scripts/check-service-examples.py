@@ -5,6 +5,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import re
+from datetime import date
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples" / "service"
 
@@ -15,7 +17,7 @@ def check_order_query():
     with tempfile.TemporaryDirectory(prefix="agentscope-docs-order-") as directory:
         work = Path(directory)
         for name in ("OrderQuery.java", "OrderQueryTest.java"):
-            shutil.copyfile(EXAMPLES / "sdlc-team" / (name + ".txt"), work / name)
+            shutil.copyfile(EXAMPLES / "incident-to-pr" / (name + ".txt"), work / name)
 
         def run_checks():
             compile_result = subprocess.run(
@@ -47,39 +49,48 @@ def check_order_query():
     print("Java fixture: 3 of 5 checks fail initially; all 5 pass with the reference repair.")
 
 
-def check_business_data():
-    data = json.loads((EXAMPLES / "order-fulfillment/business-data.json.txt").read_text(encoding="utf-8"))
-    assert data["synthetic"] is True
-    orders = {o["orderId"]: o for o in data["orders"]}
-    assert len(orders) == 3
-    assert orders["O-1001"]["status"] == "awaiting_stock"
-    assert orders["O-1002"]["status"] == "shipped"
-    assert orders["O-1003"]["status"] == "cancelled"
-    assert data["request"]["orderId"] in orders
-    stock = {i["warehouse"]: i["available"] for i in data["inventory"]}
-    assert stock == {"W-A": 0, "W-B": 8}
-    shipment = next(v for v in data["logistics"] if v["orderId"] == "O-1001")
-    assert shipment["earliestAlternateArrival"] > data["request"]["requestedArrival"]
-    assert shipment["guaranteed"] is False
-    print("Fulfillment fixture: order states, inventory, and delivery constraint match the guide.")
-
-
-def check_presales_sources():
-    expected = {
-        "customer-brief.txt": ["customer/brief.md", "customer-v1"],
-        "product-knowledge.txt": ["product/capabilities.md", "product/reference-case.md", "product-v1"],
-        "delivery-guide.txt": ["delivery/poc-guide.md", "delivery-v1"],
-    }
-    for filename, markers in expected.items():
-        text = (EXAMPLES / "presales-team" / filename).read_text(encoding="utf-8")
-        for marker in markers:
-            if marker not in text:
-                raise RuntimeError(f"Missing source marker {marker} in {filename}")
-    print("Presales fixtures: required document paths and versions are present.")
+def check_service_requests():
+    slugs = ("in-product-delivery", "incident-to-pr", "document-verification",
+             "business-assistant", "scheduled-research", "agent-as-tool")
+    requests = {}
+    for slug in slugs:
+        body = json.loads((EXAMPLES / slug / "input.json.txt").read_text())
+        requests[slug] = body
+        if slug == "business-assistant":
+            assert set(body) == {"message"} and body["message"]
+        else:
+            assert body["title"] and body["input"]["request"]
+        for language in ("zh", "en"):
+            page = EXAMPLES.parents[1] / "v2" / language / "service" / "cases" / (slug + ".md")
+            for block in re.findall(r"```bash\n(.*?)```", page.read_text(), re.S):
+                parsed = subprocess.run(["bash", "-n"], input=block, text=True, capture_output=True)
+                if parsed.returncode:
+                    raise RuntimeError(str(page) + ": " + parsed.stderr)
+    sources = requests["in-product-delivery"]["input"]["sources"]
+    assert {s["version"] for s in sources} == {"customer-v1", "product-v1", "delivery-v1"}
+    invoice = requests["document-verification"]["input"]
+    extracted = invoice["extracted"]
+    expected = extracted["quantity"] * extracted["unit_price"]
+    assert expected == 128 and extracted["total"] == 182
+    assert str(expected) + ".00" in invoice["pages"][0]["text"]
+    assert invoice["pages"][0]["page"] == 1
+    orders = json.loads((EXAMPLES / "business-assistant/orders.json.txt").read_text())
+    assert orders["synthetic"] is True
+    by_id = {o["id"]: o for o in orders["orders"]}
+    assert by_id["O-1001"]["owner"] != by_id["O-2001"]["owner"]
+    assert by_id["O-1001"]["status"] == "awaiting_stock"
+    assert by_id["O-1001"]["guaranteed_arrival"] is False
+    research = requests["scheduled-research"]["input"]
+    date.fromisoformat(research["research_date"])
+    assert research["strategy_version"] and len({s["id"] for s in research["sources"]}) == 2
+    review = requests["agent-as-tool"]["input"]
+    assert review["supplier_id"] == "V-101"
+    assert "No independent security review" in review["sources"][1]["text"]
+    print("Six request fixtures: shapes, source versions, expected contradiction and ownership boundaries checked.")
+    print("Bash snippets in all twelve scenario pages parse without execution.")
 
 
 if __name__ == "__main__":
     check_order_query()
-    check_business_data()
-    check_presales_sources()
-    print("Local fixture validation only; no end-to-end scenario was executed.")
+    check_service_requests()
+    print("Local fixture validation only; no models, GitHub, business systems, or Service were called.")

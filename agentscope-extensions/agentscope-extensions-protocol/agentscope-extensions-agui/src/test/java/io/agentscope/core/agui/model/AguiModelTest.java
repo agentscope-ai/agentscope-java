@@ -79,6 +79,17 @@ class AguiModelTest {
         }
 
         @Test
+        void testReasoningMessageFactory() {
+            AguiMessage msg = AguiMessage.reasoningMessage("msg-r1", "Think step by step");
+
+            assertEquals("msg-r1", msg.getId());
+            assertEquals("reasoning", msg.getRole());
+            assertEquals("Think step by step", msg.getTextContent());
+            assertTrue(msg.isReasoningMessage());
+            assertFalse(msg.isAssistantMessage());
+        }
+
+        @Test
         void testRoleHelpersAreCaseInsensitive() {
             AguiMessage user =
                     new AguiMessage("msg-1", "USER", new MessageContent.Text("Hello"), null, null);
@@ -91,11 +102,15 @@ class AguiModelTest {
             AguiMessage tool =
                     new AguiMessage(
                             "msg-4", "TOOL", new MessageContent.Text("Hello"), null, "tc-1");
+            AguiMessage reasoning =
+                    new AguiMessage(
+                            "msg-5", "REASONING", new MessageContent.Text("Think"), null, null);
 
             assertTrue(user.isUserMessage());
             assertTrue(assistant.isAssistantMessage());
             assertTrue(system.isSystemMessage());
             assertTrue(tool.isToolMessage());
+            assertTrue(reasoning.isReasoningMessage());
         }
 
         @Test
@@ -169,6 +184,16 @@ class AguiModelTest {
         }
 
         @Test
+        void testEqualsAccountsForToolCallIdAndError() {
+            AguiMessage base = new AguiMessage("msg-1", "tool", null, null, "tc-1", "boom");
+
+            assertEquals(base, new AguiMessage("msg-1", "tool", null, null, "tc-1", "boom"));
+            // Nothing else differs, so these isolate the two fields the error handling added.
+            assertNotEquals(base, new AguiMessage("msg-1", "tool", null, null, "tc-1", "other"));
+            assertNotEquals(base, new AguiMessage("msg-1", "tool", null, null, "tc-2", "boom"));
+        }
+
+        @Test
         void testHashCode() {
             AguiMessage msg1 = AguiMessage.userMessage("msg-1", "Hello");
             AguiMessage msg2 = AguiMessage.userMessage("msg-1", "Hello");
@@ -199,6 +224,27 @@ class AguiModelTest {
             assertEquals(msg.getId(), deserialized.getId());
             assertEquals(msg.getRole(), deserialized.getRole());
             assertEquals("Hello", deserialized.getTextContent());
+        }
+
+        @Test
+        void testJsonSerializationOmitsErrorWhenAbsent() throws JsonProcessingException {
+            // The field is newer than the wire format it joins: a message that reports no error
+            // must keep the representation it had before the field existed, so a strict client
+            // does not start seeing `"error": null` on every message.
+            AguiMessage withoutError = new AguiMessage("msg-1", "tool", null, null, "tc-1");
+
+            String withoutErrorJson = JsonUtils.getJsonCodec().toJson(withoutError);
+            assertFalse(withoutErrorJson.contains("error"), withoutErrorJson);
+
+            // A reported failure is still carried.
+            AguiMessage withError =
+                    new AguiMessage("msg-2", "tool", null, null, "tc-1", "sandbox unavailable");
+
+            String withErrorJson = JsonUtils.getJsonCodec().toJson(withError);
+            assertTrue(withErrorJson.contains("\"error\""), withErrorJson);
+            assertEquals(
+                    "sandbox unavailable",
+                    JsonUtils.getJsonCodec().fromJson(withErrorJson, AguiMessage.class).getError());
         }
 
         @Test

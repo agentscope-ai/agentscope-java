@@ -28,11 +28,14 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.Model;
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
+import java.util.EnumSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -56,14 +59,18 @@ import reactor.util.context.ContextView;
  * breakdown uses an AgentScope-specific attribute because it is not yet defined by the GenAI
  * convention.
  *
- * <p>Context propagation across Reactor's asynchronous chain (including thread
- * hops via {@code publishOn} / {@code subscribeOn}) is handled by
- * {@link ContextPropagationOperator}
- * The global lift hook is registered once on class load, so child spans see
- * the correct parent regardless of which thread the signal lands on.
+ * <p>Context propagation across Reactor's asynchronous chain is handled by
+ * {@link ContextPropagationOperator}. The first constructor call registers that
+ * operator once per JVM; operators assembled after registration are wrapped, while
+ * previously assembled chains are not.
  *
  * <p>When no OTel SDK is configured (only the default no-op provider is
  * active), every hook short-circuits with near-zero overhead.
+ *
+ * <p>The no-argument constructor reads {@link GlobalOpenTelemetry} lazily when a hook runs.
+ * Pass an application-owned SDK to {@link #OtelTracingMiddleware(OpenTelemetry)} when spans must
+ * be recorded on that SDK instead. The caller owns that SDK's lifecycle; the global SDK is not
+ * replaced.
  *
  * <p>Usage:
  * <pre>{@code
@@ -91,7 +98,38 @@ public class OtelTracingMiddleware implements MiddlewareBase {
 
     private static volatile boolean hookRegistered = false;
 
+    private final OpenTelemetry openTelemetry;
+
+    private final Tracer tracer;
+
+    /**
+     * Creates middleware that reads {@link GlobalOpenTelemetry} lazily at hook execution, so the
+     * SDK may be registered after construction.
+     */
     public OtelTracingMiddleware() {
+        this.openTelemetry = null;
+        this.tracer = null;
+        registerReactorHook();
+    }
+
+    /**
+     * Creates middleware that records spans on an application-owned OpenTelemetry SDK.
+     *
+     * <p>The tracer is resolved once and reused. The SDK is not registered as {@link
+     * GlobalOpenTelemetry}, and its lifecycle is owned by the caller. This constructor still
+     * installs the JVM-wide Reactor hook.
+     *
+     * @param openTelemetry application-owned OpenTelemetry instance; must not be null
+     * @throws NullPointerException if {@code openTelemetry} is null
+     */
+    public OtelTracingMiddleware(OpenTelemetry openTelemetry) {
+        this.openTelemetry =
+                Objects.requireNonNull(openTelemetry, "openTelemetry must not be null");
+        this.tracer = this.openTelemetry.getTracer(INSTRUMENTATION_NAME);
+        registerReactorHook();
+    }
+
+    private static void registerReactorHook() {
         if (!hookRegistered) {
             synchronized (OtelTracingMiddleware.class) {
                 if (!hookRegistered) {
@@ -102,7 +140,17 @@ public class OtelTracingMiddleware implements MiddlewareBase {
         }
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(
+                ExtensionPoint.ON_AGENT, ExtensionPoint.ON_MODEL_CALL, ExtensionPoint.ON_ACTING);
+    }
+
     private Tracer getTracer() {
+        if (openTelemetry != null) {
+            return tracer;
+        }
         return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME);
     }
 

@@ -37,6 +37,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
@@ -100,6 +101,16 @@ public abstract class AgentBase implements Agent {
     private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(Hook::priority);
 
     /**
+     * Allowed characters for an explicit agent id. The id is interpolated into path/namespace
+     * segments by downstream code (e.g. remote filesystem specs, workspace session indexes), so it
+     * must stay a single safe segment.
+     */
+    private static final Pattern AGENT_ID_PATTERN = Pattern.compile("[A-Za-z0-9._-]+");
+
+    /** Max explicit agent id length: the id becomes a single path segment downstream. */
+    private static final int MAX_AGENT_ID_LENGTH = 255;
+
+    /**
      * Per-key call serialization tails. Each entry holds the completion signal of the most recently
      * enqueued call for that key; the next call for the same key chains after it, so calls sharing a
      * key run one-at-a-time (FIFO) while different keys run concurrently. See {@link
@@ -142,12 +153,58 @@ public abstract class AgentBase implements Agent {
      * @param hooks List of hooks for monitoring/intercepting execution
      */
     public AgentBase(String name, String description, List<Hook> hooks) {
-        this.agentId = UUID.randomUUID().toString();
+        this(name, description, hooks, null);
+    }
+
+    /**
+     * Constructor for AgentBase with hooks and an explicit agent id.
+     *
+     * @param name Agent name
+     * @param description Agent description
+     * @param hooks List of hooks for monitoring/intercepting execution
+     * @param agentId explicit agent id; see {@link #normalizeAgentId(String)}. Blank falls back
+     *     to a random UUID. Leave null unless ids are managed externally — uniqueness among live
+     *     agents is the caller's responsibility and is not enforced by the framework.
+     * @throws IllegalArgumentException if a non-blank agentId is invalid
+     */
+    public AgentBase(String name, String description, List<Hook> hooks, String agentId) {
+        String normalized = normalizeAgentId(agentId);
+        this.agentId = normalized != null ? normalized : UUID.randomUUID().toString();
         this.name = name;
         this.description = description;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
         sortHooks();
+    }
+
+    /**
+     * Trims an explicit agent id and validates it — the id is interpolated into path/namespace
+     * segments downstream, so it must be a single safe segment: {@code [A-Za-z0-9._-]+}, not all
+     * dots, at most {@value #MAX_AGENT_ID_LENGTH} characters. Blank input returns {@code null}
+     * so callers fall back to a generated UUID.
+     *
+     * @param agentId raw id, may be null
+     * @return the trimmed id, or {@code null} when blank
+     * @throws IllegalArgumentException if a non-blank id violates the format
+     */
+    public static String normalizeAgentId(String agentId) {
+        String normalized = agentId != null ? agentId.trim() : "";
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        boolean invalid =
+                normalized.length() > MAX_AGENT_ID_LENGTH
+                        || !AGENT_ID_PATTERN.matcher(normalized).matches()
+                        || normalized.chars().allMatch(c -> c == '.');
+        if (invalid) {
+            throw new IllegalArgumentException(
+                    "Invalid agentId '"
+                            + normalized
+                            + "': must match [A-Za-z0-9._-]+, not be all dots, and be at most "
+                            + MAX_AGENT_ID_LENGTH
+                            + " characters");
+        }
+        return normalized;
     }
 
     @Override
@@ -262,13 +319,16 @@ public abstract class AgentBase implements Agent {
     }
 
     private Mono<Msg> runInContext(
-            List<Msg> msgs,
+            List<Msg> inputMsgs,
             Function<List<Msg>, Mono<Msg>> doCallFn,
             reactor.util.context.ContextView cv) {
         RuntimeContext rc = cv.getOrDefault(RUNTIME_CONTEXT_KEY, null);
         RunControl supplied = cv.getOrDefault(RunControl.CONTEXT_KEY, null);
         boolean managed = supplied != null && supplied.belongsTo(getAgentId());
-        RunControl control = managed ? supplied : new RunControl(getAgentId());
+        RunControl control =
+                managed
+                        ? supplied
+                        : new RunControl(getAgentId(), rc == null ? null : rc.getRunId());
         if (!managed) {
             control.queue();
         }
@@ -282,6 +342,9 @@ public abstract class AgentBase implements Agent {
                     }
                     shutdown.unregisterRequest(requestId);
                 };
+        // Per-subscription private mutable copy: input adjustments from per-call extension
+        // points (e.g. onAgentStateReady middlewares) never touch the caller's list.
+        List<Msg> msgs = new ArrayList<>(inputMsgs != null ? inputMsgs : List.of());
         // Resolve session state only after admission. Retire before releasing the queue gate so a
         // retry cannot have its new registration removed by the preceding attempt's cleanup.
         Mono<Msg> lifecycle =
@@ -324,31 +387,80 @@ public abstract class AgentBase implements Agent {
             return Mono.error(
                     new java.util.concurrent.CancellationException("Agent run cancelled"));
         }
-        Object scope = beforeAgentExecution(msgs, rc, control);
+        // State-ready middleware may interrupt the call during resource acquisition.
+        // Register its control first; lifecycle retirement removes it on every terminal signal.
         if (gateKey != null) {
             runningCalls.put(gateKey, control);
         }
+        return Mono.usingWhen(
+                acquireCallExecution(msgs, rc, control),
+                scope -> executeCallBody(msgs, doCallFn, requestId, control, gateKey, scope),
+                scope -> releaseCallExecution(scope, "completed"),
+                (scope, error) -> releaseCallExecution(scope, "failed"),
+                scope -> releaseCallExecution(scope, "cancelled"));
+    }
+
+    /** Asynchronous resource boundary for durable execution ownership. */
+    protected Mono<Object> acquireCallExecution(
+            List<Msg> msgs, RuntimeContext rc, RunControl control) {
+        return Mono.fromSupplier(
+                () -> {
+                    Object scope = beforeAgentExecution(msgs, rc, control);
+                    return scope == null ? this : scope;
+                });
+    }
+
+    /** Runs before completion/error is delivered, including subscriber cancellation. */
+    protected Mono<Void> releaseCallExecution(Object scope, String status) {
+        return Mono.empty();
+    }
+
+    private Mono<Msg> executeCallBody(
+            List<Msg> msgs,
+            Function<List<Msg>, Mono<Msg>> doCallFn,
+            String requestId,
+            RunControl control,
+            Object gateKey,
+            Object scope) {
         // Bind this call's resolved per-session state to the tracked shutdown request so graceful
         // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
         // no-arg "most-recently-active" accessors.
         GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
+        List<Msg> acceptedInputs = inputsForCall(scope, msgs);
         Mono<Msg> body =
                 TracerRegistry.get()
                         .callAgent(
                                 this,
                                 msgs,
                                 () ->
-                                        notifyPreCall(msgs, scope)
+                                        notifyPreCall(acceptedInputs, scope)
                                                 .flatMap(doCallFn)
                                                 .flatMap(this::notifyPostCall)
                                                 .onErrorResume(
                                                         createErrorHandler(
                                                                 control,
                                                                 msgs.toArray(new Msg[0]))));
+        body = body.doOnNext(result -> onCallResult(scope, result));
         Mono<Msg> scoped =
                 scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
         // Nested calls own their own control; only the outer execution receives this handle.
-        return scoped.contextWrite(c -> c.delete(RunControl.CONTEXT_KEY));
+        RuntimeContext runtime = runtimeForCall(scope);
+        return scoped.contextWrite(
+                c ->
+                        runtime == null
+                                ? c.delete(RunControl.CONTEXT_KEY)
+                                : c.delete(RunControl.CONTEXT_KEY)
+                                        .put(RUNTIME_CONTEXT_KEY, runtime));
+    }
+
+    protected List<Msg> inputsForCall(Object scope, List<Msg> inputs) {
+        return inputs;
+    }
+
+    protected void onCallResult(Object scope, Msg result) {}
+
+    protected RuntimeContext runtimeForCall(Object scope) {
+        return null;
     }
 
     /**

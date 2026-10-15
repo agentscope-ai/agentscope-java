@@ -52,6 +52,18 @@ public class McpTool extends ToolBase {
 
     private static final Logger logger = LoggerFactory.getLogger(McpTool.class);
 
+    /**
+     * Upper bound for a server-supplied display title, matching the one-line label width already used
+     * for tool names in {@code AgentTraceMiddleware}. A truncated title spends the last three on
+     * {@link #ELLIPSIS}, so a sanitised title never exceeds this many code points.
+     */
+    private static final int MAX_DISPLAY_TITLE_LENGTH = 120;
+
+    private static final String ELLIPSIS = "...";
+
+    private static final int CONTENT_LENGTH_BEFORE_ELLIPSIS =
+            MAX_DISPLAY_TITLE_LENGTH - ELLIPSIS.length();
+
     private final Map<String, Object> outputSchema;
     private final String remoteToolName;
     private final McpClientWrapper clientWrapper;
@@ -105,10 +117,44 @@ public class McpTool extends ToolBase {
             Map<String, Object> presetArguments,
             String mcpName,
             boolean readOnly) {
+        this(
+                name,
+                remoteToolName,
+                description,
+                parameters,
+                outputSchema,
+                clientWrapper,
+                presetArguments,
+                mcpName,
+                readOnly,
+                null);
+    }
+
+    /**
+     * As {@link #McpTool(String, String, String, Map, Map, McpClientWrapper, Map, String, boolean)}
+     * additionally carrying the MCP server's human-readable display title, surfaced through
+     * {@link #getTitle()}.
+     *
+     * @param title display name for end users, or {@code null} when the server provides none; the
+     *     value is sanitised for display, so a server cannot inject line breaks or bidi overrides
+     *     into a permission prompt
+     */
+    public McpTool(
+            String name,
+            String remoteToolName,
+            String description,
+            Map<String, Object> parameters,
+            Map<String, Object> outputSchema,
+            McpClientWrapper clientWrapper,
+            Map<String, Object> presetArguments,
+            String mcpName,
+            boolean readOnly,
+            String title) {
         super(
                 ToolBase.builder()
                         .name(Objects.requireNonNull(name, "name cannot be null"))
                         .description(description != null ? description : "")
+                        .title(sanitizeDisplayTitle(title))
                         .inputSchema(parameters != null ? parameters : new HashMap<>())
                         .readOnly(readOnly)
                         .concurrencySafe(false)
@@ -354,6 +400,67 @@ public class McpTool extends ToolBase {
             return Collections.emptyMap();
         }
         return mcpMeta.entries();
+    }
+
+    /**
+     * Resolve the human-readable display title an MCP server provides for a tool.
+     *
+     * <p>The MCP spec keeps {@code Tool.title} for display purposes and allows the same value under
+     * {@code ToolAnnotations.title}; both are optional and neither is the model-facing
+     * {@code description}. Registration uses this so a caller rendering a permission confirmation
+     * can label the operation for an end user instead of showing the programmatic name.
+     *
+     * <p>Both candidates pass through {@link #sanitizeDisplayTitle(String)}: the winner is whatever
+     * the MCP server typed, and it is shown to a human who is about to approve an action.
+     *
+     * @param tool the MCP tool definition, may be {@code null}
+     * @return the first non-blank sanitised title, or {@code null} when the server provides none
+     */
+    public static String resolveDisplayTitle(McpSchema.Tool tool) {
+        if (tool == null) {
+            return null;
+        }
+        String title = sanitizeDisplayTitle(tool.title());
+        if (title != null) {
+            return title;
+        }
+        return sanitizeDisplayTitle(tool.annotations() != null ? tool.annotations().title() : null);
+    }
+
+    /**
+     * Normalise a server-supplied label before it reaches a human.
+     *
+     * <p>Two classes of character are removed rather than escaped, because a prompt cannot escape
+     * its way out of them: zero-width and directional-format characters ({@code Cf}, e.g. U+202E
+     * RIGHT-TO-LEFT OVERRIDE) reorder the rest of the line the reader sees, and C0/C1 controls and
+     * whitespace let the label inject extra lines into a confirmation dialog. Whitespace runs
+     * collapse to one space so the label stays on a single line, and the result is capped at {@link
+     * #MAX_DISPLAY_TITLE_LENGTH} code points (an emoji counts as one), which makes cutting a
+     * surrogate pair in half impossible.
+     *
+     * @param title the raw server value, may be {@code null}
+     * @return the displayable form, or {@code null} when nothing printable survives (so callers fall
+     *     back to {@link #getName()} instead of showing an empty label)
+     */
+    private static String sanitizeDisplayTitle(String title) {
+        if (title == null) {
+            return null;
+        }
+        String cleaned =
+                title.replaceAll("\\p{Cf}", "")
+                        .replaceAll("[\\p{Cc}\\p{Zs}\\p{Zl}\\p{Zp}]+", " ")
+                        .strip();
+        if (cleaned.isEmpty()) {
+            return null;
+        }
+        if (cleaned.codePointCount(0, cleaned.length()) <= MAX_DISPLAY_TITLE_LENGTH) {
+            return cleaned;
+        }
+        logger.debug(
+                "MCP display title exceeds {} code points and was truncated for display",
+                MAX_DISPLAY_TITLE_LENGTH);
+        return cleaned.substring(0, cleaned.offsetByCodePoints(0, CONTENT_LENGTH_BEFORE_ELLIPSIS))
+                + ELLIPSIS;
     }
 
     /**

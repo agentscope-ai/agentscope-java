@@ -82,7 +82,13 @@ public final class JevAutoModeMiddlewareTest {
                 JevAutoModeMiddleware.builder(jevClient)
                         .guardedTool("bash")
                         .safetyThreshold(0.5)
-                        .failOpen(false)
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(5),
+                                        "example-v1",
+                                        (ctx, record) -> {}))
                         .build();
 
         ReActAgent agent =
