@@ -130,4 +130,6 @@ agentscope:
           - bearerAuth: []
 ```
 
+Map 的键（例如 OAuth scope 名）含 `:`、`/`、`.` 等字符时，用引号加方括号写成 `"[read:user]": 读取用户信息`，否则 Spring 绑定时会改写这些键。
+
 Starter 返回的 JSON 由 A2A SDK 生成，不受应用自身 Jackson 配置（如 `spring.jackson.property-naming-strategy`）影响。

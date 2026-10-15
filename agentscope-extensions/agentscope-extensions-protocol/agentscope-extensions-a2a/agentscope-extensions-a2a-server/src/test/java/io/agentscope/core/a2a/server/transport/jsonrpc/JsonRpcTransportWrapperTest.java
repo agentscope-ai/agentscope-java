@@ -42,6 +42,7 @@ import io.a2a.spec.InvalidRequestError;
 import io.a2a.spec.JSONParseError;
 import io.a2a.spec.ListTaskPushNotificationConfigRequest;
 import io.a2a.spec.ListTaskPushNotificationConfigResponse;
+import io.a2a.spec.Message;
 import io.a2a.spec.MethodNotFoundError;
 import io.a2a.spec.PushNotificationConfig;
 import io.a2a.spec.SendMessageRequest;
@@ -58,10 +59,12 @@ import io.a2a.spec.TaskStatus;
 import io.a2a.spec.TransportProtocol;
 import io.a2a.transport.jsonrpc.handler.JSONRPCHandler;
 import io.a2a.util.Utils;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Flow;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -322,6 +325,66 @@ class JsonRpcTransportWrapperTest {
     }
 
     @Nested
+    @DisplayName("Serialization Failure Tests")
+    class SerializationFailureTests {
+
+        @Test
+        @DisplayName("Should answer the same request with an internal error")
+        void testUnserializableResponseKeepsRequestId() throws Exception {
+            String body =
+                    "{\"jsonrpc\":\"2.0\",\"method\":\"message/send\",\"params\":{\"message\":{\"messageId\":\"message123\",\"kind\":\"message\",\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"Hello\"}]}},\"id\":\"request-77\"}";
+            when(jsonRpcHandler.onMessageSend(
+                            any(SendMessageRequest.class), any(ServerCallContext.class)))
+                    .thenReturn(new SendMessageResponse("request-77", unserializableMessage()));
+
+            Object result = transportWrapper.handleRequest(body, Map.of(), Map.of());
+
+            JsonNode response =
+                    Utils.OBJECT_MAPPER.readTree(assertInstanceOf(String.class, result));
+            assertEquals("request-77", response.path("id").asText());
+            assertEquals(INTERNAL_ERROR_CODE, response.path("error").path("code").asInt());
+        }
+
+        @Test
+        @DisplayName("Should end a stream with an internal error and stop the agent's responses")
+        void testUnserializableStreamedResponseEndsStream() {
+            String body =
+                    "{\"jsonrpc\":\"2.0\",\"method\":\"message/stream\",\"params\":{\"message\":{\"messageId\":\"message123\",\"kind\":\"message\",\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"Hello\"}]}},\"id\":\"1\"}";
+            AtomicBoolean cancelled = new AtomicBoolean();
+            Flux<SendStreamingMessageResponse> responses =
+                    Flux.concat(
+                                    Flux.just(
+                                            new SendStreamingMessageResponse(
+                                                    "1", A2A.toAgentMessage("before")),
+                                            new SendStreamingMessageResponse(
+                                                    "1", unserializableMessage()),
+                                            new SendStreamingMessageResponse(
+                                                    "1", A2A.toAgentMessage("after"))),
+                                    Flux.never())
+                            .doOnCancel(() -> cancelled.set(true));
+            when(jsonRpcHandler.onMessageSendStream(
+                            any(SendStreamingMessageRequest.class), any(ServerCallContext.class)))
+                    .thenReturn(FlowAdapters.toFlowPublisher(responses));
+
+            Object result = transportWrapper.handleRequest(body, Map.of(), Map.of());
+
+            StepVerifier.create(assertInstanceOf(Flux.class, result))
+                    .assertNext(json -> assertKind("message", json))
+                    .assertNext(
+                            json -> {
+                                JsonNode response = readJson(json);
+                                assertEquals("1", response.path("id").asText());
+                                assertEquals(
+                                        INTERNAL_ERROR_CODE,
+                                        response.path("error").path("code").asInt());
+                            })
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(5));
+            assertTrue(cancelled.get(), "the agent's responses should be cancelled");
+        }
+    }
+
+    @Nested
     @DisplayName("Error Handling Tests")
     class ErrorHandlingTests {
 
@@ -414,6 +477,33 @@ class JsonRpcTransportWrapperTest {
                 .path("error")
                 .path("code")
                 .asInt();
+    }
+
+    private static final int INTERNAL_ERROR_CODE = new InternalError("").getCode();
+
+    private static Message unserializableMessage() {
+        return new Message.Builder(A2A.toAgentMessage("unserializable"))
+                .metadata(Map.of("value", new Unserializable()))
+                .build();
+    }
+
+    /** A value Jackson cannot serialize. */
+    static final class Unserializable {
+        public String getValue() {
+            throw new IllegalStateException("not serializable");
+        }
+    }
+
+    private static JsonNode readJson(Object json) {
+        try {
+            return Utils.OBJECT_MAPPER.readTree(assertInstanceOf(String.class, json));
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static void assertKind(String kind, Object json) {
+        assertEquals(kind, readJson(json).path("result").path("kind").asText());
     }
 
     private static Flow.Publisher<SendStreamingMessageResponse> streamingResponses() {

@@ -16,6 +16,7 @@
 package io.agentscope.spring.boot.a2a.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -36,6 +37,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
 
@@ -82,7 +85,7 @@ class A2aJsonRpcControllerTest {
 
             Object result = controller.handleRequest(requestBody, headers);
 
-            assertEquals(responseBody, result);
+            assertEquals(responseBody, jsonBody(result));
 
             // Verify interactions
             verify(agentScopeA2aServer)
@@ -141,7 +144,7 @@ class A2aJsonRpcControllerTest {
 
             Object result = controller.handleRequest(requestBody, header);
 
-            assertEquals(responseBody, result);
+            assertEquals(responseBody, jsonBody(result));
 
             // Verify interactions
             ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
@@ -217,11 +220,11 @@ class A2aJsonRpcControllerTest {
 
             // First call should initialize the handler
             Object result1 = controller.handleRequest(requestBody, headers);
-            assertEquals(responseBody, result1);
+            assertEquals(responseBody, jsonBody(result1));
 
             // Second call should reuse the same handler
             Object result2 = controller.handleRequest(requestBody, headers);
-            assertEquals(responseBody, result2);
+            assertEquals(responseBody, jsonBody(result2));
 
             // Should only fetch the transport wrapper once
             verify(agentScopeA2aServer)
@@ -229,5 +232,12 @@ class A2aJsonRpcControllerTest {
                             eq(TransportProtocol.JSONRPC.asString()),
                             eq(JsonRpcTransportWrapper.class));
         }
+    }
+
+    /** Returns the body of a non-streaming response, which must be sent as JSON. */
+    private static Object jsonBody(Object result) {
+        ResponseEntity<?> response = assertInstanceOf(ResponseEntity.class, result);
+        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
+        return response.getBody();
     }
 }

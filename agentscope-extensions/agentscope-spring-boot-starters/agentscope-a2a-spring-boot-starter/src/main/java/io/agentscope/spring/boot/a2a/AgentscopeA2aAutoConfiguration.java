@@ -207,7 +207,8 @@ public class AgentscopeA2aAutoConfiguration {
             String name, A2aAgentCardProperties.SecurityScheme scheme) {
         return switch (String.valueOf(scheme.type())) {
             case APIKeySecurityScheme.API_KEY ->
-                    new APIKeySecurityScheme(scheme.in(), scheme.name(), scheme.description());
+                    new APIKeySecurityScheme(
+                            apiKeyLocation(name, scheme.in()), scheme.name(), scheme.description());
             case HTTPAuthSecurityScheme.HTTP ->
                     new HTTPAuthSecurityScheme(
                             scheme.bearerFormat(), scheme.scheme(), scheme.description());
@@ -232,6 +233,18 @@ public class AgentscopeA2aAutoConfiguration {
         };
     }
 
+    private static String apiKeyLocation(String name, String in) {
+        if ("header".equals(in) || "query".equals(in) || "cookie".equals(in)) {
+            return in;
+        }
+        throw new IllegalArgumentException(
+                "Unsupported location '"
+                        + in
+                        + "' of API key security scheme '"
+                        + name
+                        + "', expected one of: header, query, cookie");
+    }
+
     private static OAuthFlows toOAuthFlows(A2aAgentCardProperties.OAuthFlows flows) {
         if (null == flows) {
             return null;
@@ -246,22 +259,27 @@ public class AgentscopeA2aAutoConfiguration {
                         : new AuthorizationCodeOAuthFlow(
                                 code.authorizationUrl(),
                                 code.refreshUrl(),
-                                code.scopes(),
+                                scopes(code),
                                 code.tokenUrl()),
                 null == client
                         ? null
                         : new ClientCredentialsOAuthFlow(
-                                client.refreshUrl(), client.scopes(), client.tokenUrl()),
+                                client.refreshUrl(), scopes(client), client.tokenUrl()),
                 null == implicit
                         ? null
                         : new ImplicitOAuthFlow(
                                 implicit.authorizationUrl(),
                                 implicit.refreshUrl(),
-                                implicit.scopes()),
+                                scopes(implicit)),
                 null == password
                         ? null
                         : new PasswordOAuthFlow(
-                                password.refreshUrl(), password.scopes(), password.tokenUrl()));
+                                password.refreshUrl(), scopes(password), password.tokenUrl()));
+    }
+
+    /** An empty YAML map, {@code scopes: {}}, binds as null; a flow may have no scopes. */
+    private static Map<String, String> scopes(A2aAgentCardProperties.OAuthFlow flow) {
+        return null == flow.scopes() ? Map.of() : flow.scopes();
     }
 
     private static <T, R> List<R> mapList(List<T> values, Function<T, R> mapper) {

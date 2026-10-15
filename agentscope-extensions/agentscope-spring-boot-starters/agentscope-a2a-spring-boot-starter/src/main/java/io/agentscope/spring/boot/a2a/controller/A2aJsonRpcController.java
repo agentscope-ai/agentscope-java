@@ -21,6 +21,7 @@ import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.Map;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -60,7 +61,8 @@ public class A2aJsonRpcController {
                                     .event("jsonrpc")
                                     .build());
         }
-        return result;
+        // Set the type explicitly: the String converter could also write it as an event stream.
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(result);
     }
 
     private JsonRpcTransportWrapper getJsonRpcHandler() {

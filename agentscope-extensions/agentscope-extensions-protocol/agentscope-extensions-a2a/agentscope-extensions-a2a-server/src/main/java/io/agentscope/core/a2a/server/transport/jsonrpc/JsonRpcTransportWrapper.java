@@ -60,6 +60,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.BufferOverflowStrategy;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.SynchronousSink;
 
 /**
  * The Wrapper for JSON-RPC transport request.
@@ -119,7 +120,8 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
         try {
             if (streaming) {
                 Flux<String> result =
-                        handleStreamRequest(body, context).map(JsonRpcTransportWrapper::toJson);
+                        handleStreamRequest(body, context)
+                                .<String>handle(JsonRpcTransportWrapper::toJsonOrEnd);
                 log.info("Handling streaming request, returning SSE Flux");
                 return result;
             }
@@ -135,11 +137,40 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
         }
     }
 
+    /** Writes {@code response}, or an internal error for the same request if that fails. */
     private static String toJson(JSONRPCResponse<?> response) {
         try {
             return Utils.OBJECT_MAPPER.writeValueAsString(response);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize JSON-RPC response", e);
+            return serializationError(response, e);
+        }
+    }
+
+    /**
+     * Writes a streamed {@code response}. If that fails, ends the stream with an internal error for
+     * the same request, which also cancels the remaining responses.
+     */
+    private static void toJsonOrEnd(JSONRPCResponse<?> response, SynchronousSink<String> sink) {
+        try {
+            sink.next(Utils.OBJECT_MAPPER.writeValueAsString(response));
+        } catch (JsonProcessingException e) {
+            sink.next(serializationError(response, e));
+            sink.complete();
+        }
+    }
+
+    private static String serializationError(
+            JSONRPCResponse<?> response, JsonProcessingException cause) {
+        log.error(
+                "Failed to serialize JSON-RPC response: {}", response.getClass().getName(), cause);
+        JSONRPCErrorResponse error =
+                new JSONRPCErrorResponse(
+                        response.getId(),
+                        new InternalError("Failed to serialize JSON-RPC response"));
+        try {
+            return Utils.OBJECT_MAPPER.writeValueAsString(error);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize JSON-RPC error response", e);
         }
     }
 
