@@ -75,6 +75,48 @@ public final class WorkspaceMountSupport {
         return args;
     }
 
+    /**
+     * {@code tar} CLI {@code --exclude} arguments ({@code ./relative}) for absolute in-sandbox
+     * mount paths (e.g. cloud volume mounts) that sit strictly beneath {@code workspaceRoot}.
+     *
+     * <p>Mounts equal to the root or outside of it contribute nothing: an equal mount means the
+     * whole workspace lives on the volume (callers short-circuit persistence instead), and an
+     * outside mount is never traversed by {@code tar -C root .} in the first place.
+     *
+     * @param workspaceRoot absolute workspace root the tar archive is taken from
+     * @param absoluteMountPaths absolute in-sandbox mount paths
+     * @return {@code --exclude} args for mounts beneath the root, in input order
+     */
+    public static List<String> tarExcludeArgsForAbsolutePaths(
+            String workspaceRoot, List<String> absoluteMountPaths) {
+        if (workspaceRoot == null
+                || workspaceRoot.isBlank()
+                || absoluteMountPaths == null
+                || absoluteMountPaths.isEmpty()) {
+            return List.of();
+        }
+        String root = stripTrailingSlash(workspaceRoot.replace('\\', '/'));
+        List<String> args = new ArrayList<>();
+        for (String raw : absoluteMountPaths) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            String mount = stripTrailingSlash(raw.replace('\\', '/'));
+            if (!mount.startsWith("/") || mount.equals(root) || !mount.startsWith(root + "/")) {
+                continue;
+            }
+            args.add("--exclude=./" + mount.substring(root.length() + 1));
+        }
+        return args;
+    }
+
+    private static String stripTrailingSlash(String s) {
+        if (s.length() > 1 && s.endsWith("/")) {
+            return s.substring(0, s.length() - 1);
+        }
+        return s;
+    }
+
     private static void walk(Map<String, WorkspaceEntry> entries, String prefix, List<String> out) {
         for (Map.Entry<String, WorkspaceEntry> e : entries.entrySet()) {
             String rel =
