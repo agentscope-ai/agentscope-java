@@ -92,7 +92,9 @@ AgentScopeA2aServer server = AgentScopeA2aServer.builder()
 
 // Delegate inbound requests to the transport wrapper from your web framework
 TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
-// ... Spring/Quarkus controller forwards to wrapper.handle(...)
+// ... Spring/Quarkus controller calls wrapper.handleRequest(body, headers, metadata):
+// it returns a JSON string, or for streaming requests a Flux<String> whose elements are written
+// as SSE events. Serve server.getAgentCardJson() at the agent card endpoint.
 
 server.postEndpointReady();   // call after the web server is listening — triggers registration etc.
 ```
@@ -108,3 +110,24 @@ server.postEndpointReady();   // call after the web server is listening — trig
 ## Spring Boot Starter
 
 If you're on Spring Boot, prefer `agentscope-spring-boot-starter-a2a-server` — it auto-configures the server and controller. See [Quickstart](/v2/en/docs/quickstart).
+
+Configure the agent card under `agentscope.a2a.server.card`, with the field names of the A2A agent card. For example, to declare how clients authenticate:
+
+```yaml
+agentscope:
+  a2a:
+    server:
+      card:
+        provider:
+          organization: My Company
+          url: https://example.com
+        security-schemes:
+          bearerAuth:
+            type: http          # one of apiKey, http, oauth2, openIdConnect, mutualTLS
+            scheme: bearer
+            bearer-format: JWT
+        security:
+          - bearerAuth: []
+```
+
+The starter writes A2A JSON with the A2A SDK, so the application's own Jackson settings (such as `spring.jackson.property-naming-strategy`) do not affect it.

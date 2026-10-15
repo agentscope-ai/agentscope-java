@@ -17,14 +17,16 @@
 package io.agentscope.core.a2a.server.transport.jsonrpc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import io.a2a.A2A;
 import io.a2a.server.ServerCallContext;
 import io.a2a.spec.CancelTaskRequest;
 import io.a2a.spec.CancelTaskResponse;
@@ -38,20 +40,24 @@ import io.a2a.spec.InternalError;
 import io.a2a.spec.InvalidParamsError;
 import io.a2a.spec.InvalidRequestError;
 import io.a2a.spec.JSONParseError;
-import io.a2a.spec.JSONRPCError;
-import io.a2a.spec.JSONRPCErrorResponse;
 import io.a2a.spec.ListTaskPushNotificationConfigRequest;
 import io.a2a.spec.ListTaskPushNotificationConfigResponse;
 import io.a2a.spec.MethodNotFoundError;
+import io.a2a.spec.PushNotificationConfig;
 import io.a2a.spec.SendMessageRequest;
 import io.a2a.spec.SendMessageResponse;
 import io.a2a.spec.SendStreamingMessageRequest;
 import io.a2a.spec.SendStreamingMessageResponse;
 import io.a2a.spec.SetTaskPushNotificationConfigRequest;
 import io.a2a.spec.SetTaskPushNotificationConfigResponse;
+import io.a2a.spec.Task;
+import io.a2a.spec.TaskPushNotificationConfig;
 import io.a2a.spec.TaskResubscriptionRequest;
+import io.a2a.spec.TaskState;
+import io.a2a.spec.TaskStatus;
 import io.a2a.spec.TransportProtocol;
 import io.a2a.transport.jsonrpc.handler.JSONRPCHandler;
+import io.a2a.util.Utils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -113,15 +119,14 @@ class JsonRpcTransportWrapperTest {
             Map<String, String> headers = new HashMap<>();
             Map<String, Object> metadata = new HashMap<>();
 
-            SendMessageResponse mockResponse = mock(SendMessageResponse.class);
+            SendMessageResponse response = new SendMessageResponse("1", A2A.toAgentMessage("Hi"));
             when(jsonRpcHandler.onMessageSend(
                             any(SendMessageRequest.class), any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
+                    .thenReturn(response);
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
 
-            assertNotNull(result);
-            assertInstanceOf(SendMessageResponse.class, result);
+            assertEquals("message", assertResult(result).path("kind").asText());
         }
 
         @Test
@@ -132,15 +137,13 @@ class JsonRpcTransportWrapperTest {
             Map<String, String> headers = new HashMap<>();
             Map<String, Object> metadata = new HashMap<>();
 
-            Flow.Publisher<SendStreamingMessageResponse> mockPublisher = mock(Flow.Publisher.class);
             when(jsonRpcHandler.onMessageSendStream(
                             any(SendStreamingMessageRequest.class), any(ServerCallContext.class)))
-                    .thenReturn(mockPublisher);
+                    .thenReturn(streamingResponses());
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
 
-            assertNotNull(result);
-            assertInstanceOf(Flux.class, result);
+            assertStreamedMessage(result);
         }
 
         @Test
@@ -151,14 +154,13 @@ class JsonRpcTransportWrapperTest {
             Map<String, String> headers = new HashMap<>();
             Map<String, Object> metadata = new HashMap<>();
 
-            GetTaskResponse mockResponse = mock(GetTaskResponse.class);
+            GetTaskResponse response = new GetTaskResponse("1", TASK);
             when(jsonRpcHandler.onGetTask(any(GetTaskRequest.class), any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
+                    .thenReturn(response);
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
 
-            assertNotNull(result);
-            assertInstanceOf(GetTaskResponse.class, result);
+            assertEquals("task123", assertResult(result).path("id").asText());
         }
 
         @Test
@@ -169,15 +171,14 @@ class JsonRpcTransportWrapperTest {
             Map<String, String> headers = new HashMap<>();
             Map<String, Object> metadata = new HashMap<>();
 
-            CancelTaskResponse mockResponse = mock(CancelTaskResponse.class);
+            CancelTaskResponse response = new CancelTaskResponse("1", TASK);
             when(jsonRpcHandler.onCancelTask(
                             any(CancelTaskRequest.class), any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
+                    .thenReturn(response);
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
 
-            assertNotNull(result);
-            assertInstanceOf(CancelTaskResponse.class, result);
+            assertEquals("task123", assertResult(result).path("id").asText());
         }
 
         @Test
@@ -188,17 +189,16 @@ class JsonRpcTransportWrapperTest {
             Map<String, String> headers = new HashMap<>();
             Map<String, Object> metadata = new HashMap<>();
 
-            GetTaskPushNotificationConfigResponse mockResponse =
-                    mock(GetTaskPushNotificationConfigResponse.class);
+            GetTaskPushNotificationConfigResponse response =
+                    new GetTaskPushNotificationConfigResponse("1", PUSH_CONFIG);
             when(jsonRpcHandler.getPushNotificationConfig(
                             any(GetTaskPushNotificationConfigRequest.class),
                             any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
+                    .thenReturn(response);
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
 
-            assertNotNull(result);
-            assertInstanceOf(GetTaskPushNotificationConfigResponse.class, result);
+            assertEquals("task123", assertResult(result).path("taskId").asText());
         }
 
         @Test
@@ -209,17 +209,16 @@ class JsonRpcTransportWrapperTest {
             Map<String, String> headers = new HashMap<>();
             Map<String, Object> metadata = new HashMap<>();
 
-            SetTaskPushNotificationConfigResponse mockResponse =
-                    mock(SetTaskPushNotificationConfigResponse.class);
+            SetTaskPushNotificationConfigResponse response =
+                    new SetTaskPushNotificationConfigResponse("1", PUSH_CONFIG);
             when(jsonRpcHandler.setPushNotificationConfig(
                             any(SetTaskPushNotificationConfigRequest.class),
                             any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
+                    .thenReturn(response);
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
 
-            assertNotNull(result);
-            assertInstanceOf(SetTaskPushNotificationConfigResponse.class, result);
+            assertEquals("task123", assertResult(result).path("taskId").asText());
         }
 
         @Test
@@ -230,17 +229,16 @@ class JsonRpcTransportWrapperTest {
             Map<String, String> headers = new HashMap<>();
             Map<String, Object> metadata = new HashMap<>();
 
-            ListTaskPushNotificationConfigResponse mockResponse =
-                    mock(ListTaskPushNotificationConfigResponse.class);
+            ListTaskPushNotificationConfigResponse response =
+                    new ListTaskPushNotificationConfigResponse("1", List.of(PUSH_CONFIG));
             when(jsonRpcHandler.listPushNotificationConfig(
                             any(ListTaskPushNotificationConfigRequest.class),
                             any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
+                    .thenReturn(response);
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
 
-            assertNotNull(result);
-            assertInstanceOf(ListTaskPushNotificationConfigResponse.class, result);
+            assertEquals(1, assertResult(result).size());
         }
 
         @Test
@@ -251,17 +249,16 @@ class JsonRpcTransportWrapperTest {
             Map<String, String> headers = new HashMap<>();
             Map<String, Object> metadata = new HashMap<>();
 
-            DeleteTaskPushNotificationConfigResponse mockResponse =
-                    mock(DeleteTaskPushNotificationConfigResponse.class);
+            DeleteTaskPushNotificationConfigResponse response =
+                    new DeleteTaskPushNotificationConfigResponse("1");
             when(jsonRpcHandler.deletePushNotificationConfig(
                             any(DeleteTaskPushNotificationConfigRequest.class),
                             any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
+                    .thenReturn(response);
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
 
-            assertNotNull(result);
-            assertInstanceOf(DeleteTaskPushNotificationConfigResponse.class, result);
+            assertResult(result);
         }
 
         @Test
@@ -272,15 +269,13 @@ class JsonRpcTransportWrapperTest {
             Map<String, String> headers = new HashMap<>();
             Map<String, Object> metadata = new HashMap<>();
 
-            Flow.Publisher<SendStreamingMessageResponse> mockPublisher = mock(Flow.Publisher.class);
             when(jsonRpcHandler.onResubscribeToTask(
                             any(TaskResubscriptionRequest.class), any(ServerCallContext.class)))
-                    .thenReturn(mockPublisher);
+                    .thenReturn(streamingResponses());
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
 
-            assertNotNull(result);
-            assertInstanceOf(Flux.class, result);
+            assertStreamedMessage(result);
         }
     }
 
@@ -338,12 +333,7 @@ class JsonRpcTransportWrapperTest {
             Map<String, Object> metadata = new HashMap<>();
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
-            assertNotNull(result);
-            assertInstanceOf(JSONRPCErrorResponse.class, result);
-            JSONRPCErrorResponse errorResponse = (JSONRPCErrorResponse) result;
-            JSONRPCError error = errorResponse.getError();
-            assertNotNull(error);
-            assertInstanceOf(JSONParseError.class, error);
+            assertEquals(new JSONParseError().getCode(), errorCode(result));
         }
 
         @Test
@@ -360,12 +350,7 @@ class JsonRpcTransportWrapperTest {
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
 
-            assertNotNull(result);
-            assertInstanceOf(JSONRPCErrorResponse.class, result);
-            JSONRPCErrorResponse errorResponse = (JSONRPCErrorResponse) result;
-            JSONRPCError error = errorResponse.getError();
-            assertNotNull(error);
-            assertInstanceOf(InternalError.class, error);
+            assertEquals(new InternalError("Test exception").getCode(), errorCode(result));
         }
 
         @Test
@@ -378,44 +363,75 @@ class JsonRpcTransportWrapperTest {
 
             Object result = transportWrapper.handleRequest(body, headers, metadata);
 
-            assertNotNull(result);
-            assertInstanceOf(JSONRPCErrorResponse.class, result);
-            JSONRPCErrorResponse errorResponse = (JSONRPCErrorResponse) result;
-            JSONRPCError error = errorResponse.getError();
-            assertNotNull(error);
-            assertInstanceOf(InvalidParamsError.class, error);
+            assertEquals(new InvalidParamsError().getCode(), errorCode(result));
         }
 
         @Test
         @DisplayName("Should handle MethodNotFoundError")
-        void testHandleMethodNotFoundError() {
+        void testHandleMethodNotFoundError() throws Exception {
             String body =
                     "{\"jsonrpc\":\"2.0\",\"method\":\"not/found/method\",\"params\":{\"id\":\"task123\"},\"id\":\"1\"}";
             Map<String, String> headers = new HashMap<>();
             Map<String, Object> metadata = new HashMap<>();
             Object result = transportWrapper.handleRequest(body, headers, metadata);
-            assertNotNull(result);
-            assertInstanceOf(JSONRPCErrorResponse.class, result);
-            JSONRPCErrorResponse errorResponse = (JSONRPCErrorResponse) result;
-            JSONRPCError error = errorResponse.getError();
-            assertNotNull(error);
-            assertInstanceOf(MethodNotFoundError.class, error);
+            assertEquals(new MethodNotFoundError().getCode(), errorCode(result));
         }
 
         @Test
         @DisplayName("Should handle Method is null")
-        void testHandleMethodNull() {
+        void testHandleMethodNull() throws Exception {
             String body = "{\"jsonrpc\":\"2.0\",\"params\":{\"id\":\"task123\"},\"id\":\"1\"}";
             Map<String, String> headers = new HashMap<>();
             Map<String, Object> metadata = new HashMap<>();
             Object result = transportWrapper.handleRequest(body, headers, metadata);
-            assertNotNull(result);
-            assertInstanceOf(JSONRPCErrorResponse.class, result);
-            JSONRPCErrorResponse errorResponse = (JSONRPCErrorResponse) result;
-            JSONRPCError error = errorResponse.getError();
-            assertNotNull(error);
-            assertInstanceOf(InvalidRequestError.class, error);
+            assertEquals(new InvalidRequestError().getCode(), errorCode(result));
         }
+    }
+
+    private static final Task TASK =
+            new Task.Builder()
+                    .id("task123")
+                    .contextId("context456")
+                    .status(new TaskStatus(TaskState.WORKING))
+                    .build();
+
+    private static final TaskPushNotificationConfig PUSH_CONFIG =
+            new TaskPushNotificationConfig(
+                    "task123",
+                    new PushNotificationConfig("https://example.com/webhook", null, null, "111"));
+
+    /** Parses a successful JSON-RPC response to request {@code 1} and returns its result. */
+    private static JsonNode assertResult(Object result) throws Exception {
+        JsonNode response = Utils.OBJECT_MAPPER.readTree(assertInstanceOf(String.class, result));
+        assertEquals("1", response.path("id").asText());
+        assertFalse(response.has("error"), response.toString());
+        return response.path("result");
+    }
+
+    private static int errorCode(Object result) throws Exception {
+        return Utils.OBJECT_MAPPER
+                .readTree(assertInstanceOf(String.class, result))
+                .path("error")
+                .path("code")
+                .asInt();
+    }
+
+    private static Flow.Publisher<SendStreamingMessageResponse> streamingResponses() {
+        return burstPublisher(
+                List.of(new SendStreamingMessageResponse("1", A2A.toAgentMessage("Hi"))));
+    }
+
+    private static void assertStreamedMessage(Object result) {
+        StepVerifier.create(assertInstanceOf(Flux.class, result))
+                .assertNext(
+                        json -> {
+                            try {
+                                assertEquals("message", assertResult(json).path("kind").asText());
+                            } catch (Exception e) {
+                                throw new AssertionError(e);
+                            }
+                        })
+                .verifyComplete();
     }
 
     private static <T> Flow.Publisher<T> burstPublisher(List<T> values) {

@@ -72,6 +72,8 @@ import reactor.core.publisher.Flux;
  *     <li>judge whether the request is streaming request.</li>
  *     <li>build {@link io.a2a.server.ServerCallContext} from JSON-RPC method, headers and all metadata.</li>
  *     <li>handle error and exception for JSON-RPC request handle.</li>
+ *     <li>serialize responses to JSON with the A2A SDK, so they do not depend on how the hosting
+ *     framework serializes objects.</li>
  * </ul>
  */
 public class JsonRpcTransportWrapper implements TransportWrapper<String, Object> {
@@ -105,9 +107,8 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
      * @param body     JSON-RPC request body string
      * @param headers  JSON-RPC request headers map
      * @param metadata Other JSON-RPC request metadata from request or developer.
-     * @return Two type according to the request whether streaming request: If streaming request, return {@link Flux}
-     * with {@link JSONRPCResponse}, otherwise only single {@link JSONRPCResponse}. When handle with error or
-     * exceptions, will return {@link JSONRPCErrorResponse}.
+     * @return the JSON-RPC response as a JSON string; for a streaming request, a {@link Flux} of
+     * JSON strings, one per response. Errors are returned as JSON-RPC error responses.
      */
     @Override
     public Object handleRequest(
@@ -115,23 +116,31 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
         ServerCallContext context = buildServerCallContext(headers, metadata);
         boolean streaming = isStreamingRequest(body, context);
         context.getState().put(A2aServerConstants.ContextKeys.IS_STREAM_KEY, streaming);
-        Object result;
         try {
             if (streaming) {
-                result = handleStreamRequest(body, context);
+                Flux<String> result =
+                        handleStreamRequest(body, context).map(JsonRpcTransportWrapper::toJson);
                 log.info("Handling streaming request, returning SSE Flux");
-            } else {
-                result = handleNonStreamRequest(body, context);
-                log.info("Handling non-streaming request, returning JSON response");
+                return result;
             }
+            String result = toJson(handleNonStreamRequest(body, context));
+            log.info("Handling non-streaming request, returning JSON response");
+            return result;
         } catch (JsonProcessingException e) {
             log.error("JSON parsing error: ", e);
-            result = handleError(e);
+            return toJson(handleError(e));
         } catch (Throwable t) {
             log.error("Handle JSON-RPC request error:", t);
-            result = new JSONRPCErrorResponse(new InternalError(t.getMessage()));
+            return toJson(new JSONRPCErrorResponse(new InternalError(t.getMessage())));
         }
-        return result;
+    }
+
+    private static String toJson(JSONRPCResponse<?> response) {
+        try {
+            return Utils.OBJECT_MAPPER.writeValueAsString(response);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize JSON-RPC response", e);
+        }
     }
 
     private ServerCallContext buildServerCallContext(

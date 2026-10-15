@@ -93,6 +93,8 @@ class A2aHttpEndToEndTest {
         registry.add("server.port", () -> PORT);
         registry.add("server.address", () -> HOST);
         registry.add("agentscope.a2a.server.require-inner-message", () -> true);
+        // A2A JSON must not follow the application's Jackson settings.
+        registry.add("spring.jackson.property-naming-strategy", () -> "SNAKE_CASE");
     }
 
     @Autowired private ScriptedAgentRunner runner;
@@ -133,6 +135,18 @@ class A2aHttpEndToEndTest {
 
         assertThat(result).isNotNull();
         assertThat(result.getTextContent()).isEqualTo("final reply");
+    }
+
+    @Test
+    void blockingCallKeepsNonAsciiText() {
+        runner.script(messages -> reply("你好，世界", "你好，", "世界"));
+        ClientConfig blocking = new ClientConfig.Builder().setStreaming(false).build();
+
+        Msg result = newAgent(blocking).call(userMsg("你好")).block(TIMEOUT);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTextContent()).isEqualTo("你好，世界");
+        assertThat(texts(runner.requests().get(0))).containsExactly("你好");
     }
 
     @Test
