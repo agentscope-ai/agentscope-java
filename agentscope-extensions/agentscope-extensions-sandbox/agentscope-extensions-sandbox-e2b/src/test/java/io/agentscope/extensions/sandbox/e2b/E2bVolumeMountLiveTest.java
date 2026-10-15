@@ -41,8 +41,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 // Live E2B volume tests: run only when E2B_API_KEY is set in the environment.
-// Volume name comes from E2B_VOLUME_NAME (defaults to probe-ws-test1, so set it when your
-// account uses a different volume).
+// E2B_VOLUME_NAME must name an existing volume on the account (no default:
+// the platform answers an unknown name with an opaque 400).
 // Each test kills every sandbox it creates, even on failure.
 @EnabledIfEnvironmentVariable(named = "E2B_API_KEY", matches = ".+")
 class E2bVolumeMountLiveTest {
@@ -409,7 +409,11 @@ class E2bVolumeMountLiveTest {
 
     private static String volumeName() {
         String v = System.getenv("E2B_VOLUME_NAME");
-        return v != null && !v.isBlank() ? v : "probe-ws-test1";
+        if (v == null || v.isBlank()) {
+            throw new IllegalStateException(
+                    "E2B_VOLUME_NAME must be set to an existing E2B volume name for live tests");
+        }
+        return v;
     }
 
     private static E2bSandboxClientOptions baseOptions() {

@@ -88,6 +88,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             throw new IllegalArgumentException(
                     "Expected E2bSandboxState but got: " + state.getClass().getName());
         }
+        requireAbsoluteWorkspaceRoot(e2b.getWorkspaceRoot());
         E2bSandboxClientOptions resumed = copy(defaultOptions);
         resumed.setCodec(e2b.getCodec());
         resumed.setEnvdSandboxUrl(e2b.getEnvdSandboxUrl());
@@ -175,10 +176,10 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
     }
 
     /**
-     * Returns whether the workspace root lives on one of the configured volume mounts.
+     * Rejects blank or relative workspace roots fail-fast; every E2B operation assumes an
+     * absolute in-sandbox path.
      *
-     * @param opt merged client options
-     * @return true when a mount covers the workspace root
+     * @param workspaceRoot workspace root to check
      */
     private static void requireAbsoluteWorkspaceRoot(String workspaceRoot) {
         if (workspaceRoot == null
@@ -190,6 +191,12 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         }
     }
 
+    /**
+     * Returns whether the workspace root lives on one of the configured volume mounts.
+     *
+     * @param opt merged client options
+     * @return true when a mount covers the workspace root
+     */
     private static boolean isWorkspaceOnVolume(E2bSandboxClientOptions opt) {
         String root = opt.getWorkspaceRoot();
         if (root == null || root.isBlank() || opt.getVolumeMounts() == null) {

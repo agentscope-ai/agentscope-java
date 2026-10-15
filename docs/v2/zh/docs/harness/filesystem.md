@@ -220,9 +220,9 @@ E2B volumes（private beta）提供独立于沙箱生命周期的持久存储。
 ```
 
 当 `workspaceRoot` 落在 volume 挂载点上时，TAR 工作区持久化自动跳过（数据已在 volume 里持久化），
-销毁时也不再 `rm -rf`；原生快照仍然执行，用于保留软件环境（安装的依赖、系统状态）。Volume 的
+销毁时也不再 `rm -rf`；原生快照仍然执行，用于保留软件环境（安装的依赖、系统状态）。E2B volume
+可读写、可同时被多个沙箱挂载且无锁保证——workspace-on-volume 布局请按单写者使用。Volume 的
 生命周期管理（创建/删除/查看）仍在 E2B 控制台/SDK 里完成——这里只覆盖创建时挂载。
-
 
 #### Daytona 沙箱
 

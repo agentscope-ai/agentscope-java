@@ -16,6 +16,7 @@
 package io.agentscope.extensions.sandbox.e2b;
 
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -128,6 +129,31 @@ public class E2bVolumeMount {
             return true;
         }
         return root.equals(mount) || root.startsWith(mount + "/");
+    }
+
+    /**
+     * Validates that no two mounts share the same in-sandbox path.
+     *
+     * @param mounts mounts to check (null entries are ignored)
+     * @throws SandboxException.SandboxConfigurationException when a path is duplicated
+     */
+    public static void requireDistinctMountPaths(List<E2bVolumeMount> mounts) {
+        if (mounts == null) {
+            return;
+        }
+        for (int i = 0; i < mounts.size(); i++) {
+            if (mounts.get(i) == null) {
+                continue;
+            }
+            for (int j = i + 1; j < mounts.size(); j++) {
+                if (mounts.get(j) != null
+                        && mounts.get(i).getPath().equals(mounts.get(j).getPath())) {
+                    throw new SandboxException.SandboxConfigurationException(
+                            "E2B volume mounts must use distinct paths, duplicated: "
+                                    + mounts.get(i).getPath());
+                }
+            }
+        }
     }
 
     @Override

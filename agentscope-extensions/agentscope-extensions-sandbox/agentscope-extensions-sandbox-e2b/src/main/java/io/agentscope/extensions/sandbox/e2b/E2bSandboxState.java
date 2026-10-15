@@ -15,11 +15,13 @@
  */
 package io.agentscope.extensions.sandbox.e2b;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import java.util.ArrayList;
 import java.util.List;
 
 /** Serializable state for an E2B-backed sandbox. */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class E2bSandboxState extends SandboxState {
 
     private String sandboxId;
@@ -166,6 +168,7 @@ public class E2bSandboxState extends SandboxState {
                 checked.add(new E2bVolumeMount(m.getName(), m.getPath()));
             }
         }
+        E2bVolumeMount.requireDistinctMountPaths(checked);
         this.volumeMounts = checked;
     }
 

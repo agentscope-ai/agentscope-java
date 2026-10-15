@@ -95,19 +95,33 @@ public final class WorkspaceMountSupport {
                 || absoluteMountPaths.isEmpty()) {
             return List.of();
         }
-        String root = stripTrailingSlash(workspaceRoot.replace('\\', '/'));
+        String root = normalizeAbsolutePath(workspaceRoot);
         List<String> args = new ArrayList<>();
         for (String raw : absoluteMountPaths) {
             if (raw == null || raw.isBlank()) {
                 continue;
             }
-            String mount = stripTrailingSlash(raw.replace('\\', '/'));
-            if (!mount.startsWith("/") || mount.equals(root) || !mount.startsWith(root + "/")) {
+            String mount = normalizeAbsolutePath(raw);
+            if (!mount.startsWith("/") || mount.equals(root) || !isBeneath(root, mount)) {
                 continue;
             }
-            args.add("--exclude=./" + mount.substring(root.length() + 1));
+            args.add("--exclude=./" + mount.substring(root.equals("/") ? 1 : root.length() + 1));
         }
         return args;
+    }
+
+    private static boolean isBeneath(String root, String mount) {
+        if (root.equals("/")) {
+            return mount.length() > 1;
+        }
+        return mount.startsWith(root + "/");
+    }
+
+    private static String normalizeAbsolutePath(String s) {
+        // Collapse repeated slashes first, then drop the (single) trailing slash: the other
+        // order leaves a trailing slash behind for inputs like "//mnt//data//".
+        String normalized = stripTrailingSlash(s.replace('\\', '/').replaceAll("/+", "/"));
+        return normalized.isEmpty() ? "/" : normalized;
     }
 
     private static String stripTrailingSlash(String s) {

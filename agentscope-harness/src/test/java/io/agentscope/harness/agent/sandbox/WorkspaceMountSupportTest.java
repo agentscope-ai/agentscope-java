@@ -96,4 +96,20 @@ class WorkspaceMountSupportTest {
                         "/home/user/", List.of("/home/user/a/b/")));
         assertEquals(List.of(), WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(null, null));
     }
+
+    @Test
+    void tarExcludeArgsForAbsolutePaths_rootSlashAndNormalization() {
+        assertEquals(
+                List.of("--exclude=./mnt/data"),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths("/", List.of("/mnt/data")));
+        assertEquals(
+                List.of("--exclude=./mnt/data"),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(
+                        "//", List.of("//mnt//data//")));
+        assertEquals(
+                List.of(), WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths("/", List.of("/")));
+        assertEquals(
+                List.of(),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths("/", List.of("mnt/data")));
+    }
 }
