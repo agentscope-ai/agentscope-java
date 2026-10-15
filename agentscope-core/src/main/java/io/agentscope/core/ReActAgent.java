@@ -274,6 +274,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * caller-controlled ToolRequestConfig.
      */
     private final CapabilityResolver capabilityResolver;
+
+    /**
      * Whether native structured-output responses are validated against the requested JSON Schema.
      * Enabled by default; {@link Builder#validateStructuredOutput(boolean)} can restore the
      * legacy trust-the-provider behavior.
