@@ -63,6 +63,7 @@ import org.a2aproject.sdk.client.TaskUpdateEvent;
 import org.a2aproject.sdk.client.config.ClientConfig;
 import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransport;
 import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransportConfig;
+import org.a2aproject.sdk.spec.A2AErrorCodes;
 import org.a2aproject.sdk.spec.AgentCard;
 import org.a2aproject.sdk.spec.AgentInterface;
 import org.a2aproject.sdk.spec.TaskNotFoundError;
@@ -191,6 +192,28 @@ class A2aHttpEndToEndTest {
         assertThat(result).isNotNull();
         assertThat(result.getTextContent()).isEqualTo("你好，世界");
         assertThat(texts(runner.requests().get(0))).containsExactly("你好");
+    }
+
+    @Test
+    void requestWithoutProtocolVersionIsRejected() throws Exception {
+        // A2A 0.3 clients send no A2A-Version header; only A2A 1.0 is supported.
+        HttpRequest request =
+                HttpRequest.newBuilder(URI.create(BASE_URL))
+                        .timeout(TIMEOUT)
+                        .header("Content-Type", "application/json")
+                        .POST(
+                                HttpRequest.BodyPublishers.ofString(
+                                        "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"GetTask\","
+                                                + "\"params\":{\"id\":\"missing-task\"}}"))
+                        .build();
+
+        HttpResponse<String> response =
+                HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+
+        JsonNode body = JSON.readTree(response.body());
+        assertThat(body.path("id").asText()).isEqualTo("1");
+        assertThat(body.path("error").path("code").asInt())
+                .isEqualTo(A2AErrorCodes.VERSION_NOT_SUPPORTED.code());
     }
 
     @Test

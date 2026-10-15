@@ -45,6 +45,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedConstruction;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -213,6 +214,32 @@ class NacosAgentRegistryTest {
         nacosAgentRegistry.register(agentCard, transportPropertiesList);
         verify(nacosA2aRegistry)
                 .registerAgent(any(AgentCard.class), any(NacosA2aRegistryProperties.class));
+    }
+
+    @Test
+    @DisplayName("Should list the overwritten interface once when the card already has it")
+    void testOverwriteWithInterfaceAlreadyInCard()
+            throws NoSuchFieldException, IllegalAccessException {
+        nacosA2aProperties =
+                NacosA2aRegistryProperties.builder().overwritePreferredTransport("JSONRPC").build();
+        nacosAgentRegistry =
+                NacosAgentRegistry.builder(mock(AiService.class))
+                        .nacosA2aProperties(nacosA2aProperties)
+                        .build();
+        injectMockNacosA2aRegistry(nacosAgentRegistry);
+        AgentInterface overwritten = new AgentInterface("JSONRPC", "https://localhost:8080/agent");
+        AgentCard agentCard =
+                AgentCard.builder(mockAgentCard())
+                        .supportedInterfaces(List.of(CARD_INTERFACE, overwritten))
+                        .build();
+
+        nacosAgentRegistry.register(agentCard, mockTransportProperties("JSONRPC"));
+
+        ArgumentCaptor<AgentCard> registered = ArgumentCaptor.forClass(AgentCard.class);
+        verify(nacosA2aRegistry)
+                .registerAgent(registered.capture(), any(NacosA2aRegistryProperties.class));
+        assertEquals(
+                List.of(overwritten, CARD_INTERFACE), registered.getValue().supportedInterfaces());
     }
 
     @Test

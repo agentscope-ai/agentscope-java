@@ -10,7 +10,7 @@ en_link: /v2/en/integration/protocol/a2a
 
 两个模块完全独立，可以单用其一。
 
-不支持 A2A 0.3：客户端无法调用 A2A 0.3 的 Agent；A2A 0.3 客户端的请求不带 `A2A-Version` 请求头，服务端会以版本错误拒绝。
+不支持 A2A 0.3：客户端无法调用 A2A 0.3 的 Agent；A2A 0.3 客户端的请求不带 `A2A-Version` 请求头，服务端会以版本错误拒绝。服务端暂不支持 `ListTasks`，因为还不认证调用方。
 
 ## 客户端：调用远端 A2A Agent
 
@@ -108,7 +108,7 @@ server.postEndpointReady();   // Web 服务监听端口后再调用，触发注�
 ### 可选组件
 
 - `TaskStore` / `QueueManager`：任务和事件队列存储，默认是内存实现，生产可换成持久化版本。
-- `PushNotificationConfigStore` / `PushNotificationSender`：推送通知。默认的发送器只向非内网的 HTTPS 地址推送。
+- `PushNotificationConfigStore` / `PushNotificationSender`：推送通知。目前还不支持推送：AgentCard 声明不支持，消息里附带的推送配置会被忽略。
 - `AgentRegistry`：把 `AgentCard` 注册到外部注册中心（如 Nacos，见 [Nacos](/v2/zh/integration/infrastructure/nacos)）。
 
 ## Spring Boot Starter

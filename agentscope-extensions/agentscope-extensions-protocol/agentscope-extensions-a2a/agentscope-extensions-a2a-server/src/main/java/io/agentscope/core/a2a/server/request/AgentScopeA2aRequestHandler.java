@@ -50,6 +50,7 @@ import org.a2aproject.sdk.spec.Task;
 import org.a2aproject.sdk.spec.TaskIdParams;
 import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
 import org.a2aproject.sdk.spec.TaskQueryParams;
+import org.a2aproject.sdk.spec.UnsupportedOperationError;
 
 /**
  * The {@link RequestHandler} of an AgentScope A2A server, backed by the SDK's {@link
@@ -68,10 +69,17 @@ public class AgentScopeA2aRequestHandler implements RequestHandler {
         return delegate.onGetTask(params, context);
     }
 
+    /**
+     * Not supported: AgentScope does not authenticate callers yet, so any caller could list the
+     * tasks of every session.
+     *
+     * @throws UnsupportedOperationError always
+     */
     @Override
     public ListTasksResult onListTasks(ListTasksParams params, ServerCallContext context)
             throws A2AError {
-        return delegate.onListTasks(params, context);
+        throw new UnsupportedOperationError(
+                null, "Listing tasks is not supported: callers are not authorized", null);
     }
 
     @Override
@@ -233,6 +241,9 @@ public class AgentScopeA2aRequestHandler implements RequestHandler {
                             // AgentScope does not authenticate callers yet; with authorization
                             // required and no provider, every task operation is rejected.
                             .authorizationRequired(false)
+                            // The agent card declares no push notifications; without this the SDK
+                            // still keeps the push config sent along with a message.
+                            .pushNotificationsEnabled(false)
                             .build();
             // 60/10 seconds, as before: the SDK builder sets a few seconds, too short for models.
             SdkInternals.setTimeouts(delegate, 60, 10);

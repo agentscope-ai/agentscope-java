@@ -10,7 +10,7 @@ zh_link: /v2/zh/integration/protocol/a2a
 
 The two modules are independent — use either one alone.
 
-A2A 0.3 is not supported: the client cannot call A2A 0.3 agents, and the server rejects requests from A2A 0.3 clients, which send no `A2A-Version` header, with a version error.
+A2A 0.3 is not supported: the client cannot call A2A 0.3 agents, and the server rejects requests from A2A 0.3 clients, which send no `A2A-Version` header, with a version error. The server does not support `ListTasks` yet, since it does not authenticate callers.
 
 ## Client: call a remote A2A Agent
 
@@ -108,7 +108,7 @@ server.postEndpointReady();   // call after the web server is listening — trig
 ### Optional components
 
 - `TaskStore` / `QueueManager`: task and event queue stores; in-memory by default, swap for persistent versions in production.
-- `PushNotificationConfigStore` / `PushNotificationSender`: outbound notifications. The default sender only posts to HTTPS URLs that are not on a private network.
+- `PushNotificationConfigStore` / `PushNotificationSender`: outbound notifications. Push notifications are not supported yet: the agent card declares none, and push configs sent with a message are ignored.
 - `AgentRegistry`: register `AgentCard` to an external registry such as Nacos (see [Nacos](/v2/en/integration/infrastructure/nacos)).
 
 ## Spring Boot Starter

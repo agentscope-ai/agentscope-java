@@ -204,7 +204,8 @@ public class NacosAgentRegistry implements AgentRegistry {
         String transport = transportProperties.transport();
         AgentInterface agentInterface = new AgentInterface(transport, newUrl);
         List<AgentInterface> agentInterfaces = new LinkedList<>(agentCard.supportedInterfaces());
-        // The first interface is the preferred one.
+        // The first interface is the preferred one; it is listed once.
+        agentInterfaces.remove(agentInterface);
         agentInterfaces.add(0, agentInterface);
         AgentCard.Builder builder = AgentCard.builder(agentCard);
         builder.supportedInterfaces(agentInterfaces);

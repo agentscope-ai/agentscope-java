@@ -26,16 +26,30 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
+import org.a2aproject.sdk.server.ServerCallContext;
 import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
+import org.a2aproject.sdk.server.auth.UnauthenticatedUser;
 import org.a2aproject.sdk.server.events.InMemoryQueueManager;
 import org.a2aproject.sdk.server.events.QueueManager;
 import org.a2aproject.sdk.server.requesthandlers.DefaultRequestHandler;
+import org.a2aproject.sdk.server.tasks.InMemoryPushNotificationConfigStore;
 import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
 import org.a2aproject.sdk.server.tasks.TaskStateProvider;
 import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.ListTasksParams;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.MessageSendConfiguration;
+import org.a2aproject.sdk.spec.MessageSendParams;
 import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
 import org.a2aproject.sdk.spec.TaskState;
 import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TextPart;
+import org.a2aproject.sdk.spec.UnsupportedOperationError;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -87,6 +101,83 @@ class AgentScopeA2aRequestHandlerTest {
                 InMemoryQueueManager.class.getDeclaredField("taskStateProvider");
         taskStateProviderField.setAccessible(true);
         return (TaskStateProvider) taskStateProviderField.get(queueManager);
+    }
+
+    @Nested
+    @DisplayName("List Tasks Tests")
+    class ListTasksTests {
+
+        @Test
+        @DisplayName("Should reject listing tasks, which callers are not authorized for")
+        void testListTasksIsRejected() {
+            InMemoryTaskStore taskStore = new InMemoryTaskStore();
+            taskStore.save(
+                    Task.builder()
+                            .id("task-of-another-session")
+                            .contextId("another-session")
+                            .status(new TaskStatus(TaskState.TASK_STATE_COMPLETED))
+                            .build(),
+                    false);
+            AgentScopeA2aRequestHandler handler =
+                    AgentScopeA2aRequestHandler.builder()
+                            .agentExecutor(mock(AgentExecutor.class))
+                            .taskStore(taskStore)
+                            .build();
+            ServerCallContext anonymous =
+                    new ServerCallContext(UnauthenticatedUser.INSTANCE, new HashMap<>(), Set.of());
+
+            assertThrows(
+                    UnsupportedOperationError.class,
+                    () -> handler.onListTasks(new ListTasksParams(), anonymous));
+        }
+    }
+
+    @Nested
+    @DisplayName("Push Notification Tests")
+    class PushNotificationTests {
+
+        @Test
+        @DisplayName("Should not keep the push config of a message, as the card declares no push")
+        void testPushConfigOfMessageIsIgnored() throws Exception {
+            List<TaskPushNotificationConfig> saved = new CopyOnWriteArrayList<>();
+            InMemoryPushNotificationConfigStore pushConfigStore =
+                    new InMemoryPushNotificationConfigStore() {
+                        @Override
+                        public TaskPushNotificationConfig setInfo(
+                                TaskPushNotificationConfig config, String protocolVersion) {
+                            saved.add(config);
+                            return super.setInfo(config, protocolVersion);
+                        }
+                    };
+            AgentScopeA2aRequestHandler handler =
+                    AgentScopeA2aRequestHandler.builder()
+                            .agentExecutor(mock(AgentExecutor.class))
+                            .pushConfigStore(pushConfigStore)
+                            .build();
+            MessageSendConfiguration configuration =
+                    MessageSendConfiguration.builder()
+                            .taskPushNotificationConfig(
+                                    new TaskPushNotificationConfig(
+                                            null,
+                                            null,
+                                            "https://example.invalid/callback",
+                                            null,
+                                            null,
+                                            null))
+                            .build();
+            Message message =
+                    Message.builder()
+                            .role(Message.Role.ROLE_USER)
+                            .parts(new TextPart("hello"))
+                            .build();
+
+            // The SDK stores the config of a new streaming task before the stream is subscribed.
+            handler.onMessageSendStream(
+                    new MessageSendParams(message, configuration, null),
+                    new ServerCallContext(UnauthenticatedUser.INSTANCE, new HashMap<>(), Set.of()));
+
+            assertTrue(saved.isEmpty(), "saved push configs: " + saved);
+        }
     }
 
     @Nested

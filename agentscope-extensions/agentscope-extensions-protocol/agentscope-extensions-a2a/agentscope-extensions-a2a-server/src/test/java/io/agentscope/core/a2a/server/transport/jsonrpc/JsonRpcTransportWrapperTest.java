@@ -52,8 +52,6 @@ import org.a2aproject.sdk.jsonrpc.common.wrappers.GetTaskResponse;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTaskPushNotificationConfigsRequest;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTaskPushNotificationConfigsResponse;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTasksRequest;
-import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTasksResponse;
-import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTasksResult;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.SendMessageRequest;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.SendMessageResponse;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.SendStreamingMessageRequest;
@@ -76,6 +74,7 @@ import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
 import org.a2aproject.sdk.spec.TaskState;
 import org.a2aproject.sdk.spec.TaskStatus;
 import org.a2aproject.sdk.spec.TransportProtocol;
+import org.a2aproject.sdk.spec.UnsupportedOperationError;
 import org.a2aproject.sdk.transport.jsonrpc.context.JSONRPCContextKeys;
 import org.a2aproject.sdk.transport.jsonrpc.handler.JSONRPCHandler;
 import org.junit.jupiter.api.BeforeEach;
@@ -225,16 +224,16 @@ class JsonRpcTransportWrapperTest {
         }
 
         @Test
-        @DisplayName("Should handle ListTasksRequest")
-        void testHandleListTasksRequest() throws Exception {
-            String body = request("ListTasks", "{\"contextId\":\"context456\"}");
-            when(jsonRpcHandler.onListTasks(
-                            any(ListTasksRequest.class), any(ServerCallContext.class)))
-                    .thenReturn(new ListTasksResponse("1", new ListTasksResult(List.of(TASK))));
+        @DisplayName("Should reject ListTasks, which would let any caller list every task")
+        void testRejectListTasksRequest() throws Exception {
+            String body = request("ListTasks", "{\"historyLength\":10}");
 
             Object result = transportWrapper.handleRequest(body, Map.of(), Map.of());
 
-            assertEquals("task123", assertResult(result).path("tasks").path(0).path("id").asText());
+            assertEquals("1", readJson(result).path("id").asText());
+            assertEquals(new UnsupportedOperationError().getCode(), errorCode(result));
+            verify(jsonRpcHandler, never())
+                    .onListTasks(any(ListTasksRequest.class), any(ServerCallContext.class));
         }
 
         @Test
@@ -506,13 +505,27 @@ class JsonRpcTransportWrapperTest {
         }
 
         @Test
-        @DisplayName("Should reject params of the wrong type as an invalid request")
+        @DisplayName("Should answer params of the wrong type as invalid params of the same request")
         void testHandleWrongParamType() throws Exception {
+            // The SDK reports this error without the request id.
             String body = request("GetTask", "{\"id\":\"task123\",\"historyLength\":\"many\"}");
 
             Object result = transportWrapper.handleRequest(body, Map.of(), Map.of());
 
-            // The SDK does not tell the request id for this error.
+            assertEquals("1", readJson(result).path("id").asText());
+            assertEquals(new InvalidParamsError().getCode(), errorCode(result));
+        }
+
+        @Test
+        @DisplayName("Should answer an invalid request id as an invalid request without id")
+        void testHandleInvalidRequestId() throws Exception {
+            String body =
+                    "{\"jsonrpc\":\"2.0\",\"id\":{\"value\":1},\"method\":\"GetTask\","
+                            + "\"params\":{\"id\":\"task123\"}}";
+
+            Object result = transportWrapper.handleRequest(body, Map.of(), Map.of());
+
+            assertFalse(readJson(result).hasNonNull("id"), readJson(result).toString());
             assertEquals(new InvalidRequestError().getCode(), errorCode(result));
         }
 

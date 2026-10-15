@@ -16,6 +16,8 @@
 
 package io.agentscope.core.a2a.server.transport.jsonrpc;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 import com.google.protobuf.Empty;
 import com.google.protobuf.MessageOrBuilder;
@@ -51,8 +53,6 @@ import org.a2aproject.sdk.jsonrpc.common.wrappers.GetTaskRequest;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.GetTaskResponse;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTaskPushNotificationConfigsRequest;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTaskPushNotificationConfigsResponse;
-import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTasksRequest;
-import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTasksResponse;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.NonStreamingJSONRPCRequest;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.SendMessageRequest;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.SendMessageResponse;
@@ -147,8 +147,14 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
                     new A2AErrorResponse(
                             e.getId(), new InvalidRequestError(null, e.getMessage(), null)));
         } catch (JsonMappingException e) {
+            // Thrown for an invalid request id, and for some invalid params, without the id.
+            Object id = requestId(body);
             return toJson(
-                    new A2AErrorResponse(new InvalidRequestError(null, e.getMessage(), null)));
+                    null == id
+                            ? new A2AErrorResponse(
+                                    new InvalidRequestError(null, e.getMessage(), null))
+                            : new A2AErrorResponse(
+                                    id, new InvalidParamsError(null, e.getMessage(), null)));
         } catch (JsonSyntaxException | JsonProcessingException e) {
             log.error("JSON parsing error: ", e);
             return toJson(new A2AErrorResponse(new JSONParseError(e.getMessage())));
@@ -178,6 +184,25 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
         } catch (Throwable t) {
             log.error("Handle JSON-RPC request error:", t);
             return toJson(new A2AErrorResponse(request.getId(), new InternalError(t.getMessage())));
+        }
+    }
+
+    /**
+     * The id of a request, read as the SDK does, or {@code null} if the request has no valid id.
+     */
+    private static Object requestId(String body) {
+        try {
+            JsonElement id = JsonParser.parseString(body).getAsJsonObject().get("id");
+            if (null == id || !id.isJsonPrimitive()) {
+                return null;
+            }
+            try {
+                return id.getAsInt();
+            } catch (UnsupportedOperationException | NumberFormatException e) {
+                return id.getAsString();
+            }
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 
@@ -226,8 +251,6 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
             return ProtoUtils.ToProto.taskOrMessage(r.getResult());
         } else if (response instanceof SendStreamingMessageResponse r) {
             return ProtoUtils.ToProto.taskOrMessageStream(r.getResult());
-        } else if (response instanceof ListTasksResponse r) {
-            return ProtoUtils.ToProto.listTasksResult(r.getResult());
         } else if (response instanceof CreateTaskPushNotificationConfigResponse r) {
             return ProtoUtils.ToProto.createTaskPushNotificationConfigResponse(r.getResult());
         } else if (response instanceof GetTaskPushNotificationConfigResponse r) {
@@ -315,8 +338,6 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
             return jsonRpcHandler.onMessageSend(req, context);
         } else if (request instanceof CancelTaskRequest req) {
             return jsonRpcHandler.onCancelTask(req, context);
-        } else if (request instanceof ListTasksRequest req) {
-            return jsonRpcHandler.onListTasks(req, context);
         } else if (request instanceof GetTaskPushNotificationConfigRequest req) {
             return jsonRpcHandler.getPushNotificationConfig(req, context);
         } else if (request instanceof CreateTaskPushNotificationConfigRequest req) {
@@ -328,6 +349,8 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
         } else if (request instanceof GetExtendedAgentCardRequest req) {
             return jsonRpcHandler.onGetExtendedCardRequest(req, context);
         }
+        // Including ListTasks: callers are not authorized yet, so it would list every session's
+        // tasks.
         return generateErrorResponse(request, new UnsupportedOperationError());
     }
 
