@@ -104,6 +104,11 @@ class A2aHttpEndToEndTest {
         registry.add("agentscope.a2a.server.require-inner-message", () -> true);
         // A2A JSON must not follow the application's Jackson settings.
         registry.add("spring.jackson.property-naming-strategy", () -> "SNAKE_CASE");
+        // A non-ASCII card field, to check the card is always sent as UTF-8.
+        registry.add("agentscope.a2a.server.card.skills[0].id", () -> "translate");
+        registry.add("agentscope.a2a.server.card.skills[0].name", () -> "翻译");
+        registry.add("agentscope.a2a.server.card.skills[0].description", () -> "中英互译");
+        registry.add("agentscope.a2a.server.card.skills[0].tags[0]", () -> "language");
     }
 
     @Autowired private ScriptedAgentRunner runner;
@@ -121,6 +126,25 @@ class A2aHttpEndToEndTest {
         assertThat(card.description()).isEqualTo(ScriptedAgentRunner.DESCRIPTION);
         assertThat(card.url()).contains(HOST + ":" + PORT);
         assertThat(card.capabilities().streaming()).isTrue();
+    }
+
+    @Test
+    void agentCardIsUtf8WhateverTheRequestedCharset() throws Exception {
+        HttpRequest request =
+                HttpRequest.newBuilder(URI.create(BASE_URL + "/" + ".well-known/agent-card.json"))
+                        .timeout(TIMEOUT)
+                        .header("Accept", "application/json;charset=ISO-8859-1")
+                        .GET()
+                        .build();
+
+        HttpResponse<byte[]> response =
+                HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("Content-Type"))
+                .hasValueSatisfying(type -> assertThat(type).doesNotContain("ISO-8859-1"));
+        JsonNode card = JSON.readTree(new String(response.body(), StandardCharsets.UTF_8));
+        assertThat(card.path("skills").path(0).path("name").asText()).isEqualTo("翻译");
     }
 
     @Test
@@ -159,7 +183,7 @@ class A2aHttpEndToEndTest {
     }
 
     @Test
-    void nonStreamingResponseIsJsonWhateverTheAcceptHeader() throws Exception {
+    void nonStreamingResponseIsJsonForJsonOrSseAccept() throws Exception {
         String request =
                 "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"tasks/get\","
                         + "\"params\":{\"id\":\"missing-task\"}}";
@@ -182,6 +206,8 @@ class A2aHttpEndToEndTest {
             assertThat(body.path("id").asText()).as("Accept: %s", accept).isEqualTo("1");
             assertThat(body.has("error")).as("Accept: %s", accept).isTrue();
         }
+        // Other media types are not served at all.
+        assertThat(postJsonRpc(request, "application/xml").statusCode()).isEqualTo(406);
     }
 
     @Test
@@ -196,6 +222,12 @@ class A2aHttpEndToEndTest {
         HttpResponse<byte[]> response =
                 postJsonRpc(request, "text/event-stream;charset=ISO-8859-1");
 
+        assertThat(response.headers().firstValue("Content-Type"))
+                .hasValueSatisfying(
+                        type ->
+                                assertThat(type)
+                                        .startsWith("application/json")
+                                        .doesNotContain("ISO-8859-1"));
         JsonNode body = JSON.readTree(new String(response.body(), StandardCharsets.UTF_8));
         assertThat(body.path("result").path("parts").path(0).path("text").asText())
                 .isEqualTo("你好，世界");

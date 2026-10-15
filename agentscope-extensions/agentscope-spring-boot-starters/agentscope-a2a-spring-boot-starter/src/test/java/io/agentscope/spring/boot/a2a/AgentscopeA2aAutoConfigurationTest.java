@@ -151,7 +151,7 @@ class AgentscopeA2aAutoConfigurationTest {
                                     context.getBean(AgentCardController.class);
                             AgentCard agentCard =
                                     Utils.OBJECT_MAPPER.readValue(
-                                            controller.getAgentCard(), AgentCard.class);
+                                            controller.getAgentCard().getBody(), AgentCard.class);
                             assertThat(agentCard.name()).isEqualTo("Test Agent");
                             assertThat(agentCard.description()).isEqualTo("Test Description");
                         });
@@ -541,6 +541,7 @@ class AgentscopeA2aAutoConfigurationTest {
             throws Exception {
         assertThat(context).hasNotFailed();
         return Utils.OBJECT_MAPPER.readValue(
-                context.getBean(AgentCardController.class).getAgentCard(), AgentCard.class);
+                context.getBean(AgentCardController.class).getAgentCard().getBody(),
+                AgentCard.class);
     }
 }

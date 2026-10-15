@@ -148,7 +148,7 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
 
     /**
      * Writes a streamed {@code response}. If that fails, ends the stream with an internal error for
-     * the same request, which also cancels the remaining responses.
+     * the same request and cancels the subscription to the remaining responses.
      */
     private static void toJsonOrEnd(JSONRPCResponse<?> response, SynchronousSink<String> sink) {
         try {

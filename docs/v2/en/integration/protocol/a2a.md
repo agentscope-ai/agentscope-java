@@ -130,6 +130,6 @@ agentscope:
           - bearerAuth: []
 ```
 
-When a map key, such as an OAuth scope name, contains characters like `:`, `/` or `.`, write it quoted in brackets, for example `"[read:user]": Read the user`; otherwise Spring rewrites the key when binding.
+When a map key contains special characters, such as the OAuth scope name `read:user` or a URL, write it quoted in brackets, for example `"[read:user]": Read the user`. Without brackets, characters such as `:` and `/` are dropped, and a `security-schemes` name containing `.` is read as a nested path, so that scheme is not applied.
 
 The starter writes A2A JSON with the A2A SDK, so the application's own Jackson settings (such as `spring.jackson.property-naming-strategy`) do not affect it.

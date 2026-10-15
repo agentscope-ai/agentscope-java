@@ -18,6 +18,7 @@ package io.agentscope.spring.boot.a2a.controller;
 
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,7 +34,10 @@ public class AgentCardController {
     }
 
     @GetMapping(value = "/.well-known/agent-card.json", produces = MediaType.APPLICATION_JSON_VALUE)
-    public String getAgentCard() {
-        return agentScopeA2aServer.getAgentCardJson();
+    public ResponseEntity<String> getAgentCard() {
+        // Set the type explicitly, so that the JSON is UTF-8 whatever charset the request asks for.
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(agentScopeA2aServer.getAgentCardJson());
     }
 }

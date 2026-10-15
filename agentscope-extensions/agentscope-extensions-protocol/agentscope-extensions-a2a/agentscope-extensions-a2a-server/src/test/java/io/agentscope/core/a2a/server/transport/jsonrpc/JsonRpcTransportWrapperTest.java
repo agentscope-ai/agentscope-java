@@ -346,7 +346,7 @@ class JsonRpcTransportWrapperTest {
         }
 
         @Test
-        @DisplayName("Should end a stream with an internal error and stop the agent's responses")
+        @DisplayName("Should end a stream with an internal error and stop reading responses")
         void testUnserializableStreamedResponseEndsStream() {
             String body =
                     "{\"jsonrpc\":\"2.0\",\"method\":\"message/stream\",\"params\":{\"message\":{\"messageId\":\"message123\",\"kind\":\"message\",\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"Hello\"}]}},\"id\":\"1\"}";
@@ -380,7 +380,7 @@ class JsonRpcTransportWrapperTest {
                             })
                     .expectComplete()
                     .verify(Duration.ofSeconds(5));
-            assertTrue(cancelled.get(), "the agent's responses should be cancelled");
+            assertTrue(cancelled.get(), "the subscription to the responses should be cancelled");
         }
     }
 
