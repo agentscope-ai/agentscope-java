@@ -33,10 +33,7 @@ import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -310,30 +307,17 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
     }
 
     /**
-     * Save base64 data to a temporary file.
+     * Materialize Base64 media to a shared, content-addressed temporary file.
+     * Identical media reuses the same path within the process; callers must not modify or delete
+     * the returned file. The file is not automatically removed.
      *
      * @param mediaType  The MIME type (e.g., "image/png", "audio/wav")
      * @param base64Data The base64-encoded data (without prefix)
      * @return Absolute path to the temporary file
-     * @throws IOException If file creation or writing fails
+     * @throws IOException If the payload is invalid or materialization fails
      */
     protected String saveBase64DataToTempFile(String mediaType, String base64Data)
             throws IOException {
-        // Extract extension from MIME type (e.g., "image/png" → ".png")
-        String extension = "." + (mediaType.contains("/") ? mediaType.split("/")[1] : mediaType);
-
-        // Create temp file with extension
-        Path tempFile = Files.createTempFile("agentscope_", extension);
-
-        // Decode base64 data
-        byte[] decodedData = Base64.getDecoder().decode(base64Data);
-
-        // Write to file
-        Files.write(tempFile, decodedData);
-
-        log.debug("Saved base64 data to temp file: {}", tempFile);
-
-        // Return absolute path
-        return tempFile.toAbsolutePath().toString();
+        return MediaUtils.materializeBase64ToTempFile(mediaType, base64Data);
     }
 }
