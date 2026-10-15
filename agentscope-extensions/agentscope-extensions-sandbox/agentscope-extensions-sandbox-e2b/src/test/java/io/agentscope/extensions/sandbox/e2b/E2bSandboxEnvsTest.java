@@ -17,12 +17,17 @@ package io.agentscope.extensions.sandbox.e2b;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -113,5 +118,56 @@ class E2bSandboxEnvsTest {
 
         Map<String, String> second = sandbox.resolveEnvVars();
         assertEquals("v2", second.get("TOKEN"));
+    }
+
+    /** The spec chain must pass env entries through to its client options. */
+    @Test
+    void filesystemSpecExposesEnvPassthrough() {
+        E2bFilesystemSpec spec =
+                new E2bFilesystemSpec()
+                        .env("LARKSUITE_CLI_APP_ID", "cli_x")
+                        .env("LARKSUITE_CLI_USER_ACCESS_TOKEN", () -> "u-1");
+
+        E2bSandboxClientOptions options = (E2bSandboxClientOptions) spec.clientOptions();
+        assertEquals("cli_x", options.getEnvs().get("LARKSUITE_CLI_APP_ID").get());
+        assertEquals("u-1", options.getEnvs().get("LARKSUITE_CLI_USER_ACCESS_TOKEN").get());
+    }
+
+    /** Default and per-call envs merge, per-call entries win, and a null per-call set is fine. */
+    @Test
+    void clientMergesDefaultAndPerCallEnvs() {
+        E2bSandboxClientOptions defaults = new E2bSandboxClientOptions();
+        defaults.env("A", "default-a");
+        defaults.env("B", "default-b");
+        E2bSandboxClient client = new E2bSandboxClient(defaults, null);
+
+        E2bSandboxClientOptions call = new E2bSandboxClientOptions();
+        call.env("B", "call-b");
+        call.env("C", () -> "call-c");
+
+        Sandbox sandbox = client.create(new WorkspaceSpec(), null, call);
+        Map<String, String> resolved = ((E2bSandbox) sandbox).resolveEnvVars();
+        assertEquals("default-a", resolved.get("A"));
+        assertEquals("call-b", resolved.get("B"));
+        assertEquals("call-c", resolved.get("C"));
+
+        Sandbox sandboxWithDefaults = client.create(new WorkspaceSpec(), null, null);
+        assertEquals("default-a", ((E2bSandbox) sandboxWithDefaults).resolveEnvVars().get("A"));
+    }
+
+    /** Blank env names are rejected; a null env map resets to empty. */
+    @Test
+    void optionsValidateEnvNamesAndHandleNullMap() {
+        E2bSandboxClientOptions opt = new E2bSandboxClientOptions();
+        assertThrows(IllegalArgumentException.class, () -> opt.env("", "v"));
+        assertThrows(IllegalArgumentException.class, () -> opt.env("  ", () -> "v"));
+
+        opt.setEnvs(null);
+        assertTrue(opt.getEnvs().isEmpty());
+
+        Map<String, Supplier<String>> supplied = new HashMap<>();
+        supplied.put("K", () -> "v");
+        opt.setEnvs(supplied);
+        assertEquals("v", opt.getEnvs().get("K").get());
     }
 }
