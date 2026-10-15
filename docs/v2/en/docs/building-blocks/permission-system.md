@@ -215,6 +215,33 @@ ConfirmResult result =
 
 Runnable examples: `agentscope-examples/documentation/.../tool/PermissionContextExample.java`, `hitl/PermissionHITLExample.java`.
 
+### Filesystem path rules
+
+Harness filesystem tools interpret non-empty `ruleContent` as a pattern against the logical `path` argument. A shared-store workspace can restrict writes to application-owned definitions while retaining normal file tools:
+
+```java
+PermissionContextState.Builder permissions =
+        PermissionContextState.builder().mode(PermissionMode.DEFAULT);
+for (String tool : java.util.List.of("write_file", "edit_file")) {
+    for (String path : java.util.List.of(
+            "AGENTS.md", "tools.json", "skills/**", "knowledge/**", "subagents/**")) {
+        permissions.addDenyRule(tool,
+                new PermissionRule(tool, path, PermissionBehavior.DENY, "application"));
+    }
+}
+// Pass permissions.build() to HarnessAgent.builder().permissionContext(...).
+```
+
+These deny rules also apply in `BYPASS` mode. They do not affect `read_file`, unrelated paths, or framework code writing directly through the filesystem. Other calls continue through the configured permission mode. No path rules are installed by default.
+
+Patterns match the whole logical path and are case-sensitive on every platform. `*` matches within one path segment, `?` matches one non-separator character, and a whole-segment `**` matches any depth. `skills/**` matches both `skills` and its descendants; `skills/*.md` matches only direct Markdown files; `**/AGENTS.md` also matches a root-level `AGENTS.md`. Braces and character classes are literal text. Rules containing `..` or embedded `**` such as `skills**` are rejected.
+
+Matching first strips the configured workspace prefix using the current user/session namespace, exactly as execution does, then converts backslashes to slashes and folds repeated separators and `.`/`..` segments. Unmapped absolute paths are compared again with equally normalized workspace prefixes. With path rules enabled, relative paths that still start with `..` after normalization and Windows drive-relative paths such as `C:AGENTS.md` are rejected because their workspace target cannot be determined; use an explicit workspace-relative or absolute path instead. A leading slash on the resulting logical path is optional. Paths outside the configured prefix retain their full path, so `skills/**` does not match `/other/skills/file`. Missing, blank, or non-string path arguments do not match path rules. The Agent applies registered preset parameters before checking permissions; presets override model arguments.
+
+This is a lexical policy on named tools, not a filesystem read-only boundary. It does not resolve symlinks or case-insensitive filesystem aliases, or restrict `execute`, skill-management tools, or direct application writes. Use filesystem or sandbox restrictions to protect every access route. For existing sessions, apply rules through the permission-context update API; changing builder defaults does not update persisted sessions.
+
+Objects registered with `@Tool` can implement `ToolRuleMatcher` for matching with `RuntimeContext`. Existing `ToolBase.matchRule(String, Map)` overrides remain supported. Direct `PermissionEngine` callers should supply effective arguments including presets, and use its `RuntimeContext` overload when matching depends on user/session paths.
+
 ## Built-in checks
 
 Every tool implements `checkPermissions(toolInput, context)` (on `ToolBase`) — a runtime check on the actual input that returns `Mono<PermissionDecision>`. These checks cannot be bypassed: they apply regardless of mode or rules.

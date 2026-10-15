@@ -30,7 +30,6 @@ import io.agentscope.core.util.ExceptionUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -260,19 +259,7 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.suspended(toolCall));
         }
 
-        // Merge runtime context: param-level > toolkit default
-        RuntimeContext runtimeContext = param.getRuntimeContext();
-        @SuppressWarnings("deprecation")
-        ToolExecutionContext toolkitDefault = config.getDefaultContext();
-        if (runtimeContext == null && toolkitDefault != null) {
-            runtimeContext = RuntimeContext.builder().toolExecutionContext(toolkitDefault).build();
-        } else if (runtimeContext != null && toolkitDefault != null) {
-            ToolExecutionContext merged =
-                    ToolExecutionContext.merge(
-                            runtimeContext.asToolExecutionContext(), toolkitDefault);
-            runtimeContext =
-                    RuntimeContext.builder(runtimeContext).toolExecutionContext(merged).build();
-        }
+        RuntimeContext runtimeContext = toolkit.effectiveRuntimeContext(param.getRuntimeContext());
 
         // Create emitter for streaming
         ToolEmitter toolEmitter =
@@ -297,15 +284,10 @@ class ToolExecutor {
 
         // Merge input with preset parameters. Preset values win so framework-controlled
         // parameters remain immutable from the caller/LLM perspective.
-        Map<String, Object> mergedInput = new HashMap<>();
-        if (!param.getInput().isEmpty()) {
-            mergedInput.putAll(param.getInput());
-        } else if (!toolCall.getInput().isEmpty()) {
-            mergedInput.putAll(toolCall.getInput());
-        }
-        if (registered != null) {
-            mergedInput.putAll(registered.getPresetParameters());
-        }
+        Map<String, Object> mergedInput =
+                toolRegistry.effectiveInput(
+                        toolCall.getName(),
+                        !param.getInput().isEmpty() ? param.getInput() : toolCall.getInput());
 
         // Build final execution param
         ToolCallParam executionParam =

@@ -19,6 +19,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.tool.ToolRuleMatcher;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -30,12 +31,13 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.util.List;
+import java.util.Map;
 
 /**
  * File system tools backed by a {@link AbstractFilesystem}, exposing read/write/edit/grep/glob
  * operations as agent-callable tools.
  */
-public class FilesystemTool {
+public class FilesystemTool implements ToolRuleMatcher {
 
     static final int DEFAULT_GREP_LIMIT = 100;
     static final int DEFAULT_GLOB_LIMIT = 200;
@@ -52,6 +54,37 @@ public class FilesystemTool {
             AbstractFilesystem abstractFilesystem, WorkspacePathNormalizer pathNormalizer) {
         this.abstractFilesystem = abstractFilesystem;
         this.pathNormalizer = pathNormalizer;
+    }
+
+    /**
+     * Matches the logical workspace path, using the same per-call workspace-prefix mapping as
+     * execution. Rules support {@code *}, {@code ?}, and whole-segment {@code **} wildcards.
+     * Matching is case-sensitive and lexical; it does not resolve filesystem links or restrict
+     * other tools such as shell execution.
+     */
+    @Override
+    public boolean matchRule(
+            String ruleContent, Map<String, Object> toolInput, RuntimeContext runtimeContext) {
+        Object value = toolInput.get("path");
+        if (!(value instanceof String path) || path.isBlank() || path.indexOf('\0') >= 0) {
+            return false;
+        }
+        String normalized =
+                pathNormalizer != null
+                        ? pathNormalizer.normalizeForMatching(path, runtimeContext)
+                        : FilesystemPathPattern.normalize(path);
+        boolean driveRelative =
+                normalized.length() >= 2
+                        && Character.isLetter(normalized.charAt(0))
+                        && normalized.charAt(1) == ':'
+                        && (normalized.length() == 2 || normalized.charAt(2) != '/');
+        if (normalized.equals("..") || normalized.startsWith("../") || driveRelative) {
+            throw new IllegalArgumentException(
+                    "Path rules cannot resolve an ambiguous relative path;"
+                            + " use a workspace-relative or absolute path: "
+                            + path);
+        }
+        return FilesystemPathPattern.matches(ruleContent, normalized);
     }
 
     static final int MAX_LISTING_ENTRIES = 200;
