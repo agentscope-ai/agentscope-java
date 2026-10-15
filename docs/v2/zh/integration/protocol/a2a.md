@@ -92,7 +92,9 @@ AgentScopeA2aServer server = AgentScopeA2aServer.builder()
 
 // 在你的 Web 框架里把请求委托给 transportWrapper
 TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
-// ... Spring/Quarkus controller 转发到 wrapper.handle(...)
+// ... Spring/Quarkus controller 调用 wrapper.handleRequest(body, headers, metadata)：
+// 返回 JSON 字符串；流式请求返回 Flux<String>，每个元素作为一条 SSE 事件写出。
+// AgentCard 端点直接返回 server.getAgentCardJson()。
 
 server.postEndpointReady();   // Web 服务监听端口后再调用，触发注册等动作
 ```
@@ -108,3 +110,26 @@ server.postEndpointReady();   // Web 服务监听端口后再调用，触发注�
 ## Spring Boot Starter
 
 如果你使用 Spring Boot，建议直接引入 `agentscope-spring-boot-starter-a2a-server`，自动装配上述 server 和控制器，详见[快速开始](/v2/zh/docs/quickstart)。
+
+AgentCard 的内容可以在 `agentscope.a2a.server.card` 下配置，字段名与 A2A AgentCard 一致，例如声明认证方式：
+
+```yaml
+agentscope:
+  a2a:
+    server:
+      card:
+        provider:
+          organization: My Company
+          url: https://example.com
+        security-schemes:
+          bearerAuth:
+            type: http          # 可选 apiKey、http、oauth2、openIdConnect、mutualTLS
+            scheme: bearer
+            bearer-format: JWT
+        security:
+          - bearerAuth: []
+```
+
+Map 的键含特殊字符时（例如 OAuth scope 名 `read:user` 或 URL），请用引号加方括号写成 `"[read:user]": 读取用户信息`。不加方括号时，`:`、`/` 等字符会被去掉；`security-schemes` 的名称如果含 `.`，会被当作嵌套路径，该方案不会生效。
+
+Starter 返回的 JSON 由 A2A SDK 生成，不受应用自身 Jackson 配置（如 `spring.jackson.property-naming-strategy`）影响。

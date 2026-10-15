@@ -233,7 +233,8 @@ class KnowledgeRetrievalToolsTest {
         knowledge.addDocuments(List.of(doc1, doc2)).block();
 
         // Call tool
-        String result = tools.retrieveKnowledge("content", 5, null, null);
+        String result =
+                extractTextFromResult(tools.retrieveKnowledge("content", 5, null, null).block());
 
         assertNotNull(result);
         assertTrue(result.contains("Retrieved"));
@@ -258,7 +259,8 @@ class KnowledgeRetrievalToolsTest {
         KnowledgeRetrievalTools errorTools = new KnowledgeRetrievalTools(errorKB);
 
         // Should return error message instead of throwing
-        String result = errorTools.retrieveKnowledge("query", 5, null, null);
+        String result =
+                extractTextFromResult(errorTools.retrieveKnowledge("query", 5, null, null).block());
         assertNotNull(result);
         assertTrue(result.contains("Failed to retrieve"));
     }
@@ -267,7 +269,8 @@ class KnowledgeRetrievalToolsTest {
     @DisplayName("Should return empty message for empty results")
     void testRetrieveKnowledgeEmptyResults() {
         // Knowledge base is empty, so retrieval should return empty message
-        String result = tools.retrieveKnowledge("query", 5, null, null);
+        String result =
+                extractTextFromResult(tools.retrieveKnowledge("query", 5, null, null).block());
 
         assertNotNull(result);
         assertTrue(

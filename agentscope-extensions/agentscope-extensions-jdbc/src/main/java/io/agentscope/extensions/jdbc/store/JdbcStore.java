@@ -108,6 +108,11 @@ public class JdbcStore implements VersionedBaseStore {
     }
 
     @Override
+    public boolean supportsAtomicSessionStorage() {
+        return true;
+    }
+
+    @Override
     public boolean putIfVersion(
             List<String> namespace, String key, Map<String, Object> value, long expectedVersion) {
         validateKey(key);
