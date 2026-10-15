@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.Version;
 import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -186,6 +188,42 @@ class McpAsyncClientWrapperTest {
         assertEquals("tool1", cached.name());
 
         assertNull(wrapper.getCachedTool("non-existent"));
+    }
+
+    @Test
+    void testClose_GracefulAttemptTimesOutForcesClosure() {
+        // An unresponsive server keeps the transport open and never completes closeGracefully().
+        // Without a ceiling, block() parks the caller forever and the forceful fallback is
+        // unreachable - so close() must return within the configured bound and still shut the
+        // client down.
+        setupSuccessfulInitialization();
+        wrapper.initialize().block();
+        wrapper.setCloseTimeout(Duration.ofMillis(200));
+        when(mockClient.closeGracefully()).thenReturn(Mono.never());
+
+        long startedAt = System.nanoTime();
+        wrapper.close();
+        long elapsedMillis = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+
+        assertTrue(
+                elapsedMillis < 5_000,
+                "close() did not return within a bounded time: " + elapsedMillis + " ms");
+        assertFalse(wrapper.isInitialized());
+        assertTrue(wrapper.cachedTools.isEmpty());
+        verify(mockClient, times(1)).closeGracefully();
+        verify(mockClient, times(1)).close();
+    }
+
+    @Test
+    void testCloseTimeoutIsBoundedByDefaultAndRejectsUnboundedValues() {
+        assertEquals(McpAsyncClientWrapper.DEFAULT_CLOSE_TIMEOUT, wrapper.getCloseTimeout());
+        assertThrows(IllegalArgumentException.class, () -> wrapper.setCloseTimeout(null));
+        assertThrows(IllegalArgumentException.class, () -> wrapper.setCloseTimeout(Duration.ZERO));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> wrapper.setCloseTimeout(Duration.ofSeconds(-1)));
+        // Rejected calls must not have changed the live ceiling.
+        assertEquals(McpAsyncClientWrapper.DEFAULT_CLOSE_TIMEOUT, wrapper.getCloseTimeout());
     }
 
     @Test
