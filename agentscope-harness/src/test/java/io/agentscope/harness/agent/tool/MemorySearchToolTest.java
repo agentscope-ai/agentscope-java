@@ -17,7 +17,9 @@ package io.agentscope.harness.agent.tool;
 
 import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -25,16 +27,26 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+/** Tests for {@link MemorySearchTool}: result bounding (issue #3266) and ToolResultBlock state. */
 class MemorySearchToolTest {
-    private final WorkspaceManager workspace = mock(WorkspaceManager.class);
-    private final MemorySearchTool tool = new MemorySearchTool(workspace);
-    private final RuntimeContext context = RuntimeContext.empty();
+
+    private static final RuntimeContext RT = RuntimeContext.empty();
+
+    // --- ToolResultBlock semantics (mocked WorkspaceManager) ---
+
+    private final WorkspaceManager skippedWorkspace = mock(WorkspaceManager.class);
+    private final MemorySearchTool mockedTool = new MemorySearchTool(skippedWorkspace);
 
     @ParameterizedTest
     @NullAndEmptySource
@@ -42,27 +54,27 @@ class MemorySearchToolTest {
     void missingQueryIsAnError(String query) {
         assertEquals(
                 "Error: No query provided",
-                assertText(tool.memorySearch(context, query), ToolResultState.ERROR));
-        verifyNoInteractions(workspace);
+                assertText(mockedTool.memorySearch(RT, query), ToolResultState.ERROR));
+        verifyNoInteractions(skippedWorkspace);
     }
 
     @Test
     void noMatchesIsASuccessfulSearch() {
-        when(workspace.listMemoryFilePaths(context)).thenReturn(List.of("MEMORY.md"));
-        when(workspace.readManagedWorkspaceFileUtf8(context, "MEMORY.md"))
+        when(skippedWorkspace.listMemoryFilePaths(RT)).thenReturn(List.of("MEMORY.md"));
+        when(skippedWorkspace.readManagedWorkspaceFileUtf8(RT, "MEMORY.md"))
                 .thenReturn("Nothing relevant");
         assertEquals(
                 "No matching memories found for: timeout",
-                assertText(tool.memorySearch(context, "timeout"), ToolResultState.SUCCESS));
+                assertText(mockedTool.memorySearch(RT, "timeout"), ToolResultState.SUCCESS));
     }
 
     @Test
     void errorLookingMemoryIsData() {
-        when(workspace.listMemoryFilePaths(context))
+        when(skippedWorkspace.listMemoryFilePaths(RT))
                 .thenReturn(List.of("MEMORY.md", "memory/empty.md"));
-        when(workspace.readManagedWorkspaceFileUtf8(context, "MEMORY.md"))
+        when(skippedWorkspace.readManagedWorkspaceFileUtf8(RT, "MEMORY.md"))
                 .thenReturn("[ERROR] timeout\nError: timeout");
-        String text = assertText(tool.memorySearch(context, "TIMEOUT"), ToolResultState.SUCCESS);
+        String text = assertText(mockedTool.memorySearch(RT, "TIMEOUT"), ToolResultState.SUCCESS);
         assertTrue(text.contains("Found 2 matches:"));
         assertTrue(text.contains("MEMORY.md#1: [ERROR] timeout"));
         assertTrue(text.contains("MEMORY.md#2: Error: timeout"));
@@ -70,8 +82,256 @@ class MemorySearchToolTest {
 
     @Test
     void nullContextUsesEmptyContext() {
-        when(workspace.listMemoryFilePaths(org.mockito.ArgumentMatchers.any()))
-                .thenReturn(List.of());
-        assertText(tool.memorySearch(null, "anything"), ToolResultState.SUCCESS);
+        when(skippedWorkspace.listMemoryFilePaths(any())).thenReturn(List.of());
+        assertText(mockedTool.memorySearch(null, "anything"), ToolResultState.SUCCESS);
+    }
+
+    // --- Result bounding (real WorkspaceManager over temp files) ---
+
+    @TempDir Path workingDir;
+
+    private WorkspaceManager workspace;
+    private MemorySearchTool tool;
+
+    @BeforeEach
+    void setUp() {
+        workspace = new WorkspaceManager(workingDir);
+        tool = new MemorySearchTool(workspace);
+    }
+
+    @AfterEach
+    void tearDown() {
+        workspace.close();
+    }
+
+    private void writeMemoryFile(String relativePath, String content) throws Exception {
+        Path file = workingDir.resolve(relativePath);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, content);
+    }
+
+    @Test
+    void capsResultsAtDefaultLimit() throws Exception {
+        // 40 matching lines across daily ledgers — more than the default cap of 30.
+        StringBuilder ledger = new StringBuilder();
+        for (int i = 1; i <= 40; i++) {
+            ledger.append("fact no ").append(i).append(" about keyword\n");
+        }
+        writeMemoryFile("memory/2026-09-01.md", ledger.toString());
+
+        String result =
+                assertText(tool.memorySearch(RT, "keyword", null, null), ToolResultState.SUCCESS);
+
+        assertTrue(result.startsWith("Found 30+ matches"), () -> "should cap at 30: " + result);
+        assertFalse(result.contains("fact no 31"), "lines beyond the cap must not be returned");
+    }
+
+    @Test
+    void capsResultsAtDefaultLimit_detectsExtraMatchOnFinalLine() throws Exception {
+        // 31 matching lines where the 31st is the very last line of the file. The old cap
+        // check peeked only at the *next* line (here the empty trailing element) and silently
+        // dropped the 31st match with no "+" marker.
+        StringBuilder ledger = new StringBuilder();
+        for (int i = 1; i <= 31; i++) {
+            ledger.append("fact no ").append(i).append(" about keyword\n");
+        }
+        writeMemoryFile("memory/2026-09-01.md", ledger.toString());
+
+        String result =
+                assertText(tool.memorySearch(RT, "keyword", null, null), ToolResultState.SUCCESS);
+
+        assertTrue(
+                result.startsWith("Found 30+ matches"),
+                () -> "a 31st match on the final line must be flagged: " + result);
+        assertFalse(result.contains("fact no 31"), "lines beyond the cap must not be returned");
+    }
+
+    @Test
+    void capsResultsAtDefaultLimit_detectsExtraMatchInLaterFile() throws Exception {
+        // The cap is reached in the first file; a match in a second file must still be seen
+        // so the "+" marker stays accurate (this replaces the old next-file probe, which
+        // only ever looked one file ahead).
+        StringBuilder first = new StringBuilder();
+        for (int i = 1; i <= 30; i++) {
+            first.append("fact no ").append(i).append(" about keyword\n");
+        }
+        writeMemoryFile("memory/2026-09-01.md", first.toString());
+        writeMemoryFile("memory/2026-09-02.md", "fact no 31 about keyword\n");
+
+        String result =
+                assertText(tool.memorySearch(RT, "keyword", null, null), ToolResultState.SUCCESS);
+
+        assertTrue(
+                result.startsWith("Found 30+ matches"),
+                () -> "a match in a later file must be flagged: " + result);
+        assertFalse(result.contains("fact no 31"), "lines beyond the cap must not be returned");
+    }
+
+    @Test
+    void maxResultsParameterOverridesDefault() throws Exception {
+        StringBuilder ledger = new StringBuilder();
+        for (int i = 1; i <= 20; i++) {
+            ledger.append("fact no ").append(i).append(" about keyword\n");
+        }
+        writeMemoryFile("memory/2026-09-01.md", ledger.toString());
+
+        String result =
+                assertText(tool.memorySearch(RT, "keyword", null, 5), ToolResultState.SUCCESS);
+
+        assertTrue(result.startsWith("Found 5+ matches"), () -> result);
+        assertFalse(result.contains("fact no 6"), "lines beyond maxResults must not be returned");
+    }
+
+    @Test
+    void maxResultsIgnoredWhenInvalid() throws Exception {
+        StringBuilder ledger = new StringBuilder();
+        for (int i = 1; i <= 3; i++) {
+            ledger.append("fact no ").append(i).append(" about keyword\n");
+        }
+        writeMemoryFile("memory/2026-09-01.md", ledger.toString());
+
+        assertEquals(
+                "Found 3 matches",
+                assertText(tool.memorySearch(RT, "keyword", null, 0), ToolResultState.SUCCESS)
+                        .substring(0, 15));
+        assertEquals(
+                "Found 3 matches",
+                assertText(tool.memorySearch(RT, "keyword", null, -1), ToolResultState.SUCCESS)
+                        .substring(0, 15));
+        assertEquals(
+                "Found 3 matches",
+                assertText(tool.memorySearch(RT, "keyword", null, null), ToolResultState.SUCCESS)
+                        .substring(0, 15));
+    }
+
+    @Test
+    void maxResultsClampedToHardCeiling() throws Exception {
+        // maxResults=100000 is clamped to MAX_RESULTS_CEILING (100).
+        StringBuilder ledger = new StringBuilder();
+        for (int i = 1; i <= 110; i++) {
+            ledger.append("fact no ").append(i).append(" about keyword\n");
+        }
+        writeMemoryFile("memory/2026-09-01.md", ledger.toString());
+
+        String result =
+                assertText(tool.memorySearch(RT, "keyword", null, 100000), ToolResultState.SUCCESS);
+
+        assertTrue(result.startsWith("Found 100+ matches"), () -> "should clamp at 100: " + result);
+        assertFalse(result.contains("fact no 101"), "line 101 must not be returned");
+    }
+
+    @Test
+    void notesThatResultsWereTruncated() throws Exception {
+        StringBuilder ledger = new StringBuilder();
+        for (int i = 1; i <= 35; i++) {
+            ledger.append("fact no ").append(i).append(" about keyword\n");
+        }
+        writeMemoryFile("memory/2026-09-01.md", ledger.toString());
+
+        String result =
+                assertText(tool.memorySearch(RT, "keyword", null, null), ToolResultState.SUCCESS);
+
+        assertTrue(
+                result.toLowerCase().contains("truncat"),
+                () -> "truncation note expected when results are capped: " + result);
+    }
+
+    @Test
+    void truncatesLongMatchedLines() throws Exception {
+        String longLine = "keyword " + "x".repeat(5000);
+        writeMemoryFile("memory/2026-09-01.md", longLine + "\n");
+
+        String result =
+                assertText(tool.memorySearch(RT, "keyword", null, null), ToolResultState.SUCCESS);
+
+        int longest = 0;
+        for (String line : result.split("\n", -1)) {
+            longest = Math.max(longest, line.length());
+        }
+        // Source prefix + 5000-char line would be ~5050; require well under that.
+        final int observed = longest;
+        assertTrue(
+                observed < 1000, () -> "long lines must be truncated, got " + observed + " chars");
+        assertTrue(
+                result.toLowerCase().contains("truncat"),
+                "truncated line should carry a note: " + result);
+    }
+
+    @Test
+    void truncateLineDoesNotSplitSurrogatePairs() throws Exception {
+        // CJK Extension B character U+2000B (𠀋) — high surrogate \uD840, low \uDC0B.
+        // If the cut falls between them, the result would be a lone high surrogate
+        // followed by a low surrogate that forms a broken pair.
+        String prefix = "keyword ";
+        StringBuilder sb = new StringBuilder(prefix);
+        int filler = MemorySearchTool.MAX_LINE_CHARS - prefix.length();
+        sb.append("a".repeat(filler));
+        sb.append("\uD840\uDC0B"); // CJK Ext B char straddling the cut point
+        String line = sb.toString();
+        writeMemoryFile("memory/2026-09-01.md", line + "\n");
+
+        String result =
+                assertText(tool.memorySearch(RT, "keyword", null, null), ToolResultState.SUCCESS);
+
+        assertTrue(result.contains("[line truncated"), () -> "should truncate: " + result);
+        // The truncated output must NOT end with a lone high surrogate.
+        for (int i = 0; i < result.length(); i++) {
+            char c = result.charAt(i);
+            if (Character.isHighSurrogate(c)) {
+                assertTrue(
+                        i + 1 < result.length() && Character.isLowSurrogate(result.charAt(i + 1)),
+                        "lone high surrogate at offset " + i + " in: " + result);
+            }
+        }
+    }
+
+    @Test
+    void noTruncationNoteWhenCapReachedAtExactEnd() throws Exception {
+        // 30 exact matches — the cap is hit but there is no 31st match.
+        StringBuilder ledger = new StringBuilder();
+        for (int i = 1; i <= 30; i++) {
+            ledger.append("fact no ").append(i).append(" about keyword\n");
+        }
+        ledger.append("a non-matching line\n");
+        writeMemoryFile("memory/2026-09-01.md", ledger.toString());
+
+        String result =
+                assertText(tool.memorySearch(RT, "keyword", null, null), ToolResultState.SUCCESS);
+
+        assertTrue(result.startsWith("Found 30 matches"), () -> result);
+        assertFalse(
+                result.toLowerCase().contains("truncat"),
+                "no truncation note when cap reached at exact end: " + result);
+    }
+
+    @Test
+    void noTruncationNoteWhenUnderLimit() throws Exception {
+        writeMemoryFile("memory/2026-09-01.md", "short fact about keyword\n");
+
+        String result =
+                assertText(tool.memorySearch(RT, "keyword", null, null), ToolResultState.SUCCESS);
+
+        assertEquals(
+                "Found 1 matches:\n\nSource: memory/2026-09-01.md#1: short fact about keyword",
+                result);
+    }
+
+    @Test
+    void blankQueryStillRejected() {
+        assertEquals(
+                "Error: No query provided",
+                assertText(tool.memorySearch(RT, "  ", null, null), ToolResultState.ERROR));
+        assertEquals(
+                "Error: No query provided",
+                assertText(tool.memorySearch(RT, null, null, 5), ToolResultState.ERROR));
+    }
+
+    @Test
+    void noMatchStillReportsQuery() {
+        String result =
+                assertText(
+                        tool.memorySearch(RT, "nothing-matches-this", null, null),
+                        ToolResultState.SUCCESS);
+        assertEquals("No matching memories found for: nothing-matches-this", result);
     }
 }
