@@ -17,14 +17,17 @@ package io.agentscope.core.agent.accumulator;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.MalformedToolCallReason;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -472,5 +475,131 @@ class ToolCallsAccumulatorTest {
         assertEquals(1, result.size());
         assertEquals("a.md", result.get(0).getInput().get("file_path"));
         assertEquals("hello", result.get(0).getInput().get("content"));
+    }
+
+    @Test
+    @DisplayName("Should mark tool call without name as malformed and keep raw arguments")
+    void testMissingNameMarkedMalformed() {
+        accumulator.add(ToolUseBlock.builder().id("call_1").content("{\"city\":").build());
+        accumulator.add(ToolUseBlock.builder().id("call_1").content("\"Tokyo\"}").build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertNull(toolCall.getName());
+        assertEquals(
+                Set.of(MalformedToolCallReason.MISSING_NAME), MalformedToolCallReason.of(toolCall));
+        assertEquals(
+                "{\"city\":\"Tokyo\"}",
+                toolCall.getMetadata().get(ToolUseBlock.METADATA_MALFORMED_RAW_ARGUMENTS));
+    }
+
+    @Test
+    @DisplayName("Should mark tool call with non-JSON arguments as malformed")
+    void testInvalidArgumentsMarkedMalformed() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("search")
+                        .content("{\"query\": \"hello wor")
+                        .build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertEquals("{}", toolCall.getContent());
+        assertEquals(
+                Set.of(MalformedToolCallReason.INVALID_ARGUMENTS),
+                MalformedToolCallReason.of(toolCall));
+        assertEquals(
+                "{\"query\": \"hello wor",
+                toolCall.getMetadata().get(ToolUseBlock.METADATA_MALFORMED_RAW_ARGUMENTS));
+    }
+
+    @Test
+    @DisplayName("Should record both reasons when name is missing and arguments are invalid")
+    void testMissingNameAndInvalidArgumentsMarkedMalformed() {
+        accumulator.add(ToolUseBlock.builder().id("call_1").content("not json").build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertEquals(
+                Set.of(
+                        MalformedToolCallReason.MISSING_NAME,
+                        MalformedToolCallReason.INVALID_ARGUMENTS),
+                MalformedToolCallReason.of(toolCall));
+    }
+
+    @Test
+    @DisplayName("Should not mark well-formed tool calls")
+    void testWellFormedToolCallNotMarked() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("get_weather")
+                        .content("{\"city\":\"Tokyo\"}")
+                        .build());
+        accumulator.add(ToolUseBlock.builder().id("call_2").name("no_args").build());
+
+        for (ToolUseBlock toolCall : accumulator.buildAllToolCalls()) {
+            assertTrue(MalformedToolCallReason.of(toolCall).isEmpty());
+            assertFalse(
+                    toolCall.getMetadata().containsKey(ToolUseBlock.METADATA_MALFORMED_REASONS));
+        }
+    }
+
+    @Test
+    @DisplayName("Should mark tool call with a blank name as malformed")
+    void testBlankNameMarkedMalformed() {
+        accumulator.add(ToolUseBlock.builder().id("call_1").name("  ").build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertEquals(
+                Set.of(MalformedToolCallReason.MISSING_NAME), MalformedToolCallReason.of(toolCall));
+    }
+
+    @Test
+    @DisplayName("Should omit raw arguments metadata when there is nothing to echo")
+    void testMalformedWithoutArgumentsOmitsRawMetadata() {
+        accumulator.add(ToolUseBlock.builder().id("call_1").build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertEquals(
+                Set.of(MalformedToolCallReason.MISSING_NAME), MalformedToolCallReason.of(toolCall));
+        assertFalse(
+                toolCall.getMetadata().containsKey(ToolUseBlock.METADATA_MALFORMED_RAW_ARGUMENTS));
+    }
+
+    @Test
+    @DisplayName("Should bound raw arguments stored in metadata")
+    void testStoredRawArgumentsBounded() {
+        String raw = "{\"a\": \"" + "x".repeat(2000);
+        accumulator.add(ToolUseBlock.builder().id("call_1").content(raw).build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        String stored =
+                (String) toolCall.getMetadata().get(ToolUseBlock.METADATA_MALFORMED_RAW_ARGUMENTS);
+        assertNotNull(stored);
+        assertTrue(stored.endsWith("...(truncated, " + raw.length() + " chars total)"));
+        assertTrue(
+                stored.length() < raw.length() + 64,
+                "stored fragment must be bounded, was " + stored.length());
+    }
+
+    @Test
+    @DisplayName("Should not mark provider server tool calls as malformed")
+    void testServerToolNotMarked() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("srv_1")
+                        .name("web_search")
+                        .content("query=hello")
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertTrue(MalformedToolCallReason.of(toolCall).isEmpty());
     }
 }
