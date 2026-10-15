@@ -28,6 +28,7 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -65,6 +66,14 @@ class ReActAgentRunIdVisibilityTest {
 
         Set<String> observed(String sessionId) {
             return observedBySession.getOrDefault(sessionId, Set.of());
+        }
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(
+                    ExtensionPoint.ON_AGENT,
+                    ExtensionPoint.ON_REASONING,
+                    ExtensionPoint.ON_SYSTEM_PROMPT);
         }
 
         @Override

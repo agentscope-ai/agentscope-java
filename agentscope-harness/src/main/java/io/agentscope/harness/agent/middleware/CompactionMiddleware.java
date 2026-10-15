@@ -115,6 +115,11 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     public HarnessRuntimeMiddleware overflowRecovery() {
         return new HarnessRuntimeMiddleware() {
             @Override
+            public Set<ExtensionPoint> activePoints() {
+                return EnumSet.of(ExtensionPoint.ON_REASONING);
+            }
+
+            @Override
             public Flux<AgentEvent> onReasoning(
                     Agent agent,
                     RuntimeContext ctx,

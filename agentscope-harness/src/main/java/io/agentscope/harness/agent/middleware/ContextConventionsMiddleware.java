@@ -21,7 +21,9 @@ import io.agentscope.harness.agent.context.ContextItem;
 import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import reactor.core.publisher.Mono;
 
 /** Framework-owned, domain-neutral context instructions, loaded once from a versioned resource. */
@@ -38,6 +40,12 @@ public final class ContextConventionsMiddleware implements HarnessRuntimeMiddlew
         } catch (IOException error) {
             throw new IllegalStateException("Cannot load context conventions", error);
         }
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
     @Override

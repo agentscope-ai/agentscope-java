@@ -37,7 +37,9 @@ import io.agentscope.extensions.judge.jev.SystemOneRequest;
 import io.agentscope.extensions.judge.jev.SystemOneResult;
 import io.agentscope.extensions.judge.jev.example.JevToolSelectionMiddleware;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -256,6 +258,11 @@ public final class JevToolSelectionMiddlewareTest {
         }
 
         @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_REASONING);
+        }
+
+        @Override
         public Flux<AgentEvent> onReasoning(
                 Agent agent,
                 RuntimeContext ctx,
@@ -278,6 +285,11 @@ public final class JevToolSelectionMiddlewareTest {
         @Override
         public int order() {
             return -1;
+        }
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_REASONING, ExtensionPoint.ON_ACTING);
         }
 
         @Override
