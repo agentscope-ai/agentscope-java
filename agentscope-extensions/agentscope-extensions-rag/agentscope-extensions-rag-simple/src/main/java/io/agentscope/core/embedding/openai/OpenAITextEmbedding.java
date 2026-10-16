@@ -32,6 +32,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -235,12 +236,16 @@ public class OpenAITextEmbedding implements EmbeddingModel {
         if (result == null || result.usage() == null) {
             return null;
         }
-        long promptTokens = result.usage().promptTokens();
-        long totalTokens = result.usage().totalTokens();
+        CreateEmbeddingResponse.Usage usage = result.usage();
+        Optional<Long> promptTokens = usage._promptTokens().asKnown();
+        Optional<Long> totalTokens = usage._totalTokens().asKnown();
+        if (promptTokens.isEmpty() || totalTokens.isEmpty()) {
+            return null;
+        }
         double elapsedSeconds = Duration.between(startTime, Instant.now()).toMillis() / 1000.0;
         return EmbeddingUsage.builder()
-                .inputTokens((int) promptTokens)
-                .totalTokens((int) totalTokens)
+                .inputTokens(promptTokens.get().intValue())
+                .totalTokens(totalTokens.get().intValue())
                 .time(elapsedSeconds)
                 .build();
     }

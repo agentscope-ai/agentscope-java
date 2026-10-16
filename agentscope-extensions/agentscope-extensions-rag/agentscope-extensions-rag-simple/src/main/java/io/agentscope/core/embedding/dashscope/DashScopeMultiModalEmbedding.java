@@ -191,6 +191,9 @@ public class DashScopeMultiModalEmbedding implements EmbeddingModel {
     /**
      * Extracts token usage from the multi-modal embedding result.
      *
+     * <p>Returns {@code null} when either field is absent, consistent with
+     * {@code OpenAITextEmbedding.extractUsage}.
+     *
      * @param result the embedding result from the API
      * @param startTime the request start time for elapsed time calculation
      * @return usage information, or null when the provider does not report usage
@@ -201,12 +204,13 @@ public class DashScopeMultiModalEmbedding implements EmbeddingModel {
         }
         Integer inputTokens = result.getUsage().getInputTokens();
         Integer totalTokens = result.getUsage().getTotalUsage();
-        int input = inputTokens != null ? inputTokens : 0;
-        int total = totalTokens != null ? totalTokens : input;
+        if (inputTokens == null || totalTokens == null) {
+            return null;
+        }
         double elapsedSeconds = Duration.between(startTime, Instant.now()).toMillis() / 1000.0;
         return EmbeddingUsage.builder()
-                .inputTokens(input)
-                .totalTokens(total)
+                .inputTokens(inputTokens)
+                .totalTokens(totalTokens)
                 .time(elapsedSeconds)
                 .build();
     }

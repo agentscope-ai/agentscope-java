@@ -276,6 +276,11 @@ public class SimpleKnowledge implements Knowledge {
         /**
          * Sets an optional listener for embedding usage reported by the provider.
          *
+         * <p>The listener runs on the thread that emits the embedding response. Any exception
+         * thrown by the listener will propagate through the reactive chain and cause the
+         * surrounding {@code addDocuments} or {@code retrieve} call to fail. Callers are
+         * responsible for catching exceptions inside the listener or ensuring it never throws.
+         *
          * @param usageListener the listener to invoke after each embedding call that reports
          *     usage
          * @return this builder instance

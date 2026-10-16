@@ -36,7 +36,7 @@ public class EmbeddingUsage {
      *
      * @param inputTokens the number of tokens used for the input
      * @param totalTokens the total number of tokens reported by the provider
-     * @param time the execution time in seconds
+     * @param time the end-to-end execution time in seconds, measured on the client side
      */
     @JsonCreator
     public EmbeddingUsage(
@@ -71,7 +71,11 @@ public class EmbeddingUsage {
     }
 
     /**
-     * Gets the execution time.
+     * Gets the end-to-end execution time measured on the client side.
+     *
+     * <p>This is the elapsed time from when the embedding call was initiated to when
+     * the response (including vector parsing) was completed. It is not the server-side
+     * processing time reported by the provider.
      *
      * @return the execution time in seconds
      */
@@ -119,9 +123,9 @@ public class EmbeddingUsage {
         }
 
         /**
-         * Sets the execution time.
+         * Sets the end-to-end execution time measured on the client side.
          *
-         * @param time the execution time in seconds
+         * @param time the end-to-end execution time in seconds, measured on the client side
          * @return this builder instance
          */
         public Builder time(double time) {
