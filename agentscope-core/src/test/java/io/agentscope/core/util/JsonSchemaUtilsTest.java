@@ -17,11 +17,16 @@
 package io.agentscope.core.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import java.lang.reflect.Field;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +36,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntFunction;
 import org.junit.jupiter.api.Test;
 
@@ -49,6 +55,15 @@ class JsonSchemaUtilsTest {
         public String title;
         public SimpleModel author;
         public List<String> tags;
+    }
+
+    /** Holder for the type shapes a method signature can declare but no class does. */
+    static class GenericHolder<T> {
+        public T[] values;
+
+        public <R> R identity(R input) {
+            return input;
+        }
     }
 
     @Test
@@ -168,6 +183,247 @@ class JsonSchemaUtilsTest {
         assertEquals("object", mapSchema.get("type"));
     }
 
+    @Test
+    void testGenerateSchemaFromClassRepeatedCallsReturnEqualIndependentMaps() {
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromClass(SimpleModel.class);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromClass(SimpleModel.class);
+
+        // A repeated class must yield an equal schema, so caching cannot change the result.
+        assertEquals(first, second);
+
+        // Each call must return a fresh, independently mutable map: mutating one must not leak
+        // into another, matching in-place-mutating callers such as ToolSchemaGenerator.
+        first.put("description", "mutated");
+        assertFalse(second.containsKey("description"));
+
+        Map<String, Object> third = JsonSchemaUtils.generateSchemaFromClass(SimpleModel.class);
+        assertFalse(third.containsKey("description"));
+        assertEquals(second, third);
+    }
+
+    @Test
+    void testGenerateSchemaFromTypeRepeatedCallsReturnEqualIndependentMaps() {
+        Type listType = new TypeReference<List<String>>() {}.getType();
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(listType);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(listType);
+
+        assertEquals(first, second);
+
+        first.put("description", "mutated");
+        assertFalse(second.containsKey("description"));
+
+        Map<String, Object> third = JsonSchemaUtils.generateSchemaFromType(listType);
+        assertFalse(third.containsKey("description"));
+        assertEquals(second, third);
+    }
+
+    @Test
+    void testGenerateSchemaFromClassNestedMutationDoesNotAffectLaterCalls() {
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromClass(NestedModel.class);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstProperties = (Map<String, Object>) first.get("properties");
+        assertNotNull(firstProperties);
+
+        // Real callers mutate below the top level: ToolSchemaGenerator hoists "$defs" out of
+        // nested schemas and ReActAgent rewrites nested properties in place. A later call must
+        // still observe the pristine schema, which is exactly the deep-copy invariant the cache
+        // relies on.
+        assertNotNull(firstProperties.remove("tags"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstAuthor = (Map<String, Object>) firstProperties.get("author");
+        assertNotNull(firstAuthor);
+        firstAuthor.put("description", "mutated");
+
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromClass(NestedModel.class);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> secondProperties = (Map<String, Object>) second.get("properties");
+        assertNotNull(secondProperties);
+        assertTrue(secondProperties.containsKey("tags"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> secondAuthor = (Map<String, Object>) secondProperties.get("author");
+        assertNotNull(secondAuthor);
+        assertFalse(secondAuthor.containsKey("description"));
+    }
+
+    @Test
+    void testGenerateSchemaFromTypeNestedMutationDoesNotAffectLaterCalls() {
+        Type listType = new TypeReference<List<SimpleModel>>() {}.getType();
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(listType);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstItems = (Map<String, Object>) first.get("items");
+        assertNotNull(firstItems);
+        firstItems.put("description", "mutated");
+
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(listType);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> secondItems = (Map<String, Object>) second.get("items");
+        assertNotNull(secondItems);
+        assertFalse(secondItems.containsKey("description"));
+    }
+
+    @Test
+    void testGenerateSchemaFromClassNullThrows() {
+        // Caching routes a null class through ClassValue#get, which rejects null keys; the
+        // resulting NPE must match the pre-cache behavior for a null argument.
+        assertThrows(
+                NullPointerException.class, () -> JsonSchemaUtils.generateSchemaFromClass(null));
+    }
+
+    @Test
+    void testGenerateSchemaFromTypeNullThrows() {
+        // The public entry point rejects null before it reaches the cache, matching the pre-cache
+        // behavior for a null argument.
+        assertThrows(
+                NullPointerException.class, () -> JsonSchemaUtils.generateSchemaFromType(null));
+    }
+
+    @Test
+    void testGenerateSchemaFromTypeVariableIsCachedUnderItsDeclaringClass() {
+        // A type variable has no raw class, so it is cached under the class that declares it. Both
+        // calls must agree, whether the entry is served from the cache or generated again.
+        Type typeVariable = List.class.getTypeParameters()[0];
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(typeVariable);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(typeVariable);
+
+        assertNotNull(first);
+        assertEquals(first, second);
+    }
+
+    @Test
+    void testGenerateSchemaFromMethodTypeVariableIsCachedUnderItsDeclaringClass() throws Exception {
+        // A type variable declared on a method has no raw class either, and its declaration is the
+        // method rather than a class, so it is cached under the method's declaring class.
+        Type typeVariable =
+                GenericHolder.class.getMethod("identity", Object.class).getTypeParameters()[0];
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(typeVariable);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(typeVariable);
+
+        assertNotNull(first);
+        assertEquals(first, second);
+    }
+
+    @Test
+    void testGenerateSchemaFromGenericArrayIsCachedUnderItsComponentClass() throws Exception {
+        // A generic array carries no raw class of its own; it resolves through its component type.
+        Type genericArray = GenericHolder.class.getField("values").getGenericType();
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(genericArray);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(genericArray);
+
+        assertNotNull(first);
+        assertEquals(first, second);
+    }
+
+    @Test
+    void testGenerateSchemaFromWildcardIsGeneratedWithoutCaching() {
+        // A wildcard is only ever a type argument, never a parameter or return type, so a
+        // reflective signature cannot produce one at the top level. Only a caller synthesizing one
+        // reaches the uncached path; both calls must still agree.
+        Type wildcard =
+                ((ParameterizedType) new TypeReference<List<?>>() {}.getType())
+                        .getActualTypeArguments()[0];
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(wildcard);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(wildcard);
+
+        assertEquals(first, second);
+    }
+
+    @Test
+    void testGenerateSchemaFromParameterizedTypeIsHeldOnItsApplicationClass() throws Exception {
+        // List<TenantElement> mentions java.util.List, which is never unloaded, and TenantElement.
+        // The entry has to live on the application class: parked on List, it would keep the element
+        // class, and the classloader that defined it, reachable for the lifetime of the JVM.
+        Type parameterized = new TypeReference<List<TenantElement>>() {}.getType();
+
+        JsonSchemaUtils.generateSchemaFromType(parameterized);
+
+        assertTrue(typeSlot(TenantElement.class).containsKey(parameterized));
+        assertFalse(typeSlot(List.class).containsKey(parameterized));
+    }
+
+    @Test
+    void testGenerateSchemaFromBoundedWildcardIsHeldOnItsBoundClass() throws Exception {
+        // A wildcard is only ever a type argument, so the bound it declares decides which class the
+        // signature mentioning it belongs to.
+        Type boundedWildcard = new TypeReference<List<? extends TenantElement>>() {}.getType();
+
+        JsonSchemaUtils.generateSchemaFromType(boundedWildcard);
+
+        assertTrue(typeSlot(TenantElement.class).containsKey(boundedWildcard));
+        assertFalse(typeSlot(List.class).containsKey(boundedWildcard));
+    }
+
+    @Test
+    void testGenerateSchemaFromConstructorTypeVariableIsHeldOnItsDeclaringClass() throws Exception {
+        // A constructor declares type variables just as a method does, and it is a
+        // GenericDeclaration without being a Method. Matching only Method would send this type to
+        // the uncached path, which takes the global lock on every call.
+        Type typeVariable =
+                GenericConstructorHolder.class.getConstructor(Object.class).getTypeParameters()[0];
+
+        JsonSchemaUtils.generateSchemaFromType(typeVariable);
+
+        assertTrue(typeSlot(GenericConstructorHolder.class).containsKey(typeVariable));
+    }
+
+    @Test
+    void testGenerateSchemaFromBareClassIsHeldOnTheClassSlotOnly() throws Exception {
+        // Both entry points describe the same class, so they must share one slot rather than
+        // generating and storing the same schema twice.
+        JsonSchemaUtils.generateSchemaFromType(BareClassFixture.class);
+
+        assertNotNull(classSlot(BareClassFixture.class));
+        assertFalse(typeSlot(BareClassFixture.class).containsKey(BareClassFixture.class));
+    }
+
+    /**
+     * Reads the private type slot of a class. Asserting the slot directly is the only way to check
+     * which class a type is cached under: every schema the public API returns is a fresh copy, so
+     * the entry it came from is invisible in behaviour.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<Type, JsonNode> typeSlot(Class<?> scopeClass) throws Exception {
+        Field slot = JsonSchemaUtils.class.getDeclaredField("TYPE_SCHEMA_SLOT");
+        slot.setAccessible(true);
+        ClassValue<Map<Type, JsonNode>> slots = (ClassValue<Map<Type, JsonNode>>) slot.get(null);
+        return slots.get(scopeClass);
+    }
+
+    /** Reads the private class slot of a class. */
+    @SuppressWarnings("unchecked")
+    private static JsonNode classSlot(Class<?> clazz) throws Exception {
+        Field slot = JsonSchemaUtils.class.getDeclaredField("CLASS_SCHEMA_SLOT");
+        slot.setAccessible(true);
+        ClassValue<AtomicReference<JsonNode>> slots =
+                (ClassValue<AtomicReference<JsonNode>>) slot.get(null);
+        return slots.get(clazz).get();
+    }
+
+    /** Element class of the signatures used to check which class a type is cached under. */
+    static class TenantElement {
+        public String name;
+    }
+
+    /** Declares a type variable on a constructor, which is a GenericDeclaration but not a Method. */
+    static class GenericConstructorHolder {
+        public <T> GenericConstructorHolder(T value) {}
+    }
+
+    /** Reached as a bare class through {@code generateSchemaFromType}. */
+    static class BareClassFixture {
+        public String label;
+    }
+
     static class ConcurrentClassA {
         public String name;
         public int age;
@@ -207,10 +463,15 @@ class JsonSchemaUtilsTest {
 
     @Test
     void testGenerateSchemaFromTypeConcurrently() throws Exception {
-        List<Type> targetTypes =
-                List.of(
-                        new TypeReference<ConcurrentClassC>() {}.getType(),
-                        new TypeReference<List<ConcurrentClassD>>() {}.getType());
+        // The first two are variants of the same raw class and mention no application class, so
+        // both are held on java.util.List and share its slot map: they exercise the structure the
+        // cache's correctness rests on. The last two are held on the class each one mentions, so
+        // the scoped slots are stressed as well.
+        Type listOfString = new TypeReference<List<String>>() {}.getType();
+        Type listOfInteger = new TypeReference<List<Integer>>() {}.getType();
+        Type listOfC = new TypeReference<List<ConcurrentClassC>>() {}.getType();
+        Type listOfD = new TypeReference<List<ConcurrentClassD>>() {}.getType();
+        List<Type> targetTypes = List.of(listOfString, listOfInteger, listOfC, listOfD);
 
         List<Map<String, Object>> schemas =
                 generateConcurrently(
@@ -221,8 +482,18 @@ class JsonSchemaUtilsTest {
         assertEquals(CONCURRENT_CALL_COUNT, schemas.size());
         for (Map<String, Object> schema : schemas) {
             assertNotNull(schema);
-            assertNotNull(schema.get("type"));
+            assertEquals("array", schema.get("type"));
         }
+
+        // Variants sharing one slot must stay independent of each other.
+        assertTrue(typeSlot(List.class).containsKey(listOfString));
+        assertTrue(typeSlot(List.class).containsKey(listOfInteger));
+        assertNotEquals(
+                JsonSchemaUtils.generateSchemaFromType(listOfString),
+                JsonSchemaUtils.generateSchemaFromType(listOfInteger));
+        assertNotEquals(
+                JsonSchemaUtils.generateSchemaFromType(listOfC),
+                JsonSchemaUtils.generateSchemaFromType(listOfD));
     }
 
     /**
