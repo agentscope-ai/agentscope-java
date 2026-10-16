@@ -56,6 +56,9 @@ import io.a2a.spec.TaskStatusUpdateEvent;
 import io.a2a.spec.TextPart;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
@@ -63,6 +66,8 @@ import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.List;
@@ -75,10 +80,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.Answer;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -469,6 +476,7 @@ public class A2aAgentTest {
         AtomicInteger preCount = new AtomicInteger(0);
         AtomicInteger chunkCount = new AtomicInteger(0);
         AtomicInteger postCount = new AtomicInteger(0);
+        List<String> middlewareEvents = new java.util.concurrent.CopyOnWriteArrayList<>();
 
         Hook lifecycleMonitorHook =
                 new Hook() {
@@ -490,12 +498,29 @@ public class A2aAgentTest {
                     }
                 };
 
+        MiddlewareBase middlewareMonitor =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onReasoning(
+                            Agent agent,
+                            RuntimeContext context,
+                            ReasoningInput input,
+                            Function<ReasoningInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .doOnNext(
+                                        event ->
+                                                middlewareEvents.add(
+                                                        ((CustomEvent) event).getName()));
+                    }
+                };
+
         A2aAgent agent =
                 A2aAgent.builder()
                         .name("test-lifecycle-agent")
                         .agentCard(agentCard)
                         .hook(new ReplaceA2aClientHook())
                         .hook(lifecycleMonitorHook)
+                        .middleware(middlewareMonitor)
                         .build();
 
         Answer<Void> mockTaskResponse =
@@ -568,6 +593,9 @@ public class A2aAgentTest {
         assertEquals(1, preCount.get());
         assertEquals(1, chunkCount.get());
         assertEquals(1, postCount.get());
+        assertEquals(
+                List.of("a2a.reasoning.start", "a2a.reasoning.chunk", "a2a.reasoning.end"),
+                middlewareEvents);
     }
 
     private Answer<Void> mockSuccessMessage() {
