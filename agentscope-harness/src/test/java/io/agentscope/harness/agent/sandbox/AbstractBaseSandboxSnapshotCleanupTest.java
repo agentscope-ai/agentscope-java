@@ -19,10 +19,12 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -34,8 +36,25 @@ import java.io.IOException;
 import java.io.InputStream;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.InOrder;
 
 class AbstractBaseSandboxSnapshotCleanupTest {
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void closesSnapshotAfterSuccessfulHydration(boolean previouslyReady) throws Exception {
+        InputStream archive = mock(InputStream.class);
+        AbstractBaseSandbox sandbox = sandboxForRestore(previouslyReady, archive);
+
+        sandbox.start();
+
+        InOrder order = inOrder(sandbox, archive);
+        order.verify(sandbox).doSetupWorkspace();
+        order.verify(sandbox).doHydrateWorkspace(archive);
+        order.verify(archive).close();
+        assertTrue(sandbox.isRunning());
+        assertTrue(sandbox.getState().isWorkspaceRootReady());
+    }
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
