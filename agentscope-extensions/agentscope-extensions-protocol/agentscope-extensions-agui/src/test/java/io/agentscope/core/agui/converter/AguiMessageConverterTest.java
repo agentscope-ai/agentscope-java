@@ -154,7 +154,7 @@ class AguiMessageConverterTest {
 
         AguiMessage aguiMsg = converter.toAguiMessage(msg);
 
-        assertTrue(aguiMsg.getId().startsWith("agui::msg-5-"));
+        assertEquals("msg-5", aguiMsg.getId());
         assertEquals("user", aguiMsg.getRole());
         assertEquals("Test message", aguiMsg.getTextContent());
     }
@@ -177,7 +177,7 @@ class AguiMessageConverterTest {
 
         AguiMessage aguiMsg = converter.toAguiMessage(msg);
 
-        assertTrue(aguiMsg.getId().startsWith("agui::msg-6-"));
+        assertEquals("msg-6", aguiMsg.getId());
         assertEquals("assistant", aguiMsg.getRole());
         assertEquals("Calling tool...", aguiMsg.getTextContent());
         assertTrue(aguiMsg.hasToolCalls());
@@ -212,8 +212,7 @@ class AguiMessageConverterTest {
         AguiMessage converted = converter.toAguiMessage(msg);
         AguiMessage convertedAgain = converter.toAguiMessage(converter.toMsg(converted));
 
-        assertTrue(converted.getId().startsWith("agui::" + original.getId() + "-"));
-        assertNotEquals(original.getId(), converted.getId());
+        assertEquals(original.getId(), converted.getId());
         assertEquals(converted.getId(), convertedAgain.getId());
         assertEquals(original.getRole(), converted.getRole());
         assertEquals(original.getTextContent(), converted.getTextContent());
@@ -527,7 +526,7 @@ class AguiMessageConverterTest {
 
         AguiMessage aguiMsg = converter.toAguiMessage(msg);
 
-        assertTrue(aguiMsg.getId().startsWith("agui::msg-tr1-"));
+        assertEquals("msg-tr1", aguiMsg.getId());
         assertEquals("tool", aguiMsg.getRole());
         assertEquals("tc-1", aguiMsg.getToolCallId());
         assertEquals("Result: 42", aguiMsg.getTextContent());
@@ -547,8 +546,8 @@ class AguiMessageConverterTest {
         List<AguiMessage> messages = converter.toAguiMessageList(List.of(msg));
 
         assertEquals(2, messages.size());
-        assertTrue(messages.get(0).getId().startsWith("agui::msg-tr2-"));
-        assertTrue(messages.get(1).getId().startsWith("agui::msg-tr2-"));
+        assertEquals("msg-tr2::tc-1", messages.get(0).getId());
+        assertEquals("msg-tr2", messages.get(1).getId());
         assertNotEquals(messages.get(0).getId(), messages.get(1).getId());
         assertEquals("tc-1", messages.get(0).getToolCallId());
         assertEquals("tc-2", messages.get(1).getToolCallId());
@@ -585,7 +584,7 @@ class AguiMessageConverterTest {
 
         AguiMessage result = converter.toAguiMessage(msg);
 
-        assertTrue(result.getId().startsWith("agui::msg-thinking-"));
+        assertEquals("msg-thinking", result.getId());
         assertEquals("reasoning", result.getRole());
         assertEquals("Need to inspect the weather", result.getTextContent());
     }
@@ -610,10 +609,10 @@ class AguiMessageConverterTest {
         List<AguiMessage> results = converter.toAguiMessages(msg);
 
         assertEquals(2, results.size());
-        assertTrue(results.get(0).getId().startsWith("agui::msg-mixed-"));
+        assertEquals("msg-mixed::reasoning", results.get(0).getId());
         assertTrue(results.get(0).isReasoningMessage());
         assertEquals("Need a tool", results.get(0).getTextContent());
-        assertTrue(results.get(1).getId().startsWith("agui::msg-mixed-"));
+        assertEquals("msg-mixed", results.get(1).getId());
         assertNotEquals(results.get(0).getId(), results.get(1).getId());
         assertTrue(results.get(1).isAssistantMessage());
         assertEquals("Let me check", results.get(1).getTextContent());
