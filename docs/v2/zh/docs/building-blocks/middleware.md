@@ -479,6 +479,57 @@ MiddlewareBase timingOnly =
 
 继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 会被静默跳过。
 
+### ToolCircuitBreakerMiddleware
+
+`ToolCircuitBreakerMiddleware`（`io.agentscope.core.tool.circuitbreaker`）在被监督的工具连续执行失败后，暂时停止向模型提供该工具。监督需要显式开启：默认配置不监督任何工具。成功执行会清空连续失败计数；权限拒绝和中断不计为依赖故障。
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.tool.circuitbreaker.ToolCircuitBreaker;
+import io.agentscope.core.tool.circuitbreaker.ToolCircuitBreakerConfig;
+import io.agentscope.core.tool.circuitbreaker.ToolCircuitBreakerMiddleware;
+import java.time.Duration;
+
+ToolCircuitBreakerConfig policy = ToolCircuitBreakerConfig.builder()
+        .monitorTools("query_weather")
+        .failureThreshold(3)
+        .initialCooldown(Duration.ofSeconds(60))
+        .maxCooldown(Duration.ofMinutes(10))
+        .probeTimeout(Duration.ofMinutes(5))
+        .build();
+ToolCircuitBreaker breaker = new ToolCircuitBreaker(policy);
+ReActAgent agent = ReActAgent.builder()
+        .name("assistant")
+        .model(model)
+        .toolkit(toolkit)
+        .middleware(new ToolCircuitBreakerMiddleware(breaker))
+        .build();
+```
+
+连续三次错误后，middleware 从当前推理轮次的 schema 列表中移除该工具，共享 Toolkit 的注册不变。冷却结束后只有一个轮次能领取恢复探测；其他轮次继续隐藏工具，直到探测完成或租约到期。探测成功关闭熔断；探测失败开启下一次冷却，依次为 60、120、240、480 秒，再封顶到 600 秒。只有当前探测令牌能够提交结果；租约过期但尚未被替换的令牌仍可提交结果。
+
+`probeTimeout` 应至少覆盖工具执行超时，并为模型推理和用户审批预留时间。审批及外部执行可能跨调用，middleware 将可信的探测绑定保存在会话元数据中，恢复调用可以使用新的 `RuntimeContext`。拒绝、取消及未使用的探测会释放占用。直接以 null context 调用 `onReasoning` 时，半开工具继续隐藏，因为无法携带结果绑定；正常 Agent API 会自动建立 context。
+
+调用同一依赖的多个 Agent 可以共享一个 breaker。使用共享 Redis 存储时，引入 `agentscope-extensions-redis` 并提供 `RedisClientAdapter`：
+
+```java
+import io.agentscope.extensions.redis.circuitbreaker.RedisToolCircuitBreakerStore;
+
+var store = new RedisToolCircuitBreakerStore(
+        redisClient, "tenant-a:weather-cb:", Duration.ofHours(24));
+ToolCircuitBreaker sharedBreaker = new ToolCircuitBreaker(policy, store);
+```
+
+创建 breaker 时会校验 Redis 的实际 TTL 必须同时大于 `maxCooldown` 和 `probeTimeout`。TTL 按整秒向下取整，最少一秒。不同租户、环境或工具命名空间应使用不同的 key prefix；需要共享依赖健康状态的副本使用同一个 prefix。所有状态转换只涉及一个 Redis key，可用于 Redis Cluster。读取旧格式时会原子迁移，保留剩余 TTL；旧版本无法读取新的带版本格式，因此共享同一个 prefix 的副本需要一起升级。
+
+跨副本恢复时，各副本的 middleware 应使用相同且稳定的绑定命名空间。同一个 Agent 上的独立熔断器应使用不同的绑定命名空间。默认命名空间为 `default`，默认 order 为 `1`：
+
+```java
+var middleware = new ToolCircuitBreakerMiddleware(sharedBreaker, "weather", 1);
+```
+
+middleware 顺序需要结合其他 middleware 配置。order 越大越在外层。熔断器应位于 reasoning 重试 middleware 内层，使每次重试分别领取和释放探测；同时位于 acting 重试或缓存 middleware 外层，以便每次工具调用只统计最终结果。增加工具 schema 的 middleware 应先完成 schema 组装，再由熔断器过滤，后续 middleware 不应重新加入已隐藏的工具。可以通过显式 order 或 Builder 注册顺序满足这些约束。若 `ToolChoice.Specific` 指向已隐藏的工具，会改为自动选择；过滤后没有工具时，`ToolChoice.Required` 也会改为自动选择。
+
 ## 实用示例
 
 ### 计时 middleware
