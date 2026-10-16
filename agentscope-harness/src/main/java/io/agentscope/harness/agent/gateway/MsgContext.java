@@ -95,7 +95,7 @@ public record MsgContext(
                     .forEach(
                             e ->
                                     sb.append("|x:")
-                                            .append(escape(e.getKey()))
+                                            .append(escapeKey(e.getKey()))
                                             .append('=')
                                             .append(escape(e.getValue())));
         }
@@ -108,5 +108,14 @@ public record MsgContext(
      */
     private static String escape(String value) {
         return value.replace("%", "%25").replace("|", "%7C");
+    }
+
+    /**
+     * Escapes a component that is followed by the {@code =} key/value separator. The separator
+     * itself has to be escaped too, otherwise {@code {"a": "b=c"}} and {@code {"a=b": "c"}} would
+     * still produce the same key. Values stay untouched so that {@code {"a": "b=c"}} is unaffected.
+     */
+    private static String escapeKey(String value) {
+        return escape(value).replace("=", "%3D");
     }
 }
