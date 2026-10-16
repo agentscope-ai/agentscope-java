@@ -284,6 +284,10 @@ One more reminder: the `SandboxState` identity layer is never optional — in mu
 
 ## How the workspace maps into the sandbox
 
+The system prompt reports the workspace root stored in the sandbox state for the current call,
+including non-default paths configured for Docker, E2B, AgentRun, Daytona, or Kubernetes. Concurrent
+calls use their own sandbox bindings. If the state has no root, the prompt falls back to `/workspace`.
+
 Host-side key files under `workspace/` (`AGENTS.md`, `skills/`, `subagents/`, `knowledge/`) are synced into the sandbox at each start, content-hash-gated — unchanged content is skipped.
 
 To bind a host directory into the sandbox (e.g. a code repo), use `BindMountEntry` (Docker only; for Kubernetes, declare mounts in the cluster-side `SandboxTemplate` pod template instead; managed sandboxes like Daytona / E2B run in the cloud and can't mount your host paths).

@@ -25,6 +25,11 @@ import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
+import io.agentscope.harness.agent.sandbox.SandboxAware;
+import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -237,7 +242,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
         String workspaceParagraph =
                 buildWorkspaceParagraph(
-                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled);
+                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled, rc);
         WorkspaceContextMaterials.register(
                 rc,
                 List.of(
@@ -317,7 +322,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             Path workspace,
             Path effectiveWorkspace,
             AbstractFilesystem fs,
-            boolean artifactDeliveryEnabled) {
+            boolean artifactDeliveryEnabled,
+            RuntimeContext rc) {
         StringBuilder sb = new StringBuilder("## Workspace\n");
         LocalFilesystemWithShell localUpper = detectLocalUpper(fs);
         Path project = localUpper != null ? localUpper.getShellCwd() : null;
@@ -358,7 +364,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             sb.append("Shell commands run with `pwd` set to the project directory.\n");
         } else if (fs instanceof AbstractSandboxFilesystem sandbox
                 && !(fs instanceof OverlayFilesystem)) {
-            sb.append("Sandbox root: /workspace (container id: ")
+            sb.append("Sandbox root: ")
+                    .append(resolveSandboxRoot(fs, rc))
+                    .append(" (container id: ")
                     .append(sandbox.id())
                     .append(")\n");
             if (artifactDeliveryEnabled) {
@@ -416,6 +424,33 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                             + " cannot access your container's filesystem directly.\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * Resolves the sandbox workspace root from the active sandbox's persisted state.
+     *
+     * <p>The workspace root is written into each sandbox backend's state object when the sandbox
+     * is created (e.g. {@code DockerSandboxState}, {@code E2bSandboxState}), and is the
+     * authoritative source for the path the container exposes to the model. This method
+     * reads it via the base-class accessor {@link SandboxState#getWorkspaceRoot()} introduced
+     * for this purpose.
+     *
+     * <p>The per-call sandbox binding takes precedence over the legacy filesystem binding, which
+     * is shared across calls. Falls back to the default sandbox workspace prefix when the selected
+     * sandbox has no configured root.
+     */
+    private static String resolveSandboxRoot(AbstractFilesystem fs, RuntimeContext rc) {
+        SandboxAcquireResult bound = rc != null ? rc.get(SandboxAcquireResult.class) : null;
+        if (bound != null && bound.isReleased()) {
+            return ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX;
+        }
+        Sandbox sandbox = bound != null ? bound.getSandbox() : null;
+        if (sandbox == null && fs instanceof SandboxAware aware) {
+            sandbox = aware.getSandbox();
+        }
+        SandboxState state = sandbox != null ? sandbox.getState() : null;
+        String root = state != null ? state.getWorkspaceRoot() : null;
+        return root != null && !root.isBlank() ? root : ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX;
     }
 
     /**
