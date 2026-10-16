@@ -338,7 +338,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                 Files.createDirectories(resolved.getParent());
             }
             Files.writeString(resolved, content, StandardCharsets.UTF_8);
-            return WriteResult.ok(filePath);
+            return WriteResult.ok(absoluteResultPath(resolved));
         } catch (IOException e) {
             return WriteResult.fail("Error writing file '" + filePath + "': " + e.getMessage());
         }
@@ -381,7 +381,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             int occurrences = (int) result[1];
 
             Files.writeString(resolved, newContent, StandardCharsets.UTF_8);
-            return EditResult.ok(filePath, occurrences);
+            return EditResult.ok(absoluteResultPath(resolved), occurrences);
         } catch (IOException e) {
             return EditResult.fail("Error editing file '" + filePath + "': " + e.getMessage());
         } finally {
@@ -530,7 +530,7 @@ public class LocalFilesystem implements AbstractFilesystem {
         AbstractFilesystem.validatePath(path);
         Path resolved = resolvePath(runtimeContext, path);
         if (!Files.exists(resolved)) {
-            return WriteResult.ok(path); // idempotent
+            return WriteResult.ok(absoluteResultPath(resolved)); // idempotent
         }
         try {
             if (Files.isDirectory(resolved)) {
@@ -548,7 +548,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             } else {
                 Files.delete(resolved);
             }
-            return WriteResult.ok(path);
+            return WriteResult.ok(absoluteResultPath(resolved));
         } catch (IOException e) {
             return WriteResult.fail("Error deleting '" + path + "': " + e.getMessage());
         }
@@ -568,7 +568,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                 Files.createDirectories(to.getParent());
             }
             Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
-            return WriteResult.ok(toPath);
+            return WriteResult.ok(absoluteResultPath(to));
         } catch (IOException e) {
             return WriteResult.fail(
                     "Error moving '" + fromPath + "' to '" + toPath + "': " + e.getMessage());
@@ -585,6 +585,11 @@ public class LocalFilesystem implements AbstractFilesystem {
         } catch (SecurityException e) {
             return false;
         }
+    }
+
+    /** Absolute on-disk path for WriteResult/EditResult (matches their javadoc contract). */
+    private static String absoluteResultPath(Path resolved) {
+        return resolved.toAbsolutePath().normalize().toString();
     }
 
     // ==================== Path resolution ====================
