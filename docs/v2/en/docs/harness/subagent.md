@@ -122,7 +122,24 @@ The parent creates a subagent with `agent_spawn`; the key knob is `timeout_secon
 - `timeout_seconds > 0` (default 30, max 600) — **synchronous** call; the parent blocks on this step, result returns as the tool result. By default, when the wait expires the in-flight run is **promoted** to a background task (`status: timeout_promoted` + `task_id`) and keeps running.
 - `timeout_seconds = 0` — **background** call; returns a `task_id` immediately, subagent runs in the background.
 
-**Force sync via `RuntimeContext`.** Application code can put `AgentSpawnTool.CTX_FORCE_SYNC = true` on the current call's `RuntimeContext` to override the LLM's async choice, and optionally `CTX_FORCE_SYNC_TIMEOUT_SECONDS` for a hard wait budget (seconds):
+**Application-controlled wait.** For work whose duration the model cannot estimate reliably, configure the synchronous wait in application code:
+
+```java
+SubagentDeclaration.builder()
+    .name("deep-etl")
+    .description("Runs a long ETL pipeline")
+    .timeoutSeconds(300)
+    .build();
+
+RuntimeContext ctx = RuntimeContext.builder()
+    .sessionId("s-1")
+    .put(AgentSpawnTool.CTX_TIMEOUT_SECONDS, 120)
+    .build();
+```
+
+For `agent_spawn` (including reuse of a persisted instance) and `agent_send`, the per-call `CTX_TIMEOUT_SECONDS` value takes priority over the declaration's `timeoutSeconds`, which takes priority over the model's `timeout_seconds`. Positive application values override a model request for immediate background execution (`0`). Declaration values default to `null`; non-positive application values are ignored, and positive values are capped at 600 seconds. The context override accepts a number or an integer string. This controls the parent's wait: in ordinary mode, a local run continues in the background after the wait expires; a remote run remains on its task server with its `task_id` returned.
+
+**Force sync via `RuntimeContext`.** Application code can additionally put `AgentSpawnTool.CTX_FORCE_SYNC = true` on the current call's `RuntimeContext` to disable background promotion, and optionally `CTX_FORCE_SYNC_TIMEOUT_SECONDS` for a hard wait budget (seconds):
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder()
@@ -135,7 +152,7 @@ RuntimeContext ctx = RuntimeContext.builder()
 When enabled:
 
 1. If `CTX_FORCE_SYNC_TIMEOUT_SECONDS` is set, it **fully replaces** the LLM's `timeout_seconds` (`<= 0` falls back to 30s; max 600s).
-2. Without that override, an LLM-supplied `timeout_seconds=0` is coerced to the default sync timeout (30s) — **no** background task is submitted — while a positive LLM timeout is preserved.
+2. Without that override, `CTX_TIMEOUT_SECONDS` and the declaration timeout retain their priority. If neither supplies a positive value, an LLM-supplied `timeout_seconds=0` is coerced to the default sync timeout (30s), while a positive LLM timeout is preserved.
 3. If the sync wait expires, the tool returns `status: timeout` and interrupts the subagent — it is **not** promoted to a background `task_id`.
 
 `agent_send` honors the same switch. Multiple force-sync `agent_spawn` calls in one turn still run in parallel under the Toolkit default.

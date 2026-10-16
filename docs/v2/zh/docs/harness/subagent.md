@@ -120,7 +120,24 @@ HarnessAgent.builder()
 - `timeout_seconds > 0`（默认 30，最大 600）—— **同步**调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。默认超时后会 **promote** 成后台任务（`status: timeout_promoted` + `task_id`），子 agent 继续跑。
 - `timeout_seconds = 0` —— **后台**调用，立即返回一个 `task_id`，子 agent 在后台跑。
 
-**通过 `RuntimeContext` 强制同步。** 应用侧可在当前调用的 `RuntimeContext` 里放入 `AgentSpawnTool.CTX_FORCE_SYNC = true`，覆盖 LLM 的异步选择；可选再放 `CTX_FORCE_SYNC_TIMEOUT_SECONDS` 指定硬超时（秒）：
+**由应用配置等待时间。** 对于模型难以估计耗时的任务，可以在应用代码中配置同步等待时间：
+
+```java
+SubagentDeclaration.builder()
+    .name("deep-etl")
+    .description("Runs a long ETL pipeline")
+    .timeoutSeconds(300)
+    .build();
+
+RuntimeContext ctx = RuntimeContext.builder()
+    .sessionId("s-1")
+    .put(AgentSpawnTool.CTX_TIMEOUT_SECONDS, 120)
+    .build();
+```
+
+`agent_spawn`（包括复用持久化实例）和 `agent_send` 都按以下优先级解析超时：当前调用的 `CTX_TIMEOUT_SECONDS` → 声明中的 `timeoutSeconds` → 模型传入的 `timeout_seconds`。应用配置的正数会覆盖模型要求立即后台执行的 `0`。声明值默认为 `null`；非正数配置会被忽略，正数上限为 600 秒。上下文覆盖值支持数字或整数字符串。该配置限制的是父代理的等待时间：普通模式下，本地子代理在等待超时后转为后台继续运行；远程子代理继续在任务服务器上运行，并返回其 `task_id`。
+
+**通过 `RuntimeContext` 强制同步。** 应用侧还可以在当前调用的 `RuntimeContext` 里放入 `AgentSpawnTool.CTX_FORCE_SYNC = true`，禁止超时后转入后台；可选再放 `CTX_FORCE_SYNC_TIMEOUT_SECONDS` 指定硬超时（秒）：
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder()
@@ -133,7 +150,7 @@ RuntimeContext ctx = RuntimeContext.builder()
 开启后：
 
 1. 若设置了 `CTX_FORCE_SYNC_TIMEOUT_SECONDS`，它会**完全覆盖** LLM 的 `timeout_seconds`（`<=0` 回退到 30s，上限 600s）。
-2. 未设置时，LLM 传的 `timeout_seconds=0` 会被改写成默认同步超时（30s），**不会**提交后台任务；LLM 传的正数超时仍生效。
+2. 未设置时，仍优先采用 `CTX_TIMEOUT_SECONDS` 和声明超时。如果两者都未提供正数，LLM 传的 `timeout_seconds=0` 会被改写成默认同步超时（30s）；LLM 传的正数超时仍生效。
 3. 同步等待超时后返回 `status: timeout` 并中断子 agent，**不会** promote 成后台 `task_id`。
 
 `agent_send` 同样遵守该开关。同一轮里多个强制同步的 `agent_spawn` 仍可按 Toolkit 默认并行推进。
