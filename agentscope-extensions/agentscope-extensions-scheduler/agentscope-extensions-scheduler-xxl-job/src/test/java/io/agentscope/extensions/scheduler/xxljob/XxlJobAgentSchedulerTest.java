@@ -46,11 +46,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import reactor.core.publisher.Flux;
 
 /** Unit tests for {@link XxlJobAgentScheduler}. */
+@Timeout(60)
 class XxlJobAgentSchedulerTest {
 
     private XxlJobExecutor mockExecutor;

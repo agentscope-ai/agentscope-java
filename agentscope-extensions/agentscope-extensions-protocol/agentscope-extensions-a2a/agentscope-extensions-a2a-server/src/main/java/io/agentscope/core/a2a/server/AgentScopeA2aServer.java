@@ -16,12 +16,14 @@
 
 package io.agentscope.core.a2a.server;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import io.a2a.server.events.QueueManager;
 import io.a2a.server.tasks.PushNotificationConfigStore;
 import io.a2a.server.tasks.PushNotificationSender;
 import io.a2a.server.tasks.TaskStore;
 import io.a2a.spec.AgentCard;
 import io.a2a.spec.TransportProtocol;
+import io.a2a.util.Utils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.AgentScopeAgentCardConverter;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
@@ -150,6 +152,22 @@ public class AgentScopeA2aServer {
      */
     public AgentCard getAgentCard() {
         return agentCard;
+    }
+
+    /**
+     * Get the agent card of this server as JSON, to serve it to A2A clients.
+     *
+     * <p>The JSON is written by the A2A SDK, so it does not depend on how the hosting framework
+     * serializes objects.
+     *
+     * @return agent card JSON
+     */
+    public String getAgentCardJson() {
+        try {
+            return Utils.OBJECT_MAPPER.writeValueAsString(agentCard);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize the agent card", e);
+        }
     }
 
     /**
