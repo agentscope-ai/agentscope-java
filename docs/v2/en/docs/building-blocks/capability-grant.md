@@ -49,6 +49,9 @@ The `CapabilitySurface` is an immutable grant enumeration. The framework resolve
 `call()` (server-side — a `null` return means no trimming) and carries it on the
 `RuntimeContext` through the whole call chain (frozen per request, never persisted);
 sub-agents without their own resolver reuse the parent's surface instance (zero re-computation).
+`HarnessAgent.builder().capabilityResolver(...)` is supported as well: resolution happens
+before the sandbox acquire and skill pre-staging, so the staged set, the prompt catalog and
+every gate observe the same surface.
 
 **Caching**: the resolver runs at every call entry (exactly once per call). If its backend is
 an expensive lookup (DB / RPC), consider caching it yourself to match your business needs
@@ -89,7 +92,9 @@ accessors (`allowedSkills()` etc.) still preserve the distinction.
 Positive authorization is hierarchical; matching **any set dimension** grants:
 
 - Granting a **skill** implicitly grants its manual, scripts and associated tools (the skill
-  tool group `skillId + "_skill_tools"`, where a source-less skillId is simply the skill name);
+  tool group `skillId + "_skill_tools"`, where a source-less skillId is simply the skill name),
+  **and automatically enables custom tool groups bound to it via `activateOnSkill`** (the call
+  entry merges bound groups into the grant set);
 - Granting a **ToolGroup** implicitly grants every tool in it;
 - Granting a **tool** by name grants exactly that tool (grouping is ignored, and it does not
   amplify to sibling tools in the same group).
@@ -97,9 +102,9 @@ Positive authorization is hierarchical; matching **any set dimension** grants:
 Skills are granted and addressed **by skillId**: normally just the skill name (the
 industry-standard unique identity); the combined `name + "__s__" + source` form only when
 same-named skills come from different repositories (entitlement lists use the bare name; the
-combined form for the rare precise case). Catalogs key by skill name and enforce
-per-agent-catalog uniqueness (same name + same instance is idempotent, a different
-instance is rejected).
+combined form for the rare precise case). Catalogs key by skillId: same-named skills from
+different repositories coexist under their combined form, a same-id re-registration replaces
+the previous instance (version override), and lookups match the exact skillId.
 
 Only whitelists are provided; there is no deny (reverse-ban) capability. Default is deny —
 anything not reachable from the enumeration does not exist.

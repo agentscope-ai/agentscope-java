@@ -40,7 +40,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-`CapabilitySurface` 是不可变的授权全集。框架在每次 `call()` 入口（服务端）解析一次——resolver 返回 `null` 等同不裁剪——随 `RuntimeContext` 走完整条调用链（请求内冻结、不持久化）；未自配 resolver 的子 agent 直接复用父授权面（零重算）。
+`CapabilitySurface` 是不可变的授权全集。框架在每次 `call()` 入口（服务端）解析一次——resolver 返回 `null` 等同不裁剪——随 `RuntimeContext` 走完整条调用链（请求内冻结、不持久化）；未自配 resolver 的子 agent 直接复用父授权面（零重算）。`HarnessAgent.builder().capabilityResolver(...)` 同样支持：解析发生在沙箱 acquire 与 skill 暂存之前，暂存清单、提示词目录与各道门看到同一份授权面。
 
 **缓存建议**：resolver 在每次调用入口都会执行（调用内只此一次）。若其后端是 DB / RPC 等高成本查询，可按业务实际需要自行加缓存（如按 `userId` + TTL），并接受相应的权限变更生效延迟；框架不代管缓存。
 
@@ -73,11 +73,11 @@ new CapabilitySurface(Set.of(), Set.of(), Set.of());
 
 正向授权层次包含，命中**任一已设置维度**即放行：
 
-- 授权一个 **skill** 即隐含授权其手册、脚本与关联工具（技能组 `skillId + "_skill_tools"`，无 source 时 skillId 即 skill 名）；
+- 授权一个 **skill** 即隐含授权其手册、脚本与关联工具（技能组 `skillId + "_skill_tools"`，无 source 时 skillId 即 skill 名），**并自动放行经 `activateOnSkill` 绑定到该 skill 的自定义工具组**（call 入口把绑定组并入授权面）；
 - 授权一个 **ToolGroup** 即隐含授权组内全部工具；
 - 逐名授权一个**工具**即授权该工具本身（不问分组，也不放大到组内其他工具）。
 
-skill 以 **skillId** 授权与寻址：skillId 通常就是 skill 名（行业标准唯一定位），仅在同名 skill 来自不同仓库时取 `name + "__s__" + source` 组合形态精确到具体仓库（业务授权清单可以直接使用 skill 名，极端情况下使用组合形态）。目录以 skill 名为键并强制单个 agent 目录内唯一（同名同实例幂等、同名异实例拒绝）。
+skill 以 **skillId** 授权与寻址：skillId 通常就是 skill 名（行业标准唯一定位），仅在同名 skill 来自不同仓库时取 `name + "__s__" + source` 组合形态精确到具体仓库（业务授权清单可以直接使用 skill 名，极端情况下使用组合形态）。目录以 skillId 为键：同名 skill 来自不同仓库时以组合形态共存，同 id 重复注册覆盖旧实例（版本更新），寻址按 skillId 精确匹配。
 
 只提供白名单，不提供 deny（反向禁用）；默认拒绝——不在授权清单内的能力即「不存在」。
 
