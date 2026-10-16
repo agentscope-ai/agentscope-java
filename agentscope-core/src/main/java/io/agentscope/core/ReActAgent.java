@@ -5389,8 +5389,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * Deletes one native session's entire persisted history: events, state checkpoints, writer
-     * seals and the inbox. This is irreversible and distinct from {@link #clearContext(RuntimeContext)},
-     * which resets the model-visible context while keeping the journal itself.
+     * seals and the inbox. This is irreversible and distinct from
+     * {@link #clearContext(RuntimeContext)}, which resets the model-visible context while keeping
+     * the journal itself.
      *
      * <p>The journal is a hash-chained append-only log, so deletion is per session: the
      * {@code SessionKey} namespace is self-contained and other sessions are unaffected. An active
