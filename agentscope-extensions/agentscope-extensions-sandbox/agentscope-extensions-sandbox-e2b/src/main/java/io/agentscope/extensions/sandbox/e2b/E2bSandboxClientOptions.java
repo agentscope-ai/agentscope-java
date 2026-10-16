@@ -17,6 +17,9 @@ package io.agentscope.extensions.sandbox.e2b;
 
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.function.Supplier;
 import okhttp3.OkHttpClient;
 
 /** Options for {@link E2bSandboxClient}. */
@@ -77,6 +80,15 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
      * (and a single call cannot disable a client-level retention — disable it on the client).
      */
     private int snapshotRetention = 0;
+
+    /**
+     * Environment variables injected into the sandbox at creation time. Values are resolved
+     * through their suppliers on every sandbox creation (not once at construction), so dynamic
+     * values such as short-lived tokens stay fresh. {@code null} values are skipped. Applies only
+     * when a sandbox is created; {@code connect} to an existing sandbox keeps its original
+     * environment.
+     */
+    private Map<String, Supplier<String>> envs = new LinkedHashMap<>();
 
     @Override
     public String getType() {
@@ -217,5 +229,29 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
 
     public void setSnapshotRetention(int snapshotRetention) {
         this.snapshotRetention = snapshotRetention;
+    }
+
+    public Map<String, Supplier<String>> getEnvs() {
+        return envs;
+    }
+
+    public void setEnvs(Map<String, Supplier<String>> envs) {
+        this.envs = envs != null ? new LinkedHashMap<>(envs) : new LinkedHashMap<>();
+    }
+
+    /** Registers a sandbox-creation environment variable with a fixed value. */
+    public void env(String name, String value) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("env name must not be blank");
+        }
+        envs.put(name, () -> value);
+    }
+
+    /** Registers a sandbox-creation environment variable resolved on every sandbox creation. */
+    public void env(String name, Supplier<String> valueSupplier) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("env name must not be blank");
+        }
+        envs.put(name, valueSupplier);
     }
 }
