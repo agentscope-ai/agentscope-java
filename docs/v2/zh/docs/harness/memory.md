@@ -265,6 +265,8 @@ Memory 的记录边界为一行，Session 的记录边界为一条 entry，不�
 
 进入维护流程不一定会调用模型：如果自上次成功合并以来没有新增日流水账内容，consolidation 会跳过 LLM 请求。`FlushTrigger.never()` 不会关闭这条维护路径。
 
+使用分布式存储时，记忆合并水位遵循工作区配置的 namespace 映射。隔离的用户或会话不会推进彼此的水位；未分作用域的工作区仍共用水位。升级后，隔离作用域会忽略历史全局水位，回退到自己的 `memory/.consolidation_state` 文件；文件不存在时，会处理全部保留的日流水账。自行构造 `WorkspaceManager` 时，应传入与文件系统相同的 `NamespaceFactory`。
+
 所有阈值都可以通过 `.memory(MemoryConfig.builder()...)` 调，绝大多数项目不需要碰。
 
 ## 完全关掉
