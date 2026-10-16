@@ -155,6 +155,7 @@ import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -392,6 +393,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final SessionHistoryMode sessionHistoryMode;
     private final SessionLogStore sessionLogStore;
     private final String sessionLogAgentId;
+
+    /** Writer-lease duration fencing a session deletion, same budget as administrative updates. */
+    private static final Duration DELETE_LEASE = Duration.ofMinutes(2);
 
     private ReActAgent(Builder builder, Toolkit agentToolkit) {
         super(builder.name, builder.description, new ArrayList<>(builder.hooks), builder.agentId);
@@ -5381,6 +5385,50 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         state.contextMutable().clear();
         state.setSummary("");
         saveAgentState(userId, sid);
+    }
+
+    /**
+     * Deletes one native session's entire persisted history: events, state checkpoints, writer
+     * seals and the inbox. This is irreversible and distinct from {@link #clearContext(RuntimeContext)},
+     * which resets the model-visible context while keeping the journal itself.
+     *
+     * <p>The journal is a hash-chained append-only log, so deletion is per session: the
+     * {@code SessionKey} namespace is self-contained and other sessions are unaffected. An active
+     * execution holds the writer lease and rejects the deletion; the lease acquired here is never
+     * released because its record disappears together with the session.
+     *
+     * <p>Requires native session history ({@code EVENT_LOG} mode with a session log store).
+     *
+     * @param ctx runtime context identifying the session; a missing session id uses the default
+     *     session id
+     */
+    public void deleteSession(RuntimeContext ctx) {
+        if (!sessionLogEnabled())
+            throw new IllegalStateException("Native session history is disabled");
+        deleteSessionNative(stateContext(ctx));
+    }
+
+    /**
+     * Deletes one native session's entire persisted history, identified by
+     * {@code (userId, sessionId)}. See {@link #deleteSession(RuntimeContext)} for semantics.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void deleteSession(String userId, String sessionId) {
+        if (!sessionLogEnabled())
+            throw new IllegalStateException("Native session history is disabled");
+        deleteSessionNative(stateContext(userId, sessionId));
+    }
+
+    private void deleteSessionNative(RuntimeContext rc) {
+        SessionKey key = sessionKey(rc);
+        // Fence: an active execution holds the writer lease, so reaching here means the session
+        // is quiet. The lease record lives inside the deleted namespace and is deliberately not
+        // released.
+        sessionLog(rc).acquire(UUID.randomUUID().toString(), DELETE_LEASE);
+        sessionLogStore.delete(key, rc);
+        clearStateCache(rc);
     }
 
     private void clearNativeContext(RuntimeContext context) {

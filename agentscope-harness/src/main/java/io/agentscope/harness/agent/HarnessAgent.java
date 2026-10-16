@@ -416,6 +416,32 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
+     * Deletes one native session's entire persisted history: events, state checkpoints, writer
+     * seals and the inbox. This is irreversible and distinct from
+     * {@link #clearContext(RuntimeContext)}: clearing resets the model-visible context while the
+     * journal itself remains, deletion removes it.
+     *
+     * <p>An active execution holds the writer lease and rejects the deletion. Requires native
+     * session history ({@code EVENT_LOG} mode with a session log store).
+     *
+     * @param ctx runtime context identifying the session
+     */
+    public void deleteSession(RuntimeContext ctx) {
+        delegate.deleteSession(ctx);
+    }
+
+    /**
+     * Deletes one native session's entire persisted history, identified by
+     * {@code (userId, sessionId)}. See {@link #deleteSession(RuntimeContext)} for semantics.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void deleteSession(String userId, String sessionId) {
+        delegate.deleteSession(userId, sessionId);
+    }
+
+    /**
      * Clears all locally cached per-session state and permission engines held by the wrapped
      * {@link ReActAgent}. Persisted state in the configured {@link AgentStateStore} is preserved.
      */
