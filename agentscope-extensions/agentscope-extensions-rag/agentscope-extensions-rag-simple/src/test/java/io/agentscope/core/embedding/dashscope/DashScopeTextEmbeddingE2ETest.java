@@ -60,7 +60,8 @@ class DashScopeTextEmbeddingE2ETest {
         TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
         StepVerifier.create(model.embed(textBlock))
                 .assertNext(
-                        embedding -> {
+                        response -> {
+                            double[] embedding = response.getEmbedding();
                             assertNotNull(embedding, "Embedding should not be null");
                             assertEquals(
                                     EXPECTED_DIMENSIONS,
@@ -85,8 +86,8 @@ class DashScopeTextEmbeddingE2ETest {
         EmbeddingModel model = createModel();
         TextBlock textBlock = TextBlock.builder().text("Test text for consistency").build();
 
-        double[] embedding1 = model.embed(textBlock).block();
-        double[] embedding2 = model.embed(textBlock).block();
+        double[] embedding1 = model.embed(textBlock).block().getEmbedding();
+        double[] embedding2 = model.embed(textBlock).block().getEmbedding();
 
         assertNotNull(embedding1);
         assertNotNull(embedding2);
