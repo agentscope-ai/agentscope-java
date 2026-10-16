@@ -42,8 +42,10 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -221,6 +223,11 @@ class ReActAgentStructuredOutputWithToolsTest {
     }
 
     private static final class MarkdownFenceRemovingMiddleware implements MiddlewareBase {
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+        }
 
         @Override
         public Flux<AgentEvent> onModelCall(

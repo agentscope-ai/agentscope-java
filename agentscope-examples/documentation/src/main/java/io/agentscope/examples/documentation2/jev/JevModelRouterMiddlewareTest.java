@@ -32,7 +32,9 @@ import io.agentscope.extensions.judge.jev.JevRetryPolicy;
 import io.agentscope.extensions.judge.jev.example.JevModelRouterMiddleware;
 import io.agentscope.extensions.judge.jev.example.JevModelRouterMiddleware.RoutingDecision;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -159,6 +161,11 @@ public final class JevModelRouterMiddlewareTest {
         @Override
         public int order() {
             return -1;
+        }
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
         }
 
         @Override

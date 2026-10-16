@@ -31,6 +31,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ChatSessionsTest {
+
+    /**
+     * Wall-clock bound for waiting on demo-agent completion — test plumbing, never a latency
+     * assertion. Calibrated, not guessed: the slowest test takes ~13s standalone and the demo
+     * model's per-codepoint streaming plus agent startup drift several-fold under loaded parallel
+     * builds (~21s observed under a full {@code -T1C} run), so 30s keeps ~40% headroom over the
+     * measured worst case while still failing fast on a genuine hang.
+     */
+    private static final Duration COMPLETION_TIMEOUT = Duration.ofSeconds(30);
+
     @TempDir Path workspace;
 
     @Test
@@ -89,7 +99,7 @@ class ChatSessionsTest {
         try (var sessions = new ChatSessions(workspace, new DemoChatModel())) {
             var session = sessions.session("conversation");
             var task = session.submit("read the reference");
-            var done = session.await(task).block(Duration.ofSeconds(15));
+            var done = session.await(task).block(COMPLETION_TIMEOUT);
             assertEquals("completed", done.status());
             assertEquals(
                     1,
@@ -122,12 +132,11 @@ class ChatSessionsTest {
                         new DemoChatModel(Duration.ofMillis(2), Duration.ofMillis(10)))) {
             var session = sessions.session("conversation");
             session.resume(firstTurn);
-            // Two durable turns with streamed output can exceed 15 seconds on Windows runners.
+            // Two durable turns with streamed output can exceed the tightest bounds on runners.
             var done =
                     await(
                             sessions,
-                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"),
-                            Duration.ofSeconds(60));
+                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"));
             assertEquals(
                     List.of(firstTurn, secondTurn),
                     done.turns().stream().map(ChatHistory.Turn::turnId).toList());
@@ -281,7 +290,7 @@ class ChatSessionsTest {
 
     private ChatHistory.Snapshot await(ChatSessions sessions, Predicate<ChatHistory.Snapshot> ready)
             throws Exception {
-        return await(sessions, ready, Duration.ofSeconds(15));
+        return await(sessions, ready, COMPLETION_TIMEOUT);
     }
 
     private ChatHistory.Snapshot await(
