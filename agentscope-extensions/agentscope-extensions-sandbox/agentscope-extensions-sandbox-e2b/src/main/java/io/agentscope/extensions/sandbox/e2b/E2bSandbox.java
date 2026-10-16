@@ -303,11 +303,16 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         if (peek.missing()) {
             nativeSnapshotPlan = NativeSnapshotPlan.ABSENT;
             log.warn(
-                    "[sandbox-e2b] native snapshot {} is not restorable; creating an empty"
+                    "[sandbox-e2b] snapshot record {} is not restorable; creating an empty"
                             + " workspace from the template",
                     e2bState.getSnapshot() != null ? e2bState.getSnapshot().getId() : "unknown");
-            return platform.createSandbox(
-                    e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
+            JsonNode created =
+                    platform.createSandbox(
+                            e2bState.getTemplateId(),
+                            opt.getSandboxTimeoutSeconds(),
+                            resolveEnvVars());
+            markWorkspaceUnready();
+            return created;
         }
         String snapshotId = peek.snapshotId();
         if (snapshotId != null) {
@@ -315,32 +320,41 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
                 return createFromSnapshot(snapshotId, peek.archive());
             } catch (E2bPlatformHttp.PlatformHttpException e) {
                 if (e.statusCode() != 404) {
-                    throw new IOException(
-                            "Failed to create sandbox from native snapshot "
-                                    + snapshotId
-                                    + ": "
-                                    + e.getMessage(),
-                            e);
+                    throw snapshotCreationFailure(snapshotId, e);
                 }
                 log.warn(
                         "[sandbox-e2b] native snapshot {} no longer exists (HTTP 404); creating an"
                                 + " empty workspace from the template",
                         snapshotId);
                 nativeSnapshotPlan = NativeSnapshotPlan.ABSENT;
-                return platform.createSandbox(
-                        e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
+                JsonNode created =
+                        platform.createSandbox(
+                                e2bState.getTemplateId(),
+                                opt.getSandboxTimeoutSeconds(),
+                                resolveEnvVars());
+                markWorkspaceUnready();
+                return created;
             } catch (Exception e) {
-                throw new IOException(
-                        "Failed to create sandbox from native snapshot "
-                                + snapshotId
-                                + ": "
-                                + e.getMessage(),
-                        e);
+                throw snapshotCreationFailure(snapshotId, e);
             }
         }
         nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
         return platform.createSandbox(
                 e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
+    }
+
+    private IOException snapshotCreationFailure(String snapshotId, Exception cause) {
+        return new IOException(
+                "Failed to create sandbox from native snapshot "
+                        + snapshotId
+                        + ": "
+                        + cause.getMessage(),
+                cause);
+    }
+
+    private void markWorkspaceUnready() {
+        e2bState.setWorkspaceRootReady(false);
+        e2bState.setWorkspaceProjectionHash(null);
     }
 
     private JsonNode createFromSnapshot(String snapshotId, byte[] archive) throws IOException {

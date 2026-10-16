@@ -164,6 +164,30 @@ class E2bSandboxRecoveryTest {
     }
 
     @Test
+    void startFailsWhenSnapshotRestorabilityCheckFailsWithoutTemplateFallback() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
+        E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+        state.setSnapshot(
+                new FakeSnapshot(nativeArchive("snap-123"), true) {
+                    @Override
+                    public boolean isRestorable() throws Exception {
+                        throw new IOException("snapshot store unreachable");
+                    }
+                });
+
+        IOException failure =
+                assertThrows(
+                        IOException.class, () -> new E2bSandbox(state, startOptions()).start());
+
+        assertTrue(failure.getMessage().contains("fake-snapshot"));
+        assertEquals(1, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
+    }
+
+    @Test
     void startFailsWhenNativeSnapshotReferenceIsCorruptWithoutTemplateFallback() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
         E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
@@ -200,8 +224,40 @@ class E2bSandboxRecoveryTest {
         RecordedRequest templateCreate = server.takeRequest();
         assertEquals("/sandboxes", templateCreate.getPath());
         assertTrue(templateCreate.getBody().readUtf8().contains("\"base\""));
-        assertEquals("/process.Process/Start", server.takeRequest().getPath());
+        RecordedRequest workspaceSetup = server.takeRequest();
+        assertEquals("/process.Process/Start", workspaceSetup.getPath());
+        Buffer setupBody = workspaceSetup.getBody();
+        setupBody.readByte();
+        long setupPayloadLength = setupBody.readInt() & 0xffffffffL;
+        assertTrue(setupBody.readUtf8(setupPayloadLength).contains("mkdir -p"));
         assertEquals("fresh-sandbox", state.getSandboxId());
+    }
+
+    @Test
+    void missingSnapshotForcesColdStartWhenPreviousWorkspaceWasReady() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(404).setBody("snapshot not found"));
+        server.enqueue(sandboxResponse("fresh-sandbox"));
+        server.enqueue(envdStartResponse());
+        E2bSandboxState state = stateWithNativeSnapshot("snap-123");
+        state.setWorkspaceRootReady(true);
+        state.setWorkspaceProjectionHash("old-projection");
+
+        new E2bSandbox(state, startOptions()).start();
+
+        assertEquals(3, server.getRequestCount());
+        RecordedRequest snapshotCreate = server.takeRequest();
+        assertEquals("/sandboxes", snapshotCreate.getPath());
+        assertTrue(snapshotCreate.getBody().readUtf8().contains("snap-123"));
+        assertEquals("/sandboxes", server.takeRequest().getPath());
+        RecordedRequest workspaceSetup = server.takeRequest();
+        assertEquals("/process.Process/Start", workspaceSetup.getPath());
+        Buffer setupBody = workspaceSetup.getBody();
+        setupBody.readByte();
+        long setupPayloadLength = setupBody.readInt() & 0xffffffffL;
+        assertTrue(setupBody.readUtf8(setupPayloadLength).contains("mkdir -p"));
+        assertEquals("fresh-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertNull(state.getWorkspaceProjectionHash());
     }
 
     @Test
@@ -408,7 +464,7 @@ class E2bSandboxRecoveryTest {
         }
 
         @Override
-        public boolean isRestorable() {
+        public boolean isRestorable() throws Exception {
             return restorable;
         }
 
