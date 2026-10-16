@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.anthropic.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,6 +27,7 @@ import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -230,6 +232,28 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals("call_123", toolUse.id());
         assertEquals("search", toolUse.name());
         // Note: input validation happens during API calls, not during conversion
+    }
+
+    @Test
+    void testToolUseOmitsInternalParseFailureMetadataFromProviderPayload() {
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call_parse_failed")
+                        .name("search")
+                        .input(Map.of())
+                        .content("{}")
+                        .metadata(Map.of(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED, true))
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(toolUse))
+                        .build();
+
+        String payload = toJson(converter.convert(List.of(msg)));
+
+        assertFalse(payload.contains(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
     }
 
     @Test
