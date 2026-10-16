@@ -171,7 +171,7 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     @Override
     protected Optional<InputStream> openSnapshotArchive(SandboxSnapshot snapshot) throws Exception {
         NativeSnapshotPlan plan = nativeSnapshotPlan;
-        if (plan.isUnavailable()) {
+        if (plan.isAbsent()) {
             return Optional.empty();
         }
         if (plan.isRestored()) {
@@ -265,9 +265,9 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
                 nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
             } catch (Exception e) {
                 log.warn("[sandbox-e2b] connect failed, recreating sandbox: {}", e.getMessage());
+                sandbox = createSandboxForRestore();
                 e2bState.setWorkspaceRootReady(false);
                 e2bState.setWorkspaceProjectionHash(null);
-                sandbox = createSandboxForRestore();
             }
         }
         platform.applySandboxFields(e2bState, sandbox);
@@ -298,10 +298,14 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
      * Creates the sandbox from the cheapest usable source: a restorable native snapshot when one is
      * present, the configured original template otherwise.
      */
-    private JsonNode createSandboxForRestore() throws IOException {
+    private JsonNode createSandboxForRestore() throws Exception {
         NativeSnapshotPeek peek = peekNativeSnapshot();
-        if (peek.unavailable()) {
-            nativeSnapshotPlan = NativeSnapshotPlan.UNAVAILABLE;
+        if (peek.missing()) {
+            nativeSnapshotPlan = NativeSnapshotPlan.ABSENT;
+            log.warn(
+                    "[sandbox-e2b] native snapshot {} is not restorable; creating an empty"
+                            + " workspace from the template",
+                    e2bState.getSnapshot() != null ? e2bState.getSnapshot().getId() : "unknown");
             return platform.createSandbox(
                     e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
         }
@@ -309,14 +313,29 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         if (snapshotId != null) {
             try {
                 return createFromSnapshot(snapshotId, peek.archive());
-            } catch (Exception e) {
+            } catch (E2bPlatformHttp.PlatformHttpException e) {
+                if (e.statusCode() != 404) {
+                    throw new IOException(
+                            "Failed to create sandbox from native snapshot "
+                                    + snapshotId
+                                    + ": "
+                                    + e.getMessage(),
+                            e);
+                }
                 log.warn(
-                        "[sandbox-e2b] create from snapshot {} failed, creating from template: {}",
-                        snapshotId,
-                        e.getMessage());
-                nativeSnapshotPlan = NativeSnapshotPlan.UNAVAILABLE;
+                        "[sandbox-e2b] native snapshot {} no longer exists (HTTP 404); creating an"
+                                + " empty workspace from the template",
+                        snapshotId);
+                nativeSnapshotPlan = NativeSnapshotPlan.ABSENT;
                 return platform.createSandbox(
                         e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
+            } catch (Exception e) {
+                throw new IOException(
+                        "Failed to create sandbox from native snapshot "
+                                + snapshotId
+                                + ": "
+                                + e.getMessage(),
+                        e);
             }
         }
         nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
@@ -332,7 +351,7 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         return created;
     }
 
-    private NativeSnapshotPeek peekNativeSnapshot() {
+    private NativeSnapshotPeek peekNativeSnapshot() throws IOException {
         if (e2bState.getPersistenceMode() != E2bPersistenceMode.NATIVE_SNAPSHOT) {
             return NativeSnapshotPeek.NOT_NATIVE;
         }
@@ -342,20 +361,16 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         }
         try {
             if (!snapshot.isRestorable()) {
-                return NativeSnapshotPeek.FAILED;
+                return NativeSnapshotPeek.MISSING;
             }
             try (InputStream in = snapshot.restore()) {
                 E2bSnapshotRefs.SnapshotIdRef ref = E2bSnapshotRefs.peekSnapshotId(in);
-                if (ref == null) {
-                    return NativeSnapshotPeek.NOT_NATIVE;
-                }
                 return new NativeSnapshotPeek(ref.snapshotId(), ref.archive(), false);
             }
         } catch (Exception e) {
-            log.debug(
-                    "[sandbox-e2b] native snapshot peek failed, using template: {}",
-                    e.getMessage());
-            return NativeSnapshotPeek.FAILED;
+            throw new IOException(
+                    "Failed to read native snapshot " + snapshot.getId() + ": " + e.getMessage(),
+                    e);
         }
     }
 
@@ -410,7 +425,7 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     private enum NativeSnapshotPlanStatus {
         DEFAULT,
         RESTORED,
-        UNAVAILABLE
+        ABSENT
     }
 
     private record NativeSnapshotPlan(
@@ -419,8 +434,8 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         private static final NativeSnapshotPlan DEFAULT =
                 new NativeSnapshotPlan(NativeSnapshotPlanStatus.DEFAULT, null, null);
 
-        private static final NativeSnapshotPlan UNAVAILABLE =
-                new NativeSnapshotPlan(NativeSnapshotPlanStatus.UNAVAILABLE, null, null);
+        private static final NativeSnapshotPlan ABSENT =
+                new NativeSnapshotPlan(NativeSnapshotPlanStatus.ABSENT, null, null);
 
         private static NativeSnapshotPlan restored(String snapshotId, byte[] archive) {
             return new NativeSnapshotPlan(NativeSnapshotPlanStatus.RESTORED, snapshotId, archive);
@@ -430,17 +445,17 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
             return status == NativeSnapshotPlanStatus.RESTORED;
         }
 
-        private boolean isUnavailable() {
-            return status == NativeSnapshotPlanStatus.UNAVAILABLE;
+        private boolean isAbsent() {
+            return status == NativeSnapshotPlanStatus.ABSENT;
         }
     }
 
-    private record NativeSnapshotPeek(String snapshotId, byte[] archive, boolean unavailable) {
+    private record NativeSnapshotPeek(String snapshotId, byte[] archive, boolean missing) {
 
         private static final NativeSnapshotPeek NOT_NATIVE =
                 new NativeSnapshotPeek(null, null, false);
 
-        private static final NativeSnapshotPeek FAILED = new NativeSnapshotPeek(null, null, true);
+        private static final NativeSnapshotPeek MISSING = new NativeSnapshotPeek(null, null, true);
     }
 
     /**

@@ -17,7 +17,9 @@ package io.agentscope.extensions.sandbox.e2b;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
@@ -93,16 +95,16 @@ class E2bSandboxRecoveryTest {
     }
 
     @Test
-    void startSkipsSnapshotRetryAfterTemplateFallback() throws Exception {
+    void startFallsBackToTemplateWhenNativeSnapshotIsMissing() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
-        server.enqueue(new MockResponse().setResponseCode(500).setBody("snapshot unavailable"));
+        server.enqueue(new MockResponse().setResponseCode(404).setBody("snapshot not found"));
         server.enqueue(sandboxResponse("fresh-sandbox"));
         server.enqueue(envdStartResponse());
         E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
 
         new E2bSandbox(state, startOptions()).start();
 
-        assertEquals(4, server.getRequestCount(), "start must not retry the failed snapshot");
+        assertEquals(4, server.getRequestCount());
         RecordedRequest connect = server.takeRequest();
         RecordedRequest snapshotCreate = server.takeRequest();
         RecordedRequest templateCreate = server.takeRequest();
@@ -118,10 +120,28 @@ class E2bSandboxRecoveryTest {
     }
 
     @Test
-    void startSkipsSnapshotRetryAfterPeekFailure() throws Exception {
+    void startFailsOnSnapshotCreateServerErrorWithoutTemplateFallback() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
-        server.enqueue(sandboxResponse("fresh-sandbox"));
-        server.enqueue(envdStartResponse());
+        server.enqueue(new MockResponse().setResponseCode(500).setBody("snapshot unavailable"));
+        E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+
+        IOException failure =
+                assertThrows(
+                        IOException.class, () -> new E2bSandbox(state, startOptions()).start());
+
+        assertTrue(failure.getMessage().contains("snap-123"));
+        assertNotNull(failure.getCause());
+        assertEquals(2, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
+        assertEquals("/sandboxes", server.takeRequest().getPath());
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
+    }
+
+    @Test
+    void startFailsWhenSnapshotArchiveCannotBeRestoredWithoutTemplateFallback() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
         E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
         state.setSnapshot(
                 new FakeSnapshot(nativeArchive("snap-123"), true) {
@@ -131,18 +151,57 @@ class E2bSandboxRecoveryTest {
                     }
                 });
 
+        IOException failure =
+                assertThrows(
+                        IOException.class, () -> new E2bSandbox(state, startOptions()).start());
+
+        assertTrue(failure.getMessage().contains("fake-snapshot"));
+        assertEquals(1, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
+    }
+
+    @Test
+    void startFailsWhenNativeSnapshotReferenceIsCorruptWithoutTemplateFallback() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
+        E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+        byte[] corruptArchive =
+                (new String(E2bSnapshotRefs.MAGIC_PREFIX, StandardCharsets.UTF_8)
+                                + "{\"snapshot_id\":\"\"}")
+                        .getBytes(StandardCharsets.UTF_8);
+        state.setSnapshot(new FakeSnapshot(corruptArchive, true));
+
+        IOException failure =
+                assertThrows(
+                        IOException.class, () -> new E2bSandbox(state, startOptions()).start());
+
+        assertTrue(failure.getMessage().contains("fake-snapshot"));
+        assertEquals(1, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
+    }
+
+    @Test
+    void startFallsBackToTemplateWhenSnapshotIsConfirmedNotRestorable() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
+        server.enqueue(sandboxResponse("fresh-sandbox"));
+        server.enqueue(envdStartResponse());
+        E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+        state.setSnapshot(new FakeSnapshot(nativeArchive("snap-123"), false));
+
         new E2bSandbox(state, startOptions()).start();
 
-        assertEquals(3, server.getRequestCount(), "peek failure must not retry the snapshot");
-        RecordedRequest connect = server.takeRequest();
+        assertEquals(3, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
         RecordedRequest templateCreate = server.takeRequest();
-        RecordedRequest setupWorkspace = server.takeRequest();
-        assertEquals("/sandboxes/old-sandbox/connect", connect.getPath());
         assertEquals("/sandboxes", templateCreate.getPath());
         assertTrue(templateCreate.getBody().readUtf8().contains("\"base\""));
-        assertEquals("/process.Process/Start", setupWorkspace.getPath());
+        assertEquals("/process.Process/Start", server.takeRequest().getPath());
         assertEquals("fresh-sandbox", state.getSandboxId());
-        assertTrue(state.isWorkspaceRootReady());
     }
 
     @Test
