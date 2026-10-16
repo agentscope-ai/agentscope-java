@@ -27,9 +27,10 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Coordinates AG-UI interrupt resume contract state for request processing.
@@ -41,11 +42,19 @@ import java.util.concurrent.ConcurrentMap;
  */
 final class AguiResumeCoordinator {
 
+    private static final Logger logger = LoggerFactory.getLogger(AguiResumeCoordinator.class);
+
     static final String CONTRACT_ERROR_CODE = "AGUI_INTERRUPT_CONTRACT_ERROR";
 
-    private final ConcurrentMap<String, Map<String, AguiEvent.Interrupt>>
-            pendingInterruptsByThread = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, String> activeRunsByThread = new ConcurrentHashMap<>();
+    private final AguiResumeStateStore stateStore;
+
+    AguiResumeCoordinator() {
+        this(new InMemoryAguiResumeStateStore());
+    }
+
+    AguiResumeCoordinator(AguiResumeStateStore stateStore) {
+        this.stateStore = Objects.requireNonNull(stateStore, "stateStore");
+    }
 
     /**
      * Validate whether the input satisfies the currently supported AG-UI resume contract.
@@ -55,8 +64,8 @@ final class AguiResumeCoordinator {
      */
     ResumeContractResult validate(RunAgentInput input) {
         Map<String, AguiEvent.Interrupt> pending =
-                pendingInterruptsByThread.get(input.getThreadId());
-        if (pending == null || pending.isEmpty()) {
+                stateStore.getPendingInterrupts(input.getThreadId());
+        if (pending.isEmpty()) {
             if (!input.hasResume()) {
                 return ResumeContractResult.proceed();
             }
@@ -107,23 +116,54 @@ final class AguiResumeCoordinator {
      * AgentScope session state are both scoped by {@code threadId}. Allowing multiple active runs
      * for one thread would make the final interrupt state depend on completion order.
      *
+     * <p>The run is claimed before resume validation. Pending interrupt mutations are owner
+     * checked, so a successful claim freezes the pending state against other runs while validation
+     * and resume injection complete.
+     *
      * @param input The run input to begin
      * @return A validation result describing whether the run can start
      */
     ResumeContractResult beginRun(RunAgentInput input) {
-        ResumeContractResult resumeContract = validate(input);
-        if (resumeContract.isError()) {
-            return resumeContract;
+        boolean[] claimed = {false};
+        ResumeContractResult result;
+        try {
+            result = beginRun(input, () -> claimed[0] = true);
+        } catch (RuntimeException | Error failure) {
+            if (claimed[0]) {
+                try {
+                    finishRun(input.getThreadId(), input.getRunId());
+                } catch (RuntimeException | Error cleanupError) {
+                    if (cleanupError != failure) {
+                        failure.addSuppressed(cleanupError);
+                    }
+                    logger.error(
+                            "AG-UI release failed: threadId={}, runId={}, phase=validation",
+                            input.getThreadId(),
+                            input.getRunId(),
+                            cleanupError);
+                }
+            }
+            throw failure;
         }
-        String previousRunId =
-                activeRunsByThread.putIfAbsent(input.getThreadId(), input.getRunId());
-        if (previousRunId == null) {
-            return ResumeContractResult.proceed();
+        if (claimed[0] && result.isError()) {
+            finishRun(input.getThreadId(), input.getRunId());
         }
-        return ResumeContractResult.error(
-                "Thread already has an active run; wait for run "
-                        + previousRunId
-                        + " to finish before starting another run on the same thread");
+        return result;
+    }
+
+    /** Begin a run whose caller owns cleanup, including failed validation and cancellation. */
+    ResumeContractResult beginRun(RunAgentInput input, Runnable onClaimed) {
+        AguiResumeStateStore.RunClaim runClaim =
+                stateStore.claimRun(input.getThreadId(), input.getRunId());
+        if (!runClaim.claimed()) {
+            return ResumeContractResult.error(
+                    "Thread already has an active run; wait for run "
+                            + runClaim.activeRunId()
+                            + " to finish before starting another run on the same thread");
+        }
+
+        onClaimed.run();
+        return validate(input);
     }
 
     /**
@@ -133,7 +173,7 @@ final class AguiResumeCoordinator {
      * @param runId The finishing run ID
      */
     void finishRun(String threadId, String runId) {
-        activeRunsByThread.remove(threadId, runId);
+        stateStore.releaseRun(threadId, runId);
     }
 
     /**
@@ -148,8 +188,8 @@ final class AguiResumeCoordinator {
             return runtimeContext;
         }
         Map<String, AguiEvent.Interrupt> pending =
-                pendingInterruptsByThread.get(input.getThreadId());
-        if (pending == null || pending.isEmpty()) {
+                stateStore.getPendingInterrupts(input.getThreadId());
+        if (pending.isEmpty()) {
             return runtimeContext;
         }
         Map<String, AguiEvent.Interrupt> resumeInterrupts = new LinkedHashMap<>();
@@ -185,18 +225,15 @@ final class AguiResumeCoordinator {
         if (!(event instanceof AguiEvent.RunFinished runFinished)) {
             return;
         }
-        if (!runId.equals(activeRunsByThread.get(threadId))) {
-            return;
-        }
         if (runFinished.outcome() instanceof AguiEvent.RunFinishedInterruptOutcome interruptOutcome
                 && !interruptOutcome.interrupts().isEmpty()) {
-            Map<String, AguiEvent.Interrupt> interrupts = new ConcurrentHashMap<>();
+            Map<String, AguiEvent.Interrupt> interrupts = new LinkedHashMap<>();
             for (AguiEvent.Interrupt interrupt : interruptOutcome.interrupts()) {
                 interrupts.put(interrupt.id(), interrupt);
             }
-            pendingInterruptsByThread.put(threadId, Map.copyOf(interrupts));
+            stateStore.replacePendingInterrupts(threadId, runId, interrupts);
         } else if (!runErrorSeen) {
-            pendingInterruptsByThread.remove(threadId);
+            stateStore.replacePendingInterrupts(threadId, runId, Map.of());
         }
     }
 

@@ -22,6 +22,7 @@ import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
+import io.agentscope.core.agui.processor.AguiResumeStateStore;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
@@ -97,6 +98,8 @@ public class AguiWebFluxHandler {
                                         : AguiAdapterConfig.defaultConfig())
                         .adapterFactory(builder.adapterFactory)
                         .runtimeContextResolver(builder.runtimeContextResolver)
+                        .resumeStateStore(builder.resumeStateStore)
+                        .interruptOnCancel(builder.interruptOnDisconnect)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.requestBodyParser =
@@ -166,15 +169,11 @@ public class AguiWebFluxHandler {
                                             ServerSentEvent.<String>builder()
                                                     .data(encoder.encodeToJson(event).trim())
                                                     .build())
-                            // When the client closes the connection, optionally interrupt the agent
+                            // The subscription lifecycle interrupts before releasing its owner.
                             .doOnCancel(
                                     () -> {
                                         if (interruptOnDisconnect) {
-                                            logger.info(
-                                                    "SSE stream cancelled for run {}, interrupting"
-                                                            + " agent",
-                                                    runId);
-                                            result.interrupt(threadId);
+                                            logger.info("SSE stream cancelled for run {}", runId);
                                         } else {
                                             logger.info(
                                                     "SSE stream cancelled for run {}, agent"
@@ -292,6 +291,7 @@ public class AguiWebFluxHandler {
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
         private AguiRequestBodyParser requestBodyParser;
+        private AguiResumeStateStore resumeStateStore;
 
         /**
          * Set the agent registry.
@@ -389,6 +389,17 @@ public class AguiWebFluxHandler {
          */
         public Builder requestBodyParser(AguiRequestBodyParser requestBodyParser) {
             this.requestBodyParser = requestBodyParser;
+            return this;
+        }
+
+        /**
+         * Set the store used to coordinate active runs and pending interrupts.
+         *
+         * @param resumeStateStore The resume coordination state store
+         * @return This builder
+         */
+        public Builder resumeStateStore(AguiResumeStateStore resumeStateStore) {
+            this.resumeStateStore = resumeStateStore;
             return this;
         }
 
