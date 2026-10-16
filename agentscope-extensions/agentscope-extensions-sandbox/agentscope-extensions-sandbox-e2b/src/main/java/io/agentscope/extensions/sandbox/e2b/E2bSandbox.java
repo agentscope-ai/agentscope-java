@@ -320,7 +320,8 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
                 return createFromSnapshot(snapshotId, peek.archive());
             } catch (E2bPlatformHttp.PlatformHttpException e) {
                 if (e.statusCode() != 404) {
-                    throw snapshotCreationFailure(snapshotId, e);
+                    throw snapshotRestoreFailure(
+                            "Failed to create sandbox from native snapshot " + snapshotId, e);
                 }
                 log.warn(
                         "[sandbox-e2b] native snapshot {} no longer exists (HTTP 404); creating an"
@@ -335,7 +336,8 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
                 markWorkspaceUnready();
                 return created;
             } catch (Exception e) {
-                throw snapshotCreationFailure(snapshotId, e);
+                throw snapshotRestoreFailure(
+                        "Failed to create sandbox from native snapshot " + snapshotId, e);
             }
         }
         nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
@@ -343,12 +345,11 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
                 e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
     }
 
-    private IOException snapshotCreationFailure(String snapshotId, Exception cause) {
-        return new IOException(
-                "Failed to create sandbox from native snapshot "
-                        + snapshotId
-                        + ": "
-                        + cause.getMessage(),
+    private SandboxException.SandboxRuntimeException snapshotRestoreFailure(
+            String message, Exception cause) {
+        return new SandboxException.SandboxRuntimeException(
+                SandboxErrorCode.SNAPSHOT_RESTORE_ERROR,
+                message + ": " + cause.getMessage(),
                 cause);
     }
 
@@ -382,9 +383,7 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
                 return new NativeSnapshotPeek(ref.snapshotId(), ref.archive(), false);
             }
         } catch (Exception e) {
-            throw new IOException(
-                    "Failed to read native snapshot " + snapshot.getId() + ": " + e.getMessage(),
-                    e);
+            throw snapshotRestoreFailure("Failed to read native snapshot " + snapshot.getId(), e);
         }
     }
 

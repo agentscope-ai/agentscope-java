@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.ByteArrayInputStream;
@@ -125,10 +127,12 @@ class E2bSandboxRecoveryTest {
         server.enqueue(new MockResponse().setResponseCode(500).setBody("snapshot unavailable"));
         E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
 
-        IOException failure =
+        SandboxException.SandboxRuntimeException failure =
                 assertThrows(
-                        IOException.class, () -> new E2bSandbox(state, startOptions()).start());
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> new E2bSandbox(state, startOptions()).start());
 
+        assertEquals(SandboxErrorCode.SNAPSHOT_RESTORE_ERROR, failure.getErrorCode());
         assertTrue(failure.getMessage().contains("snap-123"));
         assertNotNull(failure.getCause());
         assertEquals(2, server.getRequestCount());
@@ -151,10 +155,12 @@ class E2bSandboxRecoveryTest {
                     }
                 });
 
-        IOException failure =
+        SandboxException.SandboxRuntimeException failure =
                 assertThrows(
-                        IOException.class, () -> new E2bSandbox(state, startOptions()).start());
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> new E2bSandbox(state, startOptions()).start());
 
+        assertEquals(SandboxErrorCode.SNAPSHOT_RESTORE_ERROR, failure.getErrorCode());
         assertTrue(failure.getMessage().contains("fake-snapshot"));
         assertEquals(1, server.getRequestCount());
         assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
@@ -175,10 +181,12 @@ class E2bSandboxRecoveryTest {
                     }
                 });
 
-        IOException failure =
+        SandboxException.SandboxRuntimeException failure =
                 assertThrows(
-                        IOException.class, () -> new E2bSandbox(state, startOptions()).start());
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> new E2bSandbox(state, startOptions()).start());
 
+        assertEquals(SandboxErrorCode.SNAPSHOT_RESTORE_ERROR, failure.getErrorCode());
         assertTrue(failure.getMessage().contains("fake-snapshot"));
         assertEquals(1, server.getRequestCount());
         assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
@@ -197,10 +205,12 @@ class E2bSandboxRecoveryTest {
                         .getBytes(StandardCharsets.UTF_8);
         state.setSnapshot(new FakeSnapshot(corruptArchive, true));
 
-        IOException failure =
+        SandboxException.SandboxRuntimeException failure =
                 assertThrows(
-                        IOException.class, () -> new E2bSandbox(state, startOptions()).start());
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> new E2bSandbox(state, startOptions()).start());
 
+        assertEquals(SandboxErrorCode.SNAPSHOT_RESTORE_ERROR, failure.getErrorCode());
         assertTrue(failure.getMessage().contains("fake-snapshot"));
         assertEquals(1, server.getRequestCount());
         assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
