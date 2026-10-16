@@ -54,10 +54,12 @@ class ChatSessionsTest {
             var steer = sessions.steer("conversation", "focus on operating cost");
             assertEquals(first.turnId(), steer.turnId());
             sessions.inject("conversation", "supporting material");
+            // Two durable turns with streamed output can exceed 15 seconds on Windows runners.
             var completed =
                     await(
                             sessions,
-                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"));
+                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"),
+                            Duration.ofSeconds(60));
             assertEquals(runId, completed.turns().get(0).runId());
             assertTrue(
                     completed.messages().stream()
@@ -155,8 +157,12 @@ class ChatSessionsTest {
             assertTrue(rebuilt.list().contains("conversation"));
             assertEquals(2, rebuilt.snapshot("conversation").messages().size());
             rebuilt.submit("conversation", "turn-two", "continue");
+            // Two durable turns can exceed 15 seconds on Windows runners (see above).
             var snapshot =
-                    await(rebuilt, s -> s.turns().size() == 2 && lastStatus(s).equals("completed"));
+                    await(
+                            rebuilt,
+                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"),
+                            Duration.ofSeconds(60));
             assertEquals(4, snapshot.messages().size());
             assertTrue(snapshot.checkpointSeq() > before);
             assertTrue(snapshot.messages().get(3).getTextContent().contains("remember this"));
