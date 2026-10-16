@@ -47,6 +47,7 @@ class AguiAdapterConfigTest {
         assertTrue(config.isEmitToolCallArgs());
         assertFalse(config.isEmitTokenUsage());
         assertFalse(config.isEnableReasoning()); // Default should be false
+        assertFalse(config.isTextOutputDispositionEnabled());
         assertFalse(config.isEmitRunFinishedAfterError()); // Default should be false
         assertEquals(Duration.ofMinutes(10), config.getRunTimeout());
         assertNull(config.getDefaultAgentId());
@@ -64,6 +65,7 @@ class AguiAdapterConfigTest {
         assertTrue(config.isEmitStateEvents());
         assertTrue(config.isEmitToolCallArgs());
         assertFalse(config.isEmitTokenUsage());
+        assertFalse(config.isTextOutputDispositionEnabled());
         assertEquals(Duration.ofMinutes(10), config.getRunTimeout());
         assertFalse(config.isBaseEventPropertiesEnricherEnabled());
         assertTrue(config.getEventEnrichers().isEmpty());
@@ -123,6 +125,17 @@ class AguiAdapterConfigTest {
     }
 
     @Test
+    void testBuilderTextOutputDispositionEnabled() {
+        AguiAdapterConfig configDisabled =
+                AguiAdapterConfig.builder().textOutputDispositionEnabled(false).build();
+        AguiAdapterConfig configEnabled =
+                AguiAdapterConfig.builder().textOutputDispositionEnabled(true).build();
+
+        assertFalse(configDisabled.isTextOutputDispositionEnabled());
+        assertTrue(configEnabled.isTextOutputDispositionEnabled());
+    }
+
+    @Test
     void testBuilderRunTimeout() {
         Duration customTimeout = Duration.ofMinutes(30);
         AguiAdapterConfig config = AguiAdapterConfig.builder().runTimeout(customTimeout).build();
@@ -161,6 +174,7 @@ class AguiAdapterConfigTest {
                         .emitToolCallArgs(false)
                         .emitTokenUsage(true)
                         .enableReasoning(true)
+                        .textOutputDispositionEnabled(true)
                         .emitRunFinishedAfterError(true)
                         .runTimeout(Duration.ofHours(1))
                         .defaultAgentId("my-agent")
@@ -172,6 +186,7 @@ class AguiAdapterConfigTest {
         assertFalse(config.isEmitToolCallArgs());
         assertTrue(config.isEmitTokenUsage());
         assertTrue(config.isEnableReasoning());
+        assertTrue(config.isTextOutputDispositionEnabled());
         assertTrue(config.isEmitRunFinishedAfterError());
         assertEquals(Duration.ofHours(1), config.getRunTimeout());
         assertEquals("my-agent", config.getDefaultAgentId());

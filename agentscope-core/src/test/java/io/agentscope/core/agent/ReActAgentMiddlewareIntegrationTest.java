@@ -30,6 +30,8 @@ import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -325,6 +327,45 @@ class ReActAgentMiddlewareIntegrationTest {
                 1,
                 events.stream().filter(ModelCallStartEvent.class::isInstance).count(),
                 "core model events must not be published twice");
+    }
+
+    @Test
+    void actingMiddlewareEventsAreForwardedExactlyOnce() {
+        MiddlewareBase hintMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        HintBlockEvent hint =
+                                new HintBlockEvent(
+                                        "reply-acting-hint",
+                                        "block-acting-hint",
+                                        "tool-middleware",
+                                        "completed");
+                        return next.apply(input).concatWithValues(hint);
+                    }
+                };
+        ToolThenFinalModel model = new ToolThenFinalModel();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(new LookupTool());
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hello-system")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(hintMiddleware)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(1, events.stream().filter(HintBlockEvent.class::isInstance).count());
+        assertEquals(1, events.stream().filter(ToolResultStartEvent.class::isInstance).count());
+        assertEquals(1, events.stream().filter(ToolResultEndEvent.class::isInstance).count());
     }
 
     @Test
