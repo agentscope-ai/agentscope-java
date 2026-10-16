@@ -16,10 +16,13 @@
 package io.agentscope.harness.agent.subagent.task;
 
 import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.harness.agent.IsolationScope;
@@ -264,7 +267,30 @@ class WorkspaceTaskRepositoryScopedMaintenanceTest {
                         .orElseThrow()
                         .getLastUpdatedAt();
         var restored = manager(IsolationScope.SESSION);
-        store.beforeCas = () -> write(owner, context, "task-a");
+        // Advance the persisted heartbeat explicitly, independent of platform clock resolution.
+        store.beforeCas =
+                () ->
+                        assertDoesNotThrow(
+                                () -> {
+                                    var namespace =
+                                            List.of(
+                                                    "agents",
+                                                    "parent",
+                                                    "sessions",
+                                                    "session-a",
+                                                    "tasks");
+                                    var file = store.get(namespace, "/session-a.json");
+                                    var value = new HashMap<>(file.value());
+                                    var tasks =
+                                            new ObjectMapper()
+                                                    .readTree((String) value.get("content"));
+                                    ((ObjectNode) tasks.get("task-a"))
+                                            .put(
+                                                    "lastUpdatedAt",
+                                                    heartbeat.plusSeconds(1).toString());
+                                    value.put("content", tasks.toString());
+                                    store.put(namespace, file.key(), value);
+                                });
         repository(restored)
                 .sweepOrphanedTasks(
                         Duration.ofMinutes(10),
