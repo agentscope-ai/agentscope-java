@@ -54,6 +54,12 @@ import java.util.Map;
  */
 public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem {
 
+    /**
+     * Maximum length of raw command output embedded in a failure message the model sees (see
+     * {@link #clampDetail(String)}).
+     */
+    private static final int MAX_DETAIL_CHARS = 500;
+
     @Override
     public abstract String id();
 
@@ -194,13 +200,17 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
         String escapedPath = FilesystemUtils.shellQuote(filePath);
+        // No double-quoted span may contain a space: on a Windows host the argv →
+        // command-line → docker.exe re-parse round-trip drops the inner double quotes, and the
+        // space stops protecting the argument (issue #3262). `d=$(dirname ...)` keeps the quoted
+        // value in a variable; "$d" is then a single token with no space inside the quotes.
         String checkCmd =
                 "if [ -e "
                         + escapedPath
                         + " ]; then echo 'EXISTS'; exit 1; fi; "
-                        + "mkdir -p \"$(dirname "
+                        + "d=$(dirname "
                         + escapedPath
-                        + ")\" 2>&1";
+                        + "); mkdir -p \"$d\" 2>&1";
 
         ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
         if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
@@ -211,7 +221,11 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                                 + " because it already exists. Read and then make an"
                                 + " edit, or write to a new path.");
             }
-            return WriteResult.fail("Failed to write file '" + filePath + "'");
+            String detail =
+                    checkResult.output() != null && !checkResult.output().isBlank()
+                            ? clampDetail(checkResult.output())
+                            : "exit code " + checkResult.exitCode();
+            return WriteResult.fail("Failed to write file '" + filePath + "': " + detail);
         }
 
         List<FileUploadResponse> responses =
@@ -428,8 +442,17 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String escapedPath = FilesystemUtils.shellQuote(path);
         String cmd = "rm -rf " + escapedPath;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
-        if (result.exitCode() != 0) {
-            return WriteResult.fail("Error deleting '" + path + "': " + result.output());
+        // Same fail-closed contract as move(): a null exit code is an unknown status, and a
+        // filesystem mutation must not report success it cannot confirm.
+        Integer exitCode = result.exitCode();
+        if (exitCode == null || exitCode != 0) {
+            String detail =
+                    exitCode == null
+                            ? "no exit status reported"
+                            : (result.output() != null && !result.output().isBlank()
+                                    ? clampDetail(result.output())
+                                    : "exit code " + exitCode);
+            return WriteResult.fail("Error deleting '" + path + "': " + detail);
         }
         return WriteResult.ok(path);
     }
@@ -440,11 +463,29 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         AbstractFilesystem.validatePath(toPath);
         String escapedFrom = FilesystemUtils.shellQuote(fromPath);
         String escapedTo = FilesystemUtils.shellQuote(toPath);
-        String cmd = "mkdir -p $(dirname " + escapedTo + ") && mv " + escapedFrom + " " + escapedTo;
+        // Unquoted $(dirname ...) word-splits when the parent path contains a space
+        // (mkdir -p a b creates junk dirs); d=$(dirname ...) then "$d" keeps it one token —
+        // the same quote-free-spread idiom write() uses (#3262).
+        String cmd =
+                "d=$(dirname "
+                        + escapedTo
+                        + "); mkdir -p \"$d\" && mv "
+                        + escapedFrom
+                        + " "
+                        + escapedTo;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
-        if (result.exitCode() != 0) {
+        // A null exit code means the status is unknown (ExecuteResponse permits it); a
+        // filesystem mutation must fail closed rather than report a success it cannot confirm.
+        Integer exitCode = result.exitCode();
+        if (exitCode == null || exitCode != 0) {
+            String detail =
+                    exitCode == null
+                            ? "no exit status reported"
+                            : (result.output() != null && !result.output().isBlank()
+                                    ? clampDetail(result.output())
+                                    : "exit code " + exitCode);
             return WriteResult.fail(
-                    "Error moving '" + fromPath + "' to '" + toPath + "': " + result.output());
+                    "Error moving '" + fromPath + "' to '" + toPath + "': " + detail);
         }
         return WriteResult.ok(toPath);
     }
@@ -511,5 +552,31 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 .replace("\n", "\\n")
                 .replace("\r", "\\r")
                 .replace("\t", "\\t");
+    }
+
+    /**
+     * Caps raw command output embedded in a tool result the model sees. Keeps the failure
+     * message safe regardless of what {@code execute} returns — the project treats ~80K chars
+     * as context-overflow territory for tool results, so error details get a tight local bound.
+     */
+    private static String clampDetail(String output) {
+        // Defensive null check: the execution layer can produce a null output (e.g.
+        // ExecTimeoutException via a null Throwable.getMessage()), though the current
+        // call sites guard it before reaching here.
+        if (output == null) {
+            return "no output";
+        }
+        String stripped = output.strip();
+        if (stripped.length() <= MAX_DETAIL_CHARS) {
+            return stripped;
+        }
+        int from = stripped.length() - MAX_DETAIL_CHARS;
+        // Slicing on UTF-16 code units can split a surrogate pair (emoji, CJK Extension B),
+        // which would leave a lone surrogate in the JSON sent to the model — back off by one
+        // char when the cut lands on a low surrogate.
+        if (Character.isLowSurrogate(stripped.charAt(from))) {
+            from++;
+        }
+        return "[output truncated] ..." + stripped.substring(from);
     }
 }
