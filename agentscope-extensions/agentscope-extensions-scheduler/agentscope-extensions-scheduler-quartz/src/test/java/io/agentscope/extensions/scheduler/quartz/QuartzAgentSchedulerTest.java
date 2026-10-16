@@ -30,7 +30,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.extensions.scheduler.ScheduleAgentTask;
 import io.agentscope.extensions.scheduler.config.AgentConfig;
-import io.agentscope.extensions.scheduler.config.DashScopeModelConfig;
+import io.agentscope.extensions.scheduler.config.ModelConfig;
 import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleMode;
@@ -39,6 +39,7 @@ import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.quartz.CronScheduleBuilder;
 import org.quartz.JobBuilder;
 import org.quartz.JobDetail;
@@ -50,8 +51,23 @@ import org.quartz.Trigger.TriggerState;
 import org.quartz.TriggerBuilder;
 import org.quartz.UnableToInterruptJobException;
 
-/** Unit tests for {@link QuartzAgentScheduler}. */
+/**
+ * Unit tests for {@link QuartzAgentScheduler}.
+ *
+ * <p>All tests use {@link StubModelConfig} and triggers that cannot fire before teardown, so no
+ * test can reach a real model endpoint regardless of scheduling timing.
+ */
+@Timeout(30)
 class QuartzAgentSchedulerTest {
+
+    /**
+     * Initial delay that keeps fixedRate/fixedDelay triggers far beyond the test's own lifetime.
+     * Without an initial delay the trigger starts at {@code new Date()} and fires mid-test,
+     * racing {@code tearDown}'s {@code scheduler.shutdown(true)}.
+     */
+    private static final long INITIAL_DELAY_MS = 60_000L;
+
+    private static final ModelConfig STUB_MODEL_CONFIG = new StubModelConfig();
 
     private QuartzAgentScheduler scheduler;
 
@@ -116,8 +132,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleWithDefaultScheduleConfig() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
@@ -145,8 +160,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleWithNullScheduleConfig() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
@@ -160,8 +174,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleWithEmptyAgentName() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -175,8 +188,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testCancel() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
@@ -203,8 +215,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testGetScheduledAgent() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
@@ -249,8 +260,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testGetAllScheduleAgentTasksAfterScheduling() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         RuntimeAgentConfig agentConfig1 =
                 RuntimeAgentConfig.builder()
@@ -278,8 +288,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleAlreadyScheduledTask() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
@@ -304,8 +313,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleWithAgentConfigConversion() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         // Create a non-RuntimeAgentConfig instance using builder
         AgentConfig agentConfig =
@@ -325,8 +333,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleWithWhitespaceOnlyName() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         // Should throw exception for whitespace-only names
         assertThrows(
@@ -341,8 +348,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testPauseAndResume() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
@@ -386,8 +392,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleWithNoneScheduleMode() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
@@ -406,8 +411,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleWithSpecialCharactersInName() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         String specialName = "Test-Agent_123!@#";
 
@@ -428,8 +432,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleWithLongAgentName() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
 
         String longName = "A".repeat(200); // Very long name
 
@@ -450,11 +453,9 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleWithDifferentModelConfigs() {
-        DashScopeModelConfig modelConfig1 =
-                DashScopeModelConfig.builder().apiKey("test-key-1").modelName("qwen-max").build();
+        ModelConfig modelConfig1 = STUB_MODEL_CONFIG;
 
-        DashScopeModelConfig modelConfig2 =
-                DashScopeModelConfig.builder().apiKey("test-key-2").modelName("qwen-plus").build();
+        ModelConfig modelConfig2 = STUB_MODEL_CONFIG;
 
         RuntimeAgentConfig agentConfig1 =
                 RuntimeAgentConfig.builder()
@@ -528,8 +529,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleFixedRate() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("FixedRateAgent")
@@ -537,7 +537,8 @@ class QuartzAgentSchedulerTest {
                         .sysPrompt("Test prompt")
                         .build();
 
-        ScheduleConfig scheduleConfig = ScheduleConfig.builder().fixedRate(1000L).build();
+        ScheduleConfig scheduleConfig =
+                ScheduleConfig.builder().fixedRate(1000L).initialDelay(INITIAL_DELAY_MS).build();
 
         ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
         assertNotNull(task);
@@ -546,8 +547,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleFixedDelay() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("FixedDelayAgent")
@@ -555,7 +555,8 @@ class QuartzAgentSchedulerTest {
                         .sysPrompt("Test prompt")
                         .build();
 
-        ScheduleConfig scheduleConfig = ScheduleConfig.builder().fixedDelay(1000L).build();
+        ScheduleConfig scheduleConfig =
+                ScheduleConfig.builder().fixedDelay(1000L).initialDelay(INITIAL_DELAY_MS).build();
 
         ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
         assertNotNull(task);
@@ -564,8 +565,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleFixedRateWithInvalidValue() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("InvalidFixedRateAgent")
@@ -592,8 +592,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleFixedDelayWithInvalidValue() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("InvalidFixedDelayAgent")
@@ -620,8 +619,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleCronWithInvalidValue() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("InvalidCronAgent")
@@ -648,8 +646,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleWithInitialDelay() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("InitialDelayAgent")
@@ -666,8 +663,7 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testScheduleWithZoneId() {
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("ZoneIdAgent")
@@ -695,8 +691,7 @@ class QuartzAgentSchedulerTest {
                 .when(mockScheduler)
                 .scheduleJob(any(JobDetail.class), any(Trigger.class));
 
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("FailAgent")
@@ -723,8 +718,7 @@ class QuartzAgentSchedulerTest {
         // But the map is private. However, schedule() puts it in.
         // So we schedule successfully, then mock deleteJob failure.
 
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("CancelFailAgent")
@@ -750,8 +744,7 @@ class QuartzAgentSchedulerTest {
         QuartzAgentScheduler mockAgentScheduler =
                 QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("PauseFailAgent")
@@ -777,8 +770,7 @@ class QuartzAgentSchedulerTest {
         QuartzAgentScheduler mockAgentScheduler =
                 QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("ResumeFailAgent")
@@ -804,8 +796,7 @@ class QuartzAgentSchedulerTest {
         QuartzAgentScheduler mockAgentScheduler =
                 QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("StatusFailAgent")
@@ -850,8 +841,7 @@ class QuartzAgentSchedulerTest {
         QuartzAgentScheduler mockAgentScheduler =
                 QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("InterruptAgent")
@@ -875,8 +865,7 @@ class QuartzAgentSchedulerTest {
         QuartzAgentScheduler mockAgentScheduler =
                 QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
-        DashScopeModelConfig modelConfig =
-                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        ModelConfig modelConfig = STUB_MODEL_CONFIG;
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("InterruptFailAgent")
