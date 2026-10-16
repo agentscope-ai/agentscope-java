@@ -59,7 +59,9 @@ class McpSyncClientWrapperTest {
     void testInitialize_Success() {
         // Mock initialization with correct constructors
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", Version.VERSION);
+                McpSchema.Implementation.builder("TestServer", Version.VERSION)
+                        .title("Test Server")
+                        .build();
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",
@@ -69,23 +71,13 @@ class McpSyncClientWrapperTest {
                         null);
 
         McpSchema.Tool tool1 =
-                new McpSchema.Tool(
-                        "tool1",
-                        null,
-                        "First tool",
-                        new McpSchema.JsonSchema("object", null, null, null, null, null),
-                        null,
-                        null,
-                        null);
+                McpSchema.Tool.builder("tool1", Map.of("type", "object"))
+                        .description("First tool")
+                        .build();
         McpSchema.Tool tool2 =
-                new McpSchema.Tool(
-                        "tool2",
-                        null,
-                        "Second tool",
-                        new McpSchema.JsonSchema("object", null, null, null, null, null),
-                        null,
-                        null,
-                        null);
+                McpSchema.Tool.builder("tool2", Map.of("type", "object"))
+                        .description("Second tool")
+                        .build();
         McpSchema.ListToolsResult toolsResult =
                 new McpSchema.ListToolsResult(List.of(tool1, tool2), null);
 
@@ -105,7 +97,9 @@ class McpSyncClientWrapperTest {
     @Test
     void testInitialize_AlreadyInitialized() {
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", Version.VERSION);
+                McpSchema.Implementation.builder("TestServer", Version.VERSION)
+                        .title("Test Server")
+                        .build();
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",
@@ -113,7 +107,8 @@ class McpSyncClientWrapperTest {
                         serverInfo,
                         null,
                         null);
-        McpSchema.ListToolsResult toolsResult = new McpSchema.ListToolsResult(List.of(), null);
+        McpSchema.ListToolsResult toolsResult =
+                McpSchema.ListToolsResult.builder(List.of()).build();
 
         when(mockClient.initialize()).thenReturn(initResult);
         when(mockClient.listTools()).thenReturn(toolsResult);
@@ -147,15 +142,11 @@ class McpSyncClientWrapperTest {
         wrapper.initialize().block();
 
         McpSchema.Tool tool =
-                new McpSchema.Tool(
-                        "test-tool",
-                        null,
-                        "Test tool",
-                        new McpSchema.JsonSchema("object", null, null, null, null, null),
-                        null,
-                        null,
-                        null);
-        McpSchema.ListToolsResult toolsResult = new McpSchema.ListToolsResult(List.of(tool), null);
+                McpSchema.Tool.builder("test-tool", Map.of("type", "object"))
+                        .description("Test tool")
+                        .build();
+        McpSchema.ListToolsResult toolsResult =
+                McpSchema.ListToolsResult.builder(List.of(tool)).build();
 
         when(mockClient.listTools()).thenReturn(toolsResult);
 
@@ -182,7 +173,7 @@ class McpSyncClientWrapperTest {
         args.put("param1", "value1");
 
         McpSchema.TextContent resultContent =
-                new McpSchema.TextContent("Tool executed successfully");
+                McpSchema.TextContent.builder("Tool executed successfully").build();
         McpSchema.CallToolResult callResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -202,7 +193,8 @@ class McpSyncClientWrapperTest {
         setupSuccessfulInitialization();
         wrapper.initialize().block();
 
-        McpSchema.TextContent errorContent = new McpSchema.TextContent("Tool execution failed");
+        McpSchema.TextContent errorContent =
+                McpSchema.TextContent.builder("Tool execution failed").build();
         McpSchema.CallToolResult callResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(errorContent))
@@ -310,7 +302,7 @@ class McpSyncClientWrapperTest {
         setupSuccessfulInitialization();
         wrapper.initialize().block();
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult callResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -326,7 +318,9 @@ class McpSyncClientWrapperTest {
 
     private void setupSuccessfulInitialization() {
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", Version.VERSION);
+                McpSchema.Implementation.builder("TestServer", Version.VERSION)
+                        .title("Test Server")
+                        .build();
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",
@@ -336,15 +330,11 @@ class McpSyncClientWrapperTest {
                         null);
 
         McpSchema.Tool tool1 =
-                new McpSchema.Tool(
-                        "tool1",
-                        null,
-                        "First tool",
-                        new McpSchema.JsonSchema("object", null, null, null, null, null),
-                        null,
-                        null,
-                        null);
-        McpSchema.ListToolsResult toolsResult = new McpSchema.ListToolsResult(List.of(tool1), null);
+                McpSchema.Tool.builder("tool1", Map.of("type", "object"))
+                        .description("First tool")
+                        .build();
+        McpSchema.ListToolsResult toolsResult =
+                McpSchema.ListToolsResult.builder(List.of(tool1)).build();
 
         when(mockClient.initialize()).thenReturn(initResult);
         when(mockClient.listTools()).thenReturn(toolsResult);

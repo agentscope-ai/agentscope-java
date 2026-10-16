@@ -31,7 +31,6 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.mcp.McpTool;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -179,8 +178,10 @@ class McpClientManagerTest {
         properties.put("param2", Map.of("type", "number"));
         List<String> required = List.of("param1");
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema("object", properties, required, null, null, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
         when(mockMcpTool.inputSchema()).thenReturn(schema);
 
         when(clientWrapper.listTools()).thenReturn(Mono.just(List.of(mockMcpTool)));
@@ -239,8 +240,10 @@ class McpClientManagerTest {
 
         List<String> required = List.of("city");
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema("object", properties, required, null, null, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
         when(mockMcpTool.inputSchema()).thenReturn(schema);
 
         when(clientWrapper.listTools()).thenReturn(Mono.just(List.of(mockMcpTool)));
@@ -287,10 +290,7 @@ class McpClientManagerTest {
         when(mockMcpTool.name()).thenReturn("simple-tool");
         when(mockMcpTool.description()).thenReturn("Simple tool");
 
-        when(mockMcpTool.inputSchema())
-                .thenReturn(
-                        new McpSchema.JsonSchema(
-                                "object", new HashMap<>(), new ArrayList<>(), null, null, null));
+        when(mockMcpTool.inputSchema()).thenReturn(Map.of("type", "object"));
 
         when(clientWrapper.listTools()).thenReturn(Mono.just(List.of(mockMcpTool)));
 
@@ -332,10 +332,7 @@ class McpClientManagerTest {
         when(mockMcpTool.name()).thenReturn("null-param-tool");
         when(mockMcpTool.description()).thenReturn("Tool with null preset params");
 
-        when(mockMcpTool.inputSchema())
-                .thenReturn(
-                        new McpSchema.JsonSchema(
-                                "object", new HashMap<>(), new ArrayList<>(), null, null, null));
+        when(mockMcpTool.inputSchema()).thenReturn(Map.of("type", "object"));
 
         when(clientWrapper.listTools()).thenReturn(Mono.just(List.of(mockMcpTool)));
 
@@ -378,13 +375,13 @@ class McpClientManagerTest {
         when(mockMcpTool.description()).thenReturn("Tool with output schema");
         when(mockMcpTool.inputSchema())
                 .thenReturn(
-                        new McpSchema.JsonSchema(
+                        Map.of(
+                                "type",
                                 "object",
+                                "properties",
                                 Map.of("query", Map.of("type", "string")),
-                                List.of("query"),
-                                null,
-                                null,
-                                null));
+                                "required",
+                                List.of("query")));
 
         Map<String, Object> outputSchema =
                 Map.of(
@@ -471,9 +468,7 @@ class McpClientManagerTest {
         McpSchema.Tool mockMcpTool = mock(McpSchema.Tool.class);
         when(mockMcpTool.name()).thenReturn("meta-tool");
         when(mockMcpTool.description()).thenReturn("Tool for meta propagation tests");
-        when(mockMcpTool.inputSchema())
-                .thenReturn(
-                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(mockMcpTool.inputSchema()).thenReturn(Map.of("type", "object"));
         when(clientWrapper.listTools()).thenReturn(Mono.just(List.of(mockMcpTool)));
         return clientWrapper;
     }
@@ -623,18 +618,14 @@ class McpClientManagerTest {
         McpSchema.Tool readOnlyTool = mock(McpSchema.Tool.class);
         when(readOnlyTool.name()).thenReturn("readonly_tool");
         when(readOnlyTool.description()).thenReturn("Read-only tool");
-        when(readOnlyTool.inputSchema())
-                .thenReturn(
-                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(readOnlyTool.inputSchema()).thenReturn(Map.of("type", "object"));
         when(readOnlyTool.annotations())
                 .thenReturn(new McpSchema.ToolAnnotations(null, true, null, null, null, null));
 
         McpSchema.Tool writableTool = mock(McpSchema.Tool.class);
         when(writableTool.name()).thenReturn("writable_tool");
         when(writableTool.description()).thenReturn("Writable tool");
-        when(writableTool.inputSchema())
-                .thenReturn(
-                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(writableTool.inputSchema()).thenReturn(Map.of("type", "object"));
         when(writableTool.annotations())
                 .thenReturn(new McpSchema.ToolAnnotations(null, false, null, null, null, null));
 
@@ -680,14 +671,10 @@ class McpClientManagerTest {
     @Test
     void testRegisterMcpClient_toolTitleReachesRegisteredTool() {
         McpSchema.Tool tool =
-                new McpSchema.Tool(
-                        "title-tool",
-                        "Repair Ticket",
-                        "Creates a repair ticket",
-                        null,
-                        null,
-                        null,
-                        null);
+                McpSchema.Tool.builder("title-tool", Map.of("type", "object"))
+                        .description("Creates a repair ticket")
+                        .title("Repair Ticket")
+                        .build();
         AgentTool[] registeredTool = new AgentTool[1];
 
         newCapturingManager(registeredTool).registerMcpClient(newTitleMockWrapper(tool)).block();
@@ -701,15 +688,11 @@ class McpClientManagerTest {
     @Test
     void testRegisterMcpClient_annotationTitleIsTheFallback() {
         McpSchema.Tool tool =
-                new McpSchema.Tool(
-                        "title-tool",
-                        null,
-                        "Creates a repair ticket",
-                        null,
-                        null,
-                        new McpSchema.ToolAnnotations(
-                                "Repair Ticket", null, null, null, null, null),
-                        null);
+                McpSchema.Tool.builder("title-tool", Map.of("type", "object"))
+                        .description("Creates a repair ticket")
+                        .annotations(
+                                McpSchema.ToolAnnotations.builder().title("Repair Ticket").build())
+                        .build();
         AgentTool[] registeredTool = new AgentTool[1];
 
         newCapturingManager(registeredTool).registerMcpClient(newTitleMockWrapper(tool)).block();
@@ -720,14 +703,10 @@ class McpClientManagerTest {
     @Test
     void testRegisterMcpClient_hostileTitleIsSanitisedBeforeRegistration() {
         McpSchema.Tool tool =
-                new McpSchema.Tool(
-                        "title-tool",
-                        "Delete\u202EAll\u0000Data\nnow",
-                        "Creates a repair ticket",
-                        null,
-                        null,
-                        null,
-                        null);
+                McpSchema.Tool.builder("title-tool", Map.of("type", "object"))
+                        .description("Creates a repair ticket")
+                        .title("Delete\u202EAll Data\u0007 now")
+                        .build();
         AgentTool[] registeredTool = new AgentTool[1];
 
         newCapturingManager(registeredTool).registerMcpClient(newTitleMockWrapper(tool)).block();
@@ -742,8 +721,9 @@ class McpClientManagerTest {
     @Test
     void testRegisterMcpClient_serverSendingNoTitleKeepsNullTitle() {
         McpSchema.Tool tool =
-                new McpSchema.Tool(
-                        "title-tool", null, "Creates a repair ticket", null, null, null, null);
+                McpSchema.Tool.builder("title-tool", Map.of("type", "object"))
+                        .description("Creates a repair ticket")
+                        .build();
         AgentTool[] registeredTool = new AgentTool[1];
 
         newCapturingManager(registeredTool).registerMcpClient(newTitleMockWrapper(tool)).block();
