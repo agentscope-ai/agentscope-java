@@ -30,6 +30,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
+import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -204,21 +205,7 @@ final class E2bEnvdProcessClient {
                         Integer.toHexString(flags));
                 continue;
             }
-            DynamicMessage sr;
-            try {
-                sr = parseStartResponseFrame(data);
-            } catch (IOException ignored) {
-                // A corrupt data frame must not abort the whole stream: skip it and keep
-                // draining. A missing EndEvent then surfaces as IOException below.
-                // Note: end-stream envelope parse errors (handled above, outside this try)
-                // intentionally propagate as IOException — a corrupt stream trailer means
-                // the stream itself is untrustworthy.
-                log.debug(
-                        "drainStartStream: skipping undecodable frame flags=0x{} len={}",
-                        Integer.toHexString(flags),
-                        len);
-                continue;
-            }
+            DynamicMessage sr = parseStartResponseFrame(data);
             if (!sr.hasField(srEventF)) {
                 log.debug("drainStartStream: frame with no event");
                 continue;
@@ -548,6 +535,9 @@ final class E2bEnvdProcessClient {
 
         JsonNode endNode = eventNode.path("end");
         if (!endNode.isMissingNode() && !endNode.isNull()) {
+            if (!endNode.isObject()) {
+                throw new IOException("Invalid EndEvent: " + endNode);
+            }
             Descriptors.Descriptor endDesc = processEventDesc.findNestedTypeByName("EndEvent");
             DynamicMessage.Builder endBuilder = DynamicMessage.newBuilder(endDesc);
             Descriptors.FieldDescriptor exitCodeField = endDesc.findFieldByName("exit_code");
@@ -559,8 +549,8 @@ final class E2bEnvdProcessClient {
             if (exitCodeNode.isMissingNode() || exitCodeNode.isNull()) {
                 exitCodeNode = endNode.path("exit_code");
             }
-            if (exitCodeNode.canConvertToInt()) {
-                endBuilder.setField(exitCodeField, exitCodeNode.intValue());
+            if (!exitCodeNode.isMissingNode() && !exitCodeNode.isNull()) {
+                endBuilder.setField(exitCodeField, parseExitCode(exitCodeNode));
             }
             Descriptors.FieldDescriptor errorField = endDesc.findFieldByName("error");
             // EndEvent.error — populated when cmd.Wait() returns ExitError
@@ -572,19 +562,30 @@ final class E2bEnvdProcessClient {
             if (errorNode.isTextual()) {
                 endBuilder.setField(errorField, errorNode.textValue());
             }
-            // Only retain end when it carries an exit code or a textual error.
-            // An end event with neither must not fabricate exit 0: without it the
-            // stream falls through to "ended before receiving a process exit code".
-            // (Real envd always populates exit_code; this guards malformed streams.)
-            if (exitCodeNode.canConvertToInt() || errorNode.isTextual()) {
-                event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
-            }
+            // exit_code is an implicit-presence proto3 scalar: when an EndEvent is present,
+            // an omitted value is its default 0. Keep the message even when it has no fields.
+            event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
         }
 
         if (!event.getAllFields().isEmpty()) {
             response.setField(startResponseDesc.findFieldByName("event"), event.build());
         }
         return response.build();
+    }
+
+    // EndEvent.exit_code is an int32. ProtoJSON (used by the official Python/JS SDKs) accepts
+    // either a JSON number or a decimal string, requires a zero fractional part, and rejects
+    // values outside the int32 range. https://protobuf.dev/programming-guides/json/
+    private static int parseExitCode(JsonNode node) throws IOException {
+        String text = node.isTextual() ? node.textValue() : node.isNumber() ? node.asText() : null;
+        if (text == null) {
+            throw new IOException("Invalid EndEvent exit_code: " + node);
+        }
+        try {
+            return new BigDecimal(text).intValueExact();
+        } catch (NumberFormatException | ArithmeticException e) {
+            throw new IOException("Invalid EndEvent exit_code: " + node);
+        }
     }
 
     private static void setBytesIfPresent(
