@@ -133,19 +133,25 @@ class JevSupervisionMiddlewareTest {
     void concurrentCallsKeepScopesEvidenceAndCountersSeparate() {
         var observations = new CopyOnWriteArrayList<JevSupervisionMiddleware.Observation>();
         Map<String, String> seen = new ConcurrentHashMap<>();
+        // This test's worker completes synchronously, so only the terminal assessment should ever
+        // fire. The shared helper's 10ms tick can sneak in before that synchronous emission when a
+        // loaded CI runner preempts the subscribing thread; a superseded mid-run observation then
+        // breaks the REVIEW_COMPLETION assertion. A wide interval keeps the terminal-only
+        // assumption safe under -T1C contention without touching what the test verifies.
         var m =
-                middleware(
-                        r -> {
-                            Map<?, ?> state = (Map<?, ?>) r.state();
-                            seen.put(
-                                    state.get("original_job").toString().trim(),
-                                    state.get("git_diff").toString());
-                            return JevSupervisionExample.syntheticAnswers(r)
-                                    .delayElement(Duration.ofMillis(20));
-                        },
-                        observations,
-                        5,
-                        3);
+                new JevSupervisionMiddleware(
+                        JevSupervisionTest.supervisor(
+                                r -> {
+                                    Map<?, ?> state = (Map<?, ?>) r.state();
+                                    seen.put(
+                                            state.get("original_job").toString().trim(),
+                                            state.get("git_diff").toString());
+                                    return JevSupervisionExample.syntheticAnswers(r)
+                                            .delayElement(Duration.ofMillis(20));
+                                }),
+                        new JevSupervisionMiddleware.Schedule(
+                                Duration.ofMillis(250), Duration.ofMillis(750), 5, 3),
+                        (ctx, o) -> observations.add(o));
         Function<String, Flux<AgentEvent>> run =
                 session -> {
                     var ctx =
