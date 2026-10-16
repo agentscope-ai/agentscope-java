@@ -369,7 +369,7 @@ Msg msg =
 WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
-实现细节：框架会基于目标 Class 生成输出 schema，按下文规则选择 Native 或 fallback 路径，解析 native JSON 响应或按 schema 校验 fallback 工具入参，并把结果挂到 `Msg.metadata` 的 `_structured_output` 字段，供 `getStructuredData(Class)` 直接反序列化。完整示例：`agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`。
+实现细节：框架会基于目标 Class 生成输出 schema，按下文规则选择 Native 或 fallback 路径，解析并按 schema 校验 native JSON 响应，或校验 fallback 工具入参，并把结果挂到 `Msg.metadata` 的 `_structured_output` 字段，供 `getStructuredData(Class)` 直接反序列化。完整示例：`agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`。
 
 #### 结构化输出路径选择
 
@@ -380,7 +380,9 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 | **Native** | `supportsNativeStructuredOutput() = true` | 通过 `response_format` + `json_schema` 让模型直接输出合规 JSON |
 | **Fallback**（默认） | `supportsNativeStructuredOutput() = false` | 注入 `generate_response` 合成工具，模型通过 tool call 返回结构化数据 |
 
-当 native 路径失败（如模型返回 400），框架会**自动降级**到 fallback 路径，无需用户干预。
+当 native 路径失败（例如提供商拒绝请求，或输出为空、不是合法 JSON、不符合 schema）时，框架会**自动降级**到 fallback 路径，无需用户干预。被拒绝的 native 响应不会保留在会话上下文中。
+
+Native 响应校验默认开启。如果提供商已保证 schema 合规，并希望避免客户端侧校验及其降级行为，可以使用 `ReActAgent.builder().validateStructuredOutput(false)` 显式关闭。
 
 Native structured output 默认不会强制 schema 进入 strict 模式。OpenAI 与 OpenAI Official
 厂商可以通过 `strictJsonSchema(true)` 显式开启；schema 内的 `strict` 值优先。

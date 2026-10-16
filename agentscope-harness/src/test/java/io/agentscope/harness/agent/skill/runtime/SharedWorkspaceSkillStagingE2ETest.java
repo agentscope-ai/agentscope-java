@@ -28,6 +28,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
@@ -36,6 +37,8 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.middleware.HarnessSkillMiddleware;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -82,7 +85,10 @@ class SharedWorkspaceSkillStagingE2ETest {
 
             List<Throwable> errors = runConcurrently(50, agentA, agentB);
 
-            assertEquals(List.of(), errors, () -> "no call should fail, but got: " + errors);
+            assertEquals(
+                    List.of(),
+                    errors,
+                    () -> "no call should fail, but got: " + stackTraces(errors));
             assertTrue(
                     Files.isDirectory(shared.resolve(MarketplaceStager.CACHE_DIR)),
                     "the shared cache should exist after the calls");
@@ -244,12 +250,22 @@ class SharedWorkspaceSkillStagingE2ETest {
         return errors;
     }
 
+    private static String stackTraces(List<Throwable> errors) {
+        StringWriter out = new StringWriter();
+        errors.forEach(e -> e.printStackTrace(new PrintWriter(out, true)));
+        return out.toString();
+    }
+
     private static HarnessAgent agent(String name, Path workspace, AgentSkillRepository repo) {
         return HarnessAgent.builder()
                 .name(name)
                 .model(new StubModel())
                 .workspace(workspace)
                 .abstractFilesystem(new LocalFilesystem(workspace))
+                // Keep the session journal out of the shared workspace: this test is about skill
+                // staging, and on Windows the default journal is one SQLite file that every call
+                // writes ~18 times with full sync — slow enough to hit the 120 s budget (#3514).
+                .sessionLogStore(new InMemorySessionLogStore())
                 .skillRepository(repo)
                 .build();
     }
