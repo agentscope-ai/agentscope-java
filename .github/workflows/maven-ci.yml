@@ -49,6 +49,8 @@ jobs:
 
   build:
     runs-on: ${{ matrix.os }}
+    # Fail loudly instead of burning GitHub's 6h default when a build wedges.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
