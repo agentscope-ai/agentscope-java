@@ -174,7 +174,10 @@ class ChatSessionsTest {
         String requestId, firstRun, turnId;
         try (var first = new ChatSessions(workspace, new DemoChatModel())) {
             turnId = first.submit("conversation", "turn-one", "/ask preference").turnId();
-            var snapshot = await(first, s -> lastStatus(s).equals("suspended"));
+            // A full turn through model dispatch and HITL suspension can exceed 15 seconds on
+            // Windows runners under -T1C contention (see above).
+            var snapshot =
+                    await(first, s -> lastStatus(s).equals("suspended"), Duration.ofSeconds(60));
             firstRun = snapshot.turns().get(0).runId();
             requestId = String.valueOf(snapshot.pending().get(0).data().get("requestId"));
             assertThrows(IllegalStateException.class, () -> first.resume("conversation", turnId));
@@ -184,7 +187,9 @@ class ChatSessionsTest {
             var resumed = rebuilt.answer("conversation", requestId, "keep it short");
             assertEquals(turnId, resumed.turnId());
             assertNotEquals(firstRun, resumed.runId());
-            var done = await(rebuilt, s -> lastStatus(s).equals("completed"));
+            // The resumed turn replays through the model on the restarted session (see above).
+            var done =
+                    await(rebuilt, s -> lastStatus(s).equals("completed"), Duration.ofSeconds(60));
             assertTrue(done.pending().isEmpty());
             assertTrue(
                     done.messages()
