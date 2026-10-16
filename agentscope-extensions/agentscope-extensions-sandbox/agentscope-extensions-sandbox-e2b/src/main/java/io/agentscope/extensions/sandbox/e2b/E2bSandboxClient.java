@@ -160,6 +160,9 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         if (call.getSnapshotRetention() > 0) {
             o.setSnapshotRetention(call.getSnapshotRetention());
         }
+        if (!call.getEnvs().isEmpty()) {
+            o.getEnvs().putAll(call.getEnvs());
+        }
         return o;
     }
 
@@ -180,6 +183,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         o.setReadTimeoutSeconds(src.getReadTimeoutSeconds());
         o.setMaxRetries(src.getMaxRetries());
         o.setSnapshotRetention(src.getSnapshotRetention());
+        o.setEnvs(src.getEnvs());
         return o;
     }
 }
