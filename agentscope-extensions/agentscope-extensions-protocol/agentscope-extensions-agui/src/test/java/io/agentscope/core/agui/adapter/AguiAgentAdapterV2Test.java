@@ -1497,6 +1497,71 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testPermissionConfirmInterruptOmitsTitleForToolMissingFromToolkit() {
+            // A model can name a tool that is no longer registered (or never was). The interrupt
+            // must still describe the call by name and simply carry no title, not fail and not
+            // borrow some other tool's label.
+            Toolkit toolkit = new Toolkit();
+            toolkit.registerAgentTool(titledTool("known_tool", "Known Tool"));
+            ToolUseBlock pending =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("vanished_tool")
+                            .input(Map.of("message", "hello"))
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            toolkit,
+                            AguiAdapterConfig.defaultConfig(),
+                            input(),
+                            new AgentStartEvent("thread-v2", "reply-confirm", "react"),
+                            new RequireUserConfirmEvent("reply-confirm", List.of(pending)),
+                            new AgentEndEvent("reply-confirm"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            Map<String, Object> metadata = outcome.interrupts().get(0).metadata();
+            assertFalse(metadata.containsKey("toolTitle"));
+            assertEquals("vanished_tool", metadata.get("toolName"));
+        }
+
+        @Test
+        void testPermissionConfirmInterruptDoesNotResolveTitleForBlankToolName() {
+            // The resolver must not even be consulted for a call whose tool cannot be identified:
+            // with a toolkit that would answer any name, a blank name must still yield no title.
+            Toolkit toolkit = mock(Toolkit.class);
+            when(toolkit.getTool(any(), any())).thenReturn(titledTool("whatever", "Some Title"));
+            ToolUseBlock pending =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("")
+                            .input(Map.of("message", "hello"))
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            toolkit,
+                            AguiAdapterConfig.defaultConfig(),
+                            input(),
+                            new AgentStartEvent("thread-v2", "reply-confirm", "react"),
+                            new RequireUserConfirmEvent("reply-confirm", List.of(pending)),
+                            new AgentEndEvent("reply-confirm"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            assertFalse(
+                    outcome.interrupts().get(0).metadata().containsKey("toolTitle"),
+                    "a blank tool name must not pick up a resolved title");
+        }
+
+        @Test
         void testPermissionConfirmEventEmitsOneInterruptPerPendingToolCall() {
             ToolUseBlock first =
                     ToolUseBlock.builder()

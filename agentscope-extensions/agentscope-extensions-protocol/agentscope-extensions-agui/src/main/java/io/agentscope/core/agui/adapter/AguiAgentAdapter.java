@@ -397,19 +397,24 @@ public class AguiAgentAdapter {
 
     /**
      * Display-title resolver backed by the live toolkit, resolved against the per-call {@link
-     * ToolRequestConfig} the same way {@link #externalToolDetector(RuntimeContext)} is, so a
-     * frontend-injected tool is looked up in the request config rather than the shared registry.
+     * ToolRequestConfig} the same way {@link #externalToolDetector(RuntimeContext)} is. Both halves
+     * of the decision - which tools are external, and what a tool is called for an end user - must
+     * consult the same view of the toolkit, or an interrupt could name a tool the argument
+     * emission already treated as internal.
      *
-     * <p>Returns {@code null} when the agent exposes no toolkit: confirmation interrupts then carry
-     * only the tool name, as they did before this resolver existed.
+     * <p>Frontend-injected tools live in the request config rather than the shared registry, so
+     * resolution goes through {@link Toolkit#getTool(String, ToolRequestConfig)}. Returns {@code
+     * null} when the agent exposes no toolkit: confirmation interrupts then carry only the tool
+     * name, as they did before this resolver existed.
      */
     private Function<String, String> displayTitleResolver(RuntimeContext runtimeContext) {
         Toolkit toolkit = agent.getToolkit();
         if (toolkit == null) {
             return null;
         }
-        ToolRequestConfig requestConfig =
-                runtimeContext != null ? runtimeContext.getToolRequestConfig() : null;
+        // buildRuntimeContext() always sets a per-call config (ToolRequestConfig.NONE at worst),
+        // so the context itself is never null on this path.
+        ToolRequestConfig requestConfig = runtimeContext.getToolRequestConfig();
         return name -> {
             AgentTool tool = toolkit.getTool(name, requestConfig);
             return tool != null ? tool.getTitle() : null;
