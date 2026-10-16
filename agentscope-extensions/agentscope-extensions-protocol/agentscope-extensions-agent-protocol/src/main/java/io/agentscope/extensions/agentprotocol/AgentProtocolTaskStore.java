@@ -88,6 +88,9 @@ public final class AgentProtocolTaskStore {
     private final Map<String, CompletableFuture<String>> futures = new ConcurrentHashMap<>();
     private final Map<String, SubmitContext> submitContexts = new ConcurrentHashMap<>();
 
+    /** Serializes resume transitions per task so concurrent resumes cannot double-start a run. */
+    private final ConcurrentHashMap<String, Object> taskLocks = new ConcurrentHashMap<>();
+
     public AgentProtocolTaskStore(
             AgentFactory agentFactory,
             ProtocolTaskRepository taskRepository,
@@ -167,11 +170,18 @@ public final class AgentProtocolTaskStore {
                 CompletableFuture.supplyAsync(
                         () -> runAgent(taskId, agentId, input, ctx, null), executor);
         futures.put(taskId, f);
-        f.whenComplete((r, ex) -> futures.remove(taskId));
+        f.whenComplete((r, ex) -> futures.remove(taskId, f));
     }
 
     /**
      * Resumes a task paused for HITL confirmation with the given decisions.
+     *
+     * <p>The {@code awaiting_confirm} record is the pause signal: the paused run persists it
+     * before its future completes and performs no further agent work afterwards, so a client may
+     * legitimately call this while that future is still unwinding (a fast poll of {@link
+     * #snapshot} or the REQUIRE_CONFIRM event lands in that window). The record, re-validated
+     * under a per-task lock, is therefore what decides — the lock also keeps concurrent resumes
+     * from double-starting the next run.
      *
      * @throws IllegalStateException if the task is not awaiting confirmation
      */
@@ -179,33 +189,33 @@ public final class AgentProtocolTaskStore {
         if (!properties.isHitlEnabled()) {
             throw new IllegalStateException("HITL is disabled on this server");
         }
-        Optional<TaskRecord> existing = taskRepository.find(taskId);
-        if (existing.isEmpty() || !existing.get().isAwaitingConfirm()) {
-            throw new IllegalStateException("task is not awaiting confirmation: " + taskId);
+        Object lock = taskLocks.computeIfAbsent(taskId, k -> new Object());
+        synchronized (lock) {
+            Optional<TaskRecord> existing = taskRepository.find(taskId);
+            if (existing.isEmpty() || !existing.get().isAwaitingConfirm()) {
+                throw new IllegalStateException("task is not awaiting confirmation: " + taskId);
+            }
+            TaskRecord rec = existing.get();
+
+            List<RemotePendingConfirm> pending =
+                    rec.getPendingConfirms() != null ? rec.getPendingConfirms() : List.of();
+            List<ConfirmResult> confirmResults = toConfirmResults(pending, decisions);
+
+            rec.setAwaitingConfirm(false);
+            rec.setPendingConfirms(null);
+            rec.setStatus(TaskStatus.RUNNING);
+            persist(rec);
+
+            SubmitContext ctx = submitContexts.getOrDefault(taskId, SubmitContext.empty());
+            String agentId = rec.getSubAgentId();
+            String dummyInput = ""; // resume uses confirm metadata, not a new user prompt
+            CompletableFuture<String> f =
+                    CompletableFuture.supplyAsync(
+                            () -> runAgent(taskId, agentId, dummyInput, ctx, confirmResults),
+                            executor);
+            futures.put(taskId, f);
+            f.whenComplete((r, ex) -> futures.remove(taskId, f));
         }
-        TaskRecord rec = existing.get();
-        CompletableFuture<String> prior = futures.get(taskId);
-        if (prior != null && !prior.isDone()) {
-            throw new IllegalStateException("task is already running: " + taskId);
-        }
-
-        List<RemotePendingConfirm> pending =
-                rec.getPendingConfirms() != null ? rec.getPendingConfirms() : List.of();
-        List<ConfirmResult> confirmResults = toConfirmResults(pending, decisions);
-
-        rec.setAwaitingConfirm(false);
-        rec.setPendingConfirms(null);
-        rec.setStatus(TaskStatus.RUNNING);
-        persist(rec);
-
-        SubmitContext ctx = submitContexts.getOrDefault(taskId, SubmitContext.empty());
-        String agentId = rec.getSubAgentId();
-        String dummyInput = ""; // resume uses confirm metadata, not a new user prompt
-        CompletableFuture<String> f =
-                CompletableFuture.supplyAsync(
-                        () -> runAgent(taskId, agentId, dummyInput, ctx, confirmResults), executor);
-        futures.put(taskId, f);
-        f.whenComplete((r, ex) -> futures.remove(taskId));
     }
 
     private String runAgent(

@@ -20,7 +20,17 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.a2a.spec.APIKeySecurityScheme;
 import io.a2a.spec.AgentCard;
+import io.a2a.spec.AgentInterface;
+import io.a2a.spec.AgentProvider;
+import io.a2a.spec.AgentSkill;
+import io.a2a.spec.HTTPAuthSecurityScheme;
+import io.a2a.spec.OAuth2SecurityScheme;
+import io.a2a.spec.OAuthFlows;
+import io.a2a.spec.OpenIdConnectSecurityScheme;
+import io.a2a.spec.SecurityScheme;
+import io.a2a.util.Utils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
@@ -29,13 +39,21 @@ import io.agentscope.spring.boot.a2a.controller.AgentCardController;
 import io.agentscope.spring.boot.a2a.listener.ServerReadyListener;
 import io.agentscope.spring.boot.a2a.properties.A2aAgentCardProperties;
 import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.boot.test.context.assertj.AssertableWebApplicationContext;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.web.context.ConfigurableWebApplicationContext;
 
 /**
@@ -131,7 +149,9 @@ class AgentscopeA2aAutoConfigurationTest {
                             assertThat(context).hasSingleBean(AgentCardController.class);
                             AgentCardController controller =
                                     context.getBean(AgentCardController.class);
-                            AgentCard agentCard = controller.getAgentCard();
+                            AgentCard agentCard =
+                                    Utils.OBJECT_MAPPER.readValue(
+                                            controller.getAgentCard().getBody(), AgentCard.class);
                             assertThat(agentCard.name()).isEqualTo("Test Agent");
                             assertThat(agentCard.description()).isEqualTo("Test Description");
                         });
@@ -261,5 +281,267 @@ class AgentscopeA2aAutoConfigurationTest {
                     Assertions.assertTrue(a2aCommonProperties.isCompleteWithMessage());
                     Assertions.assertTrue(a2aCommonProperties.isRequireInnerMessage());
                 });
+    }
+
+    @Test
+    void shouldServeConfiguredSecuritySchemes() {
+        contextRunner
+                .withPropertyValues(
+                        "agentscope.a2a.server.card.security-schemes.apiKey.type=apiKey",
+                        "agentscope.a2a.server.card.security-schemes.apiKey.name=X-API-Key",
+                        "agentscope.a2a.server.card.security-schemes.apiKey.in=header",
+                        "agentscope.a2a.server.card.security-schemes.bearer.type=http",
+                        "agentscope.a2a.server.card.security-schemes.bearer.scheme=bearer",
+                        "agentscope.a2a.server.card.security-schemes.bearer.bearer-format=JWT",
+                        "agentscope.a2a.server.card.security-schemes.oauth.type=oauth2",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.authorization-code.authorization-url=https://auth/authorize",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.authorization-code.token-url=https://auth/token",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.authorization-code.scopes.read=Read",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.client-credentials.token-url=https://auth/token",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.client-credentials.scopes.read=Read",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.implicit.authorization-url=https://auth/authorize",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.implicit.scopes.read=Read",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.password.token-url=https://auth/token",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.password.scopes.read=Read",
+                        "agentscope.a2a.server.card.security-schemes.machine.type=oauth2",
+                        "agentscope.a2a.server.card.security-schemes.machine.flows.client-credentials.token-url=https://auth/token",
+                        "agentscope.a2a.server.card.security-schemes.machine.flows.client-credentials.scopes.read=Read",
+                        "agentscope.a2a.server.card.security-schemes.oidc.type=openIdConnect",
+                        "agentscope.a2a.server.card.security-schemes.oidc.open-id-connect-url=https://auth/.well-known/openid-configuration",
+                        "agentscope.a2a.server.card.security-schemes.mtls.type=mutualTLS",
+                        "agentscope.a2a.server.card.security-schemes.mtls.description=Client"
+                                + " certificate",
+                        "agentscope.a2a.server.card.security[0].oauth[0]=read")
+                .run(
+                        context -> {
+                            AgentCard card = servedAgentCard(context);
+                            Map<String, SecurityScheme> schemes = card.securitySchemes();
+                            assertThat(schemes)
+                                    .containsOnlyKeys(
+                                            "apiKey", "bearer", "oauth", "machine", "oidc", "mtls");
+
+                            APIKeySecurityScheme apiKey =
+                                    (APIKeySecurityScheme) schemes.get("apiKey");
+                            assertThat(apiKey.getName()).isEqualTo("X-API-Key");
+                            assertThat(apiKey.getIn()).isEqualTo("header");
+
+                            HTTPAuthSecurityScheme bearer =
+                                    (HTTPAuthSecurityScheme) schemes.get("bearer");
+                            assertThat(bearer.getScheme()).isEqualTo("bearer");
+                            assertThat(bearer.getBearerFormat()).isEqualTo("JWT");
+
+                            OAuthFlows flows =
+                                    ((OAuth2SecurityScheme) schemes.get("oauth")).getFlows();
+                            assertThat(flows.authorizationCode().authorizationUrl())
+                                    .isEqualTo("https://auth/authorize");
+                            assertThat(flows.authorizationCode().tokenUrl())
+                                    .isEqualTo("https://auth/token");
+                            assertThat(flows.clientCredentials().tokenUrl())
+                                    .isEqualTo("https://auth/token");
+                            assertThat(flows.implicit().authorizationUrl())
+                                    .isEqualTo("https://auth/authorize");
+                            assertThat(flows.password().scopes()).containsEntry("read", "Read");
+
+                            // A scheme may declare only some of the flows.
+                            OAuthFlows machine =
+                                    ((OAuth2SecurityScheme) schemes.get("machine")).getFlows();
+                            assertThat(machine.clientCredentials().tokenUrl())
+                                    .isEqualTo("https://auth/token");
+                            assertThat(machine.authorizationCode()).isNull();
+                            assertThat(machine.implicit()).isNull();
+                            assertThat(machine.password()).isNull();
+
+                            assertThat(
+                                            ((OpenIdConnectSecurityScheme) schemes.get("oidc"))
+                                                    .getOpenIdConnectUrl())
+                                    .isEqualTo("https://auth/.well-known/openid-configuration");
+                            assertThat(schemes.get("mtls").getDescription())
+                                    .isEqualTo("Client certificate");
+                            assertThat(card.security())
+                                    .containsExactly(Map.of("oauth", List.of("read")));
+                        });
+    }
+
+    @Test
+    void shouldRejectUnknownSecuritySchemeType() {
+        contextRunner
+                .withPropertyValues("agentscope.a2a.server.card.security-schemes.basic.type=basic")
+                .run(
+                        context ->
+                                assertThat(context)
+                                        .getFailure()
+                                        .rootCause()
+                                        .hasMessageContaining(
+                                                "Unsupported type 'basic' of security scheme"
+                                                        + " 'basic'"));
+    }
+
+    @Test
+    void shouldServeConfiguredProviderSkillsAndInterfaces() {
+        contextRunner
+                .withPropertyValues(
+                        "agentscope.a2a.server.card.provider.organization=AgentScope",
+                        "agentscope.a2a.server.card.provider.url=https://agentscope.io",
+                        "agentscope.a2a.server.card.skills[0].id=translate",
+                        "agentscope.a2a.server.card.skills[0].name=Translate",
+                        "agentscope.a2a.server.card.skills[0].description=Translates text",
+                        "agentscope.a2a.server.card.skills[0].tags[0]=language",
+                        "agentscope.a2a.server.card.skills[0].examples[0]=Translate hello",
+                        "agentscope.a2a.server.card.skills[0].input-modes[0]=text",
+                        "agentscope.a2a.server.card.skills[0].output-modes[0]=text",
+                        "agentscope.a2a.server.card.skills[0].security[0].oauth[0]=read",
+                        "agentscope.a2a.server.card.additional-interfaces[0].transport=JSONRPC",
+                        "agentscope.a2a.server.card.additional-interfaces[0].url=http://localhost:8080/a2a")
+                .run(
+                        context -> {
+                            AgentCard card = servedAgentCard(context);
+                            assertThat(card.provider())
+                                    .isEqualTo(
+                                            new AgentProvider(
+                                                    "AgentScope", "https://agentscope.io"));
+                            assertThat(card.skills())
+                                    .containsExactly(
+                                            new AgentSkill(
+                                                    "translate",
+                                                    "Translate",
+                                                    "Translates text",
+                                                    List.of("language"),
+                                                    List.of("Translate hello"),
+                                                    List.of("text"),
+                                                    List.of("text"),
+                                                    List.of(Map.of("oauth", List.of("read")))));
+                            assertThat(card.additionalInterfaces())
+                                    .containsExactly(
+                                            new AgentInterface(
+                                                    "JSONRPC", "http://localhost:8080/a2a"));
+                        });
+    }
+
+    @Test
+    void shouldServeEachApiKeyLocation() {
+        contextRunner
+                .withPropertyValues(
+                        "agentscope.a2a.server.card.security-schemes.inHeader.type=apiKey",
+                        "agentscope.a2a.server.card.security-schemes.inHeader.name=X-API-Key",
+                        "agentscope.a2a.server.card.security-schemes.inHeader.in=header",
+                        "agentscope.a2a.server.card.security-schemes.inQuery.type=apiKey",
+                        "agentscope.a2a.server.card.security-schemes.inQuery.name=api_key",
+                        "agentscope.a2a.server.card.security-schemes.inQuery.in=query",
+                        "agentscope.a2a.server.card.security-schemes.inCookie.type=apiKey",
+                        "agentscope.a2a.server.card.security-schemes.inCookie.name=session",
+                        "agentscope.a2a.server.card.security-schemes.inCookie.in=cookie")
+                .run(
+                        context -> {
+                            Map<String, SecurityScheme> schemes =
+                                    servedAgentCard(context).securitySchemes();
+                            assertThat(((APIKeySecurityScheme) schemes.get("inHeader")).getIn())
+                                    .isEqualTo("header");
+                            assertThat(((APIKeySecurityScheme) schemes.get("inQuery")).getIn())
+                                    .isEqualTo("query");
+                            assertThat(((APIKeySecurityScheme) schemes.get("inCookie")).getIn())
+                                    .isEqualTo("cookie");
+                        });
+    }
+
+    @Test
+    void shouldRejectUnknownApiKeyLocation() {
+        for (String location : new String[] {"HEADER", "body"}) {
+            contextRunner
+                    .withPropertyValues(
+                            "agentscope.a2a.server.card.security-schemes.key.type=apiKey",
+                            "agentscope.a2a.server.card.security-schemes.key.name=X-API-Key",
+                            "agentscope.a2a.server.card.security-schemes.key.in=" + location)
+                    .run(
+                            context ->
+                                    assertThat(context)
+                                            .getFailure()
+                                            .rootCause()
+                                            .hasMessageContaining(
+                                                    "Unsupported location '"
+                                                            + location
+                                                            + "' of API key security scheme"
+                                                            + " 'key'"));
+        }
+    }
+
+    @Test
+    void shouldAcceptOAuthFlowsWithoutScopes() {
+        withYaml(
+                        """
+                        agentscope.a2a.server.card.security-schemes:
+                          oauth:
+                            type: oauth2
+                            flows:
+                              client-credentials:
+                                token-url: https://auth/token
+                                scopes: {}
+                        """)
+                .run(
+                        context -> {
+                            OAuthFlows flows =
+                                    ((OAuth2SecurityScheme)
+                                                    servedAgentCard(context)
+                                                            .securitySchemes()
+                                                            .get("oauth"))
+                                            .getFlows();
+                            assertThat(flows.clientCredentials().scopes()).isEmpty();
+                        });
+    }
+
+    @Test
+    void shouldKeepBracketedScopeNames() {
+        withYaml(
+                        """
+                        agentscope.a2a.server.card.security-schemes:
+                          oauth:
+                            type: oauth2
+                            flows:
+                              client-credentials:
+                                token-url: https://auth/token
+                                scopes:
+                                  "[read:user]": Read the user
+                                  "[https://example.com/scope]": Full access
+                        """)
+                .run(
+                        context -> {
+                            OAuthFlows flows =
+                                    ((OAuth2SecurityScheme)
+                                                    servedAgentCard(context)
+                                                            .securitySchemes()
+                                                            .get("oauth"))
+                                            .getFlows();
+                            assertThat(flows.clientCredentials().scopes())
+                                    .containsOnlyKeys("read:user", "https://example.com/scope");
+                        });
+    }
+
+    /** Adds {@code yaml} as configuration, parsed the way Spring Boot reads application.yml. */
+    private WebApplicationContextRunner withYaml(String yaml) {
+        return contextRunner.withInitializer(
+                context -> {
+                    try {
+                        new YamlPropertySourceLoader()
+                                .load(
+                                        "test.yml",
+                                        new ByteArrayResource(
+                                                yaml.getBytes(StandardCharsets.UTF_8)))
+                                .forEach(
+                                        source ->
+                                                context.getEnvironment()
+                                                        .getPropertySources()
+                                                        .addFirst(source));
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                });
+    }
+
+    /** Reads the agent card as an A2A client gets it from the card endpoint. */
+    private static AgentCard servedAgentCard(AssertableWebApplicationContext context)
+            throws Exception {
+        assertThat(context).hasNotFailed();
+        return Utils.OBJECT_MAPPER.readValue(
+                context.getBean(AgentCardController.class).getAgentCard().getBody(),
+                AgentCard.class);
     }
 }

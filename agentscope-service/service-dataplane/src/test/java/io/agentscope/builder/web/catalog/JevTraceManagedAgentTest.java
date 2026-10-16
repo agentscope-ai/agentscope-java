@@ -43,6 +43,7 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.examples.jev.JevCodeReviewExample;
 import io.agentscope.examples.jev.JevSupervisionExample;
@@ -303,6 +304,13 @@ class JevTraceManagedAgentTest {
                         mock(DefinitionStore.class),
                         control);
         builds.setJevServiceSupport(support);
+        // This test validates JEV middleware wiring on an all-stub pipeline, not journal
+        // persistence — no assertion reopens state from disk. The default workspace journal is
+        // one SQLite file written per event with full sync; under parallel -T1C builds the
+        // per-commit fsyncs (plus AV scans of the fresh -journal files) can stall a run past
+        // the 10 s block budget — the same mechanism #3602 documented for
+        // SubagentPendingToolRecoveryTest. An in-memory log removes it outright.
+        builds.setSessionLogStore(new InMemorySessionLogStore());
         try {
             var spec = new SessionAgentBuildSpec(1, "local", null, config, null, null);
             var agent = builds.getOrBuildAgent(session, spec);

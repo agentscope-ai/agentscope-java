@@ -364,25 +364,24 @@ class E2bEnvdProcessClientTest {
         assertEquals("", stderr.toString(StandardCharsets.UTF_8));
     }
 
-    // An end event carrying neither exit code nor error must not fabricate exit 0:
-    // without it the stream fails with "before receiving a process exit code".
-    // (Proto3 note: a present-but-empty EndEvent on the wire behaves the same —
-    // see emptyEndEventThrowsProto. Real envd always populates exit_code.)
+    // EndEvent.exit_code is a proto3 implicit-presence scalar: an omitted value is 0
+    // when the EndEvent message itself is present.
     @Test
-    void emptyEndEventThrows() throws Exception {
-        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        byte[] frame = concatFrames(connectFrame(endEventJson(null, null)), endStreamFrame("{}"));
+    void emptyEndEventReadsZeroJson() throws Exception {
+        for (String json :
+                new String[] {
+                    "{\"event\":{\"end\":{}}}", "{\"event\":{\"end\":{\"error\":\"\"}}}"
+                }) {
+            E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+            byte[] frame = concatFrames(connectFrame(json), endStreamFrame("{}"));
+            ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+            ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+            int exit = drainStartStream(client, frame, stdout, stderr);
 
-        IOException ex =
-                assertThrows(
-                        IOException.class,
-                        () ->
-                                drainStartStream(
-                                        client,
-                                        frame,
-                                        new ByteArrayOutputStream(),
-                                        new ByteArrayOutputStream()));
-        assertTrue(ex.getMessage().contains("before receiving a process exit code"));
+            assertEquals(0, exit);
+            assertEquals("", stdout.toString(StandardCharsets.UTF_8));
+            assertEquals("", stderr.toString(StandardCharsets.UTF_8));
+        }
     }
 
     // Proto-wire counterpart: exit_code=0 is bit-identical to a field-less EndEvent
@@ -435,6 +434,23 @@ class E2bEnvdProcessClientTest {
         assertEquals(-1, exit);
         assertEquals("", stdout.toString(StandardCharsets.UTF_8));
         assertTrue(stderr.toString(StandardCharsets.UTF_8).contains("signal: killed"));
+    }
+
+    // Match the Python/JS SDK wait() behavior: exit_code determines command status, while
+    // EndEvent.error is retained as diagnostic stderr even when the omitted code defaults to 0.
+    @Test
+    void endEventErrorWithDefaultZeroKeepsSuccessAndStderr() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame =
+                concatFrames(
+                        connectFrame("{\"event\":{\"end\":{\"error\":\"wait failed\"}}}"),
+                        endStreamFrame("{}"));
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+
+        int exit = drainStartStream(client, frame, new ByteArrayOutputStream(), stderr);
+
+        assertEquals(0, exit);
+        assertEquals("wait failed", stderr.toString(StandardCharsets.UTF_8));
     }
 
     // EndEvent.error is separated from preceding stderr output lacking a trailing
@@ -605,22 +621,75 @@ class E2bEnvdProcessClientTest {
     // ---- parseJsonStartResponse edge cases ----
 
     @Test
-    void jsonCodecNonIntegerExitCodeIsIgnored() throws Exception {
+    void jsonCodecRejectsInvalidExplicitExitCode() throws Exception {
         E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        String json = "{\"event\":{\"end\":{\"exitCode\":\"abc\"}}}";
-        byte[] frame = concatFrames(connectFrame(json), endStreamFrame("{}"));
-        // A non-convertible exitCode is ignored, leaving an empty end event —
-        // which must not fabricate exit 0 (see emptyEndEventThrows).
-        IOException ex =
-                assertThrows(
-                        IOException.class,
-                        () ->
-                                drainStartStream(
-                                        client,
-                                        frame,
-                                        new ByteArrayOutputStream(),
-                                        new ByteArrayOutputStream()));
-        assertTrue(ex.getMessage().contains("before receiving a process exit code"));
+        for (String value :
+                new String[] {"\"abc\"", "2147483648", "-2147483649", "1.5", "true", "[]"}) {
+            String json = "{\"event\":{\"end\":{\"exitCode\":" + value + "}}}";
+            assertThrows(
+                    IOException.class,
+                    () -> client.parseStartResponseFrame(json.getBytes(StandardCharsets.UTF_8)),
+                    "exitCode: " + value);
+
+            byte[] frame = concatFrames(connectFrame(json), endStreamFrame("{}"));
+            IOException ex =
+                    assertThrows(
+                            IOException.class,
+                            () ->
+                                    drainStartStream(
+                                            client,
+                                            frame,
+                                            new ByteArrayOutputStream(),
+                                            new ByteArrayOutputStream()),
+                            "exitCode: " + value);
+            assertTrue(ex.getMessage().contains("Invalid EndEvent exit_code"));
+        }
+    }
+
+    // ProtoJSON accepts an int32 as a JSON number or a decimal string, and a zero fractional
+    // part; the official Python/JS SDKs share this decoding via their protobuf runtimes.
+    @Test
+    void jsonCodecAcceptsProtoJsonInt32ExitCodeForms() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        for (String value : new String[] {"42", "42.0", "\"42\"", "-7", "0"}) {
+            String json = "{\"event\":{\"end\":{\"exitCode\":" + value + "}}}";
+            byte[] frame = concatFrames(connectFrame(json), endStreamFrame("{}"));
+            int exit =
+                    drainStartStream(
+                            client,
+                            frame,
+                            new ByteArrayOutputStream(),
+                            new ByteArrayOutputStream());
+            assertEquals(
+                    new java.math.BigDecimal(value.replace("\"", "")).intValueExact(),
+                    exit,
+                    "exitCode: " + value);
+        }
+    }
+
+    @Test
+    void jsonCodecRejectsNonObjectEndEvent() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        for (String value : new String[] {"\"bad\"", "42", "true", "[]", "1.5"}) {
+            String json = "{\"event\":{\"end\":" + value + "}}";
+            assertThrows(
+                    IOException.class,
+                    () -> client.parseStartResponseFrame(json.getBytes(StandardCharsets.UTF_8)),
+                    "end: " + value);
+
+            byte[] frame = concatFrames(connectFrame(json), endStreamFrame("{}"));
+            IOException ex =
+                    assertThrows(
+                            IOException.class,
+                            () ->
+                                    drainStartStream(
+                                            client,
+                                            frame,
+                                            new ByteArrayOutputStream(),
+                                            new ByteArrayOutputStream()),
+                            "end: " + value);
+            assertTrue(ex.getMessage().contains("Invalid EndEvent"));
+        }
     }
 
     @Test
@@ -634,6 +703,27 @@ class E2bEnvdProcessClientTest {
 
         assertEquals(1, exit);
         assertEquals("", stderr.toString(StandardCharsets.UTF_8));
+    }
+
+    // A parse failure now aborts the stream instead of being skipped, so a malformed EndEvent
+    // followed by a well-formed one must not report success.
+    @Test
+    void jsonCodecMalformedFrameAbortsStream() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame =
+                concatFrames(
+                        connectFrame("{\"event\":{\"end\":{\"exitCode\":1.5}}}"),
+                        connectFrame("{\"event\":{\"end\":{\"exitCode\":0}}}"),
+                        endStreamFrame("{}"));
+
+        assertThrows(
+                IOException.class,
+                () ->
+                        drainStartStream(
+                                client,
+                                frame,
+                                new ByteArrayOutputStream(),
+                                new ByteArrayOutputStream()));
     }
 
     private static DynamicMessage dataResponse(
