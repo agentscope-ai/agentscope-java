@@ -101,6 +101,7 @@ public class McpClientBuilder {
     private TransportConfig transportConfig;
     private Duration requestTimeout = DEFAULT_REQUEST_TIMEOUT;
     private Duration initializationTimeout = DEFAULT_INIT_TIMEOUT;
+    private Duration closeTimeout = McpClientWrapper.DEFAULT_CLOSE_TIMEOUT;
     private Function<ElicitRequest, Mono<ElicitResult>> asyncElicitationHandler;
     private Function<ElicitRequest, ElicitResult> syncElicitationHandler;
     private List<String> protocolVersions;
@@ -356,6 +357,22 @@ public class McpClientBuilder {
     }
 
     /**
+     * Sets the upper bound for the graceful close attempt performed by the built wrapper's
+     * {@link McpClientWrapper#close()}.
+     *
+     * <p>Graceful close has no timeout of its own in the MCP SDK; without a bound, closing a client
+     * whose server has stopped responding would block the caller forever. Defaults to
+     * {@link McpClientWrapper#DEFAULT_CLOSE_TIMEOUT}.
+     *
+     * @param timeout close timeout duration
+     * @return this builder
+     */
+    public McpClientBuilder closeTimeout(Duration timeout) {
+        this.closeTimeout = timeout;
+        return this;
+    }
+
+    /**
      * Sets the MCP protocol versions that the client supports.
      *
      * <p>By default, the client only supports "2024-11-05". If the MCP server responds
@@ -528,7 +545,8 @@ public class McpClientBuilder {
 
                     McpAsyncClient mcpClient = clientBuilder.build();
 
-                    McpAsyncClientWrapper wrapper = new McpAsyncClientWrapper(name, mcpClient);
+                    McpAsyncClientWrapper wrapper =
+                            new McpAsyncClientWrapper(name, mcpClient, closeTimeout);
                     wrapper.setPropagateMeta(propagateMeta);
                     return wrapper;
                 });
@@ -570,7 +588,7 @@ public class McpClientBuilder {
 
         McpSyncClient mcpClient = clientBuilder.build();
 
-        McpSyncClientWrapper wrapper = new McpSyncClientWrapper(name, mcpClient);
+        McpSyncClientWrapper wrapper = new McpSyncClientWrapper(name, mcpClient, closeTimeout);
         wrapper.setPropagateMeta(propagateMeta);
         return wrapper;
     }
