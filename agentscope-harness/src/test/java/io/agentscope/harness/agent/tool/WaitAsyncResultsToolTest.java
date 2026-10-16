@@ -197,7 +197,8 @@ class WaitAsyncResultsToolTest {
     void budgetExhaustedButResultsArrivedRecovers() throws Exception {
         AtomicBoolean hasMessages = new AtomicBoolean(false);
         MessageBus toggleBus = new StubMessageBus(hasMessages);
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(toggleBus);
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(toggleBus, null);
 
         // Exhaust the budget with 2 empty waits
         tool.waitForResults(1, ctx());
@@ -226,7 +227,8 @@ class WaitAsyncResultsToolTest {
         AtomicBoolean hasMessages = new AtomicBoolean(false);
         MessageBus toggleBus = new StubMessageBus(hasMessages);
 
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(toggleBus);
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(toggleBus, null);
 
         // First call — empty, timeout
         String r1 = text(tool.waitForResults(1, ctx()));
@@ -256,7 +258,8 @@ class WaitAsyncResultsToolTest {
     @Test
     @DisplayName("timeout message suggests non-blocking alternatives, not retry")
     void timeoutMessageDoesNotEncourageRetry() throws Exception {
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus());
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(emptyBus(), null);
         String result = text(tool.waitForResults(1, ctx()));
 
         assertFalse(result.contains("try waiting again"), "should not encourage retry");
@@ -310,7 +313,8 @@ class WaitAsyncResultsToolTest {
         BackgroundTask runningTask = new BackgroundTask("t1", "agent-1", running);
 
         TaskRepository repo = new StubTaskRepository(List.of(runningTask));
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(emptyBus(), repo);
 
         String result = text(tool.waitForResults(1, ctx()));
         assertTrue(result.contains("Timeout"), "should proceed to wait and timeout");
@@ -326,7 +330,7 @@ class WaitAsyncResultsToolTest {
                         List.of(
                                 new BackgroundTask("t1", "agent-1", t1),
                                 new BackgroundTask("t2", "agent-2", t2)));
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo, 50L);
 
         Thread completer =
                 new Thread(
@@ -398,7 +402,7 @@ class WaitAsyncResultsToolTest {
         CompletableFuture<String> running = new CompletableFuture<>();
         MutableTaskRepository repo =
                 new MutableTaskRepository(List.of(new BackgroundTask("t1", "agent-1", running)));
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo, 50L);
 
         Thread completer =
                 new Thread(
@@ -465,7 +469,8 @@ class WaitAsyncResultsToolTest {
     @Test
     @DisplayName("no TaskRepository (null) → falls through to normal wait")
     void nullTaskRepositoryFallsThrough() throws Exception {
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), null);
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(emptyBus(), null);
         String result = text(tool.waitForResults(1, ctx()));
         assertTrue(result.contains("Timeout"), "should proceed to wait and timeout");
     }

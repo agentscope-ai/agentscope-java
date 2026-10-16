@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.openai.models.responses.Response;
+import com.openai.models.responses.ResponseStatus;
 import io.agentscope.core.model.ChatUsage;
 import java.time.Instant;
 import java.util.List;
@@ -89,5 +90,25 @@ class ResponsesHelperTest {
         ChatUsage usage = ResponsesHelper.extractUsage(response, Instant.now());
 
         assertNull(usage);
+    }
+
+    @Test
+    void usageWithoutTokenDetailsMapsMissingBreakdownsToZero() {
+        // DeepSeek's Responses API omits usage.input_tokens_details / output_tokens_details;
+        // the call must still produce a ChatUsage instead of throwing (issue #3564).
+        Response response =
+                TestSdkFixtures.response(
+                        List.of(TestSdkFixtures.messageItem("test")),
+                        ResponseStatus.COMPLETED,
+                        TestSdkFixtures.usageWithMissingBreakdownFields(100L, 50L, 20L));
+
+        ChatUsage usage = ResponsesHelper.extractUsage(response, Instant.now());
+
+        assertNotNull(usage);
+        assertEquals(100, usage.getInputTokens());
+        assertEquals(50, usage.getOutputTokens());
+        assertEquals(20, usage.getCachedTokens());
+        assertEquals(0, usage.getCacheCreationTokens());
+        assertEquals(0, usage.getReasoningTokens());
     }
 }
