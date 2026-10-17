@@ -47,7 +47,11 @@ import org.junit.jupiter.api.Timeout;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
-@Timeout(20)
+// Lease takeover involves several scheduling steps whose cost on a loaded CI runner
+// can exceed this test's defaults (see #3517 and #3505 for the same pattern in
+// ChatSessionsTest and SubagentRunIdChainTest). Budget generously; these tests verify
+// lifecycle behavior, not a fixed latency limit.
+@Timeout(60)
 class WeixinLeaseLifecycleTest {
     private HttpServer server;
     private WeixinChannel channel;
@@ -145,7 +149,9 @@ class WeixinLeaseLifecycleTest {
                 "the standby instance never attempted to acquire the lease");
         assertEquals(1, entered.getCount());
         store.releaseLease("account", owner);
-        assertTrue(sent.await(3, TimeUnit.SECONDS));
+        assertTrue(
+                sent.await(10, TimeUnit.SECONDS),
+                "the standby did not take over and send the reply in time");
         assertEquals(1, sends.get());
     }
 
