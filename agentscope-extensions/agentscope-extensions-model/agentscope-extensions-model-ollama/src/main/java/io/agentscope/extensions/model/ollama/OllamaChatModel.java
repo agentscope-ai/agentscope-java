@@ -17,8 +17,11 @@ package io.agentscope.extensions.model.ollama;
 
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelUtils;
@@ -36,7 +39,9 @@ import io.agentscope.extensions.model.ollama.formatter.OllamaChatFormatter;
 import io.agentscope.extensions.model.ollama.formatter.OllamaMultiAgentFormatter;
 import io.agentscope.extensions.model.ollama.options.OllamaOptions;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -103,7 +108,7 @@ public class OllamaChatModel extends ChatModelBase {
         this.formatter = formatter != null ? formatter : new OllamaChatFormatter();
         this.stream = stream;
         setNativeStructuredOutput(true);
-        setNativeStructuredOutputWithTools(false);
+        setNativeStructuredOutputWithTools(true);
 
         HttpTransport transport =
                 httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
@@ -191,11 +196,132 @@ public class OllamaChatModel extends ChatModelBase {
             OllamaOptions options,
             boolean stream) {
 
-        // Calculate merged options for ModelUtils.applyTimeoutAndRetry
         OllamaOptions mergedOptions = this.defaultOptions.merge(options);
+        return Flux.defer(
+                () -> {
+                    List<OllamaMessage> formattedMessages = formatter.format(messages);
+                    OllamaRequest request =
+                            buildRequest(formattedMessages, tools, toolChoice, options, stream);
+                    if (request.getFormat() == null
+                            || tools == null
+                            || tools.isEmpty()
+                            || !supportsNativeStructuredOutput()
+                            || !supportsNativeStructuredOutputWithTools()) {
+                        return executeRequest(request, mergedOptions, stream);
+                    }
 
-        List<OllamaMessage> formattedMessages = formatter.format(messages);
+                    // Some Ollama models suppress tool calls when format is present. Let the
+                    // ordinary ReAct loop finish tool execution before constraining the answer.
+                    request.setFormat(null);
+                    return executeRequest(request, mergedOptions, stream)
+                            .collectList()
+                            .flatMapMany(
+                                    draft ->
+                                            finishToolRound(
+                                                    draft,
+                                                    formattedMessages,
+                                                    options,
+                                                    mergedOptions,
+                                                    stream));
+                });
+    }
 
+    private Flux<ChatResponse> finishToolRound(
+            List<ChatResponse> draft,
+            List<OllamaMessage> messages,
+            OllamaOptions options,
+            OllamaOptions mergedOptions,
+            boolean stream) {
+        if (draft.stream()
+                .flatMap(r -> r.getContent().stream())
+                .anyMatch(ToolUseBlock.class::isInstance)) {
+            return Flux.fromIterable(draft);
+        }
+        String text =
+                draft.stream()
+                        .flatMap(r -> r.getContent().stream())
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .map(TextBlock::getText)
+                        .collect(Collectors.joining());
+        if (text.isBlank()) {
+            return Flux.error(new IllegalStateException("Ollama returned no answer or tool calls"));
+        }
+        List<OllamaMessage> finalMessages = new ArrayList<>(messages);
+        finalMessages.add(new OllamaMessage("assistant", text));
+        finalMessages.add(
+                new OllamaMessage(
+                        "user",
+                        "Return the final answer as JSON matching the supplied schema. Use the tool"
+                                + " results in the conversation and preserve their values."));
+        OllamaRequest finalRequest = buildRequest(finalMessages, null, null, options, stream);
+        finalRequest.setTools(null);
+        finalRequest.setToolChoice(null);
+        ChatUsage draftUsage = null;
+        for (ChatResponse response : draft) {
+            if (response.getUsage() != null) {
+                draftUsage = response.getUsage();
+            }
+        }
+        ChatUsage hiddenUsage = draftUsage;
+        boolean[] hasText = {false};
+        return executeRequest(finalRequest, mergedOptions, stream)
+                .doOnNext(
+                        response -> {
+                            if (response.getContent().stream()
+                                    .anyMatch(ToolUseBlock.class::isInstance)) {
+                                throw new IllegalStateException(
+                                        "Ollama returned tool calls during final formatting");
+                            }
+                            hasText[0] |=
+                                    response.getContent().stream()
+                                            .filter(TextBlock.class::isInstance)
+                                            .map(TextBlock.class::cast)
+                                            .anyMatch(block -> !block.getText().isBlank());
+                        })
+                .map(response -> addHiddenUsage(response, hiddenUsage))
+                .concatWith(
+                        Flux.defer(
+                                () ->
+                                        hasText[0]
+                                                ? Flux.empty()
+                                                : Flux.error(
+                                                        new IllegalStateException(
+                                                                "Ollama returned no structured"
+                                                                        + " response"))));
+    }
+
+    private static ChatResponse addHiddenUsage(ChatResponse response, ChatUsage hidden) {
+        ChatUsage usage = response.getUsage();
+        if (hidden == null
+                || usage == null
+                || (!Boolean.TRUE.equals(response.getMetadata().get("done"))
+                        && response.getFinishReason() == null)) {
+            return response;
+        }
+        ChatUsage combined =
+                new ChatUsage(
+                        hidden.getInputTokens() + usage.getInputTokens(),
+                        hidden.getOutputTokens() + usage.getOutputTokens(),
+                        hidden.getCachedTokens() + usage.getCachedTokens(),
+                        hidden.getCacheCreationTokens() + usage.getCacheCreationTokens(),
+                        hidden.getReasoningTokens() + usage.getReasoningTokens(),
+                        hidden.getToolUsePromptTokens() + usage.getToolUsePromptTokens(),
+                        hidden.getTime() + usage.getTime());
+        return new ChatResponse(
+                response.getId(),
+                response.getContent(),
+                combined,
+                response.getMetadata(),
+                response.getFinishReason());
+    }
+
+    private OllamaRequest buildRequest(
+            List<OllamaMessage> formattedMessages,
+            List<ToolSchema> tools,
+            ToolChoice toolChoice,
+            OllamaOptions options,
+            boolean stream) {
         OllamaRequest request;
         if (formatter instanceof OllamaChatFormatter chatFormatter) {
             request =
@@ -222,6 +348,11 @@ public class OllamaChatModel extends ChatModelBase {
                     "Unsupported formatter type: " + formatter.getClass().getName());
         }
 
+        return request;
+    }
+
+    private Flux<ChatResponse> executeRequest(
+            OllamaRequest request, OllamaOptions mergedOptions, boolean stream) {
         Flux<ChatResponse> responseFlux;
         if (stream) {
             responseFlux =
@@ -280,7 +411,7 @@ public class OllamaChatModel extends ChatModelBase {
         private int contextWindowSize = -1;
         private boolean stream = true;
         private boolean nativeStructuredOutput = true;
-        private boolean nativeStructuredOutputWithTools = false;
+        private boolean nativeStructuredOutputWithTools = true;
 
         public Builder modelName(String modelName) {
             this.modelName = modelName;
@@ -392,9 +523,9 @@ public class OllamaChatModel extends ChatModelBase {
         /**
          * Sets whether this model handles native structured output alongside tool calling.
          *
-         * <p>Defaults to {@code false} because Ollama does not document guaranteed behavior
-         * for combining {@code format} and {@code tools}. Set to {@code true} for models and
-         * endpoints where that combination has been verified.
+         * <p>Defaults to {@code true}. Tool rounds run without {@code format}; once the model
+         * stops calling tools, a separate request without tools produces the structured answer.
+         * Set to {@code false} to use the synthetic {@code generate_response} tool instead.
          *
          * @param nativeStructuredOutputWithTools true to use native output with tools
          * @return this builder instance
@@ -422,7 +553,8 @@ public class OllamaChatModel extends ChatModelBase {
                     new OllamaChatModel(
                             modelName, baseUrl, finalOptions, formatter, transport, stream);
             model.setNativeStructuredOutput(nativeStructuredOutput);
-            model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
+            model.setNativeStructuredOutputWithTools(
+                    nativeStructuredOutput && nativeStructuredOutputWithTools);
             if (contextWindowSize >= 0) {
                 model.setContextWindowSize(contextWindowSize);
             }
