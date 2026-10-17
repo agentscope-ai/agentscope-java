@@ -358,5 +358,9 @@ public final class GracefulShutdownManager {
         shutdownStartedAt.set(null);
         monitorStarted.set(false);
         shutdownTimeoutSignal.set(Sinks.empty());
+        // Restore the config too: the singleton survives across test classes, so
+        // a setConfig() from an earlier test would otherwise leak into later
+        // tests that assert the default (resetForTesting promises full reset).
+        config.set(GracefulShutdownConfig.DEFAULT);
     }
 }
