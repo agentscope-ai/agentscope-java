@@ -31,7 +31,7 @@ import java.util.concurrent.ConcurrentMap;
  * <p>Every successful {@link #put} and {@link #putIfVersion} increments the item's
  * {@link StoreItem#version()} counter, enabling optimistic concurrency control.
  */
-public class InMemoryStore implements BaseStore {
+public class InMemoryStore implements VersionedBaseStore {
 
     private final ConcurrentMap<String, StoreItem> store = new ConcurrentHashMap<>();
 
