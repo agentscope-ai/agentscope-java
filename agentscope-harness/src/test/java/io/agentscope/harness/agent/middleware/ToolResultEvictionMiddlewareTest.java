@@ -26,7 +26,9 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -44,6 +46,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -371,6 +374,113 @@ class ToolResultEvictionMiddlewareTest {
                         .toList();
         assertTrue(storedContents.contains(oldOutput));
         assertTrue(storedContents.contains(newOutput));
+    }
+
+    @Test
+    void skipsEvictionWhenToolResultContainsMedia() throws IOException {
+        LocalFilesystem filesystem =
+                new LocalFilesystem(tempDir, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+        ToolResultEvictionMiddleware middleware =
+                new ToolResultEvictionMiddleware(filesystem, testConfig());
+
+        ToolResultBlock mediaResult =
+                new ToolResultBlock(
+                        "call:1",
+                        "large_output",
+                        List.of(
+                                TextBlock.builder().text(FULL_OUTPUT).build(),
+                                ImageBlock.builder()
+                                        .source(
+                                                Base64Source.builder()
+                                                        .mediaType("image/png")
+                                                        .data("iVBORw0KGgo=")
+                                                        .build())
+                                        .build()),
+                        Map.of("source", "test"),
+                        ToolResultState.SUCCESS);
+
+        AgentState state = AgentState.builder().addMessage(toolMessage(mediaResult)).build();
+        RuntimeContext ctx = RuntimeContext.builder().agentState(state).build();
+        Msg inputMessage = toolMessage(mediaResult);
+        ReasoningInput input = new ReasoningInput(List.of(inputMessage), List.of(), null);
+        AtomicReference<ReasoningInput> forwarded = new AtomicReference<>();
+
+        middleware
+                .onReasoning(
+                        agent("Test Agent"),
+                        ctx,
+                        input,
+                        downstream -> {
+                            forwarded.set(downstream);
+                            return Flux.empty();
+                        })
+                .collectList()
+                .block();
+
+        assertSame(input, forwarded.get());
+        assertEquals(FULL_OUTPUT, toolOutput(forwarded.get().messages().get(0)));
+        ToolResultBlock result =
+                forwarded.get().messages().get(0).getContentBlocks(ToolResultBlock.class).get(0);
+        assertFalse(
+                Boolean.TRUE.equals(
+                        result.getMetadata()
+                                .get(ToolResultEvictionMiddleware.EVICTED_METADATA_KEY)));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+
+        Path resultDir = tempDir.resolve("large_tool_results/Test_Agent");
+        if (Files.exists(resultDir)) {
+            try (var files = Files.list(resultDir)) {
+                assertEquals(
+                        0L,
+                        files.count(),
+                        "No file should be written for media-containing results");
+            }
+        }
+    }
+
+    @Test
+    void excludedToolIsNotEvicted() {
+        ToolResultEvictionConfig config =
+                ToolResultEvictionConfig.builder()
+                        .maxResultChars(20)
+                        .previewChars(4)
+                        .excludedToolNames(Set.of("read_file"))
+                        .build();
+        LocalFilesystem filesystem =
+                new LocalFilesystem(tempDir, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+        ToolResultEvictionMiddleware middleware =
+                new ToolResultEvictionMiddleware(filesystem, config);
+
+        ToolResultBlock excludedResult =
+                new ToolResultBlock(
+                        "call:1",
+                        "read_file",
+                        List.of(TextBlock.builder().text(FULL_OUTPUT).build()),
+                        Map.of("source", "test"),
+                        ToolResultState.SUCCESS);
+
+        AgentState state = AgentState.builder().addMessage(toolMessage(excludedResult)).build();
+        RuntimeContext ctx = RuntimeContext.builder().agentState(state).build();
+        Msg inputMessage = toolMessage(excludedResult);
+        ReasoningInput input = new ReasoningInput(List.of(inputMessage), List.of(), null);
+        AtomicReference<ReasoningInput> forwarded = new AtomicReference<>();
+
+        middleware
+                .onReasoning(
+                        agent("Test Agent"),
+                        ctx,
+                        input,
+                        downstream -> {
+                            forwarded.set(downstream);
+                            return Flux.empty();
+                        })
+                .collectList()
+                .block();
+
+        assertSame(input, forwarded.get());
+        assertEquals(FULL_OUTPUT, toolOutput(forwarded.get().messages().get(0)));
+        Path resultDir = tempDir.resolve("large_tool_results/Test_Agent");
+        assertTrue(Files.notExists(resultDir), "Excluded tools must not write eviction files");
     }
 
     private static ToolResultEvictionConfig testConfig() {
