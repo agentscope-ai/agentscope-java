@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox.layout;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -31,6 +32,20 @@ public class WorkspaceProjectionEntry extends WorkspaceEntry {
 
     private String sourceRoot;
     private List<String> includeRoots = new ArrayList<>();
+    private transient List<String> syncRoots = List.of();
+
+    /**
+     * Runtime-only owned {@code .skills-cache/<scope>} subtrees to reconcile. Empty preserves
+     * overlay semantics. Direct callers must establish exclusive maintenance themselves.
+     */
+    @JsonIgnore
+    public List<String> getSyncRoots() {
+        return syncRoots;
+    }
+
+    public void setSyncRoots(List<String> syncRoots) {
+        this.syncRoots = syncRoots != null ? List.copyOf(syncRoots) : List.of();
+    }
 
     /**
      * Absolute host-side workspace root used as source for projection.

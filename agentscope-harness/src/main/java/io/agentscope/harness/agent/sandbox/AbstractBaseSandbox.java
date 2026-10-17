@@ -19,6 +19,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -73,9 +74,19 @@ public abstract class AbstractBaseSandbox implements Sandbox {
         SandboxSnapshot snapshot = state.getSnapshot();
 
         try {
+            boolean syncing = SkillsCacheProjection.enabled(spec);
+            boolean preserved =
+                    syncing
+                            && state.isWorkspaceRootReady()
+                            && probeWorkspaceRootForPreservedResume();
+            if (syncing) {
+                verifyExclusiveCacheProjection();
+                doSetupWorkspace();
+                SkillsCacheProjection.validateDestination(this, spec, getWorkspaceRoot());
+            }
             if (state.isWorkspaceRootReady()) {
                 // Workspace was ready at last stop — check if it still exists
-                boolean stillExists = probeWorkspaceRootForPreservedResume();
+                boolean stillExists = syncing ? preserved : probeWorkspaceRootForPreservedResume();
                 if (stillExists) {
                     // Branch A: workspace preserved — only apply ephemeral entries
                     log.debug(
@@ -243,6 +254,21 @@ public abstract class AbstractBaseSandbox implements Sandbox {
             RuntimeContext runtimeContext, String command, int timeoutSeconds) throws Exception;
 
     /**
+     * Executes internal maintenance argv with input on stdin, without a shell. Opt-in cache
+     * backends must override this; existing backends retain their ordinary exec contract.
+     *
+     * @param command executable and arguments; input must never be appended to them
+     * @param input bytes to write and then close; completion includes input delivery
+     * @param timeoutSeconds deadline covering process execution and input delivery
+     * @return execution result
+     * @throws Exception if unsupported, input delivery fails, or execution fails
+     */
+    protected ExecResult doExecWithInput(List<String> command, byte[] input, int timeoutSeconds)
+            throws Exception {
+        throw new UnsupportedOperationException("This backend does not support maintenance stdin");
+    }
+
+    /**
      * Creates a tar archive of the current workspace contents.
      *
      * @return an {@link InputStream} over the tar stream; caller must close
@@ -279,12 +305,22 @@ public abstract class AbstractBaseSandbox implements Sandbox {
      */
     protected abstract String getWorkspaceRoot();
 
+    /**
+     * Opt-in cache deletion requires an exclusive maintenance environment. Backends that
+     * cannot establish this must reject it; a user-supplied guard alone is not evidence.
+     */
+    protected void verifyExclusiveCacheProjection() throws Exception {
+        throw new UnsupportedOperationException(
+                "This backend does not support exclusive cache maintenance");
+    }
+
     private void applyWorkspaceProjectionIfChanged(WorkspaceSpec spec) throws Exception {
         WorkspaceProjectionApplier.ProjectionPayload payload =
                 WorkspaceProjectionApplier.build(spec);
         if (payload == null) {
             return;
         }
+        SkillsCacheProjection.reconcile(this, spec, payload, getWorkspaceRoot());
         if (Objects.equals(payload.hash(), state.getWorkspaceProjectionHash())) {
             log.debug("[sandbox] Workspace projection unchanged, skipping");
             return;

@@ -81,6 +81,7 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
     private static final int TAR_TIMEOUT_SECONDS = 120;
 
     private final DockerSandboxState dockerState;
+    private boolean freshContainerForStart;
 
     public DockerSandbox(DockerSandboxState state) {
         super(state);
@@ -95,8 +96,36 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
      */
     @Override
     public void start() throws Exception {
+        freshContainerForStart = false;
         doEnsureContainerRunning();
         super.start();
+    }
+
+    @Override
+    protected void verifyExclusiveCacheProjection() throws Exception {
+        if (!freshContainerForStart || !dockerState.isContainerOwned()) {
+            throw new IOException(
+                    "Cache sync requires a newly created harness-owned Docker container");
+        }
+        Process process =
+                new ProcessBuilder("docker", "top", dockerState.getContainerId(), "-eo", "pid,comm")
+                        .start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        if (!process.waitFor(10, TimeUnit.SECONDS) || process.exitValue() != 0) {
+            process.destroyForcibly();
+            throw new IOException("Cannot verify Docker maintenance processes");
+        }
+        List<String> commands =
+                output.lines()
+                        .skip(1)
+                        .map(String::strip)
+                        .map(line -> line.split("\\s+", 2)[1])
+                        .sorted()
+                        .toList();
+        if (!commands.equals(List.of("sh", "sleep"))) {
+            throw new IOException(
+                    "Cache maintenance requires only the framework idle sh/sleep processes");
+        }
     }
 
     /**
@@ -157,12 +186,34 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         cmd.add("-c");
         cmd.add(command);
 
+        return execProcess(cmd, null, command, timeoutSeconds);
+    }
+
+    @Override
+    protected ExecResult doExecWithInput(List<String> command, byte[] input, int timeoutSeconds)
+            throws Exception {
+        List<String> cmd = new ArrayList<>();
+        cmd.addAll(
+                List.of(
+                        "docker",
+                        "exec",
+                        "-i",
+                        "-w",
+                        dockerState.getWorkspaceRoot(),
+                        dockerState.getContainerId()));
+        cmd.addAll(command);
+        return execProcess(cmd, input, command.get(0), timeoutSeconds);
+    }
+
+    private ExecResult execProcess(
+            List<String> cmd, byte[] input, String command, int timeoutSeconds) throws Exception {
+
         ProcessBuilder pb = new ProcessBuilder(cmd);
         Process process = pb.start();
 
         ExecutorService drainer =
                 Executors.newFixedThreadPool(
-                        2,
+                        input == null ? 2 : 3,
                         r -> {
                             Thread t =
                                     new Thread(
@@ -176,27 +227,45 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                 drainer.submit(() -> readStream(process.getInputStream(), OUTPUT_TRUNCATE_BYTES));
         Future<String> stderrFuture =
                 drainer.submit(() -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
+        Future<?> inputFuture =
+                input == null
+                        ? null
+                        : drainer.submit(
+                                () -> {
+                                    try (OutputStream stdin = process.getOutputStream()) {
+                                        stdin.write(input);
+                                    }
+                                    return null;
+                                });
         drainer.shutdown();
 
-        boolean exited = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
-        if (!exited) {
-            process.destroyForcibly();
+        try {
+            boolean exited = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+            if (!exited) {
+                process.destroyForcibly();
+                drainer.shutdownNow();
+                throw new SandboxException.ExecTimeoutException(command, timeoutSeconds);
+            }
+
+            String stdout = stdoutFuture.get();
+            String stderr = stderrFuture.get();
+            int exitCode = process.exitValue();
+
+            boolean truncated =
+                    stdout.length() >= OUTPUT_TRUNCATE_BYTES
+                            || stderr.length() >= OUTPUT_TRUNCATE_BYTES;
+            ExecResult result = new ExecResult(exitCode, stdout, stderr, truncated);
+            if (!result.ok()) {
+                throw new SandboxException.ExecException(exitCode, stdout, stderr);
+            }
+            if (inputFuture != null) {
+                inputFuture.get();
+            }
+            return result;
+        } finally {
+            if (process.isAlive()) process.destroyForcibly();
             drainer.shutdownNow();
-            throw new SandboxException.ExecTimeoutException(command, timeoutSeconds);
         }
-
-        String stdout = stdoutFuture.get();
-        String stderr = stderrFuture.get();
-        int exitCode = process.exitValue();
-
-        boolean truncated =
-                stdout.length() >= OUTPUT_TRUNCATE_BYTES
-                        || stderr.length() >= OUTPUT_TRUNCATE_BYTES;
-        ExecResult result = new ExecResult(exitCode, stdout, stderr, truncated);
-        if (!result.ok()) {
-            throw new SandboxException.ExecException(exitCode, stdout, stderr);
-        }
-        return result;
     }
 
     @Override
@@ -576,6 +645,7 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         }
 
         dockerState.setContainerId(newContainerId);
+        freshContainerForStart = true;
         log.info(
                 "[sandbox-docker] Container started: id={}, name={}",
                 newContainerId,
