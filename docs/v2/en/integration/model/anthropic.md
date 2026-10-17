@@ -40,6 +40,15 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
+## Response IDs
+
+For streaming responses, `ChatResponse.getId()` and the accumulated assistant message's
+`Msg.getId()` retain the Anthropic message ID across text, tool-call, and usage chunks.
+If a gateway omits the ID or returns a blank value, one generated ID is reused for that
+subscription; separate subscriptions receive separate fallback IDs.
+
+This is a response/message ID, not an HTTP request-id header or an AgentScope event's `replyId`.
+
 ## Server-side tools
 
 Anthropic built-in tools run on Anthropic's infrastructure instead of the local AgentScope toolkit.
