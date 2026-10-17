@@ -16,6 +16,7 @@
 package io.agentscope.core.skill;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
@@ -45,8 +46,9 @@ import reactor.core.publisher.Mono;
  * skill prompt with a per-call view that supports per-user skill isolation and one-click
  * marketplace integration.
  *
- * <p>The repository list is iterated low-priority first; when two repositories provide a skill
- * with the same {@link AgentSkill#getName()}, the later (higher-priority) entry wins.
+ * <p>The repository list is iterated low-priority first; skills merge by skillId — same-named
+ * skills from different repositories coexist, while the same skillId (same name and source)
+ * keeps only the later (higher-priority) entry.
  *
  * <p>Rebuilding on every call is intentional: per-user namespaced repositories may return
  * different content under the same skill name as the {@link RuntimeContext} switches users, so
@@ -169,11 +171,38 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
         return builderFilter.overlay(runtimeOverlay);
     }
 
+    /**
+     * Grant visibility filter, fail-closed: a missing surface or an internal error
+     * yields an empty set (the filterVisible hook's exception handling is fail-open, so
+     * this filter must catch its own exceptions).
+     *
+     * @param visible the skills remaining after the filterVisible hook
+     * @param ctx the per-call runtime context carrying the grant set
+     * @return the granted subset; empty on a missing surface or filter error
+     */
+    private List<AgentSkill> applyCapabilityFilter(List<AgentSkill> visible, RuntimeContext ctx) {
+        try {
+            CapabilitySurface surface = ctx != null ? ctx.get(CapabilitySurface.class) : null;
+            if (surface == null) {
+                return List.of();
+            }
+            return visible.stream().filter(surface::allowsSkill).toList();
+        } catch (Exception e) {
+            log.warn(
+                    "Capability filtering failed; failing closed to an empty skill set: {}",
+                    e.getMessage());
+            return List.of();
+        }
+    }
+
     private SkillBox reloadSkills(RuntimeContext ctx) {
         if (repositories.isEmpty()) {
             return null;
         }
-        Map<String, AgentSkill> skillsByName = new LinkedHashMap<>();
+        // Merged by skillId: same-named skills from different repositories coexist; a
+        // same-id re-registration (same name and source) is the version-override case —
+        // the later (higher-priority) repository wins.
+        Map<String, AgentSkill> skillsById = new LinkedHashMap<>();
         for (AgentSkillRepository repo : repositories) {
             List<AgentSkill> skills;
             try {
@@ -195,25 +224,33 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
                 if (skill == null || skill.getName() == null) {
                     continue;
                 }
-                skillsByName.put(skill.getName(), skill);
+                skillsById.put(skill.getSkillId(), skill);
             }
         }
-        if (skillsByName.isEmpty()) {
+        if (skillsById.isEmpty()) {
             return null;
         }
         // Apply subclass visibility hook before the SkillBox is rebuilt so the prompt only
         // sees skills the current ctx is allowed to see.
         List<AgentSkill> visible;
         try {
-            List<AgentSkill> filtered = filterVisible(new ArrayList<>(skillsByName.values()), ctx);
-            visible = filtered != null ? filtered : new ArrayList<>(skillsByName.values());
+            List<AgentSkill> filtered = filterVisible(new ArrayList<>(skillsById.values()), ctx);
+            visible = filtered != null ? filtered : new ArrayList<>(skillsById.values());
         } catch (Exception e) {
             log.warn(
                     "filterVisible() in {} failed; treating as pass-through: {}",
                     getClass().getSimpleName(),
                     e.getMessage());
-            visible = new ArrayList<>(skillsByName.values());
+            visible = new ArrayList<>(skillsById.values());
         }
+        if (visible.isEmpty()) {
+            return null;
+        }
+
+        // Grant filtering runs after the overridable filterVisible hook and must reassign
+        // visible: the signature/cache/box below consume the filtered list, otherwise
+        // the box (prompt + registry) stays full.
+        visible = applyCapabilityFilter(visible, ctx);
         if (visible.isEmpty()) {
             return null;
         }

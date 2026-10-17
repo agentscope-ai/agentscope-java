@@ -469,7 +469,7 @@ ReActAgent agent =
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| `skillId` | `string`（枚举：已注册的 skill ID） | 要加载的 skill。 |
+| `skillId` | `string`（枚举：已注册的 skillId，通常即 skill 名） | 要加载的 skill。 |
 | `path` | `string` | 传 `"SKILL.md"` 取该 skill 的 markdown 指令；或传 skill 声明过的精确资源路径，例如 `"references/guide.md"`、`"scripts/run.py"`。不要传 `"."`、`"./"`、目录或绝对路径。 |
 
 调用示例：
@@ -525,7 +525,7 @@ ReActAgent agent =
 
 ### Skill + ToolGroup：按需披露工具
 
-`SkillToolGroup` 把一组 tool 绑定到某个 skill name —— agent 加载该 skill 时 tool group 自动激活，未加载时 tool 不出现在模型 schema 中，减少上下文噪音。
+`SkillToolGroup` 把一组 tool 绑定到某个 skillName —— agent 加载该 skill 时 tool group 自动激活，未加载时 tool 不出现在模型 schema 中，减少上下文噪音。
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -538,7 +538,7 @@ toolkit.createSkillToolGroup(
         "analysis-tools",                // group 名
         "Data analysis tools",           // 描述
         false,                           // 初始不激活
-        "data-analysis");                // 绑定的 skill name
+        "data-analysis");                // 绑定的 skillName
 
 // 2. 把 tool 注册到该 group
 toolkit.registration()

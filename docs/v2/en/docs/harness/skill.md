@@ -281,7 +281,7 @@ On each call, harness builds an `<available_skills>` block in the system prompt 
 <skill>
   <name>code-reviewer</name>
   <description>Use when the user asks for code review, style feedback, or PR audits.</description>
-  <skill-id>code-reviewer_workspace-namespaced</skill-id>
+  <skill-id>code-reviewer__s__workspace-namespaced</skill-id>
   <files-root>/workspace/skills/code-reviewer</files-root>
 </skill>
 ...
@@ -330,7 +330,7 @@ Marketplace skill resources start as in-memory bytes. For shell execution to wor
 
 Workspace skills (Layer 3 / Layer 4) need no staging — they already live in the workspace tree.
 
-If two repositories report the same `getSource()`, the second is auto-suffixed (`<source>_2`, `<source>_3`, …) with a warning log, so paths and skill-ids never collide.
+If two repositories report the same `getSource()`, the second is auto-suffixed (`<source>_2`, `<source>_3`, …) with a warning log, so paths and skill names never collide.
 
 ## Running skills in a sandbox
 

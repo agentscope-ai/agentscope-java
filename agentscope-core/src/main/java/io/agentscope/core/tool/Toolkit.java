@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -34,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -241,6 +243,13 @@ public class Toolkit {
             groupManager.addToolToGroup(groupName, toolName);
         }
 
+        // system = exempt from trimming; INFO audit trail, framework and business tools alike.
+        if (tool.isSystem()) {
+            logger.info(
+                    "Tool '{}' registered with system=true — exempt from grant-layer trimming",
+                    toolName);
+        }
+
         logger.info(
                 "Registered tool '{}' in group '{}'",
                 toolName,
@@ -366,7 +375,7 @@ public class Toolkit {
      * Updated to respect active tool groups.
      *
      * <p><b>Legacy single-session API:</b> resolves against the shared activation flags. Per-call
-     * paths use {@link #getToolSchemas(java.util.Collection, ToolRequestConfig)}.
+     * paths use {@link #getToolSchemas(java.util.Collection, ToolRequestConfig, CapabilitySurface)}.
      *
      * @return List of ToolSchema objects
      */
@@ -391,49 +400,208 @@ public class Toolkit {
     }
 
     /**
-     * Stateless compose: the backend registry filtered by {@code activeGroups}, then a per-call
-     * {@link ToolRequestConfig} applied without mutating the shared registry or group manager.
-     *
-     * <ol>
-     *   <li>In {@link ToolMergeMode#EXTERNAL_ONLY} the backend is hidden
-     *       entirely without deleting any registrations.
-     *   <li>Backend schemas whose names collide with an external tool are dropped (external tools
-     *       override the backend).
-     *   <li>External tool schemas are appended.
-     * </ol>
+     * Un-trimmed compose: the {@link #getToolSchemas(Collection, ToolRequestConfig,
+     * CapabilitySurface) 3-arg overload} with no surface. Package-private building block —
+     * not for model-visible schema synthesis.
      *
      * @param activeGroups the group names treated as active for this resolution
      * @param requestConfig per-call request config (may be {@code null} → {@link
      *     ToolRequestConfig#NONE})
      * @return the composed tool schemas
      */
-    public List<ToolSchema> getToolSchemas(
+    List<ToolSchema> getToolSchemas(
             Collection<String> activeGroups, ToolRequestConfig requestConfig) {
-        if (requestConfig == null) {
-            requestConfig = ToolRequestConfig.NONE;
-        }
-        boolean hideBackend = requestConfig.hidesBackend();
+        return getToolSchemas(activeGroups, requestConfig, null);
+    }
 
-        List<ToolSchema> schemas = new ArrayList<>();
-        if (!hideBackend) {
-            for (ToolSchema schema : schemaProvider.getToolSchemas(activeGroups)) {
-                if (!requestConfig.overrides(schema.getName())) {
-                    schemas.add(schema);
+    /**
+     * Grant-filtered compose: the backend registry filtered by {@code activeGroups}, then a
+     * per-call {@link ToolRequestConfig} applied without mutating the shared registry or group
+     * manager, then — when {@code surface} is present — grant-layer trimming.
+     *
+     * <ol>
+     *   <li>In {@link ToolMergeMode#EXTERNAL_ONLY} the backend is hidden
+     *       entirely without deleting any registrations.
+     *   <li>Backend schemas whose names collide with an external tool are dropped (external
+     *       tools override the backend); external tools are caller-controlled and never
+     *       grant-trimmed.
+     *   <li>With a surface, backend tools failing {@code surface.allowsTool} are dropped
+     *       (treated as non-existent) and the meta tool's {@code to_activate} enum and
+     *       description only present activatable groups.
+     * </ol>
+     *
+     * @param activeGroups the group names treated as active for this resolution
+     * @param requestConfig per-call request config (may be {@code null} → {@link
+     *     ToolRequestConfig#NONE})
+     * @param surface the per-request capability grant set; {@code null} = no trimming (direct,
+     *     trusted paths outside an agent call — the same stance as the execution gates)
+     * @return the composed tool schemas, grant-trimmed when a surface is given
+     */
+    public List<ToolSchema> getToolSchemas(
+            Collection<String> activeGroups,
+            ToolRequestConfig requestConfig,
+            CapabilitySurface surface) {
+        ToolRequestConfig config = requestConfig != null ? requestConfig : ToolRequestConfig.NONE;
+        // an external tool shadows its same-named backend row (its schema is appended below)
+        Stream<ToolSchema> backend =
+                config.hidesBackend()
+                        ? Stream.<ToolSchema>empty()
+                        : schemaProvider.getToolSchemas(activeGroups).stream()
+                                .filter(s -> !config.overrides(s.getName()))
+                                .filter(
+                                        s ->
+                                                surface == null
+                                                        || isToolGranted(s.getName(), surface));
+        List<ToolSchema> schemas =
+                Stream.concat(
+                                backend,
+                                config.externalTools().values().stream()
+                                        .map(Toolkit::externalToolSchema))
+                        .toList();
+        return surface != null ? rewriteMetaToolSchema(schemas, config, surface) : schemas;
+    }
+
+    /**
+     * @param toolName the backend tool name
+     * @param surface the per-request grant set (non-null)
+     * @return {@code true} when the tool passes the grant layer; a missing registry entry
+     *     counts as denied (trimmed = non-existent)
+     */
+    private boolean isToolGranted(String toolName, CapabilitySurface surface) {
+        AgentTool tool = toolRegistry.getTool(toolName);
+        return tool != null && surface.allowsTool(tool, groupManager.getGroupsOfTool(toolName));
+    }
+
+    /** Maps an external (schema-only) tool to its composed schema; never grant-trimmed. */
+    private static ToolSchema externalToolSchema(SchemaOnlyTool tool) {
+        return ToolSchema.builder()
+                .name(tool.getName())
+                .description(tool.getDescription())
+                .parameters(tool.getParameters())
+                .strict(tool.getStrict())
+                .deferLoading(tool.getDeferLoading())
+                .outputSchema(tool.getOutputSchema())
+                .build();
+    }
+
+    /**
+     * Post-processing for the reset_equipped_tools schema: both the to_activate enum and
+     * the description keep only activatable groups (the original description embeds the
+     * full group notes, so filtering the enum alone would still leak group names). Only
+     * called with a non-null surface (an absent surface skips trimming entirely). Only the
+     * framework's backend meta tool is rewritten: an external override of the same name is
+     * caller-controlled and passes through untouched.
+     *
+     * @param schemas the grant-filtered schemas to post-process
+     * @param config the per-call request config, for external-override detection
+     * @param surface the per-request grant set (never {@code null} here)
+     * @return schemas with the backend meta tool's enum and description rewritten
+     */
+    private List<ToolSchema> rewriteMetaToolSchema(
+            List<ToolSchema> schemas, ToolRequestConfig config, CapabilitySurface surface) {
+        return schemas.stream()
+                .map(
+                        s ->
+                                "reset_equipped_tools".equals(s.getName())
+                                                && !config.overrides(s.getName())
+                                        ? rewriteResetToolSchema(s, surface)
+                                        : s)
+                .toList();
+    }
+
+    /** Rebuilds one reset_equipped_tools schema from only the activatable groups. */
+    private ToolSchema rewriteResetToolSchema(ToolSchema schema, CapabilitySurface surface) {
+        List<String> activatable =
+                groupManager.getMetaGroupNames().stream()
+                        .filter(g -> isGroupActivatable(g, surface))
+                        .sorted()
+                        .toList();
+        // Omit the enum key when nothing is activatable (matches the empty-group behaviour).
+        return ToolSchema.builder()
+                .name(schema.getName())
+                .description(MetaToolFactory.baseDescription() + groupManager.getNotes(activatable))
+                .parameters(withFilteredToActivateEnum(schema, activatable))
+                .strict(schema.getStrict())
+                .deferLoading(schema.getDeferLoading())
+                .outputSchema(schema.getOutputSchema())
+                .build();
+    }
+
+    /**
+     * Whether a group may be activated via reset_equipped_tools.
+     *
+     * @param groupName the group name to check
+     * @param surface the per-request grant set
+     * @return {@code true} for system groups or groups granted by the surface
+     */
+    private boolean isGroupActivatable(String groupName, CapabilitySurface surface) {
+        ToolGroup group = groupManager.getToolGroup(groupName);
+        return group != null
+                && (group.isSystem()
+                        || surface.allowsToolGroupActivation(
+                                groupName, groupManager::getGroupsOfTool));
+    }
+
+    /**
+     * Deep-copies the parameter structure and replaces the {@code to_activate} enum with
+     * the filtered list; removes the enum key when empty. Never mutates the original
+     * schema's shared structures.
+     *
+     * @param schema the source schema
+     * @param activatable the activatable group names for the enum
+     * @return the copied parameters with the replaced enum
+     */
+    private static Map<String, Object> withFilteredToActivateEnum(
+            ToolSchema schema, List<String> activatable) {
+        Map<String, Object> parameters = deepCopyParameters(schema.getParameters());
+        Object propertiesObj = parameters.get("properties");
+        if (propertiesObj instanceof Map<?, ?> properties) {
+            Object toActivateObj = properties.get("to_activate");
+            if (toActivateObj instanceof Map<?, ?> toActivate) {
+                Object itemsObj = toActivate.get("items");
+                if (itemsObj instanceof Map<?, ?> items) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> itemsMutable = (Map<String, Object>) items;
+                    if (activatable.isEmpty()) {
+                        itemsMutable.remove("enum");
+                    } else {
+                        itemsMutable.put("enum", activatable);
+                    }
                 }
             }
         }
-        for (SchemaOnlyTool tool : requestConfig.externalTools().values()) {
-            schemas.add(
-                    ToolSchema.builder()
-                            .name(tool.getName())
-                            .description(tool.getDescription())
-                            .parameters(tool.getParameters())
-                            .strict(tool.getStrict())
-                            .deferLoading(tool.getDeferLoading())
-                            .outputSchema(tool.getOutputSchema())
-                            .build());
+        return parameters;
+    }
+
+    /** Deep copy of a JSON-schema-like map (nested maps and lists). */
+    private static Map<String, Object> deepCopyParameters(Map<String, Object> source) {
+        Map<String, Object> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : source.entrySet()) {
+            copy.put(entry.getKey(), deepCopySchemaValue(entry.getValue()));
         }
-        return schemas;
+        return copy;
+    }
+
+    /**
+     * @param value a schema value (map, list, or scalar)
+     * @return a deep copy for maps and lists, the value itself for scalars
+     */
+    private static Object deepCopySchemaValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> copy = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                copy.put(String.valueOf(entry.getKey()), deepCopySchemaValue(entry.getValue()));
+            }
+            return copy;
+        }
+        if (value instanceof List<?> list) {
+            List<Object> copy = new ArrayList<>(list.size());
+            for (Object item : list) {
+                copy.add(deepCopySchemaValue(item));
+            }
+            return copy;
+        }
+        return value;
     }
 
     /**
@@ -536,20 +704,19 @@ public class Toolkit {
     /**
      * Execute a tool with the given parameters.
      *
+     * <p>Direct execution entry: unlike an agent {@code call()} (which resolves the
+     * capability grant surface at its entry), this path bypasses grant resolution — a
+     * missing {@link CapabilitySurface} on the {@link RuntimeContext} means unrestricted.
+     * Place a surface ({@code rc.put(CapabilitySurface.class, surface)}) to have grants
+     * applied.
+     *
      * <p>Example usage:
      *
      * <pre>{@code
-     * // Simple call
      * ToolCallParam param = ToolCallParam.builder()
      *     .toolUseBlock(toolCall)
-     *     .build();
-     * toolkit.callTool(param);
-     *
-     * // With agent and context
-     * ToolCallParam param = ToolCallParam.builder()
-     *     .toolUseBlock(toolCall)
-     *     .agent(agent)
-     *     .context(context)
+     *     .agent(agent)          // optional
+     *     .runtimeContext(rc)    // optional; without a surface on it: unrestricted
      *     .build();
      * toolkit.callTool(param);
      * }</pre>
@@ -572,10 +739,14 @@ public class Toolkit {
      * applies execution config (timeout, retry) from multiple levels. The agent context is
      * merged with toolkit default context during tool execution.
      *
+     * <p>Direct execution bypasses grant resolution: a missing {@link CapabilitySurface} on
+     * the runtime context means unrestricted (backend tools are not trimmed).
+     *
      * @param toolCalls List of tool calls to execute
      * @param agentExecutionConfig Execution config from agent level (can be null)
      * @param agent The agent making the calls (may be null)
-     * @param agentRuntimeContext The agent-level runtime context (may be null)
+     * @param agentRuntimeContext The agent-level runtime context (may be {@code null}; a
+     *     missing surface is treated as unrestricted)
      * @return Mono containing list of tool responses
      */
     public Mono<List<ToolResultBlock>> callTools(
@@ -887,6 +1058,17 @@ public class Toolkit {
         return groupManager.getToolGroup(groupName);
     }
 
+    /**
+     * Group-membership lookup (delegates to {@link ToolGroupManager#getGroupsOfTool})
+     * for grant decisions ({@code CapabilitySurface.allowsTool}).
+     *
+     * @param toolName the tool name to look up
+     * @return the set of group names containing the tool; empty when ungrouped or unknown
+     */
+    public Set<String> getToolGroupsOf(String toolName) {
+        return groupManager.getGroupsOfTool(toolName);
+    }
+
     // ==================== Meta Tool Registration ====================
 
     /**
@@ -938,7 +1120,8 @@ public class Toolkit {
      *
      * <p>Per-call tool-surface variation is instead expressed via {@link ToolRequestConfig}
      * composition ({@link #getTool(String, ToolRequestConfig)} / {@link
-     * #getToolSchemas(java.util.Collection, ToolRequestConfig)}), never by copying a toolkit. This
+     * #getToolSchemas(java.util.Collection, ToolRequestConfig, CapabilitySurface)}), never by
+     * copying a toolkit. This
      * method exists for agent-construction isolation (e.g. the harness sub-agent factories), where
      * a fresh registry is needed to register workspace-bound tools without polluting the source.
      *

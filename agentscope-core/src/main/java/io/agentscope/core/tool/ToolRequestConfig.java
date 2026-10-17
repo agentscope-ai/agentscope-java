@@ -100,8 +100,8 @@ public record ToolRequestConfig(
     /**
      * Whether this config hides the backend registry entirely (request-scoped {@link
      * ToolMergeMode#EXTERNAL_ONLY}). Shared by {@link #resolveTool(String, ToolRegistry)}
-     * and {@link Toolkit#getToolSchemas(java.util.Collection, ToolRequestConfig)} so the policy
-     * cannot drift.
+     * and {@link Toolkit#getToolSchemas(java.util.Collection, ToolRequestConfig,
+     * io.agentscope.core.agent.CapabilitySurface)} so the policy cannot drift.
      */
     boolean hidesBackend() {
         return mergeMode == ToolMergeMode.EXTERNAL_ONLY;
@@ -110,8 +110,8 @@ public record ToolRequestConfig(
     /**
      * Whether {@code name} is shadowed by an external tool, which always overrides the backend
      * regardless of merge mode. Shared by {@link #resolveTool(String, ToolRegistry)}, the
-     * executor's availability gate, and {@link
-     * Toolkit#getToolSchemas(java.util.Collection, ToolRequestConfig)}.
+     * executor's availability gate, and {@link Toolkit#getToolSchemas(java.util.Collection,
+     * ToolRequestConfig, io.agentscope.core.agent.CapabilitySurface)}.
      */
     boolean overrides(String name) {
         return externalTools.containsKey(name);

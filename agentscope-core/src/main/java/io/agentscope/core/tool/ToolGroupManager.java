@@ -253,33 +253,50 @@ class ToolGroupManager {
      * @return Formatted string describing META-scoped tool groups
      */
     public String getNotes() {
+        return getNotes(toolGroups.keySet());
+    }
+
+    /**
+     * Notes restricted to the given group names (order follows the supplied collection),
+     * formatted the same way as the no-arg form — one {@code - name: description} entry per
+     * META-scoped group, grouped into active/inactive sections. Used by the grant layer to
+     * rebuild the {@code reset_equipped_tools} description from only the activatable groups,
+     * so names and descriptions of cut-off groups are not leaked to the model. The no-arg
+     * form delegates here with the full key set.
+     *
+     * @param groupNames the groups to include (unknown names are skipped)
+     * @return formatted notes restricted to the supplied groups
+     */
+    public String getNotes(Collection<String> groupNames) {
         StringBuilder activatedNotes = new StringBuilder("Activated tool groups:\n");
         StringBuilder inactiveNotes = new StringBuilder("Inactive tool groups:\n");
         boolean hasActivatedGroup = false;
         boolean hasInactiveGroup = false;
-        for (ToolGroup group : toolGroups.values()) {
-            if (group.getScope() != ToolGroupScope.META) {
-                continue;
-            }
-            if (group.isActive()) {
-                hasActivatedGroup = true;
-                activatedNotes.append(
-                        String.format("- %s: %s\n", group.getName(), group.getDescription()));
-            } else {
-                hasInactiveGroup = true;
-                inactiveNotes.append(
-                        String.format("- %s: %s\n", group.getName(), group.getDescription()));
+        if (groupNames != null) {
+            for (String groupName : groupNames) {
+                ToolGroup group = toolGroups.get(groupName);
+                // Unknown names and non-META scopes are invisible to the meta tool (same
+                // scope rule as the no-arg form, which delegates with the full key set).
+                if (group == null || group.getScope() != ToolGroupScope.META) {
+                    continue;
+                }
+                if (group.isActive()) {
+                    hasActivatedGroup = true;
+                    activatedNotes.append(
+                            String.format("- %s: %s\n", group.getName(), group.getDescription()));
+                } else {
+                    hasInactiveGroup = true;
+                    inactiveNotes.append(
+                            String.format("- %s: %s\n", group.getName(), group.getDescription()));
+                }
             }
         }
-
         if (!hasActivatedGroup) {
             activatedNotes.append("No tool groups are currently activated.\n");
         }
-
         if (!hasInactiveGroup) {
             inactiveNotes.append("No tool groups are currently inactive.\n");
         }
-
         activatedNotes.append(inactiveNotes);
         return activatedNotes.toString();
     }
@@ -291,7 +308,9 @@ class ToolGroupManager {
      * @throws IllegalArgumentException if group doesn't exist
      */
     public void validateGroupExists(String groupName) {
-        if (!toolGroups.containsKey(groupName)) {
+        // Null guard: a null entry must be rejected with the disguised not-found wording
+        // (model input may contain JSON nulls), not with a ConcurrentHashMap NPE.
+        if (groupName == null || !toolGroups.containsKey(groupName)) {
             throw new IllegalArgumentException(
                     String.format("Tool group '%s' does not exist", groupName));
         }
@@ -550,6 +569,22 @@ class ToolGroupManager {
      */
     public ToolGroup getToolGroup(String groupName) {
         return toolGroups.get(groupName);
+    }
+
+    /**
+     * Read-only snapshot of the groups containing {@code toolName}; empty when ungrouped.
+     * Group-membership lookup for grant decisions ({@code CapabilitySurface.allowsTool}).
+     *
+     * @param toolName the tool name to look up
+     * @return the set of group names containing the tool; never {@code null}, empty when
+     *     ungrouped or unknown
+     */
+    public Set<String> getGroupsOfTool(String toolName) {
+        if (toolName == null) {
+            return Set.of();
+        }
+        Set<String> groups = tools.get(toolName);
+        return groups != null ? Set.copyOf(groups) : Set.of();
     }
 
     /**

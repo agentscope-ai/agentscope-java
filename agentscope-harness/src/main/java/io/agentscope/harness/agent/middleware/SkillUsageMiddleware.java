@@ -81,7 +81,7 @@ public class SkillUsageMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * If {@code call} targets a SkillBox loader / user, extract the {@code skillId} parameter
+     * If {@code call} targets a SkillBox loader / user, extract the {@code skillName} parameter
      * (or fallback equivalents) and bump the right counter on the store. Failures are swallowed
      * — telemetry must never break the agent loop.
      */
@@ -115,7 +115,7 @@ public class SkillUsageMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Pulls the skill identifier out of a tool-use block. {@code skillId} is the canonical key
+     * Pulls the skill name out of a tool-use block. {@code skillName} is the canonical key
      * used by the SkillBox loader; {@code skill_id} / {@code name} are tolerated as fallbacks
      * for forward compatibility with potential renames.
      */

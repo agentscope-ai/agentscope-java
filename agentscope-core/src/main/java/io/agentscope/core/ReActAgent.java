@@ -18,6 +18,8 @@ package io.agentscope.core;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.AgentRun;
+import io.agentscope.core.agent.CapabilityResolver;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RunControl;
@@ -129,6 +131,7 @@ import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.shutdown.PartialReasoningPolicy;
+import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillFilter;
@@ -264,6 +267,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
     private final GenerateOptions generateOptions;
+
+    /**
+     * Resolves the per-request {@link CapabilitySurface} at each call entry and writes
+     * it to the rc; null = no trimming. Server-side only, never sourced from the
+     * caller-controlled ToolRequestConfig.
+     */
+    private final CapabilityResolver capabilityResolver;
 
     /**
      * Whether native structured-output responses are validated against the requested JSON Schema.
@@ -404,6 +414,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.generateOptions = builder.generateOptions;
+        this.capabilityResolver = builder.capabilityResolver;
         this.validateStructuredOutput = builder.validateStructuredOutput;
         this.toolExecutionContext = builder.toolExecutionContext;
         this.enablePendingToolRecovery = builder.enablePendingToolRecovery;
@@ -955,9 +966,92 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         ToolRequestConfig requestConfig = ctx.getToolRequestConfig();
         scope.toolRequestConfig = requestConfig != null ? requestConfig : ToolRequestConfig.NONE;
         scope.activeToolkit = this.toolkit;
+
+        // ==== Grant layer: capability surface, resolved server-side at call entry ====
+        // Independent of ToolRequestConfig (the caller-controlled external-tools channel);
+        // runs before the system prompt is assembled so skill filtering already sees it.
+        CapabilitySurface surface;
+        if (capabilityResolver != null) {
+            CapabilitySurface resolved;
+            try {
+                resolved = capabilityResolver.resolve(ctx, this);
+            } catch (RuntimeException e) {
+                // A throwing resolver is broken authorization infrastructure, not "no
+                // grants": abort the call (the Mono.defer wrapper turns this into a
+                // subscription-time error; run-control cleanup still runs). Developers
+                // wanting graceful degradation catch inside their resolver and return
+                // DENY_ALL themselves.
+                log.error(
+                        "CapabilityResolver failed; aborting the call (userId={}, agentId={})",
+                        ctx.getUserId(),
+                        getAgentId(),
+                        e);
+                throw e;
+            }
+            surface = resolved != null ? resolved : CapabilitySurface.ALLOW_ALL;
+        } else {
+            CapabilitySurface inherited = ctx.get(CapabilitySurface.class);
+            // No resolver: default to ALLOW_ALL only when the rc has no surface; keep
+            // inherited ones (sub-agents reuse the parent surface without re-resolving).
+            surface = inherited != null ? inherited : CapabilitySurface.ALLOW_ALL;
+        }
+        // Materialize activateOnSkill-bound groups of granted skills into the grant set.
+        // Idempotent: returns the same instance when nothing is added, so inherited
+        // surfaces are reused by reference across toolkits with identical bindings.
+        surface = expandSkillBoundGroups(surface, scope.activeToolkit);
+        if (ctx.get(CapabilitySurface.class) != surface) {
+            if (ctx.get(CapabilitySurface.class) != null) {
+                // SubAgentTool passes the parent rc instance: writing in place would
+                // pollute the parent chain. Write a derived copy and switch scope.rc
+                // (from() copies all typed attributes).
+                ctx = RuntimeContext.builder().from(ctx).build();
+                scope.rc = ctx;
+            }
+            ctx.put(CapabilitySurface.class, surface);
+        }
+
         scope.systemMsg = null;
         scope.interruption = control.interruption();
         return scope;
+    }
+
+    /**
+     * Materializes skill-bound tool groups into the grant set: every {@code
+     * SkillToolGroup} bound (activateOnSkill) to a granted skill joins {@code
+     * allowedToolGroups}. Mechanical enrichment done once at call entry — the surface
+     * stays pure data and every gate keeps consuming only the query methods.
+     *
+     * <p>Idempotent: returns the same instance when there is nothing to add, so
+     * sub-agent reference reuse is preserved when parent and child toolkits share the
+     * same bindings. Only a whitelist union is performed; groups bound to ungranted
+     * skills are ignored.
+     *
+     * @param surface the resolved or inherited grant set
+     * @param toolkit the agent's toolkit holding the skill bindings
+     * @return the enriched surface, or the same instance when nothing was added
+     */
+    private static CapabilitySurface expandSkillBoundGroups(
+            CapabilitySurface surface, Toolkit toolkit) {
+        Set<String> grantedSkills = surface.allowedSkills();
+        if (grantedSkills == null || grantedSkills.isEmpty()) {
+            return surface;
+        }
+        Set<String> boundGroups = new HashSet<>();
+        for (String entry : grantedSkills) {
+            // Entries may be bare names or qualified ids; bindings match by name.
+            boundGroups.addAll(
+                    toolkit.findSkillToolGroupsByActivateOnSkill(AgentSkill.parseSkillName(entry)));
+        }
+        if (boundGroups.isEmpty()) {
+            return surface;
+        }
+        Set<String> existing = surface.allowedToolGroups();
+        if (existing != null && existing.containsAll(boundGroups)) {
+            return surface;
+        }
+        Set<String> merged = new HashSet<>(existing != null ? existing : Set.of());
+        merged.addAll(boundGroups);
+        return new CapabilitySurface(surface.allowedSkills(), merged, surface.allowedTools());
     }
 
     /**
@@ -1587,7 +1681,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     List<String> activeGroups = scope.state.getToolContext().getActivatedGroups();
                     boolean hasTools =
                             !scope.activeToolkit
-                                    .getToolSchemas(activeGroups, scope.toolRequestConfig)
+                                    .getToolSchemas(
+                                            activeGroups,
+                                            scope.toolRequestConfig,
+                                            scope.rc.get(CapabilitySurface.class))
                                     .isEmpty();
                     boolean useNative =
                             hasTools
@@ -2851,7 +2948,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 List<ToolSchema> tools =
                                         activeToolkit.getToolSchemas(
                                                 state.getToolContext().getActivatedGroups(),
-                                                toolRequestConfig);
+                                                toolRequestConfig,
+                                                rc.get(CapabilitySurface.class));
                                 // Per-call structured-output tool: expose generate_response to the
                                 // model for this call only (not registered on the shared toolkit).
                                 if (soTool != null) {
@@ -5777,6 +5875,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private SkillFilter skillFilter;
         private boolean dynamicSkillsEnabled = true;
 
+        /** Computes the per-request grant set; null = no trimming (ALLOW_ALL at call entry). */
+        private CapabilityResolver capabilityResolver;
+
         /**
          * When true, {@link DynamicSkillMiddleware} toggles the prompt provider's code-execution
          * block (per-skill {@code <files-root>} listing + instructions). Off by default —
@@ -5813,6 +5914,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             copy.modelExecutionConfig = this.modelExecutionConfig;
             copy.toolExecutionConfig = this.toolExecutionConfig;
             copy.generateOptions = this.generateOptions;
+            copy.capabilityResolver = this.capabilityResolver;
             copy.validateStructuredOutput = this.validateStructuredOutput;
             copy.modelRequestPreparer = this.modelRequestPreparer;
             copy.actionObserver = this.actionObserver;
@@ -6037,7 +6139,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *
          * <p>When enabled, {@link #build()} registers a {@code todo_write} tool (operating on
          * {@link io.agentscope.core.state.AgentState#getTasksContext()} with full-list-replace
-         * semantics) and a {@link io.agentscope.core.middleware.TaskReminderMiddleware} that
+         * semantics) and a {@link TaskReminderMiddleware} that
          * re-surfaces the current list before every reasoning step. Default OFF.
          *
          * @param enabled true to enable the task list
@@ -6398,6 +6500,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
+         * Registers a capability resolver: run once per call entry; the resolved {@link
+         * io.agentscope.core.agent.CapabilitySurface} is carried on the {@link
+         * RuntimeContext} for the whole call chain. Sub-agents without their own
+         * resolver reuse the parent surface instance.
+         *
+         * <p>Only an all-null surface skips trimming; any explicit dimension makes the surface
+         * a complete grant enumeration (unset dimensions contribute no grants).
+         *
+         * <p>The rc is request-scoped: never share one instance across concurrent calls.
+         */
+        public Builder capabilityResolver(CapabilityResolver resolver) {
+            this.capabilityResolver = resolver;
+            return this;
+        }
+
+        /**
          * Enables the code-execution prompt block emitted by
          * {@link io.agentscope.core.skill.AgentSkillPromptProvider}. When on:
          * <ul>
@@ -6619,6 +6737,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 skillFilter != null ? skillFilter : SkillFilter.all(),
                                 skillCodeExecutionEnabled,
                                 skillWorkDir));
+            }
+
+            // The static skill path has no per-call visibility filtering: a resolver here
+            // would silently trim nothing. Log and disable it; use skillRepositories
+            // instead.
+            if (capabilityResolver != null
+                    && (skillBox != null
+                            || (!skillRepositories.isEmpty() && !dynamicSkillsEnabled))) {
+                log.error(
+                        "capabilityResolver is configured but the static skill path is active"
+                                + " (skillBox(...) or dynamicSkillsEnabled=false); skill-prompt"
+                                + " trimming is not supported on this path — resolver disabled"
+                                + " on this agent: top-level calls of this agent are untrimmed;"
+                                + " as a sub-agent, loading and execution stay gated under the"
+                                + " inherited surface, but the static skill prompt still"
+                                + " enumerates the full catalog. Use skillRepositories(...)"
+                                + " for per-call skill trimming.");
+                capabilityResolver = null;
             }
 
             // List.sort is stable: middlewares with equal order retain their registration order.

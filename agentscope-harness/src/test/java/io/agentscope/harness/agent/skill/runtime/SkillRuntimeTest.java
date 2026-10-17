@@ -69,7 +69,7 @@ class SkillRuntimeTest {
             HarnessSkillEntry b = HarnessSkillEntry.of(skill("beta", "src"), null);
             HarnessSkillEntry c = HarnessSkillEntry.of(skill("gamma", "src"), null);
             SkillCatalog cat = SkillCatalog.of(List.of(a, b, c));
-            assertEquals(List.of("alpha_src", "beta_src", "gamma_src"), cat.ids());
+            assertEquals(List.of("alpha__s__src", "beta__s__src", "gamma__s__src"), cat.ids());
         }
 
         @Test
@@ -78,7 +78,7 @@ class SkillRuntimeTest {
             HarnessSkillEntry aDup = HarnessSkillEntry.of(skill("alpha", "src"), null);
             SkillCatalog cat = SkillCatalog.of(List.of(a, aDup));
             assertEquals(1, cat.size());
-            assertSame(aDup.skill(), cat.get("alpha_src").skill());
+            assertSame(aDup.skill(), cat.get("alpha__s__src").skill());
         }
     }
 
@@ -159,7 +159,7 @@ class SkillRuntimeTest {
         void rendersSkillIdAndOmitsFilesRootWhenAbsent() {
             HarnessSkillEntry e = HarnessSkillEntry.of(skill("alpha", "wkspace"), null);
             String out = new SkillPromptBuilder().render(SkillCatalog.of(List.of(e)));
-            assertTrue(out.contains("<skill-id>alpha_wkspace</skill-id>"));
+            assertTrue(out.contains("<skill-id>alpha__s__wkspace</skill-id>"));
             // No actual <files-root>...</files-root> element rendered.
             // (The header text mentions "<files-root>" descriptively without a closing tag.)
             assertFalse(out.contains("</files-root>"));
@@ -199,8 +199,8 @@ class SkillRuntimeTest {
             SkillFilter only = SkillFilter.only("visible");
 
             String out = new SkillPromptBuilder().render(cat, only);
-            assertTrue(out.contains("<skill-id>visible_src</skill-id>"));
-            assertFalse(out.contains("<skill-id>hidden_src</skill-id>"));
+            assertTrue(out.contains("<skill-id>visible__s__src</skill-id>"));
+            assertFalse(out.contains("<skill-id>hidden__s__src</skill-id>"));
         }
 
         @Test
@@ -213,7 +213,7 @@ class SkillRuntimeTest {
         }
 
         @Test
-        void filterWithBareNameMatchesCompositeId() {
+        void filterBySkillNameMatchesEntry() {
             HarnessSkillEntry visible =
                     HarnessSkillEntry.of(
                             skill("host-forensics-client", "filesystem-agentscope_skills"), null);
@@ -227,9 +227,10 @@ class SkillRuntimeTest {
             String out = new SkillPromptBuilder().render(cat, only);
             assertTrue(
                     out.contains(
-                            "<skill-id>host-forensics-client_filesystem-agentscope_skills</skill-id>"));
+                            "<skill-id>host-forensics-client__s__filesystem-agentscope_skills</skill-id>"));
             assertFalse(
-                    out.contains("<skill-id>other-skill_filesystem-agentscope_skills</skill-id>"));
+                    out.contains(
+                            "<skill-id>other-skill__s__filesystem-agentscope_skills</skill-id>"));
         }
     }
 
@@ -249,9 +250,9 @@ class SkillRuntimeTest {
                             skillWith("alpha", "Alpha description.", "# Body line\n", null), null);
             r.install(SkillCatalog.of(List.of(e)), ctx, null);
 
-            ToolResultBlock res = invoke(r, ctx, "alpha_workspace", "SKILL.md");
+            ToolResultBlock res = invoke(r, ctx, "alpha__s__workspace", "SKILL.md");
             String text = textOf(res);
-            assertTrue(text.contains("Successfully loaded skill: alpha_workspace"));
+            assertTrue(text.contains("Successfully loaded skill: alpha__s__workspace"));
             assertTrue(text.contains("# Body line"));
         }
 
@@ -266,7 +267,7 @@ class SkillRuntimeTest {
                     HarnessSkillEntry.of(skillWith("alpha", "Alpha desc.", "# body", mem), lazy);
             r.install(SkillCatalog.of(List.of(e)), ctx, null);
 
-            String text = textOf(invoke(r, ctx, "alpha_workspace", "scripts/run.py"));
+            String text = textOf(invoke(r, ctx, "alpha__s__workspace", "scripts/run.py"));
             assertTrue(text.contains("in-memory-body"));
             assertFalse(text.contains("lazy-body"));
         }
@@ -280,7 +281,7 @@ class SkillRuntimeTest {
                     HarnessSkillEntry.of(skillWith("alpha", "Alpha desc.", "# body", null), lazy);
             r.install(SkillCatalog.of(List.of(e)), ctx, null);
 
-            String text = textOf(invoke(r, ctx, "alpha_workspace", "references/guide.md"));
+            String text = textOf(invoke(r, ctx, "alpha__s__workspace", "references/guide.md"));
             assertTrue(text.contains("from-fs"));
         }
 
@@ -294,7 +295,7 @@ class SkillRuntimeTest {
                     HarnessSkillEntry.of(skillWith("alpha", "Alpha desc.", "# body", mem), lazy);
             r.install(SkillCatalog.of(List.of(e)), ctx, null);
 
-            String err = errorOf(invoke(r, ctx, "alpha_workspace", "does-not-exist"));
+            String err = errorOf(invoke(r, ctx, "alpha__s__workspace", "does-not-exist"));
             assertTrue(err.contains("Resource not found"));
             assertTrue(err.contains("SKILL.md"));
             assertTrue(err.contains("references/a.md"));
@@ -328,11 +329,11 @@ class SkillRuntimeTest {
         }
 
         private ToolResultBlock invoke(
-                SkillRuntime r, RuntimeContext ctx, String skillId, String path) {
+                SkillRuntime r, RuntimeContext ctx, String skillName, String path) {
             ToolCallParam p =
                     ToolCallParam.builder()
                             .runtimeContext(ctx)
-                            .input(Map.of("skillId", skillId, "path", path))
+                            .input(Map.of("skillId", skillName, "path", path))
                             .build();
             return r.loadTool().callAsync(p).block();
         }
@@ -374,18 +375,20 @@ class SkillRuntimeTest {
             HarnessSkillEntry second = HarnessSkillEntry.of(skill("second", "src"), null);
             r.install(SkillCatalog.of(List.of(second)), secondCtx, tk);
 
-            assertEquals(List.of("first_src"), r.currentCatalog(firstCtx).ids());
-            assertEquals(List.of("second_src"), r.currentCatalog(secondCtx).ids());
+            assertEquals(List.of("first__s__src"), r.currentCatalog(firstCtx).ids());
+            assertEquals(List.of("second__s__src"), r.currentCatalog(secondCtx).ids());
             assertTrue(
-                    textOf(invoke(r, firstCtx, "first_src", "SKILL.md"))
+                    textOf(invoke(r, firstCtx, "first__s__src", "SKILL.md"))
                             .contains("Successfully loaded skill"));
             assertTrue(
-                    errorOf(invoke(r, firstCtx, "second_src", "SKILL.md")).contains("not found"));
+                    errorOf(invoke(r, firstCtx, "second__s__src", "SKILL.md"))
+                            .contains("not found"));
             assertTrue(
-                    textOf(invoke(r, secondCtx, "second_src", "SKILL.md"))
+                    textOf(invoke(r, secondCtx, "second__s__src", "SKILL.md"))
                             .contains("Successfully loaded skill"));
             assertTrue(
-                    errorOf(invoke(r, secondCtx, "first_src", "SKILL.md")).contains("not found"));
+                    errorOf(invoke(r, secondCtx, "first__s__src", "SKILL.md"))
+                            .contains("not found"));
 
             // Both contexts use the same stateless registered tool instance.
             assertSame(r.loadTool(), tk.getTool(SkillLoadTool.TOOL_NAME));
@@ -410,25 +413,25 @@ class SkillRuntimeTest {
                 Future<Boolean> first =
                         executor.submit(
                                 () ->
-                                        textOf(invoke(r, firstCtx, "first_src", "SKILL.md"))
+                                        textOf(invoke(r, firstCtx, "first__s__src", "SKILL.md"))
                                                         .contains("Successfully loaded skill")
                                                 && errorOf(
                                                                 invoke(
                                                                         r,
                                                                         firstCtx,
-                                                                        "second_src",
+                                                                        "second",
                                                                         "SKILL.md"))
                                                         .contains("not found"));
                 Future<Boolean> second =
                         executor.submit(
                                 () ->
-                                        textOf(invoke(r, secondCtx, "second_src", "SKILL.md"))
+                                        textOf(invoke(r, secondCtx, "second__s__src", "SKILL.md"))
                                                         .contains("Successfully loaded skill")
                                                 && errorOf(
                                                                 invoke(
                                                                         r,
                                                                         secondCtx,
-                                                                        "first_src",
+                                                                        "first",
                                                                         "SKILL.md"))
                                                         .contains("not found"));
 
@@ -447,12 +450,12 @@ class SkillRuntimeTest {
 
             r.install(SkillCatalog.of(List.of(legacy)), tk);
 
-            assertEquals(List.of("legacy_src"), r.currentCatalog().ids());
+            assertEquals(List.of("legacy__s__src"), r.currentCatalog().ids());
             assertTrue(
-                    textOf(invoke(r, null, "legacy_src", "SKILL.md"))
+                    textOf(invoke(r, null, "legacy__s__src", "SKILL.md"))
                             .contains("Successfully loaded skill"));
             assertTrue(
-                    errorOf(invoke(r, RuntimeContext.empty(), "legacy_src", "SKILL.md"))
+                    errorOf(invoke(r, RuntimeContext.empty(), "legacy__s__src", "SKILL.md"))
                             .contains("not found"));
         }
 
@@ -462,7 +465,7 @@ class SkillRuntimeTest {
             AtomicReference<SkillCatalog> ref =
                     new AtomicReference<>(SkillCatalog.of(List.of(legacy)));
             SkillLoadTool tool = new SkillLoadTool(ref);
-            Map<String, Object> input = Map.of("skillId", "legacy_src", "path", "SKILL.md");
+            Map<String, Object> input = Map.of("skillId", "legacy__s__src", "path", "SKILL.md");
 
             ToolResultBlock contextFree =
                     tool.callAsync(ToolCallParam.builder().input(input).build()).block();
@@ -479,12 +482,12 @@ class SkillRuntimeTest {
         }
 
         private ToolResultBlock invoke(
-                SkillRuntime r, RuntimeContext ctx, String skillId, String path) {
+                SkillRuntime r, RuntimeContext ctx, String skillName, String path) {
             return r.loadTool()
                     .callAsync(
                             ToolCallParam.builder()
                                     .runtimeContext(ctx)
-                                    .input(Map.of("skillId", skillId, "path", path))
+                                    .input(Map.of("skillId", skillName, "path", path))
                                     .build())
                     .block();
         }
