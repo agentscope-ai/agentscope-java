@@ -41,7 +41,8 @@ import reactor.core.scheduler.Schedulers;
  * a pure local disk backend remains single-process.
  *
  * <p>Mode D (pub/sub) is degraded to polling: {@link #subscribe} returns a {@code Flux} that emits
- * an empty signal every 3 seconds; {@link #publish} is a no-op.
+ * an empty signal every 3 seconds by default (configurable via constructor); {@link #publish} is a
+ * no-op.
  *
  * <p>File layout under {@code busRoot}:
  * <pre>
@@ -56,10 +57,11 @@ public class WorkspaceMessageBus implements MessageBus {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceMessageBus.class);
     private static final RuntimeContext RC = RuntimeContext.empty();
-    private static final Duration POLL_INTERVAL = Duration.ofSeconds(3);
+    private static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(3);
 
     private final AbstractFilesystem fs;
     private final String busRoot;
+    private final Duration pollInterval;
     private final AtomicLong seq = new AtomicLong(System.nanoTime());
 
     /**
@@ -67,8 +69,23 @@ public class WorkspaceMessageBus implements MessageBus {
      * @param busRoot    absolute path within the filesystem for bus data (e.g. {@code "/bus"})
      */
     public WorkspaceMessageBus(AbstractFilesystem filesystem, String busRoot) {
+        this(filesystem, busRoot, DEFAULT_POLL_INTERVAL);
+    }
+
+    /**
+     * @param filesystem   any {@link AbstractFilesystem} implementation
+     * @param busRoot      absolute path within the filesystem for bus data (e.g. {@code "/bus"})
+     * @param pollInterval interval between {@link #subscribe} heartbeat ticks; tests pass a small
+     *     value so signal-driven waiting does not pay the production 3s granularity
+     */
+    public WorkspaceMessageBus(
+            AbstractFilesystem filesystem, String busRoot, Duration pollInterval) {
         this.fs = filesystem;
         this.busRoot = busRoot.endsWith("/") ? busRoot.substring(0, busRoot.length() - 1) : busRoot;
+        this.pollInterval =
+                pollInterval == null || pollInterval.isZero() || pollInterval.isNegative()
+                        ? DEFAULT_POLL_INTERVAL
+                        : pollInterval;
     }
 
     // ---- Mode A: drain queue ----
@@ -216,7 +233,7 @@ public class WorkspaceMessageBus implements MessageBus {
 
     @Override
     public Flux<Map<String, Object>> subscribe(String key) {
-        return Flux.interval(POLL_INTERVAL, Schedulers.boundedElastic())
+        return Flux.interval(pollInterval, Schedulers.boundedElastic())
                 .map(tick -> Map.<String, Object>of());
     }
 

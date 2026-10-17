@@ -19,6 +19,7 @@ package io.agentscope.extensions.model.ollama.options;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.util.JsonUtils;
@@ -390,6 +391,16 @@ public class OllamaOptions {
         // Map thinking budget to enable thinking if budget > 0
         if (genOptions.getThinkingBudget() != null && genOptions.getThinkingBudget() > 0) {
             builder.thinkOption(ThinkOption.ThinkBoolean.ENABLED);
+        }
+
+        ResponseFormat responseFormat = genOptions.getResponseFormat();
+        if (responseFormat != null) {
+            if ("json_schema".equals(responseFormat.getType())) {
+                // Ollama expects the schema itself, without the OpenAI response-format wrapper.
+                builder.format(responseFormat.getJsonSchema().getSchema());
+            } else if ("json_object".equals(responseFormat.getType())) {
+                builder.format("json");
+            }
         }
 
         // Map additional parameters from map

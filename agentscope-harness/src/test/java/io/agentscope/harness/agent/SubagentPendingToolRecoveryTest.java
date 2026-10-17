@@ -71,7 +71,11 @@ class SubagentPendingToolRecoveryTest {
     private static final String CALL_ID = "interrupted-call";
     private static final RuntimeContext CONTEXT =
             RuntimeContext.builder().userId("user").sessionId("child-session").build();
-    private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    // One child call serializes ~30 SQLite journal commits (connection-per-op, DELETE journal,
+    // synchronous=EXTRA). Windows CI's parallel builds plus real-time AV scans of the fresh
+    // -journal files can stall those fsyncs past 10s — the same budget as SQLite's own busy
+    // timeout, leaving no headroom. 30s keeps the guards intact with CI-grade headroom.
+    private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
     @TempDir Path workspace;
 
