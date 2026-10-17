@@ -1395,6 +1395,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         SkillCuratorConfig skillCuratorConfig;
         io.agentscope.core.skill.SkillFilter skillFilter;
         PermissionContextState permissionContextOverride;
+        boolean permissionRulesAuthoritative = false;
 
         boolean planModeEnabled = false;
         boolean planModeAllowShell = false;
@@ -1892,6 +1893,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
         public Builder permissionContext(PermissionContextState permissionContext) {
             this.permissionContextOverride = permissionContext;
             inner.permissionContext(permissionContext);
+            return this;
+        }
+
+        /**
+         * Makes the rules declared through {@link #permissionContext(PermissionContextState)}
+         * authoritative on every call. See {@link
+         * io.agentscope.core.ReActAgent.Builder#permissionRulesAuthoritative(boolean)}.
+         *
+         * @param authoritative true to make the declared rules authoritative on every call
+         * @return This builder instance for method chaining
+         */
+        public Builder permissionRulesAuthoritative(boolean authoritative) {
+            this.permissionRulesAuthoritative = authoritative;
+            inner.permissionRulesAuthoritative(authoritative);
             return this;
         }
 

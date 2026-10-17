@@ -214,6 +214,33 @@ ConfirmResult result =
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/PermissionContextExample.java`、`hitl/PermissionHITLExample.java`。
 
+### 规则变更与已存在的会话
+
+初始化时传入的规则只在**会话槽位首次创建时**生效：该上下文被复制进会话的 `AgentState`，之后每次调用都从这份副本重建引擎。因此在持久化会话的部署里（Redis、JDBC、JSON 文件），代码里改动的规则**到不了已存在的会话**：
+
+- 从 `ALLOW` 改为 `ASK` 的工具会继续免确认执行，新增的 `DENY` 也不会生效，直到会话被重建。
+- 后续版本新增并配了 `ALLOW` 的工具，在老会话里仍会弹确认。
+
+设置 `permissionRulesAuthoritative(true)` 可让声明的规则在每次调用都生效：
+
+```java
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model(model)
+                .permissionContext(permCtx)
+                .permissionRulesAuthoritative(true)
+                .build();
+```
+
+开启后，引擎会以声明的规则构成**声明过的每一个工具**；会话自己的规则**只对声明里没提到的工具**保留 —— 这正是「陈旧的持久化 `ALLOW` 无法放宽更新的 `ASK`/`DENY`」的依据。会话的 mode 与工作目录仍以会话为准，因此 `setPermissionMode` 照常生效。
+
+持久化的内容没有任何变化，现有 store 保持可读；没有开启该选项的 agent 行为与之前**完全一致**。
+
+<Note>
+运行时通过 `ConfirmResult` 接受的规则只写进当前引擎、不会被持久化，因此跨不过下一次调用 —— 这一点不受本选项影响，另行跟进。
+</Note>
+
 ## Built-in Checks
 
 每个 tool 都实现了一个 `checkPermissions(toolInput, context)` 方法（位于 `ToolBase`），在运行时基于真实调用入参执行检查，返回 `Mono<PermissionDecision>`。这些检查不可绕过 —— 无论 mode 或 rules 是什么，它们都生效。

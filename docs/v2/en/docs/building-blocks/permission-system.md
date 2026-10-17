@@ -215,6 +215,33 @@ ConfirmResult result =
 
 Runnable examples: `agentscope-examples/documentation/.../tool/PermissionContextExample.java`, `hitl/PermissionHITLExample.java`.
 
+### Rule changes and existing sessions
+
+Rules passed at init time reach a session **when its slot is first created**: the context is copied into the session's `AgentState`, and later calls rebuild the engine from that copy. On a deployment that persists sessions (Redis, JDBC, a JSON file), a rule changed in code therefore does not reach sessions that already exist.
+
+- A tool moved from `ALLOW` to `ASK` keeps running without confirmation, and a newly added `DENY` is not enforced, for as long as the session lives.
+- A tool added in a later release, with an `ALLOW` rule, keeps asking in existing sessions.
+
+Set `permissionRulesAuthoritative(true)` to make the declared rules apply on every call:
+
+```java
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model(model)
+                .permissionContext(permCtx)
+                .permissionRulesAuthoritative(true)
+                .build();
+```
+
+With it enabled, the engine is composed from the declared rules for every tool the declaration mentions, so a tightened rule takes effect on the next call. The session keeps its own rules **only for the tools the declaration says nothing about**, which is what keeps a stale persisted `ALLOW` from relaxing a newer `ASK` or `DENY`. The session's mode and working directories are still the session's, so `setPermissionMode` continues to apply.
+
+Nothing about what is persisted changes, so existing stores stay readable, and an agent that does not set this keeps its previous behaviour exactly.
+
+<Note>
+`ConfirmResult` rules accepted at runtime are written into the live engine only and are not persisted, so they do not survive the next call — that is unchanged by this option and tracked separately.
+</Note>
+
 ## Built-in checks
 
 Every tool implements `checkPermissions(toolInput, context)` (on `ToolBase`) — a runtime check on the actual input that returns `Mono<PermissionDecision>`. These checks cannot be bypassed: they apply regardless of mode or rules.
