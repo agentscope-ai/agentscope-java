@@ -112,9 +112,10 @@ final class E2bPlatformHttp {
                 () -> {
                     try (Response res = http.newCall(req).execute()) {
                         if (!res.isSuccessful() && res.code() != 404) {
-                            throw new SandboxException.SandboxRuntimeException(
+                            throw new PlatformHttpException(
                                     SandboxErrorCode.SNAPSHOT_PERSIST_ERROR,
-                                    "E2B snapshot delete failed: HTTP " + res.code());
+                                    "E2B snapshot delete failed: HTTP " + res.code(),
+                                    res.code());
                         }
                     }
                     return null;
@@ -169,9 +170,10 @@ final class E2bPlatformHttp {
                         .build();
         try (Response res = http.newCall(req).execute()) {
             if (!res.isSuccessful() && res.code() != 404) {
-                throw new SandboxException.SandboxRuntimeException(
+                throw new PlatformHttpException(
                         SandboxErrorCode.WORKSPACE_START_ERROR,
-                        "E2B delete failed: HTTP " + res.code());
+                        "E2B delete failed: HTTP " + res.code(),
+                        res.code());
             }
         }
     }
@@ -203,9 +205,10 @@ final class E2bPlatformHttp {
         try (Response res = http.newCall(rb.build()).execute()) {
             String text = res.body() != null ? res.body().string() : "";
             if (!res.isSuccessful()) {
-                throw new SandboxException.SandboxRuntimeException(
+                throw new PlatformHttpException(
                         SandboxErrorCode.WORKSPACE_START_ERROR,
-                        "E2B HTTP " + res.code() + ": " + text);
+                        "E2B HTTP " + res.code() + ": " + text,
+                        res.code());
             }
             if (text.isBlank()) {
                 return json.createObjectNode();
@@ -220,6 +223,20 @@ final class E2bPlatformHttp {
                     "E2B API key is required (E2bSandboxClientOptions#setApiKey)");
         }
         return opt.getApiKey();
+    }
+
+    static final class PlatformHttpException extends SandboxException.SandboxRuntimeException {
+
+        private final int statusCode;
+
+        PlatformHttpException(SandboxErrorCode errorCode, String message, int statusCode) {
+            super(errorCode, message);
+            this.statusCode = statusCode;
+        }
+
+        int statusCode() {
+            return statusCode;
+        }
     }
 
     /** Blank base URL means the E2B cloud default; a trailing slash is dropped for path joins. */
