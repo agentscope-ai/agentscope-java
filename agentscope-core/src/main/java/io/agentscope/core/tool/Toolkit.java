@@ -274,6 +274,25 @@ public class Toolkit {
     }
 
     /**
+     * Whether a registered backend tool is inactive for this call.
+     *
+     * <p>Same gate as {@link ToolExecutor}: external overrides are always callable, and an unknown
+     * name is not treated as unavailable. The permission pre-gate uses this so an inactive tool
+     * keeps the unauthorized result instead of a schema error. Not a stable filter for callers
+     * outside that pre-gate; the executor remains the source of the check.
+     *
+     * @param toolName tool name
+     * @param requestConfig per-call request config (may be null)
+     * @param activeGroups per-session active groups (null falls back to shared flags)
+     * @return true when the executor would reject the call as unavailable
+     */
+    public boolean isBackendToolUnavailable(
+            String toolName, ToolRequestConfig requestConfig, Collection<String> activeGroups) {
+        return ToolExecutor.isBackendToolUnavailable(
+                toolRegistry, groupManager, toolName, requestConfig, activeGroups);
+    }
+
+    /**
      * Gets the names of all registered tools.
      *
      * @return A set of all tool names (never null, may be empty)

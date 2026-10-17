@@ -58,6 +58,58 @@ public final class ToolValidator {
         // Utility class
     }
 
+    /**
+     * Arguments string both the permission pre-gate and {@link ToolExecutor} validate.
+     *
+     * <p>Raw {@link ToolUseBlock#getContent()} wins when it carries arguments, so a malformed
+     * content string is still rejected. Missing content, and the accumulator's empty {@code "{}"}
+     * placeholder, fall back to the input map. That is the map {@link ToolExecutor} later invokes,
+     * and both checks call this helper so they cannot disagree. A call with no content and an empty
+     * input map returns {@code "{}"} so schema validation sees an empty object instead of a null
+     * string.
+     *
+     * @param toolUse the proposed tool call
+     * @return the string to validate, or null when the block itself is null
+     */
+    public static String resolveArgsForValidation(ToolUseBlock toolUse) {
+        if (toolUse == null) {
+            return null;
+        }
+        String content = toolUse.getContent();
+        if (hasArgumentContent(content)) {
+            return content;
+        }
+        Map<String, Object> input = toolUse.getInput();
+        if (input == null || input.isEmpty()) {
+            return "{}";
+        }
+        try {
+            return JsonUtils.getJsonCodec().toJson(input);
+        } catch (Exception ignored) {
+            return content == null || content.isBlank() ? "{}" : content;
+        }
+    }
+
+    /**
+     * True when content is a real argument payload, not blank and not the empty-object placeholder.
+     */
+    private static boolean hasArgumentContent(String content) {
+        if (content == null || content.isBlank()) {
+            return false;
+        }
+        return !"{}".equals(content.trim());
+    }
+
+    /**
+     * Message {@link ToolExecutor} returns when a registered backend tool is in an inactive group.
+     *
+     * @param toolName tool name
+     * @return the unauthorized-tool error text
+     */
+    public static String unavailableToolMessage(String toolName) {
+        return String.format("Unauthorized tool call: '%s' is not available", toolName);
+    }
+
     // ==================== Schema Validation ====================
 
     /**

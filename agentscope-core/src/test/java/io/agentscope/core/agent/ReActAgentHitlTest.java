@@ -40,6 +40,8 @@ import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -50,10 +52,12 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -119,6 +123,19 @@ class ReActAgentHitlTest {
         return ChatResponse.builder().content(List.copyOf(toolUses)).build();
     }
 
+    private static ChatResponse toolUseWithContent(String toolId, String toolName, String content) {
+        return ChatResponse.builder()
+                .content(
+                        List.<ContentBlock>of(
+                                ToolUseBlock.builder()
+                                        .id(toolId)
+                                        .name(toolName)
+                                        .input(Map.of())
+                                        .content(content)
+                                        .build()))
+                .build();
+    }
+
     private static final class AskingTool extends ToolBase {
         AskingTool(String name) {
             super(name, "asks for permission", schemaFor(), false, true, false, null, false, false);
@@ -145,6 +162,47 @@ class ReActAgentHitlTest {
         public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
             Object q = param.getInput() == null ? "" : param.getInput().get("query");
             return Mono.just(ToolResultBlock.text("executed:" + q));
+        }
+    }
+
+    private static final class CountingAskTool extends ToolBase {
+        private final AtomicInteger permissionChecks = new AtomicInteger();
+        private final AtomicInteger executions = new AtomicInteger();
+
+        CountingAskTool() {
+            super(
+                    "ask_scope",
+                    "asks for permission",
+                    requiredScopeSchema(),
+                    false,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+        }
+
+        private static Map<String, Object> requiredScopeSchema() {
+            Map<String, Object> schema = new HashMap<>();
+            schema.put("type", "object");
+            Map<String, Object> props = new HashMap<>();
+            props.put("scope", Map.of("type", "string"));
+            schema.put("properties", props);
+            schema.put("required", List.of("scope"));
+            return schema;
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> toolInput, PermissionContextState context) {
+            permissionChecks.incrementAndGet();
+            return Mono.just(PermissionDecision.ask("ask: " + getName()));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            executions.incrementAndGet();
+            return Mono.just(ToolResultBlock.text("executed"));
         }
     }
 
@@ -264,6 +322,13 @@ class ReActAgentHitlTest {
                 .textContent("[confirm]")
                 .metadata(meta)
                 .build();
+    }
+
+    private static List<String> toolResultIds(ReActAgent agent) {
+        return agent.getAgentState().getContext().stream()
+                .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                .map(ToolResultBlock::getId)
+                .toList();
     }
 
     private static String toolResultText(ToolResultBlock tr) {
@@ -932,5 +997,352 @@ class ReActAgentHitlTest {
                 "Permission denied by user",
                 toolResultText(deniedResult),
                 "default denial text must be preserved for backward compatibility");
+    }
+
+    @Test
+    void invalidAskCallReturnsSchemaErrorWithoutConfirmation() {
+        assertSchemaErrorWithoutConfirmation("{}", "scope");
+    }
+
+    @Test
+    void wrongTypeAskCallReturnsSchemaErrorWithoutConfirmation() {
+        assertSchemaErrorWithoutConfirmation("{\"scope\":{\"x\":1}}", "scope");
+    }
+
+    @Test
+    void mixedBatchAsksOnlyForTheSchemaValidCall() {
+        CountingAskTool invalidTool = new CountingAskTool();
+        AskingTool validTool = new AskingTool("ask");
+        ToolUseBlock invalid =
+                ToolUseBlock.builder()
+                        .id("bad")
+                        .name("ask_scope")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+        Map<String, Object> input = new HashMap<>();
+        input.put("query", "x");
+        ToolUseBlock valid = ToolUseBlock.builder().id("good").name("ask").input(input).build();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse(List.of(invalid, valid)))));
+        ReActAgent agent = buildAgent(model, toolkitWith(invalidTool, validTool));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+        int iReq = indexOf(events, RequireUserConfirmEvent.class);
+        assertTrue(iReq >= 0, "the valid call must still ask");
+        RequireUserConfirmEvent req = (RequireUserConfirmEvent) events.get(iReq);
+        assertEquals(1, req.getToolCalls().size());
+        assertEquals("good", req.getToolCalls().get(0).getId());
+        assertEquals(0, invalidTool.permissionChecks.get());
+        assertEquals(0, invalidTool.executions.get());
+
+        String error =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "bad".equals(tr.getId()))
+                        .map(ReActAgentHitlTest::toolResultText)
+                        .findFirst()
+                        .orElse("");
+        assertTrue(
+                error.startsWith("Error: Parameter validation failed for tool 'ask_scope'"), error);
+    }
+
+    @Test
+    void mixedNonHitlBatchPersistsSchemaErrorBeforeAllowedResult() {
+        CountingAskTool invalidTool = new CountingAskTool();
+        AllowingTool allow = new AllowingTool("allow");
+        ToolUseBlock invalid =
+                ToolUseBlock.builder()
+                        .id("bad")
+                        .name("ask_scope")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+        Map<String, Object> input = new HashMap<>();
+        input.put("query", "x");
+        ToolUseBlock valid = ToolUseBlock.builder().id("good").name("allow").input(input).build();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse(List.of(invalid, valid))),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(invalidTool, allow));
+
+        Msg result = agent.call(List.of()).block();
+        assertNotNull(result);
+        assertNotEquals(GenerateReason.PERMISSION_ASKING, result.getGenerateReason());
+        assertEquals(0, invalidTool.permissionChecks.get());
+        assertEquals(0, invalidTool.executions.get());
+
+        List<String> ids = toolResultIds(agent);
+        int bad = ids.indexOf("bad");
+        int good = ids.indexOf("good");
+        assertTrue(
+                bad >= 0 && good > bad,
+                "schema error must be persisted before the allowed result: " + ids);
+        assertEquals(1, ids.stream().filter("bad"::equals).count());
+
+        String error =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "bad".equals(tr.getId()))
+                        .map(ReActAgentHitlTest::toolResultText)
+                        .findFirst()
+                        .orElse("");
+        assertTrue(
+                error.startsWith("Error: Parameter validation failed for tool 'ask_scope'"), error);
+    }
+
+    @Test
+    void mixedBatchResumeDoesNotReaskOrReexecuteInvalidCall() {
+        CountingAskTool invalidTool = new CountingAskTool();
+        AskingTool validTool = new AskingTool("ask");
+        ToolUseBlock invalid =
+                ToolUseBlock.builder()
+                        .id("bad")
+                        .name("ask_scope")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+        Map<String, Object> input = new HashMap<>();
+        input.put("query", "x");
+        ToolUseBlock valid = ToolUseBlock.builder().id("good").name("ask").input(input).build();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse(List.of(invalid, valid))),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(invalidTool, validTool));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        assertEquals(GenerateReason.PERMISSION_ASKING, first.getGenerateReason());
+        ToolUseBlock pending =
+                first.getContentBlocks(ToolUseBlock.class).stream()
+                        .filter(t -> t.getState() == ToolCallState.ASKING)
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(pending);
+        assertEquals("good", pending.getId());
+
+        Msg second = agent.call(List.of(confirmMsg(true, pending))).block();
+        assertNotNull(second);
+        assertNotEquals(GenerateReason.PERMISSION_ASKING, second.getGenerateReason());
+        assertEquals(0, invalidTool.permissionChecks.get());
+        assertEquals(0, invalidTool.executions.get());
+
+        long badResults =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "bad".equals(tr.getId()))
+                        .count();
+        assertEquals(1, badResults, "invalid call must keep exactly one result after resume");
+    }
+
+    @Test
+    void inactiveGroupInvalidCallReturnsUnavailableNotSchemaError() {
+        CountingAskTool tool = new CountingAskTool();
+        Toolkit toolkit = new Toolkit();
+        toolkit.createToolGroup("hidden", "hidden tools", false);
+        toolkit.registerAgentTool(tool);
+        toolkit.addToolToGroup("hidden", "ask_scope");
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseWithContent("tc1", "ask_scope", "{}")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkit);
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+        assertEquals(
+                -1,
+                indexOf(events, RequireUserConfirmEvent.class),
+                "an inactive tool must not ask for confirmation");
+        assertEquals(0, tool.permissionChecks.get());
+        assertEquals(0, tool.executions.get());
+
+        String error =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .map(ReActAgentHitlTest::toolResultText)
+                        .findFirst()
+                        .orElse("");
+        assertTrue(error.contains("Unauthorized tool call: 'ask_scope' is not available"), error);
+        assertFalse(error.contains("Parameter validation failed"), error);
+    }
+
+    @Test
+    void inputMapOnlyCallWithRequiredSchemaStillAsks() {
+        CountingAskTool tool = new CountingAskTool();
+        Map<String, Object> input = new HashMap<>();
+        input.put("scope", "prod");
+        ToolUseBlock call = ToolUseBlock.builder().id("tc1").name("ask_scope").input(input).build();
+        ChatModelBase model =
+                new ScriptedModel(List.of(() -> Flux.just(toolUseResponse(List.of(call)))));
+        ReActAgent agent = buildAgent(model, toolkitWith(tool));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+        int iReq = indexOf(events, RequireUserConfirmEvent.class);
+        assertTrue(iReq >= 0, "input-map arguments must still reach the permission gate");
+        RequireUserConfirmEvent req = (RequireUserConfirmEvent) events.get(iReq);
+        assertEquals(1, req.getToolCalls().size());
+        assertEquals("tc1", req.getToolCalls().get(0).getId());
+        assertEquals(1, tool.permissionChecks.get());
+        assertEquals(0, tool.executions.get());
+    }
+
+    @Test
+    void schemaErrorResultIsWrittenOnceWhenActingBatchErrors() {
+        CountingAskTool invalidTool = new CountingAskTool();
+        HangingAllowTool allow = new HangingAllowTool();
+        ToolUseBlock invalid =
+                ToolUseBlock.builder()
+                        .id("bad")
+                        .name("ask_scope")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+        Map<String, Object> input = new HashMap<>();
+        input.put("query", "x");
+        ToolUseBlock valid = ToolUseBlock.builder().id("good").name("allow").input(input).build();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse(List.of(invalid, valid))),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(invalidTool, allow))
+                        .middlewares(List.of(new FailActingAfterAllowedStart()))
+                        .build();
+
+        assertThrows(Exception.class, () -> agent.call(List.of()).block(Duration.ofSeconds(8)));
+
+        long badResults =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "bad".equals(tr.getId()))
+                        .count();
+        assertEquals(1, badResults, "an acting error must keep exactly one schema result");
+        String error =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "bad".equals(tr.getId()))
+                        .map(ReActAgentHitlTest::toolResultText)
+                        .findFirst()
+                        .orElse("");
+        assertTrue(
+                error.startsWith("Error: Parameter validation failed for tool 'ask_scope'"), error);
+    }
+
+    /**
+     * Errors the acting stream once the allowed call has started, so the schema-error write runs
+     * on the non-complete path instead of notifyPostActingHook.
+     */
+    private static final class FailActingAfterAllowedStart implements MiddlewareBase {
+        @Override
+        public Flux<AgentEvent> onActing(
+                io.agentscope.core.agent.Agent agent,
+                io.agentscope.core.agent.RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
+            return next.apply(input)
+                    .concatMap(
+                            event -> {
+                                if (event instanceof ToolResultStartEvent start
+                                        && "good".equals(start.getToolCallId())) {
+                                    return Flux.error(new IllegalStateException("acting failed"));
+                                }
+                                return Flux.just(event);
+                            });
+        }
+    }
+
+    private static final class HangingAllowTool extends ToolBase {
+        HangingAllowTool() {
+            super("allow", "hangs", schemaFor(), true, true, false, null, false, false);
+        }
+
+        private static Map<String, Object> schemaFor() {
+            Map<String, Object> schema = new HashMap<>();
+            schema.put("type", "object");
+            Map<String, Object> props = new HashMap<>();
+            props.put("query", Map.of("type", "string"));
+            schema.put("properties", props);
+            return schema;
+        }
+
+        @Override
+        public Mono<io.agentscope.core.permission.PermissionDecision> checkPermissions(
+                Map<String, Object> toolInput,
+                io.agentscope.core.permission.PermissionContextState context) {
+            return Mono.just(
+                    io.agentscope.core.permission.PermissionDecision.allow("allow: " + getName()));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            return Mono.never();
+        }
+    }
+
+    @Test
+    void validAskCallWithRequiredFieldStillRequiresConfirmation() {
+        CountingAskTool tool = new CountingAskTool();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseWithContent(
+                                                        "tc1",
+                                                        "ask_scope",
+                                                        "{\"scope\":\"team\"}"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(tool));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+        assertTrue(
+                indexOf(events, RequireUserConfirmEvent.class) >= 0,
+                "a schema-valid ASK call must still pause for confirmation");
+        assertEquals(1, tool.permissionChecks.get());
+        assertEquals(0, tool.executions.get());
+    }
+
+    private static void assertSchemaErrorWithoutConfirmation(String content, String expectedToken) {
+        CountingAskTool tool = new CountingAskTool();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseWithContent("tc1", "ask_scope", content)),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(tool));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+        assertEquals(
+                -1,
+                indexOf(events, RequireUserConfirmEvent.class),
+                "invalid input must not ask the user to confirm");
+        assertEquals(0, tool.permissionChecks.get(), "permission gate must not run");
+        assertEquals(0, tool.executions.get(), "tool must not execute");
+
+        String error =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .map(ReActAgentHitlTest::toolResultText)
+                        .findFirst()
+                        .orElse("");
+        assertTrue(
+                error.startsWith("Error: Parameter validation failed for tool 'ask_scope'"), error);
+        assertTrue(error.contains(expectedToken), error);
     }
 }
