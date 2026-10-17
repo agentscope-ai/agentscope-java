@@ -630,7 +630,7 @@ public class ConversationCompactor {
         Set<String> excluded = pruneConfig.getExcludedTools();
 
         int protectedTokens = 0;
-        int prunableTokens = 0;
+        long prunableTokens = 0;
         List<int[]> toPrune = new ArrayList<>();
 
         for (int i = messages.size() - 1; i >= 0; i--) {
@@ -642,6 +642,8 @@ public class ConversationCompactor {
             if (blocks == null) {
                 continue;
             }
+            boolean messagePruned = false;
+            long prunedCost = 0;
             for (int j = blocks.size() - 1; j >= 0; j--) {
                 if (!(blocks.get(j) instanceof ToolResultBlock tr)) {
                     continue;
@@ -660,9 +662,16 @@ public class ConversationCompactor {
                     continue;
                 }
                 if (text.length() > maxChars) {
-                    prunableTokens += tokens;
                     toPrune.add(new int[] {i, j});
+                    messagePruned = true;
+                    prunedCost += TokenCounterUtil.calculateBlockToken(List.of(tr));
                 }
+            }
+            if (messagePruned) {
+                // Only the selected blocks count toward the minimum-prune budget. A message that
+                // also carries large excluded or media blocks must not lend their tokens to cross
+                // the threshold. The message overhead is charged once.
+                prunableTokens += TokenCounterUtil.calculateMessageOverhead(msg) + prunedCost;
             }
         }
 

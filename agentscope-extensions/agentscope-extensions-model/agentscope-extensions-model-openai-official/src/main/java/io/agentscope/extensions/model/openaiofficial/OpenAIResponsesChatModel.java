@@ -102,6 +102,11 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
     }
 
     @Override
+    public GenerateOptions getDefaultOptions() {
+        return configuredOptions;
+    }
+
+    @Override
     public boolean supportsToolChoiceSpecific() {
         return true;
     }

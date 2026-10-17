@@ -394,6 +394,11 @@ public class GeminiChatModel extends ChatModelBase {
         return modelName;
     }
 
+    @Override
+    public GenerateOptions getDefaultOptions() {
+        return defaultOptions;
+    }
+
     /**
      * Close the Gemini client.
      */
