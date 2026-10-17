@@ -21,21 +21,27 @@ Prepare the Service address, target `tenant` and `namespace`, application `agent
 The following request demonstrates the registration protocol. It registers identity without advertising execution capabilities. An integrated SDK should report the capabilities its adapter actually implements.
 
 ```bash
-export SERVICE_URL="http://localhost:8081"
+export BASE_URL="http://localhost:8081"
 
-curl -sS "$SERVICE_URL/api/v1/agent-registrations" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "tenant": "default",
-    "namespace": "default",
-    "agentKey": "report-service",
-    "displayName": "Report assistant",
-    "instanceKey": "replica-1",
-    "framework": "agentscope-java",
-    "routingKey": "http://report-agent:18090",
-    "capacity": 1,
-    "capabilities": []
-  }' > registration.json
+cat > request.json <<'JSON'
+{
+  "tenant": "default",
+  "namespace": "default",
+  "agentKey": "report-service",
+  "displayName": "Report assistant",
+  "instanceKey": "replica-1",
+  "framework": "agentscope-java",
+  "routingKey": "http://report-agent:18090",
+  "capacity": 1,
+  "capabilities": []
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agent-registrations" \
+  -H "Content-Type: application/json" \
+  --data-binary @request.json > registration.json
 ```
 
 `routingKey` is the application's contract address reachable from the control plane. A container's `localhost` usually does not point to another container.
@@ -58,19 +64,24 @@ Python's `agentscope_service.instrument()` supports HTTP runtime transport with 
 
 ## Verify registration through the API
 
-Here, `TOKEN` is a platform account access token authorized for the target namespace. It is different from the registration credential.
+Query the default scope directly in local mode. See [production deployment](/v2/en/service/kubernetes#production-api-access) for calling identities.
 
 ```bash
+export TENANT="default"
+export NAMESPACE="default"
 AGENT_ID=$(jq -r '.agent.id' registration.json)
+```
 
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID" \
-  -H "Authorization: Bearer $TOKEN"
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID"
+```
 
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/instances" \
-  -H "Authorization: Bearer $TOKEN"
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/instances"
+```
 
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/runtime-inventory" \
-  -H "Authorization: Bearer $TOKEN"
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/runtime-inventory"
 ```
 
 The Agent record confirms the logical identity. Instance records describe actual replicas and their capabilities. `runtime-inventory` contains runtime reports and returns `status: "not_reporting"` when none are available. Registration success alone does not confirm that an instance can execute work.

@@ -78,7 +78,7 @@ const (
 // skipped because SAR requires a Kubernetes API connection.
 func (s *Server) authzMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if s.kubeClient == nil {
+		if s.localDev || s.kubeClient == nil {
 			// Static token mode -- no Kubernetes API available for SAR.
 			c.Next()
 			return

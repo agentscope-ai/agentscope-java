@@ -24,6 +24,8 @@ import (
 	"net/http"
 	"strings"
 
+	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,7 +40,7 @@ const (
 // not weaken the storage isolation boundary.
 func (s *Server) scopeMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if console, _ := c.Get(ctxConsoleAuth); console == true {
+		if console, _ := c.Get(ctxConsoleAuth); console == true && !s.localDev {
 			c.Next()
 			return
 		}
@@ -70,6 +72,15 @@ func (s *Server) scopeMiddleware() gin.HandlerFunc {
 }
 
 func (s *Server) getCurrentScope(c *gin.Context) {
+	if s.localDev {
+		n, err := s.localDevelopmentNamespace(c.Request.Context())
+		if err != nil {
+			s.accessFailure(c, err)
+			return
+		}
+		c.JSON(200, gin.H{"mode": ScopeModeSingle, "tenant": n.Tenant, "namespace": n.Name, "selectorVisible": false, "namespaces": namespaceSummaries([]*controlmodel.Namespace{n}, product.LocalDeveloperID)})
+		return
+	}
 	if c.GetString("userId") != "" && s.store != nil {
 		user := c.GetString("userId")
 		global, err := s.ensureGlobalDefaultNamespace(c.Request.Context())

@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -62,6 +63,9 @@ public class DataSessionService {
     /** @deprecated use {@link SessionStatuses#ARCHIVED} */
     public static final String STATUS_ARCHIVED = SessionStatuses.ARCHIVED;
 
+    @Value("${builder.local-dev:${BUILDER_LOCAL_DEV:false}}")
+    private boolean localDev;
+
     private final ControlPlaneClient controlPlaneClient;
     private final SessionEventLog eventLog;
     private final ManagedJsonHelper jsonHelper;
@@ -81,7 +85,7 @@ public class DataSessionService {
     /** Returns a session owned by the caller. */
     public ManagedSessionDto get(String ownerId, String sessionId) {
         ManagedSessionDto session = requireById(sessionId);
-        if (!ownerId.equals(session.ownerId())) {
+        if (!localDev && !ownerId.equals(session.ownerId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Session access denied");
         }
         return session;

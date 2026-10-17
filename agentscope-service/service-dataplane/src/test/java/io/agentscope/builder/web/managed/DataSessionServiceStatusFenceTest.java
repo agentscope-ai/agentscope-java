@@ -15,6 +15,8 @@
  */
 package io.agentscope.builder.web.managed;
 
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -29,8 +31,30 @@ import io.agentscope.builder.web.managed.service.ManagedJsonHelper;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 class DataSessionServiceStatusFenceTest {
+
+    @Test
+    void sessionOwnershipIsBypassedOnlyInLocalMode() {
+        ControlPlaneClient controlPlane = mock(ControlPlaneClient.class);
+        DataSessionService service =
+                new DataSessionService(
+                        controlPlane,
+                        mock(SessionEventLog.class),
+                        mock(ManagedJsonHelper.class),
+                        mock(SessionTurnRunner.class));
+        ManagedSessionDto session = mock(ManagedSessionDto.class);
+        when(session.ownerId()).thenReturn("other-owner");
+        SessionResolveResult resolved = mock(SessionResolveResult.class);
+        when(resolved.session()).thenReturn(session);
+        when(controlPlane.resolveSession("session-a")).thenReturn(resolved);
+        assertThrows(
+                ResponseStatusException.class, () -> service.get("local-developer", "session-a"));
+        ReflectionTestUtils.setField(service, "localDev", true);
+        assertSame(session, service.get("local-developer", "session-a"));
+    }
 
     @Test
     void managedStatusPatchAndEventUseOnlyCapturedTurnFence() {

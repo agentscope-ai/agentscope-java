@@ -11,7 +11,7 @@ Console 和 API 是使用 AgentScope Service 的两种入口。Console 适合在
 <span id="从哪里开始"></span>
 <span id="完成一项工作的路径"></span>
 
-首次使用前，先完成[服务部署](/v2/zh/service/quickstart)，取得 Console 地址和账号。登录后确认当前 Namespace，因为 Agent、资源和工作记录都在相应空间中管理，账号权限决定你能够查看和修改哪些内容。下面先完成一个托管 Agent 的配置与执行，再介绍如何接入应用和扩展业务协作。
+首次使用前，先完成[本地部署](/v2/zh/service/quickstart)，打开 Console 即自动进入开发身份和默认空间。生产账号、空间与权限配置见[生产部署](/v2/zh/service/kubernetes#production-api-access)。下面先完成一个托管 Agent 的配置与执行，再介绍如何接入应用和扩展业务协作。
 
 ## 创建并配置 Agent
 
@@ -43,11 +43,11 @@ Console 和 API 是使用 AgentScope Service 的两种入口。Console 适合在
 
 <span id="测试并交给应用调用"></span>
 
-在 Agent 详情页打开 **Connections → Session API**，直接填写 **Task message**。首次体验时，可以将 **Application API key** 留空，使用当前登录身份执行。点击 **Create Session and submit** 后，Console 会先创建引用当前 Agent 的 Session，再将输入提交为一个 Turn。这是一次真实的后台执行，使用的是当前配置的模型、工具和运行环境。
+在 Agent 详情页打开 **Connections → Session API**，直接填写 **Task message**。首次体验时，可以将 **Application API key** 留空，直接使用开发身份执行。点击 **Create Session and submit** 后，Console 会先创建引用当前 Agent 的 Session，再将输入提交为一个 Turn。这是一次真实的后台执行，使用的是当前配置的模型、工具和运行环境。
 
 任务提交后，页面会显示 Session ID、Turn ID 和执行状态，并持续更新消息与 **Tool activity**。如果状态为 `queued`，表示工作已经接收但仍在排队；只有看到相应 Turn 完成后，才能判断本轮执行已经结束。检查工具记录中的输入和结果，可以确认 Agent 是否实际访问了材料、调用了工具，以及最终回复是否有依据。页面提供产物记录时，可以下载文件并核对交付内容，文件访问方式见[文件与产物](/v2/zh/service/files)。
 
-如果执行需要你补充信息或决定是否允许某项操作，先阅读 **Required actions** 中的请求，再按要求提交回应。被指定给某个人的审批应使用该人员的登录身份处理，应用调用凭据不会自动获得代替他审批的权限。页面也会根据当前目标支持的能力提供补充输入、取消或恢复操作；提交控制请求后，仍应观察执行状态，确认请求是否真正生效。
+如果执行需要你补充信息或决定是否允许某项操作，先阅读 **Required actions** 中的请求，再按要求提交回应。本地模式直接提交答复；生产审批身份要求见[生产部署](/v2/zh/service/kubernetes#production-api-access)。页面也会根据当前目标支持的能力提供补充输入、取消或恢复操作；提交控制请求后，仍应观察执行状态，确认请求是否真正生效。
 
 后续任务可以通过 **Submit next Turn** 提交到同一个 Session。对于 Managed Agent，这样可以沿用已有对话上下文；如果希望开始一段独立工作，点击 **New Session**。调整 Agent 定义或资源绑定后，也应新建 Session 来验证新配置，因为已有 Session 会保留创建时选定的配置。刷新页面用于恢复已有 Session 和 Turn 的显示，不会自动重新提交任务。
 
@@ -60,11 +60,10 @@ Console 和 API 是使用 AgentScope Service 的两种入口。Console 适合在
 
 在 Console 中完成配置后，应用可以直接使用这个 Agent 的平台 ID 创建 Session，Service 会按该 Agent 已保存的定义执行工作。反过来，使用管理 API 创建或更新 Agent 后，有相应权限的用户可以在同一 Namespace 的 Console 中继续管理它。Console 和 API 通过同一个资源 ID 关联，后续配置调整也保存在同一份 Agent 定义中。
 
-在 **Connections → Session API → Application credentials** 中选择已有 Application，或者创建代表自己业务应用的 Application，再选择需要的 scope 并点击 **Issue key**。该凭据会授权当前执行目标和选定的调用操作，适合由业务后端创建 Session、提交任务并读取结果；它不等同于用于配置平台资源的用户身份。新 key 只在创建时显示，离开页面前应保存到业务后端。
+本地接入无需创建 Application 或签发 key，直接使用[Session API](/v2/zh/service/service-api)。生产业务后端的凭据签发、保存与验证见[应用凭据配置](/v2/zh/service/kubernetes#production-application-credentials)。 批量管理、自动化接入或界面尚未提供的参数可以通过对应 API 完成；Console 仍可用于管理资源和查看关联工作。
 
 展开 **API example** 可以查看当前目标对应的 Session 创建和 Turn 提交请求。应用沿用同一个目标 ID，即可把在 Console 中验证过的 Agent 接入自己的产品；调用时保存返回的 Session ID 和 Turn ID，后续读取进度、提交回应或恢复页面时继续使用这些记录。完整调用过程见[通过 Session API 接入应用](/v2/zh/service/service-api)，Agent 定义的管理请求见[API 参考](/v2/zh/service/api-reference#agents)。
 
-如果希望在接入前验证应用身份，可以在尚未创建 Session 时填入 Application API key，再提交一次任务。这样可以检查应用被授予的目标和操作是否足以完成实际调用。批量管理、自动化接入或界面尚未提供的参数可以通过对应 API 完成；Console 仍可用于管理相关资源和查看其关联工作。
 
 ## 分派、跟进与验收工作
 

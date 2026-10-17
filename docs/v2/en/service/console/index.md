@@ -11,7 +11,7 @@ You can use the platform entirely through Console or combine it with an applicat
 <span id="find-the-right-entry-point"></span>
 <span id="follow-a-piece-of-work"></span>
 
-Before your first visit, [deploy Service](/v2/en/service/quickstart) and obtain the Console address and an account. After signing in, confirm your current Namespace: Agents, resources, and work records belong to that scope, and your permissions determine what you can view or change. This guide starts with configuring and running a Managed Agent, then covers application integration and business collaboration.
+Before your first visit, [deploy locally](/v2/en/service/quickstart) and open Console. It automatically uses the development identity and default scope. See [production deployment](/v2/en/service/kubernetes#production-api-access) for accounts and permissions. This guide starts with configuring and running a Managed Agent, then covers application integration and business collaboration.
 
 ## Create and configure an Agent
 
@@ -43,11 +43,11 @@ For an existing application, [register an External Agent](/v2/en/service/registe
 
 <span id="test-and-expose-the-agent-to-applications"></span>
 
-Open **Connections → Session API** in the Agent detail page and enter a **Task message**. For your first test, leave **Application API key** empty to use your signed-in identity. Selecting **Create Session and submit** creates a Session referencing the Agent and submits the input as a Turn. This is real background execution using the configured model, tools, and environment.
+Open **Connections → Session API** in the Agent detail page and enter a **Task message**. For your first test, leave **Application API key** empty to use the development identity. Selecting **Create Session and submit** creates a Session referencing the Agent and submits the input as a Turn. This is real background execution using the configured model, tools, and environment.
 
 The page displays the Session ID, Turn ID, and execution status, and updates messages and **Tool activity**. A `queued` status means the work was received and is still waiting; wait for that Turn to finish before assessing completion. Inspect tool inputs and results to confirm that the Agent accessed the material and performed the operations supporting its final answer. When artifact records are available, download files and check the delivery. See [Files and artifacts](/v2/en/service/files) for access details.
 
-If execution needs more information or a decision about an operation, read the request under **Required actions** and submit the appropriate response. An approval assigned to a specific person requires that person's signed-in identity; an application credential does not automatically authorize decisions on their behalf. The interface offers additional input, cancellation, or resumption according to the target's capabilities. After submitting a control request, observe execution state to confirm that it took effect.
+If execution needs more information or a decision about an operation, read the request under **Required actions** and submit the appropriate response. Local mode accepts the development identity; production approval identity rules are in the [production guide](/v2/en/service/kubernetes#production-api-access). The interface offers additional input, cancellation, or resumption according to the target's capabilities. After submitting a control request, observe execution state to confirm that it took effect.
 
 Use **Submit next Turn** to add work to the same Session. A Managed Agent retains conversation context there; choose **New Session** for independent work. Also create a new Session after changing the Agent definition or resource bindings, since an existing Session retains the configuration selected at creation. Refreshing the page restores the existing Session and Turn display without automatically resubmitting the task.
 
@@ -60,11 +60,11 @@ You can also clarify requirements through **Work → Chat → New chat**. The Se
 
 After configuration in Console, an application can create a Session using that Agent's platform ID, and Service executes work according to the saved definition. Conversely, an authorized user can manage Agents created or updated through the management API in the same Namespace's Console. The shared resource ID connects the interfaces, and subsequent configuration changes are saved in the same Agent definition.
 
-Under **Connections → Session API → Application credentials**, select an existing Application or create one for your business application, choose the required scopes, and select **Issue key**. The credential grants the current execution target and the selected calling operations. Your backend can use it to create Sessions, submit tasks, and retrieve results; it is distinct from a user identity used to configure platform resources. A new key is shown only at creation, so save it to your backend before leaving the page.
+Local integration needs no Application or API key; use the [Session API](/v2/en/service/service-api) directly. See [production application credentials](/v2/en/service/kubernetes#production-application-credentials) for issuing, storing, and verifying keys.
 
 Expand **API example** for Session creation and Turn submission requests targeting the current resource. Reuse that target ID to integrate the Agent you verified in Console. Save the returned Session and Turn IDs and use those records when reading progress, responding to actions, or restoring your application's interface. See [Integrate applications with the Session API](/v2/en/service/service-api) for the calling flow and the [API reference](/v2/en/service/api-reference#agents) for Agent definition management.
 
-To verify the application's identity before integration, enter its Application API key before creating a Session and submit a task. This checks whether the granted target and operations support the actual call. Use the relevant APIs for bulk management, automated integration, or parameters not yet exposed in the interface. Console remains available for managing related resources and inspecting their associated work.
+Use the relevant APIs for bulk management, automated integration, or parameters not yet exposed in the interface. Console remains available for managing related resources and inspecting their associated work.
 
 ## Assign, follow, and review work
 

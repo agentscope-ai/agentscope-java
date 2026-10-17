@@ -363,6 +363,7 @@ func main() {
 		defaultTenant          string
 		defaultNamespace       string
 		allowLocalEnvironment  bool
+		localDev               bool
 	)
 
 	defaultRetention := store.DefaultRetention()
@@ -413,6 +414,8 @@ func main() {
 		"Root for the local Artifact provider. Production deployments should mount durable shared object storage here.")
 	flag.BoolVar(&seedUsers, "seed-users", envBool("CONTROL_PLANE_SEED_USERS", true),
 		"Seed default console users when the users table is empty.")
+	flag.BoolVar(&localDev, "local-dev", envBool("BUILDER_LOCAL_DEV", false),
+		"Run local single-user development without end-user authentication or authorization.")
 	flag.BoolVar(&allowLocalEnvironment, "allow-local-environment", envBool("BUILDER_ALLOW_LOCAL_ENVIRONMENT", false),
 		"Allow Managed Agents to bind host-local filesystem and shell environments. Disabled by default; enable only for trusted development installations.")
 	flag.StringVar(&scopeMode, "scope-mode", envOr("CONTROL_PLANE_SCOPE_MODE", httpapi.ScopeModeSingle),
@@ -534,6 +537,7 @@ func main() {
 		logger.Info("Managed Agents control plane not mounted: no --product-dsn configured")
 	default:
 		productSrv, err = product.Open(context.Background(), product.Config{
+			LocalDev:              localDev,
 			DSN:                   productDSN,
 			JWTSecret:             productJWTSecret,
 			InternalToken:         productToken,
@@ -720,6 +724,7 @@ func main() {
 	// Build REST API server options. One listener serves the Kubernetes-native
 	// API, the Managed Agents API, and the console SPA.
 	apiOpts := httpapi.ServerOptions{
+		LocalDev:                 localDev,
 		ServiceEventRetention:    serviceEventRetention,
 		Store:                    runtimeStore,
 		Prober:                   httpProber,

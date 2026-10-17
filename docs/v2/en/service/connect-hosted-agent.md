@@ -19,7 +19,7 @@ Hosted Agents work independently or join a team coordinated by a Managed Lead. R
 Install and authenticate the provider on the target machine, and verify that it can complete a request. Use `go install` with Go 1.26 or newer to install both CLI commands at `v2.1.0-BETA1`, following the [Runtime Host guide](/v2/en/service/runtime-host) to configure PATH. Then run:
 
 ```bash
-as connect https://agentscope.example.com
+as connect http://localhost:18080
 as runtime status
 as runtime probe
 ```
@@ -28,13 +28,17 @@ The CLI handles identity exchange, local configuration, and the daemon. For unat
 
 ## Find an available runtime
 
-The examples use a platform account token, `TOKEN`, authorized to manage the target namespace. Replace the Service address and scope with your deployment values:
+The examples use local development mode without a user token. Use the local address and default scope:
 
 ```bash
-export SERVICE_URL="http://localhost:8081"
+set -euo pipefail
+export BASE_URL="http://localhost:8081"
+export TENANT="default"
+export NAMESPACE="default"
 
-curl -sS "$SERVICE_URL/api/v1/agents/runtime-options?tenant=default&namespace=default" \
-  -H "Authorization: Bearer $TOKEN"
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agents/runtime-options" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
 ```
 
 The response's `runtimes` array contains available options with `provider`, `runtimeProfileId`, `runtimePoolId`, `hostCount`, and advertised provider capabilities. Select an appropriate option and retain both IDs. The accompanying `profiles` and `pools` describe how to launch a provider and which hosts may run it.
@@ -42,8 +46,9 @@ The response's `runtimes` array contains available options with `provider`, `run
 If `runtimes` is empty, check whether the Host is online and the provider was detected. You can inspect hosts directly:
 
 ```bash
-curl -sS "$SERVICE_URL/api/v1/runtime-hosts?tenant=default&namespace=default" \
-  -H "Authorization: Bearer $TOKEN"
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-hosts" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
 ```
 
 See the [provider reference](/v2/en/service/hosted-agent-configuration#hosted-agent-providers) for differences in Workspace, tool, and recovery support.
@@ -55,26 +60,29 @@ Use the common `POST /api/v1/agents` operation with a `hosted-runtime` binding. 
 Replace both ID placeholders with UUIDs returned by the previous request:
 
 ```bash
-curl -sS "$SERVICE_URL/api/v1/agents" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "tenant": "default",
-    "namespace": "default",
-    "agentKey": "code-reviewer",
-    "displayName": "Code reviewer",
-    "binding": {
-      "kind": "hosted-runtime",
-      "configuration": {
-        "runtimeProfileId": "<runtime-profile-id>",
-        "runtimePoolId": "<runtime-pool-id>"
-      }
-    },
-    "definition": {
-      "name": "Code reviewer",
-      "system": "Review the supplied code, explain evidence and recommendations, and do not modify files without instruction."
+cat > request.json <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE",
+  "agentKey": "code-reviewer",
+  "displayName": "Code reviewer",
+  "binding": {
+    "kind": "hosted-runtime",
+    "configuration": {
+      "runtimeProfileId": "<runtime-profile-id>",
+      "runtimePoolId": "<runtime-pool-id>"
     }
-  }' > hosted-agent.json
+  },
+  "definition": {
+    "name": "Code reviewer",
+    "system": "Review the supplied code, explain evidence and recommendations, and do not modify files without instruction."
+  }
+}
+JSON
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
+  -H "Content-Type: application/json" \
+  --data-binary @request.json > hosted-agent.json
 ```
 
 The response contains `agent`, `binding`, `policy`, and `definition`. Use `agent.id` in later requests. This example leaves model selection to the provider's defaults. Support for other definition fields depends on the provider's advertised capabilities.
@@ -82,11 +90,9 @@ The response contains `agent`, `binding`, `policy`, and `definition`. Use `agent
 ```bash
 AGENT_ID=$(jq -r '.agent.id' hosted-agent.json)
 
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID" \
-  -H "Authorization: Bearer $TOKEN"
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID"
 
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/bindings" \
-  -H "Authorization: Bearer $TOKEN"
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/bindings"
 ```
 
 Use `PATCH /api/v1/agents/{agentId}/definition` to update instructions. Provider execution options are available through `GET/PATCH /api/v1/agents/{agentId}/hosted-settings`. Read the current configuration and version before updating it; see the [Hosted Agent reference](/v2/en/service/connect-hosted-agent#hosted-agent) for the fields.

@@ -16,10 +16,10 @@ Hosted 可以独立调用，也可以加入 Managed Lead 协调的团队。Runti
 
 ## 先让执行主机上线
 
-在目标主机安装并登录要使用的 provider，确认它本身能够完成一次请求，再使用 Go 1.26 或更新版本，通过 `go install` 安装 `v2.1.0-BETA1` 的 CLI 与 Runtime Host，按 [Runtime Host 安装指南](/v2/zh/service/runtime-host) 配置 PATH，然后连接：
+在目标主机安装并登录要使用的 provider，确认它本身能够完成一次请求，再使用 Go 1.26 或更新版本，通过 `go install` 从当前源码安装 CLI 与 Runtime Host，按 [Runtime Host 安装指南](/v2/zh/service/runtime-host) 配置 PATH，然后连接：
 
 ```bash
-as connect https://agentscope.example.com
+as connect http://localhost:18080
 as runtime status
 as runtime probe
 ```
@@ -28,13 +28,17 @@ CLI 帮你完成身份交换、保存本机配置和启动守护进程。需要�
 
 ## 查询可用运行环境
 
-以下示例使用有权管理目标 namespace 的平台账户令牌 `TOKEN`。将 Service 地址和范围替换为你的实际配置：
+以下示例使用本地开发模式，无需用户 token。使用本地地址和默认空间：
 
 ```bash
-export SERVICE_URL="http://localhost:8081"
+set -euo pipefail
+export BASE_URL="http://localhost:8081"
+export TENANT="default"
+export NAMESPACE="default"
 
-curl -sS "$SERVICE_URL/api/v1/agents/runtime-options?tenant=default&namespace=default" \
-  -H "Authorization: Bearer $TOKEN"
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agents/runtime-options" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
 ```
 
 响应中的 `runtimes` 是可选运行环境，每项包含 `provider`、`runtimeProfileId`、`runtimePoolId`、`hostCount` 和 provider 声明的能力。选择符合任务要求的一项，保存两个 ID。`profiles` 和 `pools` 同时返回配置详情，分别表示如何启动 provider、以及到哪组主机执行。
@@ -42,8 +46,9 @@ curl -sS "$SERVICE_URL/api/v1/agents/runtime-options?tenant=default&namespace=de
 如果 `runtimes` 为空，先检查 Host 是否在线、provider 是否被成功探测。也可以通过下面的接口查看主机状态：
 
 ```bash
-curl -sS "$SERVICE_URL/api/v1/runtime-hosts?tenant=default&namespace=default" \
-  -H "Authorization: Bearer $TOKEN"
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-hosts" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
 ```
 
 支持的 provider 及 Workspace、工具和恢复能力差异，见 [Provider 参考](/v2/zh/service/hosted-agent-configuration#hosted-agent-providers)。
@@ -55,26 +60,29 @@ curl -sS "$SERVICE_URL/api/v1/runtime-hosts?tenant=default&namespace=default" \
 将请求中的两个占位值替换为上一步返回的 UUID：
 
 ```bash
-curl -sS "$SERVICE_URL/api/v1/agents" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "tenant": "default",
-    "namespace": "default",
-    "agentKey": "code-reviewer",
-    "displayName": "代码审查助手",
-    "binding": {
-      "kind": "hosted-runtime",
-      "configuration": {
-        "runtimeProfileId": "<runtime-profile-id>",
-        "runtimePoolId": "<runtime-pool-id>"
-      }
-    },
-    "definition": {
-      "name": "代码审查助手",
-      "system": "依据提供的材料进行代码审查，说明证据和建议，不擅自修改文件。"
+cat > request.json <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE",
+  "agentKey": "code-reviewer",
+  "displayName": "代码审查助手",
+  "binding": {
+    "kind": "hosted-runtime",
+    "configuration": {
+      "runtimeProfileId": "<runtime-profile-id>",
+      "runtimePoolId": "<runtime-pool-id>"
     }
-  }' > hosted-agent.json
+  },
+  "definition": {
+    "name": "代码审查助手",
+    "system": "依据提供的材料进行代码审查，说明证据和建议，不擅自修改文件。"
+  }
+}
+JSON
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
+  -H "Content-Type: application/json" \
+  --data-binary @request.json > hosted-agent.json
 ```
 
 响应返回 `agent`、`binding`、`policy` 和 `definition`。后续使用 `agent.id` 引用该 Agent。示例未指定 model，交给 provider 的默认配置；其他定义字段是否能够应用到原生 provider，应以它的能力声明为准。
@@ -82,11 +90,9 @@ curl -sS "$SERVICE_URL/api/v1/agents" \
 ```bash
 AGENT_ID=$(jq -r '.agent.id' hosted-agent.json)
 
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID" \
-  -H "Authorization: Bearer $TOKEN"
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID"
 
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/bindings" \
-  -H "Authorization: Bearer $TOKEN"
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/bindings"
 ```
 
 需要调整指令时使用 `PATCH /api/v1/agents/{agentId}/definition`；provider 执行选项位于 `GET/PATCH /api/v1/agents/{agentId}/hosted-settings`。更新前读取当前配置及版本，字段说明见 [Hosted Agent 参考](/v2/zh/service/connect-hosted-agent#hosted-agent)。

@@ -251,7 +251,7 @@ func (s *Server) createPublicSession(c *gin.Context) {
 		c.JSON(400, ErrorResponse{Error: err.Error()})
 		return
 	}
-	if a := accessFrom(c); a != nil {
+	if a := accessFrom(c); a != nil && !s.localDev {
 		if !a.Namespace.Decide(a.User, req.Target.Type+":"+req.Target.ID.String(), "use").Allowed {
 			c.JSON(403, ErrorResponse{Error: "target use is not authorized"})
 			return

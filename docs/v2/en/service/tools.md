@@ -6,7 +6,7 @@ zh_link: /v2/zh/service/tools
 
 Tools let a Managed Agent read files, execute commands, and access business systems. To give an Agent these capabilities, save the tool configuration in its **Agent definition**. When an application creates a Session with that Agent's ID, Service configures the running HarnessAgent from the definition version selected for the Session. The application does not need to declare tools again when submitting a task.
 
-This page walks through that configuration path. First, follow the [deployment guide](/v2/en/service/quickstart) to prepare `BASE_URL`, `TOKEN`, `TENANT`, `NAMESPACE`, and `ENVIRONMENT_ID`, and check that the selected environment is available. For an initial file exercise, start with [your first Managed Agent](/v2/en/service/create-managed-agent). Continue here when you are ready to connect a business system through MCP.
+This page walks through that configuration path. First, follow the [deployment guide](/v2/en/service/quickstart) to prepare `BASE_URL`, `TENANT`, `NAMESPACE`, and `ENVIRONMENT_ID`, and check that the selected environment is available. For an initial file exercise, start with [your first Managed Agent](/v2/en/service/create-managed-agent). Continue here when you are ready to connect a business system through MCP.
 
 ## How tools belong to an Agent
 
@@ -64,6 +64,16 @@ This file contains the Agent's behavior definition. The next section submits it 
 
 ### Choose built-in tools
 
+Inspect platform tool definitions and confirm their names and configuration before editing the Agent definition:
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/toolsets/builtin"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/toolsets/mcp-catalog"
+```
+
 The `agent_toolset.defaultConfig` sets the default availability of built-in tools, and `configs` overrides individual tools. With the default set to `false`, this example enables only `read` and `write` in that built-in toolset. This setting does not disable the product lookup in the separate `mcp_toolset`. Add entries to the same `configs` array when you need Shell access or file search.
 
 | Configuration name | Name in execution records | Purpose |
@@ -101,17 +111,23 @@ With the definition file ready, either create a new Agent or apply the tool conf
 The following command places `agent-definition.json` inside the request's `definition` and binds the prepared execution environment through `defaultEnvironmentId`. The `binding.kind: "managed"` setting tells Service to run the definition with HarnessAgent. The command saves the returned Agent ID and definition version for Session creation later.
 
 ```bash
-AGENT_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --slurpfile definition agent-definition.json \
-    --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
+jq -n --slurpfile definition agent-definition.json \
+    --arg tenant "$TENANT" \
+  --arg namespace "$NAMESPACE" \
     --arg env "$ENVIRONMENT_ID" '{
       tenant:$tenant, namespace:$namespace,
       agentKey:"product-assistant", displayName:$definition[0].name,
       binding:{kind:"managed"},
       definition:($definition[0] + {defaultEnvironmentId:$env})
-    }')")
+    }' > request.json
+```
+
+```bash
+AGENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
+    -H "Content-Type: application/json" \
+    --data-binary @request.json
+)
 AGENT_ID=$(printf '%s' "$AGENT_JSON" | jq -er '.agent.id')
 AGENT_VERSION=$(printf '%s' "$AGENT_JSON" | jq -er '.definition.version')
 printf '%s' "$AGENT_JSON" | jq '{agentId:.agent.id, definition:.definition}'
@@ -124,9 +140,9 @@ The response's `definition.tools` and `definition.mcpServers` should contain the
 To configure an existing Agent, first set `AGENT_ID` to its platform ID. The commands below read its current definition, preserve writable fields such as instructions, model, and resource bindings, and replace `tools` and `mcpServers` with the lists from the file. The file's name and instructions do not overwrite those of the existing Agent.
 
 ```bash
-CURRENT=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+CURRENT=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/definition"
+)
 UPDATED=$(printf '%s' "$CURRENT" | jq --slurpfile config agent-definition.json '
   .definition | {
     name, description, system, model, maxIters, tools, mcpServers, skills, multiagent,
@@ -139,10 +155,11 @@ UPDATED=$(printf '%s' "$CURRENT" | jq --slurpfile config agent-definition.json '
       .workspaceBinding.overrides =
         (((.workspaceBinding.overrides // []) + ["tools", "mcpServers"]) | unique)
     else . end')
-SAVED=$(curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$UPDATED")
+SAVED=$(
+  curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+    -H "Content-Type: application/json" \
+    --data-binary "$UPDATED"
+)
 AGENT_VERSION=$(printf '%s' "$SAVED" | jq -er '.definition.version')
 printf '%s' "$SAVED" | jq '.definition | {version, tools, mcpServers, workspaceBinding}'
 ```
@@ -167,13 +184,20 @@ The command assumes you have obtained `VAULT_ID` through the Vault guide. If the
 
 ```bash
 VAULT_IDS_JSON=$(jq -n --arg id "$VAULT_ID" '[$id]')
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --arg agent "$AGENT_ID" --argjson version "$AGENT_VERSION" \
+jq -n --arg agent "$AGENT_ID" \
+  --argjson version "$AGENT_VERSION" \
     --argjson vaults "$VAULT_IDS_JSON" '{
       target:{type:"agent", id:$agent, version:$version}, vaultIds:$vaults
-    }')")
+    }' > request.json
+```
+
+```bash
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: tools-session-001" \
+    --data-binary @request.json
+)
 SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
 SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 ```
@@ -209,13 +233,26 @@ Tool confirmation authorizes that operation; it does not expand operating-system
 Submit a bounded task to the new Session, such as looking up a known product and writing the result to `product-summary.md` before reading it back. Replace `KNOWN_PRODUCT_ID` below with a product whose data you can verify. This is a verification input, not a preinstalled demonstration record.
 
 ```bash
-TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: catalog-check-001' \
-  --data '{"message":"Use the product catalog to look up KNOWN_PRODUCT_ID. Write the actual result to product-summary.md and read it back to verify. If the lookup fails, explain why without inventing product data."}')
+cat > request.json <<'JSON'
+{
+  "message": "Use the product catalog to look up KNOWN_PRODUCT_ID. Write the actual result to product-summary.md and read it back to verify. If the lookup fails, explain why without inventing product data."
+}
+JSON
+```
+
+```bash
+TURN_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns" \
+    -H 'Idempotency-Key: catalog-check-001' \
+    -H "Content-Type: application/json" \
+    --data-binary @request.json
+)
 TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
-curl --fail-with-body -sS "$SESSION_URL/snapshot" \
-  -H "Authorization: Bearer $TOKEN" | jq '{tools, required_actions, turns}'
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/snapshot" \
+  | jq '{tools, required_actions, turns}'
 ```
 
 The task runs in the background, so the first snapshot may not contain tool records yet. Follow the [Session guide](/v2/en/service/session-event-log) to read subsequent snapshots or subscribe to events. Verify an actual `catalog__lookup_product` call, its arguments, and its returned data. A confirmation should appear before the file write; after approval, the Agent can write and read back the file. Check the product data against its source rather than relying on the model's statement that it performed a lookup. Network retries reuse the same idempotency key and message; new tasks use new keys.
