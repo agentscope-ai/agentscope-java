@@ -2885,6 +2885,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                             : new WorkspaceSessionLogStore(wsManager)));
                 }
             }
+            String sandboxWorkspaceRoot =
+                    defaultSandboxContext != null
+                                    && defaultSandboxContext.getClientOptions() != null
+                            ? defaultSandboxContext.getClientOptions().getWorkspaceRoot()
+                            : ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX;
             WorkspacePathNormalizer pathNormalizer;
             if (filesystem instanceof OverlayFilesystem ov
                     && ov.getUpper() instanceof LocalFilesystemWithShell) {
@@ -2899,8 +2904,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         WorkspacePathNormalizer.of(
                                 resolvedWorkspace.toAbsolutePath().toString(), nsFactory);
             } else if (filesystem instanceof AbstractSandboxFilesystem) {
-                pathNormalizer =
-                        WorkspacePathNormalizer.of(ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
+                pathNormalizer = WorkspacePathNormalizer.of(sandboxWorkspaceRoot);
             } else {
                 pathNormalizer =
                         WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());
@@ -3077,15 +3081,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 } else if (filesystem instanceof SandboxBackedFilesystem
                         || (filesystem instanceof RoutedSandboxFilesystem routed
                                 && routed.primary() instanceof SandboxBackedFilesystem)) {
-                    String wsPrefix =
-                            defaultSandboxContext != null
-                                            && defaultSandboxContext.getClientOptions() != null
-                                    ? defaultSandboxContext.getClientOptions().getWorkspaceRoot()
-                                    : io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
-                                            .SANDBOX_WORKSPACE_PREFIX;
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.sandbox(
-                                    wsPrefix);
+                                    sandboxWorkspaceRoot);
                 } else {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
