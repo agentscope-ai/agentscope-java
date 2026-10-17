@@ -351,6 +351,11 @@ public class LocalFilesystem implements AbstractFilesystem {
             String oldString,
             String newString,
             boolean replaceAll) {
+        EditResult invalid = FilesystemUtils.validateEditArguments(filePath, oldString, newString);
+        if (invalid != null) {
+            return invalid;
+        }
+
         Path resolved = resolvePath(runtimeContext, filePath);
 
         if (!Files.exists(resolved) || !Files.isRegularFile(resolved)) {
@@ -362,23 +367,19 @@ public class LocalFilesystem implements AbstractFilesystem {
         ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, k -> new ReentrantLock());
         lock.lock();
         try {
-            String content =
-                    Files.readString(resolved, StandardCharsets.UTF_8)
-                            .replace("\r\n", "\n")
-                            .replace("\r", "\n");
-            String normalizedOld = oldString.replace("\r\n", "\n").replace("\r", "\n");
-            String normalizedNew = newString.replace("\r\n", "\n").replace("\r", "\n");
+            // Line-ending normalization lives in FilesystemUtils.stringReplacement so every
+            // filesystem agrees on LF semantics; the content is written back accordingly.
+            String content = Files.readString(resolved, StandardCharsets.UTF_8);
 
-            Object[] result =
-                    FilesystemUtils.performStringReplacement(
-                            content, normalizedOld, normalizedNew, replaceAll);
+            FilesystemUtils.ReplacementResult result =
+                    FilesystemUtils.stringReplacement(content, oldString, newString, replaceAll);
 
-            if (result.length == 1) {
-                return EditResult.fail((String) result[0]);
+            if (!result.isSuccess()) {
+                return EditResult.fail(result.error());
             }
 
-            String newContent = (String) result[0];
-            int occurrences = (int) result[1];
+            String newContent = result.content();
+            int occurrences = result.occurrences();
 
             Files.writeString(resolved, newContent, StandardCharsets.UTF_8);
             return EditResult.ok(filePath, occurrences);
