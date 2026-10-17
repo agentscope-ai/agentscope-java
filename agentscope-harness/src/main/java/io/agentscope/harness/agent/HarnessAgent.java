@@ -1385,6 +1385,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean disableDefaultWorkspaceSkills = false;
         boolean disableDynamicSubagents = false;
         boolean disableToolsConfig = false;
+        boolean progressiveToolLoading = false;
 
         boolean skillManageToolEnabled = false;
         SkillManageConfig skillManageConfig;
@@ -1831,6 +1832,35 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         public Builder enableMetaTool(boolean enableMetaTool) {
             inner.enableMetaTool(enableMetaTool);
+            return this;
+        }
+
+        /**
+         * Enables progressive disclosure for optional Harness built-in tools.
+         *
+         * <p>Filesystem, subagent, session-history, and web tools are registered in inactive
+         * META-scoped groups. The ungrouped {@code reset_equipped_tools} meta tool lets the agent
+         * activate those groups per session. Memory and skill tools remain visible. Existing
+         * {@code disable*()} switches and {@code tools.json} filtering run before grouping, so
+         * unavailable families do not create empty groups.
+         *
+         * <p>This option is disabled by default and automatically enables the meta tool when set.
+         *
+         * @return this builder for chaining
+         */
+        public Builder enableProgressiveToolLoading() {
+            return enableProgressiveToolLoading(true);
+        }
+
+        /**
+         * Enables or disables progressive disclosure for optional Harness built-in tools.
+         *
+         * @param enabled true to group optional built-ins and expose them on demand
+         * @return this builder for chaining
+         * @see #enableProgressiveToolLoading()
+         */
+        public Builder enableProgressiveToolLoading(boolean enabled) {
+            this.progressiveToolLoading = enabled;
             return this;
         }
 
@@ -2538,6 +2568,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
             // user-registered tools never bleed across builds.
             Toolkit agentToolkit = this.toolkit.copy();
+            Map<String, AgentTool> progressiveBuiltinTools = new LinkedHashMap<>();
 
             // ---- Validation ----
             int specCount = 0;
@@ -2812,7 +2843,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 teamsMw.bindSession(teamsModeSessionId);
                 inner.middleware(teamsMw);
                 for (Object t : teamsMw.getTools()) {
-                    agentToolkit.registerTool(t);
+                    HarnessBuiltinToolGroups.registerBuiltin(
+                            agentToolkit, progressiveBuiltinTools, t);
                 }
                 capturedTeamsMw = teamsMw;
             }
@@ -2830,7 +2862,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         }
                         inner.middleware(dynMw);
                         for (Object t : dynMw.getTools()) {
-                            agentToolkit.registerTool(t);
+                            HarnessBuiltinToolGroups.registerBuiltin(
+                                    agentToolkit, progressiveBuiltinTools, t);
                         }
                         capturedSubagentMw = dynMw;
                     }
@@ -2844,7 +2877,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         }
                         inner.middleware(subagentsMw);
                         for (Object t : subagentsMw.getTools()) {
-                            agentToolkit.registerTool(t);
+                            HarnessBuiltinToolGroups.registerBuiltin(
+                                    agentToolkit, progressiveBuiltinTools, t);
                         }
                         capturedSubagentMw = subagentsMw;
                     }
@@ -2869,7 +2903,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     TeamsMiddleware teamsForWait = capturedTeamsMw;
                     waitTool.setExternalWorkProbe(teamsForWait::hasOutstandingTeamWork);
                 }
-                agentToolkit.registerTool(waitTool);
+                HarnessBuiltinToolGroups.registerBuiltin(
+                        agentToolkit, progressiveBuiltinTools, waitTool);
             }
 
             // ---- Toolkit (memory / filesystem / shell tools) ----
@@ -2878,7 +2913,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 agentToolkit.registerTool(new MemoryGetTool(wsManager));
                 agentToolkit.registerTool(new MemorySaveTool(wsManager));
                 if (!legacySessionHistory) {
-                    agentToolkit.registerTool(
+                    HarnessBuiltinToolGroups.registerBuiltin(
+                            agentToolkit,
+                            progressiveBuiltinTools,
                             new SessionSearchTool(
                                     sessionLogStore != null
                                             ? sessionLogStore
@@ -2906,23 +2943,37 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());
             }
             if (!disableFilesystemTools) {
-                agentToolkit.registerTool(new FilesystemTool(filesystem, pathNormalizer));
+                HarnessBuiltinToolGroups.registerBuiltin(
+                        agentToolkit,
+                        progressiveBuiltinTools,
+                        new FilesystemTool(filesystem, pathNormalizer));
             }
             if (artifactDeliveryEnabled) {
-                agentToolkit.registerTool(
+                HarnessBuiltinToolGroups.registerBuiltin(
+                        agentToolkit,
+                        progressiveBuiltinTools,
                         new ArtifactDeliveryTool(
                                 filesystem, pathNormalizer, artifactDeliveryTarget));
             }
             if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
-                agentToolkit.registerTool(new ShellExecuteTool(sandbox));
+                HarnessBuiltinToolGroups.registerBuiltin(
+                        agentToolkit, progressiveBuiltinTools, new ShellExecuteTool(sandbox));
             }
             if (!disableWebTools) {
                 if (webHttpClient != null) {
-                    agentToolkit.registerTool(new WebTools.WebFetchTool(webHttpClient));
-                    agentToolkit.registerTool(new WebTools.WebSearchTool(webHttpClient));
+                    HarnessBuiltinToolGroups.registerBuiltin(
+                            agentToolkit,
+                            progressiveBuiltinTools,
+                            new WebTools.WebFetchTool(webHttpClient));
+                    HarnessBuiltinToolGroups.registerBuiltin(
+                            agentToolkit,
+                            progressiveBuiltinTools,
+                            new WebTools.WebSearchTool(webHttpClient));
                 } else {
-                    agentToolkit.registerTool(new WebTools.WebFetchTool());
-                    agentToolkit.registerTool(new WebTools.WebSearchTool());
+                    HarnessBuiltinToolGroups.registerBuiltin(
+                            agentToolkit, progressiveBuiltinTools, new WebTools.WebFetchTool());
+                    HarnessBuiltinToolGroups.registerBuiltin(
+                            agentToolkit, progressiveBuiltinTools, new WebTools.WebSearchTool());
                 }
             }
 
@@ -3128,6 +3179,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // Platform tools (subagents/teams/tasks/…) survive allow; see ToolFilter.
             if (resolvedToolsConfig != null) {
                 ToolFilter.apply(agentToolkit, resolvedToolsConfig);
+            }
+            if (progressiveToolLoading) {
+                HarnessBuiltinToolGroups.apply(agentToolkit, progressiveBuiltinTools);
+                inner.enableMetaTool(true);
             }
 
             log.info(
