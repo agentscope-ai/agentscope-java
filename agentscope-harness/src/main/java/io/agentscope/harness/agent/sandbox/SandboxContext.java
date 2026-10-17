@@ -33,6 +33,7 @@ public final class SandboxContext {
     private final Sandbox externalSandbox;
     private final SandboxState externalSandboxState;
     private final IsolationScope isolationScope;
+    private final boolean lazyInitialization;
 
     private SandboxContext(Builder builder) {
         this.client = builder.client;
@@ -42,6 +43,7 @@ public final class SandboxContext {
         this.externalSandbox = builder.externalSandbox;
         this.externalSandboxState = builder.externalSandboxState;
         this.isolationScope = builder.isolationScope;
+        this.lazyInitialization = builder.lazyInitialization;
     }
 
     public SandboxClient<?> getClient() {
@@ -68,6 +70,11 @@ public final class SandboxContext {
         return externalSandboxState;
     }
 
+    /** Whether to defer acquisition until the first sandbox filesystem access. */
+    public boolean isLazyInitialization() {
+        return lazyInitialization;
+    }
+
     public IsolationScope getIsolationScope() {
         return isolationScope;
     }
@@ -85,6 +92,7 @@ public final class SandboxContext {
         private Sandbox externalSandbox;
         private SandboxState externalSandboxState;
         private IsolationScope isolationScope;
+        private boolean lazyInitialization;
 
         private Builder() {}
 
@@ -120,6 +128,12 @@ public final class SandboxContext {
 
         public Builder isolationScope(IsolationScope isolationScope) {
             this.isolationScope = isolationScope;
+            return this;
+        }
+
+        /** Defaults to eager initialization for compatibility with existing callers. */
+        public Builder lazyInitialization(boolean enabled) {
+            this.lazyInitialization = enabled;
             return this;
         }
 
