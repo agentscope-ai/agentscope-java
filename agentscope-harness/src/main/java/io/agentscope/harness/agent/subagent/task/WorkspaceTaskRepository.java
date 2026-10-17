@@ -85,6 +85,8 @@ public class WorkspaceTaskRepository implements TaskRepository {
     /** Short, fixed poll interval used while a remote task is awaiting user confirmation. */
     private static final long AWAITING_CONFIRM_POLL_MS = 750L;
 
+    private volatile long awaitingConfirmPollMs = AWAITING_CONFIRM_POLL_MS;
+
     /**
      * How often (in seconds) the heartbeat refreshes {@code lastUpdatedAt} for live local tasks.
      * Must be well below {@link #ORPHAN_TIMEOUT_MINUTES} to avoid false orphan detection.
@@ -266,6 +268,15 @@ public class WorkspaceTaskRepository implements TaskRepository {
         this.transport = Objects.requireNonNull(transport, "transport");
     }
 
+    /**
+     * Test-only hook to shrink the awaiting-confirm poll interval so tests exercising several
+     * confirming polls do not pay the production 750ms granularity. Call before {@link #putTask}
+     * starts the polling loop.
+     */
+    void setAwaitingConfirmPollMs(long pollMs) {
+        this.awaitingConfirmPollMs = Math.max(1L, pollMs);
+    }
+
     @Override
     public BackgroundTask putTask(
             RuntimeContext rc,
@@ -438,7 +449,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
             if (st.isAwaitingConfirm()) {
                 wasAwaitingConfirm = true;
                 updateAwaitingConfirm(rc, sessionId, taskId, true, st.pendingConfirms());
-                Thread.sleep(AWAITING_CONFIRM_POLL_MS);
+                Thread.sleep(awaitingConfirmPollMs);
                 continue;
             }
             if (wasAwaitingConfirm) {
