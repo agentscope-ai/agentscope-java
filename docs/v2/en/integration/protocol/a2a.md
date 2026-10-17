@@ -8,7 +8,7 @@ zh_link: /v2/zh/integration/protocol/a2a
 - `agentscope-extensions-a2a-client`: wraps a remote A2A Agent as a local `Agent` you can `call(...)` directly.
 - `agentscope-extensions-a2a-server`: exposes a local `ReActAgent` as an A2A Server.
 
-The two modules are independent — use either one alone.
+The client can be used on its own. The server also requires the client module for message conversion.
 
 A2A 0.3 is not supported: the client cannot call A2A 0.3 agents, and the server rejects requests from A2A 0.3 clients, which send no `A2A-Version` header, with a version error. The server does not support `ListTasks` yet, since it does not authenticate callers.
 
@@ -75,23 +75,27 @@ A2aAgent remote = A2aAgent.builder()
     <artifactId>agentscope-extensions-a2a-server</artifactId>
     <version>${agentscope.version}</version>
 </dependency>
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-a2a-client</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
 ```
 
 ### Build the server
 
 ```java
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
-import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportProperties;
+import io.agentscope.core.a2a.server.transport.TransportWrapper;
 
 ReActAgent.Builder agentBuilder = ReActAgent.builder()
     .name("backend-agent")
     .model(model);
 
-AgentScopeA2aServer server = AgentScopeA2aServer.builder()
-    .agentBuilder(agentBuilder)
-    .transportProperties(new JsonRpcTransportProperties())
+AgentScopeA2aServer server = AgentScopeA2aServer.builder(agentBuilder)
+    .deploymentProperties(8080)
     // .agentCard(customCard)
-    // .agentRegistry(myRegistry)
+    // .withAgentRegistry(myRegistry)
     .build();
 
 // Delegate inbound requests to the transport wrapper from your web framework
@@ -102,8 +106,9 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 
 server.postEndpointReady();   // call after the web server is listening — triggers registration etc.
 
-// On shutdown: stop the threads of the request handler. Running executions are asked to stop
-// (interrupted); close() does not wait for them. The Spring Boot starter does this for you.
+// On shutdown: stop the request handler and the server-created transport thread pool.
+// Caller-supplied executors remain caller-owned. Running executions are interrupted;
+// close() does not wait for them. The Spring Boot starter does this for you.
 server.close();
 ```
 

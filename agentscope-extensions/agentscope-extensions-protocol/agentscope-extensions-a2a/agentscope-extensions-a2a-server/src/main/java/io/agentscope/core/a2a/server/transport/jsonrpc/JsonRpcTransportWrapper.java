@@ -133,6 +133,12 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
         ServerCallContext context = buildServerCallContext(headers, metadata);
         A2ARequest<?> request;
         try {
+            if (body == null || body.isBlank()) {
+                return toJson(new A2AErrorResponse(new JSONParseError("Empty request body")));
+            }
+            if (!JsonParser.parseString(body).isJsonObject()) {
+                return toJson(new A2AErrorResponse(new InvalidRequestError()));
+            }
             request = JSONRPCUtils.parseRequestBody(body, null);
         } catch (InvalidParamsJsonMappingException e) {
             return toJson(

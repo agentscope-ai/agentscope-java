@@ -17,9 +17,13 @@
 package io.agentscope.core.a2a.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -36,7 +40,10 @@ import io.agentscope.core.a2a.server.transport.TransportProperties;
 import io.agentscope.core.a2a.server.transport.TransportWrapper;
 import io.agentscope.core.a2a.server.transport.TransportWrapperBuilder;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
+import java.util.Map;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
 import org.a2aproject.sdk.server.events.InMemoryQueueManager;
@@ -345,6 +352,69 @@ class AgentScopeA2aServerTest {
         }
 
         @Test
+        void testCloseStopsOwnedTransportExecutor() throws Exception {
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .withTransport(TransportProperties.builder("MOCK_EXECUTOR").build())
+                            .build();
+            ExecutorService executor = transportExecutor(server);
+            try (server) {
+                executor.submit(() -> {}).get(5, TimeUnit.SECONDS);
+                server.close();
+                assertTrue(executor.isShutdown());
+                assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+
+        @Test
+        void testClosePreservesCallerTransportExecutor() throws Exception {
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                try (AgentScopeA2aServer server =
+                        AgentScopeA2aServer.builder(agentRunner)
+                                .executor(executor)
+                                .withTransport(TransportProperties.builder("MOCK_EXECUTOR").build())
+                                .build()) {
+                    assertSame(executor, transportExecutor(server));
+                }
+                assertFalse(executor.isShutdown());
+                assertEquals("active", executor.submit(() -> "active").get(5, TimeUnit.SECONDS));
+            } finally {
+                executor.shutdownNow();
+                assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+            }
+        }
+
+        @Test
+        void testReusedBuilderCreatesIndependentTransportExecutors() {
+            AgentScopeA2aServer.Builder builder =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .withTransport(TransportProperties.builder("MOCK_EXECUTOR").build());
+            try (AgentScopeA2aServer first = builder.build();
+                    AgentScopeA2aServer second = builder.build()) {
+                ExecutorService firstExecutor = transportExecutor(first);
+                ExecutorService secondExecutor = transportExecutor(second);
+                try {
+                    assertNotSame(firstExecutor, secondExecutor);
+                    first.close();
+                    assertFalse(secondExecutor.isShutdown());
+                } finally {
+                    firstExecutor.shutdownNow();
+                    secondExecutor.shutdownNow();
+                }
+            }
+        }
+
+        private ExecutorService transportExecutor(AgentScopeA2aServer server) {
+            return assertInstanceOf(
+                    ExecutorService.class,
+                    server.getTransportWrapper("MOCK_EXECUTOR")
+                            .handleRequest("", Map.of(), Map.of()));
+        }
+
+        @Test
         @DisplayName("Should stop the threads of its request handler on close")
         void testCloseStopsRequestHandlerThreads() {
             long before = processorThreads();
@@ -408,6 +478,27 @@ class AgentScopeA2aServerTest {
             return Thread.getAllStackTraces().keySet().stream()
                     .filter(t -> t.isAlive() && "MainEventBusProcessor".equals(t.getName()))
                     .count();
+        }
+    }
+
+    @SuppressWarnings("rawtypes")
+    public static class ExecutorTransportWrapperBuilder
+            implements TransportWrapperBuilder<TransportWrapper> {
+
+        @Override
+        public String getTransportType() {
+            return "MOCK_EXECUTOR";
+        }
+
+        @Override
+        public TransportWrapper build(
+                AgentCard agentCard,
+                RequestHandler requestHandler,
+                Executor executor,
+                AgentCard extendedAgentCard) {
+            TransportWrapper wrapper = mock(TransportWrapper.class);
+            when(wrapper.handleRequest(any(), any(), any())).thenReturn(executor);
+            return wrapper;
         }
     }
 

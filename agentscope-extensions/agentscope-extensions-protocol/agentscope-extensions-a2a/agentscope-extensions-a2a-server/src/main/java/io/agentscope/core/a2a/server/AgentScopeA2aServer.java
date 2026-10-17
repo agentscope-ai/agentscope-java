@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -97,27 +98,38 @@ public class AgentScopeA2aServer implements AutoCloseable {
 
     private final AgentScopeA2aRequestHandler requestHandler;
 
+    private final ExecutorService ownedTransportExecutor;
+
     private AgentScopeA2aServer(
             Map<String, TransportWrapper> transportWrappers,
             Set<TransportProperties> transportProperties,
             AgentCard agentCard,
             AgentRegistryService agentRegistry,
-            AgentScopeA2aRequestHandler requestHandler) {
+            AgentScopeA2aRequestHandler requestHandler,
+            ExecutorService ownedTransportExecutor) {
         this.transportWrappers = transportWrappers;
         this.transportProperties = transportProperties;
         this.agentCard = agentCard;
         this.agentRegistry = agentRegistry;
         this.requestHandler = requestHandler;
+        this.ownedTransportExecutor = ownedTransportExecutor;
     }
 
     /**
-     * Stops the threads of the request handler, see {@link AgentScopeA2aRequestHandler#close()}.
+     * Stops the threads of the request handler and the transport executor created by this server.
+     * A caller-supplied executor is not shut down. See {@link AgentScopeA2aRequestHandler#close()}.
      * The Spring Boot starter calls it when the application context closes. Calling it again has
      * no effect.
      */
     @Override
     public void close() {
-        requestHandler.close();
+        try {
+            requestHandler.close();
+        } finally {
+            if (ownedTransportExecutor != null) {
+                ownedTransportExecutor.shutdownNow();
+            }
+        }
     }
 
     /**
@@ -346,7 +358,8 @@ public class AgentScopeA2aServer implements AutoCloseable {
         /**
          * Set executor for handle a2a request.
          *
-         * <p> use {@link Executors#newCachedThreadPool()} by default.
+         * <p>Uses a new {@link Executors#newCachedThreadPool()} by default, shut down when the
+         * server closes. A caller-supplied executor remains the caller's responsibility.
          *
          * @param executor executor
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -432,19 +445,32 @@ public class AgentScopeA2aServer implements AutoCloseable {
                             .pushConfigStore(pushConfigStore)
                             .pushSender(pushSender)
                             .build();
+            ExecutorService ownedExecutor = null;
             try {
-                return build(requestHandler);
+                if (executor == null) {
+                    ownedExecutor = Executors.newCachedThreadPool();
+                }
+                return build(
+                        requestHandler,
+                        ownedExecutor == null ? executor : ownedExecutor,
+                        ownedExecutor);
             } catch (RuntimeException e) {
                 // The request handler has started threads.
-                requestHandler.close();
+                try {
+                    requestHandler.close();
+                } finally {
+                    if (ownedExecutor != null) {
+                        ownedExecutor.shutdownNow();
+                    }
+                }
                 throw e;
             }
         }
 
-        private AgentScopeA2aServer build(AgentScopeA2aRequestHandler requestHandler) {
-            if (null == executor) {
-                executor = Executors.newCachedThreadPool();
-            }
+        private AgentScopeA2aServer build(
+                AgentScopeA2aRequestHandler requestHandler,
+                Executor transportExecutor,
+                ExecutorService ownedExecutor) {
             if (null == agentCard) {
                 agentCard = new ConfigurableAgentCard.Builder().build();
             }
@@ -473,7 +499,11 @@ public class AgentScopeA2aServer implements AutoCloseable {
                             .createAgentCard(agentCard, agentRunner, availableTransports);
             Map<String, TransportWrapper> transportWrappers =
                     buildTransportWrappers(
-                            requestHandler, availableTransports, allBuilders, a2aAgentCard);
+                            requestHandler,
+                            availableTransports,
+                            allBuilders,
+                            a2aAgentCard,
+                            transportExecutor);
             if (transportWrappers.isEmpty()) {
                 log.warn("No one TransportWrapper actually, a2a request will not be handle.");
             }
@@ -483,7 +513,8 @@ public class AgentScopeA2aServer implements AutoCloseable {
                     availableTransports,
                     a2aAgentCard,
                     agentRegistryService,
-                    requestHandler);
+                    requestHandler,
+                    ownedExecutor);
         }
 
         private Map<String, TransportWrapperBuilder> loadTransportBuilders() {
@@ -528,7 +559,8 @@ public class AgentScopeA2aServer implements AutoCloseable {
                 AgentScopeA2aRequestHandler requestHandler,
                 Set<TransportProperties> availableTransports,
                 Map<String, TransportWrapperBuilder> allBuilders,
-                AgentCard a2aAgentCard) {
+                AgentCard a2aAgentCard,
+                Executor transportExecutor) {
             Map<String, TransportWrapper> result = new HashMap<>();
             Set<TransportProperties> buildFailedTransport = new HashSet<>();
             for (TransportProperties transportProperties : availableTransports) {
@@ -536,7 +568,7 @@ public class AgentScopeA2aServer implements AutoCloseable {
                         allBuilders.get(transportProperties.transportType());
                 try {
                     TransportWrapper transportWrapper =
-                            builder.build(a2aAgentCard, requestHandler, executor);
+                            builder.build(a2aAgentCard, requestHandler, transportExecutor);
                     result.put(transportProperties.transportType(), transportWrapper);
                 } catch (Exception e) {
                     log.warn(

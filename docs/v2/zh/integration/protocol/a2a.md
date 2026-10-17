@@ -8,7 +8,7 @@ en_link: /v2/en/integration/protocol/a2a
 - `agentscope-extensions-a2a-client`：把一个远端 A2A Agent 包装成本地 `Agent`，可以直接 `agent.call(...)`。
 - `agentscope-extensions-a2a-server`：把本地 `ReActAgent` 暴露成 A2A Server。
 
-两个模块完全独立，可以单用其一。
+客户端可以单独使用；服务端还需要客户端模块来转换消息。
 
 不支持 A2A 0.3：客户端无法调用 A2A 0.3 的 Agent；A2A 0.3 客户端的请求不带 `A2A-Version` 请求头，服务端会以版本错误拒绝。服务端暂不支持 `ListTasks`，因为还不认证调用方。
 
@@ -75,23 +75,27 @@ A2aAgent remote = A2aAgent.builder()
     <artifactId>agentscope-extensions-a2a-server</artifactId>
     <version>${agentscope.version}</version>
 </dependency>
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-a2a-client</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
 ```
 
 ### 构建 server
 
 ```java
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
-import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportProperties;
+import io.agentscope.core.a2a.server.transport.TransportWrapper;
 
 ReActAgent.Builder agentBuilder = ReActAgent.builder()
     .name("backend-agent")
     .model(model);
 
-AgentScopeA2aServer server = AgentScopeA2aServer.builder()
-    .agentBuilder(agentBuilder)
-    .transportProperties(new JsonRpcTransportProperties())
+AgentScopeA2aServer server = AgentScopeA2aServer.builder(agentBuilder)
+    .deploymentProperties(8080)
     // .agentCard(customCard)
-    // .agentRegistry(myRegistry)
+    // .withAgentRegistry(myRegistry)
     .build();
 
 // 在你的 Web 框架里把请求委托给 transportWrapper
@@ -102,7 +106,8 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 
 server.postEndpointReady();   // Web 服务监听端口后再调用，触发注册等动作
 
-// 关闭时：停止请求处理器的线程。正在运行的执行会被要求停止（中断），close() 不等待它们结束。
+// 关闭时：停止请求处理器和服务端自行创建的传输线程池；调用方传入的线程池仍由调用方管理。
+// 正在运行的执行会被要求停止（中断），close() 不等待它们结束。
 // 使用 Spring Boot Starter 时会自动调用。
 server.close();
 ```
