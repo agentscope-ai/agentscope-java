@@ -61,10 +61,26 @@ final class E2bPlatformHttp {
     }
 
     JsonNode createSandbox(String templateId, int timeoutSeconds) throws IOException {
-        return createSandbox(templateId, timeoutSeconds, Map.of());
+        return createSandbox(templateId, timeoutSeconds, null, null);
     }
 
     JsonNode createSandbox(String templateId, int timeoutSeconds, Map<String, String> envVars)
+            throws IOException {
+        return createSandbox(templateId, timeoutSeconds, null, envVars);
+    }
+
+    /**
+     * Creates a sandbox, mounting pre-existing volumes when {@code mounts} is non-empty.
+     *
+     * <p>Mounts are serialized as {@code volumeMounts: [{name, path}]} per the platform REST API.
+     * The field is omitted when empty. Platform 400s (no volume beta access, unknown volume name)
+     * propagate with the response body via {@link #postJson}.
+     */
+    JsonNode createSandbox(
+            String templateId,
+            int timeoutSeconds,
+            List<E2bVolumeMount> mounts,
+            Map<String, String> envVars)
             throws IOException {
         ObjectNode body = json.createObjectNode();
         body.put("templateID", templateId);
@@ -72,6 +88,22 @@ final class E2bPlatformHttp {
         if (envVars != null && !envVars.isEmpty()) {
             ObjectNode envs = body.putObject("envVars");
             envVars.forEach(envs::put);
+        }
+        if (mounts != null && !mounts.isEmpty()) {
+            var arr = body.putArray("volumeMounts");
+            int count = 0;
+            for (E2bVolumeMount m : mounts) {
+                if (m == null) {
+                    continue;
+                }
+                var o = arr.addObject();
+                o.put("name", m.getName());
+                o.put("path", m.getPath());
+                count++;
+            }
+            if (count == 0) {
+                body.remove("volumeMounts");
+            }
         }
         String url = trimSlash(opt.getApiBaseUrl()) + "/sandboxes";
         return E2bRetry.withRetries(
