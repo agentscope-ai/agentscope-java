@@ -157,7 +157,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                                             e ->
                                                     log.warn(
                                                             "Memory maintenance failed: {}",
-                                                            e.getMessage()));
+                                                            e.getClass().getSimpleName()));
                         });
     }
 
@@ -246,7 +246,9 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         try {
             consolidator.consolidate(rc).block();
         } catch (Exception e) {
-            log.warn("Memory consolidation failed: {}", e.getMessage());
+            // Provider failures may carry request fragments, URLs or raw payloads in their
+            // message; only the exception class is safe to log.
+            log.warn("Memory consolidation failed: {}", e.getClass().getSimpleName());
         }
     }
 

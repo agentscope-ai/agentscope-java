@@ -207,7 +207,7 @@ public class MemoryFlushManager {
             String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
             return content != null ? content : "";
         } catch (Exception e) {
-            log.debug("Could not read {}: {}", relativePath, e.getMessage());
+            log.debug("Could not read {} ({})", relativePath, e.getClass().getSimpleName());
             return "";
         }
     }

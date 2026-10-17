@@ -294,9 +294,13 @@ for (var event : log.scan(0, through)) {
 
 记录范围是模型适配器可见的请求与输出、工具和框架执行过程，不包括模型服务内部过程，也不会自动备份被引用的文件。原始请求和工具结果可能包含业务数据，面向浏览器的接口应挑选需要展示的字段。
 
-`compaction/end` 的载荷包含 `compactionId`、`status`、`beforeMsgCount` 和
-`beforeTokenCount`。当 `status` 为 `completed` 时，还会包含根据压缩后有效对话计算的
-`afterMsgCount` 和 `afterTokenCount`。压缩失败或取消时不会伪造压缩后指标，因为此时没有可用的压缩后上下文。
+`compaction/start` 的载荷包含 `compactionId`、`status`（`started`）、`beforeMsgCount` 和
+`beforeTokenCount`，不会把消息内容复制到事件里。`compaction/end` 的载荷包含 `compactionId`、`status`、
+`beforeMsgCount`、`beforeTokenCount` 和 `durationMs`。当 `status` 为 `completed` 时，还会包含根据
+压缩后有效对话计算的 `afterMsgCount` 和 `afterTokenCount`；`status` 为 `skipped`（检查通过但没有产生候选）时，提供未变化的计数；当 `status` 为 `failed` 时，改用
+`errorType`（仅异常类名），不伪造压缩后指标；压缩取消时同样不包含压缩后指标，因为此时没有可用的压缩后上下文。
+
+`completed` 只代表候选压缩结果已经生成，**不代表它已经提交到工作历史**：提交发生在后续请求准备的校验之后（预算与工具配对均通过、期间状态没有变化）。排查“压缩发生过、历史看起来却没变”时，应结合同一 call 的 `context/build` 或 `request/prepared` 记录一起看。这些持久化记录在 `streamEvents()` 路径上还有对应的实时事件 `context_compaction_started`／`context_compaction_finished`（额外携带 `mode`，区分常规压缩与溢出兜底的紧急压缩），见[上下文管理](/v2/zh/docs/harness/context)。
 
 <Accordion title="集成时需要的 SessionEvent 字段">
 

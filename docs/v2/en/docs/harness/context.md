@@ -232,7 +232,9 @@ Compaction changes the conversation list, not the independently stored task, pla
 
 ### Recover from provider overflow
 
-The estimator cannot exactly predict every provider's token accounting. When native session logging is active and the provider reports a recognized context overflow, enabled compaction can force a smaller conversation and retry that reasoning request once within the same execution. Recovery requires reducible history; it is not a guarantee that an oversized request will succeed. If compaction is disabled or recovery cannot reduce the input, the error propagates.
+The estimator cannot exactly predict every provider's token accounting. When the provider reports a recognized context overflow, enabled compaction runs an **emergency compaction** from the latest committed history and retries that reasoning request once within the same execution.
+
+The emergency result is only a retry view: the candidate must pass the regular request preparation again (budget and tool-pairing validation, with no concurrent state change) before it is committed to working history — recovery itself never rewrites durable history. A cancelled or failed retry therefore leaves working history untouched, with no half-compacted state. If the retry still fails, the error propagates with the **first overflow retained as the primary cause** (attached to the retry error when the cause slot is free, otherwise as a suppressed exception) so you can distinguish “the window was simply too small” from “a new problem during retry”; cancellation is never rewritten into such a chain. Recovery is not a guarantee that an oversized request will succeed: if compaction is disabled or cannot free space, the retry does not run and the original overflow error propagates.
 
 <span id="letting-the-agent-inspect-its-own-history" />
 
@@ -369,6 +371,8 @@ try (HarnessAgent agent = agentBuilder.build()) {
 ```
 
 `context_build` reports both successful and failed preparation, before a provider request. The type check above applies to live, in-process SDK events. After JSON storage or transport, read `context_manifest` as a JSON object.
+
+When compaction runs, the same stream also publishes `context_compaction_started` and `context_compaction_finished` custom events describing that one lifecycle. Their payloads share the statistics of the stored `compaction/start` / `compaction/end` records (`compactionId`, status, and terminal counts) and add `mode`: `NORMAL` for regular compaction and `EMERGENCY` for overflow recovery. Payloads contain no messages, media, URLs, or raw exception text. Events are emitted only when compaction actually triggers, and only on the `streamEvents()` path — a `call()` has no event channel and still runs compaction. Cancellation and failure also produce a terminal event; when cancellation arrives after the stream has closed, delivery is best-effort.
 
 The default native Session Log stores this as `context/build`. Decode the record's payload with `SessionEvent.data()` and read its `event.value.context_manifest` object. Use `session.log()` or `agent.sessionLog(ctx)` to inspect a past session and correlate the record with its session, turn, and run. See [Session operations, events, and recovery](/v2/en/docs/harness/session-log) for log access. A Manifest cannot replay full prompts or restore a session. Source IDs can contain filenames, so apply your application's access controls when exporting diagnostic records.
 

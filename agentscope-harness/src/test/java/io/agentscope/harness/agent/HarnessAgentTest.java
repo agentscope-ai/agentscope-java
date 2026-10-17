@@ -46,7 +46,10 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.session.SessionEvent;
 import io.agentscope.core.session.SessionHistoryMode;
+import io.agentscope.core.session.SessionLog;
 import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.SkillFilter;
@@ -82,6 +85,7 @@ import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -722,6 +726,158 @@ class HarnessAgentTest {
             } finally {
                 subscription.dispose();
             }
+        }
+    }
+
+    /**
+     * Cancelling a run whose compaction is in flight must not make the cancelling thread wait on
+     * the recorder's storage interactions, and the durable journal must still converge to exactly
+     * one compaction start/end pair once the owning call's managed shutdown completes. The test
+     * parks those storage interactions by holding the recorder monitor (managed flushes hold it
+     * across renew and commit) while cancelling from a separate thread.
+     */
+    @Test
+    void runCancelDoesNotBlockOnRecorderStorageAndKeepsOneDurableCompactionPair() throws Exception {
+        Files.createDirectories(workspace);
+        AtomicReference<RuntimeContext> active = new AtomicReference<>();
+        CountDownLatch modelInvoked = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        CountDownLatch failed = new CountDownLatch(1);
+        Model hangingModel =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        modelInvoked.countDown();
+                        return Flux.never();
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "hanging-model";
+                    }
+                };
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("cancel-compaction")
+                        .model(hangingModel)
+                        .workspace(workspace)
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .compaction(
+                                CompactionConfig.builder()
+                                        .triggerMessages(3)
+                                        .triggerTokens(0)
+                                        .keepMessages(2)
+                                        .keepTokens(0)
+                                        .flushBeforeCompact(false)
+                                        .build())
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String prompt) {
+                                        active.set(ctx);
+                                        return Mono.just(prompt);
+                                    }
+                                })
+                        .build()) {
+            var run =
+                    agent.prepareRun(
+                            List.of(userText("m1"), userText("m2"), userText("m3"), userText("m4")),
+                            RuntimeContext.builder()
+                                    .userId("user")
+                                    .sessionId("cancel-compaction")
+                                    .build());
+            var subscription =
+                    run.stream()
+                            .subscribe(
+                                    event -> {},
+                                    error -> {
+                                        failure.set(error);
+                                        failed.countDown();
+                                    });
+            try {
+                assertTrue(modelInvoked.await(5, TimeUnit.SECONDS), "compaction never started");
+                SessionRecorder recorder = SessionRecorder.from(active.get());
+                SessionLog log = agent.sessionLog(active.get());
+                assertNotNull(recorder, "run recorder");
+                assertNotNull(log, "run journal");
+
+                CountDownLatch cancelReturned = new CountDownLatch(1);
+                AtomicReference<Throwable> cancelError = new AtomicReference<>();
+                Thread canceller =
+                        new Thread(
+                                () -> {
+                                    try {
+                                        assertTrue(run.cancel());
+                                    } catch (Throwable error) {
+                                        cancelError.set(error);
+                                    } finally {
+                                        cancelReturned.countDown();
+                                    }
+                                },
+                                "harness-canceller");
+                // Hold the recorder monitor so any cancellation cleanup touching storage on the
+                // cancelling thread would block here; the outermost
+                // cancelOn(Schedulers.boundedElastic())
+                // must keep run.cancel() free of recorder storage interactions.
+                synchronized (recorder) {
+                    canceller.start();
+                    assertTrue(
+                            awaitLatch(cancelReturned),
+                            "run.cancel() blocked on recorder storage interactions");
+                    // The cancel walk is parked on the held monitor (or about to park): the start
+                    // is durable, the end cannot have been written yet.
+                    assertEquals(1, countEvents(log, "compaction/start"));
+                    assertEquals(0, countEvents(log, "compaction/end"));
+                }
+                canceller.join(TimeUnit.SECONDS.toMillis(5));
+                assertNull(cancelError.get());
+                assertTrue(failed.await(5, TimeUnit.SECONDS), "cancelled run never reported");
+                assertTrue(failure.get() instanceof CancellationException);
+
+                // After the owning call's managed shutdown the journal holds exactly one start
+                // and one matching cancelled end for the compaction that was in flight.
+                Flux.interval(Duration.ofMillis(10))
+                        .filter(
+                                ignored ->
+                                        countEvents(log, "compaction/start") == 1
+                                                && countEvents(log, "compaction/end") == 1)
+                        .next()
+                        .block(Duration.ofSeconds(5));
+                List<SessionEvent> starts =
+                        log.readAfter(0, 1000).stream()
+                                .filter(event -> "compaction/start".equals(event.type()))
+                                .toList();
+                List<SessionEvent> ends =
+                        log.readAfter(0, 1000).stream()
+                                .filter(event -> "compaction/end".equals(event.type()))
+                                .toList();
+                assertEquals(1, starts.size(), () -> "durable starts: " + starts);
+                assertEquals(1, ends.size(), () -> "durable ends: " + ends);
+                assertEquals(
+                        starts.get(0).data().get("compactionId"),
+                        ends.get(0).data().get("compactionId"));
+                assertEquals("cancelled", ends.get(0).data().get("status"));
+            } finally {
+                subscription.dispose();
+            }
+        }
+    }
+
+    /** Counts durable journal events of one type (used to poll compaction convergence). */
+    private static long countEvents(SessionLog log, String type) {
+        return log.readAfter(0, 1000).stream().filter(event -> type.equals(event.type())).count();
+    }
+
+    /** Waits for a test latch without leaking {@link InterruptedException} into call sites. */
+    private static boolean awaitLatch(CountDownLatch latch) {
+        try {
+            return latch.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 
@@ -1566,6 +1722,51 @@ class HarnessAgentTest {
         assertNotNull(child.getCompactionHook(), "CompactionHook should be mirrored to GP child");
     }
 
+    /**
+     * Boundary compaction stays owned by the final-request preparer: with a model whose reported
+     * window is below the middleware's default reservation, the reasoning-boundary budget would
+     * clamp to 1 token and compact a conversation that the model boundary still fits. The
+     * conversation uses more than {@code keepMessages} (20) messages so the clamped path would
+     * produce a non-empty cutoff, while the model boundary's ~3.4k token allowance does not
+     * trigger for such short messages.
+     */
+    @Test
+    void compactionStaysAtModelBoundary_notReasoningBoundary() throws Exception {
+        Files.createDirectories(workspace);
+        CountingSummaryModel summaryModel = new CountingSummaryModel();
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("boundary-owner")
+                        .model(new SmallWindowAnswerModel())
+                        .workspace(workspace)
+                        .compaction(
+                                CompactionConfig.builder()
+                                        .model(summaryModel)
+                                        .flushBeforeCompact(false)
+                                        .build())
+                        .build();
+
+        List<Msg> conversation = new ArrayList<>();
+        for (int i = 0; i < 25; i++) {
+            conversation.add(userText("message " + i));
+        }
+        Msg reply =
+                agent.call(
+                                conversation,
+                                RuntimeContext.builder()
+                                        .userId("user")
+                                        .sessionId("boundary")
+                                        .build())
+                        .block(Duration.ofSeconds(10));
+
+        assertNotNull(reply);
+        assertEquals("answer", reply.getTextContent());
+        assertEquals(
+                0,
+                summaryModel.calls.get(),
+                "reasoning boundary must not compact; the model boundary owns compaction");
+    }
+
     @Test
     void generalPurpose_honorsParentMemoryConfig() throws Exception {
         Files.createDirectories(workspace);
@@ -1994,6 +2195,60 @@ class HarnessAgentTest {
 
         List<List<Msg>> inputs() {
             return inputs;
+        }
+    }
+
+    /** Reports a small context window so the middleware's default reservation would clamp it. */
+    private static final class SmallWindowAnswerModel implements Model {
+
+        @Override
+        public String getModelName() {
+            return "small-window";
+        }
+
+        @Override
+        public int getContextWindowSize() {
+            // Large enough for the harness system prompt (limit must exceed the fixed
+            // prefix), yet far below the middleware's default 20000-token reservation,
+            // so the buggy reasoning boundary would still compact with budget clamped
+            // to 1 token.
+            return 16000;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.just(
+                    new ChatResponse(
+                            "small-window",
+                            List.of(TextBlock.builder().text("answer").build()),
+                            null,
+                            Map.of(),
+                            "stop"));
+        }
+    }
+
+    /** Counts summarization calls; any invocation indicates an unexpected compaction. */
+    private static final class CountingSummaryModel implements Model {
+
+        private final AtomicInteger calls = new AtomicInteger();
+
+        @Override
+        public String getModelName() {
+            return "counting-summary";
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            calls.incrementAndGet();
+            return Flux.just(
+                    new ChatResponse(
+                            "counting-summary",
+                            List.of(TextBlock.builder().text("summary").build()),
+                            null,
+                            Map.of(),
+                            "stop"));
         }
     }
 

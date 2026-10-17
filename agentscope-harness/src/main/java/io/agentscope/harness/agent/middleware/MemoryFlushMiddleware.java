@@ -215,7 +215,9 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                             MemoryBackgroundTasks.end();
                             drainFlushQueue(key);
                         })
-                .subscribe(null, e -> log.warn("Memory flush failed: {}", e.getMessage()));
+                .subscribe(
+                        null,
+                        e -> log.warn("Memory flush failed: {}", e.getClass().getSimpleName()));
     }
 
     private void drainFlushQueue(String key) {
@@ -279,7 +281,9 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 .doOnSuccess(v -> log.debug("Memory flush completed"))
                 .onErrorResume(
                         e -> {
-                            log.warn("Memory flush failed: {}", e.getMessage());
+                            // Provider failures may carry request fragments, URLs or raw payloads
+                            // in their message; only the exception class is safe to log.
+                            log.warn("Memory flush failed: {}", e.getClass().getSimpleName());
                             return Mono.empty();
                         });
     }
