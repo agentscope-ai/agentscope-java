@@ -29,6 +29,7 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
@@ -36,7 +37,10 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,12 +48,67 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
 /** Verifies that compaction fallback does not swallow interrupts or rerun downstream reasoning. */
 class CompactionMiddlewareTest {
+
+    @TempDir Path workspace;
+
+    /**
+     * Compaction must not flush long-term memory when the agent disabled memory hooks: no memory
+     * write and no extra flush model call.
+     */
+    @Test
+    void disabledMemoryHooksSkipCompactionTimeFlush() {
+        PromptRecordingModel model = new PromptRecordingModel();
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerTokens(1)
+                        .keepTokens(1)
+                        .flushBeforeCompact(true)
+                        .prune(null)
+                        .build();
+        List<Msg> conversation = List.of(userMessage("previous context"), userMessage("latest"));
+        ModelCallInput input = new ModelCallInput(conversation, List.of(), null, model);
+
+        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+            new CompactionMiddleware(workspaceManager, model, config, false)
+                    .prepareCandidate(
+                            agent(), context("user", "session"), input, 1000, conversation)
+                    .block();
+        }
+
+        assertFalse(model.calledFlush(), "memory flush must be skipped when hooks are disabled");
+        assertTrue(model.summarized(), "compaction summarization must still run");
+    }
+
+    @Test
+    void enabledMemoryHooksStillFlushDuringCompaction() {
+        PromptRecordingModel model = new PromptRecordingModel();
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerTokens(1)
+                        .keepTokens(1)
+                        .flushBeforeCompact(true)
+                        .prune(null)
+                        .build();
+        List<Msg> conversation = List.of(userMessage("previous context"), userMessage("latest"));
+        ModelCallInput input = new ModelCallInput(conversation, List.of(), null, model);
+
+        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+            new CompactionMiddleware(workspaceManager, model, config, true)
+                    .prepareCandidate(
+                            agent(), context("user", "session"), input, 1000, conversation)
+                    .block();
+        }
+
+        assertTrue(model.calledFlush(), "memory flush must run when hooks are enabled");
+    }
+
     @Test
     void nativeOverflowRecoveryKeepsOneExecutionAndRecordsBothModelCalls() {
         AtomicInteger calls = new AtomicInteger();
@@ -433,6 +492,36 @@ class CompactionMiddlewareTest {
     /** Creates a minimal user message shared by single-session and concurrent-session tests. */
     private Msg userMessage(String text) {
         return Msg.builder().role(MsgRole.USER).textContent(text).build();
+    }
+
+    /** Records each call's leading prompt so tests can tell flush from summarization. */
+    private static final class PromptRecordingModel extends ChatModelBase {
+
+        private final List<String> prompts = new ArrayList<>();
+
+        @Override
+        public String getModelName() {
+            return "prompt-recording";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            String first = messages.isEmpty() ? "" : messages.get(0).getTextContent();
+            prompts.add(first == null ? "" : first);
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("summary").build()))
+                            .build());
+        }
+
+        boolean calledFlush() {
+            return prompts.stream().anyMatch(p -> p.contains("memory extraction assistant"));
+        }
+
+        boolean summarized() {
+            return prompts.stream().anyMatch(p -> p.contains("<messages>"));
+        }
     }
 
     /** Throws while creating the summary publisher, exercising the outer compaction fallback. */
