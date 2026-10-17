@@ -101,6 +101,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             MEMORY.md or any path under memory/ — always use memory_save instead.
             """;
 
+    private static final String MEMORY_SAVE_TOOL_GUIDANCE_WITHOUT_FILESYSTEM_TOOLS =
+            """
+            Use the **memory_save** tool to persist memories — it atomically updates \
+            both MEMORY.md and the daily ledger.
+            """;
+
     private static final String MEMORY_WRITE_FILE_GUARD =
             """
             Do NOT use write_file or edit_file on MEMORY.md or any path under memory/ — \
@@ -123,6 +129,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private final int maxContextTokens;
     private final boolean disableMemoryTools;
     private final boolean disableMemoryHooks;
+    private final boolean disableFilesystemTools;
     private List<String> additionalContextFiles = List.of();
     private boolean artifactDeliveryEnabled = false;
 
@@ -149,12 +156,31 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             int maxContextTokens,
             boolean disableMemoryTools,
             boolean disableMemoryHooks) {
+        this(
+                workspaceManager,
+                agentName,
+                environmentMemory,
+                maxContextTokens,
+                disableMemoryTools,
+                disableMemoryHooks,
+                false);
+    }
+
+    public WorkspaceContextMiddleware(
+            WorkspaceManager workspaceManager,
+            String agentName,
+            String environmentMemory,
+            int maxContextTokens,
+            boolean disableMemoryTools,
+            boolean disableMemoryHooks,
+            boolean disableFilesystemTools) {
         this.workspaceManager = workspaceManager;
         this.agentName = agentName != null && !agentName.isBlank() ? agentName : "HarnessAgent";
         this.environmentMemory = environmentMemory;
         this.maxContextTokens = maxContextTokens;
         this.disableMemoryTools = disableMemoryTools;
         this.disableMemoryHooks = disableMemoryHooks;
+        this.disableFilesystemTools = disableFilesystemTools;
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -237,7 +263,11 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
         String workspaceParagraph =
                 buildWorkspaceParagraph(
-                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled);
+                        workspace,
+                        effectiveWorkspace,
+                        filesystem,
+                        artifactDeliveryEnabled,
+                        !disableFilesystemTools);
         WorkspaceContextMaterials.register(
                 rc,
                 List.of(
@@ -267,7 +297,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private String buildGuidance() {
         StringBuilder sb = new StringBuilder();
-        sb.append(DOMAIN_KNOWLEDGE_GUIDANCE.strip()).append("\n\n");
+        if (!disableFilesystemTools) {
+            sb.append(DOMAIN_KNOWLEDGE_GUIDANCE.strip()).append("\n\n");
+        }
         if (!disableMemoryTools) {
             sb.append(MEMORY_RECALL_GUIDANCE.strip()).append("\n\n");
         }
@@ -285,10 +317,17 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         StringBuilder sb = new StringBuilder();
         if (!disableMemoryTools) {
             sb.append(MEMORY_PERSISTENCE_HEADER.strip()).append("\n");
-            sb.append(MEMORY_SAVE_TOOL_GUIDANCE.strip()).append("\n");
+            sb.append(
+                            (disableFilesystemTools
+                                            ? MEMORY_SAVE_TOOL_GUIDANCE_WITHOUT_FILESYSTEM_TOOLS
+                                            : MEMORY_SAVE_TOOL_GUIDANCE)
+                                    .strip())
+                    .append("\n");
         } else {
             sb.append(MEMORY_PERSISTENCE_HEADER_HOOKS_ONLY.strip()).append("\n");
-            sb.append(MEMORY_WRITE_FILE_GUARD.strip()).append("\n");
+            if (!disableFilesystemTools) {
+                sb.append(MEMORY_WRITE_FILE_GUARD.strip()).append("\n");
+            }
         }
         if (!disableMemoryHooks) {
             sb.append(MEMORY_AUTO_EXTRACT_GUIDANCE.strip()).append("\n");
@@ -317,7 +356,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             Path workspace,
             Path effectiveWorkspace,
             AbstractFilesystem fs,
-            boolean artifactDeliveryEnabled) {
+            boolean artifactDeliveryEnabled,
+            boolean filesystemToolsEnabled) {
         StringBuilder sb = new StringBuilder("## Workspace\n");
         LocalFilesystemWithShell localUpper = detectLocalUpper(fs);
         Path project = localUpper != null ? localUpper.getShellCwd() : null;
@@ -339,21 +379,25 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                 }
                 sb.append("\n");
             }
-            LocalFsMode mode = localUpper.getMode();
-            sb.append("Path access policy: ")
-                    .append(describeMode(mode))
-                    .append(". File tools reject absolute paths outside the roots above")
-                    .append(mode == LocalFsMode.ROOTED ? " with a security error" : "")
-                    .append(".\n");
-            if (fs instanceof ProjectAwareOverlay) {
-                sb.append(
-                        "File tools write project files (code, configs, etc.) to the project"
+            if (filesystemToolsEnabled) {
+                LocalFsMode mode = localUpper.getMode();
+                sb.append("Path access policy: ")
+                        .append(describeMode(mode))
+                        .append(". File tools reject absolute paths outside the roots above")
+                        .append(mode == LocalFsMode.ROOTED ? " with a security error" : "")
+                        .append(".\n");
+                if (fs instanceof ProjectAwareOverlay) {
+                    sb.append(
+                            "File tools write project files (code, configs, etc.) to the project"
                                 + " directory. Workspace metadata paths (memory, sessions, skills,"
                                 + " agents, knowledge) are written to the workspace.\n");
+                } else {
+                    sb.append(
+                            "Relative paths resolve under the workspace and read-fall-back to"
+                                    + " the project (overlay copy-on-write).\n");
+                }
             } else {
-                sb.append(
-                        "Relative paths resolve under the workspace and read-fall-back to"
-                                + " the project (overlay copy-on-write).\n");
+                sb.append("Filesystem tools are disabled for this agent.\n");
             }
             sb.append("Shell commands run with `pwd` set to the project directory.\n");
         } else if (fs instanceof AbstractSandboxFilesystem sandbox
@@ -384,9 +428,13 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             sb.append("Your working directory is: ")
                     .append(workspace.toAbsolutePath())
                     .append("\n");
-            sb.append(
-                    "Treat this directory as the single global workspace for file operations"
-                            + " unless explicitly instructed otherwise.\n");
+            if (filesystemToolsEnabled) {
+                sb.append(
+                        "Treat this directory as the single global workspace for file operations"
+                                + " unless explicitly instructed otherwise.\n");
+            } else {
+                sb.append("Filesystem tools are disabled for this agent.\n");
+            }
         }
         sb.append(
                 "AGENTS.md defines persona and local conventions — honor them when consistent"

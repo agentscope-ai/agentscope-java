@@ -2725,7 +2725,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 environmentMemory,
                                 maxContextTokens,
                                 disableMemoryTools,
-                                disableMemoryHooks);
+                                disableMemoryHooks,
+                                disableFilesystemTools);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
                 markdownMw.setArtifactDeliveryEnabled(artifactDeliveryEnabled);
                 inner.middleware(markdownMw);

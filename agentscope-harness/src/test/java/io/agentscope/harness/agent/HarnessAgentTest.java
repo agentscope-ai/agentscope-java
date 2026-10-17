@@ -245,6 +245,51 @@ class HarnessAgentTest {
     }
 
     @Test
+    void disableFilesystemTools_omitsFilesystemGuidanceFromSystemPrompt() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableFilesystemTools()
+                        .build();
+
+        WorkspaceContextMiddleware middleware =
+                agent.getDelegate().getMiddlewares().stream()
+                        .filter(WorkspaceContextMiddleware.class::isInstance)
+                        .map(WorkspaceContextMiddleware.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        RuntimeContext context = RuntimeContext.empty();
+        middleware.onSystemPrompt(null, context, "BASE\n").block();
+        var materials =
+                context.get(io.agentscope.harness.agent.context.WorkspaceContextMaterials.class);
+        assertNotNull(materials);
+        String guidance =
+                materials.items().stream()
+                        .filter(item -> item.sourceId().equals("harness:workspace-guidance"))
+                        .findFirst()
+                        .orElseThrow()
+                        .content();
+        String environment =
+                materials.items().stream()
+                        .filter(item -> item.sourceId().equals("harness:workspace-environment"))
+                        .findFirst()
+                        .orElseThrow()
+                        .content();
+
+        assertFalse(guidance.contains("## Domain Knowledge"));
+        assertFalse(guidance.contains("read_file"));
+        assertFalse(guidance.contains("write_file"));
+        assertFalse(guidance.contains("edit_file"));
+        assertFalse(guidance.contains("grep"));
+        assertFalse(guidance.contains("glob"));
+        assertTrue(environment.contains("Filesystem tools are disabled for this agent."));
+    }
+
+    @Test
     void disableWebTools_omitsOptionalWebTools() throws Exception {
         Files.createDirectories(workspace);
         HarnessAgent agent =
