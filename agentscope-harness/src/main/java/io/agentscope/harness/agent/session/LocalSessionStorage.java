@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -77,6 +78,35 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
                     .toList();
         } catch (IOException error) {
             throw new SessionLogException("Journal discovery failed: " + directory, error);
+        }
+    }
+
+    @Override
+    public void deletePaths(String prefix) {
+        Path directory = path(prefix);
+        if (transactionalStorage != null) {
+            transactionalStorage.deletePaths(prefix);
+            return;
+        }
+        if (!Files.exists(directory)) return;
+        // Two phases, so a refused deletion deletes nothing: scan the whole subtree first, then
+        // delete deepest-first. A symlink anywhere refuses wholesale rather than deleting
+        // partially around it.
+        List<Path> entries;
+        try (var paths = Files.walk(directory)) {
+            entries = paths.sorted(Comparator.reverseOrder()).toList();
+        } catch (IOException error) {
+            throw new SessionLogException("Journal delete failed: " + directory, error);
+        }
+        for (Path entry : entries)
+            if (Files.isSymbolicLink(entry))
+                throw new SessionLogException("Journal symlink paths are not supported");
+        for (Path entry : entries) {
+            try {
+                Files.deleteIfExists(entry);
+            } catch (IOException error) {
+                throw new SessionLogException("Journal delete failed: " + entry, error);
+            }
         }
     }
 

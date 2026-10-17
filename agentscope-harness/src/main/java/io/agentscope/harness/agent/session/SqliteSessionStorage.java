@@ -136,4 +136,23 @@ final class SqliteSessionStorage implements AtomicSessionStorage {
             throw new SessionLogException("Journal CAS failed: " + database, error);
         }
     }
+
+    @Override
+    public void deletePaths(String prefix) {
+        if (!Files.exists(database)) return;
+        // One statement covers the prefix object itself and everything below it; SQLite
+        // serializes this against concurrent readers and writers like any other write.
+        try (var connection = connect();
+                var statement =
+                        connection.prepareStatement(
+                                "DELETE FROM session_objects WHERE path = ?"
+                                        + " OR substr(path, 1, length(?) + 1) = ? || '/'")) {
+            statement.setString(1, prefix);
+            statement.setString(2, prefix);
+            statement.setString(3, prefix);
+            statement.executeUpdate();
+        } catch (SQLException | IOException error) {
+            throw new SessionLogException("Journal delete failed: " + database, error);
+        }
+    }
 }

@@ -42,4 +42,12 @@ public interface AtomicSessionStorage {
 
     /** expectedVersion=0 means create if absent. Unsupported backends must throw. */
     boolean compareAndSet(String path, long expectedVersion, byte[] bytes);
+
+    /** Deletes the object stored at {@code prefix} and every object below it, if any. Once the
+     * call returns, reads and listings observe no object at or under the prefix; a missing prefix
+     * is a no-op. Unsupported backends must throw.
+     */
+    default void deletePaths(String prefix) {
+        throw new UnsupportedOperationException("This session storage does not support delete");
+    }
 }

@@ -31,4 +31,13 @@ public interface SessionLogStore {
         throw new UnsupportedOperationException(
                 "This session log store does not support discovery");
     }
+
+    /** Deletes every persisted object of one native session: events, state checkpoints, writer
+     * seals and the inbox. The namespace is self-contained, so other sessions are unaffected.
+     * Callers must fence an active execution before deleting (the writer lease rejects concurrent
+     * writers); the operation is irreversible. Backends that cannot delete must throw.
+     */
+    default void delete(SessionKey key, RuntimeContext context) {
+        throw new UnsupportedOperationException("This session log store does not support delete");
+    }
 }

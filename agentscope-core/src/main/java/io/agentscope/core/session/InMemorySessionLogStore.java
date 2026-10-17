@@ -33,6 +33,11 @@ public final class InMemorySessionLogStore implements SessionLogStore {
     }
 
     @Override
+    public void delete(SessionKey key, RuntimeContext context) {
+        stores.remove(key);
+    }
+
+    @Override
     public List<SessionKey> list(RuntimeContext context) {
         String userId = context == null ? null : context.getUserId();
         return stores.entrySet().stream()
