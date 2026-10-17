@@ -89,7 +89,9 @@ class ChatSessionsTest {
         try (var sessions = new ChatSessions(workspace, new DemoChatModel())) {
             var session = sessions.session("conversation");
             var task = session.submit("read the reference");
-            var done = session.await(task).block(Duration.ofSeconds(15));
+            // A single streamed reply can exceed 15 seconds on Windows runners under -T1C
+            // contention (measured at 16.5s from submit to run/end in CI).
+            var done = session.await(task).block(Duration.ofSeconds(60));
             assertEquals("completed", done.status());
             assertEquals(
                     1,
