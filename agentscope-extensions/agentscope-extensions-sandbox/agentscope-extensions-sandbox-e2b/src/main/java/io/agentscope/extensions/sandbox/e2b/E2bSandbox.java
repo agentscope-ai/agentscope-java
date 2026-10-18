@@ -297,8 +297,12 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     /**
      * Creates the sandbox from the cheapest usable source: a restorable native snapshot when one is
      * present, the configured original template otherwise.
+     *
+     * <p>A sandbox created from the template cannot hold the workspace this session had, so every
+     * template-created path clears the workspace-ready flags; only a sandbox created from the
+     * native snapshot keeps them, which lets {@code start()} apply ephemeral entries alone.
      */
-    private JsonNode createSandboxForRestore() throws Exception {
+    private JsonNode createSandboxForRestore() throws IOException {
         NativeSnapshotPeek peek = peekNativeSnapshot();
         if (peek.missing()) {
             nativeSnapshotPlan = NativeSnapshotPlan.ABSENT;
@@ -335,14 +339,19 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
                                 resolveEnvVars());
                 markWorkspaceUnready();
                 return created;
+            } catch (SandboxException e) {
+                throw e;
             } catch (Exception e) {
                 throw snapshotRestoreFailure(
                         "Failed to create sandbox from native snapshot " + snapshotId, e);
             }
         }
         nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
-        return platform.createSandbox(
-                e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
+        JsonNode created =
+                platform.createSandbox(
+                        e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
+        markWorkspaceUnready();
+        return created;
     }
 
     private SandboxException.SandboxRuntimeException snapshotRestoreFailure(
@@ -366,7 +375,7 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         return created;
     }
 
-    private NativeSnapshotPeek peekNativeSnapshot() throws IOException {
+    private NativeSnapshotPeek peekNativeSnapshot() {
         if (e2bState.getPersistenceMode() != E2bPersistenceMode.NATIVE_SNAPSHOT) {
             return NativeSnapshotPeek.NOT_NATIVE;
         }

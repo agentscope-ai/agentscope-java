@@ -236,10 +236,7 @@ class E2bSandboxRecoveryTest {
         assertTrue(templateCreate.getBody().readUtf8().contains("\"base\""));
         RecordedRequest workspaceSetup = server.takeRequest();
         assertEquals("/process.Process/Start", workspaceSetup.getPath());
-        Buffer setupBody = workspaceSetup.getBody();
-        setupBody.readByte();
-        long setupPayloadLength = setupBody.readInt() & 0xffffffffL;
-        assertTrue(setupBody.readUtf8(setupPayloadLength).contains("mkdir -p"));
+        assertTrue(envdCommand(workspaceSetup).contains("mkdir -p"));
         assertEquals("fresh-sandbox", state.getSandboxId());
     }
 
@@ -261,13 +258,59 @@ class E2bSandboxRecoveryTest {
         assertEquals("/sandboxes", server.takeRequest().getPath());
         RecordedRequest workspaceSetup = server.takeRequest();
         assertEquals("/process.Process/Start", workspaceSetup.getPath());
-        Buffer setupBody = workspaceSetup.getBody();
-        setupBody.readByte();
-        long setupPayloadLength = setupBody.readInt() & 0xffffffffL;
-        assertTrue(setupBody.readUtf8(setupPayloadLength).contains("mkdir -p"));
+        assertTrue(envdCommand(workspaceSetup).contains("mkdir -p"));
         assertEquals("fresh-sandbox", state.getSandboxId());
         assertTrue(state.isWorkspaceRootReady());
         assertNull(state.getWorkspaceProjectionHash());
+    }
+
+    /**
+     * The TAR path has no native snapshot to restore from, so a sandbox created from the template
+     * must hydrate the persisted archive — even though the persisted state still marked the old
+     * workspace ready. Skipping it would silently start on an empty workspace and overwrite the
+     * good archive on the next stop.
+     */
+    @Test
+    void tarResumeHydratesSnapshotWhenPreviousWorkspaceWasReady() throws Exception {
+        server.enqueue(sandboxResponse("fresh-sandbox"));
+        server.enqueue(envdStartResponse());
+        server.enqueue(new MockResponse().setResponseCode(200));
+        server.enqueue(envdStartResponse());
+        server.enqueue(envdStartResponse());
+        E2bSandboxState state = stateWithTarSnapshot("tar-bytes".getBytes(StandardCharsets.UTF_8));
+        state.setWorkspaceRootReady(true);
+        state.setWorkspaceProjectionHash("old-projection");
+
+        new E2bSandbox(state, startOptions()).start();
+
+        assertEquals(5, server.getRequestCount());
+        RecordedRequest templateCreate = server.takeRequest();
+        assertEquals("/sandboxes", templateCreate.getPath());
+        assertTrue(templateCreate.getBody().readUtf8().contains("\"base\""));
+        assertTrue(envdCommand(server.takeRequest()).contains("mkdir -p"));
+        assertTrue(server.takeRequest().getPath().startsWith("/files?path="));
+        assertTrue(envdCommand(server.takeRequest()).contains("tar -xf"));
+        assertTrue(envdCommand(server.takeRequest()).contains("rm -f"));
+        assertEquals("fresh-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+    }
+
+    @Test
+    void startPropagatesConfigurationFailureWithoutRelabelingItAsSnapshotLoss() throws Exception {
+        E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+        E2bSandboxClientOptions noApiKey = startOptions();
+        noApiKey.setApiKey("  ");
+
+        SandboxException.SandboxConfigurationException failure =
+                assertThrows(
+                        SandboxException.SandboxConfigurationException.class,
+                        () -> new E2bSandbox(state, noApiKey).start());
+
+        assertEquals(SandboxErrorCode.CONFIGURATION_ERROR, failure.getErrorCode());
+        assertEquals(0, server.getRequestCount(), "a missing key fails before any HTTP call");
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
     }
 
     @Test
@@ -367,6 +410,14 @@ class E2bSandboxRecoveryTest {
                                 + "\"envdAccessToken\":\"new-token\"}");
     }
 
+    /** Extracts the shell script from a recorded envd {@code process.Process/Start} request. */
+    private static String envdCommand(RecordedRequest request) throws Exception {
+        Buffer body = request.getBody();
+        body.readByte();
+        long payloadLength = body.readInt() & 0xffffffffL;
+        return body.readUtf8(payloadLength);
+    }
+
     private static MockResponse envdStartResponse() {
         byte[] payload = "{\"event\":{\"end\":{\"exitCode\":0}}}".getBytes(StandardCharsets.UTF_8);
         Buffer body =
@@ -430,6 +481,17 @@ class E2bSandboxRecoveryTest {
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+        return state;
+    }
+
+    /** A fresh session (no sandbox id) whose persisted TAR archive is restorable. */
+    private static E2bSandboxState stateWithTarSnapshot(byte[] archive) {
+        E2bSandboxState state = new E2bSandboxState();
+        state.setWorkspaceSpec(new WorkspaceSpec());
+        state.setSandboxId(null);
+        state.setWorkspaceRootReady(false);
+        state.setPersistenceMode(E2bPersistenceMode.TAR);
+        state.setSnapshot(new FakeSnapshot(archive, true));
         return state;
     }
 
