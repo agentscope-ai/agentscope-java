@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.state.AgentState;
 import java.lang.reflect.Method;
@@ -164,6 +165,25 @@ final class ReflectiveFunctionTool extends ToolBase {
     @Override
     public Boolean getDeferLoading() {
         return deferLoading;
+    }
+
+    @Override
+    public boolean matchRule(String ruleContent, Map<String, Object> toolInput) {
+        return matchRule(ruleContent, toolInput, RuntimeContext.empty());
+    }
+
+    @Override
+    public boolean matchRule(
+            String ruleContent, Map<String, Object> toolInput, RuntimeContext runtimeContext) {
+        if (ruleContent == null || ruleContent.isEmpty()) {
+            return true;
+        }
+        return toolObject instanceof ToolRuleMatcher matcher
+                ? matcher.matchRule(
+                        ruleContent,
+                        toolInput,
+                        runtimeContext != null ? runtimeContext : RuntimeContext.empty())
+                : super.matchRule(ruleContent, toolInput);
     }
 
     @Override

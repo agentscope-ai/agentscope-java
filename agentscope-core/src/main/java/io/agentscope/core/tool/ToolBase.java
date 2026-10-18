@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
@@ -253,6 +254,20 @@ public abstract class ToolBase implements AgentTool {
      */
     public boolean matchRule(String ruleContent, Map<String, Object> toolInput) {
         return ruleContent == null;
+    }
+
+    /**
+     * Matches a rule with the invocation context. The default delegates to the original
+     * two-argument method so existing tool overrides continue to work.
+     *
+     * @param ruleContent tool-specific rule pattern
+     * @param toolInput effective arguments after preset parameters have been applied
+     * @param runtimeContext current invocation context
+     * @return whether the rule applies
+     */
+    public boolean matchRule(
+            String ruleContent, Map<String, Object> toolInput, RuntimeContext runtimeContext) {
+        return matchRule(ruleContent, toolInput);
     }
 
     /**

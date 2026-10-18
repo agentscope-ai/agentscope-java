@@ -274,6 +274,47 @@ public class Toolkit {
     }
 
     /**
+     * Returns the arguments a resolved tool will receive, with registered presets taking
+     * precedence. External or hidden backend tools do not inherit backend presets.
+     *
+     * @param toolName tool to resolve
+     * @param rawInput caller-supplied arguments, nullable
+     * @param requestConfig per-call tool selection, nullable
+     * @return a new map of effective arguments
+     */
+    public Map<String, Object> effectiveInput(
+            String toolName, Map<String, Object> rawInput, ToolRequestConfig requestConfig) {
+        AgentTool tool = getTool(toolName, requestConfig);
+        if (tool == null || (tool instanceof ToolBase tb && tb.isExternalTool())) {
+            return new LinkedHashMap<>(rawInput != null ? rawInput : Map.of());
+        }
+        return toolRegistry.effectiveInput(toolName, rawInput);
+    }
+
+    /**
+     * Merges the invocation context with this toolkit's default context. Invocation values
+     * take precedence. Permission matching and tool execution use the same merge policy.
+     *
+     * @param runtimeContext invocation context, nullable
+     * @return effective context, or null when neither an invocation nor a default is configured
+     */
+    @SuppressWarnings("deprecation")
+    public RuntimeContext effectiveRuntimeContext(RuntimeContext runtimeContext) {
+        ToolExecutionContext toolkitDefault = config.getDefaultContext();
+        if (toolkitDefault == null) {
+            return runtimeContext;
+        }
+        if (runtimeContext == null) {
+            return RuntimeContext.builder().toolExecutionContext(toolkitDefault).build();
+        }
+        return RuntimeContext.builder(runtimeContext)
+                .toolExecutionContext(
+                        ToolExecutionContext.merge(
+                                runtimeContext.asToolExecutionContext(), toolkitDefault))
+                .build();
+    }
+
+    /**
      * Gets the names of all registered tools.
      *
      * @return A set of all tool names (never null, may be empty)

@@ -214,6 +214,33 @@ ConfirmResult result =
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/PermissionContextExample.java`、`hitl/PermissionHITLExample.java`。
 
+### 文件系统路径规则
+
+Harness 文件工具将非空的 `ruleContent` 解释为针对逻辑 `path` 参数的匹配模式。在共享存储工作区中，可以限制定义文件的写入，同时保留普通文件工具：
+
+```java
+PermissionContextState.Builder permissions =
+        PermissionContextState.builder().mode(PermissionMode.DEFAULT);
+for (String tool : java.util.List.of("write_file", "edit_file")) {
+    for (String path : java.util.List.of(
+            "AGENTS.md", "tools.json", "skills/**", "knowledge/**", "subagents/**")) {
+        permissions.addDenyRule(tool,
+                new PermissionRule(tool, path, PermissionBehavior.DENY, "application"));
+    }
+}
+// 将 permissions.build() 传给 HarnessAgent.builder().permissionContext(...)。
+```
+
+这些拒绝规则在 `BYPASS` 模式下也生效，不影响 `read_file`、其他路径或框架直接通过文件系统执行的写入。其他调用仍按配置的权限模式处理。默认不会自动安装路径规则。
+
+模式匹配完整逻辑路径，在所有平台上都区分大小写。`*` 匹配单个路径段内的字符，`?` 匹配一个非分隔符字符，独占路径段的 `**` 匹配任意层级。`skills/**` 同时匹配 `skills` 本身及其后代；`skills/*.md` 只匹配该目录下的直接 Markdown 文件；`**/AGENTS.md` 也匹配根级 `AGENTS.md`。花括号和字符组按普通文本处理。规则中的 `..` 和 `skills**` 这类嵌入式 `**` 会被拒绝。
+
+匹配时先按照实际执行方式，根据当前用户/会话命名空间去掉配置的工作区前缀，再将反斜杠转为正斜杠并折叠重复分隔符及 `.`/`..` 路径段。未映射的绝对路径会再次与同样规范化的工作区前缀比较。启用路径规则后，规范化后仍以 `..` 开头的相对路径，以及 `C:AGENTS.md` 这样的 Windows 驱动器相对路径会被拒绝，因为无法确定其工作区目标；请改用明确的工作区相对路径或绝对路径。所得逻辑路径的开头斜杠可省略。工作区前缀之外的路径保留完整路径，因此 `skills/**` 不匹配 `/other/skills/file`。缺失、空白或非字符串的路径参数不匹配路径规则。Agent 检查权限前会合并注册时的预设参数，预设值优先于模型参数。
+
+这是对指定工具的词法路径规则，不是文件系统只读边界。它不解析符号链接或不区分大小写文件系统中的别名，也不限制 `execute`、技能管理工具或应用直接写入。需要保护所有访问方式时，应使用文件系统或沙箱限制。已有会话需要通过权限上下文更新 API 应用规则，仅修改 builder 默认值不会更新已持久化的会话。
+
+通过 `@Tool` 注册的对象可以实现 `ToolRuleMatcher`，使用 `RuntimeContext` 参与匹配。已有的 `ToolBase.matchRule(String, Map)` 重写保持兼容。直接调用 `PermissionEngine` 时，应传入包含预设参数的有效入参；规则依赖用户/会话路径时，应使用接收 `RuntimeContext` 的重载。
+
 ## Built-in Checks
 
 每个 tool 都实现了一个 `checkPermissions(toolInput, context)` 方法（位于 `ToolBase`），在运行时基于真实调用入参执行检查，返回 `Mono<PermissionDecision>`。这些检查不可绕过 —— 无论 mode 或 rules 是什么，它们都生效。
