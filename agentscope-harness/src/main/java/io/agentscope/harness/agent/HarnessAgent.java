@@ -2900,7 +2900,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 resolvedWorkspace.toAbsolutePath().toString(), nsFactory);
             } else if (filesystem instanceof AbstractSandboxFilesystem) {
                 pathNormalizer =
-                        WorkspacePathNormalizer.of(ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
+                        WorkspacePathNormalizer.forSandbox(
+                                defaultSandboxContext != null
+                                        ? defaultSandboxContext.getWorkspaceSpec().getRoot()
+                                        : ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
             } else {
                 pathNormalizer =
                         WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());

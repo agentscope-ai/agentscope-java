@@ -18,6 +18,7 @@ package io.agentscope.extensions.sandbox.e2b;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -36,6 +37,86 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class E2bSandboxOptionsAndStateTest {
+
+    @Test
+    void invalidWorkspaceRootsFailBeforeSandboxCreation() {
+        for (String root : new String[] {null, "", "relative"}) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new E2bFilesystemSpec().workspaceRoot(root).toSandboxContext());
+        }
+    }
+
+    @Test
+    void workspaceSpecAloneSetsExecutionRootWithoutMutatingCaller() {
+        WorkspaceSpec supplied = new WorkspaceSpec();
+        supplied.setRoot("/custom/root/");
+        supplied.setEnvironment(java.util.Map.of("EXAMPLE", "value"));
+        var context = new E2bFilesystemSpec().workspaceSpec(supplied).toSandboxContext();
+        assertEquals("/custom/root", context.getClientOptions().getWorkspaceRoot());
+        assertEquals("/custom/root", context.getWorkspaceSpec().getRoot());
+        assertEquals("value", context.getWorkspaceSpec().getEnvironment().get("EXAMPLE"));
+        assertEquals("/custom/root/", supplied.getRoot());
+    }
+
+    @Test
+    void conflictingExplicitRootsFailInEitherSetterOrder() {
+        WorkspaceSpec supplied = new WorkspaceSpec();
+        supplied.setRoot("/other");
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new E2bFilesystemSpec()
+                                .workspaceRoot("/home/user")
+                                .workspaceSpec(supplied)
+                                .toSandboxContext());
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new E2bFilesystemSpec()
+                                .workspaceSpec(supplied)
+                                .workspaceRoot("/home/user")
+                                .toSandboxContext());
+        supplied.setRoot("/home/user/");
+        assertEquals(
+                "/home/user",
+                new E2bFilesystemSpec()
+                        .workspaceSpec(supplied)
+                        .workspaceRoot("/home/user")
+                        .toSandboxContext()
+                        .getWorkspaceSpec()
+                        .getRoot());
+    }
+
+    @Test
+    void resumedLegacyStateKeepsActualExecutionRoot() {
+        E2bSandboxState state = new E2bSandboxState();
+        state.setWorkspaceRoot("/old/session");
+        WorkspaceSpec manifest = new WorkspaceSpec();
+        manifest.setEnvironment(java.util.Map.of("KEEP", "yes"));
+        state.setWorkspaceSpec(manifest);
+        E2bSandboxClientOptions options = new E2bSandboxClientOptions();
+        options.setWorkspaceRoot("/new/config");
+        var sandbox = new E2bSandboxClient(options, null).resume(state);
+        assertEquals("/old/session", state.getWorkspaceRoot());
+        assertEquals("/old/session", sandbox.getState().getWorkspaceSpec().getRoot());
+        assertEquals("yes", state.getWorkspaceSpec().getEnvironment().get("KEEP"));
+        assertEquals("/workspace", manifest.getRoot());
+    }
+
+    @Test
+    void defaultFilesystemWorkspaceMatchesClientRoot() {
+        var context = new E2bFilesystemSpec().toSandboxContext();
+        assertEquals(
+                context.getClientOptions().getWorkspaceRoot(),
+                context.getWorkspaceSpec().getRoot());
+    }
+
+    @Test
+    void customFilesystemWorkspaceMatchesClientRoot() {
+        var context = new E2bFilesystemSpec().workspaceRoot("/custom/workspace").toSandboxContext();
+        assertEquals("/custom/workspace", context.getWorkspaceSpec().getRoot());
+    }
 
     @Test
     void stateSnapshotIdsNullBecomesEmpty() {

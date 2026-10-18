@@ -29,7 +29,8 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
     private SandboxClient<?> client;
     private final E2bSandboxClientOptions options = new E2bSandboxClientOptions();
     private SandboxSnapshotSpec snapshotSpec = new NoopSnapshotSpec();
-    private WorkspaceSpec defaultWorkspaceSpec = new WorkspaceSpec();
+    private WorkspaceSpec defaultWorkspaceSpec;
+    private boolean explicitWorkspaceRoot;
 
     public E2bFilesystemSpec client(SandboxClient<?> client) {
         this.client = client;
@@ -70,8 +71,16 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    /**
+     * Sets the execution and filesystem root (default {@code /home/user}). If a workspace
+     * specification is also supplied, its root must match when the context is built.
+     *
+     * @param workspaceRoot absolute sandbox directory
+     * @return this spec
+     */
     public E2bFilesystemSpec workspaceRoot(String workspaceRoot) {
         options.setWorkspaceRoot(workspaceRoot);
+        explicitWorkspaceRoot = true;
         return this;
     }
 
@@ -141,6 +150,13 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    /**
+     * Supplies workspace layout and environment. Its root also sets the execution directory
+     * unless an explicit, matching {@link #workspaceRoot(String)} is supplied.
+     *
+     * @param workspaceSpec workspace configuration, copied when building the context
+     * @return this spec
+     */
     public E2bFilesystemSpec workspaceSpec(WorkspaceSpec workspaceSpec) {
         this.defaultWorkspaceSpec = workspaceSpec;
         return this;
@@ -148,6 +164,7 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
 
     @Override
     protected SandboxClient<?> createClient() {
+        options.setWorkspaceRoot(resolveWorkspaceRoot());
         return client != null ? client : options.createClient();
     }
 
@@ -163,6 +180,29 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
 
     @Override
     protected WorkspaceSpec workspaceSpec() {
-        return defaultWorkspaceSpec;
+        WorkspaceSpec effective =
+                defaultWorkspaceSpec != null ? defaultWorkspaceSpec.copy() : new WorkspaceSpec();
+        effective.setRoot(resolveWorkspaceRoot());
+        return effective;
+    }
+
+    private String resolveWorkspaceRoot() {
+        String optionRoot = normalizeRoot(options.getWorkspaceRoot());
+        String specRoot =
+                defaultWorkspaceSpec != null ? normalizeRoot(defaultWorkspaceSpec.getRoot()) : null;
+        if (explicitWorkspaceRoot && specRoot != null && !optionRoot.equals(specRoot)) {
+            throw new IllegalArgumentException("workspaceRoot and workspaceSpec.root must match");
+        }
+        return specRoot != null ? specRoot : optionRoot;
+    }
+
+    private static String normalizeRoot(String root) {
+        if (root == null || root.isBlank() || !root.startsWith("/")) {
+            throw new IllegalArgumentException("E2B workspace root must be an absolute path");
+        }
+        while (root.length() > 1 && root.endsWith("/")) {
+            root = root.substring(0, root.length() - 1);
+        }
+        return root;
     }
 }

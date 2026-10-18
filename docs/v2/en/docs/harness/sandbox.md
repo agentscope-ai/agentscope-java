@@ -189,6 +189,12 @@ Pass the same `externalSandbox` to each agent's `call()`, then `shutdown()` it y
 
 All stores implement the same interface; agent code, toolkit, and `AGENTS.md` don't change.
 
+### Workspace root
+
+The sandbox paragraph in the system prompt and file-tool path normalization use the workspace root of the sandbox bound to the current call. A restored session keeps its saved directory rather than adopting a new agent configuration. Absolute paths under that root become workspace-relative; other paths remain subject to the existing filesystem policy.
+
+For E2B, the default root is `/home/user`. Set `new E2bFilesystemSpec().workspaceRoot("/home/user/project")` to change it. Alternatively, supply a `WorkspaceSpec` with that root. If both are explicitly supplied, their roots must match (trailing slashes are ignored); conflicting values fail when the sandbox context is built. The effective workspace specification is copied, so caller-owned entries and environment are preserved without modifying the supplied object. When older E2B state has inconsistent root fields, its saved execution directory remains authoritative and the manifest is aligned with it; no files are moved. Docker's default remains `/workspace`.
+
 ## Runtime image contract
 
 You choose the sandbox image (Docker `image`, the Kubernetes agent-sandbox runtime image, etc.), but **not every image works**. Harness file tools (`read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files`) and the snapshot machinery are all implemented by running POSIX shell commands inside the sandbox. The image must satisfy the contract below, or tools will fail in hard-to-diagnose ways.

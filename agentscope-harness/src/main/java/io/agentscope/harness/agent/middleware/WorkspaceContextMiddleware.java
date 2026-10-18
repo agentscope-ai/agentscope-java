@@ -25,6 +25,7 @@ import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.sandbox.SandboxWorkspaceRoot;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -237,7 +238,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
         String workspaceParagraph =
                 buildWorkspaceParagraph(
-                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled);
+                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled, rc);
         WorkspaceContextMaterials.register(
                 rc,
                 List.of(
@@ -317,7 +318,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             Path workspace,
             Path effectiveWorkspace,
             AbstractFilesystem fs,
-            boolean artifactDeliveryEnabled) {
+            boolean artifactDeliveryEnabled,
+            RuntimeContext runtimeContext) {
         StringBuilder sb = new StringBuilder("## Workspace\n");
         LocalFilesystemWithShell localUpper = detectLocalUpper(fs);
         Path project = localUpper != null ? localUpper.getShellCwd() : null;
@@ -358,7 +360,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             sb.append("Shell commands run with `pwd` set to the project directory.\n");
         } else if (fs instanceof AbstractSandboxFilesystem sandbox
                 && !(fs instanceof OverlayFilesystem)) {
-            sb.append("Sandbox root: /workspace (container id: ")
+            sb.append("Sandbox root: ")
+                    .append(SandboxWorkspaceRoot.resolve(runtimeContext, "/workspace"))
+                    .append(" (container id: ")
                     .append(sandbox.id())
                     .append(")\n");
             if (artifactDeliveryEnabled) {
