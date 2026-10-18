@@ -75,7 +75,18 @@ class JevSupervisionMiddlewareTest {
     @Test
     void synchronousWorkerIsSubscribedOnceAndAllEventsAreIdentical() {
         var observations = new CopyOnWriteArrayList<JevSupervisionMiddleware.Observation>();
-        var m = middleware(JevSupervisionExample::syntheticAnswers, observations, 5, 3);
+        // The worker completes synchronously, so exactly one terminal assessment should fire.
+        // The shared helper's 10ms periodic tick can still sneak in before that synchronous
+        // emission when a loaded -T1C runner preempts the subscribing thread mid-subscription,
+        // adding a superseded mid-run observation. The terminal tick is emitted on worker
+        // completion, not on a timer, so an interval beyond any test lifetime makes the
+        // periodic tick structurally impossible without slowing the test down.
+        var m =
+                new JevSupervisionMiddleware(
+                        JevSupervisionTest.supervisor(JevSupervisionExample::syntheticAnswers),
+                        new JevSupervisionMiddleware.Schedule(
+                                Duration.ofDays(1), Duration.ofDays(1), 5, 3),
+                        (ctx, o) -> observations.add(o));
         AtomicInteger starts = new AtomicInteger();
         var first = new TextBlockDeltaEvent("r", "b", "Done");
         var last = new AgentResultEvent(new AssistantMessage("Done"));
@@ -136,8 +147,9 @@ class JevSupervisionMiddlewareTest {
         // This test's worker completes synchronously, so only the terminal assessment should ever
         // fire. The shared helper's 10ms tick can sneak in before that synchronous emission when a
         // loaded CI runner preempts the subscribing thread; a superseded mid-run observation then
-        // breaks the REVIEW_COMPLETION assertion. A wide interval keeps the terminal-only
-        // assumption safe under -T1C contention without touching what the test verifies.
+        // breaks the REVIEW_COMPLETION assertion. An interval beyond any test lifetime makes the
+        // terminal-only assumption structurally safe under -T1C contention without touching what
+        // the test verifies and without slowing it down.
         var m =
                 new JevSupervisionMiddleware(
                         JevSupervisionTest.supervisor(
@@ -150,7 +162,7 @@ class JevSupervisionMiddlewareTest {
                                             .delayElement(Duration.ofMillis(20));
                                 }),
                         new JevSupervisionMiddleware.Schedule(
-                                Duration.ofMillis(250), Duration.ofMillis(750), 5, 3),
+                                Duration.ofDays(1), Duration.ofDays(1), 5, 3),
                         (ctx, o) -> observations.add(o));
         Function<String, Flux<AgentEvent>> run =
                 session -> {
@@ -338,7 +350,15 @@ class JevSupervisionMiddlewareTest {
     @Test
     void runtimeIterationLimitCannotTurnIntoCompletionEvenWithPositiveJudgments() {
         var observations = new CopyOnWriteArrayList<JevSupervisionMiddleware.Observation>();
-        var m = middleware(JevSupervisionExample::syntheticAnswers, observations, 5, 3);
+        // Same terminal-only assumption as synchronousWorkerIsSubscribedOnce above: a periodic
+        // tick that fires before the synchronous ExceedMaxItersEvent lands would publish a
+        // mid-run CONTINUE observation ahead of the terminal WORKER_FAILED one.
+        var m =
+                new JevSupervisionMiddleware(
+                        JevSupervisionTest.supervisor(JevSupervisionExample::syntheticAnswers),
+                        new JevSupervisionMiddleware.Schedule(
+                                Duration.ofDays(1), Duration.ofDays(1), 5, 3),
+                        (ctx, o) -> observations.add(o));
         invoke(
                         m,
                         context("s"),
