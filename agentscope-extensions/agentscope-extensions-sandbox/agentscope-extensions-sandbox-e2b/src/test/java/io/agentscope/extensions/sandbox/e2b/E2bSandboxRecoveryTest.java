@@ -295,7 +295,8 @@ class E2bSandboxRecoveryTest {
 
         new E2bSandbox(state, startOptions()).start();
 
-        List<RecordedRequest> requests = drainRequests();
+        List<RecordedRequest> requests = recordedRequests();
+        assertFalse(requests.isEmpty(), "start() must create a sandbox");
         RecordedRequest templateCreate = requests.get(0);
         assertEquals("/sandboxes", templateCreate.getPath());
         assertTrue(templateCreate.getBody().readUtf8().contains("\"base\""));
@@ -447,12 +448,14 @@ class E2bSandboxRecoveryTest {
         return body.readUtf8(payloadLength);
     }
 
-    /** Drains every request the server received, waiting briefly for stragglers. */
-    private List<RecordedRequest> drainRequests() throws Exception {
+    /**
+     * Collects the requests the server has received. {@code start()} issues every request
+     * synchronously, so the server-side count is already final and no waiting is needed.
+     */
+    private List<RecordedRequest> recordedRequests() throws Exception {
         List<RecordedRequest> requests = new ArrayList<>();
-        RecordedRequest recorded;
-        while ((recorded = server.takeRequest(1, TimeUnit.SECONDS)) != null) {
-            requests.add(recorded);
+        for (int i = 0, count = server.getRequestCount(); i < count; i++) {
+            requests.add(server.takeRequest(1, TimeUnit.SECONDS));
         }
         return requests;
     }
