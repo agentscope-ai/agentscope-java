@@ -824,8 +824,11 @@ class HarnessAgentTest {
                 // must keep run.cancel() free of recorder storage interactions.
                 synchronized (recorder) {
                     canceller.start();
+                    // Generous wait: on loaded CI runners the canceller thread itself may be
+                    // scheduled late; a real recorder-storage block would never return because
+                    // the monitor stays held until the assertions below run.
                     assertTrue(
-                            awaitLatch(cancelReturned),
+                            cancelReturned.await(30, TimeUnit.SECONDS),
                             "run.cancel() blocked on recorder storage interactions");
                     // The cancel walk is parked on the held monitor (or about to park): the start
                     // is durable, the end cannot have been written yet.
