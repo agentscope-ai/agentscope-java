@@ -89,8 +89,10 @@ public class ConversationCompactor {
      * @param config               compaction configuration
      * @param agentId              agent identifier used for the session history reference
      * @param sessionId            session identifier used for the session history reference
-     * @return {@code Optional.empty()} when no compaction was needed; otherwise the replacement
-     *         message list consisting of {@code [summaryUserMsg] + preservedTail}
+     * @return {@code Optional.empty()} when the conversation is unchanged; otherwise a
+     *         replacement message list. The replacement contains lightweight reductions when
+     *         summarization is skipped, or {@code [summaryUserMsg] + preservedTail} after
+     *         summarization.
      */
     public Mono<Optional<List<Msg>>> compactIfNeeded(
             RuntimeContext rc,
