@@ -80,7 +80,7 @@
         <bailian.version>2.14.4</bailian.version>
         <openai-java.version>4.78.0</openai-java.version>
         <anthropic.version>2.70.0</anthropic.version>
-        <mcp.version>0.17.2</mcp.version>
+        <mcp.version>2.0.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.17.0</qdrant.version>
         <milvus.version>2.6.17</milvus.version>
@@ -250,10 +250,16 @@
                 <version>${anthropic.version}</version>
             </dependency>
 
-            <!-- Model Context Protocol (MCP) SDK -->
+            <!-- Model Context Protocol (MCP) SDK: use core + Jackson 2 module
+                 instead of the mcp aggregator (which defaults to Jackson 3) -->
             <dependency>
                 <groupId>io.modelcontextprotocol.sdk</groupId>
-                <artifactId>mcp</artifactId>
+                <artifactId>mcp-core</artifactId>
+                <version>${mcp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.modelcontextprotocol.sdk</groupId>
+                <artifactId>mcp-json-jackson2</artifactId>
                 <version>${mcp.version}</version>
             </dependency>
 
