@@ -78,7 +78,7 @@
         <google-genai.version>1.78.0</google-genai.version>
         <dashscope-sdk-java.version>2.23.2</dashscope-sdk-java.version>
         <bailian.version>2.14.4</bailian.version>
-        <openai-java.version>4.78.0</openai-java.version>
+        <openai-java.version>4.81.0</openai-java.version>
         <anthropic.version>2.72.0</anthropic.version>
         <mcp.version>0.17.2</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
