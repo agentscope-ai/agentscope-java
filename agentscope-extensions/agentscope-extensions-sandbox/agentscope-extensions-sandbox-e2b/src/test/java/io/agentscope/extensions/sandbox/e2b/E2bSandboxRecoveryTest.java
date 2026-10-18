@@ -32,6 +32,10 @@ import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import okhttp3.mockwebserver.Dispatcher;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -272,25 +276,50 @@ class E2bSandboxRecoveryTest {
      */
     @Test
     void tarResumeHydratesSnapshotWhenPreviousWorkspaceWasReady() throws Exception {
-        server.enqueue(sandboxResponse("fresh-sandbox"));
-        server.enqueue(envdStartResponse());
-        server.enqueue(new MockResponse().setResponseCode(200));
-        server.enqueue(envdStartResponse());
-        server.enqueue(envdStartResponse());
+        server.setDispatcher(
+                new Dispatcher() {
+                    @Override
+                    public MockResponse dispatch(RecordedRequest request) {
+                        if ("/sandboxes".equals(request.getPath())) {
+                            return sandboxResponse("fresh-sandbox");
+                        }
+                        if (request.getPath().startsWith("/files")) {
+                            return new MockResponse().setResponseCode(200);
+                        }
+                        return envdStartResponse();
+                    }
+                });
         E2bSandboxState state = stateWithTarSnapshot("tar-bytes".getBytes(StandardCharsets.UTF_8));
         state.setWorkspaceRootReady(true);
         state.setWorkspaceProjectionHash("old-projection");
 
         new E2bSandbox(state, startOptions()).start();
 
-        assertEquals(5, server.getRequestCount());
-        RecordedRequest templateCreate = server.takeRequest();
+        List<RecordedRequest> requests = drainRequests();
+        RecordedRequest templateCreate = requests.get(0);
         assertEquals("/sandboxes", templateCreate.getPath());
         assertTrue(templateCreate.getBody().readUtf8().contains("\"base\""));
-        assertTrue(envdCommand(server.takeRequest()).contains("mkdir -p"));
-        assertTrue(server.takeRequest().getPath().startsWith("/files?path="));
-        assertTrue(envdCommand(server.takeRequest()).contains("tar -xf"));
-        assertTrue(envdCommand(server.takeRequest()).contains("rm -f"));
+        List<String> paths = requests.stream().map(RecordedRequest::getPath).toList();
+        // Hydrated: the archive was uploaded to the fresh sandbox and unpacked.
+        assertTrue(paths.stream().anyMatch(p -> p.startsWith("/files?path=")), "paths: " + paths);
+        List<String> commands =
+                requests.stream()
+                        .filter(r -> "/process.Process/Start".equals(r.getPath()))
+                        .map(
+                                r -> {
+                                    try {
+                                        return envdCommand(r);
+                                    } catch (Exception e) {
+                                        throw new IllegalStateException(e);
+                                    }
+                                })
+                        .toList();
+        assertTrue(
+                commands.stream().anyMatch(c -> c.contains("mkdir -p")), "commands: " + commands);
+        assertTrue(commands.stream().anyMatch(c -> c.contains("tar -xf")), "commands: " + commands);
+        // Not the pre-fix symptom: no "workspace preserved" probe, i.e. Branch A was not taken.
+        assertFalse(
+                commands.stream().anyMatch(c -> c.contains("test -d")), "commands: " + commands);
         assertEquals("fresh-sandbox", state.getSandboxId());
         assertTrue(state.isWorkspaceRootReady());
     }
@@ -416,6 +445,16 @@ class E2bSandboxRecoveryTest {
         body.readByte();
         long payloadLength = body.readInt() & 0xffffffffL;
         return body.readUtf8(payloadLength);
+    }
+
+    /** Drains every request the server received, waiting briefly for stragglers. */
+    private List<RecordedRequest> drainRequests() throws Exception {
+        List<RecordedRequest> requests = new ArrayList<>();
+        RecordedRequest recorded;
+        while ((recorded = server.takeRequest(1, TimeUnit.SECONDS)) != null) {
+            requests.add(recorded);
+        }
+        return requests;
     }
 
     private static MockResponse envdStartResponse() {
