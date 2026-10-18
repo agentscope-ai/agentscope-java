@@ -65,6 +65,8 @@ The sandbox snapshots its workspace at each `call()` end and restores at the nex
 - Container gone → reboot from snapshot, restore workspace
 - No snapshot → full init from `WorkspaceSpec` (cold start)
 
+An opened snapshot archive is closed even if workspace setup fails during restoration.
+
 Where snapshots land is decided by `snapshotSpec`:
 
 | Option | When |

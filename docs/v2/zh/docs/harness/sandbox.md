@@ -65,6 +65,8 @@ agent.call(msg, RuntimeContext.builder()
 - 容器没了 → 拿快照重新起一个，恢复工作区
 - 没快照 → 按 `WorkspaceSpec` 全量初始化（冷启动）
 
+恢复时已经打开的快照归档流，即使工作区初始化失败也会关闭。
+
 快照存到哪里取决于你配的 `snapshotSpec`：
 
 | 选项 | 适合 |
