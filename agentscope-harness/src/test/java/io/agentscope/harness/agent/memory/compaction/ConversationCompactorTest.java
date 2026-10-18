@@ -162,6 +162,68 @@ class ConversationCompactorTest {
         assertTrue(fixture.flushInputs.isEmpty());
     }
 
+    /**
+     * Verifies that when the safe cutoff is zero (nothing may be summarized) the lightweight
+     * prune/truncate result is still returned instead of being discarded.
+     */
+    @Test
+    void compactIfNeeded_returnsLightweightResultWhenCutoffIsZero() {
+        RecordingModel model = new RecordingModel();
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, new MemoryFlushManager(null, null));
+        List<Msg> input = List.of(message("hello"), toolResult("bash", "x".repeat(100_000)));
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerTokens(1)
+                        .keepTokens(1_000_000)
+                        .keepMessages(0)
+                        .flushBeforeCompact(false)
+                        .truncateArgs(null)
+                        .prune(
+                                CompactionConfig.PruneConfig.builder()
+                                        .protectTokens(0)
+                                        .minimumTokens(1)
+                                        .maxOutputChars(10)
+                                        .excludedTools(Set.of())
+                                        .build())
+                        .build();
+
+        Optional<List<Msg>> result =
+                compactor
+                        .compactIfNeeded(mock(RuntimeContext.class), input, config, "agent", "s")
+                        .block();
+
+        assertTrue(result.isPresent());
+        assertTrue(
+                TokenCounterUtil.calculateToken(result.orElseThrow())
+                        < TokenCounterUtil.calculateToken(input));
+    }
+
+    /** Verifies the empty result is preserved when the cutoff is zero and nothing changed. */
+    @Test
+    void compactIfNeeded_keepsEmptyWhenCutoffZeroAndNothingChanged() {
+        RecordingModel model = new RecordingModel();
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, new MemoryFlushManager(null, null));
+        List<Msg> input = List.of(message("M1"), message("M2"));
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerTokens(1)
+                        .keepTokens(1_000_000)
+                        .keepMessages(0)
+                        .flushBeforeCompact(false)
+                        .truncateArgs(null)
+                        .prune(null)
+                        .build();
+
+        Optional<List<Msg>> result =
+                compactor
+                        .compactIfNeeded(mock(RuntimeContext.class), input, config, "agent", "s")
+                        .block();
+
+        assertTrue(result.isEmpty());
+    }
+
     /** Verifies that memory-flush fallback does not swallow a user interruption. */
     @Test
     void compactIfNeeded_propagatesInterruptedMemoryFlush() {
@@ -725,6 +787,19 @@ class ConversationCompactorTest {
         return Msg.builder()
                 .role(MsgRole.USER)
                 .content(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    /** Creates a TOOL message carrying a single tool result. */
+    private static Msg toolResult(String name, String output) {
+        return Msg.builder()
+                .role(MsgRole.TOOL)
+                .content(
+                        ToolResultBlock.builder()
+                                .id("call-1")
+                                .name(name)
+                                .output(TextBlock.builder().text(output).build())
+                                .build())
                 .build();
     }
 
