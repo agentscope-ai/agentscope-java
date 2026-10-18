@@ -614,7 +614,11 @@ class ToolConfirmationCoordinatorTest {
         assertThat(nonOwner.resolveManaged(approved))
                 .isEqualTo(ToolConfirmationCoordinator.DecisionResult.OWNER_UNAVAILABLE);
         assertThat(ticket.get().resolvedAllow()).isTrue();
-        assertThat(ticket.get().continuationReady()).isFalse();
+        // Whether continuationReady is still false here is not assertable: the owner's poller
+        // thread legitimately picks the persisted decision up at any moment, so a loaded
+        // runner can see it released before this line runs. The non-owner's inability to
+        // release is already pinned by OWNER_UNAVAILABLE above; the poller-driven release is
+        // asserted below.
 
         assertThat(waiting.get(2, TimeUnit.SECONDS)).isTrue();
         assertThat(ticket.get().continuationReady()).isTrue();
