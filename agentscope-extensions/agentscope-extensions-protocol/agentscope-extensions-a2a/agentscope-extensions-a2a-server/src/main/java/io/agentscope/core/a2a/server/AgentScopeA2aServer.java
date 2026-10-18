@@ -16,14 +16,6 @@
 
 package io.agentscope.core.a2a.server;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import io.a2a.server.events.QueueManager;
-import io.a2a.server.tasks.PushNotificationConfigStore;
-import io.a2a.server.tasks.PushNotificationSender;
-import io.a2a.server.tasks.TaskStore;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.TransportProtocol;
-import io.a2a.util.Utils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.AgentScopeAgentCardConverter;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
@@ -47,9 +39,19 @@ import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonProcessingException;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
+import org.a2aproject.sdk.server.events.MainEventBus;
+import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationSender;
+import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,7 +84,7 @@ import org.slf4j.LoggerFactory;
  * </ol>
  */
 @SuppressWarnings("rawtypes")
-public class AgentScopeA2aServer {
+public class AgentScopeA2aServer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeA2aServer.class);
 
@@ -94,15 +96,40 @@ public class AgentScopeA2aServer {
 
     private final AgentRegistryService agentRegistry;
 
+    private final AgentScopeA2aRequestHandler requestHandler;
+
+    private final ExecutorService ownedTransportExecutor;
+
     private AgentScopeA2aServer(
             Map<String, TransportWrapper> transportWrappers,
             Set<TransportProperties> transportProperties,
             AgentCard agentCard,
-            AgentRegistryService agentRegistry) {
+            AgentRegistryService agentRegistry,
+            AgentScopeA2aRequestHandler requestHandler,
+            ExecutorService ownedTransportExecutor) {
         this.transportWrappers = transportWrappers;
         this.transportProperties = transportProperties;
         this.agentCard = agentCard;
         this.agentRegistry = agentRegistry;
+        this.requestHandler = requestHandler;
+        this.ownedTransportExecutor = ownedTransportExecutor;
+    }
+
+    /**
+     * Stops the threads of the request handler and the transport executor created by this server.
+     * A caller-supplied executor is not shut down. See {@link AgentScopeA2aRequestHandler#close()}.
+     * The Spring Boot starter calls it when the application context closes. Calling it again has
+     * no effect.
+     */
+    @Override
+    public void close() {
+        try {
+            requestHandler.close();
+        } finally {
+            if (ownedTransportExecutor != null) {
+                ownedTransportExecutor.shutdownNow();
+            }
+        }
     }
 
     /**
@@ -164,7 +191,7 @@ public class AgentScopeA2aServer {
      */
     public String getAgentCardJson() {
         try {
-            return Utils.OBJECT_MAPPER.writeValueAsString(agentCard);
+            return JsonUtil.toJson(agentCard);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize the agent card", e);
         }
@@ -217,6 +244,8 @@ public class AgentScopeA2aServer {
 
         private QueueManager queueManager;
 
+        private MainEventBus mainEventBus;
+
         private PushNotificationConfigStore pushConfigStore;
 
         private PushNotificationSender pushSender;
@@ -258,7 +287,7 @@ public class AgentScopeA2aServer {
         /**
          * Set implementations of {@link TaskStore}.
          *
-         * <p> use {@link io.a2a.server.tasks.InMemoryTaskStore} by default.
+         * <p> use {@link org.a2aproject.sdk.server.tasks.InMemoryTaskStore} by default.
          *
          * @param taskStore task store
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -271,7 +300,9 @@ public class AgentScopeA2aServer {
         /**
          * Set implementations of {@link QueueManager}.
          *
-         * <p> use {@link io.a2a.server.events.InMemoryQueueManager} by default.
+         * <p> use {@link org.a2aproject.sdk.server.events.InMemoryQueueManager} by default. A
+         * custom queue manager must be created with an event bus, which has to be set with {@link
+         * #mainEventBus(MainEventBus)} too.
          *
          * @param queueManager queue manager
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -282,9 +313,24 @@ public class AgentScopeA2aServer {
         }
 
         /**
+         * Set the bus that carries events from the queues to the processor that persists and
+         * dispatches them. Required with a custom {@link #queueManager(QueueManager) queue
+         * manager}: the bus it was created with. By default, a new bus is created.
+         *
+         * @param mainEventBus event bus
+         * @return builder instance of {@link AgentScopeA2aServer}
+         */
+        public Builder mainEventBus(MainEventBus mainEventBus) {
+            this.mainEventBus = mainEventBus;
+            return this;
+        }
+
+        /**
          * Set implementations of {@link PushNotificationConfigStore}.
          *
-         * <p> use {@link io.a2a.server.tasks.InMemoryPushNotificationConfigStore} by default.
+         * <p> use {@link org.a2aproject.sdk.server.tasks.InMemoryPushNotificationConfigStore} by default.
+         * <p> Push notifications are not supported yet: new push configs are not accepted, but
+         * the configs a custom store already holds are still sent with the push sender.
          *
          * @param pushConfigStore push notification config store
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -297,7 +343,9 @@ public class AgentScopeA2aServer {
         /**
          * Set implementations of {@link PushNotificationSender}.
          *
-         * <p> use {@link io.a2a.server.tasks.BasePushNotificationSender} by default.
+         * <p> use {@link org.a2aproject.sdk.server.tasks.BasePushNotificationSender} by default.
+         * <p> Push notifications are not supported yet: new push configs are not accepted, but
+         * the configs a custom store already holds are still sent with the push sender.
          *
          * @param pushSender push notification sender
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -310,7 +358,8 @@ public class AgentScopeA2aServer {
         /**
          * Set executor for handle a2a request.
          *
-         * <p> use {@link Executors#newCachedThreadPool()} by default.
+         * <p>Uses a new {@link Executors#newCachedThreadPool()} by default, shut down when the
+         * server closes. A caller-supplied executor remains the caller's responsibility.
          *
          * @param executor executor
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -391,13 +440,37 @@ public class AgentScopeA2aServer {
                     AgentScopeA2aRequestHandler.builder()
                             .agentExecutor(agentExecutor)
                             .taskStore(taskStore)
+                            .mainEventBus(mainEventBus)
                             .queueManager(queueManager)
                             .pushConfigStore(pushConfigStore)
                             .pushSender(pushSender)
                             .build();
-            if (null == executor) {
-                executor = Executors.newCachedThreadPool();
+            ExecutorService ownedExecutor = null;
+            try {
+                if (executor == null) {
+                    ownedExecutor = Executors.newCachedThreadPool();
+                }
+                return build(
+                        requestHandler,
+                        ownedExecutor == null ? executor : ownedExecutor,
+                        ownedExecutor);
+            } catch (RuntimeException e) {
+                // The request handler has started threads.
+                try {
+                    requestHandler.close();
+                } finally {
+                    if (ownedExecutor != null) {
+                        ownedExecutor.shutdownNow();
+                    }
+                }
+                throw e;
             }
+        }
+
+        private AgentScopeA2aServer build(
+                AgentScopeA2aRequestHandler requestHandler,
+                Executor transportExecutor,
+                ExecutorService ownedExecutor) {
             if (null == agentCard) {
                 agentCard = new ConfigurableAgentCard.Builder().build();
             }
@@ -426,13 +499,22 @@ public class AgentScopeA2aServer {
                             .createAgentCard(agentCard, agentRunner, availableTransports);
             Map<String, TransportWrapper> transportWrappers =
                     buildTransportWrappers(
-                            requestHandler, availableTransports, allBuilders, a2aAgentCard);
+                            requestHandler,
+                            availableTransports,
+                            allBuilders,
+                            a2aAgentCard,
+                            transportExecutor);
             if (transportWrappers.isEmpty()) {
                 log.warn("No one TransportWrapper actually, a2a request will not be handle.");
             }
             AgentRegistryService agentRegistryService = new AgentRegistryService(agentRegistries);
             return new AgentScopeA2aServer(
-                    transportWrappers, availableTransports, a2aAgentCard, agentRegistryService);
+                    transportWrappers,
+                    availableTransports,
+                    a2aAgentCard,
+                    agentRegistryService,
+                    requestHandler,
+                    ownedExecutor);
         }
 
         private Map<String, TransportWrapperBuilder> loadTransportBuilders() {
@@ -477,7 +559,8 @@ public class AgentScopeA2aServer {
                 AgentScopeA2aRequestHandler requestHandler,
                 Set<TransportProperties> availableTransports,
                 Map<String, TransportWrapperBuilder> allBuilders,
-                AgentCard a2aAgentCard) {
+                AgentCard a2aAgentCard,
+                Executor transportExecutor) {
             Map<String, TransportWrapper> result = new HashMap<>();
             Set<TransportProperties> buildFailedTransport = new HashSet<>();
             for (TransportProperties transportProperties : availableTransports) {
@@ -485,7 +568,7 @@ public class AgentScopeA2aServer {
                         allBuilders.get(transportProperties.transportType());
                 try {
                     TransportWrapper transportWrapper =
-                            builder.build(a2aAgentCard, requestHandler, executor);
+                            builder.build(a2aAgentCard, requestHandler, transportExecutor);
                     result.put(transportProperties.transportType(), transportWrapper);
                 } catch (Exception e) {
                     log.warn(

@@ -3,12 +3,14 @@ title: A2A
 zh_link: /v2/zh/integration/protocol/a2a
 ---
 
-`agentscope-extensions-a2a` implements the [A2A protocol](https://a2aproject.github.io/A2A/) and ships two sub-modules:
+`agentscope-extensions-a2a` implements version 1.0 of the [A2A protocol](https://a2aproject.github.io/A2A/), with the A2A Java SDK, and ships two sub-modules:
 
 - `agentscope-extensions-a2a-client`: wraps a remote A2A Agent as a local `Agent` you can `call(...)` directly.
 - `agentscope-extensions-a2a-server`: exposes a local `ReActAgent` as an A2A Server.
 
-The two modules are independent — use either one alone.
+The client can be used on its own. The server also requires the client module for message conversion.
+
+A2A 0.3 is not supported: the client cannot call A2A 0.3 agents, and the server rejects requests from A2A 0.3 clients, which send no `A2A-Version` header, with a version error. The server does not support `ListTasks` yet, since it does not authenticate callers.
 
 ## Client: call a remote A2A Agent
 
@@ -25,12 +27,14 @@ The two modules are independent — use either one alone.
 ### Pass an AgentCard directly
 
 ```java
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.agent.A2aAgent;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
 
 AgentCard card = AgentCard.builder()
     .name("remote-translator")
-    .url("http://other-service:8080")
+    // The first interface is the preferred one.
+    .supportedInterfaces(List.of(new AgentInterface("JSONRPC", "http://other-service:8080")))
     // ...
     .build();
 
@@ -71,23 +75,27 @@ A2aAgent remote = A2aAgent.builder()
     <artifactId>agentscope-extensions-a2a-server</artifactId>
     <version>${agentscope.version}</version>
 </dependency>
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-a2a-client</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
 ```
 
 ### Build the server
 
 ```java
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
-import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportProperties;
+import io.agentscope.core.a2a.server.transport.TransportWrapper;
 
 ReActAgent.Builder agentBuilder = ReActAgent.builder()
     .name("backend-agent")
     .model(model);
 
-AgentScopeA2aServer server = AgentScopeA2aServer.builder()
-    .agentBuilder(agentBuilder)
-    .transportProperties(new JsonRpcTransportProperties())
+AgentScopeA2aServer server = AgentScopeA2aServer.builder(agentBuilder)
+    .deploymentProperties(8080)
     // .agentCard(customCard)
-    // .agentRegistry(myRegistry)
+    // .withAgentRegistry(myRegistry)
     .build();
 
 // Delegate inbound requests to the transport wrapper from your web framework
@@ -97,6 +105,11 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 // as SSE events. Serve server.getAgentCardJson() at the agent card endpoint.
 
 server.postEndpointReady();   // call after the web server is listening — triggers registration etc.
+
+// On shutdown: stop the request handler and the server-created transport thread pool.
+// Caller-supplied executors remain caller-owned. Running executions are interrupted;
+// close() does not wait for them. The Spring Boot starter does this for you.
+server.close();
 ```
 
 `AgentScopeA2aServer` does not bind a port or expose endpoints itself; it only assembles components and the request-handling chain. You wire transport into Spring Boot, Quarkus, Vert.x, etc. as you prefer.
@@ -104,7 +117,7 @@ server.postEndpointReady();   // call after the web server is listening — trig
 ### Optional components
 
 - `TaskStore` / `QueueManager`: task and event queue stores; in-memory by default, swap for persistent versions in production.
-- `PushNotificationConfigStore` / `PushNotificationSender`: outbound notifications.
+- `PushNotificationConfigStore` / `PushNotificationSender`: outbound notifications. Push notifications are not supported yet: the agent card declares none, and push configs sent with a message are ignored.
 - `AgentRegistry`: register `AgentCard` to an external registry such as Nacos (see [Nacos](/v2/en/integration/infrastructure/nacos)).
 
 ## Spring Boot Starter
@@ -129,6 +142,8 @@ agentscope:
         security:
           - bearerAuth: []
 ```
+
+OAuth 2.0 schemes support the `authorization-code` (with `pkce-required`), `client-credentials` and `device-code` flows. A2A 1.0 has no `implicit` or `password` flow; configuring one fails the startup.
 
 When a map key contains special characters, such as the OAuth scope name `read:user` or a URL, write it quoted in brackets, for example `"[read:user]": Read the user`. Without brackets, characters such as `:` and `/` are dropped, and a `security-schemes` name containing `.` is read as a nested path, so that scheme is not applied.
 

@@ -291,36 +291,74 @@ class JevSupervisionMiddlewareTest {
     }
 
     @Test
-    void eventBurstsAreCoalescedAndRequestsNeverOverlapOrExceedLimit() {
+    void eventBurstsAreCoalescedAndRequestsNeverOverlapOrExceedLimit() throws Exception {
         AtomicInteger active = new AtomicInteger(),
                 maxActive = new AtomicInteger(),
                 calls = new AtomicInteger();
         var observations = new CopyOnWriteArrayList<JevSupervisionMiddleware.Observation>();
+        var firstResponse = Sinks.<Boolean>one();
+        var secondResponse = Sinks.<Boolean>one();
+        CountDownLatch firstRequested = new CountDownLatch(1),
+                secondRequested = new CountDownLatch(1),
+                limitReported = new CountDownLatch(1);
+        Function<SystemOneRequest, Mono<SystemOneResult>> caller =
+                r ->
+                        Mono.defer(
+                                () -> {
+                                    int call = calls.incrementAndGet();
+                                    maxActive.accumulateAndGet(active.incrementAndGet(), Math::max);
+                                    var response = call == 1 ? firstResponse : secondResponse;
+                                    (call == 1 ? firstRequested : secondRequested).countDown();
+                                    return response.asMono()
+                                            .then(JevSupervisionExample.syntheticAnswers(r))
+                                            .doOnNext(ignored -> active.decrementAndGet());
+                                });
         var m =
-                middleware(
-                        r ->
-                                Mono.defer(
-                                        () -> {
-                                            calls.incrementAndGet();
-                                            maxActive.accumulateAndGet(
-                                                    active.incrementAndGet(), Math::max);
-                                            return JevSupervisionExample.syntheticAnswers(r)
-                                                    .delayElement(Duration.ofMillis(25))
-                                                    .doOnNext(ignored -> active.decrementAndGet());
-                                        }),
-                        observations,
-                        2,
-                        3);
-        var worker =
-                Flux.interval(Duration.ofMillis(1))
-                        .take(160)
-                        .map(i -> (AgentEvent) new TextBlockDeltaEvent("r", "b", "x"));
-        assertEquals(160, invoke(m, context("s"), worker).count().block());
-        assertEquals(2, calls.get());
-        assertEquals(1, maxActive.get());
-        assertTrue(
-                observations.stream()
-                        .anyMatch(o -> o.decision().reason().equals("ASSESSMENT_LIMIT")));
+                new JevSupervisionMiddleware(
+                        new JevTaskSupervisor(
+                                caller,
+                                new JevTaskSupervisor.Thresholds(.2, .8),
+                                JevTaskSupervisor.Limits.defaults(),
+                                // Response gates, rather than a request timeout, control this test.
+                                new JevExecution.Options(
+                                        JevExecution.Mode.SHADOW,
+                                        Duration.ofDays(1),
+                                        "gated-test",
+                                        (c, r) -> {})),
+                        new JevSupervisionMiddleware.Schedule(
+                                Duration.ofMillis(10), Duration.ofMillis(30), 2, 3),
+                        (ctx, o) -> {
+                            observations.add(o);
+                            if (o.decision().reason().equals("ASSESSMENT_LIMIT")) {
+                                limitReported.countDown();
+                            }
+                        });
+        var worker = Sinks.many().unicast().<AgentEvent>onBackpressureBuffer();
+        var completion = invoke(m, context("s"), worker.asFlux()).count().toFuture();
+        try {
+            assertTrue(firstRequested.await(5, TimeUnit.SECONDS));
+            for (int i = 0; i < 160; i++) {
+                assertEquals(
+                        Sinks.EmitResult.OK,
+                        worker.tryEmitNext(new TextBlockDeltaEvent("r", "b", "x")));
+            }
+            assertEquals(1, calls.get());
+            firstResponse.tryEmitValue(true);
+            assertTrue(secondRequested.await(5, TimeUnit.SECONDS));
+            secondResponse.tryEmitValue(true);
+            // Keep the worker active until the limit is observed: a terminal assessment is
+            // allowed to consume the last slot without producing an ASSESSMENT_LIMIT notice.
+            assertTrue(limitReported.await(5, TimeUnit.SECONDS));
+            assertEquals(Sinks.EmitResult.OK, worker.tryEmitComplete());
+            assertEquals(160, completion.get(5, TimeUnit.SECONDS));
+            assertEquals(2, calls.get());
+            assertEquals(1, maxActive.get());
+            assertTrue(
+                    observations.stream()
+                            .anyMatch(o -> o.decision().reason().equals("ASSESSMENT_LIMIT")));
+        } finally {
+            completion.cancel(true);
+        }
     }
 
     @Test
