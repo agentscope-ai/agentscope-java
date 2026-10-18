@@ -88,7 +88,7 @@ public final class AgentProtocolTaskStore {
     private final Map<String, CompletableFuture<String>> futures = new ConcurrentHashMap<>();
     private final Map<String, SubmitContext> submitContexts = new ConcurrentHashMap<>();
 
-    /** Serializes resume transitions per task so concurrent resumes cannot double-start a run. */
+    /** Serializes submit and resume transitions per task to prevent duplicate runs. */
     private final ConcurrentHashMap<String, Object> taskLocks = new ConcurrentHashMap<>();
 
     public AgentProtocolTaskStore(
@@ -144,33 +144,36 @@ public final class AgentProtocolTaskStore {
     }
 
     public void submit(String taskId, String agentId, String input, Map<String, Object> context) {
-        Optional<TaskRecord> existing = taskRepository.find(taskId);
-        if (existing.isPresent() && existing.get().getStatus().isTerminal()) {
-            throw new IllegalStateException("task_id already finished: " + taskId);
+        Object lock = taskLocks.computeIfAbsent(taskId, k -> new Object());
+        synchronized (lock) {
+            Optional<TaskRecord> existing = taskRepository.find(taskId);
+            if (existing.isPresent() && existing.get().getStatus().isTerminal()) {
+                throw new IllegalStateException("task_id already finished: " + taskId);
+            }
+            CompletableFuture<String> prior = futures.get(taskId);
+            if (prior != null && !prior.isDone()) {
+                return;
+            }
+
+            SubmitContext ctx = SubmitContext.from(context);
+            submitContexts.put(taskId, ctx);
+
+            TaskRecord pending =
+                    new TaskRecord(
+                            taskId,
+                            agentId != null ? agentId : "default",
+                            AgentProtocolConstants.PROTOCOL_AGENT_ID,
+                            AgentProtocolConstants.PROTOCOL_SESSION_ID,
+                            null);
+            pending.setStatus(TaskStatus.PENDING);
+            persist(pending);
+
+            CompletableFuture<String> f =
+                    CompletableFuture.supplyAsync(
+                            () -> runAgent(taskId, agentId, input, ctx, null), executor);
+            futures.put(taskId, f);
+            f.whenComplete((r, ex) -> futures.remove(taskId, f));
         }
-        CompletableFuture<String> prior = futures.get(taskId);
-        if (prior != null && !prior.isDone()) {
-            return;
-        }
-
-        SubmitContext ctx = SubmitContext.from(context);
-        submitContexts.put(taskId, ctx);
-
-        TaskRecord pending =
-                new TaskRecord(
-                        taskId,
-                        agentId != null ? agentId : "default",
-                        AgentProtocolConstants.PROTOCOL_AGENT_ID,
-                        AgentProtocolConstants.PROTOCOL_SESSION_ID,
-                        null);
-        pending.setStatus(TaskStatus.PENDING);
-        persist(pending);
-
-        CompletableFuture<String> f =
-                CompletableFuture.supplyAsync(
-                        () -> runAgent(taskId, agentId, input, ctx, null), executor);
-        futures.put(taskId, f);
-        f.whenComplete((r, ex) -> futures.remove(taskId, f));
     }
 
     /**
