@@ -325,7 +325,7 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 市场 skill 的资源最初只在内存里。要让 shell 能跑它们，harness 在每次 call 前（PreCall 阶段，与 `<available_skills>` 同一次 `onSystemPrompt`）把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`：
 
 - 文件级 SHA-256 去重，只重写变化过的文件
-- 已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录，会在同一次物化里顺手清掉
+- 实际执行 staging 时，符合回收条件的孤儿目录可在配置的宽限期（默认 30 分钟）后回收
 - Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱
 
 工作区 skill（Layer 3 / Layer 4）不需要 stage——它们本来就在工作区目录里。
@@ -350,7 +350,7 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 市场 skill 的资源拿到时只是内存里的字节，shell 没法直接执行。每次 call 前（PreCall 阶段），`MarketplaceStager` 把它们写到宿主的 `<wsRoot>/.skills-cache/<source>/<name>/`：
 
 - **文件级 SHA-256 去重** —— 只重写变化过的文件，没变的跳过；
-- **孤儿清理** —— 已下架的 skill、或从 builder 里移除的整个仓库，留下的目录在同一次物化里顺手删掉；
+- **孤儿清理** —— 实际执行 staging 时，已下架 skill 或被移除仓库留下的符合条件的目录，可在配置的宽限期（默认 30 分钟）后回收；
 - **恢复执行位** —— 资源在入库时被转成字符串，POSIX 权限丢了，所以 stager 用启发式补回 `+x`：文件开头是 shebang（`#!`），或后缀是已知脚本类型（`.sh`/`.bash`/`.py`/`.rb`/`.pl`/`.js`/`.mjs`），就加上可执行位（按 `chmod +x` 的语义，只给本来有读权限的位加执行位）。纯静态资产（`.json`/`.md`/`.txt`）保持 644。
 
 工作区 skill（Layer 3 / Layer 4）跳过这一步——它们本来就在工作区目录里。
@@ -370,7 +370,13 @@ AGENTS.md  skills/  subagents/  knowledge/  .skills-cache/
 | 方法 | 作用 |
 |------|------|
 | `workspaceProjectionRoots(List)` | 自定义投影哪些根目录（默认含 `skills`、`.skills-cache`） |
+| `workspaceProjectionSyncRoots(List)` | 显式开启，仅清理归属明确的 `.skills-cache/<scope>` 子树内过期沙箱项；默认为空，要求由 Harness 管理并受 guard 保护的沙箱 |
 | `workspaceProjectionEnabled(false)` | 完全关掉投影——关了之后沙箱里就没有 skill 文件，脚本自然跑不了 |
+
+缓存同步以宿主 payload 为准，包括宿主回收后产生的空 payload。宿主 stager 的 30 分钟孤儿宽限期不变，仓库下架不会因此即时生效。技能脚本应把需要保留的输出写到同步缓存根之外。归属、支持环境和 guard 要求在 filesystem 指南的工作区投影章节说明。
+
+Sandbox 同步只处理宿主投影中已不存在的文件，不触发宿主 GC，也不代表完整的仓库下架流程已被验证。合并后的 Skill 集合为空时，当前 middleware 会跳过宿主 GC；这个独立问题由 [PR #2665](https://github.com/agentscope-ai/agentscope-java/pull/2665) 处理。仓库删除 Skill、宿主回收缓存、Sandbox 移除副本是三个不同步骤。
+
 
 ### 第三步：在容器里执行脚本
 

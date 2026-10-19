@@ -57,7 +57,9 @@ public final class WorkspaceProjectionApplier {
             return null;
         }
 
+        SkillsCacheProjection.validateSources(spec);
         Map<String, Path> projectedFiles = collectProjectedFiles(entries);
+        SkillsCacheProjection.restrictProjectedCache(spec, projectedFiles);
         List<Map.Entry<String, Path>> ordered = new ArrayList<>(projectedFiles.entrySet());
         ordered.sort(Comparator.comparing(Map.Entry::getKey));
 
@@ -87,7 +89,7 @@ public final class WorkspaceProjectionApplier {
         return new ProjectionPayload(hash, baos.toByteArray(), ordered.size());
     }
 
-    private static void collectProjectionEntries(
+    static void collectProjectionEntries(
             Map<String, WorkspaceEntry> map, List<WorkspaceProjectionEntry> out) {
         for (WorkspaceEntry entry : map.values()) {
             if (entry instanceof WorkspaceProjectionEntry projection) {

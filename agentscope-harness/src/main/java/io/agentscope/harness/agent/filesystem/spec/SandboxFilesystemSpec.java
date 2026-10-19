@@ -46,6 +46,7 @@ public abstract class SandboxFilesystemSpec {
     private SandboxExecutionGuard executionGuard;
     private boolean workspaceProjectionEnabled = true;
     private List<String> workspaceProjectionRoots = DEFAULT_WORKSPACE_PROJECTION_ROOTS;
+    private List<String> workspaceProjectionSyncRoots = List.of();
 
     protected abstract SandboxClient<?> createClient();
 
@@ -107,6 +108,23 @@ public abstract class SandboxFilesystemSpec {
         return this;
     }
 
+    /**
+     * Reconciles the invocation's derived cache subtree. Use {@code .skills-cache/{scope}} to
+     * resolve the exact stager scope dynamically. Static roots must belong to the call too.
+     * Defaults to empty (overlay only). Currently requires a newly created harness-owned Docker
+     * container, Linux x86_64/aarch64 with openat2 (kernel 5.6+), and Python 3. The image must
+     * be trusted and the workspace private, with no independent writer during maintenance. Requires
+     * an execution guard whose correctness is the application's responsibility. Configuration is
+     * not persisted.
+     *
+     * @param roots relative POSIX paths below {@code .skills-cache}, included in projection
+     * @return this spec
+     */
+    public SandboxFilesystemSpec workspaceProjectionSyncRoots(List<String> roots) {
+        this.workspaceProjectionSyncRoots = roots != null ? List.copyOf(roots) : List.of();
+        return this;
+    }
+
     public final SandboxContext toSandboxContext(Path hostWorkspaceRoot) {
         SandboxClient<?> client =
                 Objects.requireNonNull(createClient(), "sandbox client is required");
@@ -128,11 +146,16 @@ public abstract class SandboxFilesystemSpec {
         WorkspaceSpec base = workspaceSpec();
         WorkspaceSpec effective = base != null ? base.copy() : new WorkspaceSpec();
         if (!workspaceProjectionEnabled || hostWorkspaceRoot == null) {
+            if (!workspaceProjectionSyncRoots.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Cache synchronization requires host projection");
+            }
             return effective;
         }
         WorkspaceProjectionEntry projection = new WorkspaceProjectionEntry();
         projection.setSourceRoot(hostWorkspaceRoot.toAbsolutePath().normalize().toString());
         projection.setIncludeRoots(workspaceProjectionRoots);
+        projection.setSyncRoots(workspaceProjectionSyncRoots);
 
         Map<String, WorkspaceEntry> entries = new LinkedHashMap<>(effective.getEntries());
         entries.put("__workspace_projection__", projection);

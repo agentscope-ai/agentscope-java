@@ -68,6 +68,25 @@ public class SandboxManager {
 
     public SandboxAcquireResult acquire(
             SandboxContext sandboxContext, RuntimeContext runtimeContext) throws Exception {
+        boolean syncingCache = SkillsCacheProjection.enabled(sandboxContext.getWorkspaceSpec());
+        if (sandboxContext.getExternalSandboxState() != null) {
+            syncingCache |=
+                    SkillsCacheProjection.enabled(
+                            sandboxContext.getExternalSandboxState().getWorkspaceSpec());
+        }
+        if (sandboxContext.getExternalSandbox() != null
+                && sandboxContext.getExternalSandbox().getState() != null) {
+            syncingCache |=
+                    SkillsCacheProjection.enabled(
+                            sandboxContext.getExternalSandbox().getState().getWorkspaceSpec());
+        }
+        if (syncingCache
+                && (sandboxContext.getExternalSandbox() != null
+                        || sandboxContext.getExternalSandboxState() != null
+                        || executionGuard == SandboxExecutionGuard.noop())) {
+            throw new IllegalArgumentException(
+                    "Cache synchronization requires a guarded, harness-managed sandbox");
+        }
         // Priority 1: user-supplied sandbox — guard does not apply
         if (sandboxContext.getExternalSandbox() != null) {
             Sandbox external = sandboxContext.getExternalSandbox();
@@ -90,6 +109,9 @@ public class SandboxManager {
         Optional<SandboxIsolationKey> scopeKey =
                 SandboxIsolationKey.resolve(
                         sandboxContext.getIsolationScope(), runtimeContext, agentId);
+        if (syncingCache && scopeKey.isEmpty()) {
+            throw new IllegalArgumentException("Cache synchronization requires an isolation key");
+        }
 
         SandboxLease lease = SandboxLease.noop();
         if (scopeKey.isPresent()) {
@@ -98,6 +120,11 @@ public class SandboxManager {
         }
 
         try {
+            WorkspaceSpec invocationSpec =
+                    SkillsCacheProjection.bindScope(
+                            sandboxContext.getWorkspaceSpec(),
+                            runtimeContext,
+                            sandboxContext.getIsolationScope());
             String persistedSnapshotId = null;
             if (scopeKey.isPresent()) {
                 try {
@@ -110,8 +137,21 @@ public class SandboxManager {
                                 client.deserializeState(
                                         stateJson.get(), sandboxContext.getSnapshotSpec());
                         // Overwrite stale WorkspaceSpec with current application config
-                        if (sandboxContext.getWorkspaceSpec() != null) {
-                            state.setWorkspaceSpec(sandboxContext.getWorkspaceSpec().copy());
+                        if (invocationSpec != null) {
+                            state.setWorkspaceSpec(invocationSpec.copy());
+                        }
+                        if (SkillsCacheProjection.enabled(state.getWorkspaceSpec())
+                                && executionGuard == SandboxExecutionGuard.noop()) {
+                            throw new CacheSyncGuardRequiredException();
+                        }
+                        try {
+                            state.setWorkspaceSpec(
+                                    SkillsCacheProjection.bindScope(
+                                            state.getWorkspaceSpec(),
+                                            runtimeContext,
+                                            sandboxContext.getIsolationScope()));
+                        } catch (IllegalArgumentException e) {
+                            throw new CacheSyncGuardRequiredException(e);
                         }
                         if (state.getSnapshot() != null) {
                             persistedSnapshotId = state.getSnapshot().getId();
@@ -119,6 +159,8 @@ public class SandboxManager {
                         Sandbox sandbox = client.resume(state);
                         return SandboxAcquireResult.selfManaged(sandbox, lease);
                     }
+                } catch (CacheSyncGuardRequiredException e) {
+                    throw e;
                 } catch (Exception e) {
                     log.warn(
                             "[sandbox] Failed to load persisted state for scope {}, falling through"
@@ -131,9 +173,7 @@ public class SandboxManager {
 
             log.debug("[sandbox] Priority 4: creating new sandbox");
             WorkspaceSpec spec =
-                    sandboxContext.getWorkspaceSpec() != null
-                            ? sandboxContext.getWorkspaceSpec().copy()
-                            : new WorkspaceSpec();
+                    invocationSpec != null ? invocationSpec.copy() : new WorkspaceSpec();
 
             @SuppressWarnings("unchecked")
             SandboxClient<SandboxClientOptions> typedClient =
@@ -151,6 +191,17 @@ public class SandboxManager {
             // Guard must be released if acquire fails — the caller won't see the result
             lease.close();
             throw e;
+        }
+    }
+
+    /** A missing cache guard is a configuration error, not a reason to discard saved state. */
+    private static final class CacheSyncGuardRequiredException extends IllegalArgumentException {
+        private CacheSyncGuardRequiredException() {
+            super("Saved cache synchronization requires an execution guard");
+        }
+
+        private CacheSyncGuardRequiredException(IllegalArgumentException cause) {
+            super("Invalid saved cache synchronization configuration", cause);
         }
     }
 

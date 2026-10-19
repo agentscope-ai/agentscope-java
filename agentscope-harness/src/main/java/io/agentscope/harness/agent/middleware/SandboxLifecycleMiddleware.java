@@ -106,21 +106,21 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             return;
         }
         try {
-            Consumer<RuntimeContext> cb = beforeStartCallback;
-            if (cb != null) {
-                try {
-                    cb.accept(ctx);
-                } catch (Exception e) {
-                    log.warn(
-                            "[sandbox-mw] beforeStartCallback failed; proceeding with sandbox"
-                                    + " start: {}",
-                            e.getMessage(),
-                            e);
-                }
-            }
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
             try {
+                Consumer<RuntimeContext> cb = beforeStartCallback;
+                if (cb != null) {
+                    try {
+                        cb.accept(ctx);
+                    } catch (Exception e) {
+                        log.warn(
+                                "[sandbox-mw] beforeStartCallback failed; proceeding with sandbox"
+                                        + " start: {}",
+                                e.getMessage(),
+                                e);
+                    }
+                }
                 sandbox.start();
                 // Bind the acquired sandbox per-call on this invocation's RuntimeContext rather
                 // than only on a shared agent-level slot. Distinct (userId, sessionId) sessions
