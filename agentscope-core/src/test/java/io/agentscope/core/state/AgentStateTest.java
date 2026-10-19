@@ -17,6 +17,7 @@ package io.agentscope.core.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -43,6 +44,7 @@ class AgentStateTest {
         assertEquals("", s.getSummary());
         assertEquals(List.of(), s.getContext());
         assertEquals(0, s.getCurIter());
+        assertNull(s.getShutdownInputMessageIds());
         assertEquals(PermissionMode.DEFAULT, s.getPermissionContext().getMode());
         assertEquals(100, s.getToolContext().getMaxCacheFiles());
         assertEquals(List.of(), s.getTasksContext().getTasks());
@@ -71,6 +73,8 @@ class AgentStateTest {
                         .summary("rolling summary")
                         .curIter(7)
                         .context(List.of(msg))
+                        .shutdownInterrupted(true)
+                        .shutdownInputMessageIds(List.of(msg.getId()))
                         .permissionContext(pc)
                         .toolContext(tc)
                         .tasksContext(tasks)
@@ -81,6 +85,7 @@ class AgentStateTest {
         assertEquals("rolling summary", s.getSummary());
         assertEquals(7, s.getCurIter());
         assertEquals(1, s.getContext().size());
+        assertEquals(List.of(msg.getId()), s.getShutdownInputMessageIds());
         assertEquals(PermissionMode.BYPASS, s.getPermissionContext().getMode());
         assertEquals(5, s.getToolContext().getMaxCacheFiles());
         assertEquals(1, s.getTasksContext().getTasks().size());
@@ -137,6 +142,8 @@ class AgentStateTest {
                         .replyId("reply-9")
                         .summary("rolling")
                         .curIter(5)
+                        .shutdownInterrupted(true)
+                        .shutdownInputMessageIds(List.of("input-1", "input-2"))
                         .permissionContext(
                                 PermissionContextState.builder()
                                         .mode(PermissionMode.EXPLORE)
@@ -147,11 +154,15 @@ class AgentStateTest {
         assertTrue(json.contains("\"reply_id\":\"reply-9\""), () -> json);
         assertTrue(json.contains("\"cur_iter\":5"), () -> json);
         assertTrue(json.contains("\"summary\":\"rolling\""), () -> json);
+        assertTrue(
+                json.contains("\"shutdown_input_message_ids\":[\"input-1\",\"input-2\"]"),
+                () -> json);
         AgentState decoded = mapper.readValue(json, AgentState.class);
         assertEquals(original.getSessionId(), decoded.getSessionId());
         assertEquals(original.getReplyId(), decoded.getReplyId());
         assertEquals(original.getCurIter(), decoded.getCurIter());
         assertEquals(original.getSummary(), decoded.getSummary());
+        assertEquals(original.getShutdownInputMessageIds(), decoded.getShutdownInputMessageIds());
         assertEquals(
                 original.getPermissionContext().getMode(),
                 decoded.getPermissionContext().getMode());
@@ -164,5 +175,6 @@ class AgentStateTest {
         assertEquals("", decoded.getSummary());
         assertEquals(0, decoded.getCurIter());
         assertNotNull(decoded.getReplyId());
+        assertNull(decoded.getShutdownInputMessageIds());
     }
 }

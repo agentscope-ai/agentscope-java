@@ -623,6 +623,34 @@ class GracefulShutdownTest {
 
             assertEquals(0, manager.getActiveRequestCount());
         }
+
+        @Test
+        @DisplayName("Shutdown checkpoint captures input IDs from the active call")
+        void shutdownCheckpointCapturesActiveCallInputIds() {
+            try {
+                manager.setConfig(
+                        new GracefulShutdownConfig(
+                                Duration.ofMillis(100), PartialReasoningPolicy.SAVE));
+                TestableAgent agent = createSlowAgent("checkpoint-1");
+                Msg input = buildMsg("hello");
+
+                StepVerifier.create(agent.call(List.of(input)))
+                        .then(
+                                () -> {
+                                    assertEquals(1, manager.getActiveRequestCount());
+                                    manager.performGracefulShutdown();
+                                })
+                        .thenAwait(Duration.ofSeconds(2))
+                        .thenCancel()
+                        .verify(Duration.ofSeconds(5));
+
+                assertTrue(agent.getAgentState().isShutdownInterrupted());
+                assertEquals(
+                        List.of(input.getId()), agent.getAgentState().getShutdownInputMessageIds());
+            } finally {
+                manager.setConfig(GracefulShutdownConfig.DEFAULT);
+            }
+        }
     }
 
     // ==================== ActiveRequestContext ====================
@@ -651,13 +679,64 @@ class GracefulShutdownTest {
             AtomicReference<AgentState> savedState = new AtomicReference<>();
             ActiveRequestContext ctx =
                     new ActiveRequestContext("req-2", savedState::set, agent.control);
+            Msg input = Msg.builder().id("input-1").role(MsgRole.USER).textContent("hello").build();
 
             ctx.bindState(agent.getAgentState());
+            ctx.bindInputs(List.of(input));
             ctx.saveState();
 
             assertTrue(agent.getAgentState().isShutdownInterrupted());
+            assertEquals(List.of("input-1"), agent.getAgentState().getShutdownInputMessageIds());
             assertNotNull(savedState.get());
             assertTrue(savedState.get().isShutdownInterrupted());
+            assertEquals(List.of("input-1"), savedState.get().getShutdownInputMessageIds());
+        }
+
+        @Test
+        void recoveryDiscardsOnlyAnExactOrderedMessageIdMatch() {
+            AgentState state =
+                    AgentState.builder()
+                            .shutdownInterrupted(true)
+                            .shutdownInputMessageIds(List.of("input-1", "input-2"))
+                            .build();
+            List<Msg> exactRetry =
+                    List.of(
+                            Msg.builder().id("input-1").role(MsgRole.USER).build(),
+                            Msg.builder().id("input-2").role(MsgRole.USER).build());
+
+            assertTrue(manager.checkAndClearShutdownInterruptedForState(state, exactRetry));
+            assertFalse(state.isShutdownInterrupted());
+            assertNull(state.getShutdownInputMessageIds());
+
+            state.setShutdownInterrupted(true);
+            state.setShutdownInputMessageIds(List.of("input-1", "input-2"));
+            List<Msg> reordered = List.of(exactRetry.get(1), exactRetry.get(0));
+
+            assertFalse(manager.checkAndClearShutdownInterruptedForState(state, reordered));
+            assertFalse(state.isShutdownInterrupted());
+            assertNull(state.getShutdownInputMessageIds());
+        }
+
+        @Test
+        void recoveryDoesNotMatchMissingMessageIds() {
+            AgentState state =
+                    AgentState.builder()
+                            .shutdownInterrupted(true)
+                            .shutdownInputMessageIds(java.util.Arrays.asList((String) null))
+                            .build();
+            Msg input = Msg.builder().id(null).role(MsgRole.USER).textContent("same").build();
+
+            assertFalse(manager.checkAndClearShutdownInterruptedForState(state, List.of(input)));
+            assertFalse(state.isShutdownInterrupted());
+        }
+
+        @Test
+        void legacyInterruptedStateRetainsOneTimeDiscardBehavior() {
+            AgentState state = AgentState.builder().shutdownInterrupted(true).build();
+            Msg input = Msg.builder().role(MsgRole.USER).textContent("new").build();
+
+            assertTrue(manager.checkAndClearShutdownInterruptedForState(state, List.of(input)));
+            assertFalse(state.isShutdownInterrupted());
         }
 
         @Test
