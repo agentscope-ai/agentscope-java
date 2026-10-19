@@ -23,6 +23,12 @@ import io.agentscope.core.agent.Agent;
  * <p>Since ReActAgent is not thread-safe, this provider pattern ensures that each tool call gets a
  * fresh agent instance. This is similar to Spring's ObjectProvider pattern.
  *
+ * <p>Each instance returned to {@link SubAgentTool} is owned by the tool. The tool closes
+ * instances that implement {@link AutoCloseable}: the temporary initialization instance after
+ * reading its metadata, and each invocation instance after completion, error, or cancellation.
+ * Implementations must return a fresh instance on every call, not a shared or cached agent that
+ * other callers may still use.
+ *
  * <p>Example usage:
  *
  * <pre>{@code
@@ -45,8 +51,9 @@ public interface SubAgentProvider<T extends Agent> {
     /**
      * Provides a new agent instance.
      *
-     * <p>This method is called for each tool invocation to ensure thread safety. Implementations
-     * should create a new agent instance each time this method is called.
+     * <p>This method is called during tool initialization to obtain metadata and for each tool
+     * invocation. Implementations must create a new instance each time and transfer its lifecycle
+     * ownership to the tool, which closes it when it implements {@link AutoCloseable}.
      *
      * @return A new agent instance
      */
