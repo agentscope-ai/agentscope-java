@@ -418,3 +418,5 @@ execute("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <目标�
 - [工作区](/v2/zh/docs/harness/workspace) — `skills/` 目录的整体布局
 - [文件系统](/v2/zh/docs/harness/filesystem) — 多租户隔离与按用户切目录
 - [架构](/v2/zh/docs/harness/architecture) — skill 集合是怎么每次 call 重新合成的
+
+技能前置元数据中递归的 YAML 别名引用会转换为空值；重复但不递归的别名保留其原有值。

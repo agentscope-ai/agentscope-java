@@ -16,15 +16,6 @@
 
 package io.agentscope.core.skill.util;
 
-import java.lang.reflect.Array;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.DumperOptions;
@@ -32,6 +23,18 @@ import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 import org.yaml.snakeyaml.representer.Representer;
+
+import java.lang.reflect.Array;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Utility for parsing and generating Markdown files with YAML frontmatter.
@@ -297,38 +300,60 @@ public class MarkdownSkillParser {
      * </ul>
      */
     private static Object normalizeMetadataValue(Object value) {
+        return normalizeMetadataValue(value, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private static Object normalizeMetadataValue(Object value, Set<Object> ancestors) {
         if (value == null) {
             return null;
         }
 
-        if (value instanceof Map<?, ?> rawMap) {
-            LinkedHashMap<String, Object> normalized = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
-                Object key = entry.getKey();
-                String normalizedKey = key instanceof String ? (String) key : String.valueOf(key);
-                normalized.put(normalizedKey, normalizeMetadataValue(entry.getValue()));
-            }
-            return normalized;
+        boolean container =
+                value instanceof Map<?, ?>
+                        || value instanceof Collection<?>
+                        || value.getClass().isArray();
+        if (container && !ancestors.add(value)) {
+            // YAML aliases may point back to an ancestor. Keep the result tree-shaped.
+            return null;
         }
 
-        if (value instanceof Collection<?> collection) {
-            List<Object> normalized = new ArrayList<>(collection.size());
-            for (Object item : collection) {
-                normalized.add(normalizeMetadataValue(item));
-            }
-            return normalized;
-        }
+        try {
 
-        if (value.getClass().isArray()) {
-            int length = Array.getLength(value);
-            List<Object> normalized = new ArrayList<>(length);
-            for (int i = 0; i < length; i++) {
-                normalized.add(normalizeMetadataValue(Array.get(value, i)));
+            if (value instanceof Map<?, ?> rawMap) {
+                LinkedHashMap<String, Object> normalized = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                    Object key = entry.getKey();
+                    String normalizedKey =
+                            key instanceof String ? (String) key : String.valueOf(key);
+                    normalized.put(
+                            normalizedKey, normalizeMetadataValue(entry.getValue(), ancestors));
+                }
+                return normalized;
             }
-            return normalized;
-        }
 
-        return value;
+            if (value instanceof Collection<?> collection) {
+                List<Object> normalized = new ArrayList<>(collection.size());
+                for (Object item : collection) {
+                    normalized.add(normalizeMetadataValue(item, ancestors));
+                }
+                return normalized;
+            }
+
+            if (value.getClass().isArray()) {
+                int length = Array.getLength(value);
+                List<Object> normalized = new ArrayList<>(length);
+                for (int i = 0; i < length; i++) {
+                    normalized.add(normalizeMetadataValue(Array.get(value, i), ancestors));
+                }
+                return normalized;
+            }
+
+            return value;
+        } finally {
+            if (container) {
+                ancestors.remove(value);
+            }
+        }
     }
 
     /**
