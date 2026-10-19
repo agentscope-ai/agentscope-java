@@ -22,7 +22,7 @@ import java.util.Map;
 /**
  * Properties for transports.
  *
- * <p>Usage for auto-generate {@link io.a2a.spec.AgentCard} and do register to A2A Registries.
+ * <p>Usage for auto-generate {@link org.a2aproject.sdk.spec.AgentCard} and do register to A2A Registries.
  */
 public record TransportProperties(
         String transportType,

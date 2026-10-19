@@ -24,12 +24,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
