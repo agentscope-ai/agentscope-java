@@ -102,6 +102,8 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
 
     private static final int DEFAULT_STREAMING_BACKPRESSURE_BUFFER_SIZE = 8192;
 
+    private static final String INTERNAL_ERROR_MESSAGE = "Internal error";
+
     private static final int STREAMING_BACKPRESSURE_BUFFER_SIZE =
             Integer.getInteger(
                     STREAMING_BACKPRESSURE_BUFFER_SIZE_PROPERTY,
@@ -133,6 +135,12 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
         ServerCallContext context = buildServerCallContext(headers, metadata);
         A2ARequest<?> request;
         try {
+            if (body == null || body.isBlank()) {
+                return toJson(new A2AErrorResponse(new JSONParseError("Empty request body")));
+            }
+            if (!JsonParser.parseString(body).isJsonObject()) {
+                return toJson(new A2AErrorResponse(new InvalidRequestError()));
+            }
             request = JSONRPCUtils.parseRequestBody(body, null);
         } catch (InvalidParamsJsonMappingException e) {
             return toJson(
@@ -160,7 +168,7 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
             return toJson(new A2AErrorResponse(new JSONParseError(e.getMessage())));
         } catch (RuntimeException e) {
             log.error("Failed to parse JSON-RPC request:", e);
-            return toJson(new A2AErrorResponse(new InternalError(e.getMessage())));
+            return toJson(new A2AErrorResponse(new InternalError(INTERNAL_ERROR_MESSAGE)));
         }
         boolean streaming = !(request instanceof NonStreamingJSONRPCRequest);
         context.getState().put(JSONRPCContextKeys.METHOD_NAME_KEY, request.getMethod());
@@ -183,7 +191,9 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
             return toJson(new A2AErrorResponse(request.getId(), e));
         } catch (Throwable t) {
             log.error("Handle JSON-RPC request error:", t);
-            return toJson(new A2AErrorResponse(request.getId(), new InternalError(t.getMessage())));
+            return toJson(
+                    new A2AErrorResponse(
+                            request.getId(), new InternalError(INTERNAL_ERROR_MESSAGE)));
         }
     }
 

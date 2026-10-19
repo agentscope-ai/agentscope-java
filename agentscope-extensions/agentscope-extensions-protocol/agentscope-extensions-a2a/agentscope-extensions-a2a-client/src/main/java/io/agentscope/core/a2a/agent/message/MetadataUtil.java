@@ -45,6 +45,26 @@ public final class MetadataUtil {
     }
 
     /**
+     * Build the metadata of a tool block. Reserved entries override user entries, so callers
+     * cannot spoof the wire representation of a tool call.
+     *
+     * @param type the tool block type
+     * @param toolName the tool name
+     * @param toolCallId the tool call id
+     * @param userMetadata the metadata supplied by the caller
+     * @return the metadata with reserved tool entries
+     */
+    static Map<String, Object> toolMetadata(
+            String type, String toolName, String toolCallId, Map<String, Object> userMetadata) {
+        Map<String, Object> metadata =
+                new HashMap<>(null == userMetadata ? Map.of() : userMetadata);
+        metadata.put(MessageConstants.BLOCK_TYPE_METADATA_KEY, type);
+        metadata.put(MessageConstants.TOOL_NAME_METADATA_KEY, toolName);
+        metadata.put(MessageConstants.TOOL_CALL_ID_METADATA_KEY, toolCallId);
+        return metadata;
+    }
+
+    /**
      * Get the metadata of a {@link Part}.
      *
      * @param part the part

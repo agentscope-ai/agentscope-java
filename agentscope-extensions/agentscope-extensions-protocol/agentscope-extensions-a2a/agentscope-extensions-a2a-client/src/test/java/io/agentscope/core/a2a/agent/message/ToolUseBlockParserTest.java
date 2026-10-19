@@ -102,4 +102,36 @@ class ToolUseBlockParserTest {
         assertTrue(metadata.containsKey("custom_key"));
         assertEquals("custom_value", metadata.get("custom_key"));
     }
+
+    @Test
+    @DisplayName("Should keep reserved metadata over user metadata")
+    void testReservedMetadataWins() {
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .name("calculator")
+                        .id("123")
+                        .input(Map.of("expression", "1+1"))
+                        .metadata(
+                                Map.of(
+                                        "_agentscope_block_type",
+                                        "text",
+                                        "_agentscope_tool_name",
+                                        "spoofed-name",
+                                        "_agentscope_tool_call_id",
+                                        "spoofed-call",
+                                        "custom_key",
+                                        "custom_value"))
+                        .build();
+
+        DataPart dataPart = (DataPart) parser.parse(block);
+
+        assertEquals("tool_use", dataPart.metadata().get("_agentscope_block_type"));
+        assertEquals("calculator", dataPart.metadata().get("_agentscope_tool_name"));
+        assertEquals("123", dataPart.metadata().get("_agentscope_tool_call_id"));
+        assertEquals("custom_value", dataPart.metadata().get("custom_key"));
+
+        ToolUseBlock received = (ToolUseBlock) new DataPartParser().parse(dataPart);
+        assertEquals("calculator", received.getName());
+        assertEquals("123", received.getId());
+    }
 }

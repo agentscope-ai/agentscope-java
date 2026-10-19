@@ -30,24 +30,17 @@ public class TextPartParser implements PartParser<TextPart> {
 
     @Override
     public ContentBlock parse(TextPart part) {
-        String blockType = getMetadataValue(part, MessageConstants.BLOCK_TYPE_METADATA_KEY);
+        String blockType =
+                MetadataUtil.metadataValue(part, MessageConstants.BLOCK_TYPE_METADATA_KEY);
         if (MessageConstants.BlockContent.TYPE_THINKING.equals(blockType)) {
             return ThinkingBlock.builder().thinking(part.text()).build();
         }
         if (MessageConstants.BlockContent.TYPE_HINT.equals(blockType)) {
             return new HintBlock(
-                    getMetadataValue(part, MessageConstants.HINT_ID_METADATA_KEY),
+                    MetadataUtil.metadataValue(part, MessageConstants.HINT_ID_METADATA_KEY),
                     part.text(),
-                    getMetadataValue(part, MessageConstants.HINT_SOURCE_METADATA_KEY));
+                    MetadataUtil.metadataValue(part, MessageConstants.HINT_SOURCE_METADATA_KEY));
         }
         return TextBlock.builder().text(part.text()).build();
-    }
-
-    private String getMetadataValue(TextPart part, String key) {
-        if (part.metadata() == null) {
-            return null;
-        }
-        Object value = part.metadata().get(key);
-        return value == null ? null : value.toString();
     }
 }

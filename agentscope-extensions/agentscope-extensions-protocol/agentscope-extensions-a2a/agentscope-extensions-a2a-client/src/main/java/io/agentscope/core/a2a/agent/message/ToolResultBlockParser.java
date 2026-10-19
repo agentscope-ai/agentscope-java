@@ -31,10 +31,11 @@ public class ToolResultBlockParser implements ContentBlockParser<ToolResultBlock
     @Override
     public Part<?> parse(ToolResultBlock contentBlock) {
         Map<String, Object> metadata =
-                MetadataUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_TOOL_RESULT);
-        metadata.put(MessageConstants.TOOL_NAME_METADATA_KEY, contentBlock.getName());
-        metadata.put(MessageConstants.TOOL_CALL_ID_METADATA_KEY, contentBlock.getId());
-        metadata.putAll(contentBlock.getMetadata());
+                MetadataUtil.toolMetadata(
+                        MessageConstants.BlockContent.TYPE_TOOL_RESULT,
+                        contentBlock.getName(),
+                        contentBlock.getId(),
+                        contentBlock.getMetadata());
         // Plain JSON values: the SDK writes data with Gson, which ignores the block type
         // annotations.
         // Each block is converted on its own, so that its type is written.

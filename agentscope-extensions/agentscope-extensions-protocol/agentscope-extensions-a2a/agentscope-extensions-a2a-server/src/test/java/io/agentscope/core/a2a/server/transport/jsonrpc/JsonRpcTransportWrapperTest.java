@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -471,11 +472,12 @@ class JsonRpcTransportWrapperTest {
         @Test
         @DisplayName("Should handle JsonParseException")
         void testHandleJsonParseException() throws Exception {
-            String body = "{ invalid json ";
+            for (String body : List.of("{ invalid json ", "", "   ")) {
+                Object result = transportWrapper.handleRequest(body, Map.of(), Map.of());
 
-            Object result = transportWrapper.handleRequest(body, Map.of(), Map.of());
-
-            assertEquals(new JSONParseError().getCode(), errorCode(result));
+                assertEquals(new JSONParseError().getCode(), errorCode(result), body);
+            }
+            verifyNoInteractions(jsonRpcHandler);
         }
 
         @Test
@@ -488,7 +490,10 @@ class JsonRpcTransportWrapperTest {
             Object result = transportWrapper.handleRequest(body, Map.of(), Map.of());
 
             assertEquals("1", readJson(result).path("id").asText());
-            assertEquals(INTERNAL_ERROR_CODE, errorCode(result));
+            JsonNode response = readJson(result);
+            assertEquals(INTERNAL_ERROR_CODE, response.path("error").path("code").asInt());
+            assertEquals("Internal error", response.path("error").path("message").asText());
+            assertFalse(response.toString().contains("Test exception"));
         }
 
         @Test
@@ -530,11 +535,15 @@ class JsonRpcTransportWrapperTest {
         }
 
         @Test
-        @DisplayName("Should answer a body that is not a JSON object with an internal error")
+        @DisplayName("Should answer valid JSON that is not an object as an invalid request")
         void testHandleNonObjectBody() throws Exception {
-            Object result = transportWrapper.handleRequest("[]", Map.of(), Map.of());
+            for (String body : List.of("[]", "true", "1", "\"text\"", "null")) {
+                Object result = transportWrapper.handleRequest(body, Map.of(), Map.of());
 
-            assertEquals(INTERNAL_ERROR_CODE, errorCode(result));
+                assertEquals(new InvalidRequestError().getCode(), errorCode(result), body);
+                assertFalse(readJson(result).hasNonNull("id"), body);
+            }
+            verifyNoInteractions(jsonRpcHandler);
         }
 
         @Test
