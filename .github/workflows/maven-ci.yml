@@ -49,6 +49,8 @@ jobs:
 
   build:
     runs-on: ${{ matrix.os }}
+    # Fail loudly instead of burning GitHub's 6h default when a build wedges.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -108,10 +110,16 @@ jobs:
           mvn -B -T1C "-Dmaven.javadoc.skip=true" "-Dmaven.source.skip=true" "-Djacoco.skip=true" clean verify
 
       - name: Upload coverage reports to Codecov
-        if: runner.os == 'Linux'
+        # Secrets are unavailable to fork PRs, and Codecov rejects tokenless uploads to a
+        # protected branch (HTTP 400) — skipping the step beats failing the build on a run
+        # that legitimately cannot upload. fail_ci_if_error stays off so codecov-side
+        # outages never mask the actual build result.
+        if: runner.os == 'Linux' && env.CODECOV_TOKEN != ''
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         uses: codecov/codecov-action@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: true
+          token: ${{ env.CODECOV_TOKEN }}
+          fail_ci_if_error: false
           verbose: true
 
