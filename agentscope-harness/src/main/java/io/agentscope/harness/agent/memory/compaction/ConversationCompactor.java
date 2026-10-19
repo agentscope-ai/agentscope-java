@@ -820,7 +820,7 @@ public class ConversationCompactor {
         if (!anyModified) {
             return msg;
         }
-        return Msg.builder().role(msg.getRole()).name(msg.getName()).content(newBlocks).build();
+        return msg.withContent(newBlocks);
     }
 
     /**
@@ -845,6 +845,13 @@ public class ConversationCompactor {
         if (!anyModified) {
             return tu;
         }
-        return ToolUseBlock.builder().id(tu.getId()).name(tu.getName()).input(newInput).build();
+        // Drop raw content so request formatters serialize the truncated input.
+        return ToolUseBlock.builder()
+                .id(tu.getId())
+                .name(tu.getName())
+                .input(newInput)
+                .metadata(tu.getMetadata())
+                .state(tu.getState())
+                .build();
     }
 }
