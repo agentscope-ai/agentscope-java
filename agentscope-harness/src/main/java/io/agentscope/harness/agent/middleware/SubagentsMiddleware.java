@@ -423,20 +423,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         // Only persist to AgentState when the agent is a ReActAgent — other Agent kinds keep
         // the legacy pull-only flow unchanged.
         List<TaskDelivery> pending = this.taskRepository.findPendingDeliveries(rc, sessionId);
-        Msg deliveryMsg = null;
-        if (!pending.isEmpty()) {
-            deliveryMsg = buildDeliveryReminder(pending);
-        }
-        if (deliveryMsg != null && agent instanceof ReActAgent reAct) {
-            try {
-                RuntimeContext.resolveAgentState(rc, reAct).contextMutable().add(deliveryMsg);
-            } catch (RuntimeException e) {
-                log.warn(
-                        "Failed to append task delivery reminder to AgentState; "
-                                + "will inject for this round only: {}",
-                        e.getMessage());
-            }
-        }
+        Msg deliveryMsg = persistDeliveryReminder(agent, rc, pending);
 
         StringBuilder addition = new StringBuilder();
         addition.append(renderSubagentSection(currentEntries, isSessionMode));
@@ -455,37 +442,77 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
 
         Flux<AgentEvent> downstream =
                 next.apply(new ReasoningInput(rebuilt, input.tools(), input.options()));
-        if (!pending.isEmpty()) {
-            // Mark delivered ONLY after the inner reasoning completes successfully. Order matters:
-            // if we marked before reasoning, a crash mid-call could persist deliveredAt while the
-            // AgentState write was never flushed, causing permanent message loss. The reverse
-            // (crash AFTER reasoning, BEFORE markDelivered) only causes a redundant re-delivery
-            // on the next round — annoying, but safe.
-            final TaskRepository repoRef = this.taskRepository;
-            final RuntimeContext rcRef = rc;
-            final String sidRef = sessionId;
-            downstream =
-                    downstream.doOnComplete(
-                            () -> {
-                                for (TaskDelivery d :
-                                        pending.subList(
-                                                0,
-                                                Math.min(
-                                                        pending.size(),
-                                                        MAX_DELIVERIES_PER_REMINDER))) {
-                                    try {
-                                        repoRef.markDelivered(rcRef, sidRef, d.taskId());
-                                    } catch (RuntimeException e) {
-                                        log.warn(
-                                                "Failed to mark task {} as delivered; "
-                                                        + "may re-push next round: {}",
-                                                d.taskId(),
-                                                e.getMessage());
-                                    }
-                                }
-                            });
+        return markDeliveredOnComplete(downstream, this.taskRepository, rc, sessionId, pending);
+    }
+
+    /**
+     * Shared Phase B-3 push-delivery step 1: aggregates newly-terminal background tasks into a
+     * single {@code <system-reminder>} message and persists it to the agent's AgentState. Only
+     * persists when the agent is a {@link ReActAgent} — other Agent kinds keep the legacy
+     * pull-only flow unchanged (the reminder is still returned for this-round injection).
+     *
+     * <p>Shared with {@link DynamicSubagentsMiddleware} so both delivery paths behave
+     * identically.
+     *
+     * @return the delivery reminder message, or {@code null} when nothing is pending
+     */
+    static Msg persistDeliveryReminder(Agent agent, RuntimeContext rc, List<TaskDelivery> pending) {
+        if (pending == null || pending.isEmpty()) {
+            return null;
         }
-        return downstream;
+        Msg deliveryMsg = buildDeliveryReminder(pending);
+        if (agent instanceof ReActAgent reAct) {
+            try {
+                RuntimeContext.resolveAgentState(rc, reAct).contextMutable().add(deliveryMsg);
+            } catch (RuntimeException e) {
+                log.warn(
+                        "Failed to append task delivery reminder to AgentState; "
+                                + "will inject for this round only: {}",
+                        e.getMessage());
+            }
+        }
+        return deliveryMsg;
+    }
+
+    /**
+     * Shared Phase B-3 push-delivery step 2: marks drained tasks delivered ONLY after the inner
+     * reasoning completes successfully. Order matters: if we marked before reasoning, a crash
+     * mid-call could persist deliveredAt while the AgentState write was never flushed, causing
+     * permanent message loss. The reverse (crash AFTER reasoning, BEFORE markDelivered) only
+     * causes a redundant re-delivery on the next round — annoying, but safe. An errored
+     * downstream never fires {@code doOnComplete}, so a failed reasoning round re-pushes.
+     *
+     * <p>Only the first {@link #MAX_DELIVERIES_PER_REMINDER} entries are acknowledged — the
+     * remainder stays pending so the next round can surface them.
+     *
+     * <p>Shared with {@link DynamicSubagentsMiddleware} so both delivery paths behave
+     * identically.
+     */
+    static Flux<AgentEvent> markDeliveredOnComplete(
+            Flux<AgentEvent> downstream,
+            TaskRepository repo,
+            RuntimeContext rc,
+            String sessionId,
+            List<TaskDelivery> pending) {
+        if (pending == null || pending.isEmpty()) {
+            return downstream;
+        }
+        return downstream.doOnComplete(
+                () -> {
+                    for (TaskDelivery d :
+                            pending.subList(
+                                    0, Math.min(pending.size(), MAX_DELIVERIES_PER_REMINDER))) {
+                        try {
+                            repo.markDelivered(rc, sessionId, d.taskId());
+                        } catch (RuntimeException e) {
+                            log.warn(
+                                    "Failed to mark task {} as delivered; "
+                                            + "may re-push next round: {}",
+                                    d.taskId(),
+                                    e.getMessage());
+                        }
+                    }
+                });
     }
 
     /**

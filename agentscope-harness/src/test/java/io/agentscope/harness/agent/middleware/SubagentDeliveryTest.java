@@ -15,9 +15,13 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
@@ -78,6 +82,9 @@ class SubagentDeliveryTest {
         final Set<String> delivered = new HashSet<>();
         final List<String> markCalls = new ArrayList<>();
 
+        /** When true, {@link #markDelivered} throws to exercise the swallow-and-continue path. */
+        boolean failMarks;
+
         @Override
         public BackgroundTask getTask(RuntimeContext rc, String sessionId, String taskId) {
             return null;
@@ -115,6 +122,9 @@ class SubagentDeliveryTest {
 
         @Override
         public void markDelivered(RuntimeContext rc, String sessionId, String taskId) {
+            if (failMarks) {
+                throw new IllegalStateException("boom");
+            }
             markCalls.add(taskId);
             delivered.add(taskId);
         }
@@ -325,5 +335,73 @@ class SubagentDeliveryTest {
                         in -> Flux.empty())
                 .blockLast();
         assertEquals(12, repo.markCalls.size());
+    }
+
+    // ---- shared helper branch coverage (persistDeliveryReminder / markDeliveredOnComplete) -----
+
+    @Test
+    void persistDeliveryReminder_nullPending_returnsNull() {
+        // findPendingDeliveries never returns null in practice, but the helper guards for it;
+        // exercise the null short-circuit so it is not a half-covered branch.
+        assertNull(
+                SubagentsMiddleware.persistDeliveryReminder(
+                        newReActAgent(), RuntimeContext.empty(), null));
+    }
+
+    @Test
+    void markDeliveredOnComplete_nullPending_returnsDownstreamUnchanged() {
+        Flux<AgentEvent> downstream = Flux.empty();
+        assertSame(
+                downstream,
+                SubagentsMiddleware.markDeliveredOnComplete(
+                        downstream, new StubRepo(), RuntimeContext.empty(), null, null));
+    }
+
+    @Test
+    void persistDeliveryReminder_nonReActAgent_returnsReminderWithoutStateWrite() {
+        // Non-ReAct agents keep the legacy pull-only flow: no AgentState write is attempted, but
+        // the reminder is still returned so the caller can inject it for the current round.
+        Agent nonReAct = mock(Agent.class);
+        Msg reminder =
+                SubagentsMiddleware.persistDeliveryReminder(
+                        nonReAct,
+                        RuntimeContext.empty(),
+                        List.of(delivery("t1", TaskStatus.COMPLETED, "payload", null)));
+        assertNotNull(reminder);
+        assertTrue(textOf(reminder).contains("payload"));
+    }
+
+    @Test
+    void persistDeliveryReminder_stateWriteFails_stillReturnsReminderForRoundInjection() {
+        // A ReActAgent whose AgentState cannot be resolved (getAgentState() -> null) makes the
+        // contextMutable().add() call throw; the catch must swallow it and still return the
+        // reminder so the current round is not lost.
+        ReActAgent agent = mock(ReActAgent.class);
+        Msg reminder =
+                SubagentsMiddleware.persistDeliveryReminder(
+                        agent,
+                        RuntimeContext.empty(),
+                        List.of(delivery("t1", TaskStatus.COMPLETED, "payload", null)));
+        assertNotNull(reminder, "reminder must survive an AgentState write failure");
+        assertTrue(textOf(reminder).contains("payload"));
+    }
+
+    @Test
+    void markDeliveredOnComplete_markThrows_swallowedAndStreamStillCompletes() {
+        // If markDelivered blows up (e.g. store unavailable), the failure is logged and swallowed
+        // so one bad ack cannot fail the whole reasoning stream; the task simply re-pushes next
+        // round.
+        StubRepo repo = new StubRepo();
+        repo.failMarks = true;
+        List<TaskDelivery> pending = List.of(delivery("t1", TaskStatus.COMPLETED, "payload", null));
+        assertDoesNotThrow(
+                () ->
+                        SubagentsMiddleware.markDeliveredOnComplete(
+                                        Flux.<AgentEvent>empty(),
+                                        repo,
+                                        RuntimeContext.empty(),
+                                        null,
+                                        pending)
+                                .blockLast());
     }
 }

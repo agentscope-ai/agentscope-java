@@ -28,6 +28,7 @@ import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
+import io.agentscope.harness.agent.subagent.task.TaskDelivery;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
@@ -64,6 +65,12 @@ import reactor.core.publisher.Flux;
  *       (builder-registered) entries are preserved as the static prefix and same-name dynamic
  *       declarations override them too.
  * </ol>
+ *
+ * <p>Background-task push delivery (Phase B-3) behaves identically to {@link
+ * SubagentsMiddleware}: newly-terminal tasks are drained from the {@link TaskRepository} before
+ * each reasoning round, injected as a single aggregated {@code <system-reminder>} message (and
+ * persisted into AgentState for {@link io.agentscope.core.ReActAgent}), then marked delivered
+ * only after the round completes successfully.
  */
 public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
 
@@ -159,6 +166,16 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        String sessionId = rc.getSessionId();
+
+        // ---- Phase B-3 push delivery (mirrors SubagentsMiddleware) ---------------------------
+        // Drain newly-terminal tasks first so the SYSTEM summary built afterwards stays
+        // consistent with what is pushed this round. Without this, background results never
+        // reach the LLM on the dynamic path: they only show up in the async-task summary as
+        // still "pending" entries, forcing the model to poll task_output().
+        List<TaskDelivery> pending = taskRepository.findPendingDeliveries(rc, sessionId);
+        Msg deliveryMsg = SubagentsMiddleware.persistDeliveryReminder(agent, rc, pending);
+
         List<SubagentEntry> merged = reloadEntries(rc);
         if (agentManager != null) {
             agentManager.replaceAgents(merged);
@@ -171,12 +188,25 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (taskSummary != null) {
             addition.append(taskSummary);
         }
-        if (addition.length() == 0) {
-            return next.apply(input);
-        }
         List<Msg> rebuilt =
-                SubagentsMiddleware.prependToSystemMessage(input.messages(), addition.toString());
-        return next.apply(new ReasoningInput(rebuilt, input.tools(), input.options()));
+                addition.length() > 0
+                        ? SubagentsMiddleware.prependToSystemMessage(
+                                input.messages(), addition.toString())
+                        : input.messages();
+        if (deliveryMsg != null) {
+            // Inject for this round (parallel to the AgentState write — keeps the message visible
+            // in the immediate LLM call regardless of when the framework re-derives messages from
+            // the state next round).
+            rebuilt = new ArrayList<>(rebuilt);
+            rebuilt.add(deliveryMsg);
+        }
+        Flux<AgentEvent> downstream =
+                next.apply(
+                        rebuilt == input.messages()
+                                ? input
+                                : new ReasoningInput(rebuilt, input.tools(), input.options()));
+        return SubagentsMiddleware.markDeliveredOnComplete(
+                downstream, taskRepository, rc, sessionId, pending);
     }
 
     private List<SubagentEntry> reloadEntries(RuntimeContext rc) {
