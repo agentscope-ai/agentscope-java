@@ -16,10 +16,10 @@
 
 package io.agentscope.spring.boot.a2a.controller;
 
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.Map;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;

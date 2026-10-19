@@ -22,11 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.DataPart;
-import io.a2a.spec.FilePart;
-import io.a2a.spec.FileWithBytes;
-import io.a2a.spec.Part;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -38,6 +33,11 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.VideoBlock;
 import java.util.Base64;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.FileWithBytes;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -93,13 +93,12 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         TextPart textPart = assertInstanceOf(TextPart.class, result);
-        assertEquals("Check the inbox", textPart.getText());
+        assertEquals("Check the inbox", textPart.text());
         assertEquals(
                 MessageConstants.BlockContent.TYPE_HINT,
-                textPart.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
-        assertEquals("hint-1", textPart.getMetadata().get(MessageConstants.HINT_ID_METADATA_KEY));
-        assertEquals(
-                "alice", textPart.getMetadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
+                textPart.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+        assertEquals("hint-1", textPart.metadata().get(MessageConstants.HINT_ID_METADATA_KEY));
+        assertEquals("alice", textPart.metadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
     }
 
     @Test
@@ -115,7 +114,7 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         assertInstanceOf(FilePart.class, result);
-        assertInstanceOf(FileWithBytes.class, ((FilePart) result).getFile());
+        assertInstanceOf(FileWithBytes.class, ((FilePart) result).file());
     }
 
     @Test
@@ -131,7 +130,7 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         assertInstanceOf(FilePart.class, result);
-        assertInstanceOf(FileWithBytes.class, ((FilePart) result).getFile());
+        assertInstanceOf(FileWithBytes.class, ((FilePart) result).file());
     }
 
     @Test
@@ -147,7 +146,7 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         assertInstanceOf(FilePart.class, result);
-        assertInstanceOf(FileWithBytes.class, ((FilePart) result).getFile());
+        assertInstanceOf(FileWithBytes.class, ((FilePart) result).file());
     }
 
     @Test

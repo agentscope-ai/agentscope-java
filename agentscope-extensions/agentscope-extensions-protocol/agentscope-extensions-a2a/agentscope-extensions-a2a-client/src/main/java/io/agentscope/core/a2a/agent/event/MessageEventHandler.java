@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.agent.event;
 
-import io.a2a.client.MessageEvent;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.Msg;
 import java.util.List;
+import org.a2aproject.sdk.client.MessageEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

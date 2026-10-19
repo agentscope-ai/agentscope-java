@@ -16,9 +16,9 @@
 
 package io.agentscope.core.a2a.agent.card;
 
-import io.a2a.A2A;
-import io.a2a.spec.AgentCard;
 import java.util.Map;
+import org.a2aproject.sdk.A2A;
+import org.a2aproject.sdk.spec.AgentCard;
 
 /**
  * Agent Card Producer from well known url.

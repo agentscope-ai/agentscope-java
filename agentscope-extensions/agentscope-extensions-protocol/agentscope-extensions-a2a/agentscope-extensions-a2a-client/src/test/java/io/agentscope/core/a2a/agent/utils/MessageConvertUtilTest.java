@@ -19,16 +19,21 @@ package io.agentscope.core.a2a.agent.utils;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
-import io.a2a.spec.Artifact;
-import io.a2a.spec.DataPart;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatUsage;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -36,12 +41,49 @@ import org.junit.jupiter.api.Test;
 class MessageConvertUtilTest {
 
     @Test
+    @DisplayName("Should send metadata and tool input objects as JSON values")
+    void shouldSendObjectsAsJsonValues() {
+        // The A2A SDK writes values other than maps, lists, strings, numbers and booleans as null.
+        ChatUsage usage = ChatUsage.builder().inputTokens(3).outputTokens(5).build();
+        Msg msg =
+                Msg.builder()
+                        .id("msg-1")
+                        .name("agent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("call-1")
+                                        .name("lookup")
+                                        .input(Map.of("usage", usage, "role", MsgRole.USER))
+                                        .metadata(Map.of("usage", usage))
+                                        .build())
+                        .metadata(Map.of(MessageMetadataKeys.CHAT_USAGE, usage))
+                        .build();
+
+        Message message = MessageConvertUtil.convertFromMsg(List.of(msg));
+
+        Map<?, ?> msgMetadata = assertInstanceOf(Map.class, message.metadata().get("msg-1"));
+        assertJsonUsage(msgMetadata.get(MessageMetadataKeys.CHAT_USAGE));
+        DataPart part = assertInstanceOf(DataPart.class, message.parts().get(0));
+        Map<?, ?> input = assertInstanceOf(Map.class, part.data());
+        assertJsonUsage(input.get("usage"));
+        assertEquals("USER", input.get("role"));
+        assertJsonUsage(part.metadata().get("usage"));
+    }
+
+    private static void assertJsonUsage(Object value) {
+        Map<?, ?> usage = assertInstanceOf(Map.class, value);
+        assertEquals(3, usage.get("inputTokens"));
+        assertEquals(5, usage.get("outputTokens"));
+    }
+
+    @Test
     @DisplayName("Should merge marked streaming text chunks from artifact")
     void shouldMergeMarkedStreamingTextChunksFromArtifact() {
         Map<String, Object> firstMetadata = streamingMetadata("msg-1");
         Map<String, Object> secondMetadata = streamingMetadata("msg-1");
         Artifact artifact =
-                new Artifact.Builder()
+                Artifact.builder()
                         .artifactId("msg-1")
                         .name("agent")
                         .parts(
@@ -65,7 +107,7 @@ class MessageConvertUtilTest {
         Map<String, Object> secondMetadata = new HashMap<>();
         secondMetadata.put(MessageConstants.MSG_ID_METADATA_KEY, "msg-1");
         Artifact artifact =
-                new Artifact.Builder()
+                Artifact.builder()
                         .artifactId("msg-1")
                         .name("agent")
                         .parts(
@@ -87,7 +129,7 @@ class MessageConvertUtilTest {
     @DisplayName("Should flush streaming accumulator before unmarked part")
     void shouldFlushStreamingAccumulatorBeforeUnmarkedPart() {
         Artifact artifact =
-                new Artifact.Builder()
+                Artifact.builder()
                         .artifactId("msg-1")
                         .name("agent")
                         .parts(
@@ -116,7 +158,7 @@ class MessageConvertUtilTest {
                 MessageConstants.BLOCK_TYPE_METADATA_KEY,
                 MessageConstants.BlockContent.TYPE_THINKING);
         Artifact artifact =
-                new Artifact.Builder()
+                Artifact.builder()
                         .artifactId("msg-1")
                         .name("agent")
                         .parts(
@@ -138,7 +180,7 @@ class MessageConvertUtilTest {
         Map<String, Object> unsupportedMetadata = streamingMetadata("msg-2");
         unsupportedMetadata.put(MessageConstants.BLOCK_TYPE_METADATA_KEY, "unsupported");
         Artifact artifact =
-                new Artifact.Builder()
+                Artifact.builder()
                         .artifactId("msg-1")
                         .name("agent")
                         .parts(

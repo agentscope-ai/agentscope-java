@@ -16,17 +16,6 @@
 
 package io.agentscope.core.a2a.agent;
 
-import io.a2a.client.Client;
-import io.a2a.client.ClientBuilder;
-import io.a2a.client.ClientEvent;
-import io.a2a.client.config.ClientConfig;
-import io.a2a.client.http.JdkA2AHttpClient;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
-import io.a2a.spec.A2AClientException;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.Message;
-import io.a2a.spec.TaskIdParams;
 import io.agentscope.core.a2a.agent.card.AgentCardResolver;
 import io.agentscope.core.a2a.agent.card.FixedAgentCardResolver;
 import io.agentscope.core.a2a.agent.event.ClientEventContext;
@@ -35,35 +24,39 @@ import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
-import java.util.function.UnaryOperator;
+import org.a2aproject.sdk.client.Client;
+import org.a2aproject.sdk.client.ClientBuilder;
+import org.a2aproject.sdk.client.ClientEvent;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransport;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransportConfig;
+import org.a2aproject.sdk.spec.A2AClientException;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.CancelTaskParams;
+import org.a2aproject.sdk.spec.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * The implementation of Agent for A2A(Agent2Agent).
  *
  * <p>Agent description should get from AgentCard. If AgentCard get failed, description will be default value from
  * {@link Agent#getDescription()}
- *
- * <p>Every call resolves the AgentCard again. If no card is found, the call fails with an
- * {@link IllegalStateException} that names the agent and the resolver.
  *
  * <p>Example Usage:
  * <pre>{@code
@@ -82,8 +75,6 @@ public class A2aAgent extends AgentBase {
 
     private static final String INTERRUPT_HINT_PATTERN = "Task %s interrupt successfully.";
 
-    private static final Duration AUTOMATIC_CANCELLATION_BUDGET = Duration.ofSeconds(2);
-
     private final AgentCardResolver agentCardResolver;
 
     private final A2aAgentConfig a2aAgentConfig;
@@ -92,11 +83,17 @@ public class A2aAgent extends AgentBase {
 
     private final ClientEventHandlerRouter clientEventHandlerRouter;
 
-    /** Replaces the client built for a call, for tests; {@code null} to keep it. */
-    private final UnaryOperator<Client> clientReplacer;
+    private Client a2aClient;
 
-    /** The call in progress, which {@link #interrupt()} cancels. */
-    private final AtomicReference<A2aCall> currentCall = new AtomicReference<>();
+    /**
+     * According to the design, one agent should not be call with multiple threads and tasks at the same time.
+     */
+    private String currentRequestId;
+
+    /**
+     * The context of client event, one agent should not be call with multiple threads and tasks at the same time.
+     */
+    private ClientEventContext clientEventContext;
 
     private A2aAgent(
             String name,
@@ -105,14 +102,13 @@ public class A2aAgent extends AgentBase {
             Memory memory,
             List<Hook> hooks,
             AgentCardResolver agentCardResolver,
-            A2aAgentConfig a2aAgentConfig,
-            UnaryOperator<Client> clientReplacer) {
+            A2aAgentConfig a2aAgentConfig) {
         super(name, description, checkRunning, hooks);
         this.a2aAgentConfig = a2aAgentConfig;
         this.agentCardResolver = agentCardResolver;
         this.memory = memory;
-        this.clientReplacer = clientReplacer;
         LoggerUtil.debug(log, "A2aAgent init with config: {}", a2aAgentConfig);
+        addHook(new A2aClientLifecycleHook());
         this.clientEventHandlerRouter = new ClientEventHandlerRouter();
     }
 
@@ -121,122 +117,18 @@ public class A2aAgent extends AgentBase {
         if (msgs != null && !msgs.isEmpty()) {
             msgs.forEach(memory::addMessage);
         }
-        return Mono.using(this::startCall, this::execute, this::endCall)
-                .doOnNext(this.memory::addMessage);
-    }
-
-    private A2aCall startCall() {
-        String requestId = UUID.randomUUID().toString();
-        AgentCard agentCard = agentCardResolver.getAgentCard(getName());
-        if (null == agentCard) {
-            throw new IllegalStateException(
-                    "No AgentCard found for A2A agent '"
-                            + getName()
-                            + "' via "
-                            + agentCardResolver.getClass().getSimpleName()
-                            + ". Check that the agent name matches the name registered on the"
-                            + " server.");
-        }
-        StreamTrackingHttpClient httpClient =
-                this.a2aAgentConfig.clientTransports().isEmpty()
-                        ? new StreamTrackingHttpClient(new JdkA2AHttpClient())
-                        : null;
-        Client client = buildA2aClient(agentCard, httpClient);
-        LoggerUtil.debug(
-                log, "[{}] A2aAgent build A2a Client with Agent Card: {}.", requestId, agentCard);
-        A2aCall call =
-                new A2aCall(
-                        requestId,
-                        client,
-                        httpClient,
-                        new ClientEventContext(requestId, this),
-                        isStreaming(agentCard),
-                        new AtomicBoolean(),
-                        new AtomicBoolean());
-        currentCall.set(call);
-        return call;
-    }
-
-    private Mono<Msg> execute(A2aCall call) {
-        LoggerUtil.info(log, "[{}] A2aAgent start call.", call.requestId());
-        LoggerUtil.debug(log, "[{}] A2aAgent call with input messages: ", call.requestId());
+        LoggerUtil.info(log, "[{}] A2aAgent start call.", currentRequestId);
+        LoggerUtil.debug(log, "[{}] A2aAgent call with input messages: ", currentRequestId);
         LoggerUtil.logTextMsgDetail(log, memory.getMessages());
-        call.eventContext().setHooks(getSortedHooks());
-        call.eventContext().setInputMessages(memory.getMessages());
+        clientEventContext.setHooks(getSortedHooks());
+        clientEventContext.setInputMessages(memory.getMessages());
         return Mono.defer(
                         () -> {
                             Message message =
                                     MessageConvertUtil.convertFromMsg(memory.getMessages());
-                            return checkInterruptedAsync().then(doExecute(call, message));
+                            return checkInterruptedAsync().then(doExecute(message));
                         })
-                .doOnError(
-                        e ->
-                                LoggerUtil.error(
-                                        log, "[{}] A2aAgent execute error.", call.requestId(), e));
-    }
-
-    private void endCall(A2aCall call) {
-        currentCall.compareAndSet(call, null);
-        if (call.httpClient() != null) {
-            call.httpClient().cancelStreams();
-        }
-        io.a2a.spec.Task task = call.eventContext().getTask();
-        if (call.cancelled().get() && task != null && task.getId() != null) {
-            try {
-                Mono.fromRunnable(() -> cancelAndClose(call, task.getId()))
-                        // Cancelling subscribeOn interrupts the SDK's synchronous HttpClient.send.
-                        .subscribeOn(cancellationScheduler())
-                        .timeout(AUTOMATIC_CANCELLATION_BUDGET)
-                        // Also close on timeout/rejection, without waiting for remote completion.
-                        .doFinally(ignored -> closeClient(call))
-                        .subscribe(
-                                ignored -> {},
-                                e ->
-                                        LoggerUtil.warn(
-                                                log,
-                                                "[{}] A2aAgent remote task {} cancellation failed"
-                                                        + " or exceeded the {} ms budget.",
-                                                call.requestId(),
-                                                task.getId(),
-                                                AUTOMATIC_CANCELLATION_BUDGET.toMillis(),
-                                                e));
-                return;
-            } catch (RuntimeException e) {
-                LoggerUtil.warn(
-                        log,
-                        "[{}] A2aAgent could not schedule remote cancellation.",
-                        call.requestId(),
-                        e);
-            }
-        }
-        closeClient(call);
-    }
-
-    /** Package-private seam for testing scheduler rejection without stopping shared schedulers. */
-    Scheduler cancellationScheduler() {
-        return Schedulers.boundedElastic();
-    }
-
-    private void cancelAndClose(A2aCall call, String taskId) {
-        try {
-            call.client().cancelTask(new TaskIdParams(taskId), null);
-        } catch (Exception e) {
-            LoggerUtil.warn(
-                    log,
-                    "[{}] A2aAgent could not cancel remote task {}.",
-                    call.requestId(),
-                    taskId,
-                    e);
-        } finally {
-            closeClient(call);
-        }
-    }
-
-    private void closeClient(A2aCall call) {
-        if (call.closed().compareAndSet(false, true)) {
-            call.client().close();
-            LoggerUtil.debug(log, "[{}] A2aAgent close A2a Client.", call.requestId());
-        }
+                .doOnNext(this.memory::addMessage);
     }
 
     @Override
@@ -259,15 +151,10 @@ public class A2aAgent extends AgentBase {
 
     @Override
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
-        A2aCall call = currentCall.get();
-        if (call == null || call.eventContext().getTask() == null) {
-            return Mono.empty();
-        }
-        LoggerUtil.debug(log, "[{}] A2aAgent handle interrupt.", call.requestId());
+        LoggerUtil.debug(log, "[{}] A2aAgent handle interrupt.", currentRequestId);
         try {
-            String taskId = call.eventContext().getTask().getId();
-            TaskIdParams taskIdParams = new TaskIdParams(taskId);
-            call.client().cancelTask(taskIdParams, null);
+            String taskId = clientEventContext.getTask().id();
+            a2aClient.cancelTask(new CancelTaskParams(taskId), null);
             return Mono.just(
                     Msg.builder()
                             .content(
@@ -296,40 +183,26 @@ public class A2aAgent extends AgentBase {
         return memory;
     }
 
-    /** Whether the client streams, decided the same way as the SDK. */
-    private boolean isStreaming(AgentCard agentCard) {
-        ClientConfig clientConfig = this.a2aAgentConfig.clientConfig();
-        return (null == clientConfig || clientConfig.isStreaming())
-                && null != agentCard.capabilities()
-                && agentCard.capabilities().streaming();
-    }
-
-    private Client buildA2aClient(AgentCard agentCard, StreamTrackingHttpClient httpClient) {
-        ClientBuilder builder = Client.builder(agentCard);
-        if (httpClient != null) {
+    private Client buildA2aClient(String name) {
+        ClientBuilder builder = Client.builder(this.agentCardResolver.getAgentCard(name));
+        if (this.a2aAgentConfig.clientTransports().isEmpty()) {
             // Default Add The Basic JSON-RPC Transport
-            builder.withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig(httpClient));
+            builder.withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig());
         } else {
             this.a2aAgentConfig.clientTransports().forEach(builder::withTransport);
         }
         builder.clientConfig(this.a2aAgentConfig.clientConfig());
-        Client client = builder.build();
-        return null == clientReplacer ? client : clientReplacer.apply(client);
+        return builder.build();
     }
 
-    private Mono<Msg> doExecute(A2aCall call, Message message) {
+    private Mono<Msg> doExecute(Message message) {
         return Mono.create(
                 sink -> {
-                    String requestId = call.requestId();
-                    ClientEventContext eventContext = call.eventContext();
-                    Client client = call.client();
+                    String requestId = currentRequestId;
+                    ClientEventContext eventContext = clientEventContext;
                     eventContext.setSink(sink);
-                    sink.onCancel(() -> call.cancelled().set(true));
                     BiConsumer<ClientEvent, AgentCard> a2aEventConsumer =
                             (event, agentCard) -> {
-                                if (call.cancelled().get()) {
-                                    return;
-                                }
                                 LoggerUtil.trace(
                                         log,
                                         "[{}] A2aAgent receive event {}: ",
@@ -338,7 +211,7 @@ public class A2aAgent extends AgentBase {
                                 LoggerUtil.logA2aClientEventDetail(log, event);
                                 clientEventHandlerRouter.handle(event, eventContext);
                             };
-                    client.sendMessage(
+                    a2aClient.sendMessage(
                             message,
                             List.of(a2aEventConsumer),
                             err -> {
@@ -363,34 +236,54 @@ public class A2aAgent extends AgentBase {
                                 }
                                 eventContext.completeExceptionally(err);
                             });
-                    if (!call.streaming() && !eventContext.isTerminalDelivered()) {
-                        eventContext.completeExceptionally(
-                                new IllegalStateException(unfinishedTaskMessage(eventContext)));
-                    }
                 });
     }
 
-    private static String unfinishedTaskMessage(ClientEventContext eventContext) {
-        io.a2a.spec.Task task = eventContext.getTask();
-        if (null == task) {
-            return "A2A reply ended without a final response.";
-        }
-        return "A2A task "
-                + task.getId()
-                + " is still in state "
-                + (null != task.getStatus() ? task.getStatus().state() : null)
-                + " after a non-streaming reply; A2aAgent does not poll unfinished tasks.";
-    }
+    private class A2aClientLifecycleHook implements Hook {
 
-    /** The client and the event context of one call. */
-    private record A2aCall(
-            String requestId,
-            Client client,
-            StreamTrackingHttpClient httpClient,
-            ClientEventContext eventContext,
-            boolean streaming,
-            AtomicBoolean cancelled,
-            AtomicBoolean closed) {}
+        /**
+         * According to {@link Hook#priority()} comment, value `500` is the lowest priority in Normal(business logic).
+         */
+        private static final int HOOK_PRIORITY = 500;
+
+        @Override
+        public <T extends HookEvent> Mono<T> onEvent(T event) {
+            if (event instanceof PreCallEvent preCallEvent) {
+                currentRequestId = UUID.randomUUID().toString();
+                clientEventContext = new ClientEventContext(currentRequestId, A2aAgent.this);
+                a2aClient = buildA2aClient(preCallEvent.getAgent().getName());
+                LoggerUtil.debug(
+                        log,
+                        "[{}] A2aAgent build A2a Client with Agent Card: {}.",
+                        currentRequestId,
+                        agentCardResolver.getAgentCard(getName()));
+            } else if (event instanceof PostCallEvent) {
+                tryReleaseResource();
+            } else if (event instanceof ErrorEvent errorEvent) {
+                tryReleaseResource();
+                LoggerUtil.error(
+                        log,
+                        "[{}] A2aAgent execute error.",
+                        currentRequestId,
+                        errorEvent.getError());
+            }
+            return Mono.just(event);
+        }
+
+        @Override
+        public int priority() {
+            return HOOK_PRIORITY;
+        }
+
+        private void tryReleaseResource() {
+            clientEventContext = null;
+            if (null != a2aClient) {
+                a2aClient.close();
+                a2aClient = null;
+                LoggerUtil.debug(log, "[{}] A2aAgent close A2a Client.", currentRequestId);
+            }
+        }
+    }
 
     public static class Builder {
 
@@ -405,8 +298,6 @@ public class A2aAgent extends AgentBase {
         private boolean checkRunning = true;
 
         private final List<Hook> hooks = new ArrayList<>();
-
-        private UnaryOperator<Client> clientReplacer;
 
         /**
          * Set the name of the A2aAgent.
@@ -515,12 +406,6 @@ public class A2aAgent extends AgentBase {
             return this;
         }
 
-        /** Replaces the client built for a call, for tests. */
-        Builder clientReplacer(UnaryOperator<Client> clientReplacer) {
-            this.clientReplacer = clientReplacer;
-            return this;
-        }
-
         /**
          * Build the A2aAgent instance.
          *
@@ -541,8 +426,7 @@ public class A2aAgent extends AgentBase {
                     this.memory,
                     this.hooks,
                     this.agentCardResolver,
-                    this.a2aAgentConfig,
-                    this.clientReplacer);
+                    this.a2aAgentConfig);
         }
 
         private String getDescriptionFromAgentCard() {

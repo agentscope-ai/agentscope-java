@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.Part;
 import io.agentscope.core.message.VideoBlock;
+import org.a2aproject.sdk.spec.Part;
 
 /**
- * Parser for {@link VideoBlock} to {@link io.a2a.spec.FilePart}.
+ * Parser for {@link VideoBlock} to {@link org.a2aproject.sdk.spec.FilePart}.
  */
 public class VideoBlockParser extends BaseMediaBlockParser<VideoBlock> {
 
