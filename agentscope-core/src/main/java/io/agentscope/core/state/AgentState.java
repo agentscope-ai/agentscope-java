@@ -49,6 +49,7 @@ import java.util.UUID;
     "reply_id",
     "cur_iter",
     "shutdown_interrupted",
+    "shutdown_input_message_ids",
     "permission_context",
     "tool_context",
     "tasks_context",
@@ -63,6 +64,7 @@ public final class AgentState implements State {
     private String replyId;
     private int curIter;
     private boolean shutdownInterrupted;
+    private List<String> shutdownInputMessageIds;
     private PermissionContextState permissionContext;
     private final ToolContextState toolContext;
     private final TaskContextState tasksContext;
@@ -76,6 +78,10 @@ public final class AgentState implements State {
         this.replyId = builder.replyId == null ? newHex() : builder.replyId;
         this.curIter = builder.curIter;
         this.shutdownInterrupted = builder.shutdownInterrupted;
+        this.shutdownInputMessageIds =
+                builder.shutdownInputMessageIds == null
+                        ? null
+                        : new ArrayList<>(builder.shutdownInputMessageIds);
         this.permissionContext =
                 builder.permissionContext == null
                         ? PermissionContextState.builder().build()
@@ -101,6 +107,7 @@ public final class AgentState implements State {
             @JsonProperty("reply_id") String replyId,
             @JsonProperty("cur_iter") Integer curIter,
             @JsonProperty("shutdown_interrupted") Boolean shutdownInterrupted,
+            @JsonProperty("shutdown_input_message_ids") List<String> shutdownInputMessageIds,
             @JsonProperty("permission_context") PermissionContextState permissionContext,
             @JsonProperty("tool_context") ToolContextState toolContext,
             @JsonProperty("tasks_context") TaskContextState tasksContext,
@@ -126,6 +133,9 @@ public final class AgentState implements State {
         }
         if (shutdownInterrupted != null) {
             b.shutdownInterrupted(shutdownInterrupted);
+        }
+        if (shutdownInputMessageIds != null) {
+            b.shutdownInputMessageIds(shutdownInputMessageIds);
         }
         if (permissionContext != null) {
             b.permissionContext(permissionContext);
@@ -204,6 +214,24 @@ public final class AgentState implements State {
         this.shutdownInterrupted = shutdownInterrupted;
     }
 
+    /**
+     * IDs of the input messages accepted by the call that was interrupted during shutdown.
+     *
+     * <p>{@code null} means the IDs were not captured (for example, state persisted by an older
+     * AgentScope version). An empty list means the interrupted call had no input messages.
+     */
+    @JsonProperty("shutdown_input_message_ids")
+    public List<String> getShutdownInputMessageIds() {
+        return shutdownInputMessageIds == null
+                ? null
+                : Collections.unmodifiableList(new ArrayList<>(shutdownInputMessageIds));
+    }
+
+    public void setShutdownInputMessageIds(List<String> shutdownInputMessageIds) {
+        this.shutdownInputMessageIds =
+                shutdownInputMessageIds == null ? null : new ArrayList<>(shutdownInputMessageIds);
+    }
+
     @JsonProperty("permission_context")
     public PermissionContextState getPermissionContext() {
         return permissionContext;
@@ -268,6 +296,7 @@ public final class AgentState implements State {
         }
         return curIter == other.curIter
                 && shutdownInterrupted == other.shutdownInterrupted
+                && Objects.equals(shutdownInputMessageIds, other.shutdownInputMessageIds)
                 && Objects.equals(sessionId, other.sessionId)
                 && Objects.equals(userId, other.userId)
                 && Objects.equals(summary, other.summary)
@@ -289,6 +318,7 @@ public final class AgentState implements State {
                 replyId,
                 curIter,
                 shutdownInterrupted,
+                shutdownInputMessageIds,
                 permissionContext,
                 toolContext,
                 tasksContext,
@@ -305,6 +335,8 @@ public final class AgentState implements State {
                 + curIter
                 + ", shutdownInterrupted="
                 + shutdownInterrupted
+                + ", shutdownInputMessageIds="
+                + shutdownInputMessageIds
                 + ", contextSize="
                 + context.size()
                 + '}';
@@ -318,6 +350,7 @@ public final class AgentState implements State {
         private String replyId;
         private int curIter;
         private boolean shutdownInterrupted;
+        private List<String> shutdownInputMessageIds;
         private PermissionContextState permissionContext;
         private ToolContextState toolContext;
         private TaskContextState tasksContext;
@@ -364,6 +397,14 @@ public final class AgentState implements State {
 
         public Builder shutdownInterrupted(boolean shutdownInterrupted) {
             this.shutdownInterrupted = shutdownInterrupted;
+            return this;
+        }
+
+        public Builder shutdownInputMessageIds(List<String> shutdownInputMessageIds) {
+            this.shutdownInputMessageIds =
+                    shutdownInputMessageIds == null
+                            ? null
+                            : new ArrayList<>(shutdownInputMessageIds);
             return this;
         }
 
