@@ -16,13 +16,16 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.MalformedToolCallReason;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -35,10 +38,20 @@ import java.util.stream.Collectors;
  *   <li>Incremental parameter merging
  *   <li>Raw JSON content accumulation and parsing
  *   <li>Placeholder name handling (e.g., "__fragment__")
+ *   <li>Malformed call marking: a call without a name or whose raw arguments are not a JSON
+ *       object is tagged with {@link ToolUseBlock#METADATA_MALFORMED_REASONS} (see {@link
+ *       MalformedToolCallReason})
  * </ul>
  * @hidden
  */
 public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
+
+    /**
+     * Maximum characters of raw arguments kept in {@link
+     * ToolUseBlock#METADATA_MALFORMED_RAW_ARGUMENTS}. The value is persisted in agent state and
+     * traces, so it must stay bounded; it is truncated with the original length noted.
+     */
+    static final int MAX_STORED_RAW_ARGUMENTS_LENGTH = 512;
 
     // Map to support multiple parallel tool calls
     // Key: tool identifier (ID, name, or index)
@@ -125,13 +138,28 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             // Always validate rawContent is a legal JSON object before using it
             // as content. This prevents persisting malformed JSON fragments
             // (e.g. when streaming was interrupted mid-arguments).
-            String contentStr;
-            if (rawContentStr.isEmpty()) {
-                contentStr = "{}";
-            } else if (JsonUtils.isValidJsonObject(rawContentStr)) {
-                contentStr = rawContentStr;
-            } else {
-                contentStr = "{}";
+            boolean validArguments =
+                    rawContentStr.isEmpty() || JsonUtils.isValidJsonObject(rawContentStr);
+            String contentStr = validArguments && !rawContentStr.isEmpty() ? rawContentStr : "{}";
+
+            Map<String, Object> finalMetadata = new HashMap<>(metadata);
+            Set<MalformedToolCallReason> malformed = EnumSet.noneOf(MalformedToolCallReason.class);
+            if (name == null || name.isBlank()) {
+                malformed.add(MalformedToolCallReason.MISSING_NAME);
+            }
+            if (!validArguments) {
+                malformed.add(MalformedToolCallReason.INVALID_ARGUMENTS);
+            }
+            if (!malformed.isEmpty()
+                    && !Boolean.TRUE.equals(metadata.get(ToolUseBlock.METADATA_SERVER_TOOL))) {
+                finalMetadata.put(
+                        ToolUseBlock.METADATA_MALFORMED_REASONS,
+                        malformed.stream().map(Enum::name).toList());
+                if (!rawContentStr.isEmpty()) {
+                    finalMetadata.put(
+                            ToolUseBlock.METADATA_MALFORMED_RAW_ARGUMENTS,
+                            truncateWithMarker(rawContentStr, MAX_STORED_RAW_ARGUMENTS_LENGTH));
+                }
             }
 
             return ToolUseBlock.builder()
@@ -139,7 +167,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .name(name)
                     .input(finalArgs)
                     .content(contentStr)
-                    .metadata(metadata.isEmpty() ? null : metadata)
+                    .metadata(finalMetadata.isEmpty() ? null : finalMetadata)
                     .state(state)
                     .build();
         }
@@ -323,5 +351,12 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         builders.clear();
         nextIndex = 0;
         lastToolCallKey = null;
+    }
+
+    private static String truncateWithMarker(String text, int max) {
+        if (text.length() <= max) {
+            return text;
+        }
+        return text.substring(0, max) + "...(truncated, " + text.length() + " chars total)";
     }
 }
