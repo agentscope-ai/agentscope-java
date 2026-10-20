@@ -22,7 +22,7 @@ Set `ANTHROPIC_API_KEY`, then use the `anthropic:<model>` id:
 ```java
 ReActAgent agent = ReActAgent.builder()
     .name("assistant")
-    .model("anthropic:claude-sonnet-4.5") // Resolved internally by ModelRegistry.resolve(modelId)
+    .model("anthropic:claude-sonnet-5-5") // Resolved internally by ModelRegistry.resolve(modelId)
     .build();
 ```
 
@@ -35,7 +35,7 @@ import io.agentscope.extensions.model.anthropic.AnthropicChatModel;
 
 AnthropicChatModel model = AnthropicChatModel.builder()
     .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-    .modelName("claude-sonnet-4.5")
+    .modelName("claude-sonnet-5-5")
     .stream(true)
     .build();
 ```
@@ -53,7 +53,7 @@ import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
 
 AnthropicChatModel model = AnthropicChatModel.builder()
     .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-    .modelName("claude-sonnet-4.5")
+    .modelName("claude-sonnet-5-5")
     .addServerTool(AnthropicServerTool.of(
         ToolUnion.ofWebSearchTool20250305(WebSearchTool20250305.builder().build())))
     .build();
@@ -72,7 +72,7 @@ For an Anthropic-compatible gateway that requires `Authorization: Bearer <token>
 AnthropicChatModel model = AnthropicChatModel.builder()
     .baseUrl("https://gateway.example.com/anthropic")
     .authToken(System.getenv("ANTHROPIC_AUTH_TOKEN"))
-    .modelName("claude-sonnet-4.5")
+    .modelName("claude-sonnet-5-5")
     .build();
 ```
 
@@ -103,7 +103,7 @@ agentscope:
   anthropic:
     base-url: https://gateway.example.com/anthropic
     auth-token: ${ANTHROPIC_AUTH_TOKEN}
-    model-name: claude-sonnet-4.5
+    model-name: claude-sonnet-5-5
 ```
 
 `agentscope.anthropic.auth-token` is optional. An unset or blank value leaves bearer

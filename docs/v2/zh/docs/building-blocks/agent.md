@@ -100,7 +100,7 @@ ReActAgent.Builder agentBuilder =
                 .name("my_agent")
                 .sysPrompt("你是一个有帮助的助手。")
                 // 由 ModelRegistry 解析；自动读取 DASHSCOPE_API_KEY
-                // 切换其他厂商时改成 "openai:gpt-5.5" / "anthropic:claude-sonnet-4-5"
+                // 切换其他厂商时改成 "openai:gpt-5.5" / "anthropic:claude-sonnet-5-5"
                 // / "deepseek:deepseek-v4-flash" / "gemini:gemini-2.0-flash" / "ollama:llama3" 即可。
                 .model("dashscope:qwen-plus")
                 .toolkit(new Toolkit());

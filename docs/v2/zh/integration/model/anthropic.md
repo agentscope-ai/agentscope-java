@@ -22,7 +22,7 @@ en_link: /v2/en/integration/model/anthropic
 ```java
 ReActAgent agent = ReActAgent.builder()
     .name("assistant")
-    .model("anthropic:claude-sonnet-4.5") // 底层由 ModelRegistry.resolve(modelId) 解析
+    .model("anthropic:claude-sonnet-5-5") // 底层由 ModelRegistry.resolve(modelId) 解析
     .build();
 ```
 
@@ -35,7 +35,7 @@ import io.agentscope.extensions.model.anthropic.AnthropicChatModel;
 
 AnthropicChatModel model = AnthropicChatModel.builder()
     .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-    .modelName("claude-sonnet-4.5")
+    .modelName("claude-sonnet-5-5")
     .stream(true)
     .build();
 ```
@@ -52,7 +52,7 @@ import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
 
 AnthropicChatModel model = AnthropicChatModel.builder()
     .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-    .modelName("claude-sonnet-4.5")
+    .modelName("claude-sonnet-5-5")
     .addServerTool(AnthropicServerTool.of(
         ToolUnion.ofWebSearchTool20250305(WebSearchTool20250305.builder().build())))
     .build();
@@ -70,7 +70,7 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 AnthropicChatModel model = AnthropicChatModel.builder()
     .baseUrl("https://gateway.example.com/anthropic")
     .authToken(System.getenv("ANTHROPIC_AUTH_TOKEN"))
-    .modelName("claude-sonnet-4.5")
+    .modelName("claude-sonnet-5-5")
     .build();
 ```
 
@@ -100,7 +100,7 @@ agentscope:
   anthropic:
     base-url: https://gateway.example.com/anthropic
     auth-token: ${ANTHROPIC_AUTH_TOKEN}
-    model-name: claude-sonnet-4.5
+    model-name: claude-sonnet-5-5
 ```
 
 `agentscope.anthropic.auth-token` 为可选配置，未设置或为空白时不启用 Bearer 鉴权。

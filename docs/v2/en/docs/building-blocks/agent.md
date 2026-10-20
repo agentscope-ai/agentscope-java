@@ -98,7 +98,7 @@ ReActAgent.Builder agentBuilder =
                 .name("my_agent")
                 .sysPrompt("You are a helpful assistant.")
                 // Resolved by ModelRegistry; reads DASHSCOPE_API_KEY automatically.
-                // Switch providers by using "openai:gpt-5.5" / "anthropic:claude-sonnet-4-5"
+                // Switch providers by using "openai:gpt-5.5" / "anthropic:claude-sonnet-5-5"
                 // / "deepseek:deepseek-v4-flash" / "gemini:gemini-2.0-flash" / "ollama:llama3".
                 .model("dashscope:qwen-plus")
                 .toolkit(new Toolkit());
