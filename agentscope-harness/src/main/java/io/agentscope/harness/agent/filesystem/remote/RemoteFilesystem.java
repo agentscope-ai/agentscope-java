@@ -587,13 +587,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
             return true;
         }
         // Also check if any child exists (directory-like)
-        List<StoreItem> items = searchAllItems(runtimeContext);
-        for (StoreItem item : items) {
-            if (item.key().startsWith(normalized + "/")) {
-                return true;
-            }
-        }
-        return false;
+        return hasChildKey(ns, normalized + "/");
     }
 
     // Also update index on delete/move so entries don't linger
@@ -643,6 +637,27 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     // ==================== Internal helpers ====================
+
+    /**
+     * Pages through the namespace looking for a key under {@code prefix}, keeping only the
+     * current page in memory and stopping at the first match.
+     */
+    private boolean hasChildKey(List<String> ns, String prefix) {
+        int offset = 0;
+        int pageSize = 100;
+        while (true) {
+            List<StoreItem> page = store.search(ns, pageSize, offset);
+            for (StoreItem item : page) {
+                if (normalizeItemKey(item).key().startsWith(prefix)) {
+                    return true;
+                }
+            }
+            if (page.size() < pageSize) {
+                return false;
+            }
+            offset += pageSize;
+        }
+    }
 
     private List<StoreItem> searchAllItems(RuntimeContext runtimeContext) {
         List<String> ns = getNamespace(runtimeContext);
