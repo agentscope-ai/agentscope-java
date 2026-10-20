@@ -16,15 +16,6 @@
 
 package io.agentscope.core.a2a.agent;
 
-import io.a2a.client.Client;
-import io.a2a.client.ClientBuilder;
-import io.a2a.client.ClientEvent;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
-import io.a2a.spec.A2AClientException;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.Message;
-import io.a2a.spec.TaskIdParams;
 import io.agentscope.core.a2a.agent.card.AgentCardResolver;
 import io.agentscope.core.a2a.agent.card.FixedAgentCardResolver;
 import io.agentscope.core.a2a.agent.event.ClientEventContext;
@@ -48,6 +39,15 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.function.BiConsumer;
+import org.a2aproject.sdk.client.Client;
+import org.a2aproject.sdk.client.ClientBuilder;
+import org.a2aproject.sdk.client.ClientEvent;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransport;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransportConfig;
+import org.a2aproject.sdk.spec.A2AClientException;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.CancelTaskParams;
+import org.a2aproject.sdk.spec.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -153,9 +153,8 @@ public class A2aAgent extends AgentBase {
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
         LoggerUtil.debug(log, "[{}] A2aAgent handle interrupt.", currentRequestId);
         try {
-            String taskId = clientEventContext.getTask().getId();
-            TaskIdParams taskIdParams = new TaskIdParams(taskId);
-            a2aClient.cancelTask(taskIdParams, null);
+            String taskId = clientEventContext.getTask().id();
+            a2aClient.cancelTask(new CancelTaskParams(taskId), null);
             return Mono.just(
                     Msg.builder()
                             .content(
