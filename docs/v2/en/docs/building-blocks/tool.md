@@ -632,6 +632,71 @@ The meta tool's input represents the **final state** of all groups, not a delta.
 </Warning>
 
 
+## On-demand tool search
+
+For large tool catalogs, opt in to `ToolSearchMiddleware`. It registers a read-only
+`tool_search(query, limit)` tool (`limit` defaults to 5). Initially, ordinary models
+see only this tool and any tools configured to remain visible. A search makes the
+matched tools available for subsequent model calls without executing them.
+
+```java
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.search.ToolSearchMiddleware;
+
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new OrderTools());
+ToolSearchMiddleware search = new ToolSearchMiddleware(toolkit);
+
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .middleware(search)
+    .build();
+```
+
+The dependency-free `KeywordToolSearchStrategy` matches query terms against tool
+names and descriptions, with name matches ranked higher. Implement
+`ToolSearchStrategy.search(ToolSearchRequest)` to use semantic retrieval or a remote
+index instead. Return eligible tool names in relevance order using
+`ToolSearchResult`; unknown names are rejected and results are deduplicated and
+limited before they change session state. Search candidates respect active tool
+groups and request-scoped tool overrides. Inactive groups must still be activated
+through the existing group-management tools.
+
+To keep control tools visible or force ordinary function calling, use the full
+constructor:
+
+```java
+import io.agentscope.core.tool.search.KeywordToolSearchStrategy;
+import java.util.Set;
+
+new ToolSearchMiddleware(toolkit, new KeywordToolSearchStrategy(),
+    Set.of("reset_equipped_tools"), false);
+```
+
+The final argument enables native loading when `true` (the default). A model's
+`getToolSearchMode()` selects the loading protocol; custom models default to
+`FUNCTION`. `OpenAIResponsesChatModel` uses native client-executed search and
+replays discovered definitions in `tool_search_output`. `AnthropicChatModel` sends
+the eligible catalog with deferred schemas and returns `tool_reference` blocks.
+These paths require a provider/model that supports the native protocol. Set the
+argument to `false` to use ordinary function calling instead. Do not combine the
+middleware with a hosted OpenAI `tool_search` server tool.
+
+Discoveries are stored in the session's `ToolContextState` and survive state-store
+round trips. Tools are rechecked against the current request's eligible catalog;
+search never activates groups or changes execution permissions. Explicitly forced
+tools and the structured-output control tool remain available. No shared toolkit
+is mutated during a call. Native loading keeps the initial tool declarations
+stable; already-discovered native tools remain available through conversation
+history. If compaction removes those results, or the model's loading protocol
+changes, persisted discoveries are exposed eagerly so they remain usable.
+Ordinary function calling accumulates discovered schemas in `tools`.
+
+A credential-free, runnable example is
+[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java).
+
 ## Further reading
 
 
