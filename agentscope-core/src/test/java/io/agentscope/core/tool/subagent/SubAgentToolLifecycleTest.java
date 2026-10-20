@@ -297,12 +297,19 @@ class SubAgentToolLifecycleTest {
     @Test
     void closesOtherAutoCloseableAgentsWithoutReplacingTheResult() throws Exception {
         List<Agent> created = new ArrayList<>();
+        CountDownLatch closed = new CountDownLatch(2);
         for (int i = 0; i < 2; i++) {
             Agent agent = mock(Agent.class, withSettings().extraInterfaces(AutoCloseable.class));
             when(agent.getName()).thenReturn("custom_agent");
             when(agent.call(anyList()))
                     .thenReturn(Mono.just(Msg.builder().textContent("OK").build()));
-            doThrow(new Exception("close failed")).when((AutoCloseable) agent).close();
+            doAnswer(
+                            invocation -> {
+                                closed.countDown();
+                                throw new Exception("close failed");
+                            })
+                    .when((AutoCloseable) agent)
+                    .close();
             created.add(agent);
         }
         SubAgentTool tool = new SubAgentTool(created.iterator()::next, config(false));
@@ -311,6 +318,7 @@ class SubAgentToolLifecycleTest {
                 .assertNext(result -> assertTrue(text(result).endsWith("OK")))
                 .verifyComplete();
 
+        assertTrue(closed.await(5, TimeUnit.SECONDS), "Invocation cleanup is asynchronous");
         for (Agent agent : created) {
             verify((AutoCloseable) agent).close();
         }

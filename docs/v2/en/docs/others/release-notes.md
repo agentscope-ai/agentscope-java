@@ -8,6 +8,18 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+### Fixed
+
+- Close `SubAgentTool` initialization and invocation instances to release shutdown registrations ([#3652](https://github.com/agentscope-ai/agentscope-java/pull/3652)). Invocation cleanup runs asynchronously so blocking `AutoCloseable` implementations do not block completion or cancellation threads. State saves and closing are coordinated to prevent cancelled calls from persisting a cleared cache.
+
+### Compatibility
+
+`SubAgentProvider` must return a fresh, independently owned instance for every `provide()` call. `SubAgentTool` closes `AutoCloseable` instances after reading initialization metadata and after each invocation. A provider returning a singleton or cached agent can therefore have that agent closed already during tool registration. For `ReActAgent`, closing removes its graceful-shutdown state saver and clears local state caches even though the object may still accept calls. Replace shared-instance providers with factories and use the configured state store to retain conversation history.
+
+---
+
 ## 2.0.4
 
 > Status: Release draft (prepared on 2026-10-08)

@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * AgentTool implementation that wraps a sub-agent for multi-turn conversation.
@@ -154,6 +155,7 @@ public class SubAgentTool implements AgentTool {
                         final String finalSessionId = sessionId;
                         RuntimeContext runtimeContext = param.getRuntimeContext();
                         Agent agent = agentProvider.provide();
+                        InvocationLifecycle lifecycle = new InvocationLifecycle(agent);
 
                         // Interrupt the sub-agent when the subscription is cancelled
                         // (e.g. ToolExecutor timeout triggers a retry on a new subscription).
@@ -168,7 +170,8 @@ public class SubAgentTool implements AgentTool {
                         // interrupt(InterruptSource) because the latter only looks up
                         // `defaultSessionId` which may differ from the session the call
                         // actually runs in.
-                        // Keep cleanup outermost so state is saved before close clears the cache.
+                        // Keep cleanup outermost; the lifecycle also serializes concurrent
+                        // save/cancel.
                         return Mono.defer(
                                         () -> {
                                             try {
@@ -217,7 +220,7 @@ public class SubAgentTool implements AgentTool {
                                                 }
 
                                                 return result.doOnSuccess(
-                                                        r -> saveAgentState(finalSessionId, agent));
+                                                        r -> lifecycle.saveState(finalSessionId));
                                             } catch (Exception e) {
                                                 logger.error(
                                                         "Error in session setup: {}",
@@ -229,16 +232,7 @@ public class SubAgentTool implements AgentTool {
                                                                         + e.getMessage()));
                                             }
                                         })
-                                .doFinally(
-                                        signal -> {
-                                            try {
-                                                if (signal == SignalType.CANCEL) {
-                                                    interruptAgent(agent, runtimeContext);
-                                                }
-                                            } finally {
-                                                closeAgent(agent);
-                                            }
-                                        });
+                                .doFinally(signal -> lifecycle.finish(signal, runtimeContext));
                     } catch (Exception e) {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
@@ -246,6 +240,49 @@ public class SubAgentTool implements AgentTool {
                                         "AgentStateStore setup failed: " + e.getMessage()));
                     }
                 });
+    }
+
+    /** Coordinates one invocation's state access and potentially blocking resource cleanup. */
+    private final class InvocationLifecycle {
+        private final Agent agent;
+        private boolean closing;
+
+        private InvocationLifecycle(Agent agent) {
+            this.agent = agent;
+        }
+
+        private synchronized void saveState(String sessionId) {
+            // Cancellation can deliver doFinally on another thread before this callback runs.
+            if (!closing) {
+                saveAgentState(sessionId, agent);
+            }
+        }
+
+        private void finish(SignalType signal, RuntimeContext runtimeContext) {
+            try {
+                if (signal == SignalType.CANCEL) {
+                    interruptAgent(agent, runtimeContext);
+                }
+            } finally {
+                // AutoCloseable implementations may block (e.g. HarnessAgent drains memory
+                // tasks). Neither close nor waiting for an in-flight save belongs on a timer
+                // or other reactive signal thread.
+                Schedulers.boundedElastic().schedule(this::closeAfterStateSave);
+            }
+        }
+
+        private void closeAfterStateSave() {
+            synchronized (this) {
+                // Wait for an in-flight save and prevent any later success callback from
+                // reading the cache that close clears. Release the monitor before closing so
+                // late callbacks do not wait for a blocking AutoCloseable implementation.
+                if (closing) {
+                    return;
+                }
+                closing = true;
+            }
+            closeAgent(agent);
+        }
     }
 
     /** Closes tool-owned agent instances without masking execution or initialization errors. */

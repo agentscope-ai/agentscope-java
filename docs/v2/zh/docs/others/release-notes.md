@@ -8,6 +8,18 @@ en_link: /v2/en/docs/others/release-notes
 
 ---
 
+## 未发布
+
+### 修复
+
+- 关闭 `SubAgentTool` 初始化和调用时创建的实例，释放停机保存登记（[#3652](https://github.com/agentscope-ai/agentscope-java/pull/3652)）。调用结束后的清理异步执行，避免会阻塞的 `AutoCloseable` 实现占用完成或取消信号线程。状态保存与关闭相互协调，防止取消时将已清空的缓存保存到会话中。
+
+### 兼容性
+
+`SubAgentProvider` 每次 `provide()` 都必须返回全新、独立拥有的实例。`SubAgentTool` 会在读取初始化元数据后以及每次调用结束后关闭实现了 `AutoCloseable` 的实例。因此，返回单例或缓存 Agent 的 provider 可能在工具注册时就使该实例被关闭。对于 `ReActAgent`，即使对象仍可接受调用，关闭也会移除其优雅停机状态保存登记并清空本地状态缓存。请将共享实例 provider 改为创建新实例的工厂，并通过配置的状态存储保留会话历史。
+
+---
+
 ## 2.0.4
 
 > 状态：发布草稿（准备日期：2026-10-08）

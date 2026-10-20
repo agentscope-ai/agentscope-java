@@ -29,6 +29,10 @@ import io.agentscope.core.agent.Agent;
  * Implementations must return a fresh instance on every call, not a shared or cached agent that
  * other callers may still use.
  *
+ * <p>Invocation cleanup is dispatched asynchronously so a blocking {@code close()} does not
+ * block the thread delivering completion, error, or cancellation. Closing may therefore finish
+ * after the tool result or cancellation has been delivered.
+ *
  * <p>Example usage:
  *
  * <pre>{@code
