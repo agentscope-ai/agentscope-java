@@ -20,13 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
-
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-
-import java.util.List;
-import java.util.Map;
 
 class MarkdownSkillParserAliasTest {
     @ParameterizedTest
