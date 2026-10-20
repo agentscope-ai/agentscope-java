@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent;
 
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -129,10 +128,15 @@ final class HarnessAgentBuilderSupport {
     }
 
     /**
-     * Custom-supplied subagent factory entry: name + optional description + factory function from
-     * name to Agent.
+     * Custom-supplied subagent factory entry: name + optional description + factory, plus an
+     * optional {@link SubagentDeclaration} whose spawn-time options (e.g. {@code persistSession})
+     * apply to the custom instances.
      */
-    record SubagentFactoryEntry(String name, String description, Function<String, Agent> factory) {
+    record SubagentFactoryEntry(
+            String name,
+            String description,
+            SubagentFactory factory,
+            SubagentDeclaration declaration) {
 
         /** Description shown to the orchestrator, falling back to the name when unset. */
         String displayDescription() {
@@ -230,12 +234,8 @@ final class HarnessAgentBuilderSupport {
                     new SubagentEntry(
                             custom.name(),
                             custom.displayDescription(),
-                            // custom factory uses Function<String, Agent> — pre-B-0 signature
-                            // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
-                            // that need parent-aware isolation should register a programmatic
-                            // SubagentEntry directly with a B-0 SubagentFactory lambda.
-                            (rc) -> custom.factory().apply(custom.name()),
-                            null));
+                            custom.factory(),
+                            custom.declaration()));
         }
 
         return entries;
@@ -273,12 +273,8 @@ final class HarnessAgentBuilderSupport {
                     new SubagentEntry(
                             custom.name(),
                             custom.displayDescription(),
-                            // custom factory uses Function<String, Agent> — pre-B-0 signature
-                            // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
-                            // that need parent-aware isolation should register a programmatic
-                            // SubagentEntry directly with a B-0 SubagentFactory lambda.
-                            (rc) -> custom.factory().apply(custom.name()),
-                            null));
+                            custom.factory(),
+                            custom.declaration()));
         }
 
         return entries;

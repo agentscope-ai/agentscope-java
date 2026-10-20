@@ -54,10 +54,12 @@ class ChatSessionsTest {
             var steer = sessions.steer("conversation", "focus on operating cost");
             assertEquals(first.turnId(), steer.turnId());
             sessions.inject("conversation", "supporting material");
+            // Two durable turns with streamed output can exceed 15 seconds on Windows runners.
             var completed =
                     await(
                             sessions,
-                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"));
+                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"),
+                            Duration.ofSeconds(60));
             assertEquals(runId, completed.turns().get(0).runId());
             assertTrue(
                     completed.messages().stream()
@@ -87,7 +89,9 @@ class ChatSessionsTest {
         try (var sessions = new ChatSessions(workspace, new DemoChatModel())) {
             var session = sessions.session("conversation");
             var task = session.submit("read the reference");
-            var done = session.await(task).block(Duration.ofSeconds(15));
+            // A single streamed reply can exceed 15 seconds on Windows runners under -T1C
+            // contention (measured at 16.5s from submit to run/end in CI).
+            var done = session.await(task).block(Duration.ofSeconds(60));
             assertEquals("completed", done.status());
             assertEquals(
                     1,
@@ -155,8 +159,12 @@ class ChatSessionsTest {
             assertTrue(rebuilt.list().contains("conversation"));
             assertEquals(2, rebuilt.snapshot("conversation").messages().size());
             rebuilt.submit("conversation", "turn-two", "continue");
+            // Two durable turns can exceed 15 seconds on Windows runners (see above).
             var snapshot =
-                    await(rebuilt, s -> s.turns().size() == 2 && lastStatus(s).equals("completed"));
+                    await(
+                            rebuilt,
+                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"),
+                            Duration.ofSeconds(60));
             assertEquals(4, snapshot.messages().size());
             assertTrue(snapshot.checkpointSeq() > before);
             assertTrue(snapshot.messages().get(3).getTextContent().contains("remember this"));
@@ -168,7 +176,10 @@ class ChatSessionsTest {
         String requestId, firstRun, turnId;
         try (var first = new ChatSessions(workspace, new DemoChatModel())) {
             turnId = first.submit("conversation", "turn-one", "/ask preference").turnId();
-            var snapshot = await(first, s -> lastStatus(s).equals("suspended"));
+            // A full turn through model dispatch and HITL suspension can exceed 15 seconds on
+            // Windows runners under -T1C contention (see above).
+            var snapshot =
+                    await(first, s -> lastStatus(s).equals("suspended"), Duration.ofSeconds(60));
             firstRun = snapshot.turns().get(0).runId();
             requestId = String.valueOf(snapshot.pending().get(0).data().get("requestId"));
             assertThrows(IllegalStateException.class, () -> first.resume("conversation", turnId));
@@ -178,7 +189,9 @@ class ChatSessionsTest {
             var resumed = rebuilt.answer("conversation", requestId, "keep it short");
             assertEquals(turnId, resumed.turnId());
             assertNotEquals(firstRun, resumed.runId());
-            var done = await(rebuilt, s -> lastStatus(s).equals("completed"));
+            // The resumed turn replays through the model on the restarted session (see above).
+            var done =
+                    await(rebuilt, s -> lastStatus(s).equals("completed"), Duration.ofSeconds(60));
             assertTrue(done.pending().isEmpty());
             assertTrue(
                     done.messages()
@@ -219,7 +232,9 @@ class ChatSessionsTest {
                         workspace,
                         new DemoChatModel(Duration.ofMillis(2), Duration.ofMillis(40)))) {
             sessions.submit("conversation", "multi-step", "/slow replay everything");
-            completed = await(sessions, s -> lastStatus(s).equals("completed"));
+            // Multi-step demo with streamed tool progress can exceed 15 seconds on Windows runners.
+            completed =
+                    await(sessions, s -> lastStatus(s).equals("completed"), Duration.ofSeconds(60));
             var tools =
                     completed.items().stream().filter(item -> item.kind().equals("tool")).toList();
             assertEquals(3, tools.size());

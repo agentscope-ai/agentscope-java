@@ -193,7 +193,13 @@ class TrainingRunnerTest {
         runner.start();
         assertTrue(runner.isRunning());
 
-        Thread.sleep(1500);
+        // First commit tick lands after commitIntervalSeconds(1); poll instead of a fixed
+        // 1.5s sleep so the test proceeds as soon as the request is sent.
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (mockServer.getRequestCount() < 1) {
+            assertTrue(System.currentTimeMillis() < deadline, "no commit request within 5s");
+            Thread.sleep(25);
+        }
 
         runner.stop();
 

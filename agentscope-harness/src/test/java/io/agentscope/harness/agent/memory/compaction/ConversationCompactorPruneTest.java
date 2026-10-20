@@ -33,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -197,6 +198,75 @@ class ConversationCompactorPruneTest {
         assertEquals(ToolResultState.ERROR, prunedLarge.getState());
         assertEquals("call-large", prunedLarge.getId());
         assertEquals("msg-5", result.get(0).getId());
+    }
+
+    @Test
+    void compactIfNeeded_protectsTheSameRecentOutputsWhenResultsAreBatched() {
+        List<ContentBlock> blocks = largeResults();
+        List<Msg> separate =
+                blocks.stream()
+                        .map(b -> Msg.builder().role(MsgRole.TOOL).content(b).build())
+                        .toList();
+        List<Msg> batched = List.of(Msg.builder().role(MsgRole.TOOL).content(blocks).build());
+        CompactionConfig config = compactionConfig(pruneConfig(100, 1, 700, Set.of()));
+
+        List<ContentBlock> separateOutput =
+                compact(separate, config).stream()
+                        .flatMap(msg -> msg.getContent().stream())
+                        .toList();
+        List<ContentBlock> batchedOutput = compact(batched, config).get(0).getContent();
+
+        assertEquals(6, batchedOutput.size());
+        for (int i = 0; i < blocks.size(); i++) {
+            assertEquals(
+                    ((TextBlock) ((ToolResultBlock) separateOutput.get(i)).getOutput().get(0))
+                            .getText(),
+                    ((TextBlock) ((ToolResultBlock) batchedOutput.get(i)).getOutput().get(0))
+                            .getText(),
+                    "result " + i);
+        }
+        assertSame(blocks.get(4), batchedOutput.get(4));
+        assertSame(blocks.get(5), batchedOutput.get(5));
+    }
+
+    @Test
+    void compactIfNeeded_doesNotMultiplyPrunableTokensByResultsPerMessage() {
+        List<Msg> messages =
+                List.of(Msg.builder().role(MsgRole.TOOL).content(largeResults()).build());
+        CompactionConfig config = compactionConfig(pruneConfig(100, 3_000, 0, Set.of()));
+
+        // Six 1,000-character outputs are about 2,400 tokens, below the threshold.
+        assertTrue(
+                compactor
+                        .compactIfNeeded(null, messages, config, "agent", "session")
+                        .block()
+                        .isEmpty());
+    }
+
+    private static List<ContentBlock> largeResults() {
+        return IntStream.range(0, 6)
+                .<ContentBlock>mapToObj(
+                        i ->
+                                ToolResultBlock.of(
+                                        "call-" + i,
+                                        "execute",
+                                        TextBlock.builder().text("x".repeat(1_000)).build()))
+                .toList();
+    }
+
+    private static CompactionConfig compactionConfig(CompactionConfig.PruneConfig prune) {
+        return CompactionConfig.builder()
+                .triggerMessages(0)
+                .triggerTokens(Integer.MAX_VALUE)
+                .prune(prune)
+                .build();
+    }
+
+    private List<Msg> compact(List<Msg> messages, CompactionConfig config) {
+        return compactor
+                .compactIfNeeded(null, messages, config, "agent", "session")
+                .block()
+                .orElse(messages);
     }
 
     /** Creates a prune config: maxOutputChars, minimumTokens, protectTokens, excludedTools. */
