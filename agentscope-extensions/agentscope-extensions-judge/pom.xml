@@ -33,5 +33,6 @@
 
     <modules>
         <module>agentscope-extensions-jev</module>
+        <module>agentscope-extensions-openai-decisions</module>
     </modules>
 </project>
