@@ -238,27 +238,33 @@ public class A2aAgentCardProperties {
      *
      * @param authorizationCode authorization code flow
      * @param clientCredentials client credentials flow
-     * @param implicit implicit flow
-     * @param password resource owner password flow
+     * @param deviceCode device authorization flow
+     * @param implicit not supported: A2A 1.0 has no implicit flow, setting it fails the startup
+     * @param password not supported: A2A 1.0 has no password flow, setting it fails the startup
      */
     public record OAuthFlows(
             OAuthFlow authorizationCode,
             OAuthFlow clientCredentials,
+            OAuthFlow deviceCode,
             OAuthFlow implicit,
             OAuthFlow password) {}
 
     /**
-     * One OAuth 2.0 flow. Which URLs apply depends on the flow.
+     * One OAuth 2.0 flow. Which fields apply depends on the flow.
      *
-     * @param authorizationUrl authorization URL
+     * @param authorizationUrl authorization URL of the authorization code flow
      * @param tokenUrl token URL
      * @param refreshUrl refresh URL
+     * @param deviceAuthorizationUrl device authorization URL of the device code flow
+     * @param pkceRequired whether the authorization code flow requires PKCE
      * @param scopes available scopes and their descriptions
      */
     public record OAuthFlow(
             String authorizationUrl,
             String tokenUrl,
             String refreshUrl,
+            String deviceAuthorizationUrl,
+            Boolean pkceRequired,
             Map<String, String> scopes) {}
 
     /**
