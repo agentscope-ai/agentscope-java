@@ -6,7 +6,7 @@ zh_link: /v2/zh/integration/judge/openai-decisions
 
 OpenAI Decisions evaluates shared evidence and returns a probability, a fixed choice, or a rubric score. The extension uses the official OpenAI Java SDK and lives under `agentscope-extensions-judge`, alongside JEV, and exposes `OpenAIDecisionsClient` independently of the chat model APIs. Applications can use its results to classify requests or choose their next action.
 
-The [official guide](https://developers.openai.com/api/docs/guides/decisions) describes the API as public beta. The [API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create) lists `gpt-6-luna`; this is the client's default model. Service access depends on your OpenAI account. The examples here describe usage; the repository tests use synthetic responses and do not establish live-service compatibility or classification quality.
+The [official guide](https://developers.openai.com/api/docs/guides/decisions) describes the API as public beta. The [API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create) lists `gpt-6-luna`; this is the client's default model. Service access depends on your OpenAI account.
 
 ## Dependency and first decision
 
@@ -51,7 +51,7 @@ if (answer instanceof DecisionAnswer.Choice choice) {
 }
 ```
 
-`DecisionRequest` contains 1–200 uniquely named questions. The optional request model overrides the client model. Inputs and question collections are copied when constructed, so a request can be reused safely. `decide()` returns a cold `Mono`: each subscription sends a request. Use it in reactive applications; `decideBlocking()` is a convenience for non-reactive threads.
+`DecisionRequest` contains 1–400 uniquely named questions. The optional request model overrides the client model. Inputs and question collections are copied when constructed, so a request can be reused safely. The optional `promptCacheKey()` partitions cache reuse; this extension does not expose `prompt_cache_options` or explicit cache breakpoints, so OpenAI uses its default implicit caching. `decide()` returns a cold `Mono`: each subscription sends a request. Use it in reactive applications; `decideBlocking()` is a convenience for non-reactive threads.
 
 ## Questions and answers
 
@@ -69,7 +69,7 @@ Every question may instead return `DecisionAnswer.Refusal`. Check for this type 
 
 The client matches answers by name and distribution entries by value/index, so response ordering is not significant. Missing, duplicate, unknown, or mismatched answers are rejected. Every choice or level must appear exactly once, numeric fields must be present and finite, probabilities and confidence must be in [0, 1], and probabilities must sum to one within `1e-6 × option count`. The chosen value must be one of the supplied options; the score must match the weighted indices within the same tolerance. Values are preserved without normalization. An invalid response fails the entire `Mono` with `OpenAIDecisionsException`.
 
-`DecisionResult.usage()` contains input, output, and total token counts supplied by the provider. Missing usage is `null`; missing individual counts remain `null`. A real zero remains zero. Usage on failed calls is not exposed.
+`DecisionResult.usage()` contains input, output, and total token counts supplied by the provider. It also flattens the provider's token-detail fields into `cachedTokens`, `cacheWriteTokens`, and `reasoningTokens`. Missing usage is `null`; missing individual counts and detail fields remain `null`. A real zero remains zero. Usage on failed calls is not exposed.
 
 ## Images and mixed input
 
@@ -87,7 +87,7 @@ DecisionRequest imageRequest = DecisionRequest.builder()
 client.decide(imageRequest).subscribe(imageResult -> System.out.println(imageResult.answers()));
 ```
 
-The client accepts image data URLs and HTTP(S) image URLs according to the API reference. However, the official guide currently says that hosted URLs are unsupported. Use inline base64 data URLs for the documented examples; hosted URL compatibility with the live service has not been verified. The Java client sends these values to the provider without fetching the images locally. This initial extension supports text and a single user message with text/image parts; conversation histories, tool-call inputs, and prompt-cache options are not exposed.
+The client accepts image data URLs and publicly accessible HTTP(S) image URLs, matching the API reference and official guide. The Java client sends these values to the provider without fetching the images locally; repository tests do not verify compatibility with a live service. This initial extension supports text and a single user message with text/image parts; conversation histories, tool-call inputs, and prompt-cache options are not exposed.
 
 ## Configuration and failures
 

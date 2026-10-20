@@ -79,7 +79,13 @@ class OpenAIDecisionsClientTest {
               {"name":"damaged", "type":"predicate", "probability":0},
               {"name":"route", "type":"choice", "choice":true, "confidence":0.7,
                "probabilities":[{"value":true,"probability":0.9},{"value":"true","probability":0.1}]}
-            ], "usage":{"input_tokens":12,"output_tokens":0,"total_tokens":12},"future_field":42}
+            ], "usage":{
+              "input_tokens":12,
+              "input_tokens_details":{"cached_tokens":3,"cache_write_tokens":2},
+              "output_tokens":0,
+              "output_tokens_details":{"reasoning_tokens":1},
+              "total_tokens":12
+            },"future_field":42}
             """;
 
     private static DecisionRequest request() {
@@ -151,7 +157,7 @@ class OpenAIDecisionsClientTest {
         assertEquals(0.7, choice.confidence());
         assertEquals("true", choice.probabilities().get(1).value());
         assertEquals(0.8, ((DecisionAnswer.Score) result.answers().get("severity")).score());
-        assertEquals(new DecisionUsage(12L, 0L, 12L), result.usage());
+        assertEquals(new DecisionUsage(12L, 0L, 12L, 3L, 2L, 1L), result.usage());
         assertThrows(UnsupportedOperationException.class, () -> result.answers().clear());
         var captured = ArgumentCaptor.forClass(HttpRequest.class);
         verify(transport).execute(captured.capture(), any());
@@ -193,6 +199,23 @@ class OpenAIDecisionsClientTest {
         assertEquals(
                 "https://images.example/product.png",
                 body.at("/input/0/content/2/image_url").textValue());
+    }
+
+    @Test
+    void sendsPromptCacheKeyWithoutCacheOptions() throws Exception {
+        HttpClient transport = transport(SUCCESS);
+        client(transport)
+                .decideBlocking(
+                        new DecisionRequest(
+                                DecisionInput.text("The screen is broken"),
+                                null,
+                                request().questions(),
+                                "tenant-42"));
+        var capture = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(transport).execute(capture.capture(), any());
+        var body = MAPPER.readTree(body(capture.getValue()));
+        assertEquals("tenant-42", body.get("prompt_cache_key").textValue());
+        assertFalse(body.has("prompt_cache_options"));
     }
 
     @ParameterizedTest
@@ -238,11 +261,11 @@ class OpenAIDecisionsClientTest {
                 IllegalArgumentException.class,
                 () -> new DecisionQuestion.Choice("Choose", tooManyChoices));
         var questions = new LinkedHashMap<String, DecisionQuestion>();
-        for (int i = 0; i < 200; i++) {
+        for (int i = 0; i < 400; i++) {
             questions.put(Integer.toString(i), new DecisionQuestion.Predicate("Check"));
         }
         assertEquals(
-                200,
+                400,
                 new DecisionRequest(DecisionInput.text("Input"), null, questions)
                         .questions()
                         .size());
@@ -301,6 +324,15 @@ class OpenAIDecisionsClientTest {
                 root -> root.put("usage", "wrong"),
                 root -> ((ObjectNode) root.get("usage")).put("input_tokens", -1),
                 root -> ((ObjectNode) root.get("usage")).put("input_tokens", 1.5),
+                root ->
+                        ((ObjectNode) root.at("/usage/input_tokens_details"))
+                                .put("cached_tokens", -1),
+                root ->
+                        ((ObjectNode) root.at("/usage/input_tokens_details"))
+                                .put("cache_write_tokens", 1.5),
+                root ->
+                        ((ObjectNode) root.at("/usage/output_tokens_details"))
+                                .put("reasoning_tokens", -1),
                 root -> root.remove("model"));
     }
 
@@ -335,6 +367,9 @@ class OpenAIDecisionsClientTest {
         var usage = client(transport(body.toString())).decideBlocking(request()).usage();
         assertNull(usage.inputTokens());
         assertEquals(0L, usage.outputTokens());
+        assertNull(usage.cachedTokens());
+        assertNull(usage.cacheWriteTokens());
+        assertNull(usage.reasoningTokens());
     }
 
     @ParameterizedTest
@@ -612,6 +647,14 @@ class OpenAIDecisionsClientTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> OpenAIDecisionsClient.builder().apiKey("key").timeout(Duration.ZERO).build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        DecisionRequest.builder()
+                                .input("x")
+                                .question("a", new DecisionQuestion.Predicate("x"))
+                                .promptCacheKey(" ")
+                                .build());
         assertThrows(
                 IllegalArgumentException.class, () -> DecisionRequest.builder().input("x").build());
         assertThrows(

@@ -21,14 +21,18 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/** An immutable set of 1–200 uniquely named questions about shared input. */
+/** An immutable set of 1–400 uniquely named questions about shared input. */
 public record DecisionRequest(
-        DecisionInput input, String model, Map<String, DecisionQuestion> questions) {
+        DecisionInput input,
+        String model,
+        Map<String, DecisionQuestion> questions,
+        String promptCacheKey) {
+
     public DecisionRequest {
         Objects.requireNonNull(input, "input");
         questions = Collections.unmodifiableMap(new LinkedHashMap<>(questions));
-        if (questions.isEmpty() || questions.size() > 200) {
-            throw new IllegalArgumentException("questions must contain 1–200 entries");
+        if (questions.isEmpty() || questions.size() > 400) {
+            throw new IllegalArgumentException("questions must contain 1–400 entries");
         }
         questions.forEach(
                 (name, question) -> {
@@ -40,6 +44,14 @@ public record DecisionRequest(
         if (model != null && model.isBlank()) {
             throw new IllegalArgumentException("model must not be blank");
         }
+        if (promptCacheKey != null && promptCacheKey.isBlank()) {
+            throw new IllegalArgumentException("promptCacheKey must not be blank");
+        }
+    }
+
+    public DecisionRequest(
+            DecisionInput input, String model, Map<String, DecisionQuestion> questions) {
+        this(input, model, questions, null);
     }
 
     public static Builder builder() {
@@ -49,6 +61,7 @@ public record DecisionRequest(
     public static final class Builder {
         private DecisionInput input;
         private String model;
+        private String promptCacheKey;
         private final Map<String, DecisionQuestion> questions = new LinkedHashMap<>();
 
         private Builder() {}
@@ -67,6 +80,11 @@ public record DecisionRequest(
             return this;
         }
 
+        public Builder promptCacheKey(String promptCacheKey) {
+            this.promptCacheKey = promptCacheKey;
+            return this;
+        }
+
         public Builder question(String name, DecisionQuestion question) {
             if (questions.containsKey(name)) {
                 throw new IllegalArgumentException("question names must be unique");
@@ -76,7 +94,7 @@ public record DecisionRequest(
         }
 
         public DecisionRequest build() {
-            return new DecisionRequest(input, model, questions);
+            return new DecisionRequest(input, model, questions, promptCacheKey);
         }
     }
 }

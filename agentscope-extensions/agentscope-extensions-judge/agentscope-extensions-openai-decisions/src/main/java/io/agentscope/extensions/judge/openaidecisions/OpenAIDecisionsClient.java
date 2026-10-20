@@ -75,11 +75,8 @@ public final class OpenAIDecisionsClient implements AutoCloseable {
         ownsClient = builder.client == null;
         if (ownsClient) {
             String apiKey = builder.apiKey;
-            if (apiKey == null
-                    || apiKey.isBlank()
-                    || apiKey.contains("\r")
-                    || apiKey.contains("\n")) {
-                throw new IllegalArgumentException("apiKey must be a nonblank single-line value");
+            if (apiKey == null || apiKey.isBlank()) {
+                throw new IllegalArgumentException("apiKey must be a nonblank value");
             }
             client =
                     OpenAIOkHttpClient.builder()
@@ -151,6 +148,9 @@ public final class OpenAIDecisionsClient implements AutoCloseable {
         var params =
                 DecisionCreateParams.builder()
                         .model(request.model() == null ? model : request.model());
+        if (request.promptCacheKey() != null) {
+            params.promptCacheKey(request.promptCacheKey());
+        }
         DecisionInput input = request.input();
         if (input.imageUrls().isEmpty()) {
             params.input(input.text());
@@ -270,6 +270,10 @@ public final class OpenAIDecisionsClient implements AutoCloseable {
                 result.put(name, parseAnswer(question, answer));
             }
             Decision.Usage usage = optional(response._usage());
+            Decision.Usage.InputTokensDetails inputTokensDetails =
+                    usage == null ? null : optional(usage._inputTokensDetails());
+            Decision.Usage.OutputTokensDetails outputTokensDetails =
+                    usage == null ? null : optional(usage._outputTokensDetails());
             return new DecisionResult(
                     responseModel,
                     result,
@@ -278,7 +282,16 @@ public final class OpenAIDecisionsClient implements AutoCloseable {
                             : new DecisionUsage(
                                     count(usage._inputTokens()),
                                     count(usage._outputTokens()),
-                                    count(usage._totalTokens())));
+                                    count(usage._totalTokens()),
+                                    inputTokensDetails == null
+                                            ? null
+                                            : count(inputTokensDetails._cachedTokens()),
+                                    inputTokensDetails == null
+                                            ? null
+                                            : count(inputTokensDetails._cacheWriteTokens()),
+                                    outputTokensDetails == null
+                                            ? null
+                                            : count(outputTokensDetails._reasoningTokens())));
         } catch (OpenAIServiceException e) {
             int status = e.statusCode();
             throw new OpenAIDecisionsException(

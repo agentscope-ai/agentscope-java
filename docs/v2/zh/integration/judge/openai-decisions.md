@@ -6,7 +6,7 @@ en_link: /v2/en/integration/judge/openai-decisions
 
 OpenAI Decisions 对共享输入进行判断，返回概率、固定选项或基于量表的评分。扩展使用 OpenAI 官方 Java SDK，位于 `agentscope-extensions-judge` 下，与 JEV 同级，通过独立于聊天模型 API 的 `OpenAIDecisionsClient` 使用。应用可以根据结果分类请求或决定下一步动作。
 
-[官方指南](https://developers.openai.com/api/docs/guides/decisions)将该 API 标记为公开测试阶段。[API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create)列出了 `gpt-6-luna`，客户端以它作为默认模型。能否访问服务取决于你的 OpenAI 账号。本文示例用于说明用法；仓库测试使用合成响应，不能证明真实服务兼容性或分类效果。
+[官方指南](https://developers.openai.com/api/docs/guides/decisions)将该 API 标记为公开测试阶段。[API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create)列出了 `gpt-6-luna`，客户端以它作为默认模型。能否访问服务取决于你的 OpenAI 账号。
 
 ## 依赖和首次决策
 
@@ -51,7 +51,7 @@ if (answer instanceof DecisionAnswer.Choice choice) {
 }
 ```
 
-`DecisionRequest` 包含 1–200 个名称唯一的问题。请求中的可选模型会覆盖客户端模型。构造时会复制输入和问题集合，因此请求可以安全复用。`decide()` 返回冷 `Mono`，每次订阅都会发送请求，适合响应式应用；`decideBlocking()` 则供非响应式线程使用。
+`DecisionRequest` 包含 1–400 个名称唯一的问题。请求中的可选模型会覆盖客户端模型。构造时会复制输入和问题集合，因此请求可以安全复用。可选的 `promptCacheKey()` 用于划分缓存复用；本扩展不暴露 `prompt_cache_options` 或显式缓存断点，OpenAI 会使用默认隐式缓存。`decide()` 返回冷 `Mono`，每次订阅都会发送请求，适合响应式应用；`decideBlocking()` 则供非响应式线程使用。
 
 ## 问题和答案
 
@@ -69,7 +69,7 @@ if (answer instanceof DecisionAnswer.Choice choice) {
 
 客户端按名称匹配答案，按值或索引匹配分布项，不依赖响应顺序。缺失、重复、未知或类型不匹配的答案都会被拒绝。每个选项或等级必须且只能出现一次；数值字段必须存在且有限；概率和置信度必须位于 [0, 1]；概率总和与 1 的误差不得超过 `1e-6 × 选项数`。选中值必须属于提供的选项，评分必须在相同容差内符合等级索引的加权平均值。客户端保留原值，不做归一化。非法响应会使整个 `Mono` 以 `OpenAIDecisionsException` 失败。
 
-`DecisionResult.usage()` 保留提供商返回的输入、输出和总 token 数。缺失 usage 为 `null`，缺失的单个计数也保持 `null`，真实的零仍为零。失败调用不暴露 usage。
+`DecisionResult.usage()` 保留提供商返回的输入、输出和总 token 数，并将提供商的 token 详情字段平铺为 `cachedTokens`、`cacheWriteTokens` 和 `reasoningTokens`。缺失 usage 为 `null`，缺失的单个计数和详情字段也保持 `null`，真实的零仍为零。失败调用不暴露 usage。
 
 ## 图片和混合输入
 
@@ -87,7 +87,7 @@ DecisionRequest imageRequest = DecisionRequest.builder()
 client.decide(imageRequest).subscribe(imageResult -> System.out.println(imageResult.answers()));
 ```
 
-客户端按 API reference 接受图片 data URL 和 HTTP(S) 图片 URL。但官方指南当前表示不支持托管 URL，两处文档存在差异。本文示例使用内联 base64 data URL；HTTP(S) 图片 URL 的真实服务兼容性尚未验证。Java 客户端只将这些值发送给提供商，不在本地获取图片。当前扩展提供文本和单条用户消息中的文本/图片输入，尚未暴露会话历史、工具调用输入或提示缓存选项。
+客户端按 API reference 和官方指南接受图片 data URL 以及可公开访问的 HTTP(S) 图片 URL。Java 客户端只将这些值发送给提供商，不在本地获取图片；仓库测试不会验证真实服务兼容性。当前扩展提供文本和单条用户消息中的文本/图片输入，尚未暴露会话历史、工具调用输入或提示缓存选项。
 
 ## 配置和失败处理
 

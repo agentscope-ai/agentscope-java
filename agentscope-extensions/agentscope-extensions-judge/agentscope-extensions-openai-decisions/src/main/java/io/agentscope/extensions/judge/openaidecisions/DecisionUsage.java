@@ -17,4 +17,10 @@
 package io.agentscope.extensions.judge.openaidecisions;
 
 /** Provider token counts; missing counts remain {@code null}, never inferred as zero. */
-public record DecisionUsage(Long inputTokens, Long outputTokens, Long totalTokens) {}
+public record DecisionUsage(
+        Long inputTokens,
+        Long outputTokens,
+        Long totalTokens,
+        Long cachedTokens,
+        Long cacheWriteTokens,
+        Long reasoningTokens) {}
