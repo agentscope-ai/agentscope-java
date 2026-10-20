@@ -15,25 +15,57 @@ First, [create a Managed Agent](/v2/en/service/create-managed-agent), configure 
 Use curl, jq and a [user login token](/v2/en/service/api-reference#authentication-and-scope) to test the same interaction as the local console. A business backend can instead use the authorized Application key from the integration guide. Substitute actual resource IDs; omit `environmentId` from the creation request if the Agent has a default Environment. Local Gateway defaults to port 18080.
 
 ```bash
-export BASE_URL='http://localhost:18080'
-export TOKEN='YOUR_USER_TOKEN'
-export AGENT_ID='YOUR_MANAGED_AGENT_ID'
-export ENVIRONMENT_ID='YOUR_ENVIRONMENT_ID'
+set -euo pipefail
+export BASE_URL="http://localhost:18080"
+export TOKEN="YOUR_USER_TOKEN"
+export TENANT="YOUR_TENANT"
+export NAMESPACE="YOUR_NAMESPACE"
+export AGENT_ID="YOUR_MANAGED_AGENT_ID"
+export ENVIRONMENT_ID="YOUR_ENVIRONMENT_ID"
+```
 
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: notes-session-001' \
-  -d "$(jq -n --arg agent "$AGENT_ID" --arg env "$ENVIRONMENT_ID" \
-        '{target:{type:"agent",id:$agent}, environmentId:$env}')")
-export SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
-export SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+Create the conversation’s Session:
 
-TURN_KEY='notes-chat-001'
-TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "Idempotency-Key: $TURN_KEY" \
-  -d '{"message":"Organize meeting actions: Alex finishes the installation guide Friday. Review is Monday; time unconfirmed. List the information still needed."}')
-export TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
+```bash
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notes-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "agent",
+    "id": "$AGENT_ID"
+  },
+  "environmentId": "$ENVIRONMENT_ID"
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+```
+
+Submit the first question:
+
+```bash
+TURN_KEY="notes-chat-001"
+TURN_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: $TURN_KEY" \
+    --data-binary @- <<'JSON'
+{
+  "message": "Organize meeting actions: Alex finishes the installation guide Friday. Review is Monday; time unconfirmed. List the information still needed."
+}
+JSON
+)
+TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
 ```
 
 After creation, save `SESSION_ID` so the chat page route can identify this conversation, and save `TURN_ID` to identify the submitted task. Create a new Session only when the user starts a new conversation. On refresh, read the existing records rather than creating a conversation or sending the question again.
@@ -43,18 +75,35 @@ The two example idempotency keys identify Session creation and task submission s
 ## 2. Restore content before subscribing
 
 ```bash
-SNAPSHOT=$(curl --fail-with-body -sS "$SESSION_URL/snapshot" \
-  -H "Authorization: Bearer $TOKEN")
-printf '%s' "$SNAPSHOT" | jq '{items,tools,turns,required_actions}'
-CURSOR=$(printf '%s' "$SNAPSHOT" | jq -er '.as_of')
-curl --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "Authorization: Bearer $TOKEN" -H 'Accept: text/event-stream' \
+SNAPSHOT=$(
+  curl -sS --fail-with-body "$SESSION_URL/snapshot" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE"
+)
+jq '{items, tools, turns, required_actions}' <<< "$SNAPSHOT"
+CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
+```
+
+```bash
+curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" \
+  -H "Accept: text/event-stream" \
   --data-urlencode "after=$CURSOR"
 ```
 
 Ctrl-C closes the subscription while background work continues. Running this block again restores messages and tool results saved during disconnection, then follows new events from the snapshot's cursor. The refreshed page can display earlier content and continue following execution that has not finished.
 
 A Session SSE connection can stay open across multiple Turns, so closing it does not establish task completion. Use the target `turn_id` and its `turn.completed` event or queried Turn state to determine success. See [SSE and event replay](/v2/en/service/sse-events) for deduplication, reconnects, and backend notifications.
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
 
 ## 3. Connect your page
 
@@ -96,7 +145,7 @@ export function mountConversation(
       } catch (error) {
         if (signal.aborted) return;
         if (attempt === 0 && error instanceof AgentStreamError
-            && [400, 409].includes(error.status)) continue;
+            && [400, 409, 410].includes(error.status)) continue;
         throw error;
       }
     }
@@ -124,6 +173,15 @@ Refresh can occur while tool arguments are still being generated. The reducer us
 
 The following table connects chat page actions to the Session API. Paths are relative to `SESSION_URL`. Use Session, Turn, and request IDs returned by the service to identify existing work; Service manages the execution process.
 
+Read current Turn capabilities before displaying controls. Choose the following operations according to user intent rather than running them in sequence:
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
 | Button / scenario | Request | Next step |
 | --- | --- | --- |
 | Send a new question | POST `/turns`, `{message}` | New turn and key, same session stream |
@@ -133,18 +191,140 @@ The following table connects chat page actions to the Session API. Paths are rel
 | Stop | POST `/turns/{turn}/cancel` | Wait for the explicit turn outcome; cancel_requested is not stopped |
 | Continue interrupted work | POST `/turns/{turn}/resume` | Resolve pending actions/unknown tool results first; same turn, possibly a new run |
 
+<AccordionGroup>
+
+<Accordion title="Correct requirements or add context">
+
+Correct a running task:
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/steer" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: notes-correction-001" \
+  --data-binary @- <<'JSON'
+{
+  "message": "List open questions first; do not write files yet."
+}
+JSON
+```
+
+Save context without starting inference:
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/inputs/inject" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: notes-context-001" \
+  --data-binary @- <<'JSON'
+{
+  "message": "Additional context: the installation guide maintainer also joins the review."
+}
+JSON
+```
+
+</Accordion>
+
+<Accordion title="Stop the current task">
+
+```bash
+CANCEL_JSON=$(
+  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/cancel" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Idempotency-Key: notes-cancel-001"
+)
+CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
+```
+
+Read the cancellation command, then the Turn state to confirm termination:
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$CANCEL_COMMAND_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+</Accordion>
+
+<Accordion title="Continue resumable work">
+
+Resume only when `available_commands` includes `resume` and pending actions and uncertain tool results are resolved:
+
+```bash
+RESUME_JSON=$(
+  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/resume" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Idempotency-Key: notes-resume-001"
+)
+RESUME_COMMAND_ID=$(jq -er '.command.id' <<< "$RESUME_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$RESUME_COMMAND_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+</Accordion>
+
+</AccordionGroup>
+
 Provide a stable `Idempotency-Key` when creating a Turn, changing requirements, adding context, or answering a pending action. The example below submits confirmation after the user inspects the tool request and chooses “Allow”. `REQUEST_ID` must come from the pending card's `request_id`; a tool call ID cannot replace it:
 
 ```bash
-REQUEST_ID='REQUEST_ID_FROM_PENDING_ACTION'
-curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: notes-approval-001' \
-  -d "$(jq -n --arg request "$REQUEST_ID" \
-        '{request_id:$request,payload:{allow:true,reason:"Confirmed by user"}}')"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
+COMMAND_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notes-approval-001" \
+    --data-binary @- <<JSON
+{
+  "request_id": "$REQUEST_ID",
+  "payload": {
+    "allow": true,
+    "reason": "Confirmed by the user"
+  }
+}
+JSON
+)
+COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 ```
 
 After the answer is accepted, follow the returned command status and observe whether the action has been handled and execution continues. A successful HTTP request only means the service received this operation; it does not immediately resolve the pending action. If the command fails or the action remains pending, reload the latest records before asking the user to decide whether to retry.
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
 
 For an action requesting external tool execution, submit the actual `output` and `is_error` inside `payload`. An identity-bound confirmation requires the designated person's authorized user identity. See [Answer a required action](/v2/en/service/session-event-log#answer-a-required-action) for locating the action and following command receipts. These answers advance the existing task; its Turn result still determines completion.
 

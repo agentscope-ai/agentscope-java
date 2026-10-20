@@ -15,6 +15,7 @@
  */
 package io.agentscope.builder.runtime.outbound;
 
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.gateway.ChannelManager;
@@ -47,7 +48,7 @@ public final class OutboundTool {
                     peer_id (the provider-specific user or group id). Either text or markdown \
                     must be supplied. Returns "ok" on success or a short error description.\
                     """)
-    public String send(
+    public ToolResultBlock send(
             @ToolParam(
                             name = "channel_id",
                             description = "Registered channel id (e.g. 'wecom-prod')")
@@ -99,9 +100,9 @@ public final class OutboundTool {
                     new OutboundRequest(
                             channelId, peerKind, peerId, accountId, threadId, text, markdown,
                             agentId));
-            return "ok";
+            return ToolResultBlock.success("ok");
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return "error: " + e.getMessage();
+            return ToolResultBlock.error(e.getMessage());
         }
     }
 }

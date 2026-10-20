@@ -15,25 +15,57 @@ en_link: /v2/en/service/agent-api-chat
 下面使用 curl、jq 和[登录取得的用户 token](/v2/zh/service/api-reference#认证与空间)，方便在本地验证与控制台相同的交互。接入业务后端时，可以改用入口指南中已经授权的 Application key。将示例中的 ID 替换为实际资源 ID；如果 Agent 已配置默认 Environment，也可以省略创建请求中的 `environmentId`。本地安装的 Gateway 默认端口为 18080。
 
 ```bash
-export BASE_URL='http://localhost:18080'
-export TOKEN='YOUR_USER_TOKEN'
-export AGENT_ID='YOUR_MANAGED_AGENT_ID'
-export ENVIRONMENT_ID='YOUR_ENVIRONMENT_ID'
+set -euo pipefail
+export BASE_URL="http://localhost:18080"
+export TOKEN="YOUR_USER_TOKEN"
+export TENANT="YOUR_TENANT"
+export NAMESPACE="YOUR_NAMESPACE"
+export AGENT_ID="YOUR_MANAGED_AGENT_ID"
+export ENVIRONMENT_ID="YOUR_ENVIRONMENT_ID"
+```
 
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: notes-session-001' \
-  -d "$(jq -n --arg agent "$AGENT_ID" --arg env "$ENVIRONMENT_ID" \
-        '{target:{type:"agent",id:$agent}, environmentId:$env}')")
-export SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
-export SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+创建这段对话的 Session：
 
-TURN_KEY='notes-chat-001'
-TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "Idempotency-Key: $TURN_KEY" \
-  -d '{"message":"整理会议待办：小李周五完成安装说明，下周一评审，时间待确认。列出还需要核实的信息。"}')
-export TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
+```bash
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notes-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "agent",
+    "id": "$AGENT_ID"
+  },
+  "environmentId": "$ENVIRONMENT_ID"
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+```
+
+提交第一个问题：
+
+```bash
+TURN_KEY="notes-chat-001"
+TURN_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: $TURN_KEY" \
+    --data-binary @- <<'JSON'
+{
+  "message": "整理会议待办：小李周五完成安装说明，下周一评审，时间待确认。列出还需要核实的信息。"
+}
+JSON
+)
+TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
 ```
 
 创建成功后，应用保存 `SESSION_ID`，让聊天页面的路由能够定位这段对话；同时保存 `TURN_ID`，用于识别刚提交的任务。只有用户新建会话时才创建新的 Session。如果用户只是刷新页面，应用应读取原有记录，而不是再次创建会话或发送问题。
@@ -43,18 +75,35 @@ export TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
 ## 2. 先恢复内容，再订阅 SSE
 
 ```bash
-SNAPSHOT=$(curl --fail-with-body -sS "$SESSION_URL/snapshot" \
-  -H "Authorization: Bearer $TOKEN")
-printf '%s' "$SNAPSHOT" | jq '{items,tools,turns,required_actions}'
-CURSOR=$(printf '%s' "$SNAPSHOT" | jq -er '.as_of')
-curl --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "Authorization: Bearer $TOKEN" -H 'Accept: text/event-stream' \
+SNAPSHOT=$(
+  curl -sS --fail-with-body "$SESSION_URL/snapshot" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE"
+)
+jq '{items, tools, turns, required_actions}' <<< "$SNAPSHOT"
+CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
+```
+
+```bash
+curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" \
+  -H "Accept: text/event-stream" \
   --data-urlencode "after=$CURSOR"
 ```
 
 在终端按 Ctrl-C 只会关闭事件订阅，后台任务仍然继续。再次运行这一段时，快照先恢复断开期间已经保存的消息和工具结果，事件订阅再从快照的游标继续更新页面。这样，刷新后的页面既能显示之前的内容，也能接上尚未结束的执行。
 
 同一个 Session 的 SSE 连接可以跨越多个 Turn 保持打开，因此应用不能把连接关闭当作任务完成。应根据目标 `turn_id` 的 `turn.completed` 事件或查询得到的 Turn 状态，判断这次任务是否成功。事件去重、断线续传和后台通知的完整说明见[SSE 与事件续传](/v2/zh/service/sse-events)。
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
 
 ## 3. 接到自己的页面
 
@@ -96,7 +145,7 @@ export function mountConversation(
       } catch (error) {
         if (signal.aborted) return;
         if (attempt === 0 && error instanceof AgentStreamError
-            && [400, 409].includes(error.status)) continue;
+            && [400, 409, 410].includes(error.status)) continue;
         throw error;
       }
     }
@@ -124,6 +173,15 @@ export function mountConversation(
 
 下面将聊天页面上的操作对应到 Session API。所有路径都相对于 `SESSION_URL`；应用使用服务返回的 Session、Turn 和请求 ID 定位已有工作，由服务管理具体执行过程。
 
+显示按钮前读取当前 Turn 的能力；以下操作按用户意图选择，并不需要依次执行：
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
 | 按钮 / 场景 | 请求 | 后续处理 |
 | --- | --- | --- |
 | 发送新问题 | POST `/turns`，`{message}` | 新 turn、新 key，继续同一个 session 流 |
@@ -133,18 +191,140 @@ export function mountConversation(
 | 停止 | POST `/turns/{turn}/cancel` | 等明确 turn 结果，不把 cancel_requested 当作已停止 |
 | 继续中断任务 | POST `/turns/{turn}/resume` | 先处理待办和未知工具结果；沿用 turn，可能产生新 run |
 
+<AccordionGroup>
+
+<Accordion title="调整当前要求，或仅补充背景">
+
+调整正在执行的任务：
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/steer" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: notes-correction-001" \
+  --data-binary @- <<'JSON'
+{
+  "message": "先列出待确认事项，暂时不要写入文件。"
+}
+JSON
+```
+
+仅保存背景材料，不启动推理：
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/inputs/inject" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: notes-context-001" \
+  --data-binary @- <<'JSON'
+{
+  "message": "补充背景：评审参与人还包括安装说明的维护者。"
+}
+JSON
+```
+
+</Accordion>
+
+<Accordion title="停止当前任务">
+
+```bash
+CANCEL_JSON=$(
+  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/cancel" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Idempotency-Key: notes-cancel-001"
+)
+CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
+```
+
+查询取消命令，再读取 Turn 状态确认终态：
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$CANCEL_COMMAND_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+</Accordion>
+
+<Accordion title="继续可恢复的任务">
+
+只有 `available_commands` 包含 `resume`，并已处理待办和未知工具结果时，才提交恢复请求：
+
+```bash
+RESUME_JSON=$(
+  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/resume" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Idempotency-Key: notes-resume-001"
+)
+RESUME_COMMAND_ID=$(jq -er '.command.id' <<< "$RESUME_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$RESUME_COMMAND_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+</Accordion>
+
+</AccordionGroup>
+
 创建 Turn、调整要求、补充背景和回答待办时，都应为这一次操作提供稳定的 `Idempotency-Key`。下面演示用户检查工具请求并点击“允许”后，应用如何提交确认答复。`REQUEST_ID` 必须来自当前待办卡片中的 `request_id`，不能用工具调用 ID 替代：
 
 ```bash
-REQUEST_ID='REQUEST_ID_FROM_PENDING_ACTION'
-curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: notes-approval-001' \
-  -d "$(jq -n --arg request "$REQUEST_ID" \
-        '{request_id:$request,payload:{allow:true,reason:"用户已确认"}}')"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
+COMMAND_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notes-approval-001" \
+    --data-binary @- <<JSON
+{
+  "request_id": "$REQUEST_ID",
+  "payload": {
+    "allow": true,
+    "reason": "用户已确认"
+  }
+}
+JSON
+)
+COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 ```
 
 答复被接收后，应用应继续查询返回的命令状态，并观察待办是否已经处理、任务是否继续执行。HTTP 请求成功只说明服务接收了这次操作，不能立即把待办标为完成。如果命令失败或待办仍然存在，应重新读取最新记录，让用户了解当前状态后再决定是否重试。
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
 
 待办要求外部工具执行结果时，应在 `payload` 中提交实际的 `output` 和 `is_error`；需要指定人员确认时，则使用该人员有权限的用户身份。如何定位待办和处理命令回执见[回答 required action](/v2/zh/service/session-event-log#回答-required-action)。这些答复是在推进原来的任务，最终是否完成仍以 Turn 的结果为准。
 

@@ -78,6 +78,12 @@ List<Document> hits = knowledge.retrieve(
 
 也可以实现 `EmbeddingModel` 自行扩展。
 
+`EmbeddingModel.embed(ContentBlock)` 返回 `Mono<EmbeddingResponse>`；响应中包含向量，并在
+提供方返回用量时附带 `EmbeddingUsage` 的 token 统计。
+
+可以向 `SimpleKnowledge.builder()` 传入 `usageListener`，接收每一次非空的 embedding 用量。
+监听器会在 embedding 响应线程上执行，应保持非阻塞且线程安全；提供方未返回用量时不会触发。
+
 ## 内置向量库适配
 
 | 实现 | 部署 |
