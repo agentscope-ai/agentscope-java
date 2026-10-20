@@ -72,6 +72,11 @@ class JevSupervisionMiddlewareTest {
                 ignored -> events);
     }
 
+    static boolean limitReached(List<JevSupervisionMiddleware.Observation> observations) {
+        return observations.stream()
+                .anyMatch(o -> o.decision().reason().equals("ASSESSMENT_LIMIT"));
+    }
+
     @Test
     void synchronousWorkerIsSubscribedOnceAndAllEventsAreIdentical() {
         var observations = new CopyOnWriteArrayList<JevSupervisionMiddleware.Observation>();
@@ -311,16 +316,24 @@ class JevSupervisionMiddlewareTest {
                         observations,
                         2,
                         3);
+        // The worker must stay active until the limit decision is published: a fixed event
+        // count races the assessment pipeline — under a stalled parallel scheduler the worker
+        // can complete before the second assessment does, the terminal tick then spends the
+        // remaining assessment slot on a final assessment instead of tripping the limit, and
+        // ASSESSMENT_LIMIT is never published. Completing on the published decision makes
+        // that impossible; the event cap only bounds a genuinely broken pipeline.
+        var emitted = new AtomicInteger();
         var worker =
                 Flux.interval(Duration.ofMillis(1))
-                        .take(160)
+                        .takeWhile(t -> !limitReached(observations))
+                        .take(2_000)
+                        .doOnNext(t -> emitted.incrementAndGet())
                         .map(i -> (AgentEvent) new TextBlockDeltaEvent("r", "b", "x"));
-        assertEquals(160, invoke(m, context("s"), worker).count().block());
+        long count = invoke(m, context("s"), worker).count().block(Duration.ofSeconds(8));
+        assertEquals(emitted.get(), count);
         assertEquals(2, calls.get());
         assertEquals(1, maxActive.get());
-        assertTrue(
-                observations.stream()
-                        .anyMatch(o -> o.decision().reason().equals("ASSESSMENT_LIMIT")));
+        assertTrue(limitReached(observations));
     }
 
     @Test
