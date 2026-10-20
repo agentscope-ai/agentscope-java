@@ -22,8 +22,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,6 +33,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.Version;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -266,6 +269,8 @@ class McpSyncClientWrapperTest {
         assertFalse(wrapper.isInitialized());
         assertTrue(wrapper.cachedTools.isEmpty());
         verify(mockClient, times(1)).closeGracefully();
+        // A successful graceful close must not trigger the forceful fallback.
+        verify(mockClient, never()).close();
     }
 
     @Test
@@ -279,6 +284,29 @@ class McpSyncClientWrapperTest {
 
         assertFalse(wrapper.isInitialized());
         assertTrue(wrapper.cachedTools.isEmpty());
+        verify(mockClient, times(1)).closeGracefully();
+        verify(mockClient, times(1)).close();
+    }
+
+    @Test
+    void testClose_TimesOutAndFallsBackToForceClose() {
+        // Short timeout so the test does not have to wait for the default close timeout.
+        McpSyncClientWrapper shortTimeoutWrapper =
+                new McpSyncClientWrapper("test-sync-client", mockClient, Duration.ofMillis(50));
+
+        // A blocking graceful close that outlives the close timeout must not block close() forever.
+        doAnswer(
+                        invocation -> {
+                            Thread.sleep(500);
+                            return null;
+                        })
+                .when(mockClient)
+                .closeGracefully();
+
+        shortTimeoutWrapper.close();
+
+        assertFalse(shortTimeoutWrapper.isInitialized());
+        assertTrue(shortTimeoutWrapper.cachedTools.isEmpty());
         verify(mockClient, times(1)).closeGracefully();
         verify(mockClient, times(1)).close();
     }

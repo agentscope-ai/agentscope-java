@@ -16,9 +16,17 @@
 package io.agentscope.core.tool.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 
 /**
@@ -38,6 +46,17 @@ import reactor.core.publisher.Mono;
  * @see McpSyncClientWrapper
  */
 public abstract class McpClientWrapper implements AutoCloseable {
+
+    /**
+     * Default upper bound for the graceful close attempt performed by {@link #close()}.
+     *
+     * <p>Graceful close has no timeout of its own in the MCP SDK, so it must be bounded here:
+     * when the MCP server stops responding, an unbounded graceful close would block the caller
+     * forever instead of returning. See {@link #closeWithTimeout}.
+     */
+    public static final Duration DEFAULT_CLOSE_TIMEOUT = Duration.ofSeconds(10);
+
+    private static final Logger closeLogger = LoggerFactory.getLogger(McpClientWrapper.class);
 
     /** Unique identifier for this MCP client */
     protected final String name;
@@ -165,7 +184,83 @@ public abstract class McpClientWrapper implements AutoCloseable {
     /**
      * Closes this MCP client and releases all resources.
      * This method is idempotent and can be called multiple times safely.
+     *
+     * <p>Implementations must not block the caller indefinitely: the graceful close attempt is
+     * bounded by {@link #DEFAULT_CLOSE_TIMEOUT} (or a configured value), see
+     * {@link #closeWithTimeout}.
      */
     @Override
     public abstract void close();
+
+    /**
+     * Runs a graceful-close attempt under a bounded wait, falling back to a forceful close.
+     *
+     * <p>This exists because the MCP SDK's graceful close has no timeout of its own: when the
+     * server stops responding, the graceful-close {@link Mono} never terminates and an unbounded
+     * wait would hang the calling thread forever. The bounded wait guarantees that {@code close()}
+     * returns, and the forceful close guarantees that the transport is released either way.
+     *
+     * <p>Behaviour on each path:
+     * <ul>
+     *   <li><b>Graceful close completes</b> - nothing else is done.
+     *   <li><b>Graceful close signals an error</b> - reported as a failure (not as a timeout) and
+     *       the forceful close is used.
+     *   <li><b>Graceful close does not finish within {@code closeTimeout}</b> - the subscription is
+     *       cancelled explicitly so the pending close chain is not left dangling, then the forceful
+     *       close is used.
+     * </ul>
+     *
+     * <p>The forceful close is assumed to release the transport without waiting on the peer (the
+     * MCP SDK {@code close()} is synchronous and performs no network round-trip); without that
+     * assumption the bound would only cover the graceful attempt, not resource release.
+     *
+     * @param gracefulClose lazy graceful-close attempt; work must start on subscription, not on
+     *     construction, so that a blocking implementation cannot run on the calling thread
+     * @param forceClose forceful close, used on every path except a fully successful graceful close
+     * @param closeTimeout upper bound for the graceful attempt; must be positive
+     */
+    protected void closeWithTimeout(
+            Mono<Void> gracefulClose, Runnable forceClose, Duration closeTimeout) {
+        AtomicBoolean gracefulSucceeded = new AtomicBoolean(false);
+        AtomicReference<Throwable> gracefulError = new AtomicReference<>();
+        CountDownLatch finished = new CountDownLatch(1);
+
+        Disposable subscription =
+                gracefulClose
+                        .doOnSuccess(v -> gracefulSucceeded.set(true))
+                        .doOnError(gracefulError::set)
+                        .doFinally(signal -> finished.countDown())
+                        // Errors are handled below; keep Reactor from also dropping them to the
+                        // log.
+                        .subscribe(v -> {}, e -> {});
+
+        boolean completed = awaitCompletion(finished, closeTimeout);
+
+        if (!completed) {
+            subscription.dispose();
+            closeLogger.warn(
+                    "Graceful close of MCP client '{}' did not complete within {}, cancelled it and"
+                            + " fell back to forceful close",
+                    name,
+                    closeTimeout);
+        } else if (gracefulError.get() != null) {
+            closeLogger.warn(
+                    "Graceful close of MCP client '{}' failed, falling back to forceful close: {}",
+                    name,
+                    gracefulError.get().getMessage());
+        }
+
+        if (!gracefulSucceeded.get()) {
+            forceClose.run();
+        }
+    }
+
+    private static boolean awaitCompletion(CountDownLatch finished, Duration closeTimeout) {
+        try {
+            return finished.await(closeTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
 }
