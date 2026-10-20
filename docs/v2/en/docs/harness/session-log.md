@@ -312,6 +312,8 @@ Replicas must share this backend, namespace and session identity. Shared storage
 
 For a custom backend, implement `SessionLogStore`, or implement `AtomicSessionStorage` and reuse `JournalSessionLog`. Preserve compare-and-set writes, writer leases, stale-writer fencing, ordered idempotent commits and durable export cursors. A custom Filesystem must supply `sessionStorage` or use a separate log store; ordinary file reads and writes cannot provide atomic journal commits. A custom `SessionLog` also needs `inbox()` for `AgentSession` commands; `JournalSessionLog` already supports it.
 
+Backends with expensive per-read setup can override `AtomicSessionStorage.withReadSession` to reuse a scoped read resource while `JournalSessionLog` walks the reachable commit chain. The callback is synchronous and thread-confined, the read session must not escape it, and it does not imply snapshot isolation. The default remains compatible by delegating each call to `read`. This optimization bounds retained raw commit rows, not total JVM memory: chain identifiers, one oversized row, deserialized events and backend or JDBC buffers remain outside that bound.
+
 <Accordion title="Physical layout, command journal and backups">
 
 The logical object layout below is useful for operating a backend. Identity segments use Base64URL. POSIX local objects include a version prefix; Windows stores their logical paths, versions and payloads as SQLite rows. Read them through the SDK rather than treating them as application JSONL files.

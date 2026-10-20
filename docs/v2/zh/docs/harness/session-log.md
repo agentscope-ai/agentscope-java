@@ -355,6 +355,8 @@ HarnessAgent.Builder sharedLogBuilder = HarnessAgent.builder()
 
 一般应用只需选择现成后端。需要接入自己的存储时，可以实现 `SessionLogStore`，或实现 `AtomicSessionStorage` 并复用 `JournalSessionLog`。它们需要支持原子版本比较写入、执行写入租约与旧写入者隔离、有序幂等提交及导出进度持久化；普通文件的读写接口不足以保证这些语义。
 
+逐次读取初始化成本较高的后端可以重写 `AtomicSessionStorage.withReadSession`，在 `JournalSessionLog` 沿可达提交链读取时复用一个受控读取资源。回调同步执行且仅限当前线程；读取会话不得逃逸回调，也不承诺快照隔离。默认实现仍逐次调用 `read`。该优化只限制长期保留的原始提交行，不是 JVM 总内存上限；提交链标识、单条超大记录、反序列化事件以及后端或 JDBC 缓冲不在限额内。
+
 自定义 Filesystem 应提供 `sessionStorage` 能力，或者单独指定日志后端。使用 AgentSession 命令还要求 `SessionLog.inbox()` 支持持久输入队列；默认 Workspace 和内存日志已提供。需要列出会话时，使用 `SessionLogStore.list(RuntimeContext)`。
 
 备份建议使用后端一致性快照，或先暂停写入，再保存会话记录。工作文件、沙箱内容、外部产物和工具依赖需要另外备份，只有日志不足以完整恢复所有外部环境。

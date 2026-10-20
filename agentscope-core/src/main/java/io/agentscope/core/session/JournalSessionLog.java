@@ -34,6 +34,9 @@ import java.util.Objects;
 
 /** Immutable commit chain made visible by one fenced CAS of its head. No listing-based recovery. */
 public final class JournalSessionLog implements SessionLog {
+    // Raw commit rows only. External payload blobs are always loaded and checked per iteration.
+    static final int SCAN_COMMIT_CACHE_MAX_BYTES = 1024 * 1024;
+
     private final AtomicSessionStorage storage;
     private final String prefix;
     private final Clock clock;
@@ -272,9 +275,17 @@ public final class JournalSessionLog implements SessionLog {
     }
 
     private Commit readCommit(String id) {
-        var value = storage.read(path("commits/" + id + ".json"));
-        if (value == null) throw new SessionLogException("Missing committed segment: " + id);
-        var c = parse(value.bytes(), Commit.class);
+        return readCommit(id, null);
+    }
+
+    private Commit readCommit(String id, byte[] cached) {
+        byte[] data = cached;
+        if (data == null) {
+            var value = storage.read(path("commits/" + id + ".json"));
+            if (value == null) throw new SessionLogException("Missing committed segment: " + id);
+            data = value.bytes();
+        }
+        var c = parse(data, Commit.class);
         if (c.payloadBlobs() != null && !c.payloadBlobs().isEmpty()) {
             var hydrated = new ArrayList<SessionEvent>();
             for (var event : c.events()) {
@@ -322,26 +333,52 @@ public final class JournalSessionLog implements SessionLog {
         var head = head();
         if (after < 0 || through < after || through > head.seq())
             throw new IllegalArgumentException("Invalid committed prefix");
-        var ids = new ArrayDeque<String>();
-        var seen = new HashSet<String>();
-        long expected = head.seq();
-        for (String id = head.commitId(); id != null && expected > after; ) {
-            if (!seen.add(id)) throw new SessionLogException("Commit chain cycle");
-            var stored = storage.read(path("commits/" + id + ".json"));
-            if (stored == null) throw new SessionLogException("Missing committed segment");
-            var commit = parse(stored.bytes(), Commit.class);
-            if (commit.lastSeq() != expected
-                    || commit.firstSeq() + commit.events().size() - 1 != expected
-                    || commit.events().isEmpty())
-                throw new SessionLogException("Broken committed prefix");
-            if (commit.firstSeq() <= through) ids.addFirst(id);
-            expected = commit.firstSeq() - 1;
-            id = commit.parent();
-        }
-        if (expected > after) throw new SessionLogException("Incomplete committed chain");
+        var scanned =
+                storage.withReadSession(
+                        reader -> {
+                            var segments = new ArrayDeque<ScannedCommit>();
+                            var seen = new HashSet<String>();
+                            long cacheBytes = 0;
+                            boolean cacheFull = false;
+                            long expected = head.seq();
+                            for (String id = head.commitId(); id != null && expected > after; ) {
+                                if (!seen.add(id))
+                                    throw new SessionLogException("Commit chain cycle");
+                                var stored = reader.read(path("commits/" + id + ".json"));
+                                if (stored == null)
+                                    throw new SessionLogException("Missing committed segment");
+                                byte[] data = stored.bytes();
+                                var commit = parse(data, Commit.class);
+                                if (commit.lastSeq() != expected
+                                        || commit.firstSeq() + commit.events().size() - 1
+                                                != expected
+                                        || commit.events().isEmpty())
+                                    throw new SessionLogException("Broken committed prefix");
+                                if (commit.firstSeq() <= through) {
+                                    byte[] cached = null;
+                                    if (!cacheFull
+                                            && data.length
+                                                    <= SCAN_COMMIT_CACHE_MAX_BYTES - cacheBytes) {
+                                        // The limit covers retained raw rows only. Chain IDs, one
+                                        // parsed row, JDBC buffers, and iterator state are outside
+                                        // this budget; one oversized row must still be read.
+                                        cached = data;
+                                        cacheBytes += data.length;
+                                    } else {
+                                        cacheFull = true;
+                                    }
+                                    segments.addFirst(new ScannedCommit(id, cached));
+                                }
+                                expected = commit.firstSeq() - 1;
+                                id = commit.parent();
+                            }
+                            if (expected > after)
+                                throw new SessionLogException("Incomplete committed chain");
+                            return List.copyOf(segments);
+                        });
         return () ->
                 new Iterator<SessionEvent>() {
-                    final Iterator<String> segments = ids.iterator();
+                    final Iterator<ScannedCommit> commits = scanned.iterator();
                     Iterator<SessionEvent> batch = List.<SessionEvent>of().iterator();
                     SessionEvent next;
                     long cursor = after;
@@ -358,9 +395,10 @@ public final class JournalSessionLog implements SessionLog {
                                 next = candidate;
                                 return true;
                             }
-                            if (!segments.hasNext())
+                            if (!commits.hasNext())
                                 throw new SessionLogException("Missing committed events");
-                            batch = readCommit(segments.next()).events().iterator();
+                            var commit = commits.next();
+                            batch = readCommit(commit.id, commit.data).events().iterator();
                         }
                     }
 
@@ -372,6 +410,16 @@ public final class JournalSessionLog implements SessionLog {
                         return event;
                     }
                 };
+    }
+
+    private static final class ScannedCommit {
+        private final String id;
+        private final byte[] data;
+
+        private ScannedCommit(String id, byte[] data) {
+            this.id = id;
+            this.data = data;
+        }
     }
 
     @Override

@@ -26,6 +26,9 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import org.sqlite.SQLiteConfig;
 
 /** Windows local journal storage, using atomic SQL writes and synchronous rollback journals. */
@@ -75,17 +78,51 @@ final class SqliteSessionStorage implements AtomicSessionStorage {
 
     @Override
     public Value read(String path) {
-        if (!Files.exists(database)) return null;
+        return withReadSession(reader -> reader.read(path));
+    }
+
+    @Override
+    public <T> T withReadSession(Function<ReadSession, T> operation) {
+        Objects.requireNonNull(operation, "operation");
+        if (!Files.exists(database)) return runReadSession(path -> null, operation);
         try (var connection = connect();
                 var statement =
                         connection.prepareStatement(
                                 "SELECT version, payload FROM session_objects WHERE path = ?")) {
-            statement.setString(1, path);
-            try (var result = statement.executeQuery()) {
-                return result.next() ? new Value(result.getLong(1), result.getBytes(2)) : null;
-            }
+            return runReadSession(
+                    path -> {
+                        try {
+                            statement.setString(1, path);
+                            try (var result = statement.executeQuery()) {
+                                return result.next()
+                                        ? new Value(result.getLong(1), result.getBytes(2))
+                                        : null;
+                            }
+                        } catch (SQLException error) {
+                            throw new SessionLogException(
+                                    "Journal read failed: " + database, error);
+                        }
+                    },
+                    operation);
         } catch (SQLException | IOException error) {
-            throw new SessionLogException("Journal read failed: " + database, error);
+            throw new SessionLogException("Journal read session failed: " + database, error);
+        }
+    }
+
+    private static <T> T runReadSession(ReadSession reader, Function<ReadSession, T> operation) {
+        Thread owner = Thread.currentThread();
+        var open = new AtomicBoolean(true);
+        ReadSession scoped =
+                path -> {
+                    if (!open.get()) throw new IllegalStateException("Read session is closed");
+                    if (Thread.currentThread() != owner)
+                        throw new IllegalStateException("Read session cannot cross threads");
+                    return reader.read(path);
+                };
+        try {
+            return operation.apply(scoped);
+        } finally {
+            open.set(false);
         }
     }
 

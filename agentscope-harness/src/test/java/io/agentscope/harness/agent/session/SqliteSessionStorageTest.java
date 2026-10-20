@@ -22,19 +22,23 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.session.AtomicSessionStorage;
 import io.agentscope.core.session.JournalSessionLog;
 import io.agentscope.core.session.SessionEvent;
 import io.agentscope.core.session.SessionKey;
 import io.agentscope.core.session.SessionLogException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -49,8 +53,79 @@ class SqliteSessionStorageTest {
         Path root = directory.resolve("runtime");
         var storage = new SqliteSessionStorage(root);
         assertNull(storage.read("agents/a/session.json"));
+        assertNull(storage.withReadSession(reader -> reader.read("agents/a/session.json")));
         assertTrue(storage.listPaths("agents/").isEmpty());
         assertFalse(Files.exists(root));
+    }
+
+    @Test
+    void readSessionIsThreadConfinedAndClosesAfterSuccessOrFailure() throws Exception {
+        var storage = new SqliteSessionStorage(directory);
+        assertTrue(storage.compareAndSet("session", 0, new byte[] {1}));
+        var escaped = new AtomicReference<AtomicSessionStorage.ReadSession>();
+        var pool = Executors.newSingleThreadExecutor();
+        try {
+            storage.withReadSession(
+                    reader -> {
+                        escaped.set(reader);
+                        assertArrayEquals(new byte[] {1}, reader.read("session").bytes());
+                        Future<AtomicSessionStorage.Value> crossThread =
+                                pool.submit(() -> reader.read("session"));
+                        ExecutionException error =
+                                assertThrows(ExecutionException.class, crossThread::get);
+                        assertTrue(error.getCause() instanceof IllegalStateException);
+                        return null;
+                    });
+        } finally {
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+        }
+        assertThrows(IllegalStateException.class, () -> escaped.get().read("session"));
+        assertDatabaseMovable();
+
+        var failed = new AtomicReference<AtomicSessionStorage.ReadSession>();
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                storage.withReadSession(
+                                        reader -> {
+                                            failed.set(reader);
+                                            throw new IllegalArgumentException("injected");
+                                        }));
+        assertEquals("injected", error.getMessage());
+        assertThrows(IllegalStateException.class, () -> failed.get().read("session"));
+        assertDatabaseMovable();
+    }
+
+    @Test
+    @Timeout(20)
+    void readSessionDoesNotHoldASnapshotThatBlocksConcurrentWriters() throws Exception {
+        var readerStorage = new SqliteSessionStorage(directory);
+        var writerStorage = new SqliteSessionStorage(directory);
+        assertTrue(readerStorage.compareAndSet("session", 0, new byte[] {1}));
+        var pool = Executors.newSingleThreadExecutor();
+        try {
+            readerStorage.withReadSession(
+                    reader -> {
+                        assertEquals(1, reader.read("session").version());
+                        Future<Boolean> update =
+                                pool.submit(
+                                        () ->
+                                                writerStorage.compareAndSet(
+                                                        "session", 1, new byte[] {2}));
+                        try {
+                            assertTrue(update.get(5, TimeUnit.SECONDS));
+                        } catch (Exception error) {
+                            throw new AssertionError(error);
+                        }
+                        assertEquals(2, reader.read("session").version());
+                        return null;
+                    });
+        } finally {
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+        }
     }
 
     @Test
@@ -134,6 +209,9 @@ class SqliteSessionStorageTest {
         assertThrows(SessionLogException.class, () -> storage.read("session"));
         assertThrows(
                 SessionLogException.class,
+                () -> storage.withReadSession(reader -> reader.read("session")));
+        assertThrows(
+                SessionLogException.class,
                 () -> storage.compareAndSet("session", 0, new byte[] {1}));
         assertThrows(SessionLogException.class, () -> storage.listPaths(""));
     }
@@ -148,8 +226,58 @@ class SqliteSessionStorageTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> storage.compareAndSet("../outside", 0, new byte[] {1}));
+        storage.withReadSession(
+                reader -> {
+                    assertThrows(IllegalArgumentException.class, () -> reader.read("../outside"));
+                    assertArrayEquals(new byte[] {1}, reader.read("agents/a/session.json").bytes());
+                    return null;
+                });
         assertArrayEquals(
                 new byte[] {1},
                 new LocalSessionStorage(directory).read("agents/a/session.json").bytes());
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void localScanClosesItsReadSessionAndDoesNotLoadOrphanCommits() throws Exception {
+        var storage = new LocalSessionStorage(directory);
+        var log = new JournalSessionLog(storage, "session");
+        var writer = log.acquire("owner", Duration.ofMinutes(2));
+        var event = new SessionEvent(1, "event", 1, 1, "run/start", "run", "turn", true, "{}");
+        log.commit(writer, "batch", 0, List.of(event));
+        assertTrue(
+                storage.compareAndSet(
+                        "session/commits/orphan.json",
+                        0,
+                        "not-json".getBytes(StandardCharsets.UTF_8)));
+
+        Iterable<SessionEvent> captured = log.scan(0, 1);
+        assertDatabaseMovable();
+        assertEquals(List.of(event), collect(captured));
+
+        String reachable =
+                storage.listPaths("session/commits/").stream()
+                        .filter(path -> !path.endsWith("orphan.json"))
+                        .findFirst()
+                        .orElseThrow();
+        var value = storage.read(reachable);
+        assertTrue(
+                storage.compareAndSet(
+                        reachable, value.version(), "not-json".getBytes(StandardCharsets.UTF_8)));
+        assertThrows(RuntimeException.class, () -> log.scan(0, 1));
+        assertDatabaseMovable();
+    }
+
+    private void assertDatabaseMovable() throws Exception {
+        Path database = directory.resolve("journal.sqlite3");
+        Path moved = directory.resolve("journal-moved.sqlite3");
+        Files.move(database, moved);
+        Files.move(moved, database);
+    }
+
+    private static List<SessionEvent> collect(Iterable<SessionEvent> events) {
+        var result = new ArrayList<SessionEvent>();
+        events.forEach(result::add);
+        return List.copyOf(result);
     }
 }
