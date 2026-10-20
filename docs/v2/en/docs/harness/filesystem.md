@@ -375,7 +375,7 @@ Enable `projectWritable(true)` and the framework routes writes by path:
     .inheritEnv(true))
 ```
 
-Read behavior is unchanged — workspace first, project fallback.
+Read behavior is unchanged — workspace first, project fallback. When per-user namespacing is active, project writes land under `{project}/{userId}/`; `read_file`, `list_files`, `glob` and `grep` resolve the same relative path there, so a file written as `hi.txt` is read back as `hi.txt`.
 
 #### Example: local development assistant
 
