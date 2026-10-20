@@ -63,6 +63,18 @@ class AnthropicAutoConfigurationTest {
     }
 
     @Test
+    void shouldDefaultToCurrentModelWhenModelNameIsNotSet() {
+        contextRunner
+                .withPropertyValues(
+                        "agentscope.model.provider=anthropic",
+                        "agentscope.anthropic.api-key=test-anthropic-key")
+                .run(
+                        context ->
+                                assertThat(context.getBean(AnthropicChatModel.class).getModelName())
+                                        .isEqualTo("claude-sonnet-5-5"));
+    }
+
+    @Test
     void shouldBindSupportedAnthropicProperties() {
         contextRunner
                 .withPropertyValues(

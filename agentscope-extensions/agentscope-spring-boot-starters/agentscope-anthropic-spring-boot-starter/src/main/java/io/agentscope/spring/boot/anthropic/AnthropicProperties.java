@@ -29,7 +29,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   anthropic:
  *     enabled: true
  *     api-key: ${ANTHROPIC_API_KEY}
- *     model-name: claude-sonnet-4.5
+ *     model-name: claude-sonnet-5-5
  *     # base-url: https://api.anthropic.com # optional
  *     stream: true
  * }</pre>
@@ -59,9 +59,9 @@ public class AnthropicProperties {
     private String baseUrl;
 
     /**
-     * Anthropic model name, for example {@code claude-sonnet-4.5}.
+     * Anthropic model name, for example {@code claude-sonnet-5-5}.
      */
-    private String modelName = "claude-sonnet-4.5";
+    private String modelName = "claude-sonnet-5-5";
 
     /**
      * Whether streaming responses are enabled.
