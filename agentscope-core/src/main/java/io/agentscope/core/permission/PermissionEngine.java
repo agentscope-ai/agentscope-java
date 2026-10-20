@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.permission;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.ToolBase;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -137,17 +138,32 @@ public final class PermissionEngine {
      * @return a Mono emitting the resolved {@link PermissionDecision}
      */
     public Mono<PermissionDecision> checkPermission(ToolBase tool, Map<String, Object> toolInput) {
+        return checkPermission(tool, toolInput, RuntimeContext.empty());
+    }
+
+    /**
+     * Checks rules using the current call's runtime context, without storing it on the engine.
+     *
+     * @param tool the tool being called
+     * @param toolInput effective input, including any registered preset parameters
+     * @param runtimeContext current invocation context; null uses an empty context
+     * @return the resolved permission decision
+     */
+    public Mono<PermissionDecision> checkPermission(
+            ToolBase tool, Map<String, Object> toolInput, RuntimeContext runtimeContext) {
+        RuntimeContext callContext =
+                runtimeContext != null ? runtimeContext : RuntimeContext.empty();
         Objects.requireNonNull(tool, "tool must not be null");
         Map<String, Object> input = toolInput == null ? Map.of() : toolInput;
 
         // 1. Deny rules (highest priority)
-        PermissionDecision denyDecision = checkDenyRules(tool, input);
+        PermissionDecision denyDecision = checkDenyRules(tool, input, callContext);
         if (denyDecision != null) {
             return Mono.just(denyDecision);
         }
 
         // 2. Ask rules
-        PermissionDecision askDecision = checkAskRules(tool, input);
+        PermissionDecision askDecision = checkAskRules(tool, input, callContext);
         if (askDecision != null) {
             return Mono.just(askDecision.withSuggestedRules(tool.generateSuggestions(input)));
         }
@@ -172,15 +188,15 @@ public final class PermissionEngine {
                                         toolDecision.withSuggestedRules(
                                                 tool.generateSuggestions(input)));
                             }
-                            return continueAfterToolCheck(tool, input);
+                            return continueAfterToolCheck(tool, input, callContext);
                         })
-                .switchIfEmpty(Mono.defer(() -> continueAfterToolCheck(tool, input)));
+                .switchIfEmpty(Mono.defer(() -> continueAfterToolCheck(tool, input, callContext)));
     }
 
     private Mono<PermissionDecision> continueAfterToolCheck(
-            ToolBase tool, Map<String, Object> input) {
+            ToolBase tool, Map<String, Object> input, RuntimeContext runtimeContext) {
         // 4. Allow rules
-        PermissionDecision allowDecision = checkAllowRules(tool, input);
+        PermissionDecision allowDecision = checkAllowRules(tool, input, runtimeContext);
         if (allowDecision != null) {
             return Mono.just(allowDecision);
         }
@@ -262,9 +278,10 @@ public final class PermissionEngine {
         return null;
     }
 
-    private PermissionDecision checkDenyRules(ToolBase tool, Map<String, Object> input) {
+    private PermissionDecision checkDenyRules(
+            ToolBase tool, Map<String, Object> input, RuntimeContext runtimeContext) {
         for (PermissionRule rule : rulesFor(denyRules, tool.getName())) {
-            if (ruleMatches(tool, rule, input)) {
+            if (ruleMatches(tool, rule, input, runtimeContext)) {
                 return PermissionDecision.builder()
                         .behavior(PermissionBehavior.DENY)
                         .message("Permission to use " + tool.getName() + " has been denied")
@@ -275,9 +292,10 @@ public final class PermissionEngine {
         return null;
     }
 
-    private PermissionDecision checkAskRules(ToolBase tool, Map<String, Object> input) {
+    private PermissionDecision checkAskRules(
+            ToolBase tool, Map<String, Object> input, RuntimeContext runtimeContext) {
         for (PermissionRule rule : rulesFor(askRules, tool.getName())) {
-            if (ruleMatches(tool, rule, input)) {
+            if (ruleMatches(tool, rule, input, runtimeContext)) {
                 return PermissionDecision.builder()
                         .behavior(PermissionBehavior.ASK)
                         .message("Permission required for " + tool.getName())
@@ -288,9 +306,10 @@ public final class PermissionEngine {
         return null;
     }
 
-    private PermissionDecision checkAllowRules(ToolBase tool, Map<String, Object> input) {
+    private PermissionDecision checkAllowRules(
+            ToolBase tool, Map<String, Object> input, RuntimeContext runtimeContext) {
         for (PermissionRule rule : rulesFor(allowRules, tool.getName())) {
-            if (ruleMatches(tool, rule, input)) {
+            if (ruleMatches(tool, rule, input, runtimeContext)) {
                 return PermissionDecision.builder()
                         .behavior(PermissionBehavior.ALLOW)
                         .message("Permission granted for " + tool.getName())
@@ -307,12 +326,16 @@ public final class PermissionEngine {
         return rules == null ? List.of() : rules;
     }
 
-    private boolean ruleMatches(ToolBase tool, PermissionRule rule, Map<String, Object> input) {
+    private boolean ruleMatches(
+            ToolBase tool,
+            PermissionRule rule,
+            Map<String, Object> input,
+            RuntimeContext runtimeContext) {
         String content = rule.ruleContent();
         if (content == null || content.isEmpty()) {
             return true;
         }
-        return tool.matchRule(content, input);
+        return tool.matchRule(content, input, runtimeContext);
     }
 
     private PermissionDecision defaultDecisionAsk(String toolName) {

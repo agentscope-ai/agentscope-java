@@ -3959,10 +3959,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (!(tool instanceof ToolBase tb)) {
                 return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
             }
-            Map<String, Object> input = use.getInput() == null ? Map.of() : use.getInput();
+            Map<String, Object> input =
+                    activeToolkit.effectiveInput(use.getName(), use.getInput(), toolRequestConfig);
             if (useEngine) {
                 return permissionEngine
-                        .checkPermission(tb, input)
+                        .checkPermission(
+                                tb,
+                                input,
+                                activeToolkit.effectiveRuntimeContext(
+                                        buildMergedRuntimeContext(rc)))
                         .map(
                                 decision ->
                                         new PermissionVerdict(

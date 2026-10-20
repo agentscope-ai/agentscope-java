@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -81,6 +82,19 @@ class ToolRegistry {
             return null;
         }
         return registeredTools.get(name);
+    }
+
+    /** Merges registered preset parameters over the caller's input into a new map. */
+    Map<String, Object> effectiveInput(String toolName, Map<String, Object> rawInput) {
+        Map<String, Object> merged = new HashMap<>();
+        if (rawInput != null) {
+            merged.putAll(rawInput);
+        }
+        RegisteredToolFunction registered = getRegisteredTool(toolName);
+        if (registered != null) {
+            merged.putAll(registered.getPresetParameters());
+        }
+        return merged;
     }
 
     /**

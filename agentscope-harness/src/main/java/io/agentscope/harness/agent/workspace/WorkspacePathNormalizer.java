@@ -17,7 +17,9 @@ package io.agentscope.harness.agent.workspace;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 /**
@@ -117,6 +119,62 @@ public final class WorkspacePathNormalizer {
      * @return workspace-relative path, or the original path if no registered prefix matched
      */
     public String normalize(String path, RuntimeContext runtimeContext) {
+        return normalize(path, runtimeContext, false);
+    }
+
+    /**
+     * Maps the path as execution does, then folds lexical aliases for rule matching.
+     * Absolute paths that were not mapped initially are compared with equally normalized
+     * workspace prefixes. Relative results are not mapped again, preserving namespace scope.
+     * This does not access the filesystem or resolve links and case aliases.
+     */
+    public String normalizeForMatching(String path, RuntimeContext runtimeContext) {
+        String mapped = normalize(path, runtimeContext);
+        if (mapped == null || mapped.isBlank()) {
+            return mapped;
+        }
+        String normalized = normalizeLexically(mapped);
+        boolean absolute =
+                normalized.startsWith("/")
+                        || (normalized.length() >= 3
+                                && Character.isLetter(normalized.charAt(0))
+                                && normalized.charAt(1) == ':'
+                                && normalized.charAt(2) == '/');
+        return absolute ? normalize(normalized, runtimeContext, true) : normalized;
+    }
+
+    /**
+     * Folds separators and dot segments without filesystem access. Backslashes are treated
+     * as separators on every platform; leading relative parent segments are retained.
+     */
+    public static String normalizeLexically(String path) {
+        String portable = path.replace('\\', '/');
+        boolean driveRoot =
+                portable.length() >= 3
+                        && Character.isLetter(portable.charAt(0))
+                        && portable.charAt(1) == ':'
+                        && portable.charAt(2) == '/';
+        boolean absolute = portable.startsWith("/") || driveRoot;
+        String root = driveRoot ? portable.substring(0, 3) : absolute ? "/" : "";
+        if (driveRoot) {
+            portable = portable.substring(3);
+        }
+        Deque<String> segments = new ArrayDeque<>();
+        for (String segment : portable.split("/")) {
+            if (segment.isEmpty() || segment.equals(".")) {
+                continue;
+            }
+            if (segment.equals("..") && !segments.isEmpty() && !segments.peekLast().equals("..")) {
+                segments.removeLast();
+            } else if (!segment.equals("..") || !absolute) {
+                segments.addLast(segment);
+            }
+        }
+        String normalized = root + String.join("/", segments);
+        return normalized.isEmpty() ? "." : normalized;
+    }
+
+    private String normalize(String path, RuntimeContext runtimeContext, boolean lexicalPrefixes) {
         if (path == null || path.isBlank()) {
             return path;
         }
@@ -127,7 +185,13 @@ public final class WorkspacePathNormalizer {
             if (namespace != null && !namespace.isEmpty()) {
                 String namespacePrefix = String.join("/", namespace);
                 for (String prefix : prefixes) {
-                    String stripped = tryStrip(path, prefix + "/" + namespacePrefix);
+                    String scopedPrefix = prefix + "/" + namespacePrefix;
+                    String stripped =
+                            tryStrip(
+                                    path,
+                                    lexicalPrefixes
+                                            ? normalizeLexically(scopedPrefix)
+                                            : scopedPrefix);
                     if (stripped != null) {
                         return stripped;
                     }
@@ -135,7 +199,7 @@ public final class WorkspacePathNormalizer {
             }
         }
         for (String prefix : prefixes) {
-            String stripped = tryStrip(path, prefix);
+            String stripped = tryStrip(path, lexicalPrefixes ? normalizeLexically(prefix) : prefix);
             if (stripped != null) {
                 return stripped;
             }
