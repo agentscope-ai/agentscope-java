@@ -47,6 +47,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -355,7 +356,7 @@ public class GeminiResponseParser {
     protected void parseToolCall(
             FunctionCall functionCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
         try {
-            String id = functionCall.id().orElse("tool_call_" + System.currentTimeMillis());
+            String id = functionCall.id().orElseGet(() -> "tool_call_" + UUID.randomUUID());
             String name = functionCall.name().orElse("");
 
             if (!ToolValidator.requireNonBlank("Gemini", name, id)) {
@@ -385,7 +386,7 @@ public class GeminiResponseParser {
     protected void parseServerToolCall(
             ToolCall toolCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
         try {
-            String id = toolCall.id().orElse("tool_call_" + System.currentTimeMillis());
+            String id = toolCall.id().orElseGet(() -> "tool_call_" + UUID.randomUUID());
             String name = toolCall.toolType().map(ToolType::toString).orElse("");
 
             if (!ToolValidator.requireNonBlank("Gemini", name, id)) {

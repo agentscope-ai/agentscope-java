@@ -16,9 +16,11 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.accumulator.ToolCallsAccumulator;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -289,5 +291,61 @@ class OpenAIStreamingToolCallTest {
         ToolUseBlock toolUse = (ToolUseBlock) block;
         assertEquals("call_null", toolUse.getId());
         assertEquals("null_args_tool", toolUse.getName());
+    }
+
+    @Test
+    @DisplayName(
+            "Should keep parallel streaming tool calls apart when the provider omits their ids")
+    void testParallelStreamingToolCallsWithoutIds() {
+        // Ids generated within the same millisecond used to collide; repeat to cover the tick.
+        for (int i = 0; i < 50; i++) {
+            checkParallelToolCallsWithoutIds();
+        }
+    }
+
+    private void checkParallelToolCallsWithoutIds() {
+        OpenAIResponse response = new OpenAIResponse();
+        response.setId("chatcmpl-noid");
+        response.setObject("chat.completion.chunk");
+
+        List<OpenAIToolCall> toolCalls = new ArrayList<>();
+        for (String[] call :
+                new String[][] {
+                    {"get_weather", "{\"city\":\"Paris\"}"}, {"get_time", "{\"tz\":\"UTC\"}"}
+                }) {
+            OpenAIFunction function = new OpenAIFunction();
+            function.setName(call[0]);
+            function.setArguments(call[1]);
+            OpenAIToolCall toolCall = new OpenAIToolCall();
+            toolCall.setType("function");
+            toolCall.setFunction(function);
+            toolCalls.add(toolCall);
+        }
+
+        OpenAIMessage delta = new OpenAIMessage();
+        delta.setToolCalls(toolCalls);
+        OpenAIChoice choice = new OpenAIChoice();
+        choice.setIndex(0);
+        choice.setDelta(delta);
+        response.setChoices(List.of(choice));
+
+        ChatResponse result = parser.parseResponse(response, Instant.now());
+
+        List<ToolUseBlock> blocks =
+                result.getContent().stream()
+                        .filter(b -> b instanceof ToolUseBlock)
+                        .map(b -> (ToolUseBlock) b)
+                        .toList();
+        assertEquals(2, blocks.size());
+        assertNotEquals(blocks.get(0).getId(), blocks.get(1).getId());
+
+        ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
+        blocks.forEach(accumulator::add);
+        List<ToolUseBlock> merged = accumulator.getAllAccumulatedToolCalls();
+        assertEquals(2, merged.size());
+        assertEquals("get_weather", merged.get(0).getName());
+        assertEquals("Paris", merged.get(0).getInput().get("city"));
+        assertEquals("get_time", merged.get(1).getName());
+        assertEquals("UTC", merged.get(1).getInput().get("tz"));
     }
 }

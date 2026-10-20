@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -447,6 +448,35 @@ class GeminiResponseParserTest {
         Map<?, ?> url = assertInstanceOf(Map.class, urls.get(0));
         assertEquals("https://example.com", url.get("retrievedUrl"));
         assertEquals("URL_RETRIEVAL_STATUS_SUCCESS", url.get("urlRetrievalStatus").toString());
+    }
+
+    @Test
+    void testParseParallelToolCallsWithoutIdsGetDistinctIds() {
+        // Gemini omits FunctionCall ids; parallel calls parsed in the same millisecond must
+        // still be told apart or their results collide. Repeat to cover the clock tick.
+        for (int i = 0; i < 50; i++) {
+            Part first =
+                    Part.builder()
+                            .functionCall(FunctionCall.builder().name("get_weather").build())
+                            .build();
+            Part second =
+                    Part.builder()
+                            .functionCall(FunctionCall.builder().name("get_time").build())
+                            .build();
+            Content content = Content.builder().role("model").parts(List.of(first, second)).build();
+            GenerateContentResponse response =
+                    GenerateContentResponse.builder()
+                            .responseId("response-parallel-no-ids")
+                            .candidates(List.of(Candidate.builder().content(content).build()))
+                            .build();
+
+            ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+            assertEquals(2, chatResponse.getContent().size());
+            String id1 = ((ToolUseBlock) chatResponse.getContent().get(0)).getId();
+            String id2 = ((ToolUseBlock) chatResponse.getContent().get(1)).getId();
+            assertNotEquals(id1, id2);
+        }
     }
 
     @Test

@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -276,7 +277,7 @@ public class OpenAIResponseParser {
                                         continue;
                                     }
                                     if (toolCallId == null) {
-                                        toolCallId = "tool_call_" + System.currentTimeMillis();
+                                        toolCallId = "tool_call_" + UUID.randomUUID();
                                         log.debug(
                                                 "Tool call has null id, generated: {}", toolCallId);
                                     }
@@ -511,7 +512,7 @@ public class OpenAIResponseParser {
                                     }
 
                                     if (toolCallId == null) {
-                                        toolCallId = "streaming_" + System.currentTimeMillis();
+                                        toolCallId = "streaming_" + UUID.randomUUID();
                                     }
                                     if (arguments == null) {
                                         arguments = "";
