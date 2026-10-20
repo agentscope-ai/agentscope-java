@@ -8,6 +8,14 @@ en_link: /v2/en/docs/others/release-notes
 
 ---
 
+## 未发布
+
+### 变更
+
+- 工具异常现在遵循 `ExecutionConfig.maxAttempts`，未指定重试谓词时使用 `RETRYABLE_ERRORS`，默认仍只执行一次。已有多次尝试配置可能在瞬态故障后重复产生副作用，请仅对可安全重复的操作启用重试。超时按每次尝试计算，总耗时还包括退避时间。启用重试时，流式输出会缓冲至该次尝试完成，失败尝试的输出会被丢弃（[#2830](https://github.com/agentscope-ai/agentscope-java/pull/2830)）。
+
+---
+
 ## 2.0.4
 
 > 状态：发布草稿（准备日期：2026-10-08）

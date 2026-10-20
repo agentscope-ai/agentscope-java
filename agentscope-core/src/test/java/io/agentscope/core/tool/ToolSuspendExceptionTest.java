@@ -17,6 +17,7 @@ package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
@@ -30,6 +31,23 @@ import org.junit.jupiter.api.Test;
 @Tag("unit")
 @DisplayName("ToolSuspendException Tests")
 class ToolSuspendExceptionTest {
+
+    @Test
+    void findsDeeplyWrappedSuspension() {
+        ToolSuspendException suspended = new ToolSuspendException("Waiting");
+        Throwable wrapped = suspended;
+        for (int i = 0; i < 20; i++) wrapped = new RuntimeException(wrapped);
+        assertSame(suspended, ToolSuspendException.findInCauseChain(wrapped));
+    }
+
+    @Test
+    void handlesNullAndCircularCauses() {
+        RuntimeException first = new RuntimeException();
+        RuntimeException second = new RuntimeException(first);
+        first.initCause(second);
+        assertNull(ToolSuspendException.findInCauseChain(null));
+        assertNull(ToolSuspendException.findInCauseChain(first));
+    }
 
     @Test
     @DisplayName("Should create exception with default message")
