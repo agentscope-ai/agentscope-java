@@ -12,7 +12,7 @@ Hosted Agent 将电脑或服务器上的 Coding Agent 接入平台。Runtime Hos
 
 主机接入只需准备一次。之后创建多个 Hosted Agent、设置职责和分派工作，都可以通过 API 完成，不需要每个 Agent 单独安装一个 Host。
 
-Hosted 可以独立调用，也可以加入 Managed Lead 协调的团队。Runtime Host 运行 Coding Agent provider；它不是 Managed Agent 的 self_hosted 工具 Worker，也不等于部署整个 Service。先准备[平台](/v2/zh/service/quickstart)，职责边界见[自托管架构](/v2/zh/service/quickstart#self-hosting)，组合方式见[多 Agent 协作](/v2/zh/service/orchestration)。
+Hosted 可以独立调用，也可以加入 Managed Lead 协调的团队。Runtime Host 运行 Coding Agent provider；它不是 Managed Agent 的 self_hosted 工具 Worker，也不等于部署整个 Service。先准备[平台](/v2/zh/service/quickstart)，职责边界见[自托管架构](/v2/zh/service/kubernetes#self-hosting)，组合方式见[多 Agent 协作](/v2/zh/service/orchestration)。
 
 ## 先让执行主机上线
 

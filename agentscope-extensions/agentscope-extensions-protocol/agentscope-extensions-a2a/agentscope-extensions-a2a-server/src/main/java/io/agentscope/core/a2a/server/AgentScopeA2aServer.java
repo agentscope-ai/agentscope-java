@@ -16,12 +16,6 @@
 
 package io.agentscope.core.a2a.server;
 
-import io.a2a.server.events.QueueManager;
-import io.a2a.server.tasks.PushNotificationConfigStore;
-import io.a2a.server.tasks.PushNotificationSender;
-import io.a2a.server.tasks.TaskStore;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.AgentScopeAgentCardConverter;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
@@ -48,6 +42,15 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonProcessingException;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
+import org.a2aproject.sdk.server.events.MainEventBus;
+import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationSender;
+import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,7 +83,7 @@ import org.slf4j.LoggerFactory;
  * </ol>
  */
 @SuppressWarnings("rawtypes")
-public class AgentScopeA2aServer {
+public class AgentScopeA2aServer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeA2aServer.class);
 
@@ -92,15 +95,29 @@ public class AgentScopeA2aServer {
 
     private final AgentRegistryService agentRegistry;
 
+    private final AgentScopeA2aRequestHandler requestHandler;
+
     private AgentScopeA2aServer(
             Map<String, TransportWrapper> transportWrappers,
             Set<TransportProperties> transportProperties,
             AgentCard agentCard,
-            AgentRegistryService agentRegistry) {
+            AgentRegistryService agentRegistry,
+            AgentScopeA2aRequestHandler requestHandler) {
         this.transportWrappers = transportWrappers;
         this.transportProperties = transportProperties;
         this.agentCard = agentCard;
         this.agentRegistry = agentRegistry;
+        this.requestHandler = requestHandler;
+    }
+
+    /**
+     * Stops the threads of the request handler, see {@link AgentScopeA2aRequestHandler#close()}.
+     * The Spring Boot starter calls it when the application context closes. Calling it again has
+     * no effect.
+     */
+    @Override
+    public void close() {
+        requestHandler.close();
     }
 
     /**
@@ -153,6 +170,22 @@ public class AgentScopeA2aServer {
     }
 
     /**
+     * Get the agent card of this server as JSON, to serve it to A2A clients.
+     *
+     * <p>The JSON is written by the A2A SDK, so it does not depend on how the hosting framework
+     * serializes objects.
+     *
+     * @return agent card JSON
+     */
+    public String getAgentCardJson() {
+        try {
+            return JsonUtil.toJson(agentCard);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize the agent card", e);
+        }
+    }
+
+    /**
      * Call this method when all endpoint ready to access.
      *
      * <p>By default, it should be called after web server ready or other network endpoint ready. To let AgentScope end
@@ -199,6 +232,8 @@ public class AgentScopeA2aServer {
 
         private QueueManager queueManager;
 
+        private MainEventBus mainEventBus;
+
         private PushNotificationConfigStore pushConfigStore;
 
         private PushNotificationSender pushSender;
@@ -240,7 +275,7 @@ public class AgentScopeA2aServer {
         /**
          * Set implementations of {@link TaskStore}.
          *
-         * <p> use {@link io.a2a.server.tasks.InMemoryTaskStore} by default.
+         * <p> use {@link org.a2aproject.sdk.server.tasks.InMemoryTaskStore} by default.
          *
          * @param taskStore task store
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -253,7 +288,9 @@ public class AgentScopeA2aServer {
         /**
          * Set implementations of {@link QueueManager}.
          *
-         * <p> use {@link io.a2a.server.events.InMemoryQueueManager} by default.
+         * <p> use {@link org.a2aproject.sdk.server.events.InMemoryQueueManager} by default. A
+         * custom queue manager must be created with an event bus, which has to be set with {@link
+         * #mainEventBus(MainEventBus)} too.
          *
          * @param queueManager queue manager
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -264,9 +301,24 @@ public class AgentScopeA2aServer {
         }
 
         /**
+         * Set the bus that carries events from the queues to the processor that persists and
+         * dispatches them. Required with a custom {@link #queueManager(QueueManager) queue
+         * manager}: the bus it was created with. By default, a new bus is created.
+         *
+         * @param mainEventBus event bus
+         * @return builder instance of {@link AgentScopeA2aServer}
+         */
+        public Builder mainEventBus(MainEventBus mainEventBus) {
+            this.mainEventBus = mainEventBus;
+            return this;
+        }
+
+        /**
          * Set implementations of {@link PushNotificationConfigStore}.
          *
-         * <p> use {@link io.a2a.server.tasks.InMemoryPushNotificationConfigStore} by default.
+         * <p> use {@link org.a2aproject.sdk.server.tasks.InMemoryPushNotificationConfigStore} by default.
+         * <p> Push notifications are not supported yet: new push configs are not accepted, but
+         * the configs a custom store already holds are still sent with the push sender.
          *
          * @param pushConfigStore push notification config store
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -279,7 +331,9 @@ public class AgentScopeA2aServer {
         /**
          * Set implementations of {@link PushNotificationSender}.
          *
-         * <p> use {@link io.a2a.server.tasks.BasePushNotificationSender} by default.
+         * <p> use {@link org.a2aproject.sdk.server.tasks.BasePushNotificationSender} by default.
+         * <p> Push notifications are not supported yet: new push configs are not accepted, but
+         * the configs a custom store already holds are still sent with the push sender.
          *
          * @param pushSender push notification sender
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -373,10 +427,21 @@ public class AgentScopeA2aServer {
                     AgentScopeA2aRequestHandler.builder()
                             .agentExecutor(agentExecutor)
                             .taskStore(taskStore)
+                            .mainEventBus(mainEventBus)
                             .queueManager(queueManager)
                             .pushConfigStore(pushConfigStore)
                             .pushSender(pushSender)
                             .build();
+            try {
+                return build(requestHandler);
+            } catch (RuntimeException e) {
+                // The request handler has started threads.
+                requestHandler.close();
+                throw e;
+            }
+        }
+
+        private AgentScopeA2aServer build(AgentScopeA2aRequestHandler requestHandler) {
             if (null == executor) {
                 executor = Executors.newCachedThreadPool();
             }
@@ -414,7 +479,11 @@ public class AgentScopeA2aServer {
             }
             AgentRegistryService agentRegistryService = new AgentRegistryService(agentRegistries);
             return new AgentScopeA2aServer(
-                    transportWrappers, availableTransports, a2aAgentCard, agentRegistryService);
+                    transportWrappers,
+                    availableTransports,
+                    a2aAgentCard,
+                    agentRegistryService,
+                    requestHandler);
         }
 
         private Map<String, TransportWrapperBuilder> loadTransportBuilders() {

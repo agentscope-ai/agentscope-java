@@ -75,6 +75,11 @@ public class AnthropicChatModel extends ChatModelBase {
     private final AnthropicBaseFormatter formatter;
     private final List<AnthropicServerTool> serverTools;
 
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
+    }
+
     public AnthropicChatModel(
             String baseUrl,
             String apiKey,
@@ -396,7 +401,7 @@ public class AnthropicChatModel extends ChatModelBase {
         private String baseUrl;
         private String apiKey;
         private String authToken;
-        private String modelName = "claude-sonnet-4-5-20250929";
+        private String modelName = "claude-sonnet-5-5";
         private boolean streamEnabled = true;
         private GenerateOptions defaultOptions;
         private AnthropicBaseFormatter formatter;
