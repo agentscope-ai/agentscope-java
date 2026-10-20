@@ -820,7 +820,7 @@ public class ConversationCompactor {
         if (!anyModified) {
             return msg;
         }
-        return Msg.builder().role(msg.getRole()).name(msg.getName()).content(newBlocks).build();
+        return msg.withContent(newBlocks);
     }
 
     /**
@@ -828,6 +828,11 @@ public class ConversationCompactor {
      * or the original if no truncation was needed.
      */
     private static ToolUseBlock truncateToolUseBlock(ToolUseBlock tu, TruncateArgsConfig cfg) {
+        // Provider replay metadata is authoritative for server tool calls.
+        if (tu.isServerTool()) {
+            return tu;
+        }
+
         Map<String, Object> input = tu.getInput();
         if (input == null || input.isEmpty()) {
             return tu;
@@ -845,6 +850,13 @@ public class ConversationCompactor {
         if (!anyModified) {
             return tu;
         }
-        return ToolUseBlock.builder().id(tu.getId()).name(tu.getName()).input(newInput).build();
+        // Drop raw content so request formatters serialize the truncated input.
+        return ToolUseBlock.builder()
+                .id(tu.getId())
+                .name(tu.getName())
+                .input(newInput)
+                .metadata(tu.getMetadata())
+                .state(tu.getState())
+                .build();
     }
 }
