@@ -30,23 +30,22 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
-import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
-import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -79,6 +78,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.Answer;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 
 /**
@@ -123,7 +123,7 @@ public class A2aAgentTest {
                 A2aAgent.builder()
                         .name("test-agent")
                         .agentCard(agentCard)
-                        .hook(new ReplaceA2aClientHook())
+                        .clientReplacer(this::useMockClient)
                         .build();
 
         doAnswer(mockSuccessMessage())
@@ -134,6 +134,7 @@ public class A2aAgentTest {
         assertNotNull(result);
         assertEquals("mock success.", result.getTextContent());
         assertEquals(2, agent.getMemory().getMessages().size());
+        verify(a2aClient).close();
     }
 
     @Test
@@ -148,7 +149,7 @@ public class A2aAgentTest {
                 A2aAgent.builder()
                         .name("test-agent")
                         .agentCard(agentCard)
-                        .hook(new ReplaceA2aClientHook())
+                        .clientReplacer(this::useMockClient)
                         .a2aAgentConfig(a2aAgentConfig)
                         .build();
 
@@ -168,7 +169,7 @@ public class A2aAgentTest {
                 A2aAgent.builder()
                         .name("test-agent")
                         .agentCard(agentCard)
-                        .hook(new ReplaceA2aClientHook())
+                        .clientReplacer(this::useMockClient)
                         .build();
 
         doThrow(new RuntimeException("mock exception."))
@@ -188,7 +189,7 @@ public class A2aAgentTest {
                 A2aAgent.builder()
                         .name("test-agent")
                         .agentCard(agentCard)
-                        .hook(new ReplaceA2aClientHook())
+                        .clientReplacer(this::useMockClient)
                         .build();
 
         doAnswer(
@@ -211,6 +212,48 @@ public class A2aAgentTest {
     }
 
     @Test
+    @DisplayName("Should close the client when the call is cancelled")
+    void testCloseClientWhenCallIsCancelled() throws InterruptedException {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        CountDownLatch sent = new CountDownLatch(1);
+        doAnswer(
+                        invocationOnMock -> {
+                            sent.countDown();
+                            return null;
+                        })
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Disposable call = agent.call(Msg.builder().textContent("test").build()).subscribe();
+        assertTrue(sent.await(5, TimeUnit.SECONDS));
+        call.dispose();
+
+        verify(a2aClient, timeout(5000)).close();
+    }
+
+    @Test
+    @DisplayName("Should keep only the hooks it is given")
+    void testHooksAreTheGivenOnes() {
+        Hook hook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        return Mono.just(event);
+                    }
+                };
+
+        A2aAgent agent =
+                A2aAgent.builder().name("test-agent").agentCard(agentCard).hook(hook).build();
+
+        assertEquals(List.of(hook), agent.getHooks());
+    }
+
+    @Test
     @DisplayName("Should do call with non-exist transport failed")
     @SuppressWarnings({"rawtypes"})
     void testCallAgentWithNonExistTransport() {
@@ -223,7 +266,7 @@ public class A2aAgentTest {
                 A2aAgent.builder()
                         .name("test-agent")
                         .agentCard(agentCard)
-                        .hook(new ReplaceA2aClientHook())
+                        .clientReplacer(this::useMockClient)
                         .a2aAgentConfig(a2aAgentConfig)
                         .build();
 
@@ -242,7 +285,7 @@ public class A2aAgentTest {
                 A2aAgent.builder()
                         .name("test-agent")
                         .agentCard(agentCard)
-                        .hook(new ReplaceA2aClientHook())
+                        .clientReplacer(this::useMockClient)
                         .build();
         Answer<Void> mockTaskResponse =
                 invocationOnMock -> {
@@ -326,7 +369,7 @@ public class A2aAgentTest {
                 A2aAgent.builder()
                         .name("test-agent")
                         .agentCard(agentCard)
-                        .hook(new ReplaceA2aClientHook())
+                        .clientReplacer(this::useMockClient)
                         .build();
 
         final AtomicBoolean stopFlag = new AtomicBoolean(false);
@@ -365,7 +408,7 @@ public class A2aAgentTest {
                 A2aAgent.builder()
                         .name("test-agent")
                         .agentCard(agentCard)
-                        .hook(new ReplaceA2aClientHook())
+                        .clientReplacer(this::useMockClient)
                         .build();
 
         final AtomicBoolean stopFlag = new AtomicBoolean(false);
@@ -404,7 +447,7 @@ public class A2aAgentTest {
                 A2aAgent.builder()
                         .name("test-agent")
                         .agentCard(agentCard)
-                        .hook(new ReplaceA2aClientHook())
+                        .clientReplacer(this::useMockClient)
                         .build();
 
         final AtomicBoolean stopFlag = new AtomicBoolean(false);
@@ -446,7 +489,7 @@ public class A2aAgentTest {
                 A2aAgent.builder()
                         .name("test-agent")
                         .agentCard(agentCard)
-                        .hook(new ReplaceA2aClientHook())
+                        .clientReplacer(this::useMockClient)
                         .build();
 
         doAnswer(mockSuccessMessage())
@@ -491,7 +534,7 @@ public class A2aAgentTest {
                 A2aAgent.builder()
                         .name("test-lifecycle-agent")
                         .agentCard(agentCard)
-                        .hook(new ReplaceA2aClientHook())
+                        .clientReplacer(this::useMockClient)
                         .hook(lifecycleMonitorHook)
                         .build();
 
@@ -667,36 +710,9 @@ public class A2aAgentTest {
         }
     }
 
-    private class ReplaceA2aClientHook implements Hook {
-
-        @Override
-        public <T extends HookEvent> Mono<T> onEvent(T event) {
-            if (event instanceof PreCallEvent preCallEvent) {
-                Agent targetAgent = preCallEvent.getAgent();
-                replaceA2aClient(targetAgent);
-            }
-            return Mono.just(event);
-        }
-
-        @Override
-        public int priority() {
-            // should do after A2aAgent inner A2aClientLifecycleHook.
-            return 501;
-        }
-
-        private void replaceA2aClient(Agent targetAgent) {
-            if (targetAgent instanceof A2aAgent a2aAgent) {
-                try {
-                    Field a2aClientField = A2aAgent.class.getDeclaredField("a2aClient");
-                    a2aClientField.setAccessible(true);
-                    Client autoBuildClient = (Client) a2aClientField.get(a2aAgent);
-                    if (null != autoBuildClient) {
-                        autoBuildClient.close();
-                    }
-                    a2aClientField.set(a2aAgent, a2aClient);
-                } catch (Exception ignored) {
-                }
-            }
-        }
+    /** Uses the mock client instead of the one the agent built for the call. */
+    private Client useMockClient(Client built) {
+        built.close();
+        return a2aClient;
     }
 }
