@@ -22,8 +22,6 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.AppenderBase;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.a2a.client.config.ClientConfig;
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.a2a.agent.A2aAgentConfig;
 import io.agentscope.core.a2a.agent.card.WellKnownAgentCardResolver;
@@ -59,6 +57,17 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import org.a2aproject.sdk.A2A;
+import org.a2aproject.sdk.client.Client;
+import org.a2aproject.sdk.client.TaskUpdateEvent;
+import org.a2aproject.sdk.client.config.ClientConfig;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransport;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransportConfig;
+import org.a2aproject.sdk.spec.A2AErrorCodes;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.TaskNotFoundError;
+import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -124,7 +133,10 @@ class A2aHttpEndToEndTest {
 
         assertThat(card.name()).isEqualTo(ScriptedAgentRunner.NAME);
         assertThat(card.description()).isEqualTo(ScriptedAgentRunner.DESCRIPTION);
-        assertThat(card.url()).contains(HOST + ":" + PORT);
+        AgentInterface preferred = card.supportedInterfaces().get(0);
+        assertThat(preferred.protocolBinding()).isEqualTo("JSONRPC");
+        assertThat(preferred.url()).contains(HOST + ":" + PORT);
+        assertThat(preferred.protocolVersion()).isEqualTo("1.0");
         assertThat(card.capabilities().streaming()).isTrue();
     }
 
@@ -183,9 +195,31 @@ class A2aHttpEndToEndTest {
     }
 
     @Test
+    void requestWithoutProtocolVersionIsRejected() throws Exception {
+        // A2A 0.3 clients send no A2A-Version header; only A2A 1.0 is supported.
+        HttpRequest request =
+                HttpRequest.newBuilder(URI.create(BASE_URL))
+                        .timeout(TIMEOUT)
+                        .header("Content-Type", "application/json")
+                        .POST(
+                                HttpRequest.BodyPublishers.ofString(
+                                        "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"GetTask\","
+                                                + "\"params\":{\"id\":\"missing-task\"}}"))
+                        .build();
+
+        HttpResponse<String> response =
+                HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+
+        JsonNode body = JSON.readTree(response.body());
+        assertThat(body.path("id").asText()).isEqualTo("1");
+        assertThat(body.path("error").path("code").asInt())
+                .isEqualTo(A2AErrorCodes.VERSION_NOT_SUPPORTED.code());
+    }
+
+    @Test
     void nonStreamingResponseIsJsonForJsonOrSseAccept() throws Exception {
         String request =
-                "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"tasks/get\","
+                "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"GetTask\","
                         + "\"params\":{\"id\":\"missing-task\"}}";
         for (String accept :
                 new String[] {
@@ -204,7 +238,9 @@ class A2aHttpEndToEndTest {
                     .hasValueSatisfying(type -> assertThat(type).startsWith("application/json"));
             JsonNode body = JSON.readTree(response.body());
             assertThat(body.path("id").asText()).as("Accept: %s", accept).isEqualTo("1");
-            assertThat(body.has("error")).as("Accept: %s", accept).isTrue();
+            assertThat(body.path("error").path("code").asInt())
+                    .as("Accept: %s", accept)
+                    .isEqualTo(new TaskNotFoundError().getCode());
         }
         // Other media types are not served at all.
         assertThat(postJsonRpc(request, "application/xml").statusCode()).isEqualTo(406);
@@ -214,10 +250,10 @@ class A2aHttpEndToEndTest {
     void nonStreamingResponseIsUtf8WhateverTheRequestedCharset() throws Exception {
         runner.script(messages -> reply("你好，世界", "你好，", "世界"));
         String request =
-                "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"method\":\"message/send\","
-                        + "\"params\":{\"message\":{\"kind\":\"message\",\"messageId\":\"m-1\","
-                        + "\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"你好\"}]},"
-                        + "\"configuration\":{\"blocking\":true}}}";
+                "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"method\":\"SendMessage\","
+                        + "\"params\":{\"message\":{\"messageId\":\"m-1\",\"role\":\"ROLE_USER\","
+                        + "\"parts\":[{\"text\":\"你好\"}]},"
+                        + "\"configuration\":{\"returnImmediately\":false}}}";
 
         HttpResponse<byte[]> response =
                 postJsonRpc(request, "text/event-stream;charset=ISO-8859-1");
@@ -229,7 +265,7 @@ class A2aHttpEndToEndTest {
                                         .startsWith("application/json")
                                         .doesNotContain("ISO-8859-1"));
         JsonNode body = JSON.readTree(new String(response.body(), StandardCharsets.UTF_8));
-        assertThat(body.path("result").path("parts").path(0).path("text").asText())
+        assertThat(body.path("result").path("message").path("parts").path(0).path("text").asText())
                 .isEqualTo("你好，世界");
     }
 
@@ -252,9 +288,6 @@ class A2aHttpEndToEndTest {
     }
 
     @Test
-    @Disabled(
-            "SDK 0.3: DataPartParser cannot rebuild tool results after the round trip (null"
-                    + " metadata values, then #1336); re-enable when migrating to SDK 1.x")
     void streamingCallDeliversToolResults() {
         runner.script(
                 messages ->
@@ -286,8 +319,42 @@ class A2aHttpEndToEndTest {
         Msg result = newAgent(null).call(userMsg("hi")).block(TIMEOUT);
 
         assertThat(result).isNotNull();
-        // SDK 0.3 renders the status message with Object#toString, so only the state survives.
-        assertThat(result.getTextContent()).contains("FAILED");
+        assertThat(result.getTextContent()).contains("TASK_STATE_FAILED").contains("boom");
+    }
+
+    @Test
+    void streamingCallEndsWithoutError() throws Exception {
+        runner.script(messages -> reply("final reply", "Hello, ", "world"));
+        CountDownLatch finalEvent = new CountDownLatch(1);
+        List<Throwable> errors = new CopyOnWriteArrayList<>();
+        Client client =
+                Client.builder(cardResolver().getAgentCard("remote"))
+                        .withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig())
+                        .clientConfig(new ClientConfig.Builder().setStreaming(true).build())
+                        .build();
+
+        client.sendMessage(
+                A2A.toUserMessage("hi"),
+                List.of(
+                        (event, card) -> {
+                            if (event instanceof TaskUpdateEvent update
+                                    && update.getUpdateEvent()
+                                            instanceof TaskStatusUpdateEvent status
+                                    && status.isFinal()) {
+                                finalEvent.countDown();
+                            }
+                        }),
+                error -> {
+                    if (error != null) {
+                        errors.add(error);
+                    }
+                });
+
+        assertThat(finalEvent.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS)).isTrue();
+        // #2927: SDK 0.3 reported the end of the stream after the final event as an error,
+        // "Request cancelled". Give such an error time to arrive.
+        Thread.sleep(500);
+        assertThat(errors).isEmpty();
     }
 
     @Test
@@ -369,6 +436,8 @@ class A2aHttpEndToEndTest {
                 HttpRequest.newBuilder(URI.create(BASE_URL))
                         .timeout(TIMEOUT)
                         .header("Content-Type", "application/json")
+                        // Without it, the request is taken for an A2A 0.3 one.
+                        .header("A2A-Version", "1.0")
                         .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
         if (accept != null) {
             request.header("Accept", accept);

@@ -73,7 +73,8 @@ public class MarkdownSkillParser {
 
     private static final Pattern FRONTMATTER_PATTERN =
             Pattern.compile(
-                    "^\\uFEFF?---\\s*[\\r\\n]+(.*?)[\\r\\n]*---(?:\\s*[\\r\\n]+)?(.*)",
+                    "^\\uFEFF?---\\s*[\\r\\n]+(.*?)(?<=[\\r\\n])---"
+                            + "(?=[ \\t]*(?:[\\r\\n]|\\z))(?:\\s*[\\r\\n]+)?(.*)",
                     Pattern.DOTALL);
 
     private static final Pattern SIMPLE_KV_PATTERN =
