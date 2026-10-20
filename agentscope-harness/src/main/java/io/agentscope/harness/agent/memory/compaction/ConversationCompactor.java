@@ -828,6 +828,11 @@ public class ConversationCompactor {
      * or the original if no truncation was needed.
      */
     private static ToolUseBlock truncateToolUseBlock(ToolUseBlock tu, TruncateArgsConfig cfg) {
+        // Provider replay metadata is authoritative for server tool calls.
+        if (tu.isServerTool()) {
+            return tu;
+        }
+
         Map<String, Object> input = tu.getInput();
         if (input == null || input.isEmpty()) {
             return tu;

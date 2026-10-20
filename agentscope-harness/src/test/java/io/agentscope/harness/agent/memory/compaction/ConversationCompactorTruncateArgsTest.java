@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Msg;
@@ -110,6 +111,35 @@ class ConversationCompactorTruncateArgsTest {
     void skipsNonAssistantMessages() {
         Msg original = Msg.builder().role(MsgRole.USER).textContent("x".repeat(100)).build();
         assertSame(original, truncate(original));
+    }
+
+    @Test
+    void skipsProviderServerToolCalls() {
+        ToolUseBlock original =
+                ToolUseBlock.builder()
+                        .id("call-server")
+                        .name("code_interpreter")
+                        .input(Map.of("code", "x".repeat(100)))
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .state(ToolCallState.FINISHED)
+                        .build();
+        Msg originalMessage = assistant(original);
+
+        assertSame(originalMessage, truncate(originalMessage));
+        assertSame(original, toolBlock(originalMessage));
+    }
+
+    @Test
+    void rejectsMaxArgLengthBelowTwentyCharacters() {
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                CompactionConfig.TruncateArgsConfig.builder()
+                                        .maxArgLength(19)
+                                        .build());
+
+        assertEquals("maxArgLength must be at least 20 characters", error.getMessage());
     }
 
     @Test
