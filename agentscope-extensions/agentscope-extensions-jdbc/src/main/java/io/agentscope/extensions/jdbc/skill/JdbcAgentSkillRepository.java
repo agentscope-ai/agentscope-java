@@ -989,10 +989,13 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     }
 
     /**
-     * Uses the shared JDBC duplicate classifier; other constraints remain storage failures.
+     * Whether the exception reports a duplicate-key / unique-constraint violation — the
+     * authoritative conflict signal for the {@code force=false} insert. Only positive
+     * duplicate signals match, so any other constraint failure surfaces as the driver's own
+     * {@link SQLException} instead of the destructive "use force=true" advice.
      *
      * @param e the exception thrown by the skill insert
-     * @return true only for a positively identified duplicate-key conflict
+     * @return true when the failure is a duplicate-key conflict rather than any other error
      */
     static boolean isUniqueViolation(SQLException e) {
         return JdbcConstraintErrors.isDuplicateKey(e);

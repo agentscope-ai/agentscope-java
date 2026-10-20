@@ -323,7 +323,18 @@ public class JdbcStore implements BaseStore {
         }
     }
 
-    /** Recognizes duplicate keys for the supported JDBC dialects, not other constraint failures. */
+    /**
+     * Returns {@code true} if the given exception represents a primary-key / unique-constraint
+     * violation. Different JDBC drivers signal this differently:
+     *
+     * <ul>
+     *   <li>Postgres / H2 use SQLSTATE {@code 23505}; MySQL / MariaDB use SQLSTATE {@code 23000}
+     *       with error code {@code 1062} or {@code 1022}.
+     *   <li>SQLite throws a plain {@code SQLiteException} with {@code sqlState=null} and
+     *       {@code errorCode=19} ({@code SQLITE_CONSTRAINT}); we also key on the driver class name
+     *       and require an extended {@code PRIMARYKEY} or {@code UNIQUE} result code.
+     * </ul>
+     */
     private static boolean isDuplicateKey(SQLException e) {
         if ("23505".equals(e.getSQLState())) {
             return true;
