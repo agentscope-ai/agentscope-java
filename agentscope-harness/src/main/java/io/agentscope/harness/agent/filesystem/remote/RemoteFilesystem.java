@@ -583,17 +583,17 @@ public class RemoteFilesystem implements AbstractFilesystem {
         }
 
         List<String> ns = getNamespace(runtimeContext);
-        if (store.get(ns, normalized) != null) {
+        if (store.containsKey(ns, normalized)) {
             return true;
         }
         // Also check if any child exists (directory-like)
-        List<StoreItem> items = searchAllItems(runtimeContext);
-        for (StoreItem item : items) {
-            if (item.key().startsWith(normalized + "/")) {
-                return true;
-            }
+        if (store.hasKeyPrefix(ns, normalized + "/")) {
+            return true;
         }
-        return false;
+        // searchAllItems also accepts legacy keys with one missing leading slash.
+        return normalized.length() > 1
+                && !normalized.startsWith("//")
+                && store.hasKeyPrefix(ns, normalized.substring(1) + "/");
     }
 
     // Also update index on delete/move so entries don't linger
