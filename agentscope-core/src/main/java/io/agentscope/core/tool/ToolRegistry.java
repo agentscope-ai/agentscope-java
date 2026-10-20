@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -81,6 +82,23 @@ class ToolRegistry {
             return null;
         }
         return registeredTools.get(name);
+    }
+
+    /**
+     * Merges raw tool input with the tool's registered preset parameters (preset values win);
+     * the single source shared by the permission gate and {@link ToolExecutor}. See {@link
+     * Toolkit#effectiveInput(String, Map)} for the public contract.
+     */
+    Map<String, Object> effectiveInput(String toolName, Map<String, Object> rawInput) {
+        Map<String, Object> merged = new HashMap<>();
+        if (rawInput != null && !rawInput.isEmpty()) {
+            merged.putAll(rawInput);
+        }
+        RegisteredToolFunction registered = getRegisteredTool(toolName);
+        if (registered != null && registered.getPresetParameters() != null) {
+            merged.putAll(registered.getPresetParameters());
+        }
+        return merged;
     }
 
     /**

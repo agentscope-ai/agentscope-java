@@ -120,6 +120,7 @@ toolkit.registerTool(new SimpleTools());
 | `concurrencySafe` | `boolean` | 是否可并发调用（默认 `true`） |
 | `stateInjected` | `boolean` | 是否在调用时注入 `AgentState` 作为额外参数（默认 `false`） |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
+| `filePathParams` | `String[]` | 声明携带文件路径的参数名；启用内置危险路径检查与 `ACCEPT_EDITS` 工作目录自动放行（默认为空） |
 | `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |
 
 #### 显式返回执行状态

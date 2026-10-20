@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.tool;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolFilePathResolver;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
@@ -29,13 +30,15 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * File system tools backed by a {@link AbstractFilesystem}, exposing read/write/edit/grep/glob
  * operations as agent-callable tools.
  */
-public class FilesystemTool {
+public class FilesystemTool implements ToolFilePathResolver {
 
     static final int DEFAULT_GREP_LIMIT = 100;
     static final int DEFAULT_GLOB_LIMIT = 200;
@@ -52,6 +55,19 @@ public class FilesystemTool {
             AbstractFilesystem abstractFilesystem, WorkspacePathNormalizer pathNormalizer) {
         this.abstractFilesystem = abstractFilesystem;
         this.pathNormalizer = pathNormalizer;
+    }
+
+    /**
+     * Permission-side path resolver. The execution landing point of a {@code FilesystemTool} call
+     * depends on the concrete {@link AbstractFilesystem} implementation's root/mode/namespace
+     * policy and on the {@link RuntimeContext} the executor passes in, neither of which is
+     * available at permission-check time. Because the landing point therefore cannot be proven
+     * with certainty, this implementation returns {@link Optional#empty()} for every input so
+     * the permission gate fails closed (no {@code ACCEPT_EDITS} auto-allow) instead of guessing.
+     */
+    @Override
+    public Optional<Path> resolveToolFilePath(String rawPath) {
+        return Optional.empty();
     }
 
     static final int MAX_LISTING_ENTRIES = 200;
@@ -139,7 +155,8 @@ public class FilesystemTool {
 
     @Tool(
             name = "write_file",
-            description = "Write content to a new file, creating parent directories if needed.")
+            description = "Write content to a new file, creating parent directories if needed.",
+            filePathParams = {"path"})
     public ToolResultBlock writeFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Target file path") String path,
@@ -155,7 +172,8 @@ public class FilesystemTool {
             name = "edit_file",
             description =
                     "Perform exact string replacement in a file. The old_string must be unique"
-                            + " unless replace_all is true.")
+                            + " unless replace_all is true.",
+            filePathParams = {"path"})
     public ToolResultBlock editFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File to edit") String path,

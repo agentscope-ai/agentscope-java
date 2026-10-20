@@ -31,7 +31,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -319,16 +318,13 @@ class ToolExecutor {
                         });
 
         // Merge input with preset parameters. Preset values win so framework-controlled
-        // parameters remain immutable from the caller/LLM perspective.
-        Map<String, Object> mergedInput = new HashMap<>();
-        if (!param.getInput().isEmpty()) {
-            mergedInput.putAll(param.getInput());
-        } else if (!toolCall.getInput().isEmpty()) {
-            mergedInput.putAll(toolCall.getInput());
-        }
-        if (registered != null) {
-            mergedInput.putAll(registered.getPresetParameters());
-        }
+        // parameters remain immutable from the caller/LLM perspective. Route through
+        // ToolRegistry.effectiveInput so the permission gate (which uses the same source)
+        // and the executor evaluate exactly the same input.
+        Map<String, Object> mergedInput =
+                toolRegistry.effectiveInput(
+                        toolCall.getName(),
+                        !param.getInput().isEmpty() ? param.getInput() : toolCall.getInput());
 
         // Build final execution param
         ToolCallParam executionParam =

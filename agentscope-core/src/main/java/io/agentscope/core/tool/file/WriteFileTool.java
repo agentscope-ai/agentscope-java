@@ -17,13 +17,16 @@ package io.agentscope.core.tool.file;
 
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolFilePathResolver;
 import io.agentscope.core.tool.ToolParam;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -40,7 +43,7 @@ import reactor.core.publisher.Mono;
  * <p>Security: When baseDir is specified, all file operations are restricted to that directory
  * to prevent unauthorized file access.
  */
-public class WriteFileTool {
+public class WriteFileTool implements ToolFilePathResolver {
 
     private static final Logger logger = LoggerFactory.getLogger(WriteFileTool.class);
 
@@ -72,6 +75,25 @@ public class WriteFileTool {
     }
 
     /**
+     * Permission-side mirror of {@link FileToolUtils#validatePath(String, Path)}: resolves the
+     * raw path argument to the absolute location this tool would write to, lexically and without
+     * side effects. Used by {@link io.agentscope.core.tool.ToolBase} so the {@code ACCEPT_EDITS}
+     * working-directory auto-allow evaluates the real execution landing point instead of a
+     * guessed base. Returns empty when the path is blank or malformed so the gate fails closed.
+     */
+    @Override
+    public Optional<Path> resolveToolFilePath(String rawPath) {
+        if (rawPath == null || rawPath.trim().isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(FileToolUtils.resolveLexical(rawPath, baseDir));
+        } catch (InvalidPathException e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
      * Insert content at the specified line number in a text file.
      *
      * @param filePath The target file path
@@ -87,7 +109,8 @@ public class WriteFileTool {
                     "Insert the content at the specified line number in a text file. Use this when"
                         + " you need to add content at a specific position without replacing"
                         + " existing content. The content will be inserted as a new line, pushing"
-                        + " existing lines down.")
+                        + " existing lines down.",
+            filePathParams = {"file_path"})
     public Mono<ToolResultBlock> insertTextFile(
             @ToolParam(name = "file_path", description = "The target file path") String filePath,
             @ToolParam(name = "content", description = "The content to be inserted") String content,
@@ -240,7 +263,8 @@ public class WriteFileTool {
                     "Create/Replace/Overwrite content in a text file. When ranges is provided, the"
                         + " content will be replaced in the specified range. Otherwise, the entire"
                         + " file (if exists) will be overwritten. Use this for creating new files"
-                        + " or replacing large sections of content.")
+                        + " or replacing large sections of content.",
+            filePathParams = {"file_path"})
     public Mono<ToolResultBlock> writeTextFile(
             @ToolParam(name = "file_path", description = "The target file path") String filePath,
             @ToolParam(name = "content", description = "The content to be written") String content,
