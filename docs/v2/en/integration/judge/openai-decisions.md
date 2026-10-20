@@ -4,7 +4,7 @@ description: Typed decisions over text and images using a dedicated judge extens
 zh_link: /v2/zh/integration/judge/openai-decisions
 ---
 
-OpenAI Decisions evaluates shared evidence and returns a probability, a fixed choice, or a rubric score. The extension lives under `agentscope-extensions-judge`, alongside JEV, and exposes `OpenAIDecisionsClient` independently of the chat model APIs. Applications can use its results to classify requests or choose their next action.
+OpenAI Decisions evaluates shared evidence and returns a probability, a fixed choice, or a rubric score. The extension uses the official OpenAI Java SDK and lives under `agentscope-extensions-judge`, alongside JEV, and exposes `OpenAIDecisionsClient` independently of the chat model APIs. Applications can use its results to classify requests or choose their next action.
 
 The [official guide](https://developers.openai.com/api/docs/guides/decisions) describes the API as public beta. The [API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create) lists `gpt-6-luna`; this is the client's default model. Service access depends on your OpenAI account. The examples here describe usage; the repository tests use synthetic responses and do not establish live-service compatibility or classification quality.
 
@@ -93,9 +93,9 @@ The client accepts image data URLs and HTTP(S) image URLs according to the API r
 
 The default API base is `https://api.openai.com/v1`. `baseUrl()` accepts a versioned API base, including any gateway path prefix, or a complete `/decisions` endpoint. Credentials, query strings, and fragments are rejected in the base URL. A custom base should retain the API version path.
 
-The default timeout is 30 seconds and must be positive. Blocking HTTP execution runs on Reactor's `boundedElastic` scheduler. Timeout and cancellation interrupt the executing task; custom transports must honor interruption to release their resources. The client borrows a configured `HttpTransport` or the factory's shared default and never closes it. The transport owner manages its lifecycle.
+The default timeout is 30 seconds and must be positive. Blocking SDK calls run on Reactor's `boundedElastic` scheduler. The timeout is also passed to the SDK. Timeout and cancellation interrupt the executing task; the SDK transport determines when an in-flight network call stops. Close clients created by the wrapper with `close()` or try-with-resources to release SDK connections. Spring closes the auto-configured client when its context shuts down.
 
-HTTP failures expose a status code through `OpenAIDecisionsException.getStatusCode()`. HTTP 429, 5xx, and client timeout errors carry a retry hint; `isRetryable()` does not trigger a retry. The client adds no automatic retry policy. Custom transports control any internal network retries or redirects. Provider bodies and raw transport causes are omitted from client-generated exceptions.
+HTTP failures expose a status code through `OpenAIDecisionsException.getStatusCode()`. HTTP 429, 5xx, and client timeout errors carry a retry hint; `isRetryable()` does not trigger a retry. SDK I/O failures and errors explicitly marked retryable by the SDK also retain a retry hint. The wrapper disables automatic retries on SDK clients it creates. `builder().client(openAIClient)` borrows an existing official SDK client, whose credentials, base URL, retry configuration, and lifecycle remain controlled by its owner. The wrapper still applies its model and request timeout. Provider bodies and raw SDK causes are omitted from client-generated exceptions.
 
 ## Spring Boot
 
@@ -118,6 +118,6 @@ agentscope:
     timeout: 30s
 ```
 
-The defaults above also apply to the starter. `agentscope.openai-decisions.enabled=false` disables client creation. A user-defined client bean takes precedence. Implement `OpenAIDecisionsClientBuilderCustomizer` to configure a transport or override properties; Spring applies ordered customizers after binding properties.
+The defaults above also apply to the starter. `agentscope.openai-decisions.enabled=false` disables client creation. A user-defined client bean takes precedence. Implement `OpenAIDecisionsClientBuilderCustomizer` to supply an official SDK client or override properties; Spring applies ordered customizers after binding properties.
 
 A complete three-question example and image-input helper are available in `agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/judge/OpenAIDecisionsExample.java`.

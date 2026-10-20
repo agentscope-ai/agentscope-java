@@ -32,12 +32,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
+            <groupId>com.openai</groupId>
+            <artifactId>openai-java</artifactId>
         </dependency>
         <dependency>
             <groupId>io.projectreactor</groupId>

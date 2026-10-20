@@ -17,9 +17,7 @@
 package io.agentscope.extensions.judge.openaidecisions;
 
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 /** Text and/or images, encoded as text or a single user message. No images are fetched locally. */
@@ -61,19 +59,5 @@ public record DecisionInput(String text, List<String> imageUrls) {
 
     public static DecisionInput image(String imageUrl) {
         return new DecisionInput(null, List.of(imageUrl));
-    }
-
-    Object toWire() {
-        if (imageUrls.isEmpty()) {
-            return text;
-        }
-        List<Map<String, String>> content = new ArrayList<>();
-        if (text != null) {
-            content.add(Map.of("type", "input_text", "text", text));
-        }
-        for (String image : imageUrls) {
-            content.add(Map.of("type", "input_image", "image_url", image));
-        }
-        return List.of(Map.of("role", "user", "content", content));
     }
 }

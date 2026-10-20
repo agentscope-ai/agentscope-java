@@ -35,12 +35,20 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.openai.client.OpenAIClient;
+import com.openai.client.OpenAIClientImpl;
+import com.openai.core.ClientOptions;
+import com.openai.core.RequestOptions;
+import com.openai.core.http.Headers;
+import com.openai.core.http.HttpClient;
+import com.openai.core.http.HttpMethod;
+import com.openai.core.http.HttpRequest;
+import com.openai.core.http.HttpResponse;
+import com.openai.errors.OpenAIIoException;
+import com.openai.errors.OpenAIRetryableException;
 import com.sun.net.httpserver.HttpServer;
-import io.agentscope.core.model.transport.HttpRequest;
-import io.agentscope.core.model.transport.HttpResponse;
-import io.agentscope.core.model.transport.HttpTransport;
-import io.agentscope.core.model.transport.HttpTransportException;
-import io.agentscope.core.model.transport.JdkHttpTransport;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -49,6 +57,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -94,23 +103,46 @@ class OpenAIDecisionsClientTest {
                 .build();
     }
 
-    private static HttpTransport transport(String body) {
-        HttpTransport transport = mock(HttpTransport.class);
-        when(transport.execute(any()))
-                .thenReturn(HttpResponse.builder().statusCode(200).body(body).build());
+    private static HttpResponse response(int status, String body) {
+        var response = mock(HttpResponse.class);
+        when(response.statusCode()).thenReturn(status);
+        when(response.headers())
+                .thenReturn(Headers.builder().put("Content-Type", "application/json").build());
+        when(response.body())
+                .thenAnswer(
+                        call -> new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+        return response;
+    }
+
+    private static HttpClient transport(String body) {
+        HttpClient transport = mock(HttpClient.class);
+        var response = response(200, body);
+        when(transport.execute(any(), any())).thenReturn(response);
         return transport;
     }
 
-    private static OpenAIDecisionsClient client(HttpTransport transport) {
-        return OpenAIDecisionsClient.builder()
-                .apiKey("fixture-secret")
-                .transport(transport)
-                .build();
+    private static OpenAIClient sdkClient(HttpClient transport) {
+        return new OpenAIClientImpl(
+                ClientOptions.builder()
+                        .apiKey("fixture-secret")
+                        .httpClient(transport)
+                        .maxRetries(0)
+                        .build());
+    }
+
+    private static OpenAIDecisionsClient client(HttpClient transport) {
+        return OpenAIDecisionsClient.builder().client(sdkClient(transport)).build();
+    }
+
+    private static String body(HttpRequest request) throws Exception {
+        var output = new ByteArrayOutputStream();
+        request.body().writeTo(output);
+        return output.toString(StandardCharsets.UTF_8);
     }
 
     @Test
     void mapsAllTypesByNameAndPreservesProviderValues() throws Exception {
-        HttpTransport transport = transport(SUCCESS);
+        HttpClient transport = transport(SUCCESS);
         var result = client(transport).decideBlocking(request());
         assertEquals("fixture-model", result.model());
         assertEquals(0, ((DecisionAnswer.Predicate) result.answers().get("damaged")).probability());
@@ -122,13 +154,13 @@ class OpenAIDecisionsClientTest {
         assertEquals(new DecisionUsage(12L, 0L, 12L), result.usage());
         assertThrows(UnsupportedOperationException.class, () -> result.answers().clear());
         var captured = ArgumentCaptor.forClass(HttpRequest.class);
-        verify(transport).execute(captured.capture());
+        verify(transport).execute(captured.capture(), any());
         HttpRequest sent = captured.getValue();
-        assertEquals("POST", sent.getMethod());
-        assertEquals("https://api.openai.com/v1/decisions", sent.getUrl());
-        assertEquals("Bearer fixture-secret", sent.getHeaders().get("Authorization"));
-        assertEquals("application/json", sent.getHeaders().get("Content-Type"));
-        JsonNode body = MAPPER.readTree(sent.getBody());
+        assertEquals(HttpMethod.POST, sent.method());
+        assertEquals("https://api.openai.com/v1/decisions", sent.url());
+        assertEquals("Bearer fixture-secret", sent.headers().values("Authorization").get(0));
+        assertEquals("application/json", sent.body().contentType());
+        JsonNode body = MAPPER.readTree(body(sent));
         assertEquals("The screen is broken", body.get("input").textValue());
         assertEquals(OpenAIDecisionsClient.DEFAULT_MODEL, body.get("model").textValue());
         assertEquals("predicate", body.at("/questions/0/type").textValue());
@@ -140,7 +172,7 @@ class OpenAIDecisionsClientTest {
 
     @Test
     void sendsImagesAndCombinedInputWithModelOverride() throws Exception {
-        HttpTransport transport = transport(SUCCESS);
+        HttpClient transport = transport(SUCCESS);
         var input =
                 new DecisionInput(
                         "Inspect",
@@ -150,8 +182,8 @@ class OpenAIDecisionsClientTest {
         var request = new DecisionRequest(input, "override-model", request().questions());
         client(transport).decideBlocking(request);
         var capture = ArgumentCaptor.forClass(HttpRequest.class);
-        verify(transport).execute(capture.capture());
-        var body = MAPPER.readTree(capture.getValue().getBody());
+        verify(transport).execute(capture.capture(), any());
+        var body = MAPPER.readTree(body(capture.getValue()));
         assertEquals("override-model", body.get("model").textValue());
         assertEquals("user", body.at("/input/0/role").textValue());
         assertEquals("input_text", body.at("/input/0/content/0/type").textValue());
@@ -161,11 +193,6 @@ class OpenAIDecisionsClientTest {
         assertEquals(
                 "https://images.example/product.png",
                 body.at("/input/0/content/2/image_url").textValue());
-        assertEquals(
-                "input_image",
-                MAPPER.valueToTree(DecisionInput.image("https://example.com/a.png").toWire())
-                        .at("/0/content/0/type")
-                        .textValue());
     }
 
     @ParameterizedTest
@@ -236,6 +263,9 @@ class OpenAIDecisionsClientTest {
     static Stream<Consumer<ObjectNode>> invalidAnswers() {
         return Stream.of(
                 root -> root.remove("answers"),
+                root -> ((ArrayNode) root.get("answers")).set(1, MAPPER.nullNode()),
+                root -> ((ArrayNode) root.at("/answers/2/probabilities")).set(0, MAPPER.nullNode()),
+                root -> ((ArrayNode) root.at("/answers/0/probabilities")).set(0, MAPPER.nullNode()),
                 root -> ((ArrayNode) root.get("answers")).remove(0),
                 root -> ((ArrayNode) root.get("answers")).add(root.get("answers").get(0)),
                 root -> ((ObjectNode) root.at("/answers/1")).put("name", "unknown"),
@@ -297,10 +327,7 @@ class OpenAIDecisionsClientTest {
     }
 
     @Test
-    void rejectsTrailingJsonAndPreservesUnknownUsage() throws Exception {
-        assertThrows(
-                OpenAIDecisionsException.class,
-                () -> client(transport(SUCCESS + " {}")).decideBlocking(request()));
+    void preservesUnknownUsage() throws Exception {
         ObjectNode body = (ObjectNode) MAPPER.readTree(SUCCESS);
         body.remove("usage");
         assertNull(client(transport(body.toString())).decideBlocking(request()).usage());
@@ -313,13 +340,9 @@ class OpenAIDecisionsClientTest {
     @ParameterizedTest
     @ValueSource(ints = {400, 401, 403, 429, 500, 503})
     void exposesHttpStatusAndRetryHintWithoutRetrying(int status) {
-        HttpTransport transport = mock(HttpTransport.class);
-        when(transport.execute(any()))
-                .thenReturn(
-                        HttpResponse.builder()
-                                .statusCode(status)
-                                .body("private provider body fixture-secret")
-                                .build());
+        HttpClient transport = mock(HttpClient.class);
+        var response = response(status, "private provider body fixture-secret");
+        when(transport.execute(any(), any())).thenReturn(response);
         var error =
                 assertThrows(
                         OpenAIDecisionsException.class,
@@ -327,19 +350,25 @@ class OpenAIDecisionsClientTest {
         assertEquals(status, error.getStatusCode());
         assertEquals(status == 429 || status >= 500, error.isRetryable());
         assertFalse(error.getMessage().contains("private"));
-        verify(transport, times(1)).execute(any());
+        verify(transport, times(1)).execute(any(), any());
     }
 
-    @Test
-    void sanitizesTransportErrorsAndIsLazy() {
-        HttpTransport transport = mock(HttpTransport.class);
-        when(transport.execute(any())).thenThrow(new HttpTransportException("fixture-secret"));
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void sanitizesRetryableSdkErrorsAndIsLazy(boolean sdkRetryHint) {
+        HttpClient transport = mock(HttpClient.class);
+        when(transport.execute(any(), any()))
+                .thenThrow(
+                        sdkRetryHint
+                                ? new OpenAIRetryableException("fixture-secret")
+                                : new OpenAIIoException("fixture-secret"));
         var pending = client(transport).decide(request());
         verifyNoInteractions(transport);
         StepVerifier.create(pending)
                 .expectErrorSatisfies(
                         error -> {
                             assertInstanceOf(OpenAIDecisionsException.class, error);
+                            assertTrue(((OpenAIDecisionsException) error).isRetryable());
                             assertFalse(error.getMessage().contains("fixture-secret"));
                             assertNull(error.getCause());
                         })
@@ -349,8 +378,8 @@ class OpenAIDecisionsClientTest {
     @Test
     void cancellationInterruptsTransportExecution() throws Exception {
         CountDownLatch started = new CountDownLatch(1), interrupted = new CountDownLatch(1);
-        HttpTransport transport = mock(HttpTransport.class);
-        when(transport.execute(any()))
+        HttpClient transport = mock(HttpClient.class);
+        when(transport.execute(any(), any()))
                 .thenAnswer(
                         call -> {
                             started.countDown();
@@ -360,7 +389,7 @@ class OpenAIDecisionsClientTest {
                                 interrupted.countDown();
                                 Thread.currentThread().interrupt();
                             }
-                            throw new HttpTransportException("interrupted");
+                            throw new OpenAIIoException("interrupted");
                         });
         StepVerifier.create(client(transport).decide(request()))
                 .then(
@@ -380,8 +409,8 @@ class OpenAIDecisionsClientTest {
     @Test
     void timeoutTerminatesAndInterruptsExecution() throws Exception {
         CountDownLatch interrupted = new CountDownLatch(1);
-        HttpTransport transport = mock(HttpTransport.class);
-        when(transport.execute(any()))
+        HttpClient transport = mock(HttpClient.class);
+        when(transport.execute(any(), any()))
                 .thenAnswer(
                         call -> {
                             try {
@@ -390,12 +419,12 @@ class OpenAIDecisionsClientTest {
                                 interrupted.countDown();
                                 Thread.currentThread().interrupt();
                             }
-                            throw new HttpTransportException("interrupted");
+                            throw new OpenAIIoException("interrupted");
                         });
         var client =
                 OpenAIDecisionsClient.builder()
                         .apiKey("fixture-key")
-                        .transport(transport)
+                        .client(sdkClient(transport))
                         .timeout(Duration.ofSeconds(1))
                         .build();
         StepVerifier.create(client.decide(request()))
@@ -410,8 +439,8 @@ class OpenAIDecisionsClientTest {
 
     @Test
     void repeatedTimeoutSubscriptionsUseSeparateExceptions() {
-        HttpTransport transport = mock(HttpTransport.class);
-        when(transport.execute(any()))
+        HttpClient transport = mock(HttpClient.class);
+        when(transport.execute(any(), any()))
                 .thenAnswer(
                         call -> {
                             try {
@@ -419,12 +448,12 @@ class OpenAIDecisionsClientTest {
                             } catch (InterruptedException error) {
                                 Thread.currentThread().interrupt();
                             }
-                            throw new HttpTransportException("interrupted");
+                            throw new OpenAIIoException("interrupted");
                         });
         var pending =
                 OpenAIDecisionsClient.builder()
                         .apiKey("fixture-key")
-                        .transport(transport)
+                        .client(sdkClient(transport))
                         .timeout(Duration.ofMillis(50))
                         .build()
                         .decide(request());
@@ -437,8 +466,9 @@ class OpenAIDecisionsClientTest {
         assertNotSame(first, second);
     }
 
-    @Test
-    void usesRealHttpTransportAgainstLocalFixture() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void usesOfficialSdkAgainstLocalFixture(boolean fullEndpoint) throws Exception {
         var captured = new AtomicReference<String>();
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext(
@@ -456,23 +486,100 @@ class OpenAIDecisionsClientTest {
                     }
                 });
         server.start();
-        var transport = JdkHttpTransport.builder().build();
-        try {
-            var client =
-                    OpenAIDecisionsClient.builder()
-                            .apiKey("fixture-key")
-                            .transport(transport)
-                            .baseUrl(
-                                    "http://127.0.0.1:"
-                                            + server.getAddress().getPort()
-                                            + "/prefix/v1/")
-                            .build();
+        try (var client =
+                OpenAIDecisionsClient.builder()
+                        .apiKey("fixture-key")
+                        .baseUrl(
+                                "http://127.0.0.1:"
+                                        + server.getAddress().getPort()
+                                        + "/prefix/v1/"
+                                        + (fullEndpoint ? "decisions/" : ""))
+                        .build()) {
             assertEquals(3, client.decideBlocking(request()).answers().size());
             assertEquals(
                     "The screen is broken",
                     MAPPER.readTree(captured.get()).get("input").textValue());
         } finally {
-            transport.close();
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void sendsImageOnlyInput() throws Exception {
+        var transport = transport(SUCCESS);
+        client(transport)
+                .decideBlocking(
+                        new DecisionRequest(
+                                DecisionInput.image("data:image/png;base64,aW1hZ2U="),
+                                null,
+                                request().questions()));
+        var captured = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(transport).execute(captured.capture(), any());
+        var body = MAPPER.readTree(body(captured.getValue()));
+        assertEquals(1, body.at("/input/0/content").size());
+        assertEquals("input_image", body.at("/input/0/content/0/type").textValue());
+    }
+
+    @Test
+    void borrowsSdkClientAndPassesRequestTimeout() {
+        var transport = transport(SUCCESS);
+        var sdk = sdkClient(transport);
+        try (var client =
+                OpenAIDecisionsClient.builder()
+                        .client(sdk)
+                        .apiKey(null)
+                        .timeout(Duration.ofSeconds(7))
+                        .build()) {
+            assertEquals(3, client.decideBlocking(request()).answers().size());
+        }
+        var options = ArgumentCaptor.forClass(RequestOptions.class);
+        verify(transport).execute(any(), options.capture());
+        assertEquals(Duration.ofSeconds(7), options.getValue().getTimeout().request());
+        verify(transport, never()).close();
+        assertEquals(
+                3,
+                OpenAIDecisionsClient.builder()
+                        .client(sdk)
+                        .build()
+                        .decideBlocking(request())
+                        .answers()
+                        .size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {429, 500})
+    void defaultSdkClientDoesNotRetry(int status) throws Exception {
+        var calls = new AtomicInteger();
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/v1/decisions",
+                exchange -> {
+                    calls.incrementAndGet();
+                    exchange.getRequestBody().readAllBytes();
+                    byte[] response =
+                            "{\"error\":{\"message\":\"private fixture-secret\"}}"
+                                    .getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(status, response.length);
+                    try (var output = exchange.getResponseBody()) {
+                        output.write(response);
+                    }
+                });
+        server.start();
+        try (var client =
+                OpenAIDecisionsClient.builder()
+                        .apiKey("fixture-key")
+                        .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
+                        .build()) {
+            var error =
+                    assertThrows(
+                            OpenAIDecisionsException.class, () -> client.decideBlocking(request()));
+            assertEquals(status, error.getStatusCode());
+            assertTrue(error.isRetryable());
+            assertFalse(error.getMessage().contains("private"));
+            assertNull(error.getCause());
+            assertEquals(1, calls.get());
+        } finally {
             server.stop(0);
         }
     }

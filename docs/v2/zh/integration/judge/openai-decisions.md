@@ -4,7 +4,7 @@ description: 通过独立的 judge 扩展，对文本和图片进行类型化决
 en_link: /v2/en/integration/judge/openai-decisions
 ---
 
-OpenAI Decisions 对共享输入进行判断，返回概率、固定选项或基于量表的评分。扩展位于 `agentscope-extensions-judge` 下，与 JEV 同级，通过独立于聊天模型 API 的 `OpenAIDecisionsClient` 使用。应用可以根据结果分类请求或决定下一步动作。
+OpenAI Decisions 对共享输入进行判断，返回概率、固定选项或基于量表的评分。扩展使用 OpenAI 官方 Java SDK，位于 `agentscope-extensions-judge` 下，与 JEV 同级，通过独立于聊天模型 API 的 `OpenAIDecisionsClient` 使用。应用可以根据结果分类请求或决定下一步动作。
 
 [官方指南](https://developers.openai.com/api/docs/guides/decisions)将该 API 标记为公开测试阶段。[API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create)列出了 `gpt-6-luna`，客户端以它作为默认模型。能否访问服务取决于你的 OpenAI 账号。本文示例用于说明用法；仓库测试使用合成响应，不能证明真实服务兼容性或分类效果。
 
@@ -93,9 +93,9 @@ client.decide(imageRequest).subscribe(imageResult -> System.out.println(imageRes
 
 默认 API base 为 `https://api.openai.com/v1`。`baseUrl()` 接受带版本号的 API base（可包含网关路径前缀），或完整的 `/decisions` 地址。base URL 不允许包含用户凭据、查询参数和片段。自定义地址时应保留 API 版本路径。
 
-默认超时为 30 秒，必须为正值。阻塞 HTTP 调用运行在 Reactor 的 `boundedElastic` 调度器上。超时和取消会中断执行任务，自定义 transport 必须响应中断才能释放资源。客户端借用配置的 `HttpTransport` 或工厂共享默认值，不负责关闭；其生命周期由 transport 的拥有者管理。
+默认超时为 30 秒，必须为正值。阻塞 SDK 调用运行在 Reactor 的 `boundedElastic` 调度器上，超时也会传递给 SDK。超时和取消会向执行任务发送中断，正在进行的网络请求何时停止取决于 SDK transport。通过封装层创建的客户端需要调用 `close()` 或使用 try-with-resources 释放 SDK 连接。Spring 会在上下文关闭时关闭自动配置的客户端。
 
-HTTP 错误可通过 `OpenAIDecisionsException.getStatusCode()` 获取状态码。HTTP 429、5xx 和客户端超时会携带重试提示，`isRetryable()` 本身不会触发重试。客户端没有自动重试策略，自定义 transport 控制其内部网络重试或重定向行为。客户端生成的异常不会附带提供商原始响应体或底层 transport 的原始异常链。
+HTTP 错误可通过 `OpenAIDecisionsException.getStatusCode()` 获取状态码。HTTP 429、5xx 和客户端超时会携带重试提示，`isRetryable()` 本身不会触发重试。SDK I/O 错误及 SDK 明确标记为可重试的错误也会保留重试提示。封装层会关闭自行创建的 SDK 客户端的自动重试。`builder().client(openAIClient)` 可以借用已有的官方 SDK 客户端，其凭据、base URL、重试配置和生命周期由拥有者管理；封装层仍应用自身的模型和请求超时。客户端生成的异常不会附带提供商原始响应体或底层 SDK 的原始异常链。
 
 ## Spring Boot
 
@@ -118,6 +118,6 @@ agentscope:
     timeout: 30s
 ```
 
-starter 使用上述默认值。设置 `agentscope.openai-decisions.enabled=false` 可禁用客户端创建，用户自定义的客户端 bean 优先。可以实现 `OpenAIDecisionsClientBuilderCustomizer` 配置 transport 或覆盖属性，Spring 在绑定属性之后按顺序应用 customizer。
+starter 使用上述默认值。设置 `agentscope.openai-decisions.enabled=false` 可禁用客户端创建，用户自定义的客户端 bean 优先。可以实现 `OpenAIDecisionsClientBuilderCustomizer` 传入官方 SDK 客户端或覆盖属性，Spring 在绑定属性之后按顺序应用 customizer。
 
 完整的三问题示例和图片输入辅助方法位于 `agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/judge/OpenAIDecisionsExample.java`。
