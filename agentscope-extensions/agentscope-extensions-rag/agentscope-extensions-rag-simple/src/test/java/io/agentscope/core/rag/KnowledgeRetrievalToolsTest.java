@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -317,7 +318,7 @@ class KnowledgeRetrievalToolsTest {
         }
 
         @Override
-        public Mono<double[]> embed(ContentBlock block) {
+        public Mono<EmbeddingResponse> embed(ContentBlock block) {
             if (shouldThrowError) {
                 return Mono.error(new RuntimeException("Mock embedding error"));
             }
@@ -328,7 +329,7 @@ class KnowledgeRetrievalToolsTest {
                             // Generate deterministic embedding based on text
                             double[] embedding =
                                     embeddings.computeIfAbsent(text, k -> generateEmbedding(text));
-                            return embedding.clone();
+                            return new EmbeddingResponse(embedding.clone(), null);
                         });
             }
             return Mono.error(new UnsupportedOperationException("Unsupported content block type"));
