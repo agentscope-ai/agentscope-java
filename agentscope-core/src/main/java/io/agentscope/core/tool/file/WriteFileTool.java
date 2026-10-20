@@ -231,7 +231,8 @@ public class WriteFileTool {
      * @param filePath The target file path
      * @param content The content to be written
      * @param ranges The range of lines to be replaced as [start, end]. If null, the entire
-     *               file will be overwritten. Format: "[1,5]" or "1,5"
+     *               file will be overwritten. Format: "[1,5]" or "1,5". Existing-file ranges
+     *               must use positive, ordered line numbers; invalid ranges leave the file unchanged.
      * @return The result of the writing operation
      */
     @Tool(
@@ -325,6 +326,10 @@ public class WriteFileTool {
 
                                 int start = rangeArray[0];
                                 int end = rangeArray[1];
+                                if (start < 1 || end < start) {
+                                    return ToolResultBlock.error(
+                                            "Invalid range: expected 1 <= start <= end.");
+                                }
                                 logger.debug(
                                         "Replacing lines {}-{} in file: {}", start, end, filePath);
 
