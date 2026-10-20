@@ -92,6 +92,12 @@ public class LocalFilesystem implements AbstractFilesystem {
      */
     private final ConcurrentHashMap<String, ReentrantLock> fileLocks = new ConcurrentHashMap<>();
 
+    /** Per-runtime-root session storage cache. Each storage holds one long-lived SQLite
+     * connection on Windows, so repeated journal reads across a traversal reuse it instead of
+     * paying connection setup per read. Entries live as long as this filesystem. */
+    private final ConcurrentHashMap<String, io.agentscope.harness.agent.session.LocalSessionStorage>
+            sessionStorages = new ConcurrentHashMap<>();
+
     /**
      * Same as {@link #LocalFilesystem(Path)} with {@link Path#of(String, String...) Path.of(path)}
      * after {@link String#strip()}. Pass {@code null} for the same CWD semantics as a {@code null}
@@ -595,8 +601,19 @@ public class LocalFilesystem implements AbstractFilesystem {
 
     @Override
     public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
-        return new io.agentscope.harness.agent.session.LocalSessionStorage(
-                resolvePath(rc, ".").resolve(".agentscope-runtime"));
+        Path runtimeRoot = resolvePath(rc, ".").resolve(".agentscope-runtime");
+        return sessionStorages.computeIfAbsent(
+                runtimeRoot.toString(),
+                key -> new io.agentscope.harness.agent.session.LocalSessionStorage(runtimeRoot));
+    }
+
+    /** Releases the cached session storages' connections, if any, so the journal database
+     * files are no longer held open on Windows. */
+    public void closeSessionStorages() {
+        sessionStorages
+                .values()
+                .forEach(io.agentscope.harness.agent.session.LocalSessionStorage::close);
+        sessionStorages.clear();
     }
 
     protected Path resolvePath(RuntimeContext rc, String key) {

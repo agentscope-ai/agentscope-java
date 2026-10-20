@@ -29,14 +29,48 @@ import java.util.List;
 import org.sqlite.SQLiteConfig;
 
 /** Windows local journal storage, using atomic SQL writes and synchronous rollback journals. */
-final class SqliteSessionStorage implements AtomicSessionStorage {
+final class SqliteSessionStorage implements AtomicSessionStorage, AutoCloseable {
     private final Path database;
+    private Connection connection;
 
     SqliteSessionStorage(Path root) {
         this.database = root.resolve("journal.sqlite3");
     }
 
-    private Connection connect() throws SQLException, IOException {
+    /** Releases the long-lived connection so the database file is no longer held open. */
+    @Override
+    public synchronized void close() {
+        if (connection != null) {
+            try {
+                connection.close();
+            } catch (SQLException cleanup) {
+                // The driver releases the handle on failure as well; nothing to surface here.
+            }
+            connection = null;
+        }
+    }
+
+    /**
+     * One long-lived connection per instance, rebuilt after a failed operation. Every operation
+     * holds the instance monitor, so in-process writers serialize here exactly as SQLite file
+     * locks serialize them across processes; statement-level autocommit keeps each write atomic.
+     * Connection setup (file creation, schema) pays once per instance instead of once per call,
+     * which dominates iteration-heavy workloads on Windows.
+     */
+    private synchronized Connection connection() throws SQLException, IOException {
+        if (connection != null) {
+            try {
+                if (!connection.isClosed()) return connection;
+            } catch (SQLException closed) {
+                // Fall through and rebuild.
+            }
+            connection = null;
+        }
+        connection = open();
+        return connection;
+    }
+
+    private Connection open() throws SQLException, IOException {
         for (String suffix : List.of("", "-journal", "-wal", "-shm")) {
             if (Files.isSymbolicLink(database.resolveSibling(database.getFileName() + suffix)))
                 throw new SessionLogException("Journal symlink paths are not supported");
@@ -53,19 +87,19 @@ final class SqliteSessionStorage implements AtomicSessionStorage {
         config.setBusyTimeout(10_000);
         config.setJournalMode(SQLiteConfig.JournalMode.DELETE);
         config.setSynchronous(SQLiteConfig.SynchronousMode.FULL);
-        Connection connection =
+        Connection opened =
                 DriverManager.getConnection("jdbc:sqlite:" + database, config.toProperties());
         try {
-            try (var statement = connection.createStatement()) {
+            try (var statement = opened.createStatement()) {
                 statement.execute("PRAGMA synchronous=EXTRA");
                 statement.executeUpdate(
                         "CREATE TABLE IF NOT EXISTS session_objects (path TEXT PRIMARY KEY, version"
                                 + " INTEGER NOT NULL CHECK(version > 0), payload BLOB NOT NULL)");
             }
-            return connection;
+            return opened;
         } catch (SQLException error) {
             try {
-                connection.close();
+                opened.close();
             } catch (SQLException cleanup) {
                 error.addSuppressed(cleanup);
             }
@@ -73,44 +107,62 @@ final class SqliteSessionStorage implements AtomicSessionStorage {
         }
     }
 
+    private SessionLogException invalidate(Exception error, String message) {
+        if (connection != null) {
+            try {
+                connection.close();
+            } catch (SQLException cleanup) {
+                error.addSuppressed(cleanup);
+            }
+            connection = null;
+        }
+        return new SessionLogException(message + ": " + database, error);
+    }
+
     @Override
-    public Value read(String path) {
+    public synchronized Value read(String path) {
         if (!Files.exists(database)) return null;
-        try (var connection = connect();
-                var statement =
-                        connection.prepareStatement(
-                                "SELECT version, payload FROM session_objects WHERE path = ?")) {
-            statement.setString(1, path);
-            try (var result = statement.executeQuery()) {
-                return result.next() ? new Value(result.getLong(1), result.getBytes(2)) : null;
+        try {
+            var statement =
+                    connection()
+                            .prepareStatement(
+                                    "SELECT version, payload FROM session_objects WHERE path = ?");
+            try (statement) {
+                statement.setString(1, path);
+                try (var result = statement.executeQuery()) {
+                    return result.next() ? new Value(result.getLong(1), result.getBytes(2)) : null;
+                }
             }
         } catch (SQLException | IOException error) {
-            throw new SessionLogException("Journal read failed: " + database, error);
+            throw invalidate(error, "Journal read failed");
         }
     }
 
     @Override
-    public List<String> listPaths(String prefix) {
+    public synchronized List<String> listPaths(String prefix) {
         if (!Files.exists(database)) return List.of();
-        try (var connection = connect();
-                var statement =
-                        connection.prepareStatement(
-                                "SELECT path FROM session_objects WHERE substr(path, 1, length(?))"
-                                        + " = ? ORDER BY path")) {
-            statement.setString(1, prefix);
-            statement.setString(2, prefix);
-            try (var result = statement.executeQuery()) {
-                var paths = new ArrayList<String>();
-                while (result.next()) paths.add(result.getString(1));
-                return List.copyOf(paths);
+        try {
+            var statement =
+                    connection()
+                            .prepareStatement(
+                                    "SELECT path FROM session_objects WHERE substr(path, 1,"
+                                            + " length(?)) = ? ORDER BY path");
+            try (statement) {
+                statement.setString(1, prefix);
+                statement.setString(2, prefix);
+                try (var result = statement.executeQuery()) {
+                    var paths = new ArrayList<String>();
+                    while (result.next()) paths.add(result.getString(1));
+                    return List.copyOf(paths);
+                }
             }
         } catch (SQLException | IOException error) {
-            throw new SessionLogException("Journal discovery failed: " + database, error);
+            throw invalidate(error, "Journal discovery failed");
         }
     }
 
     @Override
-    public boolean compareAndSet(String path, long expected, byte[] bytes) {
+    public synchronized boolean compareAndSet(String path, long expected, byte[] bytes) {
         if (expected < 0 || expected == Long.MAX_VALUE)
             throw new IllegalArgumentException("Invalid journal object version");
         // One SQL statement is the entire transaction: readers never see a partial write, and
@@ -121,38 +173,43 @@ final class SqliteSessionStorage implements AtomicSessionStorage {
                                 + " ON CONFLICT(path) DO NOTHING"
                         : "UPDATE session_objects SET version = version + 1, payload = ?"
                                 + " WHERE path = ? AND version = ?";
-        try (var connection = connect();
-                var statement = connection.prepareStatement(sql)) {
-            if (expected == 0) {
-                statement.setString(1, path);
-                statement.setBytes(2, bytes);
-            } else {
-                statement.setBytes(1, bytes);
-                statement.setString(2, path);
-                statement.setLong(3, expected);
+        try {
+            var statement = connection().prepareStatement(sql);
+            try (statement) {
+                if (expected == 0) {
+                    statement.setString(1, path);
+                    statement.setBytes(2, bytes);
+                } else {
+                    statement.setBytes(1, bytes);
+                    statement.setString(2, path);
+                    statement.setLong(3, expected);
+                }
+                return statement.executeUpdate() == 1;
             }
-            return statement.executeUpdate() == 1;
         } catch (SQLException | IOException error) {
-            throw new SessionLogException("Journal CAS failed: " + database, error);
+            throw invalidate(error, "Journal CAS failed");
         }
     }
 
     @Override
-    public void deletePaths(String prefix) {
+    public synchronized void deletePaths(String prefix) {
         if (!Files.exists(database)) return;
         // One statement covers the prefix object itself and everything below it; SQLite
         // serializes this against concurrent readers and writers like any other write.
-        try (var connection = connect();
-                var statement =
-                        connection.prepareStatement(
-                                "DELETE FROM session_objects WHERE path = ?"
-                                        + " OR substr(path, 1, length(?) + 1) = ? || '/'")) {
-            statement.setString(1, prefix);
-            statement.setString(2, prefix);
-            statement.setString(3, prefix);
-            statement.executeUpdate();
+        try {
+            var statement =
+                    connection()
+                            .prepareStatement(
+                                    "DELETE FROM session_objects WHERE path = ?"
+                                            + " OR substr(path, 1, length(?) + 1) = ? || '/'");
+            try (statement) {
+                statement.setString(1, prefix);
+                statement.setString(2, prefix);
+                statement.setString(3, prefix);
+                statement.executeUpdate();
+            }
         } catch (SQLException | IOException error) {
-            throw new SessionLogException("Journal delete failed: " + database, error);
+            throw invalidate(error, "Journal delete failed");
         }
     }
 }

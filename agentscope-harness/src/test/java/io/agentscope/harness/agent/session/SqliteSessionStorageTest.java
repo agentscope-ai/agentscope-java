@@ -30,11 +30,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -44,10 +46,40 @@ import org.junit.jupiter.api.io.TempDir;
 class SqliteSessionStorageTest {
     @TempDir Path directory;
 
+    private final List<AutoCloseable> opened =
+            Collections.synchronizedList(new ArrayList<AutoCloseable>());
+
+    private SqliteSessionStorage sqlite(Path root) {
+        var storage = new SqliteSessionStorage(root);
+        opened.add(storage);
+        return storage;
+    }
+
+    private LocalSessionStorage local(Path root) {
+        var storage = new LocalSessionStorage(root);
+        opened.add(storage);
+        return storage;
+    }
+
+    @AfterEach
+    void releaseStorages() {
+        // Long-lived connections hold the database file open on Windows; release them before
+        // JUnit removes the temp directory.
+        synchronized (opened) {
+            for (AutoCloseable storage : opened)
+                try {
+                    storage.close();
+                } catch (Exception ignored) {
+                    // Best effort: the driver reclaims native handles regardless.
+                }
+            opened.clear();
+        }
+    }
+
     @Test
     void readingAnUnwrittenNamespaceDoesNotCreateStorage() {
         Path root = directory.resolve("runtime");
-        var storage = new SqliteSessionStorage(root);
+        var storage = sqlite(root);
         assertNull(storage.read("agents/a/session.json"));
         assertTrue(storage.listPaths("agents/").isEmpty());
         assertFalse(Files.exists(root));
@@ -55,8 +87,8 @@ class SqliteSessionStorageTest {
 
     @Test
     void independentInstancesPreserveVersionsAndRejectStaleWriters() {
-        var first = new SqliteSessionStorage(directory);
-        var second = new SqliteSessionStorage(directory);
+        var first = sqlite(directory);
+        var second = sqlite(directory);
         String key = "agents/a/sessions/session.json";
         assertFalse(first.compareAndSet(key, 1, new byte[] {0}));
         assertNull(second.read(key));
@@ -64,14 +96,14 @@ class SqliteSessionStorageTest {
         assertFalse(second.compareAndSet(key, 0, new byte[] {9}));
         assertTrue(second.compareAndSet(key, 1, new byte[] {3, 4}));
         assertFalse(first.compareAndSet(key, 1, new byte[] {9}));
-        var restored = new SqliteSessionStorage(directory).read(key);
+        var restored = sqlite(directory).read(key);
         assertEquals(2, restored.version());
         assertArrayEquals(new byte[] {3, 4}, restored.bytes());
     }
 
     @Test
     void discoveryTreatsPrefixesLiterallyAndReturnsSortedKeys() {
-        var storage = new SqliteSessionStorage(directory);
+        var storage = sqlite(directory);
         for (String path : List.of("a%/z", "ab/other", "a%/b"))
             assertTrue(storage.compareAndSet(path, 0, new byte[] {1}));
         assertEquals(List.of("a%/b", "a%/z"), storage.listPaths("a%/"));
@@ -92,7 +124,7 @@ class SqliteSessionStorageTest {
                             pool.submit(
                                     () -> {
                                         start.await();
-                                        return new SqliteSessionStorage(directory)
+                                        return sqlite(directory)
                                                 .compareAndSet(
                                                         "session", expected, new byte[] {value});
                                     }));
@@ -101,8 +133,7 @@ class SqliteSessionStorageTest {
                 int successes = 0;
                 for (var attempt : attempts) if (attempt.get(10, TimeUnit.SECONDS)) successes++;
                 assertEquals(1, successes);
-                assertEquals(
-                        version + 1, new SqliteSessionStorage(directory).read("session").version());
+                assertEquals(version + 1, sqlite(directory).read("session").version());
             }
         } finally {
             pool.shutdownNow();
@@ -113,12 +144,11 @@ class SqliteSessionStorageTest {
     @Test
     void journalEventsAndWriterOwnershipSurviveNewConnections() {
         var key = new SessionKey("user", "agent", "session");
-        var first = new JournalSessionLog(new SqliteSessionStorage(directory), key.storagePath());
+        var first = new JournalSessionLog(sqlite(directory), key.storagePath());
         var writer = first.acquire("owner", Duration.ofMinutes(2));
         var event = new SessionEvent(1, "event", 1, 1, "run/start", "run", "turn", true, "{}");
         first.commit(writer, "batch", 0, List.of(event));
-        var restored =
-                new JournalSessionLog(new SqliteSessionStorage(directory), key.storagePath());
+        var restored = new JournalSessionLog(sqlite(directory), key.storagePath());
         assertEquals(List.of(event), restored.readAfter(0, 10));
         assertThrows(
                 SessionLogException.class, () -> restored.acquire("other", Duration.ofMinutes(2)));
@@ -130,7 +160,7 @@ class SqliteSessionStorageTest {
     @Test
     void corruptDatabaseReportsFailureInsteadOfAFalseVersionConflict() throws Exception {
         Files.writeString(directory.resolve("journal.sqlite3"), "not a database");
-        var storage = new SqliteSessionStorage(directory);
+        var storage = sqlite(directory);
         assertThrows(SessionLogException.class, () -> storage.read("session"));
         assertThrows(
                 SessionLogException.class,
@@ -141,15 +171,13 @@ class SqliteSessionStorageTest {
     @Test
     @EnabledOnOs(OS.WINDOWS)
     void localStorageOnWindowsUsesTheTransactionalBackendAndRetainsPathGuards() {
-        var storage = new LocalSessionStorage(directory);
+        var storage = local(directory);
         assertTrue(storage.compareAndSet("agents/a/session.json", 0, new byte[] {1}));
         assertTrue(Files.exists(directory.resolve("journal.sqlite3")));
         assertEquals(List.of("agents/a/session.json"), storage.listPaths("agents/"));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> storage.compareAndSet("../outside", 0, new byte[] {1}));
-        assertArrayEquals(
-                new byte[] {1},
-                new LocalSessionStorage(directory).read("agents/a/session.json").bytes());
+        assertArrayEquals(new byte[] {1}, local(directory).read("agents/a/session.json").bytes());
     }
 }
