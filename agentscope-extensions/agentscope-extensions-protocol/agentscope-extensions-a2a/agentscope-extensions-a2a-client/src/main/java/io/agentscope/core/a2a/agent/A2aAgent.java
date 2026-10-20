@@ -24,6 +24,14 @@ import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEndEvent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.InMemoryMemory;
@@ -36,6 +44,7 @@ import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import org.a2aproject.sdk.client.Client;
 import org.a2aproject.sdk.client.ClientBuilder;
@@ -48,6 +57,9 @@ import org.a2aproject.sdk.spec.CancelTaskParams;
 import org.a2aproject.sdk.spec.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 
 /**
@@ -72,6 +84,9 @@ public class A2aAgent extends AgentBase {
     private static final Logger log = LoggerFactory.getLogger(A2aAgent.class);
 
     private static final String INTERRUPT_HINT_PATTERN = "Task %s interrupt successfully.";
+
+    /** Reactor context key of the {@link ReplyEvents} of a call. */
+    private static final String EVENT_EMITTER_KEY = A2aAgent.class.getName() + ".replyEvents";
 
     private final AgentCardResolver agentCardResolver;
 
@@ -107,13 +122,111 @@ public class A2aAgent extends AgentBase {
         this.clientEventHandlerRouter = new ClientEventHandlerRouter();
     }
 
+    /**
+     * Calls the remote agent and streams the events of the call: {@link AgentStartEvent}, the
+     * text and thinking the remote agent streams as {@link TextBlockDeltaEvent}s and {@link
+     * ThinkingBlockDeltaEvent}s, {@link AgentResultEvent} with the message {@code call()} returns,
+     * and {@link AgentEndEvent}. Tool calls and tool results are only in the result message. A
+     * failed call ends the stream with its error.
+     *
+     * @param msgs the input messages
+     * @return the events of the call
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
+        return streamEvents(msgs, null);
+    }
+
+    /**
+     * Calls the remote agent and streams the events of the call, see {@link
+     * #streamEvents(List)}.
+     *
+     * @param msg the input message
+     * @return the events of the call
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg) {
+        return streamEvents(List.of(msg), null);
+    }
+
+    /**
+     * Calls the remote agent and streams the events of the call, see {@link
+     * #streamEvents(List)}.
+     *
+     * @param msgs the input messages
+     * @param context the context of the call, or {@code null}
+     * @return the events of the call
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
+        return buildAgentStream(msgs, context, this::doCall);
+    }
+
+    /** {@code call()} returns the result of the same event stream, so that both agree. */
+    @Override
+    protected Mono<Msg> callInternal(
+            List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
+        return buildAgentStream(msgs, context, doCallFn)
+                .ofType(AgentResultEvent.class)
+                .map(AgentResultEvent::getResult)
+                .takeLast(1)
+                .next();
+    }
+
+    private Flux<AgentEvent> buildAgentStream(
+            List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        return Flux.create(
+                sink -> {
+                    sink.next(
+                            new AgentStartEvent(
+                                    null == context ? null : context.getSessionId(),
+                                    replyId,
+                                    getName()));
+                    Mono<Msg> lifecycle = runLifecycle(msgs, doCallFn);
+                    if (null != context) {
+                        lifecycle =
+                                lifecycle.contextWrite(c -> c.put(RUNTIME_CONTEXT_KEY, context));
+                    }
+                    Disposable disposable =
+                            lifecycle
+                                    .contextWrite(
+                                            c ->
+                                                    c.put(
+                                                            EVENT_EMITTER_KEY,
+                                                            new ReplyEvents(replyId, sink::next)))
+                                    .doFinally(
+                                            signal -> {
+                                                sink.next(new AgentEndEvent(replyId));
+                                                sink.complete();
+                                            })
+                                    .contextWrite(sink.contextView())
+                                    .subscribe(
+                                            result -> sink.next(new AgentResultEvent(result)),
+                                            sink::error);
+                    sink.onCancel(disposable);
+                },
+                FluxSink.OverflowStrategy.BUFFER);
+    }
+
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
         if (msgs != null && !msgs.isEmpty()) {
             msgs.forEach(memory::addMessage);
         }
         // The client is closed however the call ends, also when it is cancelled.
-        return Mono.using(this::startCall, this::execute, this::endCall)
+        return Mono.deferContextual(
+                        view ->
+                                Mono.using(
+                                        this::startCall,
+                                        call -> {
+                                            ReplyEvents events =
+                                                    view.getOrDefault(EVENT_EMITTER_KEY, null);
+                                            if (null != events) {
+                                                call.eventContext()
+                                                        .setEventEmitter(
+                                                                events.replyId(), events.emitter());
+                                            }
+                                            return execute(call);
+                                        },
+                                        this::endCall))
                 .doOnNext(this.memory::addMessage);
     }
 
@@ -264,6 +377,9 @@ public class A2aAgent extends AgentBase {
                             });
                 });
     }
+
+    /** Where the events of a reply go. */
+    private record ReplyEvents(String replyId, AgentEventEmitter emitter) {}
 
     /** The client and the event context of one call. */
     private record A2aCall(String requestId, Client client, ClientEventContext eventContext) {}
