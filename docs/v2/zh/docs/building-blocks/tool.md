@@ -632,6 +632,62 @@ Meta tool 的输入表示所有 group 的**最终状态**而非增量。任何�
 </Warning>
 
 
+## 按需搜索工具
+
+工具目录较大时，可以启用 `ToolSearchMiddleware`。它会注册只读工具
+`tool_search(query, limit)`，`limit` 默认值为 5。普通模型最初只看到搜索工具和配置为
+始终可见的工具。搜索后，命中的工具会在后续模型调用中可用，搜索本身不会执行它们。
+
+```java
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.search.ToolSearchMiddleware;
+
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new OrderTools());
+ToolSearchMiddleware search = new ToolSearchMiddleware(toolkit);
+
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .middleware(search)
+    .build();
+```
+
+默认的 `KeywordToolSearchStrategy` 不引入额外依赖，按关键词匹配工具名称和描述，
+名称匹配的排序权重更高。可以实现 `ToolSearchStrategy.search(ToolSearchRequest)`，
+接入语义检索或远程索引，并通过 `ToolSearchResult` 按相关性返回可用工具名称。
+结果在写入会话状态前会去重、限制数量；不属于候选集合的名称会被拒绝。
+候选集合遵守当前激活的工具组和请求级工具覆盖规则，未激活的组仍需通过现有工具组
+管理功能启用。
+
+需要保留控制工具，或强制使用普通函数调用时，可以使用完整构造方法：
+
+```java
+import io.agentscope.core.tool.search.KeywordToolSearchStrategy;
+import java.util.Set;
+
+new ToolSearchMiddleware(toolkit, new KeywordToolSearchStrategy(),
+    Set.of("reset_equipped_tools"), false);
+```
+
+最后一个参数为 `true` 时启用原生加载（默认值）。模型通过 `getToolSearchMode()`
+选择加载协议；自定义模型默认为 `FUNCTION`。`OpenAIResponsesChatModel` 使用原生
+client-executed 搜索，通过 `tool_search_output` 重放命中的工具定义；
+`AnthropicChatModel` 发送带有延迟加载标记的候选工具目录，并返回 `tool_reference`。
+这两种方式需要 provider 和模型支持对应的原生协议。不支持时，将参数设为 `false`，
+改用普通函数调用。不要将此 middleware 与 OpenAI hosted `tool_search` server tool 同时配置。
+
+发现结果保存在会话的 `ToolContextState` 中，支持通过状态存储恢复。每次请求都会按
+当前候选目录重新检查工具；搜索不会激活工具组或改变执行权限。显式指定调用的工具和
+结构化输出控制工具会保持可用。调用期间不会修改共享 Toolkit。原生加载保持初始工具
+声明稳定，通过会话历史保留已发现的工具。如果历史压缩删除了搜索结果，或模型切换了
+加载协议，则根据持久化的发现记录立即暴露对应定义，保证工具仍然可用。普通函数调用
+则在 `tools` 中累积已发现的定义。
+
+无需凭证即可运行的示例：
+[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java)。
+
 ## 延伸阅读
 
 

@@ -80,6 +80,8 @@ final class ResponsesResponseParser {
                 if (toolUse != null) {
                     toolBlocks.add(toolUse);
                 }
+            } else if (ResponsesToolSearchHelper.isClientSearch(item)) {
+                toolBlocks.add(ResponsesToolSearchHelper.decode(item));
             } else if (ResponsesServerToolHelper.isSupportedServerToolItem(item)) {
                 toolBlocks.addAll(
                         ResponsesServerToolHelper.decodeBlocks(

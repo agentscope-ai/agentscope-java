@@ -17,6 +17,7 @@ package io.agentscope.core.state;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.io.IOException;
@@ -43,17 +44,24 @@ import reactor.core.scheduler.Schedulers;
  * evicted on access. All filesystem interaction runs on {@link Schedulers#boundedElastic()} so
  * Reactor's non-blocking schedulers are never blocked.
  *
- * <p>Only configuration fields ({@code maxCacheFiles}, {@code maxCacheBytes},
- * {@code activatedGroups}) participate in JSON serialization. The in-memory LRU cache itself is
- * runtime state and is reconstructed empty on deserialization.
+ * <p>Configuration, activated groups, spawn metadata, and discovered tool names participate in
+ * JSON serialization. The in-memory LRU cache itself is runtime state and is reconstructed empty
+ * on deserialization.
  */
-@JsonPropertyOrder({"max_cache_files", "max_cache_bytes", "activated_groups", "spawn_registry"})
+@JsonPropertyOrder({
+    "max_cache_files",
+    "max_cache_bytes",
+    "activated_groups",
+    "spawn_registry",
+    "discovered_tools"
+})
 public final class ToolContextState {
 
     private final int maxCacheFiles;
     private final double maxCacheBytes;
     private final List<ReadCacheEntry> readFileCache = new ArrayList<>();
     private final List<String> activatedGroups;
+    private final List<String> discoveredTools = new ArrayList<>();
     private final Map<String, SpawnEntry> spawnRegistry;
 
     private ToolContextState(Builder builder) {
@@ -181,6 +189,28 @@ public final class ToolContextState {
                 if (group != null && !activatedGroups.contains(group)) {
                     activatedGroups.add(group);
                 }
+            }
+        }
+    }
+
+    /** Tools discovered in this session; names are revalidated against each request's catalog. */
+    @JsonProperty("discovered_tools")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public synchronized List<String> getDiscoveredTools() {
+        return List.copyOf(discoveredTools);
+    }
+
+    @JsonProperty("discovered_tools")
+    public synchronized void setDiscoveredTools(List<String> tools) {
+        discoveredTools.clear();
+        addDiscoveredTools(tools);
+    }
+
+    /** Atomically accumulate discoveries from concurrent searches. */
+    public synchronized void addDiscoveredTools(List<String> tools) {
+        if (tools != null) {
+            for (String tool : tools) {
+                if (tool != null && !discoveredTools.contains(tool)) discoveredTools.add(tool);
             }
         }
     }

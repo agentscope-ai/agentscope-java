@@ -204,6 +204,12 @@ final class ResponsesStreamingAssembler {
 
         private List<ChatResponse> handleOutputItemDone(ResponseOutputItemDoneEvent event) {
             ResponseOutputItem item = event.item();
+            if (ResponsesToolSearchHelper.isClientSearch(item)) {
+                return List.of(
+                        ChatResponse.builder()
+                                .content(List.of(ResponsesToolSearchHelper.decode(item)))
+                                .build());
+            }
             String companionCallId = toolSearchPairing.companionCallId(item);
             return ResponsesServerToolHelper.decodeBlocks(item, companionCallId).stream()
                     .map(block -> ChatResponse.builder().content(List.of(block)).build())
