@@ -324,7 +324,10 @@ public final class JournalSessionLog implements SessionLog {
             var paths = storage.listPaths(path("commits") + "/");
             if (paths.isEmpty()) return Map.of();
             return storage.readAll(paths);
-        } catch (UnsupportedOperationException unsupported) {
+        } catch (UnsupportedOperationException | SessionLogException ignored) {
+            // The listing also surfaces rows a concurrent writer has not yet referenced
+            // from head (possibly half-written on file backends); a bulk read that trips
+            // over one must degrade rather than fail the scan.
             return null;
         }
     }

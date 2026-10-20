@@ -46,6 +46,20 @@ A2aAgent remote = A2aAgent.builder()
 Msg result = remote.call(new UserMessage("Translate to English: 你好")).block();
 ```
 
+### 流式获取回复
+
+`streamEvents` 按事件流式返回一次调用：远端流式返回的文本和思考分别是 `TextBlockDeltaEvent`、`ThinkingBlockDeltaEvent`，最后的 `AgentResultEvent` 带着和 `call()` 相同的结果消息。工具调用和工具结果只在结果消息里。
+
+```java
+remote.streamEvents(new UserMessage("Translate to English: 你好"))
+    .doOnNext(event -> {
+        if (event instanceof TextBlockDeltaEvent delta) {
+            System.out.print(delta.getDelta());
+        }
+    })
+    .blockLast();
+```
+
 ### 用 well-known 自动获取 AgentCard
 
 ```java

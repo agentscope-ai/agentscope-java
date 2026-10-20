@@ -442,6 +442,25 @@ Background task state is written by default to `workspace/agents/<parentAgentId>
 - Task execution **pins to the creating node**, but any node can read the result and push it back to the parent;
 - Cancel from any node via `task_cancel` — the executing node polls the cancel flag and aborts.
 
+
+Local background tasks are not resumed after their executing process exits. The orphan sweeper
+marks a non-terminal local task `FAILED` after its heartbeat expires (10 minutes by default).
+Remote Agent Protocol tasks retain their own polling-based liveness behavior.
+
+With `RemoteFilesystem`, task writes and reads register minimal user/session routing metadata in
+a separate `BaseStore` namespace (`harness/task-scopes/...`). The host-side sweeper uses this
+persistent registry to discover `SESSION` and `USER` scopes after restart and writes failures back
+to the original scope. Agent tools still read only their caller's scope; the registry contains no
+task bodies and is not exposed as workspace files. Registrations use independent keys and paginated
+reads. Retained scopes are scanned even after prolonged downtime, so store retention should account
+for this metadata alongside task records.
+
+Registration failures are logged and retried on later task access; task persistence remains best
+effort. Records created before this registry existed become discoverable when their original
+scope is read or written again; there is no automatic enumeration of previously unknown scopes.
+On CAS-capable stores, task updates recheck liveness after conflicts, protecting a concurrent
+heartbeat from an outdated orphan decision. This fails lost local work; it does not replay it.
+
 ## Delegating during Plan Mode
 
 When the parent is in Plan Mode, spawned subagents **automatically inherit the read-only restriction**. The child enters Plan Mode at spawn time, so it cannot perform write operations — the safety boundary is maintained across the delegation chain.
