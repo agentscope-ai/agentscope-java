@@ -82,13 +82,13 @@ class OpenAIDecisionsAutoConfigurationTest {
                                     + server.getAddress().getPort()
                                     + "/v1",
                             "agentscope.openai-decisions.model=test-model",
-                            "agentscope.openai-decisions.timeout=2s")
+                            "agentscope.openai-decisions.timeout=15s")
                     .run(
                             context -> {
                                 assertThat(context).hasSingleBean(OpenAIDecisionsClient.class);
                                 var properties = context.getBean(OpenAIDecisionsProperties.class);
                                 assertThat(properties.getTimeout())
-                                        .isEqualTo(Duration.ofSeconds(2));
+                                        .isEqualTo(Duration.ofSeconds(15));
                                 assertThat(properties.isEnabled()).isTrue();
                                 context.getBean(OpenAIDecisionsClient.class)
                                         .decideBlocking(request());
