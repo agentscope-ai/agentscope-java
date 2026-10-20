@@ -103,6 +103,11 @@ func (a *sessionSinkAdapter) HandleDisconnect(tenant, namespace, agentID, bindin
 	a.sink.ApplyInstanceDisconnect(context.Background(), tenant, namespace, agentID, bindingID, instanceKey, generation)
 }
 
+func (a *sessionSinkAdapter) HandleHeartbeat(identity asdp.ReportIdentity) {
+	a.sink.ApplyInstanceHeartbeat(context.Background(), identity.Tenant, identity.Namespace, identity.AgentID,
+		identity.BindingID, identity.InstanceKey, identity.InstanceGeneration)
+}
+
 func (a *sessionSinkAdapter) HandleSessionReport(identity asdp.ReportIdentity, report *asdp.SessionReport) {
 	if report == nil {
 		return

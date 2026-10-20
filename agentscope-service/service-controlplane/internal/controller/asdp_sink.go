@@ -542,6 +542,40 @@ func (s *SessionEventSink) ApplyInstanceDisconnect(ctx context.Context, tenant, 
 	}
 }
 
+// ApplyInstanceHeartbeat refreshes last_seen_at/health for a connected
+// instance on receipt of an ASDP Heartbeat upstream message. Heartbeat carries
+// no capabilities, so the existing capabilities are left untouched (Coalesce
+// in HeartbeatAgentInstance). Without this, an instance with no active
+// sessions has nothing else to report between Connect and its first real
+// report, and RuntimeControlSweeper marks it unhealthy purely from staleness
+// even though the ASDP stream is alive and heartbeating normally.
+func (s *SessionEventSink) ApplyInstanceHeartbeat(ctx context.Context, tenant, namespace, agentIDRaw, bindingIDRaw, instanceKey string, generation int64) {
+	if s == nil || s.Store == nil {
+		return
+	}
+	if tenant == "" {
+		tenant = "default"
+	}
+	agentID, err := uuid.Parse(agentIDRaw)
+	if err != nil {
+		return
+	}
+	bindingID, err := uuid.Parse(bindingIDRaw)
+	if err != nil {
+		return
+	}
+	instances, err := s.Store.RuntimeRegistry().ListAgentInstances(ctx, tenant, namespace, agentID)
+	if err != nil {
+		return
+	}
+	for _, instance := range instances {
+		if instance.BindingID == bindingID && instance.InstanceKey == instanceKey && instance.Generation == generation {
+			_, _ = s.Store.RuntimeRegistry().HeartbeatAgentInstance(ctx, instance.ID, generation, instance.ActiveSessions, nil)
+			return
+		}
+	}
+}
+
 // ApplySessionReport upserts each reported session into the Store.
 func (s *SessionEventSink) ApplySessionReport(ctx context.Context, identity RuntimeReportIdentity, sessions []ObservedSession) {
 	logger := log.FromContext(ctx).WithName("asdp-session-sink")
