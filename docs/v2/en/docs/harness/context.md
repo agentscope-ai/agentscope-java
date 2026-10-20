@@ -220,6 +220,8 @@ agentBuilder.compaction(CompactionConfig.builder()
 
 The standard summary records session intent, decisions, artifacts, and next steps. The working conversation becomes the summary plus recent messages; exact tail boundaries can expand to keep tool exchanges intact. Summarization and truncation are lossy. Keep critical requirements in explicit state, store important artifacts, and retrieve original evidence when needed.
 
+Summarization never deletes a message that carries raw media (image, audio, video, or data blocks): the safe cutoff must fall before such messages, and when it cannot, that compaction run performs no summarization rather than sacrificing media to satisfy the budget. In the summarization input itself, media appears as stable placeholders rather than raw data.
+
 <span id="coordination-with-memory" />
 
 With `flushBeforeCompact(true)`, the compactor also attempts to extract useful facts into long-term memory before summarizing. This is best-effort extraction, not a guarantee that every detail survives. It is separate from native conversation history and from the current task projection. See [Memory](/v2/en/docs/harness/memory) for memory extraction and maintenance.
