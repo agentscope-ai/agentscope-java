@@ -506,6 +506,10 @@ public class CompactionConfig {
             }
 
             public TruncateArgsConfig build() {
+                if (maxArgLength < 20) {
+                    throw new IllegalArgumentException(
+                            "maxArgLength must be at least 20 characters");
+                }
                 return new TruncateArgsConfig(this);
             }
         }
