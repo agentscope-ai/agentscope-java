@@ -46,6 +46,20 @@ A2aAgent remote = A2aAgent.builder()
 Msg result = remote.call(new UserMessage("Translate to English: 你好")).block();
 ```
 
+### Stream the reply
+
+`streamEvents` streams the events of a call: the text and thinking the remote agent streams arrive as `TextBlockDeltaEvent` and `ThinkingBlockDeltaEvent`, then `AgentResultEvent` carries the same message `call()` returns. Tool calls and tool results are only in the result message.
+
+```java
+remote.streamEvents(new UserMessage("Translate to English: 你好"))
+    .doOnNext(event -> {
+        if (event instanceof TextBlockDeltaEvent delta) {
+            System.out.print(delta.getDelta());
+        }
+    })
+    .blockLast();
+```
+
 ### Auto-discover via well-known
 
 ```java
