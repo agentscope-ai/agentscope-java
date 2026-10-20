@@ -107,7 +107,12 @@ class ToolExecutor {
         this.interceptors = sortInterceptors(config);
     }
 
-    /** Sorts interceptors once at construction ({@link #INTERCEPTOR_ORDER}); empty stays empty. */
+    /**
+     * Sorts interceptors once at construction ({@link #INTERCEPTOR_ORDER}); empty stays empty.
+     *
+     * @param config the toolkit config carrying the registered interceptors, may be {@code null}
+     * @return the sorted, immutable interceptor list (outermost first)
+     */
     private static List<ToolCallInterceptor> sortInterceptors(ToolkitConfig config) {
         List<ToolCallInterceptor> registered =
                 config != null ? config.getInterceptors() : List.of();
@@ -458,6 +463,10 @@ class ToolExecutor {
      * Uniform result error mapping for tool executions: {@link ToolSuspendException} becomes a
      * suspended result, observation/session-log errors propagate unchanged, and other errors and
      * empty results become model-visible {@code ToolResultBlock.error}.
+     *
+     * @param execution the execution pipeline whose errors and empty signals are mapped
+     * @param toolCall  the tool call, for suspended-result identity and logging
+     * @return the pipeline with suspend/error/empty cases mapped to result blocks
      */
     private Mono<ToolResultBlock> applyResultErrorMapping(
             Mono<ToolResultBlock> execution, ToolUseBlock toolCall) {

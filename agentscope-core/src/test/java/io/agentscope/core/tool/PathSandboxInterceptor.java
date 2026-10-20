@@ -34,6 +34,8 @@ import reactor.core.publisher.Mono;
  * <p>Hardened per security review: a strict user-id format check (an attacker-controlled id must
  * not be usable as a path component), and a real-path re-check on the nearest existing ancestor so
  * a new-file write through a symlinked directory cannot escape.
+ *
+ * @author shanhongyu
  */
 final class PathSandboxInterceptor implements ToolCallInterceptor {
 
@@ -55,6 +57,14 @@ final class PathSandboxInterceptor implements ToolCallInterceptor {
         };
     }
 
+    /**
+     * Validates the {@code file_path} argument of the guarded tool against the caller's sandbox
+     * root and rewrites surviving paths to their absolute in-sandbox form.
+     *
+     * @param invocation the call snapshot
+     * @param next       the downstream chain
+     * @return the denial result, or the downstream result with the rewritten input
+     */
     private Mono<ToolResultBlock> guardPath(
             ToolInvocation invocation, Function<ToolInvocation, Mono<ToolResultBlock>> next) {
         Object raw = invocation.input().get("file_path");
@@ -88,6 +98,10 @@ final class PathSandboxInterceptor implements ToolCallInterceptor {
      * NTFS ADS. For a not-yet-existing target (or root), compares the real paths of the nearest
      * existing ancestors on both sides — a new-file write through a symlinked directory must not
      * escape, while a brand-new workspace must still pass.
+     *
+     * @param resolved the lexically validated, normalized candidate path
+     * @param root     the caller's sandbox root
+     * @return whether the path stays inside the root after resolving real paths
      */
     private static boolean staysInsideRealBoundary(Path resolved, Path root) {
         try {
@@ -106,7 +120,12 @@ final class PathSandboxInterceptor implements ToolCallInterceptor {
         }
     }
 
-    /** Walks up until an existing ancestor is found, or {@code null} at the filesystem root. */
+    /**
+     * Walks up until an existing ancestor is found.
+     *
+     * @param path the starting path
+     * @return the nearest existing ancestor, or {@code null} at the filesystem root
+     */
     private static Path nearestExistingAncestor(Path path) {
         Path current = path;
         while (current != null) {
@@ -118,6 +137,12 @@ final class PathSandboxInterceptor implements ToolCallInterceptor {
         return null;
     }
 
+    /**
+     * Builds a model-actionable policy denial.
+     *
+     * @param modelMessage the denial reason shown to the model
+     * @return a DENIED result carrying the interceptor identity prefix
+     */
     private static Mono<ToolResultBlock> reject(String modelMessage) {
         return Mono.just(
                 ToolResultBlock.text("PathSandbox: " + modelMessage)

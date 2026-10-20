@@ -43,6 +43,8 @@ import reactor.core.publisher.Mono;
  * Behavior test: a per-user path sandbox interceptor guarding a custom {@code write_text_file}
  * tool (no built-in baseDir semantics), proving denial without side effects, in-sandbox
  * normalization, and fail-closed identity handling.
+ *
+ * @author shanhongyu
  */
 @Tag("unit")
 @DisplayName("PathSandboxInterceptor Behavior Tests")
@@ -118,8 +120,8 @@ class PathSandboxInterceptorTest {
         return toolkit.callTool(param.build()).block(TIMEOUT);
     }
 
-    private RuntimeContext userContext() {
-        return RuntimeContext.builder().userId("alice").sessionId("s1").build();
+    private RuntimeContext userContext(String userId) {
+        return RuntimeContext.builder().userId(userId).sessionId("s1").build();
     }
 
     private static String textOf(ToolResultBlock result) {
@@ -127,10 +129,10 @@ class PathSandboxInterceptorTest {
     }
 
     @Test
-    @DisplayName("Relative path is normalized into the sandbox and executed")
-    void relativePathIsNormalizedIntoSandbox() {
+    @DisplayName("Relative paths are normalized into the sandbox; untargeted tools pass through")
+    void normalizesRelativePathsAndPassesThroughUntargetedTools() {
         WriteFileTool tool = new WriteFileTool();
-        ToolResultBlock result = write(toolkit(tool), "notes/a.txt", userContext());
+        ToolResultBlock result = write(toolkit(tool), "notes/a.txt", userContext("alice"));
 
         assertTrue(
                 result.getState() != ToolResultState.DENIED
@@ -140,105 +142,10 @@ class PathSandboxInterceptorTest {
         assertEquals(
                 expected.toString(), tool.writtenPath.get(), "Tool must receive the resolved path");
         assertTrue(Files.exists(expected), "Side effect must land inside the sandbox");
-    }
 
-    @Test
-    @DisplayName("Parent-directory escape is denied without side effects")
-    void escapeAttemptIsDenied() {
-        WriteFileTool tool = new WriteFileTool();
-        ToolResultBlock result = write(toolkit(tool), "../../evil.txt", userContext());
-
-        assertEquals(ToolResultState.DENIED, result.getState());
-        assertTrue(
-                textOf(result).startsWith("PathSandbox:"),
-                "Message should carry the interceptor identity");
-        assertNull(tool.writtenPath.get(), "Tool must not run");
-        Path escaped = sandboxRoot.resolve("alice").resolve("../../evil.txt").normalize();
-        assertFalse(Files.exists(escaped), "No file may be created outside the sandbox");
-    }
-
-    @Test
-    @DisplayName("Absolute path outside the sandbox is denied")
-    void absolutePathOutsideSandboxIsDenied() {
-        WriteFileTool tool = new WriteFileTool();
-        String outside = sandboxRoot.getParent().resolve("absolute-evil.txt").toString();
-        ToolResultBlock result = write(toolkit(tool), outside, userContext());
-
-        assertEquals(ToolResultState.DENIED, result.getState());
-        assertNull(tool.writtenPath.get());
-        assertFalse(Files.exists(Path.of(outside)), "No file may be created at the absolute path");
-    }
-
-    @Test
-    @DisplayName("Missing identity fails closed")
-    void missingIdentityFailsClosed() {
-        WriteFileTool tool = new WriteFileTool();
-        // No RuntimeContext at all
-        ToolResultBlock result = write(toolkit(tool), "a.txt", null);
-
-        assertEquals(ToolResultState.DENIED, result.getState());
-        assertTrue(textOf(result).contains("no authenticated user context"));
-        assertNull(tool.writtenPath.get());
-    }
-
-    @Test
-    @DisplayName("Blank userId fails closed")
-    void blankUserIdFailsClosed() {
-        WriteFileTool tool = new WriteFileTool();
-        RuntimeContext blank = RuntimeContext.builder().userId("  ").sessionId("s1").build();
-        ToolResultBlock result = write(toolkit(tool), "a.txt", blank);
-
-        assertEquals(ToolResultState.DENIED, result.getState());
-        assertNull(tool.writtenPath.get());
-    }
-
-    @Test
-    @DisplayName("Path-shaped userId cannot relocate the sandbox root")
-    void pathShapedUserIdIsDenied() {
-        WriteFileTool tool = new WriteFileTool();
-        RuntimeContext attacker =
-                RuntimeContext.builder().userId("../other-tenant").sessionId("s1").build();
-        ToolResultBlock result = write(toolkit(tool), "a.txt", attacker);
-
-        assertEquals(ToolResultState.DENIED, result.getState());
-        assertNull(tool.writtenPath.get());
-        assertFalse(Files.exists(sandboxRoot.resolveSibling("other-tenant").resolve("a.txt")));
-    }
-
-    @Test
-    @DisplayName("New-file write through a symlinked directory cannot escape")
-    void symlinkedDirectoryEscapeIsDenied() throws IOException {
-        Path outsideDir = sandboxRoot.resolveSibling("outside");
-        Path link = sandboxRoot.resolve("alice").resolve("shared");
-        Files.createDirectories(outsideDir);
-        Files.createDirectories(link.getParent());
-        try {
-            Files.createSymbolicLink(link, outsideDir);
-        } catch (IOException | UnsupportedOperationException unsupported) {
-            // Symlink creation needs privileges on some platforms; capability, not flake
-            Assumptions.abort("symbolic links not supported here: " + unsupported.getMessage());
-        }
-
-        WriteFileTool tool = new WriteFileTool();
-        // Lexically inside the sandbox, but "shared" resolves outside: the new-file target's
-        // nearest existing ancestor (the link itself) must fail the real-path re-check
-        ToolResultBlock result = write(toolkit(tool), "shared/new.txt", userContext());
-
-        assertEquals(ToolResultState.DENIED, result.getState());
-        assertNull(tool.writtenPath.get());
-        assertFalse(Files.exists(outsideDir.resolve("new.txt")), "No file may escape via symlink");
-    }
-
-    @Test
-    @DisplayName("Untargeted tools pass through untouched")
-    void untargetedToolsPassThrough() {
+        // Untargeted tool names bypass the guard entirely
         AtomicReference<String> passthrough = new AtomicReference<>("not-called");
-        Toolkit toolkit =
-                new Toolkit(
-                        ToolkitConfig.builder()
-                                .parallel(false)
-                                .interceptor(new PathSandboxInterceptor(sandboxRoot::resolve))
-                                .build());
+        Toolkit toolkit = toolkit(tool);
         toolkit.registerTool(
                 new AgentTool() {
                     @Override
@@ -262,20 +169,79 @@ class PathSandboxInterceptorTest {
                         return Mono.just(ToolResultBlock.text("ok"));
                     }
                 });
-
         Map<String, Object> input = Map.of();
-        ToolUseBlock toolCall =
+        ToolUseBlock probe =
                 ToolUseBlock.builder()
                         .id("call-probe")
                         .name("status_probe")
                         .input(input)
                         .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
-        ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+        ToolResultBlock probeResult =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(probe).build())
                         .block(TIMEOUT);
-
-        assertEquals("ok", textOf(result));
+        assertEquals("ok", textOf(probeResult));
         assertEquals("called", passthrough.get(), "Untargeted tool must run without guard logic");
+    }
+
+    @Test
+    @DisplayName("Escape attempts (parent traversal, absolute, symlinked directory) are denied")
+    void escapeAttemptsAreDenied() throws IOException {
+        // Parent-directory traversal
+        WriteFileTool tool = new WriteFileTool();
+        ToolResultBlock escaped = write(toolkit(tool), "../../evil.txt", userContext("alice"));
+        assertEquals(ToolResultState.DENIED, escaped.getState());
+        assertTrue(
+                textOf(escaped).startsWith("PathSandbox:"),
+                "Message should carry the interceptor identity");
+        assertNull(tool.writtenPath.get(), "Tool must not run");
+        assertFalse(
+                Files.exists(sandboxRoot.resolve("alice").resolve("../../evil.txt").normalize()),
+                "No file may be created outside the sandbox");
+
+        // Absolute path outside the sandbox
+        String outside = sandboxRoot.getParent().resolve("absolute-evil.txt").toString();
+        ToolResultBlock absolute = write(toolkit(tool), outside, userContext("alice"));
+        assertEquals(ToolResultState.DENIED, absolute.getState());
+        assertNull(tool.writtenPath.get());
+        assertFalse(Files.exists(Path.of(outside)), "No file may be created at the absolute path");
+
+        // New-file write through a symlinked directory (real-path re-check on ancestors)
+        Path outsideDir = sandboxRoot.resolveSibling("outside");
+        Path link = sandboxRoot.resolve("alice").resolve("shared");
+        Files.createDirectories(outsideDir);
+        Files.createDirectories(link.getParent());
+        try {
+            Files.createSymbolicLink(link, outsideDir);
+        } catch (IOException | UnsupportedOperationException unsupported) {
+            // Symlink creation needs privileges on some platforms; capability, not flake
+            Assumptions.abort("symbolic links not supported here: " + unsupported.getMessage());
+        }
+        ToolResultBlock viaSymlink = write(toolkit(tool), "shared/new.txt", userContext("alice"));
+        assertEquals(ToolResultState.DENIED, viaSymlink.getState());
+        assertNull(tool.writtenPath.get());
+        assertFalse(Files.exists(outsideDir.resolve("new.txt")), "No file may escape via symlink");
+    }
+
+    @Test
+    @DisplayName("Missing, blank, and path-shaped identities all fail closed")
+    void malformedIdentityFailsClosed() {
+        // No RuntimeContext at all
+        WriteFileTool tool = new WriteFileTool();
+        ToolResultBlock noContext = write(toolkit(tool), "a.txt", null);
+        assertEquals(ToolResultState.DENIED, noContext.getState());
+        assertTrue(textOf(noContext).contains("no authenticated user context"));
+
+        // Blank userId
+        ToolResultBlock blank = write(toolkit(tool), "a.txt", userContext("  "));
+        assertEquals(ToolResultState.DENIED, blank.getState());
+
+        // Path-shaped userId must not relocate the sandbox root
+        ToolResultBlock attacker = write(toolkit(tool), "a.txt", userContext("../other-tenant"));
+        assertEquals(ToolResultState.DENIED, attacker.getState());
+        assertNull(tool.writtenPath.get());
+        assertFalse(
+                Files.exists(sandboxRoot.resolveSibling("other-tenant").resolve("a.txt")),
+                "No file may be created in another tenant's root");
     }
 }

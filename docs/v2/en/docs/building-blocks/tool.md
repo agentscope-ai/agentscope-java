@@ -675,21 +675,31 @@ public final class PathSandboxInterceptor implements ToolCallInterceptor {
         if (!invocation.toolName().equals("write_text_file")) {
             return next.apply(invocation);        // not our tool — pass through
         }
+        // Injected dependency: registered by the caller via
+        // RuntimeContext.builder().put(FileAuditLog.class, log) — never model-visible
+        FileAuditLog audit = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().get(FileAuditLog.class) : null;
         String userId = invocation.runtimeContext() != null
                 ? invocation.runtimeContext().getUserId() : null;
         if (userId == null || userId.isBlank()) { // fail closed on missing identity
             return deny("no authenticated user context; cannot scope file access");
         }
         Path root = workspaceRootResolver.apply(userId).toAbsolutePath().normalize();
+        // Tool argument: "file_path" comes from the model's JSON input (presets included)
         Path resolved = root
                 .resolve(invocation.input().get("file_path").toString())
                 .normalize();                     // absolute paths also fail the check below
+        // Pre-processing: validate the argument and rewrite it to the in-sandbox path
         if (!resolved.startsWith(root)) {
             return deny("path must stay inside your workspace; use relative paths");
         }
         Map<String, Object> rewritten = new HashMap<>(invocation.input());
         rewritten.put("file_path", resolved.toString());
-        return next.apply(invocation.withInput(rewritten));
+        // Post-processing: audit the executed result without affecting it
+        return next.apply(invocation.withInput(rewritten))
+                .doOnSuccess(result -> {
+                    if (audit != null) audit.record(userId, resolved, result);
+                });
     }
 
     private static Mono<ToolResultBlock> deny(String message) {

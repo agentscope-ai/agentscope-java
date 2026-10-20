@@ -49,6 +49,8 @@ import reactor.core.publisher.Mono;
  *
  * <p>External tools ({@code externalTool=true} / {@link SchemaOnlyTool}) are executed outside the
  * framework and never reach interceptors.
+ *
+ * @author shanhongyu
  */
 public interface ToolCallInterceptor {
 
@@ -67,6 +69,8 @@ public interface ToolCallInterceptor {
      * Execution order: a larger value sits closer to the outside of the chain (intercepts first,
      * receives the result last). Same-order interceptors keep their registration order. Matches
      * the {@code MiddlewareBase#order()} convention. The default is {@code 1}.
+     *
+     * @return the execution order; higher values run outermost
      */
     default int order() {
         return 1;

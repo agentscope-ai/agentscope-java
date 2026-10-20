@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -52,10 +54,12 @@ import reactor.core.publisher.Mono;
 /**
  * Integration tests for the tool call interceptor chain wired into {@code ToolExecutor}.
  *
- * <p>Covers the §8 matrix of the tool call interceptor design: denial forms, parameter
- * rewriting, preset interplay, ordering, error attribution, suspension, propagation via
- * {@code Toolkit#copy()}, external-tool boundary, concurrency, timeout/retry semantics of the
- * batch path, and session records.
+ * <p>Covers the §8 matrix of the tool call interceptor design: denial forms, parameter rewriting,
+ * preset interplay, ordering, error attribution, suspension, propagation via {@code
+ * Toolkit#copy()}, external-tool boundary, caller identity, concurrency, timeout/retry semantics
+ * of the batch path, and session records.
+ *
+ * @author shanhongyu
  */
 @Tag("unit")
 @DisplayName("ToolCallInterceptor Integration Tests")
@@ -92,7 +96,7 @@ class ToolCallInterceptorTest {
         }
     }
 
-    /** Interceptor recording invocation order and delegating with an optional input rewrite. */
+    /** Interceptor recording invocation order and delegating unchanged. */
     static final class TracingInterceptor implements ToolCallInterceptor {
         final String marker;
         final List<String> trace;
@@ -130,6 +134,16 @@ class ToolCallInterceptorTest {
                 .build();
     }
 
+    private static ToolUseBlock externalCall() {
+        Map<String, Object> input = Map.of("endpoint", "/users");
+        return ToolUseBlock.builder()
+                .id("call-external")
+                .name("external_api")
+                .input(input)
+                .content(JsonUtils.getJsonCodec().toJson(input))
+                .build();
+    }
+
     private static String textOf(ToolResultBlock result) {
         return ((TextBlock) result.getOutput().get(0)).getText();
     }
@@ -137,6 +151,13 @@ class ToolCallInterceptorTest {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> asMap(Object value) {
         return (Map<String, Object>) value;
+    }
+
+    private static Agent agent(String agentId, String agentName) {
+        Agent agent = mock(Agent.class);
+        when(agent.getAgentId()).thenReturn(agentId);
+        when(agent.getName()).thenReturn(agentName);
+        return agent;
     }
 
     @Test
@@ -156,8 +177,8 @@ class ToolCallInterceptorTest {
     }
 
     @Test
-    @DisplayName("DENIED policy denial skips the tool and backfills id/name")
-    void deniedSkipsToolAndBackfillsIdentity() {
+    @DisplayName("Both denial forms skip the tool; DENIED keeps denial semantics")
+    void denialFormsSkipTool() {
         EchoTool echo = new EchoTool();
         Toolkit toolkit =
                 new Toolkit(
@@ -171,25 +192,19 @@ class ToolCallInterceptorTest {
                                 .build());
         toolkit.registerTool(echo);
 
-        ToolResultBlock result =
+        ToolResultBlock denied =
                 toolkit.callTool(
                                 ToolCallParam.builder()
                                         .toolUseBlock(call("call-denied", Map.of()))
                                         .build())
                         .block(TIMEOUT);
-
         assertEquals(0, echo.calls.get(), "Tool must not execute on denial");
-        assertEquals(ToolResultState.DENIED, result.getState());
-        assertEquals("call-denied", result.getId(), "Id must be backfilled");
-        assertEquals("echo", result.getName(), "Name must be backfilled");
-        assertEquals("Guard: denied", textOf(result));
-    }
+        assertEquals(ToolResultState.DENIED, denied.getState());
+        assertEquals("call-denied", denied.getId(), "Id must be backfilled");
+        assertEquals("echo", denied.getName(), "Name must be backfilled");
+        assertEquals("Guard: denied", textOf(denied));
 
-    @Test
-    @DisplayName("Error-form denial skips the tool and reports failure semantics")
-    void errorFormDenialSkipsTool() {
-        EchoTool echo = new EchoTool();
-        Toolkit toolkit =
+        Toolkit errorToolkit =
                 new Toolkit(
                         ToolkitConfig.builder()
                                 .parallel(false)
@@ -197,33 +212,32 @@ class ToolCallInterceptorTest {
                                         (iv, next) ->
                                                 Mono.just(ToolResultBlock.error("invalid call")))
                                 .build());
-        toolkit.registerTool(echo);
-
-        ToolResultBlock result =
-                toolkit.callTool(
+        errorToolkit.registerTool(new EchoTool());
+        ToolResultBlock invalid =
+                errorToolkit
+                        .callTool(
                                 ToolCallParam.builder()
                                         .toolUseBlock(call("call-invalid", Map.of()))
                                         .build())
                         .block(TIMEOUT);
-
-        assertEquals(0, echo.calls.get());
-        assertEquals(ToolResultState.ERROR, result.getState());
-        assertTrue(textOf(result).contains("invalid call"));
+        assertEquals(ToolResultState.ERROR, invalid.getState(), "Error form reports call failure");
+        assertTrue(textOf(invalid).contains("invalid call"));
     }
 
     @Test
-    @DisplayName("Interceptor sees preset-merged input and rewrites what the tool receives")
-    void rewritesFinalInputIncludingPreset() {
+    @DisplayName("Interceptor sees the preset-merged input, may rewrite it, and null args survive")
+    void seesAndRewritesFinalInput() {
         EchoTool echo = new EchoTool();
+        AtomicReference<Object> seenOptions = new AtomicReference<>("unset");
+        AtomicReference<Object> seenPreset = new AtomicReference<>("unset");
         Toolkit toolkit =
                 new Toolkit(
                         ToolkitConfig.builder()
                                 .parallel(false)
                                 .interceptor(
                                         (iv, next) -> {
-                                            assertTrue(
-                                                    iv.input().containsKey("preset"),
-                                                    "Preset must be visible to interceptors");
+                                            seenOptions.set(iv.input().get("options"));
+                                            seenPreset.set(iv.input().get("preset"));
                                             Map<String, Object> rewritten =
                                                     new HashMap<>(iv.input());
                                             rewritten.put("file_path", "resolved.txt");
@@ -236,57 +250,27 @@ class ToolCallInterceptorTest {
                 .presetParameters(Map.of("echo", Map.of("preset", "preset_value")))
                 .apply();
 
-        ToolResultBlock result =
-                toolkit.callTool(
-                                ToolCallParam.builder()
-                                        .toolUseBlock(
-                                                call(
-                                                        "call-rewrite",
-                                                        Map.of("file_path", "../secrets.txt")))
-                                        .build())
-                        .block(TIMEOUT);
+        // Model arguments + preset + a JSON null value all reach the interceptor merged
+        Map<String, Object> input = new HashMap<>();
+        input.put("file_path", "../secrets.txt");
+        input.put("options", null);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-rewrite")
+                        .name("echo")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
 
+        toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block(TIMEOUT);
+
+        assertNull(seenOptions.get(), "Null argument must be preserved, not dropped");
+        assertEquals("preset_value", seenPreset.get(), "Preset must be visible to interceptors");
         assertEquals(1, echo.calls.get());
         Map<String, Object> received = echo.receivedInputs.get(0);
         assertEquals(
                 "resolved.txt", received.get("file_path"), "Tool must receive rewritten value");
         assertEquals("overridden", received.get("preset"), "Interceptor may override presets");
-    }
-
-    @Test
-    @DisplayName("Null-valued JSON arguments pass through the chain without NPE")
-    void nullValuedArgumentsSurvive() {
-        EchoTool echo = new EchoTool();
-        AtomicReference<Object> seenOptions = new AtomicReference<>("unset");
-        Toolkit toolkit =
-                new Toolkit(
-                        ToolkitConfig.builder()
-                                .parallel(false)
-                                .interceptor(
-                                        (iv, next) -> {
-                                            seenOptions.set(iv.input().get("options"));
-                                            return next.apply(iv);
-                                        })
-                                .build());
-        toolkit.registerTool(echo);
-
-        Map<String, Object> input = new HashMap<>();
-        input.put("options", null);
-        ToolUseBlock toolCall =
-                ToolUseBlock.builder()
-                        .id("call-null")
-                        .name("echo")
-                        .input(input)
-                        .content("{\"options\": null}")
-                        .build();
-
-        ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
-                        .block(TIMEOUT);
-
-        assertNull(seenOptions.get(), "Null argument must be preserved, not dropped");
-        assertEquals(1, echo.calls.get());
-        assertTrue(textOf(result).contains("options"));
     }
 
     @Test
@@ -405,33 +389,28 @@ class ToolCallInterceptorTest {
     }
 
     @Test
-    @DisplayName("Empty interceptor Mono falls into the existing empty-result error")
-    void emptyMonoMapsToEmptyResultError() {
-        Toolkit toolkit =
+    @DisplayName("Empty Mono and ToolSuspendException map to the existing result formats")
+    void emptyAndSuspendResultsMapToExistingFormats() {
+        Toolkit emptyToolkit =
                 new Toolkit(
                         ToolkitConfig.builder()
                                 .parallel(false)
                                 .interceptor((iv, next) -> Mono.empty())
                                 .build());
-        toolkit.registerTool(new EchoTool());
-
-        ToolResultBlock result =
-                toolkit.callTool(
+        emptyToolkit.registerTool(new EchoTool());
+        ToolResultBlock empty =
+                emptyToolkit
+                        .callTool(
                                 ToolCallParam.builder()
                                         .toolUseBlock(call("call-empty", Map.of()))
                                         .build())
                         .block(TIMEOUT);
-
-        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals(ToolResultState.ERROR, empty.getState());
         assertEquals(
                 "Error: Tool execution failed: Tool completed without returning a result",
-                textOf(result));
-    }
+                textOf(empty));
 
-    @Test
-    @DisplayName("ToolSuspendException from an interceptor becomes a suspended result")
-    void suspendExceptionBecomesSuspended() {
-        Toolkit toolkit =
+        Toolkit suspendToolkit =
                 new Toolkit(
                         ToolkitConfig.builder()
                                 .parallel(false)
@@ -440,51 +419,31 @@ class ToolCallInterceptorTest {
                                             throw new ToolSuspendException("needs human approval");
                                         })
                                 .build());
-        toolkit.registerTool(new EchoTool());
-
-        ToolResultBlock result =
-                toolkit.callTool(
+        suspendToolkit.registerTool(new EchoTool());
+        ToolResultBlock suspended =
+                suspendToolkit
+                        .callTool(
                                 ToolCallParam.builder()
                                         .toolUseBlock(call("call-suspend", Map.of()))
                                         .build())
                         .block(TIMEOUT);
-
-        assertTrue(result.isSuspended());
-        assertEquals(ToolResultState.SUSPENDED, result.getState());
-        assertEquals("needs human approval", result.getSuspendReason());
+        assertTrue(suspended.isSuspended());
+        assertEquals(ToolResultState.SUSPENDED, suspended.getState());
+        assertEquals("needs human approval", suspended.getSuspendReason());
     }
 
     @Test
-    @DisplayName("Toolkit#copy propagates interceptors")
-    void copyPropagatesInterceptors() {
+    @DisplayName("Toolkit#copy propagates interceptors; external tools short-circuit before them")
+    void copyPropagatesAndExternalToolsBypass() {
         EchoTool echo = new EchoTool();
         List<String> trace = new CopyOnWriteArrayList<>();
         Toolkit toolkit =
                 new Toolkit(
                         ToolkitConfig.builder()
                                 .parallel(false)
-                                .interceptor(new TracingInterceptor("copied", trace))
+                                .interceptor(new TracingInterceptor("trace", trace))
                                 .build());
         toolkit.registerTool(echo);
-
-        Toolkit copy = toolkit.copy();
-        copy.callTool(ToolCallParam.builder().toolUseBlock(call("call-copy", Map.of())).build())
-                .block(TIMEOUT);
-
-        assertEquals(List.of("copied"), trace);
-        assertEquals(1, echo.calls.get());
-    }
-
-    @Test
-    @DisplayName("External tools short-circuit before interceptors")
-    void externalToolsBypassInterceptors() {
-        List<String> trace = new CopyOnWriteArrayList<>();
-        Toolkit toolkit =
-                new Toolkit(
-                        ToolkitConfig.builder()
-                                .parallel(false)
-                                .interceptor(new TracingInterceptor("must-not-run", trace))
-                                .build());
         toolkit.registerSchema(
                 ToolSchema.builder()
                         .name("external_api")
@@ -492,19 +451,18 @@ class ToolCallInterceptorTest {
                         .parameters(Map.of("type", "object", "properties", Map.of()))
                         .build());
 
-        Map<String, Object> input = Map.of("endpoint", "/users");
-        ToolUseBlock externalCall =
-                ToolUseBlock.builder()
-                        .id("call-external")
-                        .name("external_api")
-                        .input(input)
-                        .content(JsonUtils.getJsonCodec().toJson(input))
-                        .build();
+        // Copy keeps the interceptor effective
+        Toolkit copy = toolkit.copy();
+        copy.callTool(ToolCallParam.builder().toolUseBlock(call("call-copy", Map.of())).build())
+                .block(TIMEOUT);
+        assertEquals(List.of("trace"), trace);
+        assertEquals(1, echo.calls.get());
 
-        ToolResultBlock result =
-                toolkit.callTools(List.of(externalCall), null, null, null).block(TIMEOUT).get(0);
-
-        assertTrue(result.isSuspended(), "External tool must surface as suspended");
+        // External tool: suspended before the chain, interceptor untouched
+        trace.clear();
+        ToolResultBlock external =
+                toolkit.callTools(List.of(externalCall()), null, null, null).block(TIMEOUT).get(0);
+        assertTrue(external.isSuspended(), "External tool must surface as suspended");
         assertEquals(0, trace.size(), "Interceptors must not run for external tools");
     }
 
@@ -564,12 +522,9 @@ class ToolCallInterceptorTest {
                 "Expected timeout error: " + textOf(timedOut));
 
         // Direct callTool path: no timeout wrapper (current behavior)
-        ToolResultBlock direct =
-                toolkit.callTool(
-                                ToolCallParam.builder()
-                                        .toolUseBlock(call("call-direct", Map.of()))
-                                        .build())
-                        .block(TIMEOUT);
+        toolkit.callTool(
+                        ToolCallParam.builder().toolUseBlock(call("call-direct", Map.of())).build())
+                .block(TIMEOUT);
         assertEquals(1, echo.calls.get(), "Direct path must complete without timeout");
     }
 
@@ -753,45 +708,54 @@ class ToolCallInterceptorTest {
     }
 
     @Test
-    @DisplayName("Interceptor observes agent identity per call")
-    void interceptorSeesAgentIdentity() {
-        AtomicReference<String> seenAgentId = new AtomicReference<>();
-        AtomicReference<String> seenAgentName = new AtomicReference<>();
-        Toolkit toolkit =
+    @DisplayName(
+            "Interceptor observes caller identity and can dispatch business rules by agentName")
+    void interceptorObservesCallerIdentity() {
+        // runtimeContext + agent identity are visible on agent-driven calls
+        AtomicReference<RuntimeContext> seenContext = new AtomicReference<>();
+        AtomicReference<String> seenAgentId = new AtomicReference<>("unset");
+        AtomicReference<String> seenAgentName = new AtomicReference<>("unset");
+        Toolkit observeToolkit =
                 new Toolkit(
                         ToolkitConfig.builder()
                                 .parallel(false)
                                 .interceptor(
                                         (iv, next) -> {
+                                            seenContext.set(iv.runtimeContext());
                                             seenAgentId.set(iv.agentId());
                                             seenAgentName.set(iv.agentName());
                                             return next.apply(iv);
                                         })
                                 .build());
-        toolkit.registerTool(new EchoTool());
+        observeToolkit.registerTool(new EchoTool());
 
-        Agent agent = org.mockito.Mockito.mock(Agent.class);
-        org.mockito.Mockito.when(agent.getAgentId()).thenReturn("agent-42");
-        org.mockito.Mockito.when(agent.getName()).thenReturn("planner");
-        toolkit.callTool(
+        RuntimeContext context =
+                RuntimeContext.builder().userId("user-42").sessionId("sess-7").build();
+        observeToolkit
+                .callTool(
                         ToolCallParam.builder()
-                                .toolUseBlock(call("call-agent", Map.of()))
-                                .agent(agent)
+                                .toolUseBlock(call("call-ctx", Map.of()))
+                                .runtimeContext(context)
+                                .agent(agent("agent-42", "planner"))
                                 .build())
                 .block(TIMEOUT);
-
+        assertNotNull(seenContext.get(), "RuntimeContext must be visible to interceptors");
+        assertEquals("user-42", seenContext.get().getUserId());
+        assertEquals("sess-7", seenContext.get().getSessionId());
         assertEquals("agent-42", seenAgentId.get());
         assertEquals("planner", seenAgentName.get());
 
-        // Direct call without an agent: identity is null (itself a meaningful signal)
+        // Agentless direct call: identity is null (itself a meaningful signal)
         AtomicReference<String> directAgentId = new AtomicReference<>("unset");
         AtomicReference<String> directAgentName = new AtomicReference<>("unset");
+        AtomicReference<RuntimeContext> directContext = new AtomicReference<>();
         Toolkit directToolkit =
                 new Toolkit(
                         ToolkitConfig.builder()
                                 .parallel(false)
                                 .interceptor(
                                         (iv, next) -> {
+                                            directContext.set(iv.runtimeContext());
                                             directAgentId.set(iv.agentId());
                                             directAgentName.set(iv.agentName());
                                             return next.apply(iv);
@@ -804,13 +768,11 @@ class ToolCallInterceptorTest {
                 .block(TIMEOUT);
         assertNull(directAgentId.get());
         assertNull(directAgentName.get());
-    }
+        assertNull(directContext.get());
 
-    @Test
-    @DisplayName("Interceptors can dispatch business rules by agentName")
-    void perAgentDispatchByAgentName() {
+        // Business rules can dispatch on agentName
         EchoTool echo = new EchoTool();
-        Toolkit toolkit =
+        Toolkit dispatchToolkit =
                 new Toolkit(
                         ToolkitConfig.builder()
                                 .parallel(false)
@@ -826,62 +788,27 @@ class ToolCallInterceptorTest {
                                                                                         .DENIED))
                                                         : next.apply(iv))
                                 .build());
-        toolkit.registerTool(echo);
-
-        Agent planner = org.mockito.Mockito.mock(Agent.class);
-        org.mockito.Mockito.when(planner.getAgentId()).thenReturn("agent-1");
-        org.mockito.Mockito.when(planner.getName()).thenReturn("planner");
+        dispatchToolkit.registerTool(echo);
         ToolResultBlock denied =
-                toolkit.callTool(
+                dispatchToolkit
+                        .callTool(
                                 ToolCallParam.builder()
                                         .toolUseBlock(call("call-planner", Map.of()))
-                                        .agent(planner)
+                                        .agent(agent("agent-1", "planner"))
                                         .build())
                         .block(TIMEOUT);
         assertEquals(ToolResultState.DENIED, denied.getState());
         assertEquals(0, echo.calls.get());
 
-        Agent coder = org.mockito.Mockito.mock(Agent.class);
-        org.mockito.Mockito.when(coder.getAgentId()).thenReturn("agent-2");
-        org.mockito.Mockito.when(coder.getName()).thenReturn("coder");
         ToolResultBlock allowed =
-                toolkit.callTool(
+                dispatchToolkit
+                        .callTool(
                                 ToolCallParam.builder()
                                         .toolUseBlock(call("call-coder", Map.of()))
-                                        .agent(coder)
+                                        .agent(agent("agent-2", "coder"))
                                         .build())
                         .block(TIMEOUT);
         assertTrue(allowed.getState() != ToolResultState.DENIED);
         assertEquals(1, echo.calls.get());
-    }
-
-    @Test
-    @DisplayName("Interceptor observes runtimeContext identity per call")
-    void interceptorSeesRuntimeContext() {
-        AtomicReference<RuntimeContext> seen = new AtomicReference<>();
-        Toolkit toolkit =
-                new Toolkit(
-                        ToolkitConfig.builder()
-                                .parallel(false)
-                                .interceptor(
-                                        (iv, next) -> {
-                                            seen.set(iv.runtimeContext());
-                                            return next.apply(iv);
-                                        })
-                                .build());
-        toolkit.registerTool(new EchoTool());
-
-        RuntimeContext context =
-                RuntimeContext.builder().userId("user-42").sessionId("sess-7").build();
-        toolkit.callTool(
-                        ToolCallParam.builder()
-                                .toolUseBlock(call("call-ctx", Map.of()))
-                                .runtimeContext(context)
-                                .build())
-                .block(TIMEOUT);
-
-        assertNotNull(seen.get(), "RuntimeContext must be visible to interceptors");
-        assertEquals("user-42", seen.get().getUserId());
-        assertEquals("sess-7", seen.get().getSessionId());
     }
 }

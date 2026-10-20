@@ -32,6 +32,11 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
+/**
+ * Unit tests for {@link ToolInvocation}.
+ *
+ * @author shanhongyu
+ */
 @Tag("unit")
 @DisplayName("ToolInvocation Unit Tests")
 class ToolInvocationTest {
@@ -61,52 +66,37 @@ class ToolInvocationTest {
     }
 
     @Test
-    @DisplayName("Should tolerate null values and preserve JSON key order")
-    void shouldTolerateNullValuesAndPreserveOrder() {
+    @DisplayName("Input copy: null-tolerant, order-preserving, unmodifiable, empty-normalizing")
+    void inputMapSemantics() {
+        // Null/empty inputs normalize to an empty map
+        ToolInvocation nullInput = new ToolInvocation("noop", noopTool(), null, null, null, null);
+        assertNotNull(nullInput.input());
+        assertTrue(nullInput.input().isEmpty());
+        assertTrue(
+                new ToolInvocation("noop", noopTool(), Map.of(), null, null, null)
+                        .input()
+                        .isEmpty());
+
+        // Null values tolerated (not Map.copyOf) and JSON key order preserved
         Map<String, Object> json = new LinkedHashMap<>();
         json.put("file_path", "a.txt");
         json.put("options", null);
         json.put("mode", "append");
-
         ToolInvocation invocation = new ToolInvocation("noop", noopTool(), json, null, null, null);
-
-        // Null-tolerant copy, not Map.copyOf (which rejects nulls)
         assertTrue(invocation.input().containsKey("options"));
         assertNull(invocation.input().get("options"));
-        // Iteration order matches the model JSON order
         assertEquals(
                 List.of("file_path", "options", "mode"), List.copyOf(invocation.input().keySet()));
-    }
 
-    @Test
-    @DisplayName("Should expose an immutable input view")
-    void shouldExposeImmutableInput() {
-        Map<String, Object> source = new HashMap<>();
-        source.put("a", 1);
-        ToolInvocation invocation =
-                new ToolInvocation("noop", noopTool(), source, null, null, null);
-
+        // Unmodifiable view, source mutations do not leak through
         assertThrows(UnsupportedOperationException.class, () -> invocation.input().put("b", 2));
-        // Mutating the source after construction must not leak through
-        source.put("c", 3);
+        json.put("c", 3);
         assertTrue(!invocation.input().containsKey("c"));
     }
 
     @Test
-    @DisplayName("Should normalize null and empty input to an empty map")
-    void shouldNormalizeEmptyInput() {
-        ToolInvocation nullInput = new ToolInvocation("noop", noopTool(), null, null, null, null);
-        assertNotNull(nullInput.input());
-        assertTrue(nullInput.input().isEmpty());
-
-        ToolInvocation emptyInput =
-                new ToolInvocation("noop", noopTool(), Map.of(), null, null, null);
-        assertTrue(emptyInput.input().isEmpty());
-    }
-
-    @Test
-    @DisplayName("withInput returns a new instance with replaced input")
-    void withInputReplacesInput() {
+    @DisplayName("withInput replaces input, keeps every other component, nulls stay null")
+    void withInputSemantics() {
         RuntimeContext ctx = RuntimeContext.empty();
         ToolInvocation original =
                 new ToolInvocation("noop", noopTool(), Map.of("a", 1), ctx, "agent-1", "planner");
@@ -121,18 +111,13 @@ class ToolInvocationTest {
         assertEquals("noop", replaced.toolName());
         assertEquals(original.tool(), replaced.tool());
         assertEquals(ctx, replaced.runtimeContext());
-        // Agent identity is part of the snapshot and survives rewrites
         assertEquals("agent-1", replaced.agentId());
         assertEquals("planner", replaced.agentName());
-    }
 
-    @Test
-    @DisplayName("Should keep runtimeContext null when unavailable")
-    void shouldKeepNullRuntimeContext() {
-        ToolInvocation invocation =
-                new ToolInvocation("noop", noopTool(), Map.of(), null, null, null);
-        assertNull(invocation.runtimeContext());
-        assertNull(invocation.agentId());
-        assertNull(invocation.agentName());
+        // Components without values stay null (agentless direct calls)
+        ToolInvocation bare = new ToolInvocation("noop", noopTool(), Map.of(), null, null, null);
+        assertNull(bare.runtimeContext());
+        assertNull(bare.agentId());
+        assertNull(bare.agentName());
     }
 }

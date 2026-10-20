@@ -46,6 +46,7 @@ import java.util.Map;
  * @param runtimeContext the caller identity context, or {@code null} when unavailable
  * @param agentId       the calling agent's unique id, or {@code null} on agentless direct calls
  * @param agentName     the calling agent's business name, or {@code null} on agentless direct calls
+ * @author shanhongyu
  */
 public record ToolInvocation(
         String toolName,
@@ -59,11 +60,23 @@ public record ToolInvocation(
         input = copyInput(input);
     }
 
-    /** Returns a copy of this invocation with the input replaced. */
+    /**
+     * Returns a copy of this invocation with the input replaced.
+     *
+     * @param newInput the replacement input map (may be {@code null} or contain {@code null}
+     *     values)
+     * @return a new invocation with all other components unchanged
+     */
     public ToolInvocation withInput(Map<String, Object> newInput) {
         return new ToolInvocation(toolName, tool, newInput, runtimeContext, agentId, agentName);
     }
 
+    /**
+     * Makes a null-tolerant, order-preserving unmodifiable copy of the given input.
+     *
+     * @param input the raw input map, may be {@code null}
+     * @return an unmodifiable copy, or an empty map when the input is {@code null} or empty
+     */
     private static Map<String, Object> copyInput(Map<String, Object> input) {
         if (input == null || input.isEmpty()) {
             return Map.of();
