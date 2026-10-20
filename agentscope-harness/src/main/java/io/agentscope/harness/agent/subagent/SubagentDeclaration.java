@@ -266,7 +266,7 @@ public final class SubagentDeclaration {
 
     /**
      * Whether the subagent's session state should persist across parent calls. When {@code true},
-     * the spawn key is derived deterministically from (parentSessionId, agentId, label), enabling
+     * the spawn key is derived deterministically from (userId, parentSessionId, agentId, label), enabling
      * state recovery after process restarts. When {@code false} (default), a random UUID is used.
      */
     public boolean isPersistSession() {
@@ -543,7 +543,7 @@ public final class SubagentDeclaration {
 
         /**
          * When {@code true}, the subagent's spawn key is derived deterministically from
-         * (parentSessionId, agentId, label), enabling state recovery across parent calls and
+         * (userId, parentSessionId, agentId, label), enabling state recovery across parent calls and
          * process restarts. Defaults to {@code false}.
          */
         public Builder persistSession(boolean persistSession) {

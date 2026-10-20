@@ -21,14 +21,17 @@ import io.agentscope.builder.web.api.error.ApiErrorDetail;
 import io.agentscope.builder.web.api.error.ApiErrorType;
 import io.agentscope.builder.web.api.error.ApiException;
 import io.agentscope.builder.web.catalog.HarnessAgentBuildService;
+import io.agentscope.builder.web.catalog.JevServiceSupport;
 import io.agentscope.builder.web.coord.CoordinationStore;
 import io.agentscope.builder.web.coord.TurnLeaseService;
 import io.agentscope.builder.web.managed.service.DeletedSessionRegistry;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
 import io.agentscope.builder.web.toolbus.ToolConfirmationCoordinator;
+import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -36,26 +39,42 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultMessage;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.session.SessionExecution;
+import io.agentscope.core.session.SessionExportSink;
+import io.agentscope.core.session.SessionInbox;
+import io.agentscope.core.session.SessionInteractions;
+import io.agentscope.core.session.SessionModelPolicy;
+import io.agentscope.core.session.SessionRecorder;
+import io.agentscope.core.session.SessionTurns;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.middleware.TeamsMiddleware;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
+import io.agentscope.harness.agent.tools.McpConnectionException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
@@ -74,7 +93,6 @@ public class SessionTurnRunner {
     private final HarnessAgentBuildService agentBuildService;
     private final DataSessionService sessionService;
     private final SessionEventLog eventLog;
-    private final SessionEventMapper eventMapper;
     private final SessionEventPreviewBus previewBus;
     private final DataEnvironmentService environmentService;
     private final HandsLeaseService handsLeaseService;
@@ -83,25 +101,21 @@ public class SessionTurnRunner {
     private final DeletedSessionRegistry deletedSessions;
     private final ControlPlaneClient controlPlaneClient;
     private final ToolConfirmationCoordinator confirmationCoordinator;
-    private final ConcurrentHashMap<String, Disposable> activeTurns = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, HarnessAgent> activeAgents = new ConcurrentHashMap<>();
+    private final AgentRunRegistry runRegistry;
+    private final ConcurrentHashMap<String, AgentRun<AgentEvent>> activeTurns =
+            new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, TurnLeaseService.TurnLease> activeTurnLeases =
             new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, java.util.concurrent.CountDownLatch> activeTurnDone =
+    private final ConcurrentHashMap<String, CountDownLatch> activeTurnDone =
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, AtomicBoolean> interruptedTurns =
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Object> turnMutexes = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, SessionEventMapper.PreviewIds> previewIdsBySession =
-            new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Set<String>> startedPreviewTypes =
-            new ConcurrentHashMap<>();
 
     public SessionTurnRunner(
             HarnessAgentBuildService agentBuildService,
             @Lazy DataSessionService sessionService,
             SessionEventLog eventLog,
-            SessionEventMapper eventMapper,
             SessionEventPreviewBus previewBus,
             DataEnvironmentService environmentService,
             HandsLeaseService handsLeaseService,
@@ -109,11 +123,11 @@ public class SessionTurnRunner {
             CoordinationStore coordinationStore,
             DeletedSessionRegistry deletedSessions,
             ControlPlaneClient controlPlaneClient,
-            @Lazy ToolConfirmationCoordinator confirmationCoordinator) {
+            @Lazy ToolConfirmationCoordinator confirmationCoordinator,
+            AgentRunRegistry runRegistry) {
         this.agentBuildService = agentBuildService;
         this.sessionService = sessionService;
         this.eventLog = eventLog;
-        this.eventMapper = eventMapper;
         this.previewBus = previewBus;
         this.environmentService = environmentService;
         this.handsLeaseService = handsLeaseService;
@@ -122,6 +136,7 @@ public class SessionTurnRunner {
         this.deletedSessions = deletedSessions;
         this.controlPlaneClient = controlPlaneClient;
         this.confirmationCoordinator = confirmationCoordinator;
+        this.runRegistry = runRegistry;
     }
 
     /** Runs a turn asynchronously so inbound HTTP handlers can return quickly. */
@@ -156,10 +171,115 @@ public class SessionTurnRunner {
         runTurnAsync(session, List.of(resumeBuilder.build()), () -> {});
     }
 
+    private SessionNativeLogService nativeLogs;
+
+    @Autowired private SessionBudgetService budgets;
+
+    @Autowired
+    public void setNativeLogs(SessionNativeLogService nativeLogs) {
+        this.nativeLogs = nativeLogs;
+    }
+
+    private final ConcurrentHashMap<String, String> publicTurns = new ConcurrentHashMap<>();
+
+    public void cancelDurableTurn(String session, String turnId) {
+        synchronized (turnMutex(session)) {
+            if (turnId.equals(publicTurns.get(session)))
+                interruptLocalLocked(session, "public_turn_cancelled");
+        }
+    }
+
+    private record DurableTurn(
+            String turnId,
+            BiConsumer<String, Throwable> finished,
+            AtomicReference<String> outcome) {}
+
+    public void runDurableTurnAsync(
+            ManagedSessionDto session,
+            String message,
+            String turnId,
+            BiConsumer<String, Throwable> finished) {
+        runDurableTurnAsync(
+                session,
+                List.of(UserMessage.builder().id("command_" + turnId).textContent(message).build()),
+                turnId,
+                finished);
+    }
+
+    public void runDurableTurnAsync(
+            ManagedSessionDto session,
+            List<Msg> inputs,
+            String turnId,
+            BiConsumer<String, Throwable> finished) {
+        runTurnAsync(
+                session,
+                inputs,
+                () -> {},
+                new DurableTurn(turnId, finished, new AtomicReference<>("completed")));
+    }
+
+    public void resumeDurableTurnAsync(
+            ManagedSessionDto session,
+            String commandId,
+            String json,
+            String turnId,
+            BiConsumer<String, Throwable> finished) {
+        var answers = JsonUtils.getJsonCodec().fromJson(json, List.class);
+        var confirmations = new ArrayList<ConfirmResult>();
+        var results = new ArrayList<ToolResultBlock>();
+        for (Object raw : answers) {
+            var answer = (Map<?, ?>) raw;
+            var call =
+                    JsonUtils.getJsonCodec().convertValue(answer.get("call"), ToolUseBlock.class);
+            if ("confirmation".equals(answer.get("kind")))
+                confirmations.add(
+                        new ConfirmResult(
+                                Boolean.TRUE.equals(answer.get("allow")),
+                                call,
+                                null,
+                                (String) answer.get("reason")));
+            else
+                results.add(
+                        ToolResultBlock.of(
+                                call.getId(),
+                                call.getName(),
+                                TextBlock.builder().text((String) answer.get("output")).build(),
+                                Map.of("error", Boolean.TRUE.equals(answer.get("is_error")))));
+        }
+        var inputs = new ArrayList<Msg>();
+        if (!confirmations.isEmpty())
+            inputs.add(
+                    UserMessage.builder()
+                            .id("confirmation_" + commandId)
+                            .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, confirmations))
+                            .build());
+        if (!results.isEmpty()) {
+            var builder = ToolResultMessage.builder().id("result_" + commandId);
+            for (var result : results) builder.result(result);
+            inputs.add(builder.build());
+        }
+        runTurnAsync(
+                session,
+                inputs,
+                () -> {},
+                new DurableTurn(turnId, finished, new AtomicReference<>("completed")));
+    }
+
     private void runTurnAsync(ManagedSessionDto session, List<Msg> inputMsgs, Runnable onAdmitted) {
+        runTurnAsync(session, inputMsgs, onAdmitted, null);
+    }
+
+    private void runTurnAsync(
+            ManagedSessionDto session,
+            List<Msg> inputMsgs,
+            Runnable onAdmitted,
+            DurableTurn command) {
         // A wakeup can race teardown: the control plane may have deleted the session
         // between the wake being queued and this turn starting.
         if (deletedSessions.isDeleted(session.id())) {
+            if (command != null)
+                command.finished()
+                        .accept("cancelled", new IllegalStateException("Session deleted"));
             log.info("Skipping turn for deleted session {}", session.id());
             return;
         }
@@ -182,7 +302,27 @@ public class SessionTurnRunner {
                                     return;
                                 }
                                 ManagedExecutionScope expectedScope = admittedScopeRef.get();
-                                if (request.fenceToken() == null) {
+                                if (request.fenceToken() != null
+                                        && request.fenceToken().startsWith("run:")) {
+                                    AgentRun<AgentEvent> run = activeTurns.get(session.id());
+                                    if (run != null
+                                            && request.fenceToken().equals("run:" + run.runId())
+                                            && runRegistry
+                                                    .find(
+                                                            session.ownerId(),
+                                                            session.id(),
+                                                            run.runId())
+                                                    .isPresent()) {
+                                        if (activeTurnLeases.get(session.id()) == expectedLease) {
+                                            interruptLocalLocked(session.id(), request.reason());
+                                        } else {
+                                            // An old heartbeat can race lease replacement. Preserve
+                                            // a valid request for the replacement's own heartbeat.
+                                            requeueInterrupt(session.id(), request);
+                                        }
+                                    }
+                                    // A stale run ticket never falls back to session interruption.
+                                } else if (request.fenceToken() == null) {
                                     boolean interruptedExpected =
                                             interruptExpected(
                                                     session.id(),
@@ -224,7 +364,13 @@ public class SessionTurnRunner {
                 activeTurnLeases.put(session.id(), lease);
                 interruptedTurns.put(session.id(), interrupted);
             }
+            if (command != null) publicTurns.put(session.id(), command.turnId());
             ManagedExecutionScope admittedScope = executionScope;
+            // The event outbox is asynchronous. Its running event cannot serve as a
+            // barrier for a fast task.complete or child-delegation tool call.
+            controlPlaneClient.startManagedExecution(session.id(), admittedScope);
+            if (nativeLogs != null)
+                nativeLogs.beginAdmission(session, lease.coordinationId(), admittedScope);
             onAdmitted.run();
             sessionService.updateStatus(
                     session.ownerId(),
@@ -241,6 +387,11 @@ public class SessionTurnRunner {
                                     controlPlaneClient.endManagedExecution(
                                             session.id(), admittedScope);
                                     lease.close();
+                                    finishMirrorAdmission(lease.coordinationId());
+                                    if (command != null)
+                                        publicTurns.remove(session.id(), command.turnId());
+                                    if (command != null)
+                                        command.finished().accept("cancelled", null);
                                     return;
                                 }
                                 Disposable heartbeat =
@@ -254,9 +405,17 @@ public class SessionTurnRunner {
                                                         10,
                                                         10,
                                                         TimeUnit.SECONDS);
+                                Throwable commandFailure = null;
                                 try {
-                                    runTurn(session, inputMsgs, lease, interrupted, admittedScope);
+                                    runTurn(
+                                            session,
+                                            inputMsgs,
+                                            lease,
+                                            interrupted,
+                                            admittedScope,
+                                            command);
                                 } catch (CorePermissionConfirmationException ex) {
+                                    commandFailure = ex;
                                     log.warn(
                                             "Managed session reached an unresumable Core permission"
                                                     + " prompt: sessionId={}, error={}",
@@ -269,6 +428,7 @@ public class SessionTurnRunner {
                                             admittedScope,
                                             lease.coordinationId());
                                 } catch (Exception ex) {
+                                    commandFailure = ex;
                                     log.warn(
                                             "Managed session turn failed: sessionId={}, error={}",
                                             session.id(),
@@ -286,14 +446,37 @@ public class SessionTurnRunner {
                                     controlPlaneClient.endManagedExecution(
                                             session.id(), admittedScope);
                                     lease.close();
+                                    finishMirrorAdmission(lease.coordinationId());
+                                    if (command != null)
+                                        publicTurns.remove(session.id(), command.turnId());
+                                    if (command != null)
+                                        command.finished()
+                                                .accept(
+                                                        commandFailure != null
+                                                                ? "failed"
+                                                                : interrupted.get()
+                                                                        ? "cancelled"
+                                                                        : command.outcome().get(),
+                                                        commandFailure);
                                 }
                             });
         } catch (RuntimeException ex) {
+            if (command != null) publicTurns.remove(session.id(), command.turnId());
             activeTurnLeases.remove(session.id(), lease);
             interruptedTurns.remove(session.id(), interrupted);
             controlPlaneClient.endManagedExecution(session.id(), executionScope);
             lease.close();
+            finishMirrorAdmission(lease.coordinationId());
             throw ex;
+        }
+    }
+
+    private void finishMirrorAdmission(String admission) {
+        if (nativeLogs == null) return;
+        try {
+            nativeLogs.finishAdmission(admission);
+        } catch (RuntimeException error) {
+            log.warn("Mirror admission close pending lease expiry: {}", admission, error);
         }
     }
 
@@ -302,6 +485,7 @@ public class SessionTurnRunner {
             ManagedExecutionScope expectedScope,
             TurnLeaseService.TurnLease expectedLease) {
         try {
+            if (nativeLogs != null) nativeLogs.renewAdmission(expectedLease.coordinationId());
             controlPlaneClient.heartbeatManagedExecution(sessionId, expectedScope);
         } catch (RuntimeException ex) {
             if (isPermanentManagedHeartbeatFailure(ex)) {
@@ -391,6 +575,28 @@ public class SessionTurnRunner {
     }
 
     /**
+     * Cancels an exact run after the caller has authorized access to the session. The registry
+     * additionally checks local ownership. Remote tickets carry the runId as a fence, never a
+     * session-wide fallback, so a late request cannot cancel the next turn.
+     */
+    public void interruptRun(String ownerId, String sessionId, String runId) {
+        if (runId == null || runId.isBlank()) {
+            throw new IllegalArgumentException("runId is required");
+        }
+        synchronized (turnMutex(sessionId)) {
+            AgentRun<AgentEvent> current = activeTurns.get(sessionId);
+            if (current != null) {
+                if (current.runId().equals(runId)
+                        && runRegistry.find(ownerId, sessionId, runId).isPresent()) {
+                    interruptLocalLocked(sessionId, "run.interrupt");
+                }
+                return;
+            }
+        }
+        coordinationStore.requestFencedTurnInterrupt(sessionId, "run.interrupt", "run:" + runId);
+    }
+
+    /**
      * Performs local turn cancellation when this JVM holds the active agent. Returns {@code true}
      * when a local turn was interrupted.
      */
@@ -401,6 +607,8 @@ public class SessionTurnRunner {
     }
 
     private boolean interruptLocalLocked(String sessionId, String source) {
+        ManagedExecutionScope interruptedScope =
+                controlPlaneClient.managedExecutionScope(sessionId);
         // Establish cancellation before releasing a blocked confirmation future. Otherwise the
         // middleware can observe false and advance the agent between future completion and stream
         // disposal.
@@ -408,36 +616,29 @@ public class SessionTurnRunner {
         if (interrupted != null) {
             interrupted.set(true);
         }
-        Disposable disposable = activeTurns.remove(sessionId);
-        if (disposable != null) {
-            disposable.dispose();
-        }
-        HarnessAgent agent = activeAgents.remove(sessionId);
-        if (agent != null) {
-            try {
-                agent.interrupt();
-            } catch (Exception ex) {
-                log.warn("Harness interrupt failed for {}: {}", sessionId, ex.getMessage());
-            }
+        AgentRun<AgentEvent> run = activeTurns.remove(sessionId);
+        if (run != null) {
+            run.cancel();
         }
         confirmationCoordinator.cancelSession(sessionId, source);
-        java.util.concurrent.CountDownLatch done = activeTurnDone.remove(sessionId);
+        CountDownLatch done = activeTurnDone.remove(sessionId);
         if (done != null) {
             done.countDown();
         }
         boolean active =
                 interrupted != null
-                        || disposable != null
-                        || agent != null
+                        || run != null
                         || done != null
                         || activeTurnLeases.containsKey(sessionId);
         if (!active) {
             return false;
         }
-        eventLog.append(
+        appendTurnEvent(
                 sessionId,
                 SessionEventTypes.SESSION_INTERRUPTED,
-                Map.of("status", "interrupted", "source", source));
+                Map.of("status", "interrupted", "source", source),
+                null,
+                interruptedScope);
         TurnLeaseService.TurnLease lease = activeTurnLeases.remove(sessionId);
         if (lease != null) {
             handsLeaseService.release(sessionId, lease.coordinationId());
@@ -464,8 +665,6 @@ public class SessionTurnRunner {
         interruptLocal(sessionId, "session-deleted");
         TeamsMiddleware.unregisterSession(sessionId);
         agentBuildService.discardSession(ownerId, sessionId);
-        previewIdsBySession.remove(sessionId);
-        startedPreviewTypes.remove(sessionId);
     }
 
     private void runTurn(
@@ -473,7 +672,8 @@ public class SessionTurnRunner {
             List<Msg> inputMsgs,
             TurnLeaseService.TurnLease lease,
             AtomicBoolean interrupted,
-            ManagedExecutionScope executionScope) {
+            ManagedExecutionScope executionScope,
+            DurableTurn command) {
         if (interrupted.get()) {
             return;
         }
@@ -511,6 +711,8 @@ public class SessionTurnRunner {
                     ManagedTurnContext.class,
                     new ManagedTurnContext(executionScope, lease.coordinationId()));
         }
+        String turnId = command == null ? resolveTurnId(session, inputMsgs) : command.turnId();
+        rcBuilder.put(SessionRecorder.TURN_ID_KEY, turnId);
         Optional<Sandbox> handsSandbox =
                 handsLeaseService.acquire(session, environment, lease.coordinationId());
         handsSandbox.ifPresent(
@@ -521,15 +723,70 @@ public class SessionTurnRunner {
                                         .externalSandbox(sandbox)
                                         .isolationScope(IsolationScope.SESSION)
                                         .build()));
+        var jevRunId = new AtomicReference<String>();
+        rcBuilder.put(
+                JevServiceSupport.TraceSink.class,
+                new JevServiceSupport.TraceSink(
+                        record -> {
+                            String runId = jevRunId.get();
+                            if (runId == null) return;
+                            appendTurnEvent(
+                                    session.id(),
+                                    "jev.decision",
+                                    Map.of(
+                                            "run_id",
+                                            runId,
+                                            "purpose",
+                                            record.purpose(),
+                                            "version",
+                                            record.version(),
+                                            "mode",
+                                            record.mode().name(),
+                                            "status",
+                                            record.status().name(),
+                                            "reason",
+                                            record.reason(),
+                                            "elapsed_ms",
+                                            record.elapsed().toMillis(),
+                                            "recommendation",
+                                            record.recommendation()),
+                                    null,
+                                    executionScope);
+                        }));
+        if (nativeLogs != null) {
+            nativeLogs.register(session);
+            rcBuilder.put(SessionExportSink.CONTEXT_KEY, nativeLogs.sink(session.id()));
+            if (command != null) {
+                var log = nativeLogs.open(session);
+                var latest = SessionTurns.read(log).latest();
+                boolean answering =
+                        inputMsgs.stream()
+                                .anyMatch(
+                                        message ->
+                                                message.getMetadata()
+                                                                .containsKey(
+                                                                        Msg
+                                                                                .METADATA_CONFIRM_RESULTS)
+                                                        || message.hasContentBlocks(
+                                                                ToolResultBlock.class));
+                String kind =
+                        latest != null && turnId.equals(latest.turnId()) && !latest.ended()
+                                ? answering ? "respond" : "resume"
+                                : "submit";
+                var execution =
+                        new SessionInbox.Command(
+                                UUID.randomUUID().toString(), kind, turnId, inputMsgs, List.of());
+                rcBuilder.put(SessionExecution.CONTEXT_KEY, new SessionExecution(log, execution));
+            }
+        }
+        if (budgets != null) rcBuilder.put(SessionModelPolicy.CONTEXT_KEY, budgets.policy(session));
         RuntimeContext rc = rcBuilder.build();
 
-        SessionEventMapper.PreviewIds previewIds = new SessionEventMapper.PreviewIds();
-        Set<String> startedPreviews = ConcurrentHashMap.newKeySet();
         AtomicBoolean suspended = new AtomicBoolean(false);
+        AtomicReference<GenerateReason> resultReason = new AtomicReference<>();
         AtomicBoolean corePermissionAsking = new AtomicBoolean(false);
-        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
-        java.util.concurrent.atomic.AtomicReference<Throwable> errorRef =
-                new java.util.concurrent.atomic.AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+        AtomicReference<Throwable> errorRef = new AtomicReference<>();
         BaseSubscriber<AgentEvent> subscription =
                 new BaseSubscriber<>() {
                     @Override
@@ -542,8 +799,13 @@ public class SessionTurnRunner {
                         if (isCorePermissionAsking(event)) {
                             corePermissionAsking.set(true);
                         }
-                        if (handleAgentEvent(session.id(), event, executionScope)) {
-                            suspended.set(true);
+                        if (event instanceof AgentResultEvent result
+                                && result.getResult() != null
+                                && (event.getSource() == null || event.getSource().isBlank())) {
+                            resultReason.set(result.getResult().getGenerateReason());
+                            suspended.set(
+                                    "suspended"
+                                            .equals(SessionRecorder.outcome(resultReason.get())));
                         }
                     }
 
@@ -558,6 +820,9 @@ public class SessionTurnRunner {
                         done.countDown();
                     }
                 };
+        AgentRun<AgentEvent> run = agent.prepareRun(inputMsgs, rc);
+        jevRunId.set(run.runId());
+        if (nativeLogs != null) nativeLogs.bindRun(session, lease.coordinationId(), run.runId());
         synchronized (turnMutex(session.id())) {
             // A stale turn may finish agent construction after a replacement was admitted. Never
             // let its late registrations overwrite the replacement's cancellation handles.
@@ -567,30 +832,30 @@ public class SessionTurnRunner {
                 handsLeaseService.release(session.id(), lease.coordinationId());
                 return;
             }
-            previewIdsBySession.put(session.id(), previewIds);
-            startedPreviewTypes.put(session.id(), startedPreviews);
-            activeAgents.put(session.id(), agent);
             activeTurnDone.put(session.id(), done);
-            activeTurns.put(session.id(), subscription);
+            runRegistry.register(session.ownerId(), session.id(), run);
+            activeTurns.put(session.id(), run);
         }
-        // The subscriber itself was registered under the turn mutex. If cancellation won before
-        // this call, BaseSubscriber cancels immediately from onSubscribe and no middleware/tool
-        // demand is issued. subscribe() is intentionally outside the mutex because always_ask may
-        // synchronously block until a human decision.
+        // Register the handle before subscribing, so cancellation during setup is not lost.
+        // Subscribe outside the mutex: confirmation middleware can block awaiting a decision.
         try {
-            agent.streamEvents(inputMsgs, rc).subscribe(subscription);
+            appendTurnEvent(
+                    session.id(),
+                    SessionEventTypes.SESSION_RUN_STARTED,
+                    executionCorrelation(run.runId(), turnId, executionScope),
+                    null,
+                    executionScope);
+            run.stream().subscribe(subscription);
         } catch (RuntimeException ex) {
-            activeTurns.remove(session.id(), subscription);
-            activeAgents.remove(session.id(), agent);
+            activeTurns.remove(session.id(), run);
             activeTurnDone.remove(session.id(), done);
-            persistRemainingThinking(session.id(), previewIds, executionScope);
-            previewIdsBySession.remove(session.id(), previewIds);
-            startedPreviewTypes.remove(session.id(), startedPreviews);
+            run.cancel();
             subscription.dispose();
             handsLeaseService.release(session.id(), lease.coordinationId());
             throw ex;
         }
         if (interrupted.get()) {
+            run.cancel();
             subscription.dispose();
             done.countDown();
         }
@@ -606,13 +871,22 @@ public class SessionTurnRunner {
                 }
                 throw new RuntimeException(error);
             }
-            if (corePermissionAsking.get()) {
+            // Native export is asynchronous during generation. Flush committed output before
+            // status_idle so the control-plane Endpoint collector sees the final answer first.
+            if (nativeLogs != null) nativeLogs.refresh(session.id());
+            String outcome = SessionRecorder.outcome(resultReason.get());
+            if (command != null) command.outcome().set(outcome);
+            if ("failed".equals(outcome))
+                throw new IllegalStateException(
+                        "Agent turn ended unsuccessfully: " + resultReason.get());
+            if (corePermissionAsking.get() && command == null) {
                 throw new CorePermissionConfirmationException(
                         "Core PermissionEngine returned PERMISSION_ASKING without a durable service"
                             + " HITL ticket; configure the tool with permissionPolicy=always_ask to"
                             + " use resumable AgentScope Service approval");
             }
-            if (suspended.get()) {
+            if (suspended.get() || corePermissionAsking.get()) {
+                if (command != null) command.outcome().set("requires_action");
                 sessionService.updateStatus(
                         session.ownerId(),
                         session.id(),
@@ -635,20 +909,38 @@ public class SessionTurnRunner {
             }
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
+            if (command != null) command.outcome().set("interrupted");
+            run.cancel();
             subscription.dispose();
             failTurn(session, ie, "interrupted", executionScope, lease.coordinationId());
         } finally {
-            activeTurns.remove(session.id(), subscription);
-            activeAgents.remove(session.id(), agent);
+            activeTurns.remove(session.id(), run);
             activeTurnDone.remove(session.id(), done);
-            persistRemainingThinking(session.id(), previewIds, executionScope);
-            previewIdsBySession.remove(session.id(), previewIds);
-            startedPreviewTypes.remove(session.id(), startedPreviews);
             // Keep work-queue lease for suspended turns so workers can finish pending tools.
             if (!suspended.get()) {
                 handsLeaseService.release(session.id(), lease.coordinationId());
             }
         }
+    }
+
+    private String resolveTurnId(ManagedSessionDto session, List<Msg> inputs) {
+        var ids = new HashSet<String>();
+        for (Msg input : inputs)
+            for (var block : input.getContent())
+                if (block instanceof ToolResultBlock result) ids.add(result.getId());
+        if (ids.isEmpty()) return UUID.randomUUID().toString();
+        if (nativeLogs == null)
+            throw new IllegalStateException("Native session log is required for tool continuation");
+        return SessionInteractions.continuationTurn(nativeLogs.open(session), ids);
+    }
+
+    static Map<String, Object> executionCorrelation(
+            String runId, String turnId, ManagedExecutionScope scope) {
+        var data = new LinkedHashMap<String, Object>();
+        data.put("run_id", runId);
+        data.put("turn_id", turnId);
+        if (scope != null) data.put("coordination", scope.correlation());
+        return data;
     }
 
     private void failTurn(
@@ -658,9 +950,7 @@ public class SessionTurnRunner {
             ManagedExecutionScope executionScope,
             String handsOwnerId) {
         var mcpFailure =
-                error instanceof io.agentscope.harness.agent.tools.McpConnectionException
-                        ? (io.agentscope.harness.agent.tools.McpConnectionException) error
-                        : null;
+                error instanceof McpConnectionException ? (McpConnectionException) error : null;
         if (mcpFailure != null) code = "mcp_connection_failed_error";
         ApiErrorDetail detail =
                 ApiErrorDetail.of(
@@ -688,81 +978,9 @@ public class SessionTurnRunner {
         handsLeaseService.release(session.id(), handsOwnerId);
     }
 
-    /**
-     * @return {@code true} when the event indicates {@link GenerateReason#TOOL_SUSPENDED}
-     */
-    private boolean handleAgentEvent(
-            String sessionId, AgentEvent event, ManagedExecutionScope executionScope) {
-        SessionEventMapper.PreviewIds ids =
-                previewIdsBySession.computeIfAbsent(
-                        sessionId, ignored -> new SessionEventMapper.PreviewIds());
-        SessionEventMapper.MappingResult mapped = eventMapper.map(event, ids);
-        mapped.preceding()
-                .forEach(
-                        persisted ->
-                                appendTurnEvent(
-                                        sessionId,
-                                        persisted.type(),
-                                        persisted.payload(),
-                                        persisted.eventId(),
-                                        executionScope));
-        if (event instanceof AgentResultEvent result
-                && result.getResult() != null
-                && result.getResult().getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
-            persistSuspendedToolUses(sessionId, result.getResult(), executionScope);
-            return true;
-        }
-
-        mapped.preview()
-                .ifPresent(
-                        frame -> {
-                            Set<String> started =
-                                    startedPreviewTypes.computeIfAbsent(
-                                            sessionId, ignored -> ConcurrentHashMap.newKeySet());
-                            if (started.add(frame.targetType() + ":" + frame.eventId())) {
-                                previewBus.emitStart(
-                                        sessionId, frame.targetType(), frame.eventId());
-                            }
-                            // null delta = start-only announcement (e.g. tool_use begin)
-                            if (frame.delta() != null) {
-                                previewBus.emitDelta(
-                                        sessionId,
-                                        frame.targetType(),
-                                        frame.eventId(),
-                                        frame.delta());
-                            }
-                        });
-        mapped.persisted()
-                .ifPresent(
-                        persisted ->
-                                appendTurnEvent(
-                                        sessionId,
-                                        persisted.type(),
-                                        persisted.payload(),
-                                        persisted.eventId(),
-                                        executionScope));
-        return false;
-    }
-
-    private void persistRemainingThinking(
-            String sessionId, SessionEventMapper.PreviewIds ids, ManagedExecutionScope scope) {
-        try {
-            ids.consumeThinking()
-                    .ifPresent(
-                            event ->
-                                    appendTurnEvent(
-                                            sessionId,
-                                            event.type(),
-                                            event.payload(),
-                                            event.eventId(),
-                                            scope));
-        } catch (RuntimeException error) {
-            log.warn("Could not persist remaining thinking for session {}", sessionId, error);
-        }
-    }
-
     static boolean isCorePermissionAsking(AgentEvent event) {
-        return event instanceof AgentResultEvent result
+        return (event.getSource() == null || event.getSource().isBlank())
+                && event instanceof AgentResultEvent result
                 && result.getResult() != null
                 && result.getResult().getGenerateReason() == GenerateReason.PERMISSION_ASKING;
     }
@@ -774,41 +992,14 @@ public class SessionTurnRunner {
         }
     }
 
-    private void persistSuspendedToolUses(
-            String sessionId, Msg result, ManagedExecutionScope executionScope) {
-        for (ToolUseBlock tub : result.getContentBlocks(ToolUseBlock.class)) {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("id", tub.getId());
-            payload.put("name", tub.getName());
-            payload.put("input", tub.getInput() != null ? tub.getInput() : Map.of());
-            payload.put("toolCallId", tub.getId());
-            payload.put("toolName", tub.getName());
-            payload.put("state", "pending");
-            appendTurnEvent(
-                    sessionId, SessionEventTypes.AGENT_TOOL_USE, payload, null, executionScope);
-        }
-    }
-
     private SessionEventDto appendTurnEvent(
             String sessionId,
             String type,
             Map<String, Object> payload,
             String eventId,
             ManagedExecutionScope executionScope) {
-        if (executionScope == null) {
-            return eventLog.append(sessionId, type, payload, eventId);
-        }
-        SessionEventDto event = eventLog.appendLocal(sessionId, type, payload, eventId);
-        try {
-            controlPlaneClient.appendSessionEvent(event, executionScope);
-        } catch (RuntimeException ex) {
-            log.warn(
-                    "Scoped session event mirror failed: sessionId={}, eventId={}, error={}",
-                    sessionId,
-                    event.id(),
-                    ex.getMessage());
-        }
-        return event;
+        return eventLog.appendScoped(
+                sessionId, type, payload, eventId, ControlPlaneClient.eventScope(executionScope));
     }
 
     /** Builds a {@link ToolResultBlock} from a worker/user tool_result payload. */
@@ -885,7 +1076,7 @@ public class SessionTurnRunner {
             byte[] digest =
                     MessageDigest.getInstance("SHA-256")
                             .digest(value.getBytes(StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(digest);
+            return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is unavailable", ex);
         }

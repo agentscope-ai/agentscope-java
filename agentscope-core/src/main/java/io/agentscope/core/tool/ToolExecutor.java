@@ -16,18 +16,26 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.observation.ActionObservationException;
+import io.agentscope.core.observation.ActionObservations;
+import io.agentscope.core.session.SessionLogException;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,13 +66,17 @@ class ToolExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(ToolExecutor.class);
 
+    /** Interceptor chain order: higher {@code order()} runs outermost; stable for equal orders. */
+    private static final Comparator<ToolCallInterceptor> INTERCEPTOR_ORDER =
+            Comparator.comparingInt(ToolCallInterceptor::order).reversed();
+
     private final Toolkit toolkit;
     private final ToolRegistry toolRegistry;
     private final ToolGroupManager groupManager;
     private final ToolkitConfig config;
     private final ExecutorService executorService;
+    private final List<ToolCallInterceptor> interceptors;
     private BiConsumer<ToolUseBlock, ToolResultBlock> userChunkCallback;
-    private BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback;
 
     /**
      * Create a tool executor with Reactor Schedulers (recommended).
@@ -91,6 +103,21 @@ class ToolExecutor {
         this.groupManager = groupManager;
         this.config = config;
         this.executorService = executorService;
+        this.interceptors = sortInterceptors(config);
+    }
+
+    /**
+     * Sorts interceptors once at construction ({@link #INTERCEPTOR_ORDER}); empty stays empty.
+     *
+     * @param config the toolkit config carrying the registered interceptors, may be {@code null}
+     * @return the sorted, immutable interceptor list (outermost first)
+     */
+    private static List<ToolCallInterceptor> sortInterceptors(ToolkitConfig config) {
+        List<ToolCallInterceptor> registered =
+                config != null ? config.getInterceptors() : List.of();
+        return registered.isEmpty()
+                ? List.of()
+                : registered.stream().sorted(INTERCEPTOR_ORDER).toList();
     }
 
     /**
@@ -101,36 +128,31 @@ class ToolExecutor {
     }
 
     /**
-     * Set the framework-internal chunk callback used by ReActAgent hooks.
-     */
-    void setInternalChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
-        this.internalChunkCallback = callback;
-    }
-
-    /**
      * Get the user-defined chunk callback.
-     * Used by Toolkit.copy() to preserve user callbacks during deep copy.
+     * Used by {@link Toolkit#copy()} to preserve user callbacks across a build-time isolation copy.
      */
     BiConsumer<ToolUseBlock, ToolResultBlock> getChunkCallback() {
         return this.userChunkCallback;
     }
 
     /**
-     * Combine the user-defined and internal chunk callbacks.
+     * Combine the user-defined and the per-call internal chunk callbacks.
+     *
+     * @param internal the per-call internal chunk callback (may be {@code null})
      */
-    private BiConsumer<ToolUseBlock, ToolResultBlock> getEffectiveChunkCallback() {
-        if (internalChunkCallback == null) {
+    private BiConsumer<ToolUseBlock, ToolResultBlock> getEffectiveChunkCallback(
+            BiConsumer<ToolUseBlock, ToolResultBlock> internal) {
+        if (internal == null) {
             return userChunkCallback != null
                     ? (toolUse, chunk) ->
                             invokeChunkCallback("user", userChunkCallback, toolUse, chunk)
                     : null;
         }
         if (userChunkCallback == null) {
-            return (toolUse, chunk) ->
-                    invokeChunkCallback("internal", internalChunkCallback, toolUse, chunk);
+            return (toolUse, chunk) -> invokeChunkCallback("internal", internal, toolUse, chunk);
         }
         return (toolUse, chunk) -> {
-            invokeChunkCallback("internal", internalChunkCallback, toolUse, chunk);
+            invokeChunkCallback("internal", internal, toolUse, chunk);
             invokeChunkCallback("user", userChunkCallback, toolUse, chunk);
         };
     }
@@ -164,7 +186,36 @@ class ToolExecutor {
      * @return Mono containing execution result
      */
     Mono<ToolResultBlock> execute(ToolCallParam param) {
-        return TracerRegistry.get().callTool(this.toolkit, param, () -> executeCore(param));
+        return execute(
+                param,
+                param.getRuntimeContext() == null
+                        ? ToolRequestConfig.NONE
+                        : param.getRuntimeContext().getToolRequestConfig(),
+                null);
+    }
+
+    /**
+     * Execute a single tool call with a per-call tool request config and a per-call internal chunk
+     * callback. This is the single core entry point; the no-arg {@link #execute(ToolCallParam)}
+     * resolves the request config from its explicit runtime context and uses no internal callback.
+     */
+    Mono<ToolResultBlock> execute(
+            ToolCallParam param,
+            ToolRequestConfig requestConfig,
+            BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+        return ActionObservations.observe(
+                param, () -> executeUnobserved(param, requestConfig, internalChunkCallback));
+    }
+
+    private Mono<ToolResultBlock> executeUnobserved(
+            ToolCallParam param,
+            ToolRequestConfig requestConfig,
+            BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+        return TracerRegistry.get()
+                .callTool(
+                        this.toolkit,
+                        param,
+                        () -> executeCore(param, requestConfig, internalChunkCallback));
     }
 
     /**
@@ -180,17 +231,29 @@ class ToolExecutor {
      *   <li>Actual tool invocation</li>
      * </ul>
      */
-    private Mono<ToolResultBlock> executeCore(ToolCallParam param) {
+    private Mono<ToolResultBlock> executeCore(
+            ToolCallParam param,
+            ToolRequestConfig requestConfig,
+            BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+        if (requestConfig == null) {
+            requestConfig = ToolRequestConfig.NONE;
+        }
         ToolUseBlock toolCall = param.getToolUseBlock();
-        AgentTool tool = toolRegistry.getTool(toolCall.getName());
+        AgentTool tool = resolveTool(toolCall.getName(), requestConfig);
 
         if (tool == null) {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
 
-        // Check tool activation
+        // Check tool activation. This gate only applies to backend tools: an external tool injected
+        // via the request config is ungrouped and always callable, so a same-named-but-inactive
+        // backend tool must not reject it (the model was shown the external override and the call
+        // must be honoured).
+        boolean fromRequestConfig = requestConfig.overrides(toolCall.getName());
         RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
-        if (registered != null && !groupManager.isActiveTool(toolCall.getName())) {
+        if (!fromRequestConfig
+                && registered != null
+                && !groupManager.isActiveTool(toolCall.getName(), resolveActiveGroups(param))) {
             String errorMsg =
                     String.format(
                             "Unauthorized tool call: '%s' is not available", toolCall.getName());
@@ -219,26 +282,40 @@ class ToolExecutor {
         }
 
         // Merge runtime context: param-level > toolkit default
-        io.agentscope.core.agent.RuntimeContext runtimeContext = param.getRuntimeContext();
+        RuntimeContext runtimeContext = param.getRuntimeContext();
         @SuppressWarnings("deprecation")
         ToolExecutionContext toolkitDefault = config.getDefaultContext();
         if (runtimeContext == null && toolkitDefault != null) {
-            runtimeContext =
-                    io.agentscope.core.agent.RuntimeContext.builder()
-                            .toolExecutionContext(toolkitDefault)
-                            .build();
+            runtimeContext = RuntimeContext.builder().toolExecutionContext(toolkitDefault).build();
         } else if (runtimeContext != null && toolkitDefault != null) {
             ToolExecutionContext merged =
                     ToolExecutionContext.merge(
                             runtimeContext.asToolExecutionContext(), toolkitDefault);
             runtimeContext =
-                    io.agentscope.core.agent.RuntimeContext.builder(runtimeContext)
-                            .toolExecutionContext(merged)
-                            .build();
+                    RuntimeContext.builder(runtimeContext).toolExecutionContext(merged).build();
         }
+        final RuntimeContext effectiveRuntimeContext = runtimeContext;
 
         // Create emitter for streaming
-        ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, getEffectiveChunkCallback());
+        ToolEmitter toolEmitter =
+                new DefaultToolEmitter(
+                        toolCall,
+                        (use, chunk) -> {
+                            SessionRecorder recorder =
+                                    SessionRecorder.from(param.getRuntimeContext());
+                            if (recorder != null)
+                                recorder.append(
+                                        "tool/chunk",
+                                        Map.of(
+                                                "toolCallId",
+                                                use.getId(),
+                                                "actionId",
+                                                recorder.actionId(use.getId()),
+                                                "chunk",
+                                                chunk));
+                            var callback = getEffectiveChunkCallback(internalChunkCallback);
+                            if (callback != null) callback.accept(use, chunk);
+                        });
 
         // Merge input with preset parameters. Preset values win so framework-controlled
         // parameters remain immutable from the caller/LLM perspective. Route through
@@ -259,7 +336,137 @@ class ToolExecutor {
                         .emitter(toolEmitter)
                         .build();
 
-        return tool.callAsync(executionParam)
+        SessionRecorder recorder = SessionRecorder.from(runtimeContext);
+
+        // Zero interceptors: existing execution path, zero behavior change.
+        if (interceptors.isEmpty()) {
+            return applyResultErrorMapping(
+                    dispatchRecord(recorder, executionParam, toolCall, mergedInput)
+                            .then(Mono.defer(() -> tool.callAsync(executionParam))),
+                    toolCall);
+        }
+
+        // The interceptor chain wraps dispatch logging + real execution: the dispatch record
+        // captures the post-interception arguments, and denied calls produce no allowed/dispatch
+        // records. Agent identity travels as agentId/agentName only, null on agentless calls.
+        Agent callingAgent = param.getAgent();
+        String agentId = callingAgent != null ? callingAgent.getAgentId() : null;
+        String agentName = callingAgent != null ? callingAgent.getName() : null;
+        Function<ToolInvocation, Mono<ToolResultBlock>> terminal =
+                iv ->
+                        dispatchRecord(recorder, executionParam, toolCall, iv.input())
+                                .then(
+                                        Mono.defer(
+                                                () ->
+                                                        tool.callAsync(
+                                                                ToolCallParam.builder(
+                                                                                executionParam)
+                                                                        .input(iv.input())
+                                                                        .build())));
+        return applyResultErrorMapping(
+                        Mono.defer(
+                                () ->
+                                        applyInterceptorChain(
+                                                interceptors,
+                                                new ToolInvocation(
+                                                        toolCall.getName(),
+                                                        tool,
+                                                        mergedInput,
+                                                        effectiveRuntimeContext,
+                                                        agentId,
+                                                        agentName),
+                                                terminal)),
+                        toolCall)
+                // Interceptor-produced results (e.g. denials) carry no id/name — backfill them;
+                // tool results already carry theirs. Error/empty-synthesized results also gain
+                // id/name here (direct path only; normalized on the batch path).
+                .map(
+                        result ->
+                                result.getId() == null
+                                        ? result.withIdAndName(toolCall.getId(), toolCall.getName())
+                                        : result);
+    }
+
+    /**
+     * Records the pre-execution state snapshot plus the {@code allowed} decision and {@code
+     * tool/dispatch} log for the given (post-interception) arguments; a no-op without a session
+     * recorder.
+     */
+    private static Mono<Void> dispatchRecord(
+            SessionRecorder recorder,
+            ToolCallParam executionParam,
+            ToolUseBlock toolCall,
+            Map<String, Object> arguments) {
+        if (recorder == null) {
+            return Mono.empty();
+        }
+        return Mono.defer(
+                () -> {
+                    recorder.captureState(
+                            RuntimeContext.resolveAgentState(
+                                    executionParam.getRuntimeContext(), executionParam.getAgent()),
+                            "before_tool");
+                    recorder.append(
+                            "tool/decision",
+                            Map.of("toolCallId", toolCall.getId(), "decision", "allowed"));
+                    return recorder.record(
+                            "tool/dispatch",
+                            Map.of(
+                                    "toolCallId",
+                                    toolCall.getId(),
+                                    "actionId",
+                                    recorder.actionId(toolCall.getId()),
+                                    "name",
+                                    toolCall.getName(),
+                                    "arguments",
+                                    arguments));
+                });
+    }
+
+    /**
+     * Assembles the ordered interceptor chain around the terminal execution (onion pattern, same
+     * delegation shape as {@code MiddlewareBase}).
+     *
+     * <p>{@code interceptors} must already be stable-sorted by {@code order()} descending (see
+     * {@link #sortInterceptors(ToolkitConfig)}): higher order runs outermost, equal orders keep
+     * registration order. Each {@code intercept} call is wrapped in {@link Mono#defer} so a
+     * synchronous throw becomes an error signal.
+     *
+     * <p>Errors are deliberately not attributed per layer: in an onion chain an error signal
+     * cannot be reliably attributed to one layer, so they propagate as-is and are mapped by the
+     * caller's {@link #applyResultErrorMapping(Mono, ToolUseBlock)}. Interceptors that need
+     * attribution should encode their identity in exception messages.
+     *
+     * @param interceptors interceptors sorted by {@code order()} descending
+     * @param invocation   the call snapshot entering the outermost interceptor
+     * @param terminal     the chain endpoint: session dispatch logging + real tool execution
+     * @return the result produced by the chain (outermost interceptor's result wins)
+     */
+    private static Mono<ToolResultBlock> applyInterceptorChain(
+            List<ToolCallInterceptor> interceptors,
+            ToolInvocation invocation,
+            Function<ToolInvocation, Mono<ToolResultBlock>> terminal) {
+        Function<ToolInvocation, Mono<ToolResultBlock>> next = terminal;
+        for (int i = interceptors.size() - 1; i >= 0; i--) {
+            ToolCallInterceptor current = interceptors.get(i);
+            Function<ToolInvocation, Mono<ToolResultBlock>> downstream = next;
+            next = iv -> Mono.defer(() -> current.intercept(iv, downstream));
+        }
+        return next.apply(invocation);
+    }
+
+    /**
+     * Uniform result error mapping for tool executions: {@link ToolSuspendException} becomes a
+     * suspended result, observation/session-log errors propagate unchanged, and other errors and
+     * empty results become model-visible {@code ToolResultBlock.error}.
+     *
+     * @param execution the execution pipeline whose errors and empty signals are mapped
+     * @param toolCall  the tool call, for suspended-result identity and logging
+     * @return the pipeline with suspend/error/empty cases mapped to result blocks
+     */
+    private Mono<ToolResultBlock> applyResultErrorMapping(
+            Mono<ToolResultBlock> execution, ToolUseBlock toolCall) {
+        return execution
                 .onErrorResume(
                         ToolSuspendException.class,
                         e -> {
@@ -272,6 +479,8 @@ class ToolExecutor {
                         })
                 .onErrorResume(
                         e -> {
+                            if (ActionObservationException.causedBy(e)
+                                    || SessionLogException.causedBy(e)) return Mono.error(e);
                             String errorMsg =
                                     e.getMessage() != null
                                             ? e.getMessage()
@@ -284,6 +493,30 @@ class ToolExecutor {
                                 ToolResultBlock.error(
                                         "Tool execution failed: Tool completed without returning a"
                                                 + " result")));
+    }
+
+    /**
+     * Resolve a tool by name against the executor's own {@link #toolRegistry}. The merge policy
+     * ("external → hide-backend → registry") lives in {@link
+     * ToolRequestConfig#resolveTool(String, ToolRegistry)}; here it is applied against the
+     * executor's <em>injected</em> {@link #toolRegistry}/{@link #config} (in production the same
+     * object as the toolkit's, but injected so {@code ToolExecutor} stays testable).
+     */
+    private AgentTool resolveTool(String name, ToolRequestConfig requestConfig) {
+        return (requestConfig != null ? requestConfig : ToolRequestConfig.NONE)
+                .resolveTool(name, this.toolRegistry);
+    }
+
+    /**
+     * Resolve the per-call active groups from the tool call's runtime context, or {@code null} when
+     * unavailable (falling back to the shared activation flags in {@code ToolGroupManager}).
+     */
+    private Collection<String> resolveActiveGroups(ToolCallParam param) {
+        RuntimeContext rc = param.getRuntimeContext();
+        if (rc != null && rc.getAgentState() != null) {
+            return rc.getAgentState().getToolContext().getActivatedGroups();
+        }
+        return null;
     }
 
     // ==================== Batch Tool Execution ====================
@@ -303,7 +536,29 @@ class ToolExecutor {
             boolean parallel,
             ExecutionConfig executionConfig,
             Agent agent,
-            io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
+            RuntimeContext agentRuntimeContext) {
+        return executeAll(
+                toolCalls,
+                parallel,
+                executionConfig,
+                agent,
+                agentRuntimeContext,
+                ToolRequestConfig.NONE,
+                null);
+    }
+
+    /**
+     * Execute multiple tool calls with an explicit per-call tool request config and an internal
+     * chunk callback, both threaded down to every single-tool execution.
+     */
+    Mono<List<ToolResultBlock>> executeAll(
+            List<ToolUseBlock> toolCalls,
+            boolean parallel,
+            ExecutionConfig executionConfig,
+            Agent agent,
+            RuntimeContext agentRuntimeContext,
+            ToolRequestConfig requestConfig,
+            BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return Mono.just(List.of());
         }
@@ -320,7 +575,9 @@ class ToolExecutor {
                                                     toolCall,
                                                     executionConfig,
                                                     agent,
-                                                    agentRuntimeContext))
+                                                    agentRuntimeContext,
+                                                    requestConfig,
+                                                    internalChunkCallback))
                             .toList();
             return Flux.concat(monos).collectList();
         }
@@ -334,8 +591,13 @@ class ToolExecutor {
         for (ToolUseBlock toolCall : toolCalls) {
             Mono<ToolResultBlock> mono =
                     executeWithInfrastructure(
-                            toolCall, executionConfig, agent, agentRuntimeContext);
-            if (isConcurrencySafe(toolCall)) {
+                            toolCall,
+                            executionConfig,
+                            agent,
+                            agentRuntimeContext,
+                            requestConfig,
+                            internalChunkCallback);
+            if (isConcurrencySafe(toolCall, requestConfig)) {
                 safeBatch.add(mono);
             } else {
                 if (!safeBatch.isEmpty()) {
@@ -352,12 +614,14 @@ class ToolExecutor {
     }
 
     /**
-     * Whether the tool backing {@code toolCall} can run in parallel with itself. Defaults to
-     * {@code true} for legacy {@link AgentTool} instances that do not extend {@link ToolBase}, so
-     * existing tools keep their pre-2.0 concurrent behaviour.
+     * Whether the tool backing {@code toolCall} can run in parallel with itself. Resolves the tool
+     * through {@link #resolveTool} so the safety classification matches the tool that will actually
+     * execute (external tools from the request config are schema-only/suspended and therefore safe).
+     * Defaults to {@code true} for legacy {@link AgentTool} instances that do not extend {@link
+     * ToolBase}, so existing tools keep their pre-2.0 concurrent behaviour.
      */
-    private boolean isConcurrencySafe(ToolUseBlock toolCall) {
-        AgentTool tool = toolRegistry.getTool(toolCall.getName());
+    private boolean isConcurrencySafe(ToolUseBlock toolCall, ToolRequestConfig requestConfig) {
+        AgentTool tool = resolveTool(toolCall.getName(), requestConfig);
         if (tool instanceof ToolBase tb) {
             return tb.isConcurrencySafe();
         }
@@ -371,7 +635,9 @@ class ToolExecutor {
             ToolUseBlock toolCall,
             ExecutionConfig executionConfig,
             Agent agent,
-            io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
+            RuntimeContext agentRuntimeContext,
+            ToolRequestConfig requestConfig,
+            BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
         // Build tool call parameter
         ToolCallParam param =
                 ToolCallParam.builder()
@@ -381,11 +647,21 @@ class ToolExecutor {
                         .build();
 
         // Get core execution
-        Mono<ToolResultBlock> execution = execute(param);
+        // Persist outside the execution timeout so a slow observation commit cannot replay a tool.
+        Mono<ToolResultBlock> execution =
+                ActionObservations.observe(
+                        param,
+                        () ->
+                                applyTimeout(
+                                        applyScheduling(
+                                                executeUnobserved(
+                                                        param,
+                                                        requestConfig,
+                                                        internalChunkCallback)),
+                                        executionConfig,
+                                        toolCall));
 
-        // Apply infrastructure layers
-        execution = applyScheduling(execution);
-        execution = applyTimeout(execution, executionConfig, toolCall);
+        // Every retry receives a separate observed attempt.
         execution = applyRetry(execution, executionConfig, toolCall);
         execution = applyShutdownGuard(execution);
 
@@ -394,6 +670,8 @@ class ToolExecutor {
                 .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()))
                 .onErrorResume(
                         e -> {
+                            if (ActionObservationException.causedBy(e)
+                                    || SessionLogException.causedBy(e)) return Mono.error(e);
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
                             String errorMsg = ExceptionUtils.getErrorMessage(e);
                             return Mono.just(
@@ -445,7 +723,11 @@ class ToolExecutor {
                 Retry.backoff(maxAttempts - 1, initialBackoff)
                         .maxBackoff(maxBackoff)
                         .jitter(0.5)
-                        .filter(retryOn)
+                        .filter(
+                                error ->
+                                        !ActionObservationException.causedBy(error)
+                                                && !SessionLogException.causedBy(error)
+                                                && retryOn.test(error))
                         .doBeforeRetry(
                                 signal ->
                                         logger.warn(

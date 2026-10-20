@@ -21,6 +21,8 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,10 +41,10 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>doFinally</h2>
  * <ol>
+ *   <li>Release the session via {@link SandboxManager} (stop + optional shutdown)</li>
  *   <li>Persist sandbox session state via {@link SandboxManager} and
  *       {@link io.agentscope.harness.agent.sandbox.SessionSandboxStateStore}</li>
- *   <li>Release the session via {@link SandboxManager} (stop + optional shutdown)</li>
- *   <li>Clear this call's session binding from the {@link RuntimeContext}</li>
+ *   <li>Invalidate this call's session binding across {@link RuntimeContext} copies</li>
  * </ol>
  *
  * <p>Post-call failures (persist, release) are logged but do not propagate — this ensures
@@ -65,6 +67,15 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             SandboxManager sandboxManager, SandboxBackedFilesystem filesystemProxy) {
         this.sandboxManager = sandboxManager;
         this.filesystemProxy = filesystemProxy;
+    }
+
+    /**
+     * Session lifecycle is driven explicitly by HarnessAgent; participates at no point.
+     * Subclasses overriding hooks must re-declare.
+     */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.noneOf(ExtensionPoint.class);
     }
 
     /**
@@ -158,20 +169,25 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         if (result == null) {
             return;
         }
-        ctx.put(SandboxAcquireResult.class, null);
+        // Retain an invalidated binding so this context cannot fall back to a sibling call.
+        if (!result.beginRelease()) {
+            return;
+        }
         // Compare-and-clear the fallback field so a releasing call never nulls a concurrent
         // sibling's binding (issue #2490); it only clears the field when it still points here.
         filesystemProxy.clearSandboxIfCurrent(result.getSandbox());
         SandboxContext sandboxContext = ctx.get(SandboxContext.class);
-        try {
-            sandboxManager.persistState(result, sandboxContext, ctx);
-        } catch (Exception e) {
-            log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
-        }
+        // Release (stop/persist workspace) first so state mutations made during stop — e.g.
+        // workspaceRootReady or per-session snapshot records — are captured by the persist below.
         try {
             sandboxManager.release(result);
         } catch (Exception e) {
             log.warn("[sandbox-mw] Failed to release sandbox session: {}", e.getMessage(), e);
+        }
+        try {
+            sandboxManager.persistState(result, sandboxContext, ctx);
+        } catch (Exception e) {
+            log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
         }
         result.getLease().close();
     }

@@ -28,6 +28,8 @@ import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
@@ -138,6 +140,12 @@ public class ModelCallMiddlewareExample {
 
         /** Counts the total number of streaming events received across all calls. */
         final AtomicLong eventCount = new AtomicLong();
+
+        /** Declares participation only at the overridden extension point. */
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+        }
 
         /**
          * Intercepts every model call to log request metadata and measure latency.

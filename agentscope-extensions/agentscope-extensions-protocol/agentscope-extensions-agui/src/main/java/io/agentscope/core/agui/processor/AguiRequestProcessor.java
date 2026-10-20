@@ -196,6 +196,22 @@ public class AguiRequestProcessor {
                                                             event,
                                                             runErrorSeen.get());
                                                 })
+                                        // Finish the run before the terminal signal reaches
+                                        // the caller. doFinally runs after onComplete/onError
+                                        // is propagated, so a caller that collected this run's
+                                        // events and immediately started the next run on the
+                                        // same thread (the common resume flow) could observe
+                                        // the stale active-run marker and be rejected with
+                                        // AGUI_INTERRUPT_CONTRACT_ERROR. doOnComplete/doOnError
+                                        // run before propagation, giving a happens-before
+                                        // guarantee; finishRun is idempotent, and doFinally
+                                        // still covers the cancellation path.
+                                        .doOnComplete(
+                                                () -> resumeCoordinator.finishRun(threadId, runId))
+                                        .doOnError(
+                                                error ->
+                                                        resumeCoordinator.finishRun(
+                                                                threadId, runId))
                                         .doFinally(
                                                 signalType ->
                                                         resumeCoordinator.finishRun(

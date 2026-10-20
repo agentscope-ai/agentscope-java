@@ -117,7 +117,13 @@ import org.slf4j.LoggerFactory;
  * // Get a skill
  * AgentSkill loaded = repo.getSkill("my-skill");
  * }</pre>
+ *
+ * @deprecated Replaced by {@code io.agentscope.extensions.jdbc.skill.JdbcAgentSkillRepository}
+ *     (module {@code agentscope-extensions-jdbc}) — one implementation for every JDBC
+ *     dialect. Migration notes (wiring, schema upgrade, configuration mapping) live in the
+ *     jdbc extension documentation's "Migrating from Legacy Modules" section.
  */
+@Deprecated
 public class MysqlSkillRepository implements AgentSkillRepository {
 
     private static final Logger logger = LoggerFactory.getLogger(MysqlSkillRepository.class);
@@ -1206,7 +1212,11 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      * <p>
      * This builder provides a fluent API for configuring all aspects of the repository,
      * including database name, table names, and behavior options.
+     *
+     * @deprecated See {@link MysqlSkillRepository}: migrate to
+     *     {@code JdbcAgentSkillRepository} from {@code agentscope-extensions-jdbc}.
      */
+    @Deprecated
     public static class Builder {
 
         private final DataSource dataSource;

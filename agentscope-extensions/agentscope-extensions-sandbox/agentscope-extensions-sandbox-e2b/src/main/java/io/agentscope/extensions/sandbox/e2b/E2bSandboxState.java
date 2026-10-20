@@ -16,6 +16,8 @@
 package io.agentscope.extensions.sandbox.e2b;
 
 import io.agentscope.harness.agent.sandbox.SandboxState;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Serializable state for an E2B-backed sandbox. */
 public class E2bSandboxState extends SandboxState {
@@ -23,12 +25,19 @@ public class E2bSandboxState extends SandboxState {
     private String sandboxId;
     private String templateId = "base";
     private String sandboxDomain;
+    private String envdSandboxUrl;
     private String envdAccessToken;
     private String envdVersion = "0.1.5";
     private String workspaceRoot = "/home/user";
     private boolean sandboxOwned = true;
     private E2bPersistenceMode persistenceMode = E2bPersistenceMode.TAR;
     private E2bCodec codec = E2bCodec.PROTO;
+
+    /**
+     * Snapshot ids previously created by this session, most recent last. Persisted with the state
+     * so pruning never depends on the (chain-changing) source sandbox id or a full snapshot list.
+     */
+    private List<String> snapshotIds = new ArrayList<>();
 
     public String getSandboxId() {
         return sandboxId;
@@ -52,6 +61,14 @@ public class E2bSandboxState extends SandboxState {
 
     public void setSandboxDomain(String sandboxDomain) {
         this.sandboxDomain = sandboxDomain;
+    }
+
+    public String getEnvdSandboxUrl() {
+        return envdSandboxUrl;
+    }
+
+    public void setEnvdSandboxUrl(String envdSandboxUrl) {
+        this.envdSandboxUrl = envdSandboxUrl;
     }
 
     public String getEnvdAccessToken() {
@@ -100,5 +117,13 @@ public class E2bSandboxState extends SandboxState {
 
     public void setCodec(E2bCodec codec) {
         this.codec = codec != null ? codec : E2bCodec.PROTO;
+    }
+
+    public List<String> getSnapshotIds() {
+        return snapshotIds;
+    }
+
+    public void setSnapshotIds(List<String> snapshotIds) {
+        this.snapshotIds = snapshotIds != null ? snapshotIds : new ArrayList<>();
     }
 }

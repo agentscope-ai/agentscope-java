@@ -1,5 +1,6 @@
 ---
 title: Feishu Channel
+zh_link: /v2/zh/integration/channel/feishu
 ---
 
 `agentscope-extensions-channel-feishu` connects your Agent to Feishu / Lark (飞书) via the **Event Subscription v2** callback mechanism. A Spring `@RestController` receives webhook callbacks, optionally decrypts encrypted payloads, and dispatches messages through the Gateway.

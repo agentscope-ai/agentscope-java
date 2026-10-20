@@ -18,6 +18,7 @@ package io.agentscope.core.nacos.a2a.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,10 +29,21 @@ import com.alibaba.nacos.api.ai.model.a2a.AgentInterface;
 import com.alibaba.nacos.api.ai.model.a2a.AgentProvider;
 import com.alibaba.nacos.api.ai.model.a2a.AgentSkill;
 import com.alibaba.nacos.api.ai.model.a2a.SecurityScheme;
-import io.a2a.spec.MutualTLSSecurityScheme;
+import com.alibaba.nacos.common.utils.JacksonUtils;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.APIKeySecurityScheme;
+import org.a2aproject.sdk.spec.AuthorizationCodeOAuthFlow;
+import org.a2aproject.sdk.spec.ClientCredentialsOAuthFlow;
+import org.a2aproject.sdk.spec.DeviceCodeOAuthFlow;
+import org.a2aproject.sdk.spec.HTTPAuthSecurityScheme;
+import org.a2aproject.sdk.spec.MutualTLSSecurityScheme;
+import org.a2aproject.sdk.spec.OAuth2SecurityScheme;
+import org.a2aproject.sdk.spec.OAuthFlows;
+import org.a2aproject.sdk.spec.OpenIdConnectSecurityScheme;
+import org.a2aproject.sdk.spec.SecurityRequirement;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -39,6 +51,13 @@ import org.junit.jupiter.api.Test;
  * Unit tests for {@link AgentCardConverterUtil}.
  */
 class AgentCardConverterUtilTest {
+
+    private static final org.a2aproject.sdk.spec.AgentInterface JSONRPC_INTERFACE =
+            new org.a2aproject.sdk.spec.AgentInterface("JSONRPC", "http://example.com");
+
+    private static final org.a2aproject.sdk.spec.AgentInterface GRPC_INTERFACE =
+            new org.a2aproject.sdk.spec.AgentInterface("GRPC", "http://interface2.com");
+
     @Test
     @DisplayName("Should return null when converting null Nacos AgentCard to A2A AgentCard")
     void testConvertToA2aAgentCardWithNullInput() {
@@ -50,23 +69,24 @@ class AgentCardConverterUtilTest {
     void testConvertToA2aAgentCard() {
         AgentCard nacosAgentCard = createSampleNacosAgentCard();
 
-        io.a2a.spec.AgentCard result = AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
 
         assertNotNull(result);
-        assertEquals(nacosAgentCard.getProtocolVersion(), result.protocolVersion());
         assertEquals(nacosAgentCard.getName(), result.name());
         assertEquals(nacosAgentCard.getDescription(), result.description());
         assertEquals(nacosAgentCard.getVersion(), result.version());
         assertEquals(nacosAgentCard.getIconUrl(), result.iconUrl());
-        assertEquals(nacosAgentCard.getUrl(), result.url());
-        assertEquals(nacosAgentCard.getPreferredTransport(), result.preferredTransport());
         assertEquals(nacosAgentCard.getDocumentationUrl(), result.documentationUrl());
-        assertEquals(nacosAgentCard.getSecurity(), result.security());
+        assertEquals(
+                List.of(new SecurityRequirement(Map.of("scheme1", List.of("test")))),
+                result.securityRequirements());
         assertEquals(nacosAgentCard.getDefaultInputModes(), result.defaultInputModes());
         assertEquals(nacosAgentCard.getDefaultOutputModes(), result.defaultOutputModes());
-        assertEquals(
-                nacosAgentCard.getSupportsAuthenticatedExtendedCard(),
-                result.supportsAuthenticatedExtendedCard());
+
+        // The url and preferred transport come first; the same additional interface once.
+        assertEquals(List.of(JSONRPC_INTERFACE, GRPC_INTERFACE), result.supportedInterfaces());
+        result.supportedInterfaces().forEach(each -> assertEquals("1.0", each.protocolVersion()));
 
         // Check capabilities
         assertNotNull(result.capabilities());
@@ -76,8 +96,8 @@ class AgentCardConverterUtilTest {
                 nacosAgentCard.getCapabilities().getPushNotifications(),
                 result.capabilities().pushNotifications());
         assertEquals(
-                nacosAgentCard.getCapabilities().getStateTransitionHistory(),
-                result.capabilities().stateTransitionHistory());
+                nacosAgentCard.getSupportsAuthenticatedExtendedCard(),
+                result.capabilities().extendedAgentCard());
 
         // Check provider
         assertNotNull(result.provider());
@@ -90,7 +110,7 @@ class AgentCardConverterUtilTest {
         assertEquals(nacosAgentCard.getSkills().size(), result.skills().size());
         for (int i = 0; i < nacosAgentCard.getSkills().size(); i++) {
             AgentSkill nacosSkill = nacosAgentCard.getSkills().get(i);
-            io.a2a.spec.AgentSkill a2aSkill = result.skills().get(i);
+            org.a2aproject.sdk.spec.AgentSkill a2aSkill = result.skills().get(i);
             assertEquals(nacosSkill.getId(), a2aSkill.id());
             assertEquals(nacosSkill.getName(), a2aSkill.name());
             assertEquals(nacosSkill.getDescription(), a2aSkill.description());
@@ -100,45 +120,44 @@ class AgentCardConverterUtilTest {
             assertEquals(nacosSkill.getOutputModes(), a2aSkill.outputModes());
         }
 
-        // Check interfaces
-        assertNotNull(result.additionalInterfaces());
-        assertEquals(
-                nacosAgentCard.getAdditionalInterfaces().size(),
-                result.additionalInterfaces().size());
-        for (int i = 0; i < nacosAgentCard.getAdditionalInterfaces().size(); i++) {
-            AgentInterface nacosInterface = nacosAgentCard.getAdditionalInterfaces().get(i);
-            io.a2a.spec.AgentInterface a2aInterface = result.additionalInterfaces().get(i);
-            assertEquals(nacosInterface.getTransport(), a2aInterface.transport());
-            assertEquals(nacosInterface.getUrl(), a2aInterface.url());
-        }
-
         // Check security schemes
-        assertNotNull(result.securitySchemes());
-        assertEquals(nacosAgentCard.getSecuritySchemes().size(), result.securitySchemes().size());
+        assertEquals(2, result.securitySchemes().size());
+        assertInstanceOf(MutualTLSSecurityScheme.class, result.securitySchemes().get("scheme1"));
+    }
+
+    @Test
+    @DisplayName("Should keep the protocol version Nacos has for the interfaces")
+    void testConvertToA2aAgentCardKeepsProtocolVersion() {
+        AgentCard nacosAgentCard = createSampleNacosAgentCard();
+        nacosAgentCard.setProtocolVersion("0.3.0");
+
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+
+        result.supportedInterfaces().forEach(each -> assertEquals("0.3.0", each.protocolVersion()));
     }
 
     @Test
     @DisplayName("Should convert A2A AgentCard to Nacos AgentCard correctly")
     void testConvertToNacosAgentCard() {
-        io.a2a.spec.AgentCard a2aAgentCard = createSampleA2aAgentCard();
+        org.a2aproject.sdk.spec.AgentCard a2aAgentCard = createSampleA2aAgentCard();
 
         AgentCard result = AgentCardConverterUtil.convertToNacosAgentCard(a2aAgentCard);
 
         assertNotNull(result);
-        assertEquals(a2aAgentCard.protocolVersion(), result.getProtocolVersion());
+        // The first interface is the preferred one.
+        assertEquals("1.0", result.getProtocolVersion());
+        assertEquals("http://example.com", result.getUrl());
+        assertEquals("JSONRPC", result.getPreferredTransport());
         assertEquals(a2aAgentCard.name(), result.getName());
         assertEquals(a2aAgentCard.description(), result.getDescription());
         assertEquals(a2aAgentCard.version(), result.getVersion());
         assertEquals(a2aAgentCard.iconUrl(), result.getIconUrl());
-        assertEquals(a2aAgentCard.url(), result.getUrl());
-        assertEquals(a2aAgentCard.preferredTransport(), result.getPreferredTransport());
         assertEquals(a2aAgentCard.documentationUrl(), result.getDocumentationUrl());
-        assertEquals(a2aAgentCard.security(), result.getSecurity());
+        assertEquals(List.of(Map.of("scheme1", List.of("test"))), result.getSecurity());
         assertEquals(a2aAgentCard.defaultInputModes(), result.getDefaultInputModes());
         assertEquals(a2aAgentCard.defaultOutputModes(), result.getDefaultOutputModes());
-        assertEquals(
-                a2aAgentCard.supportsAuthenticatedExtendedCard(),
-                result.getSupportsAuthenticatedExtendedCard());
+        assertTrue(result.getSupportsAuthenticatedExtendedCard());
 
         // Check capabilities
         assertNotNull(result.getCapabilities());
@@ -147,9 +166,7 @@ class AgentCardConverterUtilTest {
         assertEquals(
                 a2aAgentCard.capabilities().pushNotifications(),
                 result.getCapabilities().getPushNotifications());
-        assertEquals(
-                a2aAgentCard.capabilities().stateTransitionHistory(),
-                result.getCapabilities().getStateTransitionHistory());
+        assertFalse(result.getCapabilities().getStateTransitionHistory());
 
         // Check provider
         assertNotNull(result.getProvider());
@@ -161,7 +178,7 @@ class AgentCardConverterUtilTest {
         assertNotNull(result.getSkills());
         assertEquals(a2aAgentCard.skills().size(), result.getSkills().size());
         for (int i = 0; i < a2aAgentCard.skills().size(); i++) {
-            io.a2a.spec.AgentSkill a2aSkill = a2aAgentCard.skills().get(i);
+            org.a2aproject.sdk.spec.AgentSkill a2aSkill = a2aAgentCard.skills().get(i);
             AgentSkill nacosSkill = result.getSkills().get(i);
             assertEquals(a2aSkill.id(), nacosSkill.getId());
             assertEquals(a2aSkill.name(), nacosSkill.getName());
@@ -173,20 +190,104 @@ class AgentCardConverterUtilTest {
         }
 
         // Check interfaces
-        assertNotNull(result.getAdditionalInterfaces());
-        assertEquals(
-                a2aAgentCard.additionalInterfaces().size(),
-                result.getAdditionalInterfaces().size());
-        for (int i = 0; i < a2aAgentCard.additionalInterfaces().size(); i++) {
-            io.a2a.spec.AgentInterface a2aInterface = a2aAgentCard.additionalInterfaces().get(i);
-            AgentInterface nacosInterface = result.getAdditionalInterfaces().get(i);
-            assertEquals(a2aInterface.url(), nacosInterface.getUrl());
-            assertEquals(a2aInterface.transport(), nacosInterface.getTransport());
-        }
+        assertEquals(2, result.getAdditionalInterfaces().size());
+        assertEquals("JSONRPC", result.getAdditionalInterfaces().get(0).getTransport());
+        assertEquals("http://example.com", result.getAdditionalInterfaces().get(0).getUrl());
+        assertEquals("GRPC", result.getAdditionalInterfaces().get(1).getTransport());
+        assertEquals("http://interface2.com", result.getAdditionalInterfaces().get(1).getUrl());
 
         // Check security schemes
-        assertNotNull(result.getSecuritySchemes());
-        assertEquals(a2aAgentCard.securitySchemes().size(), result.getSecuritySchemes().size());
+        assertEquals(Map.of("type", "mutualTLS"), result.getSecuritySchemes().get("scheme1"));
+    }
+
+    @Test
+    @DisplayName("Should keep every kind of security scheme through Nacos")
+    void testSecuritySchemesRoundTrip() {
+        Map<String, org.a2aproject.sdk.spec.SecurityScheme> schemes = new LinkedHashMap<>();
+        schemes.put(
+                "apiKey",
+                new APIKeySecurityScheme(
+                        APIKeySecurityScheme.Location.QUERY, "api_key", "Query key"));
+        schemes.put("bearer", new HTTPAuthSecurityScheme("JWT", "bearer", null));
+        schemes.put(
+                "oauth",
+                new OAuth2SecurityScheme(
+                        new OAuthFlows(
+                                new AuthorizationCodeOAuthFlow(
+                                        "https://auth/authorize",
+                                        "https://auth/refresh",
+                                        Map.of("read", "Read"),
+                                        "https://auth/token",
+                                        true),
+                                new ClientCredentialsOAuthFlow(
+                                        null, Map.of(), "https://auth/token"),
+                                new DeviceCodeOAuthFlow(
+                                        "https://auth/device",
+                                        "https://auth/token",
+                                        null,
+                                        Map.of("read", "Read"))),
+                        "OAuth",
+                        "https://auth/.well-known/oauth-authorization-server"));
+        schemes.put(
+                "oidc",
+                new OpenIdConnectSecurityScheme(
+                        "https://auth/.well-known/openid-configuration", null));
+        schemes.put("mtls", new MutualTLSSecurityScheme("Client certificate"));
+        org.a2aproject.sdk.spec.AgentCard card =
+                org.a2aproject.sdk.spec.AgentCard.builder(createSampleA2aAgentCard())
+                        .securitySchemes(schemes)
+                        .build();
+
+        // Nacos stores the card as JSON.
+        String stored = JacksonUtils.toJson(AgentCardConverterUtil.convertToNacosAgentCard(card));
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(
+                        JacksonUtils.toObj(stored, AgentCard.class));
+
+        assertEquals(schemes, result.securitySchemes());
+    }
+
+    @Test
+    @DisplayName("Should read security schemes stored in the A2A 0.3 format")
+    void testConvertToA2aAgentCardWithLegacySecuritySchemes() {
+        AgentCard nacosAgentCard = createSampleNacosAgentCard();
+        SecurityScheme apiKey = new SecurityScheme();
+        apiKey.putAll(Map.of("type", "apiKey", "in", "header", "name", "X-API-Key"));
+        // A2A 1.0 has no implicit or password flow.
+        SecurityScheme oauth = new SecurityScheme();
+        oauth.putAll(
+                Map.of(
+                        "type",
+                        "oauth2",
+                        "flows",
+                        Map.of(
+                                "clientCredentials",
+                                Map.of("tokenUrl", "https://auth/token", "scopes", Map.of()),
+                                "implicit",
+                                Map.of("authorizationUrl", "https://auth/authorize"))));
+        SecurityScheme unknown = new SecurityScheme();
+        unknown.put("type", "unknown");
+        nacosAgentCard.setSecuritySchemes(
+                Map.of("apiKey", apiKey, "oauth", oauth, "unknown", unknown));
+
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+
+        assertEquals(
+                Map.of(
+                        "apiKey",
+                        new APIKeySecurityScheme(
+                                APIKeySecurityScheme.Location.HEADER, "X-API-Key", null),
+                        "oauth",
+                        new OAuth2SecurityScheme(
+                                new OAuthFlows(
+                                        null,
+                                        new ClientCredentialsOAuthFlow(
+                                                null, Map.of(), "https://auth/token"),
+                                        null),
+                                null,
+                                null)),
+                result.securitySchemes());
     }
 
     @Test
@@ -195,11 +296,11 @@ class AgentCardConverterUtilTest {
         AgentCard nacosAgentCard = createSampleNacosAgentCard();
         nacosAgentCard.setCapabilities(null);
 
-        io.a2a.spec.AgentCard result = AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
         assertNotNull(result.capabilities());
         assertFalse(result.capabilities().streaming());
         assertFalse(result.capabilities().pushNotifications());
-        assertFalse(result.capabilities().stateTransitionHistory());
     }
 
     @Test
@@ -208,7 +309,8 @@ class AgentCardConverterUtilTest {
         AgentCard nacosAgentCard = createSampleNacosAgentCard();
         nacosAgentCard.setProvider(null);
 
-        io.a2a.spec.AgentCard result = AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
 
         assertNotNull(result);
         assertNull(result.provider());
@@ -229,10 +331,10 @@ class AgentCardConverterUtilTest {
         AgentCard nacosAgentCard = createSampleNacosAgentCard();
         nacosAgentCard.setAdditionalInterfaces(Collections.emptyList());
 
-        io.a2a.spec.AgentCard result = AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
 
-        assertNotNull(result);
-        assertEquals(0, result.additionalInterfaces().size());
+        assertEquals(List.of(JSONRPC_INTERFACE), result.supportedInterfaces());
     }
 
     @Test
@@ -241,10 +343,23 @@ class AgentCardConverterUtilTest {
         AgentCard nacosAgentCard = createSampleNacosAgentCard();
         nacosAgentCard.setAdditionalInterfaces(null);
 
-        io.a2a.spec.AgentCard result = AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
 
-        assertNotNull(result);
-        assertEquals(0, result.additionalInterfaces().size());
+        assertEquals(List.of(JSONRPC_INTERFACE), result.supportedInterfaces());
+    }
+
+    @Test
+    @DisplayName("Should use JSONRPC when Nacos has no preferred transport")
+    void testConvertToA2aAgentCardWithoutPreferredTransport() {
+        AgentCard nacosAgentCard = createSampleNacosAgentCard();
+        nacosAgentCard.setPreferredTransport(null);
+        nacosAgentCard.setAdditionalInterfaces(null);
+
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+
+        assertEquals(List.of(JSONRPC_INTERFACE), result.supportedInterfaces());
     }
 
     @Test
@@ -253,7 +368,8 @@ class AgentCardConverterUtilTest {
         AgentCard nacosAgentCard = createSampleNacosAgentCard();
         nacosAgentCard.setSecuritySchemes(null);
 
-        io.a2a.spec.AgentCard result = AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
 
         assertNotNull(result);
         assertNull(result.securitySchemes());
@@ -262,30 +378,9 @@ class AgentCardConverterUtilTest {
     @Test
     @DisplayName("Should handle null provider when converting to Nacos AgentCard")
     void testConvertToNacosAgentCardWithNullProvider() {
-        io.a2a.spec.AgentCard a2aAgentCard = createSampleA2aAgentCard();
-        io.a2a.spec.AgentProvider nullProvider = null;
-
-        // Create a new A2A agent card with null provider
-        io.a2a.spec.AgentCard cardWithNullProvider =
-                new io.a2a.spec.AgentCard.Builder()
-                        .protocolVersion(a2aAgentCard.protocolVersion())
-                        .name(a2aAgentCard.name())
-                        .description(a2aAgentCard.description())
-                        .version(a2aAgentCard.version())
-                        .iconUrl(a2aAgentCard.iconUrl())
-                        .capabilities(a2aAgentCard.capabilities())
-                        .provider(nullProvider)
-                        .skills(a2aAgentCard.skills())
-                        .url(a2aAgentCard.url())
-                        .preferredTransport(a2aAgentCard.preferredTransport())
-                        .additionalInterfaces(a2aAgentCard.additionalInterfaces())
-                        .documentationUrl(a2aAgentCard.documentationUrl())
-                        .securitySchemes(a2aAgentCard.securitySchemes())
-                        .security(a2aAgentCard.security())
-                        .defaultInputModes(a2aAgentCard.defaultInputModes())
-                        .defaultOutputModes(a2aAgentCard.defaultOutputModes())
-                        .supportsAuthenticatedExtendedCard(
-                                a2aAgentCard.supportsAuthenticatedExtendedCard())
+        org.a2aproject.sdk.spec.AgentCard cardWithNullProvider =
+                org.a2aproject.sdk.spec.AgentCard.builder(createSampleA2aAgentCard())
+                        .provider(null)
                         .build();
 
         AgentCard result = AgentCardConverterUtil.convertToNacosAgentCard(cardWithNullProvider);
@@ -295,65 +390,26 @@ class AgentCardConverterUtilTest {
     }
 
     @Test
-    @DisplayName("Should handle null interfaces when converting to Nacos AgentCard")
-    void testConvertToNacosAgentCardWithNullInterfaces() {
-        io.a2a.spec.AgentCard a2aAgentCard = createSampleA2aAgentCard();
+    @DisplayName("Should handle no interfaces when converting to Nacos AgentCard")
+    void testConvertToNacosAgentCardWithNoInterfaces() {
+        org.a2aproject.sdk.spec.AgentCard cardWithNoInterfaces =
+                org.a2aproject.sdk.spec.AgentCard.builder(createSampleA2aAgentCard())
+                        .supportedInterfaces(List.of())
+                        .build();
 
-        // Create a new A2A agent card with null interfaces
-        io.a2a.spec.AgentCard cardWithNullInterfaces =
-                new io.a2a.spec.AgentCard(
-                        a2aAgentCard.name(),
-                        a2aAgentCard.description(),
-                        a2aAgentCard.url(),
-                        a2aAgentCard.provider(),
-                        a2aAgentCard.version(),
-                        a2aAgentCard.documentationUrl(),
-                        a2aAgentCard.capabilities(),
-                        a2aAgentCard.defaultInputModes(),
-                        a2aAgentCard.defaultOutputModes(),
-                        a2aAgentCard.skills(),
-                        a2aAgentCard.supportsAuthenticatedExtendedCard(),
-                        a2aAgentCard.securitySchemes(),
-                        a2aAgentCard.security(),
-                        a2aAgentCard.iconUrl(),
-                        null,
-                        a2aAgentCard.preferredTransport(),
-                        a2aAgentCard.protocolVersion(),
-                        a2aAgentCard.signatures());
-
-        AgentCard result = AgentCardConverterUtil.convertToNacosAgentCard(cardWithNullInterfaces);
+        AgentCard result = AgentCardConverterUtil.convertToNacosAgentCard(cardWithNoInterfaces);
 
         assertNotNull(result);
+        assertNull(result.getUrl());
         assertEquals(0, result.getAdditionalInterfaces().size());
     }
 
     @Test
     @DisplayName("Should handle null security schemes when converting to Nacos AgentCard")
     void testConvertToNacosAgentCardWithNullSecuritySchemes() {
-        io.a2a.spec.AgentCard a2aAgentCard = createSampleA2aAgentCard();
-        Map<String, io.a2a.spec.SecurityScheme> nullSecuritySchemes = null;
-
-        // Create a new A2A agent card with null security schemes
-        io.a2a.spec.AgentCard cardWithNullSecuritySchemes =
-                new io.a2a.spec.AgentCard.Builder()
-                        .protocolVersion(a2aAgentCard.protocolVersion())
-                        .name(a2aAgentCard.name())
-                        .description(a2aAgentCard.description())
-                        .version(a2aAgentCard.version())
-                        .iconUrl(a2aAgentCard.iconUrl())
-                        .capabilities(a2aAgentCard.capabilities())
-                        .provider(a2aAgentCard.provider())
-                        .skills(a2aAgentCard.skills())
-                        .url(a2aAgentCard.url())
-                        .preferredTransport(a2aAgentCard.preferredTransport())
-                        .additionalInterfaces(a2aAgentCard.additionalInterfaces())
-                        .documentationUrl(a2aAgentCard.documentationUrl())
-                        .securitySchemes(nullSecuritySchemes)
-                        .security(a2aAgentCard.security())
-                        .defaultInputModes(a2aAgentCard.defaultInputModes())
-                        .defaultOutputModes(a2aAgentCard.defaultOutputModes())
-                        .supportsAuthenticatedExtendedCard(
-                                a2aAgentCard.supportsAuthenticatedExtendedCard())
+        org.a2aproject.sdk.spec.AgentCard cardWithNullSecuritySchemes =
+                org.a2aproject.sdk.spec.AgentCard.builder(createSampleA2aAgentCard())
+                        .securitySchemes(null)
                         .build();
 
         AgentCard result =
@@ -438,19 +494,19 @@ class AgentCardConverterUtilTest {
     /**
      * Helper method to create a sample A2A AgentCard for testing.
      */
-    private io.a2a.spec.AgentCard createSampleA2aAgentCard() {
-        io.a2a.spec.AgentProvider provider =
-                new io.a2a.spec.AgentProvider("Test Org", "http://test.org");
+    private org.a2aproject.sdk.spec.AgentCard createSampleA2aAgentCard() {
+        org.a2aproject.sdk.spec.AgentProvider provider =
+                new org.a2aproject.sdk.spec.AgentProvider("Test Org", "http://test.org");
 
-        io.a2a.spec.AgentCapabilities capabilities =
-                new io.a2a.spec.AgentCapabilities.Builder()
+        org.a2aproject.sdk.spec.AgentCapabilities capabilities =
+                org.a2aproject.sdk.spec.AgentCapabilities.builder()
                         .streaming(true)
                         .pushNotifications(false)
-                        .stateTransitionHistory(true)
+                        .extendedAgentCard(true)
                         .build();
 
-        io.a2a.spec.AgentSkill skill1 =
-                new io.a2a.spec.AgentSkill.Builder()
+        org.a2aproject.sdk.spec.AgentSkill skill1 =
+                org.a2aproject.sdk.spec.AgentSkill.builder()
                         .id("skill-1")
                         .name("Test Skill")
                         .description("A test skill")
@@ -460,8 +516,8 @@ class AgentCardConverterUtilTest {
                         .outputModes(List.of("text"))
                         .build();
 
-        io.a2a.spec.AgentSkill skill2 =
-                new io.a2a.spec.AgentSkill.Builder()
+        org.a2aproject.sdk.spec.AgentSkill skill2 =
+                org.a2aproject.sdk.spec.AgentSkill.builder()
                         .id("skill-2")
                         .name("Another Skill")
                         .description("Another test skill")
@@ -471,16 +527,7 @@ class AgentCardConverterUtilTest {
                         .outputModes(List.of("audio"))
                         .build();
 
-        io.a2a.spec.AgentInterface interface1 =
-                new io.a2a.spec.AgentInterface("JSONRPC", "http://example.com");
-        io.a2a.spec.AgentInterface interface2 =
-                new io.a2a.spec.AgentInterface("GRPC", "http://interface2.com");
-
-        io.a2a.spec.SecurityScheme scheme1 = new MutualTLSSecurityScheme();
-        io.a2a.spec.SecurityScheme scheme2 = new MutualTLSSecurityScheme();
-
-        return new io.a2a.spec.AgentCard.Builder()
-                .protocolVersion("1.0")
+        return org.a2aproject.sdk.spec.AgentCard.builder()
                 .name("test-agent")
                 .description("A test agent")
                 .version("1.0.0")
@@ -488,15 +535,18 @@ class AgentCardConverterUtilTest {
                 .capabilities(capabilities)
                 .provider(provider)
                 .skills(List.of(skill1, skill2))
-                .url("http://example.com")
-                .preferredTransport("JSONRPC")
-                .additionalInterfaces(List.of(interface1, interface2))
+                .supportedInterfaces(List.of(JSONRPC_INTERFACE, GRPC_INTERFACE))
                 .documentationUrl("http://example.com/docs")
-                .securitySchemes(Map.of("scheme1", scheme1, "scheme2", scheme2))
-                .security(List.of(Map.of("scheme1", List.of("test"))))
+                .securitySchemes(
+                        Map.of(
+                                "scheme1",
+                                new MutualTLSSecurityScheme(null),
+                                "scheme2",
+                                new MutualTLSSecurityScheme(null)))
+                .securityRequirements(
+                        List.of(new SecurityRequirement(Map.of("scheme1", List.of("test")))))
                 .defaultInputModes(List.of("text", "voice"))
                 .defaultOutputModes(List.of("text", "audio"))
-                .supportsAuthenticatedExtendedCard(true)
                 .build();
     }
 }

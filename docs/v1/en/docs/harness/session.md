@@ -1,55 +1,49 @@
 ---
 title: Session
+zh_link: /v1/zh/docs/harness/session
 ---
 
 ## Purpose
 
-Enable the agent to restore state across requests, process restarts, and multi-user scenarios. After each `call()` ends, two outputs are automatically persisted on parallel tracks:
+Enable the agent to restore state across requests, process restarts, and multi-user scenarios. Session persistence is owned by the agent runtime itself: conversation progress is appended to a **native session journal** — a lossless, hash-chained sequence of structured events. The journal is never compacted or rewritten; compaction only shrinks the in-context window.
 
-- **StateModule snapshot** (`Memory`, `ToolExecutionContext`, and other serializable state) — defaults to `WorkspaceSession`
-- **Conversation JSONL** (LLM context + full history) — goes through `SessionTree`, triggered by `MemoryFlushManager.offloadMessages`
-
-The two are **parallel, independent paths**.
+- **Native session journal** — the complete history: messages, tool calls with full inputs/outputs, and reasoning events, stored as atomic commits
+- **Read-time projections** — `agent.sessionTranscript(ctx)` and the `session_search` / `session_list` tools project the journal into flat views on demand; no duplicate conversation files are written
 
 ## Trigger Points
 
 | When | Action |
 |------|--------|
-| `agent.call(msg, ctx)` | `bindRuntimeContext` passes `ctx.session/sessionKey` to `delegate.loadIfExists` to restore StateModule |
-| `PostCallEvent` / `ErrorEvent` | `SessionPersistenceHook` (priority 900) calls `agent.saveTo(session, sessionKey)` — saves on both success and failure |
-| Compaction / `PostCallEvent` flush | `MemoryFlushManager.offloadMessages` appends to `<sessionId>.jsonl` + `.log.jsonl` |
-| End of session | `WorkspaceManager.updateSessionIndex` updates `sessions.json` for `session_list` queries |
+| `agent.call(msg, ctx)` / `agent.session(ctx)` | `(agentId, userId, sessionId)` from `RuntimeContext` selects the journal directory; prior committed events are replayed to restore state |
+| After each turn | The runtime appends a hash-chained commit of structured events to the journal |
+| Context threshold hit | `CompactionMiddleware` compacts the in-context window (`CompactionConfig`); the journal itself is untouched |
+| Before compaction | `MemoryFlushMiddleware` extracts facts into `memory/YYYY-MM-DD.md` (`flushBeforeCompact`, on by default) |
 
 ## Key Logic
 
-### Dual-Track Storage Layout
+### Storage Layout
 
 ```mermaid
 graph LR
-    Call[agent.call] --> Hook[SessionPersistenceHook]
-    Hook -->|saveTo / loadIfExists| WS[(WorkspaceSession<br/>StateModule snapshot)]
-    Call --> Compact[CompactionHook / MemoryFlushHook]
-    Compact -->|offloadMessages| ST[(SessionTree<br/>JSONL dual files)]
-    WSWrite[WorkspaceManager<br/>updateSessionIndex] --> Idx[(sessions.json<br/>session index)]
-    Compact --> WSWrite
+    Call[agent.call] --> RT[ReActAgent runtime]
+    RT -->|append committed events| JNL[(Native session journal<br/>.agentscope-runtime/)]
+    RT --> Tools[session_search / session_list]
+    Tools -->|read| JNL
+    Dev[application code] -->|sessionTranscript| JNL
 ```
 
 ```
-workspace/agents/<agentId>/
-├── context/                          ← managed by WorkspaceSession
-│   └── <sessionId>/
-│       ├── memory.json               ← ReActAgent.memory snapshot
-│       └── *.json                    ← other StateModule serialization artifacts
-└── sessions/                         ← managed by SessionTree + WorkspaceManager
-    ├── sessions.json                 ← session index (sessionId / summary / updatedAt)
-    ├── <sessionId>.jsonl             ← LLM-visible compacted context
-    └── <sessionId>.log.jsonl         ← full conversation log (append-only, never compacted)
+workspace/.agentscope-runtime/            ← private runtime storage (not model-visible)
+└── agents/<agentId>/sessions/<userId>/<sessionId>/
+    ├── session.json                      ← session header
+    └── …                                 ← hash-chained commit + payload objects
 ```
 
-- **`context/`**: `WorkspaceSession` extends `JsonSession`, base at `agents/<agentId>/context/`; each `StateModule` is stored per `SessionKey → {key}.json` in the sessionId subdirectory.
-- **`sessions/`**: `SessionTree` organizes a JSONL file as a `id/parentId` tree; the paired `<sessionId>.log.jsonl` is **never compacted**, used for auditing and `session_search`.
+- **Journal**: `JournalSessionLog` writes ordered, hash-chained commits of structured `SessionEvent`s with full payloads, so tool inputs/outputs and reasoning content are preserved verbatim. Compaction summaries are ordinary events; earlier events are never dropped.
+- **Backends**: the default `LocalFilesystem` stores journal objects under the workspace's `.agentscope-runtime/` directory; a SQLite backend is used on Windows, and larger deployments can plug `SessionLogStore` / `AtomicSessionStorage` implementations (e.g. a remote store).
+- **Reading**: `agent.sessionTranscript(ctx)` projects committed events into a flat `Msg` view; `session_search` / `session_list` query the same journal.
 
-### How `RuntimeContext` Aligns the Two Tracks
+### How `RuntimeContext` Routes the Journal
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder()
@@ -60,39 +54,38 @@ RuntimeContext ctx = RuntimeContext.builder()
 agent.call(msg, ctx).block();
 ```
 
-`HarnessAgent.bindRuntimeContext` does several things:
+`RuntimeContext` decides **which journal** a call reads and writes:
 
-1. **Fill defaults**: if `session` is null, use the `defaultSession` from build time (defaults to `WorkspaceSession(workspace, agentId)`); if `sessionKey` is null, try `SimpleSessionKey.of(sessionId)` → `SimpleSessionKey.of(agentName)` in order.
-2. **Distribute to hooks**: `workspaceContextHook`, `memoryFlushHook`, `sessionPersistenceHook`, `compactionHook` all sync to this ctx — they can read `sessionId` during offload / saveTo.
-3. **Link `userIdRef`**: an `AtomicReference<String>` is updated to `userId`; the default `NamespaceFactory → List.of(userId)` uses this as a path prefix, enabling transparent multi-tenant isolation.
-4. **Pre-load state**: if both `session` and `sessionKey` are present, calls `delegate.loadIfExists` to overwrite current Memory. Does nothing if not found.
+1. **Key derivation**: `(agentId, userId, sessionId)` maps to the journal directory `agents/<agentId>/sessions/<userId>/<sessionId>/`.
+2. **Isolation**: different `userId` / `sessionId` values hit different journal directories; there is no shared mutable state between them.
+3. **Restore**: committed events are replayed for that identity before the turn runs, so state survives restarts.
+4. **Reading from application code**: `agent.sessionTranscript(ctx)` (flat view) or `agent.sessionLog(ctx)` (raw journal) never starts inference.
 
-### Default vs Custom Session
+### Default vs Custom Storage
 
 ```java
-// 1. Default: nothing passed → WorkspaceSession(workspace, agentId)
+// 1. Default: journal objects under <workspace>/.agentscope-runtime/
 HarnessAgent.builder()
     .name("MyAgent").model(model).workspace(workspace).build();
 
-// 2. Use a JsonSession at a specific path
+// 2. Plug a custom store (any AtomicSessionStorage / SessionLogStore)
 HarnessAgent.builder()
     ...
-    .session(new JsonSession(Path.of("/custom/sessions")))
+    .sessionLogStore(myStore)
     .build();
 
-// 3. Override per call
+// 3. Route calls by identity — no per-user builder boilerplate
 agent.call(msg, RuntimeContext.builder()
         .sessionId("sess-001")
-        .session(customSession)
-        .sessionKey(SimpleSessionKey.of("sess-001"))
+        .userId("alice")
         .build())
     .block();
 ```
 
-### Multi-User Isolation at Two Levels
+### Multi-User Isolation
 
-- **Session level**: `sessionId` determines that `context/<sessionId>/` and `sessions/<sessionId>.jsonl` are independent.
-- **File level**: `userId` + `NamespaceFactory` determines the file operation path prefix (the default `LocalFilesystemWithShell` reads `userIdRef`).
+- **Journal level**: `userId` + `sessionId` determine the journal directory; sessions of different users live in disjoint namespaces.
+- **File level**: `userId` + `NamespaceFactory` determines the file operation path prefix (the default `LocalFilesystemWithShell` reads the per-call identity).
 
 ```java
 // Serve alice and bob from the same agent instance
@@ -101,13 +94,13 @@ agent.call(msg, RuntimeContext.builder().sessionId("bob-1").userId("bob").build(
 // Session state and file paths for the two users do not interfere with each other
 ```
 
-### Session Index
+### Listing Sessions
 
-After `MemoryFlushManager.offloadMessages` completes, `WorkspaceManager.updateSessionIndex(agentId, sessionId, summary)` merges a write into `sessions/sessions.json`. In another turn, the agent can use the `session_list` tool to see "what conversations this agent has had historically".
+`session_list` / `session_search` read the journal store directly — there is no separate index file to keep in sync. The store discovers sessions by scanning `agents/<agentId>/sessions/` for session headers, so anything committed through the runtime is automatically visible to both tools.
 
 ## Related Pages
 
 - [Tool](/v1/en/docs/harness/tool) — `session_search` / `session_list` / `session_history` parameters
-- [Memory](/v1/en/docs/harness/memory) — when `offloadMessages` is called, and how it feeds back into `memory_search`
+- [Memory](/v1/en/docs/harness/memory) — how memory flush interacts with compaction and feeds `memory_search`
 - [Filesystem](/v1/en/docs/harness/filesystem) — `userIdRef` + `NamespaceFactory` multi-tenant path isolation
-- [Architecture](/v1/en/docs/harness/architecture) — `SessionPersistenceHook` position in `PostCallEvent` / `ErrorEvent`
+- [Session log](/v2/en/docs/harness/session-log) — journal internals: backends, physical layout, custom stores and exports

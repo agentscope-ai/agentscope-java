@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.extensions.model.openai.dto.OpenAIFunction;
@@ -148,8 +149,8 @@ class DeepSeekFormatterTest {
     }
 
     @Test
-    @DisplayName("Removes stale reasoning content")
-    void removesStaleReasoningContent() {
+    @DisplayName("Preserves reasoning content for historical text-only turns")
+    void preservesReasoningContentForHistoricalTextOnlyTurns() {
         List<OpenAIMessage> messages =
                 DeepSeekFormatter.applyDeepSeekFixes(
                         List.of(
@@ -166,8 +167,30 @@ class DeepSeekFormatterTest {
 
         assertEquals("assistant", messages.get(1).getRole());
         assertEquals("First answer", messages.get(1).getContentAsString());
-        assertNull(messages.get(1).getReasoningContent());
+        assertEquals("hidden reasoning", messages.get(1).getReasoningContent());
         assertEquals("user", messages.get(2).getRole());
+    }
+
+    @Test
+    @DisplayName("Backfills empty reasoning content for missing assistant traces")
+    void backfillsEmptyReasoningContentForMissingAssistantTraces() {
+        List<OpenAIMessage> messages =
+                DeepSeekFormatter.applyDeepSeekFixes(
+                        List.of(
+                                OpenAIMessage.builder().role("user").content("First").build(),
+                                OpenAIMessage.builder()
+                                        .role("assistant")
+                                        .content("First answer")
+                                        .reasoningContent("history reasoning")
+                                        .build(),
+                                OpenAIMessage.builder().role("user").content("Next").build(),
+                                OpenAIMessage.builder()
+                                        .role("assistant")
+                                        .content("notification")
+                                        .build()));
+
+        assertEquals("history reasoning", messages.get(1).getReasoningContent());
+        assertEquals("", messages.get(3).getReasoningContent());
     }
 
     @Test
@@ -220,5 +243,55 @@ class DeepSeekFormatterTest {
 
         assertEquals("tool reasoning", messages.get(1).getReasoningContent());
         assertEquals("current reasoning", messages.get(4).getReasoningContent());
+    }
+
+    @Test
+    @DisplayName("Backfills reasoning content on the production format path")
+    void backfillsReasoningContentOnTheProductionFormatPath() {
+        List<OpenAIMessage> messages =
+                new DeepSeekFormatter()
+                        .format(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Q1")
+                                                                        .build()))
+                                                .build(),
+                                        Msg.builder()
+                                                .role(MsgRole.ASSISTANT)
+                                                .content(
+                                                        List.of(
+                                                                ThinkingBlock.builder()
+                                                                        .thinking(
+                                                                                "history thinking")
+                                                                        .build(),
+                                                                TextBlock.builder()
+                                                                        .text("A1")
+                                                                        .build()))
+                                                .build(),
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Q2")
+                                                                        .build()))
+                                                .build(),
+                                        Msg.builder()
+                                                .role(MsgRole.ASSISTANT)
+                                                .name("agent-1")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("notify")
+                                                                        .build()))
+                                                .build()),
+                                null);
+
+        assertEquals("history thinking", messages.get(1).getReasoningContent());
+        assertEquals("", messages.get(3).getReasoningContent());
     }
 }
