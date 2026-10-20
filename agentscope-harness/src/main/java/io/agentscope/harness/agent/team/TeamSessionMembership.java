@@ -21,7 +21,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
-import io.agentscope.harness.agent.filesystem.remote.store.VersionedBaseStore;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -68,16 +67,17 @@ public final class TeamSessionMembership {
             new ObjectMapper()
                     .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
                     .enable(DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS);
-    private final VersionedBaseStore store;
+    private final BaseStore store;
     private final String domain;
     private final Map<String, AgentStateStore> stateStores;
 
     TeamSessionMembership(
             BaseStore store, String domain, Map<String, AgentStateStore> stateStores) {
-        if (!(store instanceof VersionedBaseStore versioned)) {
-            throw new IllegalArgumentException("Session membership requires VersionedBaseStore");
+        if (!store.supportsAtomicSessionStorage()) {
+            throw new IllegalArgumentException(
+                    "Session membership requires atomic versioned storage");
         }
-        this.store = versioned;
+        this.store = store;
         this.domain = text(domain, "relationship domain");
         this.stateStores = Map.copyOf(stateStores);
         this.stateStores.keySet().forEach(id -> text(id, "state store domain"));
@@ -644,8 +644,8 @@ public final class TeamSessionMembership {
         if (marker == null) {
             return null;
         }
-        if (!(store instanceof VersionedBaseStore)) {
-            throw new IllegalStateException("Adopted Teams require VersionedBaseStore");
+        if (!store.supportsAtomicSessionStorage()) {
+            throw new IllegalStateException("Adopted Teams require atomic versioned storage");
         }
         TeamAddress address = new TeamAddress(namespace, teamName);
         OwnerState state = readOwner(store, marker.domain(), marker.owner()).state();

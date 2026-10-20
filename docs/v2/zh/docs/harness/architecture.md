@@ -46,7 +46,7 @@ en_link: /v2/en/docs/harness/architecture
 
 ## 既有 Session 的持久 Team 归属
 
-`LocalTeamClient.sessionMembership(...)` 显式启用既有 Leader 和手工提供的 **BYO** 成员 Session 的接入、登记、查询与安全解除。同一定义的不同 Session 可以加入不同 Team；同一完整身份的 Session 在配置的关系域中只能属于一个 Team，包括跨 Team namespace 的情况。这是编程 API，需要 `VersionedBaseStore`；已有 `InMemoryStore` 和 JDBC `JdbcStore` 实现了该能力。其他 `BaseStore` 和 `TeamClient` 仍可通过原有 API 使用。
+`LocalTeamClient.sessionMembership(...)` 显式启用既有 Leader 和手工提供的 **BYO** 成员 Session 的接入、登记、查询与安全解除。同一定义的不同 Session 可以加入不同 Team；同一完整身份的 Session 在配置的关系域中只能属于一个 Team，包括跨 Team namespace 的情况。这是编程 API，复用已有 `BaseStore` 能力：`supportsAtomicSessionStorage()` 必须返回 `true`，提供正数记录版本，以及共享后端所有写入者之间原子的 `putIfVersion`。比较失败不得写入，真实存储错误必须传播。已有 `InMemoryStore` 和 JDBC `JdbcStore` 已声明该能力；自定义 provider 使用相同合同，默认仍为 `false`。其他 `BaseStore` 和 `TeamClient` 仍可通过原有 API 使用。
 
 先通过已有 `createTeam` 建立 Team，再用已持久化的 Leader Session 显式接入。只能绑定已在该 Team 目录中声明的成员。下面在应用入口使用 `.block()`；响应式请求路径应组合返回的 `Mono`。
 

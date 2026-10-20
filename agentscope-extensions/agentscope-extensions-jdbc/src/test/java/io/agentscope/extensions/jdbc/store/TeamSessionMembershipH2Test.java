@@ -28,8 +28,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.state.JdbcAgentStateStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
-import io.agentscope.harness.agent.filesystem.remote.store.VersionedBaseStore;
 import io.agentscope.harness.agent.team.LocalTeamClient;
 import io.agentscope.harness.agent.team.TeamConflictException;
 import io.agentscope.harness.agent.team.TeamCreateSpec;
@@ -595,11 +595,16 @@ class TeamSessionMembershipH2Test {
             LocalTeamClient client,
             TeamSessionMembership membership) {}
 
-    private static class DelegatingStore implements VersionedBaseStore {
+    private static class DelegatingStore implements BaseStore {
         private final JdbcStore delegate;
 
         DelegatingStore(JdbcStore delegate) {
             this.delegate = delegate;
+        }
+
+        @Override
+        public boolean supportsAtomicSessionStorage() {
+            return delegate.supportsAtomicSessionStorage();
         }
 
         @Override

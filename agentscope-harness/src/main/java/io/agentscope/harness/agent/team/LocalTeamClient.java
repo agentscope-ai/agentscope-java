@@ -18,7 +18,6 @@ package io.agentscope.harness.agent.team;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
-import io.agentscope.harness.agent.filesystem.remote.store.VersionedBaseStore;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -572,9 +571,9 @@ public final class LocalTeamClient implements TeamClient {
                                             && item.value() != null
                                             && item.value().containsKey("sessionMembership");
                             if (sessionMembershipEnabled || adopted) {
-                                if (!(store instanceof VersionedBaseStore)) {
+                                if (!store.supportsAtomicSessionStorage()) {
                                     throw new IllegalStateException(
-                                            "Adopted Teams require VersionedBaseStore");
+                                            "Adopted Teams require atomic versioned storage");
                                 }
                                 // A stale unconditional fallback could erase concurrent adoption.
                                 for (int attempt = 0; attempt < 10; attempt++) {

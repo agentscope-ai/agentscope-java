@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.team;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -32,6 +33,7 @@ import io.agentscope.core.state.State;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
+import io.agentscope.harness.agent.session.StoreSessionStorage;
 import io.agentscope.harness.agent.team.TeamSessionMembership.MemberSession;
 import io.agentscope.harness.agent.team.TeamSessionMembership.Membership;
 import io.agentscope.harness.agent.team.TeamSessionMembership.Role;
@@ -768,6 +770,71 @@ class TeamSessionMembershipTest {
     }
 
     @Test
+    void declaredBaseStoreCapabilitySupportsMembershipAndNativeSessionStorage() {
+        BaseStore capable =
+                new DelegatingStore(store) {
+                    @Override
+                    public boolean supportsAtomicSessionStorage() {
+                        return true;
+                    }
+                };
+        client = new LocalTeamClient(capable);
+        service = client.sessionMembership("app", Map.of("state", states));
+        MemberSession lead = member(states, "alice", "lead", "leader", "leader-agent");
+        MemberSession worker = member(states, "alice", "worker", "worker", "worker-agent");
+        service.adoptTeam("alice", a, "a", List.of(lead)).block();
+        Membership binding = service.bindMember("alice", a, worker).block();
+
+        LocalTeamClient reopened = new LocalTeamClient(capable);
+        TeamSessionMembership other = reopened.sessionMembership("app", Map.of("state", states));
+        assertEquals(binding, other.findMembership(worker.session()).block());
+        assertEquals("worker", legacy("worker").sessionId());
+        // A reader that has not explicitly enabled membership must use the same capability.
+        new LocalTeamClient(capable).completeTeam(a.namespace(), a.teamName()).block();
+        assertEquals("Completed", service.getTeam("alice", a).block().info().phase());
+        assertTrue(other.unbindMember("alice", a, worker.session(), binding.token()).block());
+        assertEquals("", legacy("worker").sessionId());
+        assertTrue(states.exists("alice", "worker"));
+
+        StoreSessionStorage nativeStorage = new StoreSessionStorage(capable, List.of("native"));
+        byte[] original = {1, 2, 3};
+        assertTrue(nativeStorage.compareAndSet("journal", 0, original));
+        var stored = nativeStorage.read("journal");
+        assertTrue(stored.version() > 0);
+        assertFalse(nativeStorage.compareAndSet("journal", 0, new byte[] {4}));
+        assertArrayEquals(original, nativeStorage.read("journal").bytes());
+        assertTrue(nativeStorage.compareAndSet("journal", stored.version(), new byte[] {4}));
+    }
+
+    @Test
+    void casWithoutCapabilityRemainsLegacyOnlyAndCannotReadAdoptedMembership() {
+        BaseStore undeclared = new DelegatingStore(store);
+        LocalTeamClient legacyClient = new LocalTeamClient(undeclared);
+        assertFalse(undeclared.supportsAtomicSessionStorage());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> legacyClient.sessionMembership("app", Map.of("state", states)));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> new StoreSessionStorage(undeclared, List.of("native")));
+        legacyClient.completeTeam(b.namespace(), b.teamName()).block();
+        assertEquals(
+                "Completed", store.get(List.of("teams", "ns-b", "b"), "meta").value().get("phase"));
+        assertEquals(2, legacyClient.listMembers(a.namespace(), a.teamName()).block().size());
+
+        MemberSession lead = member(states, "alice", "lead", "leader", "leader-agent");
+        service.adoptTeam("alice", a, "a", List.of(lead)).block();
+        StoreItem before = store.get(List.of("teams", "ns-a", "a"), "meta");
+        assertThrows(
+                IllegalStateException.class,
+                () -> legacyClient.listMembers(a.namespace(), a.teamName()).block());
+        assertThrows(
+                IllegalStateException.class,
+                () -> legacyClient.completeTeam(a.namespace(), a.teamName()).block());
+        assertEquals(before, store.get(List.of("teams", "ns-a", "a"), "meta"));
+    }
+
+    @Test
     void unenabledLegacyProviderAndRecordsKeepTheirContracts() throws Exception {
         BaseStore legacy =
                 new BaseStore() {
@@ -1184,6 +1251,40 @@ class TeamSessionMembershipTest {
             }
         }
         return out;
+    }
+
+    private static class DelegatingStore implements BaseStore {
+        private final BaseStore delegate;
+
+        DelegatingStore(BaseStore delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public StoreItem get(List<String> ns, String key) {
+            return delegate.get(ns, key);
+        }
+
+        @Override
+        public void put(List<String> ns, String key, Map<String, Object> value) {
+            delegate.put(ns, key, value);
+        }
+
+        @Override
+        public List<StoreItem> search(List<String> ns, int limit, int offset) {
+            return delegate.search(ns, limit, offset);
+        }
+
+        @Override
+        public void delete(List<String> ns, String key) {
+            delegate.delete(ns, key);
+        }
+
+        @Override
+        public boolean putIfVersion(
+                List<String> ns, String key, Map<String, Object> value, long expectedVersion) {
+            return delegate.putIfVersion(ns, key, value, expectedVersion);
+        }
     }
 
     private static class CountingStore extends InMemoryStore {
