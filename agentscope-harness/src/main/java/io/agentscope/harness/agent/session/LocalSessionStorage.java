@@ -35,10 +35,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * directory fsync. Windows uses SQLite transactions because its Java filesystem provider cannot
  * open directories for fsync. Both backends acknowledge writes only after synchronous commit.
  */
-public final class LocalSessionStorage implements AtomicSessionStorage, AutoCloseable {
+public final class LocalSessionStorage implements AtomicSessionStorage {
     private static final ConcurrentHashMap<Path, ReentrantLock> LOCKS = new ConcurrentHashMap<>();
     private final Path root;
-    private final SqliteSessionStorage transactionalStorage;
+    private final AtomicSessionStorage transactionalStorage;
 
     public LocalSessionStorage(Path root) {
         Path absolute = root.toAbsolutePath().normalize(), existing = absolute;
@@ -52,13 +52,6 @@ public final class LocalSessionStorage implements AtomicSessionStorage, AutoClos
         } catch (IOException error) {
             throw new SessionLogException("Cannot resolve journal root", error);
         }
-    }
-
-    /** Releases the transactional backend's connection, if any, so the database file is no
-     * longer held open on Windows. */
-    @Override
-    public void close() {
-        if (transactionalStorage != null) transactionalStorage.close();
     }
 
     private Path path(String key) {
