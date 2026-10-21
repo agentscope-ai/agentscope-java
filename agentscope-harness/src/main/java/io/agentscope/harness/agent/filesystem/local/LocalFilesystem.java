@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.filesystem.local;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.util.StripedLocks;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileData;
@@ -52,7 +53,6 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -78,6 +78,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     private static final Logger log = LoggerFactory.getLogger(LocalFilesystem.class);
 
     private static final int DEFAULT_MAX_FILE_SIZE_MB = 10;
+    private static final int FILE_LOCK_STRIPES = 64;
 
     private final Path cwd;
     private final LocalFsMode mode;
@@ -86,11 +87,10 @@ public class LocalFilesystem implements AbstractFilesystem {
     private final NamespaceFactory namespaceFactory;
 
     /**
-     * Per-path locks for the read-modify-write cycle inside {@link #edit}.
-     * Keyed by the absolute, normalized path string so that two callers operating on
-     * the same file (even with different input paths) always share the same lock.
+     * 保护 {@link #edit} 的读改写过程；使用归一化绝对路径选锁，保证同文件互斥。
+     * 固定锁槽不会随文件路径数量增长，碰撞路径会共享同一把锁。
      */
-    private final ConcurrentHashMap<String, ReentrantLock> fileLocks = new ConcurrentHashMap<>();
+    private final StripedLocks fileLocks = new StripedLocks(FILE_LOCK_STRIPES);
 
     /**
      * Same as {@link #LocalFilesystem(Path)} with {@link Path#of(String, String...) Path.of(path)}
@@ -359,7 +359,7 @@ public class LocalFilesystem implements AbstractFilesystem {
 
         // Serialize concurrent edits to the same file to prevent lost-update races.
         String lockKey = resolved.toAbsolutePath().normalize().toString();
-        ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, k -> new ReentrantLock());
+        ReentrantLock lock = fileLocks.get(lockKey);
         lock.lock();
         try {
             String content =

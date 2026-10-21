@@ -30,6 +30,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.util.StripedLocks;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
@@ -60,7 +61,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -101,6 +101,7 @@ import org.slf4j.LoggerFactory;
 public class WorkspaceManager implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
+    private static final int PATH_LOCK_STRIPES = 64;
     private static final ObjectMapper TASK_RECORD_JSON =
             new ObjectMapper()
                     .registerModule(new JavaTimeModule())
@@ -109,16 +110,10 @@ public class WorkspaceManager implements AutoCloseable {
             new TypeReference<>() {};
 
     /**
-     * Per-path locks for workspace-relative files to prevent concurrent read-modify-write races.
-     * Keyed by workspace-relative path (e.g. {@code agents/X/tasks/Y.json},
-     * {@code agents/X/sessions/sessions.json}, {@code memory/YYYY-MM-DD.md}).
-     *
-     * <p>This is an in-process lock only. Workspace file RMW paths here are last-writer-wins
-     * across replicas — {@code WorkspaceManager} does not perform server-side CAS. True
-     * optimistic concurrency lives on {@code BaseStore#putIfVersion} and
-     * {@code AgentStateStore#saveIfVersion}, not on these path locks.
+     * 以工作区相对路径选择固定锁槽，保护追加、任务修改和任务读取的进程内互斥。
+     * 锁池不保留路径；远端存储的 CAS 仍由任务更新流程单独处理。
      */
-    private final Map<String, ReentrantLock> pathLocks = new ConcurrentHashMap<>();
+    private final StripedLocks pathLocks = new StripedLocks(PATH_LOCK_STRIPES);
 
     private final Path workspace;
     private final AbstractFilesystem filesystem;
@@ -366,7 +361,7 @@ public class WorkspaceManager implements AutoCloseable {
         if (normalized.isEmpty()) {
             return;
         }
-        ReentrantLock lock = pathLocks.computeIfAbsent(normalized, k -> new ReentrantLock());
+        ReentrantLock lock = pathLocks.get(normalized);
         lock.lock();
         try {
             if (filesystem == null) {
@@ -538,7 +533,7 @@ public class WorkspaceManager implements AutoCloseable {
 
     private boolean mutateTaskMap(
             RuntimeContext rc, String rel, Function<Map<String, TaskRecord>, Boolean> mutation) {
-        ReentrantLock lock = pathLocks.computeIfAbsent(rel, k -> new ReentrantLock());
+        ReentrantLock lock = pathLocks.get(rel);
         lock.lock();
         try {
             RemoteFilesystem remote = taskRemoteFilesystem(rel);
@@ -724,7 +719,7 @@ public class WorkspaceManager implements AutoCloseable {
      * as a partial JSON read.
      */
     private Map<String, TaskRecord> readTaskMapLocked(RuntimeContext rc, String rel) {
-        ReentrantLock lock = pathLocks.computeIfAbsent(rel, k -> new ReentrantLock());
+        ReentrantLock lock = pathLocks.get(rel);
         lock.lock();
         try {
             try {
