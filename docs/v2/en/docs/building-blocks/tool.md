@@ -122,6 +122,12 @@ Common `@Tool` attributes:
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
 
+#### Explicit result states
+
+Return `ToolResultBlock.success(text)` for a successful call and `ToolResultBlock.error(message)` for a failure. Both are supported directly and inside `Mono<ToolResultBlock>`. Do not infer failure from text prefixes. `ToolResultBlock.text(text)` defaults to `RUNNING`; use `withState(...)` to set a terminal state when preserving an existing JSON or multiline output.
+
+Built-in tools now return structured results. Direct callers should inspect `getState()` and read the text blocks from `getOutput()`; `Toolkit` registration is unchanged.
+
 ### Custom tools (extending `ToolBase`)
 
 When you need a custom permission policy, external execution, or a more complex schema, extend `ToolBase`:
@@ -230,12 +236,27 @@ Inside a `@Tool` method, any parameter **without `@ToolParam`** is treated as fr
 
 | Parameter type | Source |
 |----------------|--------|
-| `ToolEmitter` | Streaming emitter (no-op when none configured) |
+| `ToolEmitter` | Streaming emitter and tool call context (no-op when none configured) |
 | `Agent` | The current agent instance |
 | `AgentState` | The per-session state for the current call (via `RuntimeContext.getAgentState()`) |
 | `RuntimeContext` | The current per-call context |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()` (compatibility shim, deprecated) |
 | Any other user POJO type | `runtimeContext.get(ParamType.class)` — i.e. an object the caller registered via `RuntimeContext.builder().put(ParamType.class, value)` |
+
+An injected `ToolEmitter` exposes the current tool call ID, which can be used to correlate progress with frontend state or another shared store:
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    String toolCallId = emitter.getToolCallId();
+    if (toolCallId != null) {
+        progressByToolCall.put(toolCallId, "running");
+    }
+    return "done";
+}
+```
+
+`getToolCallId()` returns `null` when the emitter has no tool call context, such as a no-op or custom emitter.
 
 "User POJO" means: no `@ToolParam`, not primitive, not `ContentBlock` / `Msg`, not under `java.*` / `javax.*`. Every other parameter (those with `@ToolParam`, or that fall outside the above types) is read from the LLM-supplied JSON by name.
 
@@ -270,6 +291,25 @@ agent.call(List.of(new UserMessage("Greet me.")), ctx).block();
 ```
 
 The model never sees `userCtx` — it is not part of the tool's JSON schema. Full example: `agentscope-examples/documentation/.../tool/ToolExecutionContextExample.java`.
+
+### Streaming tool progress
+
+Long-running tools can publish intermediate progress through `ToolEmitter.emit()`. Progress travels as [`ToolProgressEvent`](/v2/en/docs/building-blocks/message-and-event#event-types) in the event stream — it is for display only and never sent to the LLM. The tool's return value is what the model receives, and it travels separately as `ToolResultTextDeltaEvent` / `ToolResultDataDeltaEvent`.
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    emitter.emit(ToolResultBlock.text("Scanning 3 directories..."));
+    // ... do work ...
+    emitter.emit(ToolResultBlock.text("Indexing results..."));
+    // ... do more work ...
+
+    // Only this return value is sent to the LLM as the tool result.
+    return "3 files found";
+}
+```
+
+Clients that rebuild tool results from the event stream must accumulate `ToolResult*DeltaEvent` and ignore `ToolProgressEvent`. Mixing the two would put progress text into the tool message and feed it back to the model on the next turn, contradicting `ToolEmitter`'s contract.
 
 ### Accessing context in `ToolBase.callAsync`
 
@@ -591,6 +631,104 @@ The meta tool's input represents the **final state** of all groups, not a delta.
 
 </Warning>
 
+
+## Tool call interceptors
+
+`ToolCallInterceptor` is a Toolkit-layer, per-invocation hook over tool arguments. It runs after JSON-schema validation and preset-argument merging, and before the session dispatch record and real execution — so it sees the exact arguments the tool would receive, plus the caller identity, and decides what actually executes.
+
+Use it for **parameter-level business rules** the [permission system](/v2/en/docs/building-blocks/permission-system) cannot express: the tool is allowed, but is *this* call's `file_path` inside the current user's sandbox? Is this SQL statement within the caller's data scope? Tool-level policy (ALLOW/ASK/DENY, human review) stays in the permission engine; batch-level, event-stream concerns stay in [middleware](/v2/en/docs/building-blocks/middleware) `onActing`.
+
+Register interceptors at build time on `ToolkitConfig`:
+
+```java
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptor(new AuditInterceptor())                    // appends; repeatable
+        .interceptor(new PathSandboxInterceptor(                // appends
+                userId -> Path.of("/data/workspaces", userId)))
+        .build());
+
+// Or set the whole list at once — interceptors(list) replaces, not appends
+Toolkit toolkit2 = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptors(List.of(audit, sandbox))
+        .build());
+```
+
+`interceptor(...)` appends and may be called repeatedly; `interceptors(List)` replaces everything registered so far — handy when you already assembled the chain elsewhere. Interceptors are sorted once by `order()` descending (higher value = outer layer, runs first, sees the result last; equal orders keep registration order) and stay immutable afterwards. A `Toolkit` is shared across concurrent sessions, so interceptor implementations must be stateless or thread-safe; runtime-mutable *policy* (kill switches, tenant rules) lives as mutable state *inside* an interceptor.
+
+The hook follows the same onion shape as middleware:
+
+```java
+public final class PathSandboxInterceptor implements ToolCallInterceptor {
+
+    private final Function<String, Path> workspaceRootResolver;
+
+    public PathSandboxInterceptor(Function<String, Path> workspaceRootResolver) {
+        this.workspaceRootResolver = workspaceRootResolver;
+    }
+
+    @Override
+    public Mono<ToolResultBlock> intercept(
+            ToolInvocation invocation,
+            Function<ToolInvocation, Mono<ToolResultBlock>> next) {
+        if (!invocation.toolName().equals("write_text_file")) {
+            return next.apply(invocation);        // not our tool — pass through
+        }
+        // Injected dependency: registered by the caller via
+        // RuntimeContext.builder().put(FileAuditLog.class, log) — never model-visible
+        FileAuditLog audit = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().get(FileAuditLog.class) : null;
+        String userId = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().getUserId() : null;
+        if (userId == null || userId.isBlank()) { // fail closed on missing identity
+            return deny("no authenticated user context; cannot scope file access");
+        }
+        Path root = workspaceRootResolver.apply(userId).toAbsolutePath().normalize();
+        // Tool argument: "file_path" comes from the model's JSON input (presets included)
+        Path resolved = root
+                .resolve(invocation.input().get("file_path").toString())
+                .normalize();                     // absolute paths also fail the check below
+        // Pre-processing: validate the argument and rewrite it to the in-sandbox path
+        if (!resolved.startsWith(root)) {
+            return deny("path must stay inside your workspace; use relative paths");
+        }
+        Map<String, Object> rewritten = new HashMap<>(invocation.input());
+        rewritten.put("file_path", resolved.toString());
+        // Post-processing: audit the executed result without affecting it
+        return next.apply(invocation.withInput(rewritten))
+                .doOnSuccess(result -> {
+                    if (audit != null) audit.record(userId, resolved, result);
+                });
+    }
+
+    private static Mono<ToolResultBlock> deny(String message) {
+        return Mono.just(ToolResultBlock.text("PathSandbox: " + message)
+                .withState(ToolResultState.DENIED));
+    }
+}
+```
+
+Actions an interceptor can take:
+
+| Action | Expression | Effect |
+|--------|------------|--------|
+| Allow | `next.apply(invocation)` | Continue the chain / execute the tool |
+| Policy deny | `ToolResultBlock.text(msg).withState(ToolResultState.DENIED)` | Tool not executed; result feeds back to the model for self-correction; recorded as a `denied` decision |
+| Reject as invalid | `ToolResultBlock.error(msg)` | "This call failed" semantics, like a schema violation; no denied record |
+| Rewrite | `next.apply(invocation.withInput(newInput))` | Tool receives the rewritten arguments (presets may be overridden; no schema re-validation — developer-produced input, same trust level as presets) |
+| Audit | `next.apply(invocation).doOnSuccess(...)` | Observe without affecting execution |
+| Suspend (HITL) | throw `ToolSuspendException` | Mapped to a `suspended` result by the existing pipeline |
+
+Semantics to keep in mind:
+
+- **Per-agent dispatch.** The snapshot carries `agentId` (audit correlation) and `agentName` (write rules against it, e.g. deny writes for `planner`); both are `null` on agentless direct calls. Identity only, not the `Agent` handle — its operations belong to middleware and carry re-entrancy hazards; structurally different interceptor sets per agent belong in each agent's own `ToolkitConfig` at build time.
+- **Rewrites happen after permission approval.** The permission engine judges the raw model input; if the *final* value of a security-sensitive rewrite (path, SQL, URL) needs user confirmation, suspend for human review instead of rewriting silently. An interceptor denying an already-approved call is expected — the denial simply feeds back to the model.
+- **Denial messages should be model-actionable** ("use relative paths inside your workspace"), free of server internals, and prefixed with your interceptor's identity (e.g. `PathSandbox:`). To harden a path guard beyond the example above: validate caller-controlled ids before using them as path components, re-check existing paths (and the nearest existing ancestor of new files) with `toRealPath()` — `normalize()` misses symlinks, Windows 8.3 names and ADS, and `Path#startsWith` is case-sensitive — and prefer rewrites that do not echo the server-side absolute root back to the model.
+- **Session records stay honest.** The `tool/dispatch` record sits at the end of the chain and always contains the arguments that actually executed; denied calls leave no `allowed`/`dispatch` record.
+- **Timeouts and retries** on the batch `callTools` path wrap the whole chain: interceptor time counts toward the tool timeout, and retries re-run the chain on every attempt. The direct `Toolkit#callTool` path keeps today's behavior — no timeout wrapper — so interceptors must never block; offload blocking I/O with `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`.
+- **External tools are never intercepted.** `externalTool=true` / `SchemaOnlyTool` calls short-circuit to `suspended` before the chain runs; validation belongs to the external executor. Resumed results are data injection, not execution, and bypass the chain too. The framework-internal `generate_response` tool is likewise not intercepted.
+- **Propagation.** `Toolkit#copy()` (used by harness subagents) carries interceptors along; a subagent built with a brand-new `Toolkit` gets none unless you register them there. Tools a tool delegates to internally (one tool calling another inside `callAsync`) are not re-intercepted — guard by the outer tool name.
 
 ## Further reading
 

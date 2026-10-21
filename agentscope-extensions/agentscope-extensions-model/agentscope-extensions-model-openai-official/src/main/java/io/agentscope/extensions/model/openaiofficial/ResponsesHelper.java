@@ -15,14 +15,21 @@
  */
 package io.agentscope.extensions.model.openaiofficial;
 
+import com.openai.core.JsonField;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseError;
+import com.openai.models.responses.ResponseOutputItem;
+import com.openai.models.responses.ResponseOutputMessage;
+import com.openai.models.responses.ResponseOutputText;
 import com.openai.models.responses.ResponseStatus;
 import com.openai.models.responses.ResponseUsage;
 import io.agentscope.core.model.ChatUsage;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -76,7 +83,68 @@ final class ResponsesHelper {
             metadata.put(OpenAIOfficialConstants.MD_RESPONSE_ERROR, errorMap);
         }
 
+        List<Map<String, Object>> citations = extractCitations(response);
+        if (!citations.isEmpty()) {
+            metadata.put(OpenAIOfficialConstants.MD_RESPONSE_CITATIONS, citations);
+        }
+
         return metadata;
+    }
+
+    private static List<Map<String, Object>> extractCitations(Response response) {
+        List<Map<String, Object>> citations = new ArrayList<>();
+        for (ResponseOutputItem item : response.output()) {
+            if (!item.isMessage()) {
+                continue;
+            }
+            for (ResponseOutputMessage.Content content : item.asMessage().content()) {
+                if (!content.isOutputText()) {
+                    continue;
+                }
+                for (ResponseOutputText.Annotation annotation :
+                        content.asOutputText().annotations()) {
+                    if (annotation.isUrlCitation()) {
+                        ResponseOutputText.Annotation.UrlCitation citation =
+                                annotation.asUrlCitation();
+                        Map<String, Object> citationMap = new LinkedHashMap<>();
+                        citationMap.put("type", "url_citation");
+                        citationMap.put("start_index", citation.startIndex());
+                        citationMap.put("end_index", citation.endIndex());
+                        citationMap.put("title", citation.title());
+                        citationMap.put("url", citation.url());
+                        citations.add(citationMap);
+                    } else if (annotation.isContainerFileCitation()) {
+                        ResponseOutputText.Annotation.ContainerFileCitation citation =
+                                annotation.asContainerFileCitation();
+                        Map<String, Object> citationMap = new LinkedHashMap<>();
+                        citationMap.put("type", "container_file_citation");
+                        citationMap.put("container_id", citation.containerId());
+                        citationMap.put("end_index", citation.endIndex());
+                        citationMap.put("file_id", citation.fileId());
+                        citationMap.put("filename", citation.filename());
+                        citationMap.put("start_index", citation.startIndex());
+                        citations.add(citationMap);
+                    } else if (annotation.isFileCitation()) {
+                        ResponseOutputText.Annotation.FileCitation citation =
+                                annotation.asFileCitation();
+                        Map<String, Object> citationMap = new LinkedHashMap<>();
+                        citationMap.put("type", "file_citation");
+                        citationMap.put("file_id", citation.fileId());
+                        citationMap.put("filename", citation.filename());
+                        citationMap.put("index", citation.index());
+                        citations.add(citationMap);
+                    } else if (annotation.isFilePath()) {
+                        ResponseOutputText.Annotation.FilePath citation = annotation.asFilePath();
+                        Map<String, Object> citationMap = new LinkedHashMap<>();
+                        citationMap.put("type", "file_path");
+                        citationMap.put("file_id", citation.fileId());
+                        citationMap.put("index", citation.index());
+                        citations.add(citationMap);
+                    }
+                }
+            }
+        }
+        return citations;
     }
 
     /**
@@ -95,9 +163,12 @@ final class ResponsesHelper {
         ResponseUsage respUsage = usageOpt.get();
         long inputTokens = respUsage.inputTokens();
         long outputTokens = respUsage.outputTokens();
-        long cachedTokens = respUsage.inputTokensDetails().cachedTokens();
-        long cacheCreationTokens = respUsage.inputTokensDetails().cacheWriteTokens();
-        long reasoningTokens = respUsage.outputTokensDetails().reasoningTokens();
+        // Read the breakdowns through the JSON-field accessors: providers such as DeepSeek omit
+        // individual sub-fields (e.g. cache_write_tokens) while still reporting totals, and the
+        // required-field accessors throw on read, failing the whole model call (#3564).
+        long cachedTokens = orZero(respUsage.inputTokensDetails()._cachedTokens());
+        long cacheCreationTokens = orZero(respUsage.inputTokensDetails()._cacheWriteTokens());
+        long reasoningTokens = orZero(respUsage.outputTokensDetails()._reasoningTokens());
 
         double time = Duration.between(startTime, Instant.now()).toMillis() / 1000.0;
 
@@ -109,5 +180,15 @@ final class ResponsesHelper {
                 .reasoningTokens((int) reasoningTokens)
                 .time(time)
                 .build();
+    }
+
+    /**
+     * Unwraps an optional JSON field, defaulting to {@code 0} when the field is missing or null.
+     *
+     * @param field the JSON field to read
+     * @return the field's value, or {@code 0} when absent
+     */
+    private static long orZero(JsonField<Long> field) {
+        return field.asKnown().orElse(0L);
     }
 }

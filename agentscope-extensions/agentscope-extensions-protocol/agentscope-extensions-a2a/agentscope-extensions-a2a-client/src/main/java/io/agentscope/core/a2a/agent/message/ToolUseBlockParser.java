@@ -16,12 +16,11 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.DataPart;
-import io.a2a.spec.Part;
-import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Map;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.Part;
 
 /**
  * Parser for {@link ToolUseBlock} to {@link DataPart}.
@@ -31,17 +30,12 @@ public class ToolUseBlockParser implements ContentBlockParser<ToolUseBlock> {
     @Override
     public Part<?> parse(ToolUseBlock contentBlock) {
         Map<String, Object> metadata =
-                MessageConvertUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_TOOL_USE);
-        metadata.put(MessageConstants.TOOL_NAME_METADATA_KEY, contentBlock.getName());
-        metadata.put(MessageConstants.TOOL_CALL_ID_METADATA_KEY, contentBlock.getId());
-        contentBlock
-                .getMetadata()
-                .forEach(
-                        (key, value) -> {
-                            if (!MessageMetadataKeys.TOOL_CALL_PARSE_FAILED.equals(key)) {
-                                metadata.put(key, value);
-                            }
-                        });
+                MetadataUtil.toolMetadata(
+                        MessageConstants.BlockContent.TYPE_TOOL_USE,
+                        contentBlock.getName(),
+                        contentBlock.getId(),
+                        contentBlock.getMetadata());
+        metadata.remove(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED);
         return new DataPart(contentBlock.getInput(), metadata);
     }
 }

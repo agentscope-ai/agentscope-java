@@ -27,7 +27,7 @@
     <name>AgentScope Java - Parent</name>
 
     <properties>
-        <revision>2.0.4-SNAPSHOT</revision>
+        <revision>2.1.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -43,7 +43,7 @@
         <maven-site-plugin.version>4.0.0-M16</maven-site-plugin.version>
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
-        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
+        <maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
         <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
         <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
         <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
@@ -288,6 +288,15 @@
 
                     <!-- Ignore missing test patterns -->
                     <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
+
+                    <!--
+                        Backstop for a hung test fork: kill it after 30 minutes instead of
+                        letting a stuck fork pin its reactor thread until the CI job timeout.
+                        Default forkCount/reuseForks means one fork per module's full suite;
+                        legitimate suites are far below this budget, and a kill surfaces the
+                        offending module in the build log rather than a silent hang.
+                    -->
+                    <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
 
                     <!--
                         Phase 0: redirect HarnessAgent's default JsonSession root into the

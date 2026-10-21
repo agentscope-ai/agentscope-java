@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
 import java.util.List;
@@ -33,6 +34,7 @@ import java.util.Objects;
  *   <li>assistant - Messages from the AI assistant</li>
  *   <li>system - System instructions</li>
  *   <li>tool - Tool execution results</li>
+ *   <li>reasoning - Assistant reasoning or thinking content</li>
  * </ul>
  *
  * <p>The {@code content} field uses {@link MessageContent}, a type-safe sealed union
@@ -46,9 +48,10 @@ public class AguiMessage {
     private final MessageContent content;
     private final List<AguiToolCall> toolCalls;
     private final String toolCallId;
+    private final String error;
 
     /**
-     * Creates a new AguiMessage.
+     * Creates a new AguiMessage without an error payload.
      *
      * @param id The unique message ID
      * @param role The message role (user, assistant, system, tool)
@@ -56,13 +59,34 @@ public class AguiMessage {
      * @param toolCalls Tool calls for assistant messages (optional)
      * @param toolCallId Tool call ID for tool messages (optional)
      */
+    public AguiMessage(
+            String id,
+            String role,
+            MessageContent content,
+            List<AguiToolCall> toolCalls,
+            String toolCallId) {
+        this(id, role, content, toolCalls, toolCallId, null);
+    }
+
+    /**
+     * Creates a new AguiMessage.
+     *
+     * @param id The unique message ID
+     * @param role The message role (user, assistant, system, tool, reasoning)
+     * @param content The message content (plain text or structured blocks), may be null
+     * @param toolCalls Tool calls for assistant messages (optional)
+     * @param toolCallId Tool call ID for tool messages (optional)
+     * @param error The error a frontend tool reported, per the AG-UI protocol's {@code error}
+     *     field on tool messages; may be null
+     */
     @JsonCreator
     public AguiMessage(
             @JsonProperty("id") String id,
             @JsonProperty("role") String role,
             @JsonProperty("content") MessageContent content,
             @JsonProperty("toolCalls") List<AguiToolCall> toolCalls,
-            @JsonProperty("toolCallId") String toolCallId) {
+            @JsonProperty("toolCallId") String toolCallId,
+            @JsonProperty("error") String error) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.role = Objects.requireNonNull(role, "role cannot be null");
         this.content = content;
@@ -71,6 +95,7 @@ public class AguiMessage {
                         ? Collections.unmodifiableList(toolCalls)
                         : Collections.emptyList();
         this.toolCallId = toolCallId;
+        this.error = error;
     }
 
     /**
@@ -127,6 +152,31 @@ public class AguiMessage {
      */
     public static AguiMessage toolMessage(String id, String toolCallId, String content) {
         return new AguiMessage(id, "tool", wrapText(content), null, toolCallId);
+    }
+
+    /**
+     * Creates a tool result message that reports a frontend tool failure.
+     *
+     * @param id The message ID
+     * @param toolCallId The ID of the tool call this is responding to
+     * @param content The tool result content as plain text
+     * @param error The error reported by the frontend tool
+     * @return A new tool message
+     */
+    public static AguiMessage toolMessage(
+            String id, String toolCallId, String content, String error) {
+        return new AguiMessage(id, "tool", wrapText(content), null, toolCallId, error);
+    }
+
+    /**
+     * Creates a reasoning message.
+     *
+     * @param id The message ID
+     * @param content The reasoning content as plain text
+     * @return A new reasoning message
+     */
+    public static AguiMessage reasoningMessage(String id, String content) {
+        return new AguiMessage(id, "reasoning", wrapText(content), null, null);
     }
 
     /**
@@ -187,7 +237,7 @@ public class AguiMessage {
     /**
      * Get the message role.
      *
-     * @return The role (user, assistant, system, tool)
+     * @return The role (user, assistant, system, tool, reasoning)
      */
     public String getRole() {
         return role;
@@ -245,6 +295,16 @@ public class AguiMessage {
     }
 
     /**
+     * Get the error a frontend tool reported, per the AG-UI protocol's {@code error} field.
+     *
+     * @return The error message, or null if no error was reported
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public String getError() {
+        return error;
+    }
+
+    /**
      * Check if this is a user message.
      *
      * @return true if role is "user"
@@ -281,6 +341,15 @@ public class AguiMessage {
     }
 
     /**
+     * Check if this is a reasoning message.
+     *
+     * @return true if role is "reasoning"
+     */
+    public boolean isReasoningMessage() {
+        return "reasoning".equalsIgnoreCase(role);
+    }
+
+    /**
      * Check if this message has tool calls.
      *
      * @return true if tool calls are present
@@ -301,6 +370,8 @@ public class AguiMessage {
                 + toolCalls
                 + ", toolCallId='"
                 + toolCallId
+                + "', error='"
+                + error
                 + "'}";
     }
 
@@ -313,11 +384,12 @@ public class AguiMessage {
                 && Objects.equals(role, that.role)
                 && Objects.equals(content, that.content)
                 && Objects.equals(toolCalls, that.toolCalls)
-                && Objects.equals(toolCallId, that.toolCallId);
+                && Objects.equals(toolCallId, that.toolCallId)
+                && Objects.equals(error, that.error);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, role, content, toolCalls, toolCallId);
+        return Objects.hash(id, role, content, toolCalls, toolCallId, error);
     }
 }

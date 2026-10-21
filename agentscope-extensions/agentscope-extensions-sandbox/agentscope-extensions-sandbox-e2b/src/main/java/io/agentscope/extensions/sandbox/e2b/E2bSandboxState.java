@@ -25,6 +25,7 @@ public class E2bSandboxState extends SandboxState {
     private String sandboxId;
     private String templateId = "base";
     private String sandboxDomain;
+    private String envdSandboxUrl;
     private String envdAccessToken;
     private String envdVersion = "0.1.5";
     private String workspaceRoot = "/home/user";
@@ -60,6 +61,14 @@ public class E2bSandboxState extends SandboxState {
 
     public void setSandboxDomain(String sandboxDomain) {
         this.sandboxDomain = sandboxDomain;
+    }
+
+    public String getEnvdSandboxUrl() {
+        return envdSandboxUrl;
+    }
+
+    public void setEnvdSandboxUrl(String envdSandboxUrl) {
+        this.envdSandboxUrl = envdSandboxUrl;
     }
 
     public String getEnvdAccessToken() {

@@ -28,6 +28,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.model.openaiofficial.tool.ResponsesServerToolHelper;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -57,7 +58,9 @@ final class ResponsesResponseParser {
         String encryptedContent = null;
         StringBuilder reasoningTextBuilder = new StringBuilder();
         StringBuilder textBuilder = new StringBuilder();
-        List<ToolUseBlock> toolUseBlocks = new ArrayList<>();
+        List<ContentBlock> toolBlocks = new ArrayList<>();
+        ResponsesServerToolHelper.HostedToolSearchPairing toolSearchPairing =
+                new ResponsesServerToolHelper.HostedToolSearchPairing();
 
         List<ResponseOutputItem> output = response.output();
         for (ResponseOutputItem item : output) {
@@ -75,8 +78,12 @@ final class ResponsesResponseParser {
             } else if (item.isFunctionCall()) {
                 ToolUseBlock toolUse = extractFunctionCall(item.asFunctionCall());
                 if (toolUse != null) {
-                    toolUseBlocks.add(toolUse);
+                    toolBlocks.add(toolUse);
                 }
+            } else if (ResponsesServerToolHelper.isSupportedServerToolItem(item)) {
+                toolBlocks.addAll(
+                        ResponsesServerToolHelper.decodeBlocks(
+                                item, toolSearchPairing.companionCallId(item)));
             }
             // Unknown output item types are silently ignored (forward compatibility)
         }
@@ -112,8 +119,8 @@ final class ResponsesResponseParser {
             contentBlocks.add(TextBlock.builder().text(text).build());
         }
 
-        // ToolUseBlocks
-        contentBlocks.addAll(toolUseBlocks);
+        // Tool blocks preserve the output-item order.
+        contentBlocks.addAll(toolBlocks);
 
         // ── Metadata + usage + finishReason ──
         String responseId = response.id();
@@ -185,6 +192,20 @@ final class ResponsesResponseParser {
             input = new HashMap<>();
         }
 
-        return ToolUseBlock.builder().id(callId).name(name).input(input).content(arguments).build();
+        Map<String, Object> metadata = new HashMap<>();
+        call.namespace()
+                .ifPresent(
+                        namespace ->
+                                metadata.put(
+                                        OpenAIOfficialConstants.MD_FUNCTION_CALL_NAMESPACE,
+                                        namespace));
+
+        return ToolUseBlock.builder()
+                .id(callId)
+                .name(name)
+                .input(input)
+                .content(arguments)
+                .metadata(metadata.isEmpty() ? null : metadata)
+                .build();
     }
 }

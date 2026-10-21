@@ -145,6 +145,82 @@ public class RemoteFilesystem implements AbstractFilesystem {
         return rc -> frozen;
     }
 
+    @Override
+    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
+        return new io.agentscope.harness.agent.session.StoreSessionStorage(store, getNamespace(rc));
+    }
+
+    /** Whether this backend supports compare-and-swap file updates across nodes. */
+    public boolean supportsAtomicUpdates() {
+        return store.supportsAtomicSessionStorage();
+    }
+
+    /**
+     * Registers routing metadata for host-side task maintenance. The registry is a separate
+     * store namespace, never a file visible to agent filesystem tools. Each resolved scope has
+     * its own key so concurrent registrations do not overwrite a shared list.
+     */
+    public void registerTaskScope(RuntimeContext rc, String agentId) {
+        List<String> namespace = getNamespace(rc);
+        if (namespace.equals(getNamespace(RuntimeContext.empty()))) {
+            return;
+        }
+        String key = scopeKey(namespace);
+        store.put(
+                taskScopeNamespace(agentId),
+                key,
+                Map.of(
+                        "namespace",
+                        List.copyOf(namespace),
+                        "userId",
+                        rc.getUserId() == null ? "" : rc.getUserId(),
+                        "sessionId",
+                        rc.getSessionId() == null ? "" : rc.getSessionId()));
+    }
+
+    /**
+     * Returns registered contexts for trusted task maintenance, including the default context.
+     * This does not change the namespace used by ordinary filesystem operations.
+     */
+    public List<RuntimeContext> taskMaintenanceContexts(String agentId) {
+        List<RuntimeContext> contexts = new ArrayList<>();
+        contexts.add(RuntimeContext.empty());
+        final int pageSize = 64;
+        for (int offset = 0; ; offset += pageSize) {
+            List<StoreItem> page = store.search(taskScopeNamespace(agentId), pageSize, offset);
+            for (StoreItem item : page) {
+                Map<String, Object> value = item.value();
+                RuntimeContext rc =
+                        RuntimeContext.builder()
+                                .userId((String) value.get("userId"))
+                                .sessionId((String) value.get("sessionId"))
+                                .build();
+                // Ignore entries from incompatible namespace factories/configurations.
+                if (getNamespace(rc).equals(value.get("namespace"))) {
+                    contexts.add(rc);
+                }
+            }
+            if (page.size() < pageSize) {
+                return contexts;
+            }
+        }
+    }
+
+    private List<String> taskScopeNamespace(String agentId) {
+        return List.of(
+                "harness", "task-scopes", scopeKey(getNamespace(RuntimeContext.empty())), agentId);
+    }
+
+    private static String scopeKey(List<String> namespace) {
+        return namespace.stream()
+                .map(
+                        segment ->
+                                Base64.getUrlEncoder()
+                                        .withoutPadding()
+                                        .encodeToString(segment.getBytes(StandardCharsets.UTF_8)))
+                .collect(java.util.stream.Collectors.joining("."));
+    }
+
     private List<String> getNamespace(RuntimeContext rc) {
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
