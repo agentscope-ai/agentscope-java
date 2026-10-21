@@ -63,6 +63,13 @@ public class LocalFilesystemSpec {
     private IsolationScope isolationScope;
 
     /**
+     * Override for the workspace layer's namespace boundary; see
+     * {@link #namespaceBoundary(Boolean)}. {@code null} applies the default (boundary on when
+     * {@code mode == ROOTED}).
+     */
+    private Boolean namespaceBoundaryOverride;
+
+    /**
      * User project root (lower layer of the resulting {@link OverlayFilesystem}). The agent reads
      * project-authored content (e.g. {@code AGENTS.md}, {@code knowledge/}, {@code skills/}) from
      * this directory and copies-on-write into the agent {@code workspace} when modified. Also
@@ -206,6 +213,32 @@ public class LocalFilesystemSpec {
         return this;
     }
 
+    /**
+     * Overrides whether the workspace layer enforces the namespace boundary in
+     * {@link LocalFsMode#ROOTED} mode (absolute paths must resolve inside the caller's own
+     * namespace directory under the workspace root). The boundary is on by default there: the
+     * namespace prefix only scopes <em>relative</em> keys, so without it any session or user
+     * could address another's directory under the shared workspace root by absolute path
+     * (#3261).
+     *
+     * <p>This is a behaviour change for deployments upgrading from versions where absolute
+     * paths passed through: absolute keys that legitimately addressed shared content under the
+     * workspace root (e.g. {@code <workspace>/skills/...}) now throw a
+     * {@link SecurityException}. Shared content stays reachable through workspace-relative
+     * paths, which the overlay resolves against the read-only project layer. Pass
+     * {@code false} only for single-tenant workspaces whose absolute-path behaviour has been
+     * vetted, to keep the pre-boundary behaviour without patching the library; pass
+     * {@code true} to force the boundary on in every mode.
+     *
+     * @param enabled {@code true} to force the boundary on, {@code false} to force it off,
+     *     {@code null} to restore the default (on for {@link LocalFsMode#ROOTED})
+     * @return this spec
+     */
+    public LocalFilesystemSpec namespaceBoundary(Boolean enabled) {
+        this.namespaceBoundaryOverride = enabled;
+        return this;
+    }
+
     /** Returns the configured isolation scope, or {@code null} to use the default. */
     public IsolationScope getIsolationScope() {
         return isolationScope;
@@ -338,6 +371,18 @@ public class LocalFilesystemSpec {
                         inheritEnv,
                         effectiveNamespaceFactory,
                         effectiveProject);
+        boolean boundaryEnabled =
+                namespaceBoundaryOverride != null
+                        ? namespaceBoundaryOverride
+                        : mode == LocalFsMode.ROOTED;
+        if (boundaryEnabled) {
+            // The namespace prefix only scopes relative keys; without the boundary, an absolute
+            // path would let one session/user address another session's directory under the
+            // shared workspace root (#3261). SANDBOXED re-roots absolute paths under the
+            // workspace already, and UNRESTRICTED is documented to pass absolute paths through;
+            // namespaceBoundary(Boolean) overrides the default either way.
+            upper.namespaceBoundary(true);
+        }
         LocalFilesystem lower = new LocalFilesystem(effectiveProject, true, 10, null);
         if (projectWritable) {
             LocalFilesystem projectFs =

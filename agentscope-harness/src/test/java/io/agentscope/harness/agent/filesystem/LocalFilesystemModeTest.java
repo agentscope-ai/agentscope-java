@@ -20,9 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
@@ -247,21 +249,325 @@ class LocalFilesystemModeTest {
     }
 
     @Test
-    void rooted_leadingSlashWithNamespace(@TempDir Path workspace) throws IOException {
-        // With namespace, "/skills" should still resolve to <workspace>/skills (not namespaced)
-        Path skillsDir = workspace.resolve("skills");
-        Files.createDirectories(skillsDir);
-        Files.writeString(skillsDir.resolve("tool.md"), "global skill", StandardCharsets.UTF_8);
+    void rooted_leadingSlashSharedDirRejectedWithNamespace(@TempDir Path workspace) {
+        // With the namespace boundary active, the leading-slash virtual form ("/skills/tool.md"
+        // → <workspace>/skills/...) must not reach a directory outside the own namespace either.
+        // Shared content is reachable via workspace-relative paths, which the overlay resolves
+        // against the read-only project layer.
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        assertThrows(SecurityException.class, () -> fs.read(rc, "/skills/tool.md", 0, 0));
+    }
+
+    @Test
+    void rooted_namespaceBlocksAbsolutePathIntoSiblingNamespace(
+            @TempDir Path workspace, @TempDir Path project) throws IOException {
+        Files.createDirectories(workspace.resolve("user-1"));
+        Path siblingFile = workspace.resolve("user-2/MEMORY.md");
+        Files.createDirectories(siblingFile.getParent());
+        Files.writeString(siblingFile, "user-2 private memory", StandardCharsets.UTF_8);
+
+        PathPolicy policy = PathPolicy.of(project, workspace);
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, policy, 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        Throwable t =
+                assertThrows(
+                        SecurityException.class,
+                        () -> fs.read(rc, siblingFile.toAbsolutePath().toString(), 0, 0));
+        assertTrue(
+                t.getMessage().contains("outside the isolated namespace"),
+                () -> "expected namespace-boundary error, got: " + t.getMessage());
+    }
+
+    @Test
+    void rooted_namespaceAllowsAbsolutePathWithinOwnNamespace(@TempDir Path workspace)
+            throws IOException {
+        Path ownFile = workspace.resolve("user-1/notes.md");
+        Files.createDirectories(ownFile.getParent());
+        Files.writeString(ownFile, "my notes", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult r = fs.read(rc, ownFile.toAbsolutePath().toString(), 0, 0);
+        assertTrue(
+                r.isSuccess(), () -> "own-namespace absolute path should pass, got: " + r.error());
+        assertEquals("my notes", r.fileData().content());
+    }
+
+    @Test
+    void rooted_namespaceBlocksWorkspaceRootAbsoluteAccess(@TempDir Path workspace)
+            throws IOException {
+        Files.writeString(workspace.resolve("shared.txt"), "shared", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        assertThrows(
+                SecurityException.class, () -> fs.ls(rc, workspace.toAbsolutePath().toString()));
+    }
+
+    @Test
+    void rooted_namespaceBoundaryOffByDefault(@TempDir Path workspace) throws IOException {
+        // Direct LocalFilesystem users keep the legacy behaviour; the boundary is opt-in via
+        // namespaceBoundary(true) (LocalFilesystemSpec enables it for the workspace layer).
+        Path siblingFile = workspace.resolve("user-2/MEMORY.md");
+        Files.createDirectories(siblingFile.getParent());
+        Files.writeString(siblingFile, "user-2 private memory", StandardCharsets.UTF_8);
 
         LocalFilesystem fs =
                 new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS);
         RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
 
-        // Absolute paths (starting with "/") should NOT be namespace-scoped
-        ReadResult r = fs.read(rc, "/skills/tool.md", 0, 0);
+        ReadResult r = fs.read(rc, siblingFile.toAbsolutePath().toString(), 0, 0);
         assertTrue(
-                r.isSuccess(), () -> "absolute path should not be namespaced, got: " + r.error());
-        assertEquals("global skill", r.fileData().content());
+                r.isSuccess(),
+                () -> "without the boundary the legacy behaviour holds: " + r.error());
+    }
+
+    @Test
+    void rooted_namespaceBoundaryNoopWithoutActiveNamespace(@TempDir Path workspace)
+            throws IOException {
+        // With no namespace resolved for the call (AGENT/GLOBAL scope or missing identifiers)
+        // the boundary is a no-op, even when enabled. The factory mirrors IsolationScope.USER,
+        // which derives the namespace from the RuntimeContext and yields nothing (null) when
+        // the identifier is absent.
+        NamespaceFactory contextDerivedNs =
+                rc -> {
+                    String uid = rc == null ? null : rc.getUserId();
+                    return (uid == null || uid.isBlank()) ? null : List.of(uid);
+                };
+        Path file = workspace.resolve("shared.txt");
+        Files.writeString(file, "shared", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(
+                                workspace,
+                                LocalFsMode.ROOTED,
+                                PathPolicy.empty(),
+                                10,
+                                contextDerivedNs)
+                        .namespaceBoundary(true);
+
+        ReadResult r = fs.read(RuntimeContext.empty(), file.toAbsolutePath().toString(), 0, 0);
+        assertTrue(
+                r.isSuccess(), () -> "no active namespace should keep access open: " + r.error());
+    }
+
+    @Test
+    void rooted_namespaceBoundaryNoopWithoutNamespaceFactory(@TempDir Path workspace)
+            throws IOException {
+        // Boundary enabled but no namespace factory configured — nothing to enforce.
+        Path file = workspace.resolve("shared.txt");
+        Files.writeString(file, "shared", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null)
+                        .namespaceBoundary(true);
+
+        ReadResult r = fs.read(RuntimeContext.empty(), file.toAbsolutePath().toString(), 0, 0);
+        assertTrue(r.isSuccess(), () -> "no factory should keep access open: " + r.error());
+    }
+
+    @Test
+    void rooted_symlinkIntoSiblingNamespaceRejected(@TempDir Path workspace) throws IOException {
+        // A link planted inside the own namespace must not become an escape hatch: the boundary
+        // check compares the physical location, so every route through the link — absolute,
+        // namespace-prefixed relative, and leading-slash virtual — is rejected.
+        assumeTrue(symlinksSupported(workspace), "symlink creation not supported on this platform");
+        Files.createDirectories(workspace.resolve("user-1"));
+        Path sibling = workspace.resolve("user-2/MEMORY.md");
+        Files.createDirectories(sibling.getParent());
+        Files.writeString(sibling, "user-2 private memory", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(workspace.resolve("user-1/link"), Path.of("../user-2"));
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        String throughLink = workspace.resolve("user-1/link/MEMORY.md").toAbsolutePath().toString();
+        assertThrows(SecurityException.class, () -> fs.read(rc, throughLink, 0, 0));
+        assertThrows(SecurityException.class, () -> fs.read(rc, "link/MEMORY.md", 0, 0));
+        assertThrows(SecurityException.class, () -> fs.read(rc, "/user-1/link/MEMORY.md", 0, 0));
+    }
+
+    @Test
+    void rooted_symlinkOutsideWorkspaceRejected(@TempDir Path workspace, @TempDir Path outside)
+            throws IOException {
+        assumeTrue(symlinksSupported(workspace), "symlink creation not supported on this platform");
+        Path secret = outside.resolve("secret.txt");
+        Files.writeString(secret, "host secret", StandardCharsets.UTF_8);
+        Files.createDirectories(workspace.resolve("user-1"));
+        Files.createSymbolicLink(workspace.resolve("user-1/escape"), outside);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        String throughLink =
+                workspace.resolve("user-1/escape/secret.txt").toAbsolutePath().toString();
+        assertThrows(SecurityException.class, () -> fs.read(rc, throughLink, 0, 0));
+        assertThrows(SecurityException.class, () -> fs.read(rc, "escape/secret.txt", 0, 0));
+    }
+
+    @Test
+    void rooted_brokenSymlinkToSiblingRejected(@TempDir Path workspace) throws IOException {
+        // The link target does not exist yet, so real-path resolution alone cannot place it:
+        // the fallback follows the link lexically and compares the eventual target location.
+        assumeTrue(symlinksSupported(workspace), "symlink creation not supported on this platform");
+        Files.createDirectories(workspace.resolve("user-1"));
+        Files.createSymbolicLink(workspace.resolve("user-1/link"), Path.of("../user-2/secret.md"));
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        String throughLink = workspace.resolve("user-1/link").toAbsolutePath().toString();
+        assertThrows(SecurityException.class, () -> fs.read(rc, throughLink, 0, 0));
+        assertThrows(SecurityException.class, () -> fs.read(rc, "link", 0, 0));
+    }
+
+    @Test
+    void rooted_symlinkWithinOwnNamespaceAllowed(@TempDir Path workspace) throws IOException {
+        // Links that stay inside the own namespace keep working — no false positive from the
+        // physical resolution.
+        assumeTrue(symlinksSupported(workspace), "symlink creation not supported on this platform");
+        Path real = workspace.resolve("user-1/real/notes.md");
+        Files.createDirectories(real.getParent());
+        Files.writeString(real, "my notes", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(workspace.resolve("user-1/link"), Path.of("real"));
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult r =
+                fs.read(
+                        rc,
+                        workspace.resolve("user-1/link/notes.md").toAbsolutePath().toString(),
+                        0,
+                        0);
+        assertTrue(r.isSuccess(), () -> "link within the own namespace should pass: " + r.error());
+        assertEquals("my notes", r.fileData().content());
+
+        ReadResult viaRelative = fs.read(rc, "link/notes.md", 0, 0);
+        assertTrue(
+                viaRelative.isSuccess(),
+                () -> "relative access through the link should pass: " + viaRelative.error());
+        assertEquals("my notes", viaRelative.fileData().content());
+    }
+
+    /**
+     * Returns {@code true} when a symbolic link can be created inside {@code dir}: Windows
+     * runners and some CI sandboxes lack the privilege, and the affected tests skip then.
+     */
+    private static boolean symlinksSupported(Path dir) {
+        try {
+            Path probe = dir.resolve("symlink-probe-" + System.nanoTime());
+            Files.createSymbolicLink(probe, Path.of("probe-target"));
+            Files.deleteIfExists(probe);
+            return true;
+        } catch (IOException | UnsupportedOperationException | SecurityException e) {
+            return false;
+        }
+    }
+
+    @Test
+    void rooted_relativeAccessIntoNotYetCreatedWorkspaceRootFailsGracefully(@TempDir Path temp) {
+        // The workspace root and namespace dir may not exist yet when shared-content lookups
+        // run before first use. Resolution must degrade to "not found", not trip the namespace
+        // check: the nearest existing ancestor then lies above the workspace root, and path
+        // aliases (Windows 8.3 short names, macOS /var -> /private/var) would otherwise make
+        // the two sides of the comparison disagree.
+        Path workspace = temp.resolve("agents/main/workspace");
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult r = fs.read(rc, "notes.md", 0, 0);
+        assertFalse(r.isSuccess(), () -> "expected a graceful failure, got: " + r);
+        assertTrue(
+                r.error().toLowerCase().contains("not found"),
+                () -> "expected not-found, got: " + r.error());
+
+        GlobResult g = fs.glob(rc, "*.md", "knowledge");
+        assertTrue(g.isSuccess(), () -> "glob should degrade to an empty result: " + g.error());
+        assertTrue(g.matches().isEmpty(), () -> "expected no matches, got: " + g.matches());
+    }
+
+    @Test
+    void rooted_symlinkedNamespaceDirectoryRejected(@TempDir Path workspace) throws IOException {
+        // Namespace directories are framework-managed and never links: one swapped in for the
+        // own-namespace directory must fail closed instead of re-anchoring the boundary to its
+        // target (which would accept cross-namespace access).
+        assumeTrue(symlinksSupported(workspace), "symlink creation not supported on this platform");
+        Path sibling = workspace.resolve("user-2/MEMORY.md");
+        Files.createDirectories(sibling.getParent());
+        Files.writeString(sibling, "user-2 private memory", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(workspace.resolve("user-1"), Path.of("user-2"));
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        String throughNsRoot = workspace.resolve("user-1/MEMORY.md").toAbsolutePath().toString();
+        assertThrows(SecurityException.class, () -> fs.read(rc, throughNsRoot, 0, 0));
+        assertThrows(SecurityException.class, () -> fs.read(rc, "MEMORY.md", 0, 0));
+    }
+
+    @Test
+    void rooted_symlinkedWorkspaceAliasTolerated(@TempDir Path temp) throws IOException {
+        // The workspace root may be reached through a path alias (macOS /var -> /private/var,
+        // Windows 8.3 short names): the boundary normalizes both sides instead of rejecting
+        // legitimate own-namespace access. Only namespace directories themselves are guarded.
+        assumeTrue(symlinksSupported(temp), "symlink creation not supported on this platform");
+        Path real = temp.resolve("real-workspace");
+        Files.createDirectories(real.resolve("user-1"));
+        Files.writeString(real.resolve("user-1/notes.md"), "my notes", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(temp.resolve("alias-workspace"), real.getFileName());
+
+        LocalFilesystem fs =
+                new LocalFilesystem(
+                                temp.resolve("alias-workspace"),
+                                LocalFsMode.ROOTED,
+                                PathPolicy.empty(),
+                                10,
+                                USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult viaRelative = fs.read(rc, "notes.md", 0, 0);
+        assertTrue(
+                viaRelative.isSuccess(),
+                () ->
+                        "relative access through an aliased root should pass: "
+                                + viaRelative.error());
+        assertEquals("my notes", viaRelative.fileData().content());
+
+        ReadResult viaAbsolute =
+                fs.read(rc, temp.resolve("alias-workspace/user-1/notes.md").toString(), 0, 0);
+        assertTrue(
+                viaAbsolute.isSuccess(),
+                () ->
+                        "absolute access through an aliased root should pass: "
+                                + viaAbsolute.error());
+        assertEquals("my notes", viaAbsolute.fileData().content());
     }
 
     @Test
