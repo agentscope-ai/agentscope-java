@@ -31,10 +31,7 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
-import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -297,6 +294,9 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             # itself would break workspace symlinks) and stays on target's mount.
             # uuid4 keeps the temp name unique per edit even when concurrent edits
             # share a long-lived shell process (os.getpid() would not be unique).
+            # A hard process kill before os.replace can leave this uniquely named sibling
+            # behind; it is visible in directory listings and can enter a workspace snapshot.
+            # Do not sweep by age here: a slow concurrent edit could still own such a file.
             real = os.path.realpath(target)
             tmp_out = real + ".agentscope-edit-tmp-" + uuid.uuid4().hex
             try:
@@ -375,7 +375,10 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
      * preserved. The native path writes only via a same-directory temp file + atomic rename,
      * so a {@code write_failed} result means the file is unchanged; {@code edit()} then
      * retries through the transfer path, whose shell redirection needs only file write
-     * permission.
+     * permission. A hard kill between temp creation and rename can leave a uniquely named
+     * sibling temp file in the workspace. It may appear in listings or snapshots; the
+     * implementation does not sweep these because an age-based cleanup could race with a slow
+     * concurrent edit.
      *
      * @param runtimeContext per-call agent context; may be {@code null}
      * @param filePath path of the file to edit
@@ -392,7 +395,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             String oldString,
             String newString,
             boolean replaceAll) {
-        EditResult invalid = FilesystemUtils.validateEditArguments(filePath, oldString, newString);
+        EditResult invalid = FilesystemUtils.validateEditArguments(oldString, newString);
         if (invalid != null) {
             return invalid;
         }
@@ -549,16 +552,6 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     /** The {@code __RESULT__} payload the sandbox script prints on a single line. */
     private record NativeScriptResult(String error, Integer count, String detail) {}
 
-    /** Decode bytes as UTF-8, failing on malformed input instead of substituting. */
-    private static String decodeUtf8Strict(byte[] bytes) throws CharacterCodingException {
-        CharsetDecoder decoder =
-                StandardCharsets.UTF_8
-                        .newDecoder()
-                        .onMalformedInput(CodingErrorAction.REPORT)
-                        .onUnmappableCharacter(CodingErrorAction.REPORT);
-        return decoder.decode(ByteBuffer.wrap(bytes)).toString();
-    }
-
     /**
      * Fallback when {@code python3} is unavailable: download, replace in Java, re-upload.
      *
@@ -595,7 +588,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         // file it cannot represent.
         String content;
         try {
-            content = decodeUtf8Strict(contentBytes);
+            content = FilesystemUtils.decodeUtf8Strict(contentBytes);
         } catch (CharacterCodingException e) {
             return EditResult.fail(
                     "Error editing file '" + filePath + "': file is not valid UTF-8");

@@ -33,9 +33,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
-import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
@@ -362,7 +360,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
             String oldString,
             String newString,
             boolean replaceAll) {
-        EditResult invalid = FilesystemUtils.validateEditArguments(filePath, oldString, newString);
+        EditResult invalid = FilesystemUtils.validateEditArguments(oldString, newString);
         if (invalid != null) {
             return invalid;
         }
@@ -586,13 +584,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
             String contentStr;
             String encoding;
             try {
-                contentStr =
-                        StandardCharsets.UTF_8
-                                .newDecoder()
-                                .onMalformedInput(CodingErrorAction.REPORT)
-                                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                                .decode(ByteBuffer.wrap(content))
-                                .toString();
+                contentStr = FilesystemUtils.decodeUtf8Strict(content);
                 encoding = "utf-8";
             } catch (CharacterCodingException e) {
                 contentStr = Base64.getEncoder().encodeToString(content);
