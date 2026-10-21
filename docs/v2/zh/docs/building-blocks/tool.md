@@ -521,6 +521,8 @@ ReActAgent agent =
                 .build();
 ```
 
+`baseDir` 限制也会检查已有符号链接和 Windows 目录联接解析后的目标。读文件、覆盖文件和创建目录前会拒绝指向基目录之外的链接；仍支持目标位于基目录内的链接，以及本身为链接的基目录。
+
 - **`HarnessAgent`** —— harness 模块自带 workspace 感知的 shell 与文件工具（`execute`、`read_file`、`write_file` 等），无需额外注册。
 
 ### Skill + ToolGroup：按需披露工具
