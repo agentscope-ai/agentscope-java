@@ -26,6 +26,8 @@ code-reviewer/
 
 `SKILL.md` 使用 UTF-8 编码，支持在开头的 `---` 前带有字节顺序标记（BOM）。
 
+使用不带缩进、仅包含 `---` 及可选空格或制表符的一行结束 YAML frontmatter。描述中的 `---` 或 YAML 缩进块标量中的 `---` 仍属于元数据。
+
 SKILL.md 写法：
 
 ```markdown

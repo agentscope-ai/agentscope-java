@@ -18,6 +18,8 @@ package io.agentscope.extensions.model.openaiofficial;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.openai.core.JsonField;
+import com.openai.core.JsonMissing;
 import com.openai.core.JsonValue;
 import com.openai.core.http.Headers;
 import com.openai.core.http.StreamResponse;
@@ -575,6 +577,37 @@ public final class TestSdkFixtures {
                 .outputTokensDetails(
                         ResponseUsage.OutputTokensDetails.builder()
                                 .reasoningTokens(reasoning)
+                                .build())
+                .totalTokens(input + output)
+                .build();
+    }
+
+    /**
+     * Builds usage whose breakdown sub-fields are JSON-missing, mirroring providers (e.g.
+     * DeepSeek's Responses API) that report {@code cached_tokens} but omit {@code
+     * cache_write_tokens}, or omit {@code reasoning_tokens} entirely. The SDK deserializer
+     * accepts such payloads, but the required-field accessors throw on read (issue #3564).
+     *
+     * @param input the input token count
+     * @param output the output token count
+     * @param cached the cached-token count
+     * @return usage with cache-write and reasoning breakdowns missing
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static ResponseUsage usageWithMissingBreakdownFields(
+            long input, long output, long cached) {
+        JsonField missing = JsonMissing.of();
+        return ResponseUsage.builder()
+                .inputTokens(input)
+                .inputTokensDetails(
+                        ResponseUsage.InputTokensDetails.builder()
+                                .cacheWriteTokens(missing)
+                                .cachedTokens(cached)
+                                .build())
+                .outputTokens(output)
+                .outputTokensDetails(
+                        ResponseUsage.OutputTokensDetails.builder()
+                                .reasoningTokens(missing)
                                 .build())
                 .totalTokens(input + output)
                 .build();

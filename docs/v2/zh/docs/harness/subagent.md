@@ -102,6 +102,41 @@ HarnessAgent.builder()
 也适用于从失败会话中重新加载的工具调用。等待人工审批的工具仍须提供审批结果；空输入恢复执行、
 调用方补交工具结果的行为保持原有语义。远端 agent 和自定义工厂需自行配置恢复策略。
 
+### 自定义工厂
+
+子 agent 需要声明描述不了的实例时——比如自己的 middleware、父 agent 没有的工具、直接传
+`Model` 对象——可以在工厂里自己构建：
+
+```java
+HarnessAgent.builder()
+    .name("orchestrator")
+    .model(model)
+    .workspace(workspace)
+    .subagentFactory(
+        SubagentDeclaration.builder()
+            .name("note-taker")
+            .description("跨轮次积累笔记")
+            .persistSession(true)
+            .build(),
+        parentRc -> HarnessAgent.builder()
+            .name("note-taker")
+            .model(noteModel)
+            .workspace(noteWorkspace)
+            .toolkit(noteToolkit)
+            .middleware(auditMiddleware)
+            .build())
+    .build();
+```
+
+需要新实例时才调用工厂，参数是父 agent 的 `RuntimeContext`。持久化缓存命中时直接复用已有实例，
+不会再次调用工厂。声明负责名称、描述，以及 spawn
+时生效的选项：`persistSession`、`mode`、`hidden`、`exposeToUser`、`inheritParentPermissions`；
+描述"怎么构建实例"的字段（`model`、`tools`、`skills`、`workspace`、`steps` 等）会被忽略。
+远程声明（`url(...)`）不能和工厂一起用。
+
+简单场景仍可用 `subagentFactory(name, description, factory)`。它不带声明，所以每次 spawn
+都是新会话。
+
 ### 内置 `general-purpose`
 
 不需要写声明文件，总是可用。它的角色是"通用兜底"——能力和主 agent 一致（同样的模型、工具、技能），共享主工作区。适合"主 agent 想隔离上下文跑一个子任务但又懒得专门写 spec"。
@@ -211,7 +246,12 @@ agent_send label="pr-reviewer" message="顺便也看下 schema 变更"
     .build())
 ```
 
-开启后，框架会根据 `(parentSessionId, agentId, label)` 生成确定性的 key。如果再次 spawn 同样的组合，就会复用已存在的 agent 实例——对话历史和状态都保留。
+开启后，框架会根据 `(userId, parentSessionId, agentId, label)` 生成确定性的 key。如果再次 spawn 同样的组合，就会复用已存在的 agent 实例——对话历史和状态都保留。不同用户即使父会话 ID 和 label 相同，也会使用各自的实例。`agent_spawn` 和 `agent_send` 的 label 按用户和父会话隔离。
+
+持久化 key 现在包含用户身份，因此旧版本生成的 key 与新 spawn 的 key 不同；已保存的条目仍可通过 `agent_send` 使用原有的 `agent_key` 访问。
+
+自定义工厂构建的子 agent 也一样：用 `subagentFactory(declaration, factory)` 注册，并在声明里设
+`persistSession(true)` 即可（见上文「自定义工厂」）。
 
 ## 向用户暴露子 Agent
 
@@ -397,6 +437,21 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 - 在共享存储模式（多副本）下，任意节点都能读到任务状态；
 - 任务执行**粘在创建节点**，但完成结果会被任意节点读到、并能正常推送回父 agent；
 - 想取消可以从任意节点调 `task_cancel`——执行节点轮询取消标记后中止。
+
+
+本地后台任务不会在执行进程退出后自动恢复执行。孤儿任务清理器会在心跳超时后
+（默认 10 分钟）将未结束的本地任务标记为 `FAILED`。远程 Agent Protocol 任务仍使用自身的轮询机制判断存活。
+
+使用 `RemoteFilesystem` 时，任务写入和读取会把最小的用户/会话路由信息登记到独立的
+`BaseStore` 命名空间（`harness/task-scopes/...`）。宿主侧清理器通过持久化索引，在重启后找到
+`SESSION`、`USER` 作用域，并将失败状态写回原作用域。Agent 工具仍只能读取调用者自己的作用域；
+索引不包含任务正文，也不会作为工作区文件暴露。各作用域使用独立键登记，并分页读取。
+清理时也会扫描长时间停机前的记录，因此存储保留策略应同时考虑任务记录和这些路由信息。
+
+登记失败会记日志，并在后续任务访问时重试；任务持久化仍保持尽力而为的语义。
+升级前已有的记录，在使用原作用域再次读取或写入后才会进入索引；此前未知的作用域无法自动枚举。
+支持 CAS 的存储会在写入冲突后重新检查心跳，避免过期的清理判断覆盖并发更新。
+清理结果是报告本地执行已丢失，不会自动重放任务。
 
 ## 在 Plan Mode 下委派子 agent
 

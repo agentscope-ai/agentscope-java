@@ -202,6 +202,7 @@
                     "group": "Integration",
                     "pages": [
                       "v2/en/integration/overview",
+                      "v2/en/integration/judge/openai-decisions",
                       {
                         "group": "Model Providers",
                         "pages": [
@@ -751,6 +752,7 @@
                     "group": "集成",
                     "pages": [
                       "v2/zh/integration/overview",
+                      "v2/zh/integration/judge/openai-decisions",
                       {
                         "group": "模型提供商",
                         "pages": [

@@ -16,15 +16,18 @@
 
 package io.agentscope.core.a2a.server.card;
 
-import io.a2a.spec.AgentCapabilities;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.a2aproject.sdk.spec.AgentCapabilities;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.SecurityRequirement;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,14 +47,17 @@ import org.slf4j.LoggerFactory;
  *     <li>capabilities: only from agentscope implementation, not supported to config.</li>
  *     <li>defaultInputModes/defaultOutputModes: first from {@link ConfigurableAgentCard}, default `["text"]`.</li>
  *     <li>skills: first from {@link ConfigurableAgentCard}, default empty list.</li>
- *     <li>supportsAuthenticatedExtendedCard: only {@code false} for now.</li>
+ *     <li>capabilities.extendedAgentCard: only {@code false} for now.</li>
  *     <li>securitySchemes: only from {@link ConfigurableAgentCard}, default null.</li>
- *     <li>security: only from {@link ConfigurableAgentCard}, default null.</li>
+ *     <li>securityRequirements: from the security of {@link ConfigurableAgentCard}, default null.</li>
  *     <li>iconUrl: only from {@link ConfigurableAgentCard}, default null.</li>
- *     <li>additionalInterfaces: first from {@link ConfigurableAgentCard}, default from availableTransports.</li>
- *     <li>preferredTransport: first from {@link ConfigurableAgentCard}, default is `JSONRPC`, if not found in availableTransports, will random one from availableTransports. </li>
- *     <li>url: first from {@link ConfigurableAgentCard}, default from `JSONRPC` transportProperties, if not found in availableTransports, will random one from availableTransports. </li>
- *     <li>protocolVersion: only from agentscope implementation, not supported to config. current version is `0.3.0`</li>
+ *     <li>supportedInterfaces: the preferred interface first, then the other interfaces. The
+ *     preferred interface is the url and preferredTransport of {@link ConfigurableAgentCard}, by
+ *     default the `JSONRPC` interface, or any interface if there is no `JSONRPC` one. The other
+ *     interfaces are the additionalInterfaces of {@link ConfigurableAgentCard}, by default one
+ *     per available transport.</li>
+ *     <li>protocolVersion of each interface: only from agentscope implementation, not supported
+ *     to config. current version is `1.0`</li>
  * </ul>
  */
 public class AgentScopeAgentCardConverter {
@@ -75,12 +81,7 @@ public class AgentScopeAgentCardConverter {
                 createAdditionalInterfaces(agentCard, availableTransports);
         AgentInterface preferredTransportInterface =
                 getPreferredTransport(agentCard, additionalInterfaces);
-        AgentCard.Builder agentCardBuilder = new AgentCard.Builder();
-        if (null != preferredTransportInterface) {
-            agentCardBuilder.preferredTransport(preferredTransportInterface.transport());
-            agentCardBuilder.url(preferredTransportInterface.url());
-        }
-        return agentCardBuilder
+        return AgentCard.builder()
                 .name(getName(agentCard, agentRunner))
                 .description(getDescription(agentCard, agentRunner))
                 .provider(agentCard.getProvider())
@@ -90,21 +91,41 @@ public class AgentScopeAgentCardConverter {
                 .defaultInputModes(getModes(agentCard.getDefaultInputModes()))
                 .defaultOutputModes(getModes(agentCard.getDefaultOutputModes()))
                 .skills(null != agentCard.getSkills() ? agentCard.getSkills() : List.of())
-                .supportsAuthenticatedExtendedCard(false)
                 .securitySchemes(agentCard.getSecuritySchemes())
-                .security(agentCard.getSecurity())
+                .securityRequirements(toSecurityRequirements(agentCard.getSecurity()))
                 .iconUrl(agentCard.getIconUrl())
-                .additionalInterfaces(additionalInterfaces)
-                .protocolVersion("0.3.0")
+                .supportedInterfaces(
+                        supportedInterfaces(preferredTransportInterface, additionalInterfaces))
                 .build();
     }
 
     private AgentCapabilities createDefaultCapabilities() {
-        return new AgentCapabilities.Builder()
+        return AgentCapabilities.builder()
                 .streaming(true)
                 .pushNotifications(false)
-                .stateTransitionHistory(false)
+                .extendedAgentCard(false)
                 .build();
+    }
+
+    private List<SecurityRequirement> toSecurityRequirements(
+            List<Map<String, List<String>>> security) {
+        return null == security ? null : security.stream().map(SecurityRequirement::new).toList();
+    }
+
+    /** The preferred interface comes first: A2A clients use the first one they support. */
+    private List<AgentInterface> supportedInterfaces(
+            AgentInterface preferred, List<AgentInterface> additionalInterfaces) {
+        List<AgentInterface> result = new ArrayList<>();
+        if (null != preferred) {
+            result.add(preferred);
+        }
+        additionalInterfaces.stream().filter(each -> !each.equals(preferred)).forEach(result::add);
+        if (result.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "No interface for the agent card: configure a url and preferred transport, or"
+                            + " at least one transport");
+        }
+        return result;
     }
 
     private List<AgentInterface> createAdditionalInterfaces(
@@ -130,7 +151,7 @@ public class AgentScopeAgentCardConverter {
                                 transport ->
                                         TransportProtocol.JSONRPC
                                                 .asString()
-                                                .equals(transport.transport()))
+                                                .equals(transport.protocolBinding()))
                         .findFirst();
         return result.orElseGet(
                 () -> {

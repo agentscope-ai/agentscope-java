@@ -204,6 +204,8 @@ These are the defaults: results exceeding 80,000 characters are eligible, and th
 
 Conversation compaction addresses repeated rounds of work. Its lightweight passes first truncate old tool arguments when configured and prune sufficiently large aggregates of older tool output. If the remaining history meets the message or token trigger, it summarizes a prefix and keeps a recent tail, preserving tool-call/result boundaries.
 
+Argument truncation preserves message IDs, timestamps, metadata and usage, as well as tool-call metadata and execution state. When formatting requests, raw argument JSON is regenerated from the truncated input. Provider server-tool calls are left unchanged because their provider-owned replay metadata may be authoritative.
+
 ```java
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 
