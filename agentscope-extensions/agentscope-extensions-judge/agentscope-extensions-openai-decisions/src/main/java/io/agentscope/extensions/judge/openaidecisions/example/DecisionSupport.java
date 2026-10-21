@@ -17,6 +17,8 @@ package io.agentscope.extensions.judge.openaidecisions.example;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.judge.openaidecisions.DecisionRequest;
 import io.agentscope.extensions.judge.openaidecisions.DecisionResult;
@@ -25,6 +27,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
 
 /** Shared evidence projection for the Decisions middleware examples. */
@@ -56,7 +60,17 @@ final class DecisionSupport {
                 i--) {
             Msg message = messages.get(i);
             if (message == null) continue;
-            String text = message.getTextContent();
+            String text =
+                    message.getContent().stream()
+                            .flatMap(
+                                    block ->
+                                            block instanceof ToolResultBlock result
+                                                    ? result.getOutput().stream()
+                                                    : Stream.of(block))
+                            .filter(TextBlock.class::isInstance)
+                            .map(TextBlock.class::cast)
+                            .map(TextBlock::getText)
+                            .collect(Collectors.joining("\n"));
             if (text == null || text.isBlank()) continue;
             if (text.length() > remaining) {
                 int end = remaining;

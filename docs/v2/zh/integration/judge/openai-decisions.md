@@ -123,7 +123,7 @@ OpenAIDecisionsClient retryingClient = OpenAIDecisionsClient.builder()
 
 路由器接受 2–255 个命名模型候选。默认在请求包含工具时保留原模型，并在包含 response format 时检查候选的原生结构化输出能力。只有确认候选支持当前工具、输入模态和输出要求后，才应通过 `.compatible((input, choice) -> ...)` 放开对应请求。路由和筛选默认 `failOpen(true)`，设为 `false` 时传播请求失败。工具执行判断显式配置 `failOpen(true)` 后会放行请求失败和缺少上下文的情况，但拒答始终不会转为执行许可。
 
-筛选器保留 `load_skill_through_path`、`reset_tools` 和 `generate_response`，这些工具不占可选工具名额。可通过 `alwaysIncludeTools(Set.of(...))` 自定义。确定无关时可以移除全部可选工具。筛选默认仅提交最近八条非空白文本消息，总文本最多 8,000 字符，可用 `maxContextMessages` 和 `maxContextChars` 调整。工具执行判断采用相同的固定窗口，另将实际工具名和参数作为 JSON 证据提交。这些示例不会转发对话中的图片。筛选和执行判断超过 400 题时会顺序分批请求。
+筛选器保留 `load_skill_through_path`、`reset_tools` 和 `generate_response`，这些工具不占可选工具名额。可通过 `alwaysIncludeTools(Set.of(...))` 自定义。当前请求的 `ToolChoice.Specific` 指定的工具若存在于输入目录中，也会保留且不占名额；筛选器不对其评分，也不会创建该工具。确定无关时可以移除全部可选工具。筛选默认仅提交最近八条非空白文本消息，总文本最多 8,000 字符，可用 `maxContextMessages` 和 `maxContextChars` 调整。工具结果块中的文本也纳入相同的消息数和字符预算。工具执行判断采用相同的固定窗口，另将实际工具名和参数作为 JSON 证据提交。这些示例不会转发对话中的图片。筛选和执行判断超过 400 题时会顺序分批请求。
 
 ```java
 import io.agentscope.extensions.judge.openaidecisions.example.OpenAIDecisionsModelRouterMiddleware;

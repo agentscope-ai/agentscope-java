@@ -32,6 +32,7 @@ import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultMessage;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
@@ -41,6 +42,7 @@ import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.extensions.judge.openaidecisions.DecisionAnswer;
@@ -320,6 +322,129 @@ class OpenAIDecisionsMiddlewareTest {
         var tools = IntStream.range(0, 401).mapToObj(i -> tool("tool" + i)).toList();
         assertEquals(3, select(selector, new ReasoningInput(MESSAGES, tools, null)).tools().size());
         assertEquals(List.of(400, 1), sizes);
+    }
+
+    @Test
+    void selectionPreservesForcedToolsOutsideOptionalLimit() {
+        var selector =
+                OpenAIDecisionsToolSelectionMiddleware.builder(
+                                request -> {
+                                    assertEquals(2, request.questions().size());
+                                    assertTrue(
+                                            request.questions().values().stream()
+                                                    .noneMatch(
+                                                            q -> q.toString().contains("weather")));
+                                    return Mono.just(predicates(request, 0.9));
+                                })
+                        .enabled(true)
+                        .alwaysIncludeTools(java.util.Set.of())
+                        .maxTools(1)
+                        .build();
+        var options =
+                GenerateOptions.builder().toolChoice(new ToolChoice.Specific("weather")).build();
+        var input =
+                new ReasoningInput(
+                        MESSAGES,
+                        List.of(tool("weather"), tool("search"), tool("lookup")),
+                        options);
+        var selected = select(selector, input);
+        assertEquals(
+                List.of("weather", "search"),
+                selected.tools().stream().map(ToolSchema::getName).toList());
+        assertSame(options, selected.options());
+    }
+
+    @Test
+    void selectionDoesNotJudgeOnlyForcedToolOrInventMissingSchema() {
+        var calls = new AtomicInteger();
+        var selector =
+                OpenAIDecisionsToolSelectionMiddleware.builder(
+                                request -> {
+                                    calls.incrementAndGet();
+                                    return Mono.just(predicates(request, 0.0));
+                                })
+                        .enabled(true)
+                        .build();
+        var options =
+                GenerateOptions.builder().toolChoice(new ToolChoice.Specific("weather")).build();
+        var onlyForced = new ReasoningInput(MESSAGES, List.of(tool("weather")), options);
+        assertSame(onlyForced, select(selector, onlyForced));
+        assertEquals(0, calls.get());
+        var absentForced =
+                select(selector, new ReasoningInput(MESSAGES, List.of(tool("search")), options));
+        assertTrue(absentForced.tools().isEmpty());
+        assertSame(options, absentForced.options());
+        assertEquals(1, calls.get());
+    }
+
+    @Test
+    void selectionUsesToolResultEvidence() {
+        var selector =
+                OpenAIDecisionsToolSelectionMiddleware.builder(
+                                request -> {
+                                    assertTrue(request.input().text().contains("Order shipped"));
+                                    return Mono.just(predicates(request, 0.0));
+                                })
+                        .enabled(true)
+                        .build();
+        var messages =
+                List.<Msg>of(
+                        new UserMessage("Refund only if not shipped"),
+                        new ToolResultMessage("query-1", "query_order", "Order shipped"));
+        assertTrue(
+                select(selector, new ReasoningInput(messages, List.of(tool("refund")), null))
+                        .tools()
+                        .isEmpty());
+    }
+
+    @Test
+    void guardUsesToolResultEvidence() {
+        for (boolean shipped : List.of(true, false)) {
+            String evidence = shipped ? "Order shipped" : "Order not shipped";
+            var state = AgentState.builder().replyId("reply").build();
+            state.contextMutable().add(new UserMessage("Refund only if not shipped"));
+            state.contextMutable().add(new ToolResultMessage("query-1", "query_order", evidence));
+            var ctx = RuntimeContext.empty();
+            ctx.setAgentState(state);
+            var guard =
+                    OpenAIDecisionsAutoModeMiddleware.builder(
+                                    request -> {
+                                        assertTrue(request.input().text().contains(evidence));
+                                        return Mono.just(
+                                                result(
+                                                        Map.of(
+                                                                "tool_0",
+                                                                predicate(shipped ? 0.1 : 0.9))));
+                                    })
+                            .enabled(true)
+                            .guardedTool("refund")
+                            .build();
+            var dispatched = new AtomicBoolean();
+            var events =
+                    guard.onActing(
+                                    null,
+                                    ctx,
+                                    new ActingInput(List.of(call("refund-1", "refund"))),
+                                    input -> {
+                                        dispatched.set(true);
+                                        return Flux.empty();
+                                    })
+                            .collectList()
+                            .block();
+            assertEquals(!shipped, dispatched.get());
+            assertEquals(shipped ? 3 : 0, events.size());
+        }
+    }
+
+    @Test
+    void toolResultProjectionRespectsBudget() {
+        var result = new ToolResultMessage("query-1", "query_order", "abc😀def");
+        assertEquals(
+                List.of(Map.of("role", "tool", "text", "abc")),
+                DecisionSupport.recentMessages(List.of(result), 1, 4));
+        assertEquals(
+                List.of(Map.of("role", "tool", "text", "abc😀def")),
+                DecisionSupport.recentMessages(List.of(new UserMessage("old"), result), 1, 100));
     }
 
     @Test

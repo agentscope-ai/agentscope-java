@@ -59,6 +59,10 @@ prompts do not guarantee a particular route or denial. The guard applies when th
 actually requests `delete_file`; it does not force a tool call. Passing the check still goes through
 core permissions. All middleware is explicitly enabled by this example; the library defaults to off.
 
+Selection and guarding include tool-result text in their bounded conversation evidence. If a request
+uses `ToolChoice.Specific`, selection preserves that tool when it exists in the current catalog,
+outside the optional-tool limit and without scoring it.
+
 ## Connection troubleshooting
 
 If the example fails with `HTTP connect timed out`, verify that the JVM can reach

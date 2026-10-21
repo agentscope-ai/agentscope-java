@@ -20,6 +20,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.extensions.judge.openaidecisions.DecisionAnswer;
 import io.agentscope.extensions.judge.openaidecisions.DecisionQuestion;
@@ -27,6 +28,7 @@ import io.agentscope.extensions.judge.openaidecisions.DecisionRequest;
 import io.agentscope.extensions.judge.openaidecisions.DecisionResult;
 import io.agentscope.extensions.judge.openaidecisions.OpenAIDecisionsClient;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -100,9 +102,15 @@ public final class OpenAIDecisionsToolSelectionMiddleware implements MiddlewareB
                     if (!enabled || DecisionSupport.latestUserText(input.messages()).isBlank())
                         return next.apply(input);
                     List<ToolSchema> tools = input.tools() == null ? List.of() : input.tools();
+                    Set<String> requiredTools = new HashSet<>(alwaysIncludeTools);
+                    if (input.options() != null
+                            && input.options().getToolChoice()
+                                    instanceof ToolChoice.Specific specific) {
+                        requiredTools.add(specific.toolName());
+                    }
                     List<ToolSchema> optional =
                             tools.stream()
-                                    .filter(t -> !alwaysIncludeTools.contains(t.getName()))
+                                    .filter(t -> !requiredTools.contains(t.getName()))
                                     .toList();
                     if (optional.isEmpty()) return next.apply(input);
                     String evidence =
@@ -113,14 +121,17 @@ public final class OpenAIDecisionsToolSelectionMiddleware implements MiddlewareB
                                                     input.messages(),
                                                     maxContextMessages,
                                                     maxContextChars)));
-                    return select(input, optional, evidence)
+                    return select(input, optional, evidence, requiredTools)
                             .onErrorResume(error -> failOpen ? Mono.just(input) : Mono.error(error))
                             .flatMapMany(next);
                 });
     }
 
     private Mono<ReasoningInput> select(
-            ReasoningInput input, List<ToolSchema> tools, String evidence) {
+            ReasoningInput input,
+            List<ToolSchema> tools,
+            String evidence,
+            Set<String> requiredTools) {
         return Flux.range(0, (tools.size() - 1) / DecisionSupport.MAX_QUESTIONS + 1)
                 .concatMap(
                         batchIndex -> {
@@ -195,7 +206,7 @@ public final class OpenAIDecisionsToolSelectionMiddleware implements MiddlewareB
                                     input.tools().stream()
                                             .filter(
                                                     t ->
-                                                            alwaysIncludeTools.contains(t.getName())
+                                                            requiredTools.contains(t.getName())
                                                                     || selected.contains(
                                                                             t.getName()))
                                             .toList(),
