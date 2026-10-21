@@ -35,6 +35,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -205,18 +206,25 @@ class ToolExecutor {
             ToolRequestConfig requestConfig,
             BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
         return ActionObservations.observe(
-                param, () -> executeUnobserved(param, requestConfig, internalChunkCallback));
+                param,
+                () ->
+                        executeUnobserved(
+                                param,
+                                requestConfig,
+                                getEffectiveChunkCallback(internalChunkCallback),
+                                false));
     }
 
     private Mono<ToolResultBlock> executeUnobserved(
             ToolCallParam param,
             ToolRequestConfig requestConfig,
-            BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+            BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback,
+            boolean useExecutionPath) {
         return TracerRegistry.get()
                 .callTool(
                         this.toolkit,
                         param,
-                        () -> executeCore(param, requestConfig, internalChunkCallback));
+                        () -> executeCore(param, requestConfig, chunkCallback, useExecutionPath));
     }
 
     /**
@@ -235,7 +243,8 @@ class ToolExecutor {
     private Mono<ToolResultBlock> executeCore(
             ToolCallParam param,
             ToolRequestConfig requestConfig,
-            BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+            BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback,
+            boolean useExecutionPath) {
         if (requestConfig == null) {
             requestConfig = ToolRequestConfig.NONE;
         }
@@ -297,13 +306,13 @@ class ToolExecutor {
         }
         final RuntimeContext effectiveRuntimeContext = runtimeContext;
 
+        SessionRecorder recorder = SessionRecorder.from(runtimeContext);
+        String actionId = recorder == null ? null : recorder.actionId(toolCall.getId());
         // Create emitter for streaming
         ToolEmitter toolEmitter =
                 new DefaultToolEmitter(
                         toolCall,
                         (use, chunk) -> {
-                            SessionRecorder recorder =
-                                    SessionRecorder.from(param.getRuntimeContext());
                             if (recorder != null)
                                 recorder.append(
                                         "tool/chunk",
@@ -311,11 +320,10 @@ class ToolExecutor {
                                                 "toolCallId",
                                                 use.getId(),
                                                 "actionId",
-                                                recorder.actionId(use.getId()),
+                                                actionId,
                                                 "chunk",
                                                 chunk));
-                            var callback = getEffectiveChunkCallback(internalChunkCallback);
-                            if (callback != null) callback.accept(use, chunk);
+                            if (chunkCallback != null) chunkCallback.accept(use, chunk);
                         });
 
         // Merge input with preset parameters. Preset values win so framework-controlled
@@ -340,14 +348,13 @@ class ToolExecutor {
                         .emitter(toolEmitter)
                         .build();
 
-        SessionRecorder recorder = SessionRecorder.from(runtimeContext);
-
         // Zero interceptors: existing execution path, zero behavior change.
         if (interceptors.isEmpty()) {
             return applyResultErrorMapping(
                     dispatchRecord(recorder, executionParam, toolCall, mergedInput)
-                            .then(Mono.defer(() -> tool.callAsync(executionParam))),
-                    toolCall);
+                            .then(invokeTool(tool, executionParam, useExecutionPath)),
+                    toolCall,
+                    useExecutionPath);
         }
 
         // The interceptor chain wraps dispatch logging + real execution: the dispatch record
@@ -360,13 +367,12 @@ class ToolExecutor {
                 iv ->
                         dispatchRecord(recorder, executionParam, toolCall, iv.input())
                                 .then(
-                                        Mono.defer(
-                                                () ->
-                                                        tool.callAsync(
-                                                                ToolCallParam.builder(
-                                                                                executionParam)
-                                                                        .input(iv.input())
-                                                                        .build())));
+                                        invokeTool(
+                                                tool,
+                                                ToolCallParam.builder(executionParam)
+                                                        .input(iv.input())
+                                                        .build(),
+                                                useExecutionPath));
         return applyResultErrorMapping(
                         Mono.defer(
                                 () ->
@@ -380,7 +386,8 @@ class ToolExecutor {
                                                         agentId,
                                                         agentName),
                                                 terminal)),
-                        toolCall)
+                        toolCall,
+                        useExecutionPath)
                 // Interceptor-produced results (e.g. denials) carry no id/name — backfill them;
                 // tool results already carry theirs. Error/empty-synthesized results also gain
                 // id/name here (direct path only; normalized on the batch path).
@@ -438,7 +445,7 @@ class ToolExecutor {
      *
      * <p>Errors are deliberately not attributed per layer: in an onion chain an error signal
      * cannot be reliably attributed to one layer, so they propagate as-is and are mapped by the
-     * caller's {@link #applyResultErrorMapping(Mono, ToolUseBlock)}. Interceptors that need
+     * caller's {@link #applyResultErrorMapping(Mono, ToolUseBlock, boolean)}. Interceptors that need
      * attribution should encode their identity in exception messages.
      *
      * @param interceptors interceptors sorted by {@code order()} descending
@@ -459,36 +466,49 @@ class ToolExecutor {
         return next.apply(invocation);
     }
 
+    private Mono<ToolResultBlock> invokeTool(
+            AgentTool tool, ToolCallParam param, boolean useExecutionPath) {
+        Mono<ToolResultBlock> invocation =
+                Mono.defer(
+                        () ->
+                                useExecutionPath
+                                        ? tool.callAsyncForExecution(param)
+                                        : tool.callAsync(param));
+        return useExecutionPath
+                ? invocation.onErrorMap(ExceptionUtils::unwrapExecutionWrapper)
+                : invocation;
+    }
+
     /**
-     * Uniform result error mapping for tool executions: {@link ToolSuspendException} becomes a
-     * suspended result, observation/session-log errors propagate unchanged, and other errors and
-     * empty results become model-visible {@code ToolResultBlock.error}.
-     *
-     * @param execution the execution pipeline whose errors and empty signals are mapped
-     * @param toolCall  the tool call, for suspended-result identity and logging
-     * @return the pipeline with suspend/error/empty cases mapped to result blocks
+     * Maps suspensions and empty results in both channels. Execution-channel failures remain
+     * error signals for retry; direct calls keep returning error results. Observation and session
+     * failures always propagate.
      */
     private Mono<ToolResultBlock> applyResultErrorMapping(
-            Mono<ToolResultBlock> execution, ToolUseBlock toolCall) {
+            Mono<ToolResultBlock> execution, ToolUseBlock toolCall, boolean useExecutionPath) {
         return execution
-                .onErrorResume(
-                        ToolSuspendException.class,
-                        e -> {
-                            // Convert ToolSuspendException to suspended result
-                            logger.debug(
-                                    "Tool '{}' suspended: {}",
-                                    toolCall.getName(),
-                                    e.getReason() != null ? e.getReason() : "no reason");
-                            return Mono.just(ToolResultBlock.suspended(toolCall, e));
-                        })
                 .onErrorResume(
                         e -> {
                             if (ActionObservationException.causedBy(e)
                                     || SessionLogException.causedBy(e)) return Mono.error(e);
-                            String errorMsg =
-                                    e.getMessage() != null
-                                            ? e.getMessage()
-                                            : e.getClass().getSimpleName();
+                            ToolSuspendException suspended =
+                                    ToolSuspendException.findInCauseChain(e);
+                            if (suspended != null) {
+                                if (suspended != e) {
+                                    logger.warn(
+                                            "Tool '{}' reported a wrapped ToolSuspendException"
+                                                    + " behind {}",
+                                            toolCall.getName(),
+                                            e.getClass().getSimpleName());
+                                }
+                                logger.debug(
+                                        "Tool '{}' suspended: {}",
+                                        toolCall.getName(),
+                                        suspended.getReason());
+                                return Mono.just(ToolResultBlock.suspended(toolCall, suspended));
+                            }
+                            if (useExecutionPath) return Mono.error(e);
+                            String errorMsg = ExceptionUtils.getErrorMessage(e);
                             return Mono.just(
                                     ToolResultBlock.error("Tool execution failed: " + errorMsg));
                         })
@@ -650,20 +670,41 @@ class ToolExecutor {
                         .runtimeContext(agentRuntimeContext)
                         .build();
 
-        // Get core execution
-        // Persist outside the execution timeout so a slow observation commit cannot replay a tool.
+        boolean bufferChunks =
+                executionConfig != null
+                        && executionConfig.getMaxAttempts() != null
+                        && executionConfig.getMaxAttempts() > 1;
+        // Each subscription builds fresh parameters, emitters, interceptors and observation state.
+        // Replay only after the timed attempt and its observation commit have both succeeded.
         Mono<ToolResultBlock> execution =
-                ActionObservations.observe(
-                        param,
-                        () ->
-                                applyTimeout(
-                                        applyScheduling(
-                                                executeUnobserved(
-                                                        param,
-                                                        requestConfig,
-                                                        internalChunkCallback)),
-                                        executionConfig,
-                                        toolCall));
+                Mono.defer(
+                        () -> {
+                            BiConsumer<ToolUseBlock, ToolResultBlock> callback =
+                                    getEffectiveChunkCallback(internalChunkCallback);
+                            AttemptChunks chunks =
+                                    bufferChunks && callback != null
+                                            ? new AttemptChunks(callback)
+                                            : null;
+                            Mono<ToolResultBlock> attempt =
+                                    ActionObservations.observe(
+                                            param,
+                                            () ->
+                                                    applyTimeout(
+                                                            applyScheduling(
+                                                                    executeUnobserved(
+                                                                            param,
+                                                                            requestConfig,
+                                                                            chunks == null
+                                                                                    ? callback
+                                                                                    : chunks::emit,
+                                                                            true)),
+                                                            executionConfig,
+                                                            toolCall));
+                            return chunks == null
+                                    ? attempt
+                                    : attempt.doOnNext(ignored -> chunks.replay())
+                                            .doFinally(ignored -> chunks.discard());
+                        });
 
         // Every retry receives a separate observed attempt.
         execution = applyRetry(execution, executionConfig, toolCall);
@@ -682,6 +723,37 @@ class ToolExecutor {
                                     ToolResultBlock.error("Tool execution failed: " + errorMsg)
                                             .withIdAndName(toolCall.getId(), toolCall.getName()));
                         });
+    }
+
+    /** Buffers one attempt's chunks and ignores emissions after completion or cancellation. */
+    private static final class AttemptChunks {
+        private final BiConsumer<ToolUseBlock, ToolResultBlock> callback;
+        private final List<Runnable> pending = new ArrayList<>();
+        private boolean closed;
+
+        private AttemptChunks(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
+            this.callback = callback;
+        }
+
+        private synchronized void emit(ToolUseBlock use, ToolResultBlock chunk) {
+            if (!closed) pending.add(() -> callback.accept(use, chunk));
+        }
+
+        private void replay() {
+            List<Runnable> chunks;
+            synchronized (this) {
+                if (closed) return;
+                closed = true;
+                chunks = new ArrayList<>(pending);
+                pending.clear();
+            }
+            chunks.forEach(Runnable::run);
+        }
+
+        private synchronized void discard() {
+            closed = true;
+            pending.clear();
+        }
     }
 
     // ==================== Infrastructure Methods ====================
@@ -704,7 +776,7 @@ class ToolExecutor {
 
         return execution.timeout(
                 timeout,
-                Mono.error(new RuntimeException("Tool execution timeout after " + timeout)));
+                Mono.error(new TimeoutException("Tool execution timeout after " + timeout)));
     }
 
     private Mono<ToolResultBlock> applyRetry(
@@ -721,7 +793,9 @@ class ToolExecutor {
         Duration maxBackoff =
                 config.getMaxBackoff() != null ? config.getMaxBackoff() : Duration.ofSeconds(10);
         Predicate<Throwable> retryOn =
-                config.getRetryOn() != null ? config.getRetryOn() : error -> true;
+                config.getRetryOn() != null
+                        ? config.getRetryOn()
+                        : ExecutionConfig.RETRYABLE_ERRORS;
 
         Retry retrySpec =
                 Retry.backoff(maxAttempts - 1, initialBackoff)
@@ -732,6 +806,7 @@ class ToolExecutor {
                                         !ActionObservationException.causedBy(error)
                                                 && !SessionLogException.causedBy(error)
                                                 && retryOn.test(error))
+                        .onRetryExhaustedThrow((spec, signal) -> signal.failure())
                         .doBeforeRetry(
                                 signal ->
                                         logger.warn(

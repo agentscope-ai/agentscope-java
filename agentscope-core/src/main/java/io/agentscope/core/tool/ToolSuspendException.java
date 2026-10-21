@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.tool;
 
+import java.util.IdentityHashMap;
+
 /**
  * Exception thrown to signal that a tool execution should be suspended and handled externally.
  *
@@ -65,5 +67,22 @@ public class ToolSuspendException extends RuntimeException {
      */
     public String getReason() {
         return reason;
+    }
+
+    /**
+     * Finds a suspension anywhere in the cause chain, including arbitrary tool wrappers.
+     * Identity tracking prevents circular causes from looping indefinitely.
+     *
+     * @param error the throwable to inspect (may be {@code null})
+     * @return the first suspension, or {@code null} if none is present
+     */
+    public static ToolSuspendException findInCauseChain(Throwable error) {
+        IdentityHashMap<Throwable, Boolean> visited = new IdentityHashMap<>();
+        Throwable current = error;
+        while (current != null && visited.put(current, Boolean.TRUE) == null) {
+            if (current instanceof ToolSuspendException suspended) return suspended;
+            current = current.getCause();
+        }
+        return null;
     }
 }

@@ -15,7 +15,10 @@
  */
 package io.agentscope.core.util;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.IdentityHashMap;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Utility methods for exception handling.
@@ -78,5 +81,28 @@ public final class ExceptionUtils {
             current = current.getCause();
         }
         return false;
+    }
+
+    /**
+     * Unwraps {@link InvocationTargetException}, {@link ExecutionException} and
+     * {@link CompletionException} wrappers to expose the original failure.
+     *
+     * @param error the throwable to unwrap (may be {@code null})
+     * @return the innermost non-wrapper throwable, or {@code null} if the input is {@code null}
+     */
+    public static Throwable unwrapExecutionWrapper(Throwable error) {
+        Throwable current = error;
+        IdentityHashMap<Throwable, Boolean> visited = new IdentityHashMap<>();
+        while ((current instanceof InvocationTargetException
+                        || current instanceof ExecutionException
+                        || current instanceof CompletionException)
+                && visited.put(current, Boolean.TRUE) == null) {
+            Throwable cause = current.getCause();
+            if (cause == null) {
+                break;
+            }
+            current = cause;
+        }
+        return current;
     }
 }

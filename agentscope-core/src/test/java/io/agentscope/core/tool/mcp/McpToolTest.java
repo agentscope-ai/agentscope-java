@@ -16,6 +16,7 @@
 package io.agentscope.core.tool.mcp;
 
 import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -1127,23 +1128,33 @@ class McpToolTest {
     @Test
     void testCallAsync_WithNullToolCallParam() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+        ToolResultBlock result = assertDoesNotThrow(() -> tool.callAsync(null).block());
+        assertTrue(
+                ((TextBlock) result.getOutput().get(0))
+                        .getText()
+                        .contains("param must not be null"));
 
-        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
-        McpSchema.CallToolResult mcpResult =
-                McpSchema.CallToolResult.builder()
-                        .content(List.of(resultContent))
-                        .isError(false)
-                        .build();
+        Mono<ToolResultBlock> execution =
+                assertDoesNotThrow(() -> tool.callAsyncForExecution(null));
+        assertThrows(NullPointerException.class, () -> execution.block());
+    }
 
+    @Test
+    void testExecutionChannelDefersEachInvocationAndKeepsSynchronousFailuresReactive() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
         when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
-                .thenReturn(Mono.just(mcpResult));
+                .thenThrow(new IllegalStateException("Connection closed"));
+        ToolCallParam param = ToolCallParam.builder().input(Map.of()).build();
 
-        // This should throw NullPointerException or handle gracefully
-        assertThrows(
-                NullPointerException.class,
-                () -> {
-                    tool.callAsync(null).block();
-                });
+        Mono<ToolResultBlock> execution =
+                assertDoesNotThrow(() -> tool.callAsyncForExecution(param));
+        assertThrows(IllegalStateException.class, () -> execution.block());
+        assertThrows(IllegalStateException.class, () -> execution.block());
+        verify(mockClientWrapper, org.mockito.Mockito.times(2))
+                .callTool(eq("test-tool"), any(), any());
+
+        ToolResultBlock direct = assertDoesNotThrow(() -> tool.callAsync(param).block());
+        assertTrue(((TextBlock) direct.getOutput().get(0)).getText().contains("Connection closed"));
     }
 
     @Test
