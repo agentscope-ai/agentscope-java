@@ -441,6 +441,10 @@ onAgent
         └── onActing（本轮每个工具调用一次）
 ```
 
+### 何时用 `onActing`,何时用工具调用拦截器?
+
+需要操纵事件流、门控整批工具调用、处理回合级输出 → `onActing`。需要对单次调用的最终参数做校验/改写/拒绝,且要求在不经过 agent 循环的路径(`Toolkit#callTool` 直连、子代理 Toolkit)同样生效 → [工具调用拦截器](/v2/zh/docs/building-blocks/tool#工具调用拦截器)。两者可同时使用。
+
 ### 扩展点参与声明（`activePoints()`）
 
 `MiddlewareBase.activePoints()` 声明 middleware 在哪些扩展点处于激活状态。它是**参与开关**，不是对"覆写了哪些方法"的复述：

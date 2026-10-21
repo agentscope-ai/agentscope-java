@@ -441,6 +441,10 @@ onAgent
         └── onActing (per tool call)
 ```
 
+### `onActing` or tool call interceptors?
+
+Use `onActing` to manipulate the event stream, gate a whole batch of tool calls, or handle turn-level output. Use [tool call interceptors](/v2/en/docs/building-blocks/tool#tool-call-interceptors) to validate / rewrite / deny a single call's final arguments, including on paths that never enter an agent loop (direct `Toolkit#callTool`, subagent Toolkits). The two can be used together.
+
 ### Extension point participation (`activePoints()`)
 
 `MiddlewareBase.activePoints()` declares at which extension points the middleware is active. It is a **participation switch**, not a statement about which methods are overridden:
