@@ -32,6 +32,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,6 +52,7 @@ import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
+import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -483,6 +485,164 @@ public class A2aAgentTest {
     }
 
     @Test
+    @DisplayName("Should keep the history of each session apart")
+    void testSessionsKeepSeparateHistories() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        doAnswer(mockSuccessMessage())
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+        RuntimeContext sessionA = RuntimeContext.builder().sessionId("a").build();
+        RuntimeContext sessionB = RuntimeContext.builder().sessionId("b").build();
+
+        agent.call(List.of(Msg.builder().textContent("a1").build()), sessionA).block();
+        agent.call(List.of(Msg.builder().textContent("b1").build()), sessionB).block();
+        agent.call(List.of(Msg.builder().textContent("a2").build()), sessionA).block();
+
+        ArgumentCaptor<Message> sent = ArgumentCaptor.forClass(Message.class);
+        verify(a2aClient, times(3)).sendMessage(sent.capture(), anyList(), any());
+        assertEquals(List.of("a1", "mock success.", "a2"), texts(sent.getAllValues().get(2)));
+        assertEquals(
+                List.of("a1", "mock success.", "a2", "mock success."),
+                agent.getAgentState(sessionA).getContext().stream()
+                        .map(Msg::getTextContent)
+                        .toList());
+        assertEquals(
+                List.of("b1", "mock success."),
+                agent.getAgentState(sessionB).getContext().stream()
+                        .map(Msg::getTextContent)
+                        .toList());
+    }
+
+    @Test
+    @DisplayName("Should share a memory given to the builder between all sessions")
+    @SuppressWarnings("deprecation")
+    void testBuilderMemoryIsSharedBetweenSessions() {
+        InMemoryMemory memory = new InMemoryMemory();
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .memory(memory)
+                        .build();
+        doAnswer(mockSuccessMessage())
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        agent.call(
+                        List.of(Msg.builder().textContent("a1").build()),
+                        RuntimeContext.builder().sessionId("a").build())
+                .block();
+        agent.call(
+                        List.of(Msg.builder().textContent("b1").build()),
+                        RuntimeContext.builder().sessionId("b").build())
+                .block();
+
+        assertEquals(4, memory.getMessages().size());
+        assertEquals(memory, agent.getMemory());
+    }
+
+    @Test
+    @DisplayName("Should see the history of the default session through getMemory")
+    @SuppressWarnings("deprecation")
+    void testGetMemoryIsTheDefaultSession() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+
+        agent.observe(Msg.builder().textContent("first").build()).block();
+        agent.getMemory().addMessage(Msg.builder().textContent("second").build());
+
+        assertEquals(
+                List.of("first", "second"),
+                agent.getAgentState(null).getContext().stream().map(Msg::getTextContent).toList());
+        agent.getMemory().deleteMessage(0);
+        assertEquals(1, agent.getAgentState(null).getContext().size());
+        agent.getMemory().clear();
+        assertTrue(agent.getAgentState(null).getContext().isEmpty());
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> agent.getMemory().saveTo(null, null, null));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> agent.getMemory().loadFrom(null, null, null));
+    }
+
+    @Test
+    @DisplayName("Should cancel only the remote task of the interrupted session")
+    void testInterruptCancelsOnlyItsSession() throws InterruptedException {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        CountDownLatch sent = new CountDownLatch(2);
+        doAnswer(
+                        invocationOnMock -> {
+                            @SuppressWarnings("unchecked")
+                            List<BiConsumer<ClientEvent, AgentCard>> consumers =
+                                    invocationOnMock.getArgument(1, List.class);
+                            Message message = invocationOnMock.getArgument(0, Message.class);
+                            Task task =
+                                    Task.builder()
+                                            .id("task-" + texts(message).get(0))
+                                            .contextId("contextId")
+                                            .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
+                                            .build();
+                            consumers.forEach(
+                                    consumer -> consumer.accept(new TaskEvent(task), agentCard));
+                            sent.countDown();
+                            return null;
+                        })
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+        RuntimeContext sessionA = RuntimeContext.builder().sessionId("a").build();
+        RuntimeContext sessionB = RuntimeContext.builder().sessionId("b").build();
+
+        Disposable callA =
+                agent.call(List.of(Msg.builder().textContent("a").build()), sessionA).subscribe();
+        Disposable callB =
+                agent.call(List.of(Msg.builder().textContent("b").build()), sessionB).subscribe();
+        try {
+            assertTrue(sent.await(5, TimeUnit.SECONDS));
+            agent.interrupt(sessionA);
+
+            ArgumentCaptor<CancelTaskParams> cancelled =
+                    ArgumentCaptor.forClass(CancelTaskParams.class);
+            verify(a2aClient).cancelTask(cancelled.capture(), eq(null));
+            assertEquals("task-a", cancelled.getValue().id());
+        } finally {
+            callA.dispose();
+            callB.dispose();
+        }
+    }
+
+    @Test
+    @DisplayName("Should do nothing when interrupted without a call in progress")
+    void testInterruptWithoutCall() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+
+        agent.interrupt();
+        agent.interrupt(RuntimeContext.builder().sessionId("a").build());
+
+        verify(a2aClient, never()).cancelTask(any(CancelTaskParams.class), any());
+    }
+
+    @Test
     @DisplayName("Should keep only the hooks it is given")
     void testHooksAreTheGivenOnes() {
         Hook hook =
@@ -895,6 +1055,14 @@ public class A2aAgentTest {
                                                 : event);
             }
         };
+    }
+
+    /** The texts of the parts of {@code message}. */
+    private static List<String> texts(Message message) {
+        return message.parts().stream()
+                .filter(TextPart.class::isInstance)
+                .map(part -> ((TextPart) part).text())
+                .toList();
     }
 
     /** A task that streams each part in its own artifact, then completes. */

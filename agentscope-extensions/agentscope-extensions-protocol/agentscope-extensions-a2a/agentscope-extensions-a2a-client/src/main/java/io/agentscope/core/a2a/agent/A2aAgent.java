@@ -34,7 +34,6 @@ import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.interruption.InterruptContext;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -44,11 +43,15 @@ import io.agentscope.core.middleware.MiddlewareBase.ExtensionPoint;
 import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -62,6 +65,7 @@ import org.a2aproject.sdk.spec.A2AClientException;
 import org.a2aproject.sdk.spec.AgentCard;
 import org.a2aproject.sdk.spec.CancelTaskParams;
 import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Task;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
@@ -100,7 +104,11 @@ public class A2aAgent extends AgentBase {
 
     private final A2aAgentConfig a2aAgentConfig;
 
+    /** The memory given to the builder, shared by all sessions, or {@code null}. */
     private final Memory memory;
+
+    /** The state of each session, which holds its history unless {@link #memory} is set. */
+    private final Map<Session, AgentState> sessions = new ConcurrentHashMap<>();
 
     private final ClientEventHandlerRouter clientEventHandlerRouter;
 
@@ -113,11 +121,8 @@ public class A2aAgent extends AgentBase {
     /** The middlewares active at onReasoning, outermost first. */
     private final List<MiddlewareBase> reasoningMiddlewares;
 
-    /**
-     * The call in progress, which {@link #interrupt()} cancels. According to the design, one agent
-     * should not be called with multiple threads and tasks at the same time.
-     */
-    private final AtomicReference<A2aCall> currentCall = new AtomicReference<>();
+    /** The call in progress in each session, which {@link #interrupt(RuntimeContext)} cancels. */
+    private final Map<Session, A2aCall> runningCalls = new ConcurrentHashMap<>();
 
     private A2aAgent(
             String name,
@@ -243,22 +248,104 @@ public class A2aAgent extends AgentBase {
                 FluxSink.OverflowStrategy.BUFFER);
     }
 
-    @Override
-    protected Mono<Msg> doCall(List<Msg> msgs) {
-        if (msgs != null && !msgs.isEmpty()) {
-            msgs.forEach(memory::addMessage);
-        }
-        // The client is closed however the call ends, also when it is cancelled.
-        return Mono.deferContextual(
-                        view ->
-                                Mono.using(
-                                        this::startCall,
-                                        call -> execute(call, view),
-                                        this::endCall))
-                .doOnNext(this.memory::addMessage);
+    /**
+     * Calls the remote agent in the session of {@code context}. Each session, set by the user and
+     * session id of the context, has its own history, and its calls run one at a time. Without a
+     * session id, calls use the session named after the agent.
+     *
+     * @param msgs the input messages
+     * @param context the context of the call, or {@code null}
+     * @return the reply of the remote agent
+     */
+    public Mono<Msg> call(List<Msg> msgs, RuntimeContext context) {
+        return callInternal(msgs, context, this::doCall);
     }
 
-    private A2aCall startCall() {
+    /**
+     * Returns the state of the session of {@code context}, which holds its history unless a
+     * memory was given to the builder.
+     *
+     * @param context the context of the session, or {@code null} for the default session
+     * @return the state of the session
+     */
+    public AgentState getAgentState(RuntimeContext context) {
+        return stateOf(sessionOf(context));
+    }
+
+    /**
+     * Returns the state of the default session.
+     *
+     * @deprecated use {@link #getAgentState(RuntimeContext)}.
+     */
+    @Deprecated
+    @Override
+    public AgentState getAgentState() {
+        return getAgentState(null);
+    }
+
+    /**
+     * Cancels the remote task of the call in progress in the session of {@code context}, if any.
+     *
+     * @param context the context of the session, or {@code null} for the default session
+     */
+    public void interrupt(RuntimeContext context) {
+        cancelRemoteTask(sessionOf(context)).block();
+    }
+
+    /** Calls of the same session run one at a time, since they share its history. */
+    @Override
+    protected Object callSerializationKey(RuntimeContext rc) {
+        return sessionOf(rc);
+    }
+
+    @Override
+    protected Mono<Msg> doCall(List<Msg> msgs) {
+        return Mono.deferContextual(
+                view -> {
+                    Session session = sessionOf(view.getOrDefault(RUNTIME_CONTEXT_KEY, null));
+                    if (msgs != null && !msgs.isEmpty()) {
+                        addToHistory(session, msgs);
+                    }
+                    // The client is closed however the call ends, also when it is cancelled.
+                    return Mono.using(
+                                    () -> startCall(session),
+                                    call -> execute(call, session, view),
+                                    this::endCall)
+                            .doOnNext(reply -> addToHistory(session, List.of(reply)));
+                });
+    }
+
+    /** The user and session id of {@code context}; by default the session named after the agent. */
+    private Session sessionOf(RuntimeContext context) {
+        String sessionId = null == context ? null : context.getSessionId();
+        return new Session(
+                null == context ? null : context.getUserId(),
+                null == sessionId || sessionId.isBlank() ? getName() : sessionId);
+    }
+
+    private AgentState stateOf(Session session) {
+        return sessions.computeIfAbsent(
+                session,
+                each ->
+                        AgentState.builder()
+                                .userId(each.userId())
+                                .sessionId(each.sessionId())
+                                .build());
+    }
+
+    private List<Msg> historyOf(Session session) {
+        return null != memory ? memory.getMessages() : stateOf(session).getContext();
+    }
+
+    private void addToHistory(Session session, List<Msg> msgs) {
+        if (null != memory) {
+            msgs.forEach(memory::addMessage);
+        } else {
+            stateOf(session).contextMutable().addAll(msgs);
+        }
+    }
+
+    private A2aCall startCall(Session session) {
         String requestId = UUID.randomUUID().toString();
         Client client = buildA2aClient(getName());
         LoggerUtil.debug(
@@ -266,17 +353,19 @@ public class A2aAgent extends AgentBase {
                 "[{}] A2aAgent build A2a Client with Agent Card: {}.",
                 requestId,
                 agentCardResolver.getAgentCard(getName()));
-        A2aCall call = new A2aCall(requestId, client, new ClientEventContext(requestId, this));
-        currentCall.set(call);
+        A2aCall call =
+                new A2aCall(requestId, session, client, new ClientEventContext(requestId, this));
+        runningCalls.put(session, call);
         return call;
     }
 
-    private Mono<Msg> execute(A2aCall call, ContextView view) {
+    private Mono<Msg> execute(A2aCall call, Session session, ContextView view) {
+        List<Msg> history = historyOf(session);
         LoggerUtil.info(log, "[{}] A2aAgent start call.", call.requestId());
         LoggerUtil.debug(log, "[{}] A2aAgent call with input messages: ", call.requestId());
-        LoggerUtil.logTextMsgDetail(log, memory.getMessages());
+        LoggerUtil.logTextMsgDetail(log, history);
         call.eventContext().setHooks(getSortedHooks());
-        call.eventContext().setInputMessages(memory.getMessages());
+        call.eventContext().setInputMessages(history);
         ReplyEvents events = view.getOrDefault(EVENT_EMITTER_KEY, null);
         RuntimeContext context = view.getOrDefault(RUNTIME_CONTEXT_KEY, RuntimeContext.empty());
         AtomicReference<Msg> reply = new AtomicReference<>();
@@ -294,7 +383,7 @@ public class A2aAgent extends AgentBase {
                                                                 exchange)
                                                         .apply(
                                                                 new ReasoningInput(
-                                                                        memory.getMessages(),
+                                                                        history,
                                                                         List.of(),
                                                                         GenerateOptions.builder()
                                                                                 .build())))
@@ -337,35 +426,51 @@ public class A2aAgent extends AgentBase {
     }
 
     private void endCall(A2aCall call) {
-        currentCall.compareAndSet(call, null);
+        runningCalls.remove(call.session(), call);
         call.client().close();
         LoggerUtil.debug(log, "[{}] A2aAgent close A2a Client.", call.requestId());
     }
 
+    /** Cancels the remote task of the call in progress in the default session, if any. */
     @Override
     public void interrupt() {
         super.interrupt();
-        handleInterrupt(InterruptContext.builder().build()).block();
+        interrupt((RuntimeContext) null);
     }
 
+    /** Cancels the remote task of the call in progress in the default session, if any. */
     @Override
     public void interrupt(Msg msg) {
         super.interrupt(msg);
-        handleInterrupt(InterruptContext.builder().userMessage(msg).build()).block();
+        interrupt((RuntimeContext) null);
     }
 
     @Override
     protected Mono<Void> doObserve(Msg msg) {
-        memory.addMessage(msg);
-        return Mono.empty();
+        return Mono.deferContextual(
+                view -> {
+                    addToHistory(
+                            sessionOf(view.getOrDefault(RUNTIME_CONTEXT_KEY, null)), List.of(msg));
+                    return Mono.empty();
+                });
     }
 
     @Override
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
-        A2aCall call = currentCall.get();
+        return Mono.deferContextual(
+                view -> cancelRemoteTask(sessionOf(view.getOrDefault(RUNTIME_CONTEXT_KEY, null))));
+    }
+
+    /** Cancels the remote task of the call in progress in {@code session}, if it has one yet. */
+    private Mono<Msg> cancelRemoteTask(Session session) {
+        A2aCall call = runningCalls.get(session);
+        Task task = null == call ? null : call.eventContext().getTask();
+        if (null == task) {
+            return Mono.empty();
+        }
         LoggerUtil.debug(log, "[{}] A2aAgent handle interrupt.", call.requestId());
         try {
-            String taskId = call.eventContext().getTask().id();
+            String taskId = task.id();
             call.client().cancelTask(new CancelTaskParams(taskId), null);
             return Mono.just(
                     Msg.builder()
@@ -391,8 +496,15 @@ public class A2aAgent extends AgentBase {
         return new Builder();
     }
 
+    /**
+     * Returns the memory given to the builder, or else the history of the default session.
+     *
+     * @return the memory
+     * @deprecated use {@link #getAgentState(RuntimeContext)}.
+     */
+    @Deprecated
     public Memory getMemory() {
-        return memory;
+        return null != memory ? memory : new StateMemory(getAgentState(null));
     }
 
     private Client buildA2aClient(String name) {
@@ -457,7 +569,45 @@ public class A2aAgent extends AgentBase {
     private record ReplyEvents(String replyId, AgentEventEmitter emitter) {}
 
     /** The client and the event context of one call. */
-    private record A2aCall(String requestId, Client client, ClientEventContext eventContext) {}
+    private record A2aCall(
+            String requestId, Session session, Client client, ClientEventContext eventContext) {}
+
+    /** A session of the agent. */
+    private record Session(String userId, String sessionId) {}
+
+    /** The history of a session, seen as a {@link Memory}. */
+    private record StateMemory(AgentState state) implements Memory {
+
+        @Override
+        public void saveTo(AgentStateStore stateStore, String userId, String sessionId) {
+            throw new UnsupportedOperationException("Save the AgentState of the session instead");
+        }
+
+        @Override
+        public void loadFrom(AgentStateStore stateStore, String userId, String sessionId) {
+            throw new UnsupportedOperationException("Load the AgentState of the session instead");
+        }
+
+        @Override
+        public void addMessage(Msg message) {
+            state.contextMutable().add(message);
+        }
+
+        @Override
+        public List<Msg> getMessages() {
+            return state.getContext();
+        }
+
+        @Override
+        public void deleteMessage(int index) {
+            state.contextMutable().remove(index);
+        }
+
+        @Override
+        public void clear() {
+            state.contextMutable().clear();
+        }
+    }
 
     public static class Builder {
 
@@ -467,7 +617,7 @@ public class A2aAgent extends AgentBase {
 
         private A2aAgentConfig a2aAgentConfig;
 
-        private Memory memory = new InMemoryMemory();
+        private Memory memory;
 
         private final List<Hook> hooks = new ArrayList<>();
 
@@ -535,13 +685,15 @@ public class A2aAgent extends AgentBase {
         }
 
         /**
-         * Set the {@link Memory} for the A2aAgent.
-         *
-         * <p>Default is {@link InMemoryMemory}
+         * Set a {@link Memory} shared by all the sessions of the A2aAgent. Without it, each
+         * session keeps its history in its {@link AgentState}.
          *
          * @param memory the Memory to set
          * @return the current Builder instance for method chaining
+         * @deprecated use the {@link AgentState} of each session, see {@link
+         *     A2aAgent#getAgentState(RuntimeContext)}.
          */
+        @Deprecated
         public Builder memory(Memory memory) {
             this.memory = memory;
             return this;

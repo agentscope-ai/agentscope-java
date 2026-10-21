@@ -60,6 +60,16 @@ remote.streamEvents(new UserMessage("Translate to English: 你好"))
     .blockLast();
 ```
 
+### Sessions
+
+Each session, set by the user and session id of the `RuntimeContext`, keeps its own history in its `AgentState`, and its calls run one at a time; calls without a session id share the session named after the agent. `interrupt(RuntimeContext)` cancels the remote task of the call in progress in that session.
+
+```java
+RuntimeContext context = RuntimeContext.builder().userId("alice").sessionId("chat-1").build();
+Msg reply = remote.call(List.of(new UserMessage("Translate to English: 你好")), context).block();
+List<Msg> history = remote.getAgentState(context).getContext();
+```
+
 ### Middleware
 
 `A2aAgent` runs `MiddlewareBase` at two points: `onAgent` wraps the whole call, and `onReasoning` wraps the exchange with the remote agent. The input messages of `onReasoning` are the messages sent to the remote agent, and its events are the text and thinking the remote agent streams. The other extension points do not apply to a remote agent.
