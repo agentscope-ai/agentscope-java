@@ -159,6 +159,10 @@ mvn -B -T1C -pl agentscope-examples/openai-decisions org.codehaus.mojo:exec-mave
 
 设置 `OPENAI_API_KEY`、`OPENAI_MODEL`（支持工具调用的 Chat Completions 模型），以及 `OPENAI_FAST_MODEL`（仅 `route` 必需）。模型名不带 `openai:` 前缀。将 `route` 替换为 `select` 或 `guard` 即可切换场景，也可以通过 `"-Dexec.args=route Design a distributed task scheduler"` 追加自定义提示词。模块 README 包含环境变量设置和离线验证命令。真实决策结果及聊天模型是否调用工具取决于模型，示例提示词不保证特定路由或拒绝结果。
 
+当任一聊天模型为 `gpt-6-luna` 时，示例会为该模型设置 `reasoning_effort=none`，以满足 Chat Completions 工具调用的要求。此配置仅用于聊天请求，Decisions 和其他聊天模型保留默认配置。
+
+如果连接超时，请按示例模块 README 配置 JVM 的 HTTP/HTTPS 代理属性，让两个客户端都使用代理。main 方法会在回退前输出脱敏的 Decisions 失败原因，并在退出时关闭 Reactor 共享调度器；此关闭操作仅适用于独立运行的示例。
+
 ## Spring Boot
 
 使用 starter 依赖替代直接引入扩展，然后注入 `OpenAIDecisionsClient`。

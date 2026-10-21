@@ -159,6 +159,10 @@ mvn -B -T1C -pl agentscope-examples/openai-decisions org.codehaus.mojo:exec-mave
 
 Set `OPENAI_API_KEY`, `OPENAI_MODEL` (a Chat Completions model supporting tools), and `OPENAI_FAST_MODEL` (required only for `route`). Supply model names without the `openai:` prefix. Replace `route` with `select` or `guard`, or append a custom prompt using `"-Dexec.args=route Design a distributed task scheduler"`. The module README includes environment setup and offline verification commands. Real decision results and whether the chat model calls a tool depend on the models; the sample prompts do not guarantee a particular route or denial.
 
+When either chat model is `gpt-6-luna`, the example sets that model's `reasoning_effort` to `none`, as required for function tools through Chat Completions. This applies to chat requests only; Decisions and other chat models retain their defaults.
+
+If connections time out, configure the JVM's HTTP/HTTPS proxy properties for both clients as described in the example module's README. The main method reports sanitized Decisions failures before fallback and shuts down Reactor's shared schedulers on exit; this shutdown is specific to the standalone example.
+
 ## Spring Boot
 
 Use the starter dependency instead of adding the extension directly, then inject `OpenAIDecisionsClient`.

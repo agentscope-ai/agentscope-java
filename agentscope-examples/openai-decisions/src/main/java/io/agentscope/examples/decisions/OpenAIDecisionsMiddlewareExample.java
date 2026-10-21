@@ -25,6 +25,7 @@ import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
@@ -44,6 +45,7 @@ import java.util.List;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /** Runs one middleware scenario against real APIs; every business tool is simulated. */
 public final class OpenAIDecisionsMiddlewareExample {
@@ -64,11 +66,10 @@ public final class OpenAIDecisionsMiddlewareExample {
                         .baseUrl("https://api.openai.com/v1")
                         .stream(false)
                         .build();
-        Model model = ModelRegistry.resolve("openai:" + requiredEnv("OPENAI_MODEL"), modelContext);
+        Model model = createChatModel(requiredEnv("OPENAI_MODEL"), modelContext);
         Model fastModel =
                 "route".equals(mode)
-                        ? ModelRegistry.resolve(
-                                "openai:" + requiredEnv("OPENAI_FAST_MODEL"), modelContext)
+                        ? createChatModel(requiredEnv("OPENAI_FAST_MODEL"), modelContext)
                         : model;
 
         try (var client = OpenAIDecisionsClient.builder().apiKey(apiKey).build()) {
@@ -78,15 +79,33 @@ public final class OpenAIDecisionsMiddlewareExample {
                                     .doOnNext(r -> System.out.println("Decision: " + r.answers()))
                                     .doOnError(
                                             e ->
-                                                    System.err.println(
+                                                    System.err.printf(
                                                             "Decision request failed; scenario"
-                                                                    + " fallback applies."));
+                                                                    + " fallback applies. %s: %s%n",
+                                                            e.getClass().getSimpleName(),
+                                                            e.getMessage()));
             var agent = createAgent(mode, model, fastModel, decide);
             System.out.printf("Scenario: %s%nPrompt: %s%n", mode, prompt);
             agent.streamEvents(List.of(new UserMessage(prompt)))
                     .doOnNext(OpenAIDecisionsMiddlewareExample::printEvent)
                     .blockLast(Duration.ofMinutes(2));
+        } finally {
+            // This standalone main owns the shared schedulers, including when run by exec:java.
+            Schedulers.shutdownNow();
         }
+    }
+
+    static Model createChatModel(String modelName, ModelCreationContext context) {
+        if ("gpt-6-luna".equals(modelName)) {
+            // Luna requires non-reasoning mode for function tools in Chat Completions.
+            context =
+                    context.toBuilder()
+                            .component(
+                                    GenerateOptions.class,
+                                    GenerateOptions.builder().reasoningEffort("none").build())
+                            .build();
+        }
+        return ModelRegistry.resolve("openai:" + modelName, context);
     }
 
     static ReActAgent createAgent(

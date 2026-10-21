@@ -16,6 +16,7 @@
 package io.agentscope.examples.decisions;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,7 +31,11 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.model.transport.HttpRequest;
+import io.agentscope.core.model.transport.HttpResponse;
+import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.judge.openaidecisions.DecisionAnswer;
 import io.agentscope.extensions.judge.openaidecisions.DecisionResult;
@@ -46,6 +51,31 @@ import reactor.core.publisher.Mono;
 
 /** Runs the example wiring through the real ReAct loop without credentials or network access. */
 class OpenAIDecisionsMiddlewareExampleTest {
+    @ParameterizedTest
+    @ValueSource(strings = {"gpt-6-luna", "gpt-4.1-mini"})
+    void sendsLunaToolRequestsWithoutReasoning(String modelName) {
+        var transport = new RecordingTransport();
+        var model =
+                OpenAIDecisionsMiddlewareExample.createChatModel(
+                        modelName,
+                        ModelCreationContext.builder().apiKey("fixture-key").stream(false)
+                                .component(HttpTransport.class, transport)
+                                .build());
+        var agent =
+                OpenAIDecisionsMiddlewareExample.createAgent(
+                        "guard", model, model, r -> Mono.error(new AssertionError("No tool call")));
+        agent.call("Weather in Beijing", RuntimeContext.empty()).block(Duration.ofSeconds(10));
+        var body = JsonUtils.getJsonCodec().fromJson(transport.request.getBody(), Map.class);
+        assertTrue(transport.request.getUrl().endsWith("/chat/completions"));
+        assertEquals(modelName, body.get("model"));
+        assertEquals(3, ((List<?>) body.get("tools")).size());
+        if ("gpt-6-luna".equals(modelName)) {
+            assertEquals("none", body.get("reasoning_effort"));
+        } else {
+            assertFalse(body.containsKey("reasoning_effort"));
+        }
+    }
+
     @Test
     void routesToFastModel() {
         var original = new FixtureModel(null);
@@ -155,6 +185,32 @@ class OpenAIDecisionsMiddlewareExampleTest {
 
     private static DecisionResult result(Map<String, DecisionAnswer> answers) {
         return new DecisionResult("fixture", answers, null);
+    }
+
+    private static final class RecordingTransport implements HttpTransport {
+        private HttpRequest request;
+
+        @Override
+        public HttpResponse execute(HttpRequest request) {
+            this.request = request;
+            return HttpResponse.builder()
+                    .statusCode(200)
+                    .body(
+                            """
+                            {"id":"fixture","object":"chat.completion","created":0,
+                             "model":"fixture","choices":[{"index":0,"finish_reason":"stop",
+                             "message":{"role":"assistant","content":"Done"}}]}
+                            """)
+                    .build();
+        }
+
+        @Override
+        public Flux<String> stream(HttpRequest request) {
+            return Flux.error(new AssertionError("Expected non-streaming request"));
+        }
+
+        @Override
+        public void close() {}
     }
 
     private static final class FixtureModel extends ChatModelBase {

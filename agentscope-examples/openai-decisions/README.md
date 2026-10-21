@@ -17,6 +17,12 @@ a Chat Completions model that supports tools, and `OPENAI_FAST_MODEL` to a secon
 the routing scenario. Use model names without the `openai:` prefix. Both clients use the official
 `https://api.openai.com/v1` endpoint in this example.
 
+When a chat model is `gpt-6-luna`, the example sets `reasoning_effort` to `none` on that model:
+[Luna requires this for function tools in Chat Completions](https://developers.openai.com/api/docs/models/gpt-6-luna).
+For example, `OPENAI_MODEL=gpt-6-luna` works with the `select` and `guard` scenarios without source
+changes. This setting applies to chat requests, not Decisions, and other chat models keep their
+default generation options. Choose models that support tools through Chat Completions.
+
 For example, in PowerShell:
 
 ```powershell
@@ -52,6 +58,30 @@ while the guard denies. Real decisions are probabilistic, so the default
 prompts do not guarantee a particular route or denial. The guard applies when the chat model
 actually requests `delete_file`; it does not force a tool call. Passing the check still goes through
 core permissions. All middleware is explicitly enabled by this example; the library defaults to off.
+
+## Connection troubleshooting
+
+If the example fails with `HTTP connect timed out`, verify that the JVM can reach
+`https://api.openai.com`. A browser's Windows proxy setting does not establish that the Java
+clients use the same proxy. For a local HTTP proxy listening on `127.0.0.1:7890`, set the following
+in the PowerShell session before running the Maven command above (adjust the host and port):
+
+```powershell
+$env:MAVEN_OPTS = "$env:MAVEN_OPTS -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7890 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7890"
+```
+
+For IntelliJ IDEA, put those four `-D` properties in the main class's **VM options**.
+Both the chat model's JDK transport and the Decisions SDK use these JVM proxy settings.
+This keeps the official API endpoint; setting only `HTTP_PROXY` or `HTTPS_PROXY` does not configure
+these clients. Keep `OPENAI_API_KEY` in the environment as described above.
+
+`No SLF4J providers were found` means this minimal example has no logging backend; it does not
+cause a connection timeout. A Decisions failure prints its sanitized error before applying the
+scenario's fallback. An answer produced after that failure does not verify a successful decision.
+The standalone main shuts down Reactor's shared schedulers on exit. With `exec:java`, the SDK's
+OkHttp/Okio daemon threads can still cause Maven thread-cleanup warnings; running the main class
+directly in IntelliJ IDEA avoids Maven's thread-group cleanup. Embedded applications should manage
+their own scheduler lifecycle.
 
 ## Offline verification
 
