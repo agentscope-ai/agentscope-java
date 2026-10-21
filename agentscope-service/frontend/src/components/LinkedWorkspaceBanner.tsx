@@ -16,6 +16,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useControlPlaneScope } from '@/app/ScopeContext';
 
 const TAB_FOR: Record<string, string> = {
   skills: 'skills',
@@ -29,14 +30,17 @@ export default function LinkedWorkspaceBanner({
   workspaceId,
   workspaceName,
   resource,
+  hasOverrides = false,
 }: {
   workspaceId: string;
   workspaceName?: string;
   resource: 'skills' | 'tools' | 'subagents' | 'files' | 'settings';
+  hasOverrides?: boolean;
 }) {
+  const scope = useControlPlaneScope();
   const label = workspaceName || workspaceId;
   const tab = TAB_FOR[resource] || 'agentsmd';
-  const href = `/workspaces/${encodeURIComponent(workspaceId)}?tab=${encodeURIComponent(tab)}`;
+  const href = scope.scopedPath(`/agent-center/workspaces/${encodeURIComponent(workspaceId)}?tab=${encodeURIComponent(tab)}`);
   return (
     <div
       style={{
@@ -52,8 +56,8 @@ export default function LinkedWorkspaceBanner({
       }}
     >
       <span>
-        Linked to workspace <strong>{label}</strong>. This page shows the agent snapshot
-        (read-only). Edit shared {resource} in the Workspace so all linked agents stay consistent.
+        {hasOverrides ? <>This Agent uses <strong>{label}</strong> with local overrides; editable {resource} changes apply only to this Agent.</>
+          : <>Edit shared {resource} in <strong>{label}</strong>, publish the changes, then update this Agent’s Workspace binding to use them.</>}
       </span>
       <Link
         to={href}

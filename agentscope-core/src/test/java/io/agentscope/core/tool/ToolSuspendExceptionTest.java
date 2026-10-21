@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -75,7 +76,9 @@ class ToolSuspendExceptionTest {
         assertEquals("tool-1", suspended.getId());
         assertEquals("external_api", suspended.getName());
         assertTrue(suspended.isSuspended());
-        assertEquals(1, suspended.getOutput().size());
+        assertEquals(ToolResultState.SUSPENDED, suspended.getState());
+        assertTrue(suspended.getOutput().isEmpty(), "suspended result must not fabricate output");
+        assertEquals("Waiting for API response", suspended.getSuspendReason());
     }
 
     @Test
@@ -93,6 +96,35 @@ class ToolSuspendExceptionTest {
         assertEquals("tool-2", suspended.getId());
         assertEquals("database_query", suspended.getName());
         assertTrue(suspended.isSuspended());
+        assertEquals(ToolResultState.SUSPENDED, suspended.getState());
+        assertTrue(suspended.getOutput().isEmpty(), "suspended result must not fabricate output");
+        assertNull(suspended.getSuspendReason());
+    }
+
+    @Test
+    @DisplayName("Should recognise suspended results by state and by legacy metadata")
+    @SuppressWarnings("deprecation")
+    void testSuspendedRecognitionAcceptsStateAndLegacyMetadata() {
+        ToolResultBlock canonical =
+                ToolResultBlock.builder()
+                        .id("tool-3")
+                        .name("external_api")
+                        .state(ToolResultState.SUSPENDED)
+                        .build();
+        assertTrue(canonical.isSuspended(), "the SUSPENDED state is the canonical encoding");
+        assertNull(canonical.getSuspendReason());
+
+        ToolResultBlock legacy =
+                ToolResultBlock.builder()
+                        .id("tool-3")
+                        .name("external_api")
+                        .metadata(Map.of(ToolResultBlock.METADATA_SUSPENDED, true))
+                        .build();
+        assertEquals(
+                ToolResultState.RUNNING,
+                legacy.getState(),
+                "legacy blocks deserialize without a state and default to RUNNING");
+        assertTrue(legacy.isSuspended(), "the legacy wire marker must stay recognised");
     }
 
     @Test

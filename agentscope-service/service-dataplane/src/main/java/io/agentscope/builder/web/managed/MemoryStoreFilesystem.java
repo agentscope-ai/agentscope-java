@@ -54,7 +54,7 @@ import org.springframework.web.server.ResponseStatusException;
  */
 public final class MemoryStoreFilesystem implements AbstractFilesystem {
 
-    private final MemoryStoreService memoryStoreService;
+    private final MemoryDocumentStore documents;
     private final String ownerId;
     private final String storeId;
     private final String storeName;
@@ -73,12 +73,48 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
             String storeId,
             String storeName,
             String accessMode) {
-        this.memoryStoreService = memoryStoreService;
+        this(
+                new MemoryDocumentStore() {
+                    public List<MemoryDto> list() {
+                        return memoryStoreService.listMemories(ownerId, storeId);
+                    }
+
+                    public MemoryDto get(String path) {
+                        return memoryStoreService.getMemory(ownerId, storeId, path);
+                    }
+
+                    public void put(String path, String content, Integer version) {
+                        memoryStoreService.putMemory(
+                                ownerId,
+                                storeId,
+                                path,
+                                new MemoryStoreService.PutMemoryRequest(content));
+                    }
+
+                    public void delete(String path) {
+                        memoryStoreService.deleteMemory(ownerId, storeId, path);
+                    }
+                },
+                ownerId,
+                storeId,
+                storeName,
+                accessMode);
+    }
+
+    public MemoryStoreFilesystem(
+            MemoryDocumentStore documents,
+            String ownerId,
+            String storeId,
+            String storeName,
+            String accessMode) {
+        this.documents = documents;
         this.ownerId = ownerId;
         this.storeId = storeId;
         this.storeName = storeName;
         this.accessMode =
                 accessMode == null || accessMode.isBlank() ? "read_write" : accessMode.trim();
+        if (!List.of("read_only", "read_write").contains(this.accessMode))
+            throw new IllegalArgumentException("Invalid memory mount access mode");
     }
 
     private final String accessMode;
@@ -126,7 +162,7 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         try {
             List<FileInfo> infos = new ArrayList<>();
-            for (MemoryDto memory : memoryStoreService.listMemories(ownerId, storeId)) {
+            for (MemoryDto memory : documents.list()) {
                 infos.add(toFileInfo(memory));
             }
             return LsResult.success(infos);
@@ -142,7 +178,7 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
             return ReadResult.fail("Path must reference a memory document, not the store root");
         }
         try {
-            MemoryDto memory = memoryStoreService.getMemory(ownerId, storeId, key);
+            MemoryDto memory = documents.get(key);
             String content = memory.content() == null ? "" : memory.content();
             if (offset > 0 || limit > 0) {
                 content = paginate(content, offset, limit);
@@ -186,8 +222,7 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
                             + " to a new path.");
         }
         try {
-            memoryStoreService.putMemory(
-                    ownerId, storeId, key, new MemoryStoreService.PutMemoryRequest(content));
+            documents.put(key, content, 0);
             return WriteResult.ok(filePath);
         } catch (ResponseStatusException e) {
             return WriteResult.fail("Error writing memory '" + filePath + "': " + e.getReason());
@@ -210,7 +245,7 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
         }
         MemoryDto memory;
         try {
-            memory = memoryStoreService.getMemory(ownerId, storeId, key);
+            memory = documents.get(key);
         } catch (ResponseStatusException e) {
             return EditResult.fail("Memory not found: " + filePath);
         }
@@ -230,9 +265,10 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
         String updated =
                 replaceAll
                         ? content.replace(oldString, newString)
-                        : content.replaceFirst(java.util.regex.Pattern.quote(oldString), newString);
-        memoryStoreService.putMemory(
-                ownerId, storeId, key, new MemoryStoreService.PutMemoryRequest(updated));
+                        : content.replaceFirst(
+                                java.util.regex.Pattern.quote(oldString),
+                                java.util.regex.Matcher.quoteReplacement(newString));
+        documents.put(key, updated, memory.headVersion());
         return EditResult.ok(filePath, replaceAll ? occurrences : 1);
     }
 
@@ -255,7 +291,7 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
         List<GrepMatch> matches = new ArrayList<>();
         PathMatcher globMatcher = compileGlob(glob);
         try {
-            for (MemoryDto memory : memoryStoreService.listMemories(ownerId, storeId)) {
+            for (MemoryDto memory : documents.list()) {
                 if (globMatcher != null && !globMatcher.matches(Path.of(memory.path()))) {
                     continue;
                 }
@@ -278,7 +314,7 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
         PathMatcher matcher = compileGlob(pattern);
         try {
             List<FileInfo> matches = new ArrayList<>();
-            for (MemoryDto memory : memoryStoreService.listMemories(ownerId, storeId)) {
+            for (MemoryDto memory : documents.list()) {
                 if (matcher == null || matcher.matches(Path.of(memory.path()))) {
                     matches.add(toFileInfo(memory));
                 }
@@ -328,12 +364,13 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
 
     @Override
     public WriteResult delete(RuntimeContext runtimeContext, String path) {
+        if (isReadOnly()) return WriteResult.fail("Memory store is mounted read_only");
         String key = normalize(path);
         if (key.isEmpty()) {
             return WriteResult.fail("Path must reference a memory document, not the store root");
         }
         try {
-            memoryStoreService.deleteMemory(ownerId, storeId, key);
+            documents.delete(key);
             return WriteResult.ok(path);
         } catch (ResponseStatusException e) {
             if (e.getStatusCode().value() == 404) {
@@ -345,6 +382,7 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
 
     @Override
     public WriteResult move(RuntimeContext runtimeContext, String fromPath, String toPath) {
+        if (isReadOnly()) return WriteResult.fail("Memory store is mounted read_only");
         String fromKey = normalize(fromPath);
         String toKey = normalize(toPath);
         if (fromKey.isEmpty() || toKey.isEmpty()) {
@@ -352,13 +390,12 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
         }
         MemoryDto memory;
         try {
-            memory = memoryStoreService.getMemory(ownerId, storeId, fromKey);
+            memory = documents.get(fromKey);
         } catch (ResponseStatusException e) {
             return WriteResult.fail("Cannot read source for move: " + fromPath);
         }
-        memoryStoreService.putMemory(
-                ownerId, storeId, toKey, new MemoryStoreService.PutMemoryRequest(memory.content()));
-        memoryStoreService.deleteMemory(ownerId, storeId, fromKey);
+        documents.put(toKey, memory.content(), 0);
+        documents.delete(fromKey);
         return WriteResult.ok(toPath);
     }
 
@@ -370,7 +407,7 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
 
     private boolean memoryExists(String key) {
         try {
-            memoryStoreService.getMemory(ownerId, storeId, key);
+            documents.get(key);
             return true;
         } catch (ResponseStatusException e) {
             return false;

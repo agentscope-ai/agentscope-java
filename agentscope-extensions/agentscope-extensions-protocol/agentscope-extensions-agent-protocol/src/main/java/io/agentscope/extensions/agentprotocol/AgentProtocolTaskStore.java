@@ -88,6 +88,9 @@ public final class AgentProtocolTaskStore {
     private final Map<String, CompletableFuture<String>> futures = new ConcurrentHashMap<>();
     private final Map<String, SubmitContext> submitContexts = new ConcurrentHashMap<>();
 
+    /** Serializes resume transitions per task so concurrent resumes cannot double-start a run. */
+    private final ConcurrentHashMap<String, Object> taskLocks = new ConcurrentHashMap<>();
+
     public AgentProtocolTaskStore(
             AgentFactory agentFactory,
             ProtocolTaskRepository taskRepository,
@@ -167,11 +170,18 @@ public final class AgentProtocolTaskStore {
                 CompletableFuture.supplyAsync(
                         () -> runAgent(taskId, agentId, input, ctx, null), executor);
         futures.put(taskId, f);
-        f.whenComplete((r, ex) -> futures.remove(taskId));
+        f.whenComplete((r, ex) -> futures.remove(taskId, f));
     }
 
     /**
      * Resumes a task paused for HITL confirmation with the given decisions.
+     *
+     * <p>The {@code awaiting_confirm} record is the pause signal: the paused run persists it
+     * before its future completes and performs no further agent work afterwards, so a client may
+     * legitimately call this while that future is still unwinding (a fast poll of {@link
+     * #snapshot} or the REQUIRE_CONFIRM event lands in that window). The record, re-validated
+     * under a per-task lock, is therefore what decides — the lock also keeps concurrent resumes
+     * from double-starting the next run.
      *
      * @throws IllegalStateException if the task is not awaiting confirmation
      */
@@ -179,33 +189,33 @@ public final class AgentProtocolTaskStore {
         if (!properties.isHitlEnabled()) {
             throw new IllegalStateException("HITL is disabled on this server");
         }
-        Optional<TaskRecord> existing = taskRepository.find(taskId);
-        if (existing.isEmpty() || !existing.get().isAwaitingConfirm()) {
-            throw new IllegalStateException("task is not awaiting confirmation: " + taskId);
+        Object lock = taskLocks.computeIfAbsent(taskId, k -> new Object());
+        synchronized (lock) {
+            Optional<TaskRecord> existing = taskRepository.find(taskId);
+            if (existing.isEmpty() || !existing.get().isAwaitingConfirm()) {
+                throw new IllegalStateException("task is not awaiting confirmation: " + taskId);
+            }
+            TaskRecord rec = existing.get();
+
+            List<RemotePendingConfirm> pending =
+                    rec.getPendingConfirms() != null ? rec.getPendingConfirms() : List.of();
+            List<ConfirmResult> confirmResults = toConfirmResults(pending, decisions);
+
+            rec.setAwaitingConfirm(false);
+            rec.setPendingConfirms(null);
+            rec.setStatus(TaskStatus.RUNNING);
+            persist(rec);
+
+            SubmitContext ctx = submitContexts.getOrDefault(taskId, SubmitContext.empty());
+            String agentId = rec.getSubAgentId();
+            String dummyInput = ""; // resume uses confirm metadata, not a new user prompt
+            CompletableFuture<String> f =
+                    CompletableFuture.supplyAsync(
+                            () -> runAgent(taskId, agentId, dummyInput, ctx, confirmResults),
+                            executor);
+            futures.put(taskId, f);
+            f.whenComplete((r, ex) -> futures.remove(taskId, f));
         }
-        TaskRecord rec = existing.get();
-        CompletableFuture<String> prior = futures.get(taskId);
-        if (prior != null && !prior.isDone()) {
-            throw new IllegalStateException("task is already running: " + taskId);
-        }
-
-        List<RemotePendingConfirm> pending =
-                rec.getPendingConfirms() != null ? rec.getPendingConfirms() : List.of();
-        List<ConfirmResult> confirmResults = toConfirmResults(pending, decisions);
-
-        rec.setAwaitingConfirm(false);
-        rec.setPendingConfirms(null);
-        rec.setStatus(TaskStatus.RUNNING);
-        persist(rec);
-
-        SubmitContext ctx = submitContexts.getOrDefault(taskId, SubmitContext.empty());
-        String agentId = rec.getSubAgentId();
-        String dummyInput = ""; // resume uses confirm metadata, not a new user prompt
-        CompletableFuture<String> f =
-                CompletableFuture.supplyAsync(
-                        () -> runAgent(taskId, agentId, dummyInput, ctx, confirmResults), executor);
-        futures.put(taskId, f);
-        f.whenComplete((r, ex) -> futures.remove(taskId));
     }
 
     private String runAgent(
@@ -279,14 +289,15 @@ public final class AgentProtocolTaskStore {
             }
 
             String text = reply != null ? reply.getTextContent() : "";
+            clearSubmitContext(taskId);
             update(taskId, TaskStatus.COMPLETED, text, null, agentId, false, null);
             publishStatus(taskId, agentId, "success", null);
             eventBus.complete(taskId);
-            clearSubmitContext(taskId);
             return text;
         } catch (Exception e) {
             String err = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             log.warn("Protocol task {} failed", taskId, e);
+            clearSubmitContext(taskId);
             update(taskId, TaskStatus.FAILED, null, err, agentId, false, null);
             RemoteAgentEvent error = new RemoteAgentEvent();
             error.setType(RemoteEventType.RUN_ERROR);
@@ -295,7 +306,6 @@ public final class AgentProtocolTaskStore {
             error.setStatus("error");
             eventBus.publish(taskId, error);
             eventBus.complete(taskId);
-            clearSubmitContext(taskId);
             throw new RuntimeException(e);
         }
     }
@@ -374,17 +384,18 @@ public final class AgentProtocolTaskStore {
 
     private static List<ConfirmResult> toConfirmResults(
             List<RemotePendingConfirm> pending, List<RemoteConfirmDecision> decisions) {
-        Map<String, Boolean> byId = new HashMap<>();
+        Map<String, RemoteConfirmDecision> byId = new HashMap<>();
         if (decisions != null) {
             for (RemoteConfirmDecision d : decisions) {
                 if (d.getToolCallId() != null) {
-                    byId.put(d.getToolCallId(), d.isApproved());
+                    byId.put(d.getToolCallId(), d);
                 }
             }
         }
         List<ConfirmResult> results = new ArrayList<>();
         for (RemotePendingConfirm p : pending) {
-            boolean approved = byId.getOrDefault(p.getToolCallId(), false);
+            RemoteConfirmDecision decision = byId.get(p.getToolCallId());
+            boolean approved = decision != null && decision.isApproved();
             Map<String, Object> input = parseInputQuiet(p.getToolInputJson());
             ToolUseBlock toolCall =
                     ToolUseBlock.builder()
@@ -392,7 +403,12 @@ public final class AgentProtocolTaskStore {
                             .name(p.getToolName())
                             .input(input)
                             .build();
-            results.add(new ConfirmResult(approved, toolCall));
+            results.add(
+                    new ConfirmResult(
+                            approved,
+                            toolCall,
+                            null,
+                            decision == null ? null : decision.getReason()));
         }
         return results;
     }

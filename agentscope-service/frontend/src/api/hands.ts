@@ -1,3 +1,4 @@
+import { namespaceHeaders } from "@/lib/namespaceScope";
 /*
  * Copyright 2024-2026 the original author or authors.
  *
@@ -28,6 +29,7 @@ function authHeaders(): Record<string, string> {
   const token = getToken();
   return {
     'Content-Type': 'application/json',
+    ...namespaceHeaders(),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }

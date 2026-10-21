@@ -17,6 +17,7 @@ package io.agentscope.core.shutdown;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RunControl;
 import io.agentscope.core.state.AgentState;
 import java.time.Duration;
 import java.time.Instant;
@@ -132,11 +133,12 @@ public final class GracefulShutdownManager {
     }
 
     /**
-     * Check whether the agent was previously interrupted by shutdown, and clear the flag.
+     * Check whether the agent's default state was previously interrupted by shutdown, and clear
+     * the flag.
      *
-     * <p>Called from {@link GracefulShutdownMiddleware} on each {@code onAgent} to detect
-     * a client retry after shutdown interruption, so the duplicate user prompt can be
-     * replaced with a "continue" message.
+     * <p>This agent-level entry point is retained for agents that do not expose a call-scoped
+     * state. Agents with per-call state should use
+     * {@link #checkAndClearShutdownInterruptedForState(AgentState)} instead.
      *
      * @return true if the flag was present and cleared
      */
@@ -144,9 +146,21 @@ public final class GracefulShutdownManager {
         if (!(agent instanceof AgentBase ab)) {
             return false;
         }
-        AgentState st = ab.getAgentState();
-        if (st != null && st.isShutdownInterrupted()) {
-            st.setShutdownInterrupted(false);
+        return checkAndClearShutdownInterruptedForState(ab.getAgentState());
+    }
+
+    /**
+     * Check whether a call-scoped state was previously interrupted by shutdown, and clear the flag.
+     *
+     * <p>The supplied state must be the state resolved for the current call. This avoids falling
+     * back to an agent's default state when one agent instance serves multiple sessions.
+     *
+     * @param state the resolved state for the current call
+     * @return true if the flag was present and cleared
+     */
+    public boolean checkAndClearShutdownInterruptedForState(AgentState state) {
+        if (state != null && state.isShutdownInterrupted()) {
+            state.setShutdownInterrupted(false);
             return true;
         }
         return false;
@@ -166,13 +180,13 @@ public final class GracefulShutdownManager {
         }
     }
 
-    public String registerRequest(Agent agent) {
-        if (!(agent instanceof AgentBase agentBase)) {
+    public String registerRequest(Agent agent, RunControl control) {
+        if (!(agent instanceof AgentBase)) {
             return "";
         }
         ShutdownStateSaver saver = stateSavers.get(agent.getAgentId());
         String requestId = UUID.randomUUID().toString();
-        ActiveRequestContext ctx = new ActiveRequestContext(requestId, agentBase, saver);
+        ActiveRequestContext ctx = new ActiveRequestContext(requestId, saver, control);
         activeRequestsById.put(requestId, ctx);
         return requestId;
     }

@@ -15,9 +15,10 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AgentDefinition, listAgents } from '../api/agents';
 import NewManagedSessionForm from '../components/NewManagedSessionForm';
+import { AgentPicker } from '../components/AgentPicker';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', minWidth: 0, maxWidth: 640 },
@@ -72,10 +73,10 @@ export default function SessionCreatePage() {
   }, [prefAgentId]);
 
   return (
-    <div style={S.root}>
-      <Link to={agentId ? `/sessions?agentId=${encodeURIComponent(agentId)}` : '/sessions'} style={S.back}>
-        ← Sessions
-      </Link>
+    <div className="console-page-legacy" style={S.root}>
+      <button type="button" aria-label="Back to previous page" title="Back to previous page" onClick={() => navigate(-1)} style={S.back}>
+        ← Back
+      </button>
       <h1 style={S.title}>New session</h1>
       <p style={S.hint}>
         Creates a session resource bound to an agent and mounts. No turn starts until you send a
@@ -84,17 +85,9 @@ export default function SessionCreatePage() {
       {loadErr && <div style={S.err}>{loadErr}</div>}
 
       <label style={S.field}>Agent</label>
-      <select
-        style={S.select}
-        value={agentId}
-        onChange={e => setAgentId(e.target.value)}
-        required
-      >
-        <option value="">Select agent…</option>
-        {agents.map(a => (
-          <option key={a.id} value={a.id}>{a.name}</option>
-        ))}
-      </select>
+      <div style={{ marginBottom: 18 }}>
+        <AgentPicker value={agentId} onChange={setAgentId} required aria-label="Session Agent" />
+      </div>
 
       {agentId ? (
         <div style={S.panel}>
@@ -102,10 +95,10 @@ export default function SessionCreatePage() {
             agentId={agentId}
             modal={false}
             onCancel={() => navigate(agentId
-              ? `/sessions?agentId=${encodeURIComponent(agentId)}`
-              : '/sessions')}
+              ? `/managed/sessions?agentId=${encodeURIComponent(agentId)}`
+              : '/managed/sessions')}
             onCreated={session => {
-              navigate(`/sessions/${encodeURIComponent(session.id)}`, { replace: true });
+              navigate(`/managed/sessions/${encodeURIComponent(session.id)}`, { replace: true });
             }}
           />
         </div>

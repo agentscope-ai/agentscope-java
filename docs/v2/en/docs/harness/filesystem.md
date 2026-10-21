@@ -1,6 +1,8 @@
 ---
-title: "Filesystem"
-description: "Three deployment modes: local + shell / shared store / sandbox; IsolationScope dimensions; multi-user isolation; how skills and tools behave in each mode"
+title: Filesystem
+description: 'Three deployment modes: local + shell / shared store / sandbox; IsolationScope
+  dimensions; multi-user isolation; how skills and tools behave in each mode'
+zh_link: /v2/zh/docs/harness/filesystem
 ---
 
 ## Role
@@ -100,7 +102,7 @@ This mode **does not provide shell** — on purpose: for shell, use mode 2 (sand
 | Implementation | Description |
 |---------------|-------------|
 | `RedisStore` | Jedis-based, for low-latency high-concurrency | `agentscope-extensions-redis` |
-| `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 | `agentscope-extensions-mysql` |
+| `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
 | `InMemoryStore` | In-memory, for testing | `agentscope-harness` |
 
 ---
@@ -133,14 +135,14 @@ HarnessAgent agent = HarnessAgent.builder()
 | Method | Description | Default |
 |--------|-------------|---------|
 | `image(String)` | Docker image | required |
-| `isolationScope(IsolationScope)` | Isolation dimension | `SESSION` |
+| `isolationScope(IsolationScope)` | Isolation dimension | `USER` |
 | `memorySizeBytes(Long)` | Container memory limit | Docker default |
 | `cpuCount(Long)` | CPU limit | Docker default |
 | `network(String)` | Docker network | Docker default |
 | `exposedPorts(int...)` | Exposed ports | none |
 | `environment(Map)` | Container environment variables | none |
 | `workspaceRoot(String)` | Workspace mount point inside the container | `/workspace` |
-| `additionalRunArgs(String...)` | Extra `docker run` arguments | none |
+| `additionalRunArgs(String...)` / `additionalRunArgs(List)` | Extra `docker run` arguments; repeated calls append | none |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` (no snapshots) |
 | `workspaceSpec(WorkspaceSpec)` | Workspace mount rules | default |
 | `executionGuard(SandboxExecutionGuard)` | Concurrency guard for AGENT / GLOBAL scope | none |
@@ -177,7 +179,7 @@ Main `KubernetesFilesystemSpec` options:
 | `kubernetesClient(KubernetesClient)` | custom fabric8 client | kubeconfig auto-loaded |
 | `snapshotSpec(SandboxSnapshotSpec)` | snapshot strategy (see the sandbox page for the PVC trade-off) | `NoopSnapshotSpec` |
 
-When neither `apiUrl` nor `gateway*` is set, a local tunnel via `kubectl port-forward` is used (good for development). The runtime image must satisfy the [runtime image contract](./sandbox.md#runtime-image-contract); **workspace persistence depends on the PVC configured in the template** — see [Sandbox - Kubernetes state persistence](./sandbox.md#kubernetes-state-persistence-pvc-is-the-first-layer).
+When neither `apiUrl` nor `gateway*` is set, a local tunnel via `kubectl port-forward` is used (good for development). The runtime image must satisfy the [runtime image contract](/v2/en/docs/harness/sandbox#runtime-image-contract); **workspace persistence depends on the PVC configured in the template** — see [Sandbox - Kubernetes state persistence](/v2/en/docs/harness/sandbox#kubernetes-state-persistence-pvc-is-the-first-layer).
 
 #### E2B sandbox
 
@@ -192,6 +194,16 @@ HarnessAgent agent = HarnessAgent.builder()
         .sandboxTimeoutSeconds(300)
         .isolationScope(IsolationScope.SESSION))
     .build();
+```
+
+Self-hosted E2B-compatible backends (e.g. CubeSandbox) that front the data plane with a single fixed gateway address can set `envdSandboxUrl` — the equivalent of the official SDK's `E2B_SANDBOX_URL`. Every sandbox's envd traffic then goes to that URL, and routing relies on the `E2b-Sandbox-Id` / `E2b-Sandbox-Port` request headers (sent automatically, like the official SDKs), so no wildcard DNS is required:
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .apiBaseUrl("http://10.0.0.1:3000")     // control plane
+    .envdSandboxUrl("http://10.0.0.1:8080") // data plane (gateway must route by the E2B headers)
+    ...)
 ```
 
 #### Daytona sandbox
@@ -233,7 +245,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | Method | Description | Default |
 |--------|-------------|---------|
-| `isolationScope(IsolationScope)` | Isolation dimension | store-specific (usually `SESSION`) |
+| `isolationScope(IsolationScope)` | Isolation dimension | store-specific (defaults to `USER`) |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` |
 | `executionGuard(SandboxExecutionGuard)` | Concurrency serialization guard for AGENT/GLOBAL scopes | none |
 | `workspaceProjectionEnabled(boolean)` | Project static assets from host to sandbox | `true` |
@@ -466,12 +478,12 @@ workspace/
 
 ### Skills
 
-`DynamicSkillMiddleware` merges skills from the repository list before each reasoning turn and renders them into the system prompt. Skill file loading goes through the `AbstractFilesystem` interface, so it works transparently across all three modes:
+`HarnessSkillMiddleware` merges skills from the repository list before each call and renders them into the system prompt. Skill file loading goes through the `AbstractFilesystem` interface, so it works transparently across all three modes:
 
 | Mode | How skills load |
 |------|----------------|
 | Local | Read directly from `workspace/skills/` on local disk; `<userId>/skills/` for per-user overrides |
-| Shared store | `skills/` routes to KV — checks remote first, falls back to local template. Admin edits take effect on the next reasoning turn across all replicas |
+| Shared store | `skills/` routes to KV — checks remote first, falls back to local template. Admin edits take effect on the next call across all replicas |
 | Sandbox | Host `skills/` are injected into the sandbox's `/workspace/skills/` via workspace projection at startup |
 
 The four-layer priority is unchanged (low → high): `projectGlobalSkillsDir` → `skillRepository` → `workspace/skills/` → `<userId>/skills/`.
@@ -523,9 +535,9 @@ Usually not needed — the three modes cover ~95% of use cases.
 
 ## Related Pages
 
-- [Sandbox](./sandbox.md) — runtime details of mode 2 (container lifecycle, snapshot recovery chain)
-- [Workspace](./workspace.md) — directory layout, loading mechanics, the "lower layer" of two-layer reads
-- [Context](../building-blocks/context.md) — `AgentState` and `AgentStateStore`, `(userId, sessionId)` addressing
-- [Skills](./skill.md) — four-layer composition, self-learning loop, the `<available_skills>` block
-- [Tools](../building-blocks/tool.md) — `read_file` / `write_file` / `execute` parameters
-- [Architecture](./architecture.md) — how filesystem and runtime context cooperate
+- [Sandbox](/v2/en/docs/harness/sandbox) — runtime details of mode 2 (container lifecycle, snapshot recovery chain)
+- [Workspace](/v2/en/docs/harness/workspace) — directory layout, loading mechanics, the "lower layer" of two-layer reads
+- [Context](/v2/en/docs/building-blocks/context) — `AgentState` and `AgentStateStore`, `(userId, sessionId)` addressing
+- [Skills](/v2/en/docs/harness/skill) — four-layer composition, self-learning loop, the `<available_skills>` block
+- [Tools](/v2/en/docs/building-blocks/tool) — `read_file` / `write_file` / `execute` parameters
+- [Architecture](/v2/en/docs/harness/architecture) — how filesystem and runtime context cooperate

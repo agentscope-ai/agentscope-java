@@ -63,11 +63,20 @@ final class SubagentEventConverter implements AgentEventConverter {
                             value(
                                     source,
                                     "AGENT_START",
-                                    Map.of("name", nullToEmpty(start.getName())))));
+                                    Map.of(
+                                            "name", nullToEmpty(start.getName()),
+                                            "replyId", nullToEmpty(start.getReplyId())))));
             return;
         }
-        if (event instanceof AgentEndEvent) {
-            context.emit(custom(context, NAME_LIFECYCLE, value(source, "AGENT_END", Map.of())));
+        if (event instanceof AgentEndEvent end) {
+            context.emit(
+                    custom(
+                            context,
+                            NAME_LIFECYCLE,
+                            value(
+                                    source,
+                                    "AGENT_END",
+                                    Map.of("replyId", nullToEmpty(end.getReplyId())))));
             return;
         }
         if (event instanceof TextBlockDeltaEvent text) {

@@ -1,11 +1,14 @@
-# Quick Start
+---
+title: Quick Start
+zh_link: /v1/zh/docs/harness/quickstart/index
+---
 
 This section contains the shortest path to start using `HarnessAgent`.
 
 Start here:
 
-- [Harness Overview](../overview.md)
-- [Architecture](../architecture.md)
-- [Filesystem](../filesystem.md)
+- [Harness Overview](/v1/en/docs/harness/overview)
+- [Architecture](/v1/en/docs/harness/architecture)
+- [Filesystem](/v1/en/docs/harness/filesystem)
 
-For runnable code, see [Examples](../example/index.md).
+For runnable code, see [Examples](/v1/en/docs/harness/example/index).

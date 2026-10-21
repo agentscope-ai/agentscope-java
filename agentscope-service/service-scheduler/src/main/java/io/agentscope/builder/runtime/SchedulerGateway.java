@@ -15,11 +15,7 @@
  */
 package io.agentscope.builder.runtime;
 
-import io.agentscope.builder.web.config.ChannelRuntimeCatalog;
-import io.agentscope.builder.web.managed.ChannelExternalKeys;
-import io.agentscope.builder.web.managed.ManagedSessionChannelBridge;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.MsgContext;
@@ -30,32 +26,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
-/**
- * Scheduler-side {@link Gateway}: the inbound sink every channel adapter delivers to via {@code
- * ChannelManager#initAll}. Unlike the monolith's in-process gateway, this implementation holds
- * no {@code HarnessAgent} — each inbound turn is bridged over HTTP into the control/data planes
- * by {@link ManagedSessionChannelBridge}:
- *
- * <ul>
- *   <li>target agent — {@code MsgContext.extra().get("agentId")}, resolved by the channel's own
- *       router from bindings / channel default before delivery;
- *   <li>session owner — Builder tenant from {@link ChannelRuntimeCatalog} (channel configurator);
- *   <li>conversation slot — {@link ChannelExternalKeys} derived from dmScope + peer;
- *   <li>reply — the bridge posts the message as a {@code user.message} event and waits for the
- *       turn's terminal status, returning the final {@code agent.message} text.
- * </ul>
- */
+/** Scheduler transport gateway. The control plane owns identity, routing and durable work intake. */
 @Component
 public class SchedulerGateway implements Gateway {
 
     private static final Logger log = LoggerFactory.getLogger(SchedulerGateway.class);
 
-    private final ManagedSessionChannelBridge bridge;
-    private final ChannelRuntimeCatalog catalog;
+    private final io.agentscope.builder.web.managed.ChannelWorkBridge work;
 
-    public SchedulerGateway(ManagedSessionChannelBridge bridge, ChannelRuntimeCatalog catalog) {
-        this.bridge = bridge;
-        this.catalog = catalog;
+    public SchedulerGateway(io.agentscope.builder.web.managed.ChannelWorkBridge work) {
+        this.work = work;
     }
 
     /** No-op: the scheduler runs no local agents. */
@@ -71,43 +51,16 @@ public class SchedulerGateway implements Gateway {
 
     @Override
     public Mono<Msg> run(MsgContext context, List<Msg> messages, OutboundAddress outboundAddress) {
-        MsgContext ctx = context != null ? context : MsgContext.defaultContext();
-        String agentId = ctx.extra().get("agentId");
-        if (agentId == null || agentId.isBlank()) {
-            return Mono.error(
-                    new IllegalStateException(
-                            "No agent bound for channel '" + ctx.channel() + "' inbound"));
-        }
-        String ownerId = catalog.ownerId(ctx.channel());
-        if (ownerId == null || ownerId.isBlank()) {
-            return Mono.error(
-                    new IllegalStateException(
-                            "No Builder owner for channel '"
-                                    + ctx.channel()
-                                    + "' — ensure the channel is registered in the control plane"));
-        }
-        String text = extractUserText(messages);
-        if (text == null) {
-            return Mono.empty();
-        }
-        String externalKey =
-                ChannelExternalKeys.forInbound(
-                        ctx, outboundAddress, catalog.dmScope(ctx.channel()));
-        return bridge.dispatchAndAwaitReply(ownerId, agentId, externalKey, text)
-                .map(reply -> Msg.builder().role(MsgRole.ASSISTANT).textContent(reply).build());
+        return Mono.error(new IllegalArgumentException("Normalized channel identity is required"));
     }
 
-    /** Returns the text of the last {@code USER}-role message, or {@code null} if none. */
-    private static String extractUserText(List<Msg> messages) {
-        if (messages == null) {
-            return null;
-        }
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Msg m = messages.get(i);
-            if (m != null && m.getRole() == MsgRole.USER && m.getTextContent() != null) {
-                return m.getTextContent();
-            }
-        }
-        return null;
+    @Override
+    public Mono<Msg> run(
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress address,
+            io.agentscope.core.agent.RuntimeContext callerContext,
+            io.agentscope.harness.agent.gateway.channel.InboundMessage inbound) {
+        return work.receive(inbound);
     }
 }

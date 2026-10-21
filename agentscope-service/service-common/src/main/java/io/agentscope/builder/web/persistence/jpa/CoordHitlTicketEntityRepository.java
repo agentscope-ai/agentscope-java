@@ -15,16 +15,55 @@
  */
 package io.agentscope.builder.web.persistence.jpa;
 
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface CoordHitlTicketEntityRepository
         extends JpaRepository<CoordHitlTicketEntity, Long> {
 
-    Optional<CoordHitlTicketEntity> findByToolUseId(String toolUseId);
+    Optional<CoordHitlTicketEntity> findBySessionIdAndToolUseIdAndAgentTaskIdIsNull(
+            String sessionId, String toolUseId);
+
+    List<CoordHitlTicketEntity> findBySessionIdAndToolUseIdOrderByCreatedAtDesc(
+            String sessionId, String toolUseId);
+
+    Optional<CoordHitlTicketEntity>
+            findBySessionIdAndAttemptIdAndDispatchGenerationAndTurnIdAndToolUseId(
+                    String sessionId,
+                    String attemptId,
+                    long dispatchGeneration,
+                    String turnId,
+                    String toolUseId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query(
+            "select t from CoordHitlTicketEntity t where t.sessionId = :sessionId and"
+                    + " t.toolUseId = :toolUseId and t.agentTaskId is null")
+    Optional<CoordHitlTicketEntity> findPersonalForUpdate(
+            @Param("sessionId") String sessionId, @Param("toolUseId") String toolUseId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query(
+            "select t from CoordHitlTicketEntity t where t.sessionId = :sessionId and"
+                    + " t.attemptId = :attemptId and t.dispatchGeneration = :dispatchGeneration and"
+                    + " t.turnId = :turnId and t.toolUseId = :toolUseId")
+    Optional<CoordHitlTicketEntity> findManagedForUpdate(
+            @Param("sessionId") String sessionId,
+            @Param("attemptId") String attemptId,
+            @Param("dispatchGeneration") long dispatchGeneration,
+            @Param("turnId") String turnId,
+            @Param("toolUseId") String toolUseId);
 
     List<CoordHitlTicketEntity> findByExpiresAtLessThanAndResolvedAllowIsNull(long expiresAt);
 
-    void deleteByToolUseId(String toolUseId);
+    void deleteBySessionIdAndToolUseId(String sessionId, String toolUseId);
+
+    void deleteBySessionId(String sessionId);
+
+    long deleteByResolvedAllowIsNotNullAndExpiresAtLessThan(long expiresAt);
 }

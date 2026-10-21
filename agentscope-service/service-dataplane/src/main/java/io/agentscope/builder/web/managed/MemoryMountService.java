@@ -120,8 +120,9 @@ public class MemoryMountService {
         StringBuilder sb = new StringBuilder();
         sb.append("\n\n## Mounted Memory Stores\n");
         sb.append(
-                "The following directories contain persistent cross-session memory. Read and update"
-                    + " files under these paths; changes are versioned immediately on write.\n");
+                "These stores contain shared knowledge. Read documents on demand using the memory"
+                    + " tools. Each mount's access mode is listed below. Keep private working notes"
+                    + " in this session's workspace.\n");
         for (MountInfo mount : mounts) {
             sb.append("- `")
                     .append(mount.relativePath())
@@ -129,9 +130,40 @@ public class MemoryMountService {
                     .append(sanitize(mount.storeName()))
                     .append("/`) — store \"")
                     .append(mount.storeName())
-                    .append("\"\n");
+                    .append("\", storeId=")
+                    .append(mount.storeId())
+                    .append(", access=")
+                    .append(mount.accessMode())
+                    .append("\n");
         }
         return sb.toString();
+    }
+
+    public List<MemoryStoreFilesystem> createResolvedFilesystems(
+            io.agentscope.builder.control.ControlPlaneClient client,
+            String sessionId,
+            String ownerId,
+            List<Map<String, Object>> mounts,
+            Map<String, String> access) {
+        List<MemoryStoreFilesystem> result = new ArrayList<>();
+        java.util.Set<String> routes = new java.util.HashSet<>();
+        if (mounts == null) return result;
+        for (Map<String, Object> mount : mounts) {
+            String id = (String) mount.get("storeId");
+            String name = (String) mount.get("name");
+            if (id == null || name == null)
+                throw new IllegalArgumentException("Invalid memory mount");
+            if (!routes.add(MemoryStoreFilesystem.routePrefix(name)))
+                throw new IllegalArgumentException("Memory mount names collide: " + name);
+            result.add(
+                    new MemoryStoreFilesystem(
+                            client.memoryDocuments(sessionId, id),
+                            ownerId,
+                            id,
+                            name,
+                            access.get(id)));
+        }
+        return result;
     }
 
     /**
@@ -163,5 +195,10 @@ public class MemoryMountService {
     }
 
     /** Description of one mounted memory store. */
-    public record MountInfo(String storeId, String storeName, String relativePath) {}
+    public record MountInfo(
+            String storeId, String storeName, String relativePath, String accessMode) {
+        public MountInfo(String storeId, String storeName, String relativePath) {
+            this(storeId, storeName, relativePath, "read_write");
+        }
+    }
 }

@@ -29,7 +29,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Event;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import java.util.UUID;
@@ -157,17 +157,17 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<Event> mockFlux = mock(Flux.class);
-        when(mockAgent.stream(messages)).thenReturn(mockFlux);
+        Flux<AgentEvent> mockFlux = mock(Flux.class);
+        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
         when(mockFlux.doFinally(any())).thenReturn(mockFlux);
 
         // When
-        Flux<Event> result = runner.stream(messages, requestOptions);
+        Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
 
         // Then
         assertNotNull(result);
         verify(mockBuilder, times(1)).build();
-        verify(mockAgent, times(1)).stream(messages);
+        verify(mockAgent, times(1)).streamEvents(messages);
     }
 
     @Test
@@ -179,14 +179,15 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<Event> mockFlux = mock(Flux.class);
-        when(mockAgent.stream(messages)).thenReturn(mockFlux);
+        Flux<AgentEvent> mockFlux = mock(Flux.class);
+        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
 
         // First call to populate the cache
-        runner.stream(messages, requestOptions);
+        runner.streamEvents(messages, requestOptions);
 
         // When & Then
-        assertThrows(IllegalStateException.class, () -> runner.stream(messages, requestOptions));
+        assertThrows(
+                IllegalStateException.class, () -> runner.streamEvents(messages, requestOptions));
     }
 
     @Test
@@ -199,11 +200,11 @@ class AgentRunnerTest {
         List<Msg> messages = List.of(mock(Msg.class));
 
         // Setup mock flux that simulates completion
-        Flux<Event> mockFlux = Flux.empty();
-        when(mockAgent.stream(messages)).thenReturn(mockFlux);
+        Flux<AgentEvent> mockFlux = Flux.empty();
+        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
 
         // When
-        Flux<Event> result = runner.stream(messages, requestOptions);
+        Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
 
         // Subscribe to trigger the doFinally block
         result.subscribe();
@@ -216,7 +217,7 @@ class AgentRunnerTest {
         }
 
         // Try to stream again with the same taskId - should succeed since agent was removed
-        Flux<Event> secondResult = runner.stream(messages, requestOptions);
+        Flux<AgentEvent> secondResult = runner.streamEvents(messages, requestOptions);
         assertNotNull(secondResult);
     }
 
@@ -229,16 +230,16 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<Event> mockFlux = mock(Flux.class);
-        when(mockAgent.stream(messages)).thenReturn(mockFlux);
+        Flux<AgentEvent> mockFlux = mock(Flux.class);
+        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
         when(mockFlux.doFinally(any())).thenReturn(mockFlux);
-        runner.stream(messages, requestOptions);
+        runner.streamEvents(messages, requestOptions);
 
         runner.stop(taskId);
         verify(mockAgent, times(1)).interrupt();
 
         // Try to stream again with the same taskId - should succeed since agent was removed
-        Flux<Event> result = runner.stream(messages, requestOptions);
+        Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
         assertNotNull(result);
     }
 

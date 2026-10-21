@@ -28,6 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -49,7 +50,7 @@ import reactor.test.StepVerifier;
         properties = {
             "spring.datasource.url=jdbc:h2:mem:sessionEventLog;DB_CLOSE_DELAY=-1;MODE=MYSQL",
             "spring.jpa.hibernate.ddl-auto=create-drop",
-            "builder.session-event.poll-interval-ms=50"
+            "builder.session-event.recovery-interval-ms=60000"
         })
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class SessionEventLogCrossProcessTest {
@@ -171,13 +172,24 @@ class SessionEventLogCrossProcessTest {
         }
 
         @Bean
+        SessionEventNotifier sessionEventNotifier(DataSource dataSource) {
+            return new SessionEventNotifier(dataSource, 100L);
+        }
+
+        @Bean
         SessionEventLog sessionEventLog(
                 SessionEventEntityRepository repository,
                 ManagedJsonHelper jsonHelper,
                 TransactionTemplate transactionTemplate,
-                DeletedSessionRegistry deletedSessions) {
+                DeletedSessionRegistry deletedSessions,
+                SessionEventNotifier notifier) {
             return new SessionEventLog(
-                    repository, jsonHelper, transactionTemplate, deletedSessions, 100L);
+                    repository,
+                    jsonHelper,
+                    transactionTemplate,
+                    deletedSessions,
+                    notifier,
+                    60_000L);
         }
     }
 }

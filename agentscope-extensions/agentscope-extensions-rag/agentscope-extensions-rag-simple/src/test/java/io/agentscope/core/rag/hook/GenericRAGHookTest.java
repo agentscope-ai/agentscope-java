@@ -23,13 +23,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.rag.GenericRAGHook;
 import io.agentscope.core.rag.Knowledge;
 import io.agentscope.core.rag.knowledge.SimpleKnowledge;
@@ -169,6 +172,40 @@ class GenericRAGHookTest {
                                             .contains("knowledge base"));
                         })
                 .verifyComplete();
+    }
+
+    @Test
+    void testPreservesRetrievedImageAlongsideText() {
+        ImageBlock image =
+                ImageBlock.builder()
+                        .source(
+                                URLSource.builder()
+                                        .url("https://example.com/architecture.png")
+                                        .build())
+                        .build();
+        Document imageDoc = new Document(new DocumentMetadata(image, "image", "0"));
+        Knowledge retrieval = org.mockito.Mockito.mock(Knowledge.class);
+        org.mockito.Mockito.when(
+                        retrieval.retrieve(
+                                org.mockito.ArgumentMatchers.anyString(),
+                                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(
+                        Mono.just(
+                                List.of(createDocument("text", "Architecture details"), imageDoc)));
+        Msg query =
+                Msg.builder().role(MsgRole.USER).textContent("Describe this architecture").build();
+        PreCallEvent result =
+                new GenericRAGHook(retrieval)
+                        .onEvent(new PreCallEvent(mockAgent, new ArrayList<>(List.of(query))))
+                        .block();
+        assertNotNull(result);
+        Msg context = result.getInputMessages().get(1);
+        assertTrue(
+                context.getContent().contains(image),
+                "Image must reach the model as an ImageBlock");
+        assertTrue(context.getTextContent().contains("Architecture details"));
+        assertTrue(!context.getTextContent().contains("ImageBlock@"));
+        assertEquals(query, result.getInputMessages().get(0));
     }
 
     @Test
@@ -347,7 +384,7 @@ class GenericRAGHookTest {
         }
 
         @Override
-        public Mono<double[]> embed(ContentBlock block) {
+        public Mono<EmbeddingResponse> embed(ContentBlock block) {
             if (shouldThrowError) {
                 return Mono.error(new RuntimeException("Mock embedding error"));
             }
@@ -357,7 +394,7 @@ class GenericRAGHookTest {
                         () -> {
                             double[] embedding =
                                     embeddings.computeIfAbsent(text, k -> generateEmbedding(text));
-                            return embedding.clone();
+                            return new EmbeddingResponse(embedding.clone(), null);
                         });
             }
             return Mono.error(new UnsupportedOperationException("Unsupported content block type"));

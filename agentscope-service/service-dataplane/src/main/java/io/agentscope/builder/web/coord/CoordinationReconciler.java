@@ -18,6 +18,7 @@ package io.agentscope.builder.web.coord;
 import io.agentscope.builder.web.managed.DataSessionService;
 import io.agentscope.builder.web.managed.ManagedSessionDto;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
+import io.agentscope.builder.web.toolbus.ToolConfirmationCoordinator;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.util.LinkedHashMap;
@@ -42,10 +43,12 @@ import org.springframework.stereotype.Component;
 public class CoordinationReconciler {
 
     private static final Logger log = LoggerFactory.getLogger(CoordinationReconciler.class);
+    private static final long RESOLVED_HITL_RETENTION_MS = TimeUnit.HOURS.toMillis(24);
 
     private final CoordinationStore coordinationStore;
     private final DataSessionService sessionService;
     private final SessionEventLog eventLog;
+    private final ToolConfirmationCoordinator confirmationCoordinator;
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(
                     r -> {
@@ -57,10 +60,12 @@ public class CoordinationReconciler {
     public CoordinationReconciler(
             CoordinationStore coordinationStore,
             @Lazy DataSessionService sessionService,
-            SessionEventLog eventLog) {
+            SessionEventLog eventLog,
+            @Lazy ToolConfirmationCoordinator confirmationCoordinator) {
         this.coordinationStore = coordinationStore;
         this.sessionService = sessionService;
         this.eventLog = eventLog;
+        this.confirmationCoordinator = confirmationCoordinator;
     }
 
     @PostConstruct
@@ -87,34 +92,26 @@ public class CoordinationReconciler {
         long now = System.currentTimeMillis();
         List<CoordinationStore.LeaseHandle> expired = coordinationStore.listExpiredTurnLeases(now);
         for (CoordinationStore.LeaseHandle lease : expired) {
-            coordinationStore.releaseTurnLease(lease.sessionId(), lease.instanceId());
-            closeOrphanSession(
-                    lease.sessionId(),
-                    lease.ownerId(),
-                    "session.orphaned_after_lease_expiry",
-                    Map.of(
-                            "previousInstanceId",
-                            lease.instanceId() == null ? "" : lease.instanceId()));
+            if (coordinationStore.releaseTurnLease(lease.sessionId(), lease.instanceId())) {
+                closeOrphanSession(
+                        lease.sessionId(),
+                        lease.ownerId(),
+                        "session.orphaned_after_lease_expiry",
+                        Map.of(
+                                "previousInstanceId",
+                                lease.instanceId() == null ? "" : lease.instanceId()));
+            }
         }
     }
 
     private void reconcileExpiredHitlTickets() {
         long now = System.currentTimeMillis();
         for (CoordinationStore.HitlTicket ticket : coordinationStore.listExpiredHitlTickets(now)) {
-            coordinationStore.resolveHitlTicket(ticket.toolUseId(), false, "timed_out");
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("toolUseId", ticket.toolUseId());
-            payload.put("reason", "hitl_ticket_expired");
-            eventLog.append(ticket.sessionId(), "session.hitl_expired", payload);
-            if (ticket.ownerId() != null) {
-                sessionService.updateStatus(
-                        ticket.ownerId(),
-                        ticket.sessionId(),
-                        DataSessionService.STATUS_IDLE,
-                        payload);
+            if (!ticket.managedTask()) {
+                confirmationCoordinator.expire(ticket.sessionId(), ticket.toolUseId(), now);
             }
-            coordinationStore.deleteHitlTicket(ticket.toolUseId());
         }
+        coordinationStore.deleteResolvedHitlTicketsBefore(now - RESOLVED_HITL_RETENTION_MS);
     }
 
     private void closeOrphanSession(

@@ -11,13 +11,13 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../aistio/ui',
+    outDir: '../service-controlplane/ui',
     emptyOutDir: true,
   },
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:18080',
         changeOrigin: true,
       },
     },

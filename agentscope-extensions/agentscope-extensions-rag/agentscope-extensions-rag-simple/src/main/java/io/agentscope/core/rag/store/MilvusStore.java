@@ -588,6 +588,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
                         .databaseName(databaseName)
                         .collectionName(collectionName)
                         .data(Collections.singletonList(queryVector))
+                        .metricType(metricType)
                         .limit(limit)
                         .outputFields(
                                 Arrays.asList(
@@ -609,8 +610,9 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         if (searchResults != null && !searchResults.isEmpty()) {
             for (SearchResp.SearchResult result : searchResults.get(0)) {
                 try {
-                    // Get score
-                    double score = result.getScore();
+                    // Milvus returns a distance for L2. Convert it to a higher-is-better score
+                    // before applying the shared threshold.
+                    double score = normalizeScore(result.getScore());
 
                     // Apply score threshold if specified
                     if (scoreThreshold != null && score < scoreThreshold) {
@@ -629,6 +631,23 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         }
 
         return results;
+    }
+
+    /**
+     * Converts a raw Milvus result to the score contract used by AgentScope.
+     *
+     * <p>L2 results are distances where lower values are more similar, so map them to a
+     * monotonically decreasing score in the [0, 1] range. Other supported metrics already return
+     * scores in the expected direction and are left unchanged.
+     *
+     * @param rawScore the raw score or distance returned by Milvus
+     * @return a higher-is-better score
+     */
+    private double normalizeScore(double rawScore) {
+        if (metricType == IndexParam.MetricType.L2) {
+            return 1.0 / (1.0 + rawScore);
+        }
+        return rawScore;
     }
 
     /**
@@ -923,6 +942,8 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
          * Sets the metric type for vector similarity search.
          *
          * <p>Default is COSINE. Other options include L2 (Euclidean) and IP (Inner Product).
+         * When opening an existing collection, this must match the collection's vector index.
+         * L2 distances are converted to {@code 1 / (1 + distance)} scores before thresholding.
          *
          * @param metricType the metric type
          * @return this builder

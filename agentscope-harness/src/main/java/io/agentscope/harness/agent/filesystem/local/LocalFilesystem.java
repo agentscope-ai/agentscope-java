@@ -237,8 +237,11 @@ public class LocalFilesystem implements AbstractFilesystem {
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         Path dirPath = resolvePath(runtimeContext, path);
-        if (!Files.exists(dirPath) || !Files.isDirectory(dirPath)) {
-            return LsResult.success(List.of());
+        if (!Files.exists(dirPath)) {
+            return LsResult.fail("Path does not exist: " + path);
+        }
+        if (!Files.isDirectory(dirPath)) {
+            return LsResult.fail("Not a directory: " + path);
         }
 
         List<FileInfo> results = new ArrayList<>();
@@ -590,7 +593,17 @@ public class LocalFilesystem implements AbstractFilesystem {
         return namespaceFactory;
     }
 
+    @Override
+    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
+        return new io.agentscope.harness.agent.session.LocalSessionStorage(
+                resolvePath(rc, ".").resolve(".agentscope-runtime"));
+    }
+
     protected Path resolvePath(RuntimeContext rc, String key) {
+        if (key != null
+                && java.util.Arrays.stream(key.replace('\\', '/').split("/"))
+                        .anyMatch(".agentscope-runtime"::equalsIgnoreCase))
+            throw new SecurityException("Session journal is reserved for the runtime");
         String effectiveKey = applyNamespacePrefix(rc, key);
         if (effectiveKey == null || effectiveKey.isBlank()) {
             return cwd;

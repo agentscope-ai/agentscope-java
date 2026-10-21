@@ -116,6 +116,48 @@ class SandboxLifecycleConcurrencyReproTest {
                 "s2",
                 proxy.execute(ctxB, "whoami", null).output(),
                 "call B must still run against its own sandbox after A released");
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(ctxA, "whoami", null),
+                "released A must not fall back to the still-running B sandbox");
+    }
+
+    @Test
+    void latestReleaseRestoresFallbackWithoutRebindingReleasedContexts() {
+        SandboxBackedFilesystem proxy = new SandboxBackedFilesystem();
+        RecordingSandbox sandboxA = new RecordingSandbox("s1");
+        RecordingSandbox sandboxB = new RecordingSandbox("s2");
+        SandboxLifecycleMiddleware mw =
+                new SandboxLifecycleMiddleware(
+                        fakeManager(
+                                Map.of("s1", sandboxA, "s2", sandboxB),
+                                Map.of("s1", new RecordingLease(), "s2", new RecordingLease())),
+                        proxy);
+        RuntimeContext ctxA = callContext("s1");
+        RuntimeContext ctxB = callContext("s2");
+        mw.acquireForCall(ctxA);
+        mw.acquireForCall(ctxB);
+        RuntimeContext copiedB = RuntimeContext.builder(ctxB).build();
+
+        mw.releaseForCall(ctxB);
+
+        assertEquals("s1", proxy.execute(RuntimeContext.empty(), "whoami", null).output());
+        assertFalse(sandboxA.stopped);
+        assertTrue(sandboxB.stopped);
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(ctxB, "whoami", null));
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(copiedB, "whoami", null));
+
+        mw.releaseForCall(copiedB);
+        assertEquals("s1", proxy.execute(RuntimeContext.empty(), "whoami", null).output());
+
+        mw.releaseForCall(ctxA);
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(RuntimeContext.empty(), "whoami", null));
     }
 
     @Test

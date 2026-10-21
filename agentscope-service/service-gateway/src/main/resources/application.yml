@@ -1,5 +1,5 @@
 server:
-  port: ${BUILDER_GATEWAY_PORT:8080}
+  port: ${BUILDER_GATEWAY_PORT:18080}
 
 spring:
   application:
@@ -34,6 +34,15 @@ spring:
             # Evaluated first (order 0): these overlap the control plane's
             # /api/sessions/** and /api/environments/** namespaces.
             # ------------------------------------------------------------------
+            - id: agent-session-lifecycle
+              uri: ${builder.control-plane-url}
+              order: -1
+              predicates:
+                - Path=/api/v1/agent-sessions,/api/v1/agent-sessions/**
+              filters:
+                - RemoveRequestHeader=X-Builder-Environment-Key
+                - RemoveRequestHeader=X-Builder-Internal-Token
+                - RemoveRequestHeader=X-Builder-Internal-User
             - id: data-session-turn
               uri: ${builder.data-plane-url}
               order: 0
@@ -75,14 +84,14 @@ spring:
                 - Path=/api/channels/feishu/**,/api/channels/wecom/**,/api/channels/github/**,/api/channels/gitlab/**
 
             # ------------------------------------------------------------------
-            # Control plane (aistiod) — Managed Agents APIs, the /api/v1
+            # Control plane (service-controlplane) — Managed Agents APIs, the /api/v1
             # management API, and the console SPA, all on one upstream port.
             # ------------------------------------------------------------------
             - id: control-api
               uri: ${builder.control-plane-url}
               order: 10
               predicates:
-                - Path=/api/auth/**,/api/user/**,/api/admin/**,/api/agents/**,/api/workspaces/**,/api/marketplaces/**,/api/toolsets/**,/api/environments/**,/api/sessions,/api/sessions/**,/api/memory-stores/**,/api/vaults/**,/api/deployments/**,/api/channels/**,/api/files,/api/files/**,/api/v1/**
+                - Path=/hooks/v1/automations/**,/api/auth/**,/api/user/**,/api/admin/**,/api/agents/**,/api/workspaces/**,/api/marketplaces/**,/api/toolsets/**,/api/environments/**,/api/sessions,/api/sessions/**,/api/memory-stores/**,/api/vaults/**,/api/deployments/**,/api/channels/**,/api/files,/api/files/**,/api/v1/**
               filters:
                 # Env-key auth is data-plane only; strip if a client spoofs it toward control.
                 - RemoveRequestHeader=X-Builder-Environment-Key

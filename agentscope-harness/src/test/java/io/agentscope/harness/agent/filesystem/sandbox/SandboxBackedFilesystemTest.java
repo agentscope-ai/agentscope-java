@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
 import io.agentscope.harness.agent.sandbox.SandboxState;
@@ -108,6 +109,24 @@ class SandboxBackedFilesystemTest {
     }
 
     @Test
+    void releasedContextCannotFallBackToAnotherCallsSandbox() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox previous = new FakeSandbox(new ExecResult(0, "", "", false));
+        FakeSandbox current = new FakeSandbox(new ExecResult(0, "", "", false));
+        SandboxAcquireResult acquired = SandboxAcquireResult.userManaged(previous);
+        RuntimeContext stale =
+                RuntimeContext.builder().put(SandboxAcquireResult.class, acquired).build();
+        acquired.beginRelease();
+        filesystem.setSandbox(current);
+
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> filesystem.execute(stale, "echo stale", 1));
+        assertNull(previous.lastCommand);
+        assertNull(current.lastCommand);
+    }
+
+    @Test
     void downloadFiles_decodesWrappedBase64Output() {
         byte[] expected = new byte[] {1, 2, 3, 4, 5, 6};
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
@@ -154,6 +173,19 @@ class SandboxBackedFilesystemTest {
         assertTrue(!responses.get(0).isSuccess());
         assertEquals("/tmp/fail.bin", responses.get(0).path());
         assertEquals("[stderr] boom", responses.get(0).error());
+    }
+
+    @Test
+    void downloadFiles_rejectsTruncatedExecOutput() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, "partial", "", true));
+        filesystem.setSandbox(sandbox);
+
+        List<FileDownloadResponse> responses =
+                filesystem.downloadFiles(RT, List.of("/tmp/truncated.bin"));
+
+        assertTrue(!responses.get(0).isSuccess());
+        assertEquals("File download output was truncated by the sandbox", responses.get(0).error());
     }
 
     @Test

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { ResourceConsumers } from '../components/ResourceConsumers';
 import React, { useEffect, useState } from 'react';
 import {
   Memory,
@@ -201,18 +202,21 @@ export default function MemoryStoresPage() {
   }
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <div style={S.header}>
         <h1 style={S.title}>Memory Stores</h1>
         <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New store</button>
       </div>
       <p style={S.blurb}>
-        Cross-session memory stores mountable on managed agent sessions. Documents are versioned by path.
+        Store shared knowledge for use across sessions. Bind a store in the Agent’s resource settings or attach it when starting a Managed session.
       </p>
+      <div className="mb-5 rounded-xl border bg-blue-50/50 p-4 text-sm leading-6">
+        Managed Agents discover and read bound documents through memory tools as needed. The full store is not automatically added to every model prompt. Shared knowledge is read-only during execution; update documents here. Session working memory remains separate from this shared store.
+      </div>
       {err && <div style={S.err}>{err}</div>}
       {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,1fr) minmax(0,2fr)', gap: 24 }}>
+      <div className="grid gap-6 lg:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)]">
         <div>
           {stores.map(s => (
             <div
@@ -254,6 +258,7 @@ export default function MemoryStoresPage() {
         <div>
           {selected ? (
             <div style={S.card}>
+              <ResourceConsumers kind="memory" id={selected.id} />
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{selected.name} — memories</h2>
                 <button

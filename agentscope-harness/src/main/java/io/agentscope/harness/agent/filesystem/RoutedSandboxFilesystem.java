@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.filesystem;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.session.AtomicSessionStorage;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
@@ -54,6 +55,14 @@ public final class RoutedSandboxFilesystem implements AbstractSandboxFilesystem 
         return primary;
     }
 
+    /**
+     * Returns the backend that would serve {@code path}: the longest matching prefix route, or
+     * the primary sandbox filesystem when no route matches.
+     */
+    public AbstractFilesystem backendFor(String path) {
+        return composite.filesystemFor(path);
+    }
+
     @Override
     public String id() {
         return primary.id();
@@ -63,6 +72,11 @@ public final class RoutedSandboxFilesystem implements AbstractSandboxFilesystem 
     public ExecuteResponse execute(
             RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
         return primary.execute(runtimeContext, command, timeoutSeconds);
+    }
+
+    @Override
+    public AtomicSessionStorage sessionStorage(RuntimeContext runtimeContext) {
+        return composite.sessionStorage(runtimeContext);
     }
 
     @Override

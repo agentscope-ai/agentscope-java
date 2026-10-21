@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -29,7 +30,6 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * File system tools backed by a {@link AbstractFilesystem}, exposing read/write/edit/grep/glob
@@ -54,17 +54,70 @@ public class FilesystemTool {
         this.pathNormalizer = pathNormalizer;
     }
 
-    private String norm(String path) {
-        return pathNormalizer != null ? pathNormalizer.normalize(path) : path;
+    static final int MAX_LISTING_ENTRIES = 200;
+    static final int MAX_LISTING_CHARS = 16000;
+
+    private static String boundedListing(
+            java.util.stream.Stream<String> lines, int total, int limit, String resultLabel) {
+        StringBuilder out = new StringBuilder();
+        var iterator = lines.iterator();
+        int count = 0;
+        boolean characterLimitReached = false;
+        while (count < limit && iterator.hasNext()) {
+            String line = iterator.next();
+            int separatorLength = count > 0 ? 1 : 0;
+            if (out.length() + line.length() + separatorLength > MAX_LISTING_CHARS) {
+                characterLimitReached = true;
+                break;
+            }
+            if (count++ > 0) out.append('\n');
+            out.append(line);
+        }
+        if (count == total) {
+            return out.toString();
+        }
+        String guidance =
+                characterLimitReached
+                        ? "Output character limit of "
+                                + MAX_LISTING_CHARS
+                                + " reached; narrow the path/pattern."
+                        : "entries".equals(resultLabel)
+                                ? "Listing limit of " + limit + " reached; narrow the directory."
+                                : limit < MAX_SEARCH_LIMIT
+                                        ? "Narrow the path/pattern or increase limit (hard maximum:"
+                                                + " "
+                                                + MAX_SEARCH_LIMIT
+                                                + ")."
+                                        : "Hard maximum of "
+                                                + MAX_SEARCH_LIMIT
+                                                + " reached; narrow the path/pattern to retrieve"
+                                                + " more targeted results.";
+        return out
+                + "\n[Results truncated: showing "
+                + count
+                + " of "
+                + total
+                + " "
+                + resultLabel
+                + ". "
+                + guidance
+                + "]";
+    }
+
+    private String norm(String path, RuntimeContext runtimeContext) {
+        return pathNormalizer != null ? pathNormalizer.normalize(path, runtimeContext) : path;
     }
 
     @Tool(
             name = "read_file",
             readOnly = true,
             description =
-                    "Read file content with line numbers. Supports pagination via offset and"
-                            + " limit.")
-    public String readFile(
+                    "Read a file's content. Binary files come back base64-encoded. Paginate large"
+                            + " files with offset (0-indexed start line) and limit (max lines)"
+                            + " instead of reading everything at once; before editing, read the"
+                            + " target region with enough surrounding context so your edit"
+                            + " matches the current content.")
+    public ToolResultBlock readFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File path to read") String path,
             @ToolParam(
@@ -79,30 +132,43 @@ public class FilesystemTool {
                     Integer limit) {
         int off = offset != null ? offset : 0;
         int lim = limit != null ? limit : 0;
-        ReadResult r = abstractFilesystem.read(runtimeContext, norm(path), off, lim);
+        ReadResult r =
+                abstractFilesystem.read(runtimeContext, norm(path, runtimeContext), off, lim);
         if (!r.isSuccess()) {
-            return "Error: " + r.error();
+            return ToolResultBlock.error(r.error());
         }
-        return r.fileData() != null ? r.fileData().content() : "";
+        return ToolResultBlock.success(r.fileData() != null ? r.fileData().content() : "");
     }
 
     @Tool(
             name = "write_file",
-            description = "Write content to a new file, creating parent directories if needed.")
-    public String writeFile(
+            description =
+                    "Create a new file with the given full content (parent directories are"
+                            + " created). Fails if the path already exists — read_file the"
+                            + " existing file and use edit_file to change it instead of"
+                            + " overwriting.")
+    public ToolResultBlock writeFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Target file path") String path,
             @ToolParam(name = "content", description = "File content to write") String content) {
-        WriteResult r = abstractFilesystem.write(runtimeContext, norm(path), content);
-        return r.isSuccess() ? "Written to " + r.path() : "Error: " + r.error();
+        WriteResult r =
+                abstractFilesystem.write(runtimeContext, norm(path, runtimeContext), content);
+        return r.isSuccess()
+                ? ToolResultBlock.success("Written to " + r.path())
+                : ToolResultBlock.error(r.error());
     }
 
     @Tool(
             name = "edit_file",
             description =
-                    "Perform exact string replacement in a file. The old_string must be unique"
-                            + " unless replace_all is true.")
-    public String editFile(
+                    "Replace an exact text string in an existing file after line-ending"
+                            + " normalization; whitespace and indentation within lines must match."
+                            + " There is no fuzzy matching. If the string is not"
+                            + " found, read_file the region again and copy the exact text (with"
+                            + " surrounding context) instead of guessing variants; if it appears"
+                            + " more than once, add surrounding context to make it unique or set"
+                            + " replace_all=true.")
+    public ToolResultBlock editFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File to edit") String path,
             @ToolParam(name = "old_string", description = "Text to find") String oldString,
@@ -115,10 +181,15 @@ public class FilesystemTool {
         boolean shouldReplaceAll = Boolean.TRUE.equals(replaceAll);
         EditResult r =
                 abstractFilesystem.edit(
-                        runtimeContext, norm(path), oldString, newString, shouldReplaceAll);
+                        runtimeContext,
+                        norm(path, runtimeContext),
+                        oldString,
+                        newString,
+                        shouldReplaceAll);
         return r.isSuccess()
-                ? "Edited " + r.path() + " (" + r.occurrences() + " replacement(s))"
-                : "Error: " + r.error();
+                ? ToolResultBlock.success(
+                        "Edited " + r.path() + " (" + r.occurrences() + " replacement(s))")
+                : ToolResultBlock.error(r.error());
     }
 
     @Tool(
@@ -127,7 +198,7 @@ public class FilesystemTool {
             description =
                     "Search file contents for a literal text pattern. Returns at most 100 matches"
                             + " by default to keep tool output bounded.")
-    public String grepFiles(
+    public ToolResultBlock grepFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Literal text pattern to search for")
                     String pattern,
@@ -147,26 +218,27 @@ public class FilesystemTool {
                     Integer limit) {
         int effectiveLimit = effectiveLimit(limit, DEFAULT_GREP_LIMIT);
         if (effectiveLimit < 1) {
-            return "Error: limit must be greater than 0";
+            return ToolResultBlock.error("limit must be greater than 0");
         }
-        GrepResult r = abstractFilesystem.grep(runtimeContext, pattern, norm(path), glob);
+        GrepResult r =
+                abstractFilesystem.grep(runtimeContext, pattern, norm(path, runtimeContext), glob);
         if (!r.isSuccess()) {
-            return "Error: " + r.error();
+            return ToolResultBlock.error(r.error());
         }
         List<GrepMatch> matches = r.matches();
         if (matches == null || matches.isEmpty()) {
-            return "No matches found";
+            return ToolResultBlock.success("No matches found");
         }
-        String output =
-                matches.stream()
-                        .limit(effectiveLimit)
-                        .map(m -> m.path() + ":" + m.line() + ":" + m.text())
-                        .collect(Collectors.joining("\n"));
-        return appendTruncationNotice(output, matches.size(), effectiveLimit, "matches");
+        return ToolResultBlock.success(
+                boundedListing(
+                        matches.stream().map(m -> m.path() + ":" + m.line() + ":" + m.text()),
+                        matches.size(),
+                        effectiveLimit,
+                        "matches"));
     }
 
-    /** Backward-compatible overload for direct Java callers. */
-    public String grepFiles(
+    /** Search using the default result limit. */
+    public ToolResultBlock grepFiles(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
         return grepFiles(runtimeContext, pattern, path, glob, null);
     }
@@ -177,7 +249,7 @@ public class FilesystemTool {
             description =
                     "Find files matching a glob pattern. Returns at most 200 files by default to"
                             + " keep tool output bounded.")
-    public String globFiles(
+    public ToolResultBlock globFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Glob pattern (e.g., **/*.java)")
                     String pattern,
@@ -195,26 +267,32 @@ public class FilesystemTool {
                     Integer limit) {
         int effectiveLimit = effectiveLimit(limit, DEFAULT_GLOB_LIMIT);
         if (effectiveLimit < 1) {
-            return "Error: limit must be greater than 0";
+            return ToolResultBlock.error("limit must be greater than 0");
         }
-        GlobResult r = abstractFilesystem.glob(runtimeContext, pattern, norm(path));
+        GlobResult r = abstractFilesystem.glob(runtimeContext, pattern, norm(path, runtimeContext));
         if (!r.isSuccess()) {
-            return "Error: " + r.error();
+            return ToolResultBlock.error(r.error());
         }
         List<FileInfo> files = r.matches();
         if (files == null || files.isEmpty()) {
-            return "No matching files found";
+            return ToolResultBlock.success("No matching files found");
         }
-        String output =
-                files.stream()
-                        .limit(effectiveLimit)
-                        .map(f -> f.path() + (f.isDirectory() ? "/" : " (" + f.size() + " bytes)"))
-                        .collect(Collectors.joining("\n"));
-        return appendTruncationNotice(output, files.size(), effectiveLimit, "files");
+        return ToolResultBlock.success(
+                boundedListing(
+                        files.stream()
+                                .map(
+                                        f ->
+                                                f.path()
+                                                        + (f.isDirectory()
+                                                                ? "/"
+                                                                : " (" + f.size() + " bytes)")),
+                        files.size(),
+                        effectiveLimit,
+                        "files"));
     }
 
-    /** Backward-compatible overload for direct Java callers. */
-    public String globFiles(RuntimeContext runtimeContext, String pattern, String path) {
+    /** Search using the default result limit. */
+    public ToolResultBlock globFiles(RuntimeContext runtimeContext, String pattern, String path) {
         return globFiles(runtimeContext, pattern, path, null);
     }
 
@@ -225,53 +303,33 @@ public class FilesystemTool {
         return Math.min(requestedLimit, MAX_SEARCH_LIMIT);
     }
 
-    private static String appendTruncationNotice(
-            String output, int total, int limit, String resultLabel) {
-        if (total <= limit) {
-            return output;
-        }
-        String guidance =
-                limit < MAX_SEARCH_LIMIT
-                        ? "Narrow the path/pattern or increase limit (hard maximum: "
-                                + MAX_SEARCH_LIMIT
-                                + ")."
-                        : "Hard maximum of "
-                                + MAX_SEARCH_LIMIT
-                                + " reached; narrow the path/pattern to retrieve more targeted"
-                                + " results.";
-        return output
-                + "\n[Results truncated: showing "
-                + limit
-                + " of "
-                + total
-                + " "
-                + resultLabel
-                + ". "
-                + guidance
-                + "]";
-    }
-
     @Tool(
             name = "list_files",
             readOnly = true,
             description = "List files and directories at the given path.")
-    public String listFiles(
+    public ToolResultBlock listFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Directory path to list") String path) {
-        LsResult r = abstractFilesystem.ls(runtimeContext, norm(path));
+        LsResult r = abstractFilesystem.ls(runtimeContext, norm(path, runtimeContext));
         if (!r.isSuccess()) {
-            return "Error: " + r.error();
+            return ToolResultBlock.error(r.error());
         }
         List<FileInfo> infos = r.entries();
         if (infos == null || infos.isEmpty()) {
-            return "Empty or not a directory: " + path;
+            return ToolResultBlock.success("Empty directory: " + path);
         }
-        return infos.stream()
-                .map(
-                        f ->
-                                (f.isDirectory() ? "[DIR]  " : "[FILE] ")
-                                        + f.path()
-                                        + (f.isDirectory() ? "" : " (" + f.size() + " bytes)"))
-                .collect(Collectors.joining("\n"));
+        return ToolResultBlock.success(
+                boundedListing(
+                        infos.stream()
+                                .map(
+                                        f ->
+                                                (f.isDirectory() ? "[DIR]  " : "[FILE] ")
+                                                        + f.path()
+                                                        + (f.isDirectory()
+                                                                ? ""
+                                                                : " (" + f.size() + " bytes)")),
+                        infos.size(),
+                        MAX_LISTING_ENTRIES,
+                        "entries"));
     }
 }

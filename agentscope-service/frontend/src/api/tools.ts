@@ -1,3 +1,4 @@
+import { namespaceHeaders } from "@/lib/namespaceScope";
 /*
  * Copyright 2024-2026 the original author or authors.
  *
@@ -73,7 +74,7 @@ export interface McpCatalogEntry {
 
 function authHeaders(): Record<string, string> {
   const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return token ? { Authorization: `Bearer ${token}`, ...namespaceHeaders() } : {};
 }
 
 function base(agentId: string): string {
@@ -147,7 +148,7 @@ export function computeToolPolicies(
   return out;
 }
 
-/** Persist built-in enablement + per-tool permission policy via PUT /api/agents/{id}. */
+/** Persist built-in enablement + per-tool permission policy through the v5 Managed definition. */
 export async function saveBuiltinToolConfig(
   agentId: string,
   catalog: BuiltinToolInfo[],
@@ -223,7 +224,7 @@ export async function installMcpServer(
     {
       type: 'mcp_toolset',
       mcpServerName: name,
-      defaultConfig: { enabled: true, permissionPolicy: { type: 'always_allow' } },
+      defaultConfig: { enabled: true, permissionPolicy: { type: 'always_ask' } },
     },
   ];
   return updateAgent(agentId, {
@@ -313,9 +314,6 @@ export async function fetchConfiguredActive(
 
   return {
     tools,
-    warnings: [
-      'Active list is derived from Agent body (tools / mcpServers). Live MCP tool introspection was removed with GET …/tools/active.',
-    ],
   };
 }
 

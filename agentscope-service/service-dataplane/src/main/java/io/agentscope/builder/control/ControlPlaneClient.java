@@ -19,9 +19,14 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.web.auth.InternalTokenAuthFilter;
 import io.agentscope.builder.web.managed.EnvironmentDto;
+import io.agentscope.builder.web.managed.LegacySessionEventAdapter;
+import io.agentscope.builder.web.managed.SessionEventDto;
+import io.agentscope.builder.web.managed.service.SessionEventScope;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +40,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Data-plane HTTP client for control-plane (aistiod) internal APIs. Session and environment
+ * Data-plane HTTP client for control-plane (service-controlplane) internal APIs. Session and environment
  * metadata live in the CP schema; the data plane must not SELECT those tables directly.
  *
  * <p>Authenticates with {@code X-Builder-Internal-Token}; optional {@code
@@ -49,19 +54,124 @@ public class ControlPlaneClient {
     private static final Logger log = LoggerFactory.getLogger(ControlPlaneClient.class);
 
     private final WebClient webClient;
+    private final String controlPlaneUrl;
     private final String internalToken;
     private final ObjectMapper objectMapper;
+    private final Map<String, ManagedExecutionScope> managedExecutionScopes =
+            new ConcurrentHashMap<>();
 
     public ControlPlaneClient(
             @Value("${builder.control-plane-url:http://localhost:8081}") String controlPlaneUrl,
             @Value("${builder.internal-token:${BUILDER_INTERNAL_TOKEN:}}") String internalToken,
             ObjectMapper objectMapper) {
-        this.webClient = WebClient.builder().baseUrl(controlPlaneUrl).build();
+        this.controlPlaneUrl = controlPlaneUrl.replaceAll("/+$", "");
+        this.webClient = WebClient.builder().baseUrl(this.controlPlaneUrl).build();
         this.internalToken = internalToken;
         this.objectMapper =
                 objectMapper
                         .copy()
                         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    }
+
+    /** Absolute URL of the task-scoped collaboration MCP endpoint. */
+    public String collaborationMcpUrl() {
+        return controlPlaneUrl + "/mcp/collaboration";
+    }
+
+    public static SessionEventScope eventScope(ManagedExecutionScope scope) {
+        return scope == null
+                ? SessionEventScope.NONE
+                : new SessionEventScope(
+                        scope.tenant(),
+                        scope.agentTaskId(),
+                        scope.attemptId(),
+                        scope.dispatchGeneration(),
+                        scope.turnId());
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> sessionEventReport(SessionEventDto event, SessionEventScope scope) {
+        Map<String, Object> body =
+                objectMapper.convertValue(
+                        LegacySessionEventAdapter.adapt(event), LinkedHashMap.class);
+        Map<String, Object> publicPayload =
+                new LinkedHashMap<>(event.payload() == null ? Map.of() : event.payload());
+        publicPayload.remove("source");
+        body.put("publicEvent", Map.of("type", event.type(), "payload", publicPayload));
+        if (scope != null && scope.managed()) {
+            if (scope.agentTaskId() != null && !scope.agentTaskId().isBlank()) {
+                body.put("agentTaskId", scope.agentTaskId());
+            }
+            body.put("attemptId", scope.attemptId());
+            body.put("dispatchGeneration", scope.dispatchGeneration());
+            body.put("turnId", scope.turnId());
+        }
+        return body;
+    }
+
+    public void sendSessionEventReport(String sessionId, Map<String, Object> report) {
+        webClient
+                .post()
+                .uri("/api/internal/runtime-sessions/{sessionId}/events", sessionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(internalHeaders(null))
+                .bodyValue(report)
+                .retrieve()
+                .toBodilessEntity()
+                .block(Duration.ofSeconds(15));
+    }
+
+    /** Confirms the captured task is running before its model or collaboration tools execute. */
+    public void startManagedExecution(String sessionId, ManagedExecutionScope scope) {
+        if (scope == null || scope.agentTaskId() == null || scope.agentTaskId().isBlank()) {
+            return;
+        }
+        webClient
+                .post()
+                .uri("/api/internal/runtime-sessions/{sessionId}/start", sessionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(internalHeaders(null))
+                .bodyValue(
+                        Map.of(
+                                "agentTaskId", scope.agentTaskId(),
+                                "attemptId", scope.attemptId(),
+                                "dispatchGeneration", scope.dispatchGeneration(),
+                                "turnId", scope.turnId()))
+                .retrieve()
+                .toBodilessEntity()
+                .block(Duration.ofSeconds(15));
+    }
+
+    /** Renews the current managed AgentTask attempt while its model turn is active. */
+    public void heartbeatManagedExecution(String sessionId) {
+        ManagedExecutionScope scope = managedExecutionScopes.get(sessionId);
+        if (scope == null) {
+            return;
+        }
+        heartbeatManagedExecution(sessionId, scope);
+    }
+
+    /** Heartbeats one captured turn without accidentally adopting a newer session scope. */
+    public void heartbeatManagedExecution(String sessionId, ManagedExecutionScope scope) {
+        if (scope == null) {
+            return;
+        }
+        webClient
+                .post()
+                .uri("/api/internal/runtime-sessions/{sessionId}/heartbeat", sessionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(internalHeaders(null))
+                .bodyValue(
+                        Map.of(
+                                "attemptId",
+                                scope.attemptId(),
+                                "dispatchGeneration",
+                                scope.dispatchGeneration(),
+                                "turnId",
+                                scope.turnId()))
+                .retrieve()
+                .toBodilessEntity()
+                .block();
     }
 
     /**
@@ -105,6 +215,92 @@ public class ControlPlaneClient {
                             + ": "
                             + ex.getMessage(),
                     ex);
+        }
+    }
+
+    /**
+     * Captures the Attempt fence for one admitted physical turn. Later session resolves may observe
+     * a retry Attempt, but events from this turn must remain attached to the Attempt that launched
+     * it until {@link #endManagedExecution(String)} is called.
+     */
+    public ManagedExecutionScope beginManagedExecution(String sessionId) {
+        SessionResolveResult result = resolveSession(sessionId);
+        ManagedExecutionScope scope = executionScope(result.executionContext());
+        if (scope == null) {
+            managedExecutionScopes.remove(sessionId);
+        } else {
+            managedExecutionScopes.put(sessionId, scope);
+        }
+        return scope;
+    }
+
+    /** Releases the immutable Attempt fence captured for a completed physical turn. */
+    public void endManagedExecution(String sessionId) {
+        managedExecutionScopes.remove(sessionId);
+    }
+
+    /** Releases this turn's scope without deleting a newer turn that reused the same session. */
+    public void endManagedExecution(String sessionId, ManagedExecutionScope expectedScope) {
+        if (expectedScope != null) {
+            managedExecutionScopes.remove(sessionId, expectedScope);
+        }
+    }
+
+    /** Returns the immutable AgentTask execution fence captured for the active physical turn. */
+    public ManagedExecutionScope managedExecutionScope(String sessionId) {
+        return managedExecutionScopes.get(sessionId);
+    }
+
+    private static ManagedExecutionScope executionScope(Map<String, Object> executionContext) {
+        if (executionContext == null
+                || !(executionContext.get("attemptId") instanceof String attemptId)
+                || attemptId.isBlank()) {
+            return null;
+        }
+        long generation =
+                executionContext.get("dispatchGeneration") instanceof Number n ? n.longValue() : 0L;
+        String turnId = String.valueOf(executionContext.getOrDefault("turnId", ""));
+        String agentTaskId = managedAgentTaskId(executionContext);
+        String tenant = managedTaskValue(executionContext, "tenant");
+        return new ManagedExecutionScope(tenant, agentTaskId, attemptId, generation, turnId);
+    }
+
+    private static String managedAgentTaskId(Map<String, Object> executionContext) {
+        Object direct = executionContext.get("agentTaskId");
+        if (direct != null && !String.valueOf(direct).isBlank()) {
+            return String.valueOf(direct);
+        }
+        return managedTaskValue(executionContext, "id");
+    }
+
+    private static String managedTaskValue(Map<String, Object> executionContext, String fieldName) {
+        Object taskContext = executionContext.get("taskContext");
+        if (!(taskContext instanceof Map<?, ?> context)
+                || !(context.get("task") instanceof Map<?, ?> task)) {
+            return null;
+        }
+        Object value = task.get(fieldName);
+        return value != null && !String.valueOf(value).isBlank() ? String.valueOf(value) : null;
+    }
+
+    /**
+     * Immutable orchestration fence. {@code turnId} is the control-plane admission ID, not the
+     * logical Agent API turn ID; {@code attemptId} is a scheduler attempt, not a model call/run.
+     */
+    public record ManagedExecutionScope(
+            String tenant,
+            String agentTaskId,
+            String attemptId,
+            long dispatchGeneration,
+            String turnId) {
+        /** Explicitly named correlation metadata; the control-plane wire fence remains unchanged. */
+        public Map<String, Object> correlation() {
+            var result = new LinkedHashMap<String, Object>();
+            if (turnId != null) result.put("control_plane_turn_id", turnId);
+            if (attemptId != null) result.put("orchestration_attempt_id", attemptId);
+            if (agentTaskId != null) result.put("agent_task_id", agentTaskId);
+            result.put("dispatch_generation", dispatchGeneration);
+            return result;
         }
     }
 
@@ -166,7 +362,7 @@ public class ControlPlaneClient {
     }
 
     /**
-     * Registers this data-plane instance with aistiod ({@code POST /api/v1/dataplanes/register}).
+     * Registers this data-plane instance with service-controlplane ({@code POST /api/v1/dataplanes/register}).
      *
      * @return heartbeat interval seconds from the response, or 15 when absent
      */
@@ -244,18 +440,39 @@ public class ControlPlaneClient {
      */
     public void patchSessionRuntime(
             String sessionId, String status, Map<String, Object> stopReason) {
-        patchSessionRuntime(sessionId, status, stopReason, null);
+        patchSessionRuntime(sessionId, status, stopReason, null, null);
     }
 
     /** Patches session runtime status, optionally attributing the call to {@code actingUserId}. */
     public void patchSessionRuntime(
             String sessionId, String status, Map<String, Object> stopReason, String actingUserId) {
+        patchSessionRuntime(sessionId, status, stopReason, actingUserId, null);
+    }
+
+    /**
+     * Patches runtime status with the immutable fence captured when this physical turn was
+     * admitted. A delayed turn must never adopt a newer Attempt's session-scoped fence.
+     */
+    public void patchSessionRuntime(
+            String sessionId,
+            String status,
+            Map<String, Object> stopReason,
+            String actingUserId,
+            ManagedExecutionScope scope) {
         Map<String, Object> body = new LinkedHashMap<>();
         if (status != null) {
             body.put("status", status);
         }
         if (stopReason != null) {
             body.put("stopReason", stopReason);
+        }
+        if (scope != null) {
+            if (scope.agentTaskId() != null && !scope.agentTaskId().isBlank()) {
+                body.put("agentTaskId", scope.agentTaskId());
+            }
+            body.put("attemptId", scope.attemptId());
+            body.put("dispatchGeneration", scope.dispatchGeneration());
+            body.put("turnId", scope.turnId());
         }
         try {
             webClient
@@ -346,6 +563,75 @@ public class ControlPlaneClient {
             log.debug("verifyEnvironmentKey failed for {}: {}", environmentId, ex.getMessage());
             return false;
         }
+    }
+
+    /** Memory calls remain session-scoped; CP rechecks mount ownership and access on each request. */
+    public io.agentscope.builder.web.managed.MemoryDocumentStore memoryDocuments(
+            String sessionId, String storeId) {
+        String base = "/api/internal/sessions/{session}/memory-stores/{store}/memories";
+        return new io.agentscope.builder.web.managed.MemoryDocumentStore() {
+            public List<io.agentscope.builder.web.managed.MemoryDto> list() {
+                try {
+                    return webClient
+                            .get()
+                            .uri(base, sessionId, storeId)
+                            .headers(internalHeaders(null))
+                            .retrieve()
+                            .bodyToFlux(io.agentscope.builder.web.managed.MemoryDto.class)
+                            .collectList()
+                            .block();
+                } catch (WebClientResponseException e) {
+                    throw mapWebClientError(e, "Memory mount unavailable");
+                }
+            }
+
+            public io.agentscope.builder.web.managed.MemoryDto get(String path) {
+                try {
+                    return webClient
+                            .get()
+                            .uri(base + "/{path}", sessionId, storeId, path)
+                            .headers(internalHeaders(null))
+                            .retrieve()
+                            .bodyToMono(io.agentscope.builder.web.managed.MemoryDto.class)
+                            .block();
+                } catch (WebClientResponseException e) {
+                    throw mapWebClientError(e, "Memory not found");
+                }
+            }
+
+            public void put(String path, String content, Integer expectedVersion) {
+                try {
+                    Map<String, Object> body = new LinkedHashMap<>();
+                    body.put("content", content);
+                    body.put("expectedVersion", expectedVersion);
+                    webClient
+                            .put()
+                            .uri(base + "/{path}", sessionId, storeId, path)
+                            .headers(internalHeaders(null))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(body)
+                            .retrieve()
+                            .toBodilessEntity()
+                            .block();
+                } catch (WebClientResponseException e) {
+                    throw mapWebClientError(e, "Memory not found");
+                }
+            }
+
+            public void delete(String path) {
+                try {
+                    webClient
+                            .delete()
+                            .uri(base + "/{path}", sessionId, storeId, path)
+                            .headers(internalHeaders(null))
+                            .retrieve()
+                            .toBodilessEntity()
+                            .block();
+                } catch (WebClientResponseException e) {
+                    throw mapWebClientError(e, "Memory not found");
+                }
+            }
+        };
     }
 
     private Consumer<HttpHeaders> internalHeaders(String actingUserId) {

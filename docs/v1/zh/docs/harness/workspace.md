@@ -1,4 +1,7 @@
-# 工作区（Workspace）
+---
+title: 工作区
+en_link: /v1/en/docs/harness/workspace
+---
 
 ## 作用
 
@@ -12,7 +15,7 @@ agent 每次推理时，工作区里的几个关键文件会被自动注入到 s
 |------|------|
 | `HarnessAgent.build()` | `WorkspaceManager.validate()` 检查目录与 `AGENTS.md` 是否存在，缺失只 warn |
 | 每次 `call()` 推理前 | `WorkspaceContextHook` 读 `AGENTS.md` / `MEMORY.md` / `knowledge/` / 额外文件并注入 system prompt |
-| 压缩 / 调用结束 | `MemoryFlushHook`、`SessionPersistenceHook` 等通过 `WorkspaceManager` 写回 `memory/`、`agents/.../sessions/` |
+| 压缩 / 调用结束 | `MemoryFlushMiddleware` 通过 `WorkspaceManager` 写回 `memory/`；运行时向 `.agentscope-runtime/` 追加会话 journal |
 
 ## 目录结构
 
@@ -28,15 +31,14 @@ workspace/                           ← 默认 .agentscope/workspace
 │   └── .consolidation_state         ← MemoryConsolidator 内部状态
 ├── skills/<skill-name>/SKILL.md     ← 自定义技能
 ├── subagents/<id>.md                ← 子 agent 声明（文件名=agent_id，自动发现）
-└── agents/<agentId>/
-    ├── workspace/                   ← isolated 子 agent 的运行时根（无 workspace.path 时自动创建）
-    └── sessions/
-        ├── sessions.json            ← 会话索引（id / summary / updatedAt）
-        ├── <sessionId>.jsonl        ← LLM 可见的压缩上下文
-        └── <sessionId>.log.jsonl   ← 完整对话日志（追加）
+├── agents/<agentId>/workspace/      ← isolated 子 agent 的运行时根（无 workspace.path 时自动创建）
+└── .agentscope-runtime/             ← 运行时私有的 native session journal（模型不可见）
+    └── agents/<agentId>/sessions/<userId>/<sessionId>/
+        ├── session.json             ← 会话头
+        └── …                        ← hash 链式 commit 与 payload 对象
 ```
 
-> 子 agent 三层模型（声明 / 定义 / 运行时）详见 [子 Agent](./subagent.md)。
+> 子 agent 三层模型（声明 / 定义 / 运行时）详见 [子 Agent](/v1/zh/docs/harness/subagent)。
 
 ## 关键逻辑
 
@@ -44,7 +46,7 @@ workspace/                           ← 默认 .agentscope/workspace
 
 `WorkspaceManager` 是无状态访问器，所有读写都遵循同一规约：
 
-```{mermaid}
+```mermaid
 graph LR
     Caller[Hook / Tool] -->|read| WM[WorkspaceManager]
     WM -->|read 优先| FS[AbstractFilesystem<br/>多租户 namespace 透明]
@@ -94,7 +96,6 @@ wm.listMemoryFilePaths();
 wm.listSessionLogFiles();
 
 wm.appendUtf8WorkspaceRelative(rel, content);  // 走 AbstractFilesystem
-wm.updateSessionIndex(agentId, sessionId, summary); // 维护 sessions.json
 ```
 
 ## 配置
@@ -110,11 +111,11 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
-`AGENTS.md` 缺失时 agent 仍可工作，只会丢失 persona 段，建议至少写一份最小骨架（参考 [overview.md](./overview.md) 的 quickstart）。
+`AGENTS.md` 缺失时 agent 仍可工作，只会丢失 persona 段，建议至少写一份最小骨架（参考 [overview.md](/v1/zh/docs/harness/overview) 的 quickstart）。
 
 ## 相关文档
 
-- [架构](./architecture.md) — `WorkspaceContextHook` 在 call() 生命周期里的位置
-- [文件系统](./filesystem.md) — 两层读路径中"上层"的实现
-- [记忆](./memory.md) — `MEMORY.md` / `memory/*.md` 怎么生成与维护
-- [会话](./session.md) — `agents/<agentId>/sessions/` 的细节
+- [架构](/v1/zh/docs/harness/architecture) — `WorkspaceContextHook` 在 call() 生命周期里的位置
+- [文件系统](/v1/zh/docs/harness/filesystem) — 两层读路径中"上层"的实现
+- [记忆](/v1/zh/docs/harness/memory) — `MEMORY.md` / `memory/*.md` 怎么生成与维护
+- [会话](/v1/zh/docs/harness/session) — `agents/<agentId>/sessions/` 的细节

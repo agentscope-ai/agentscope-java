@@ -23,6 +23,9 @@ import io.agentscope.builder.web.persistence.jpa.CoordWorkItemEntity;
 import io.agentscope.builder.web.persistence.jpa.CoordWorkItemEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.CoordWorkerHeartbeatEntity;
 import io.agentscope.builder.web.persistence.jpa.CoordWorkerHeartbeatEntityRepository;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -69,7 +72,7 @@ public class JdbcCoordinationStore implements CoordinationStore {
         long now = System.currentTimeMillis();
         long expires = now + ttl.toMillis();
         Optional<CoordLeaseEntity> existing =
-                leaseRepository.findByLeaseKindAndLeaseKey(CoordLeaseEntity.KIND_TURN, sessionId);
+                leaseRepository.findByKindAndKeyForUpdate(CoordLeaseEntity.KIND_TURN, sessionId);
         if (existing.isPresent()) {
             CoordLeaseEntity row = existing.get();
             if (row.getExpiresAt() > now && !instanceId.equals(row.getInstanceId())) {
@@ -102,18 +105,12 @@ public class JdbcCoordinationStore implements CoordinationStore {
     @Override
     @Transactional
     public boolean heartbeatTurnLease(String sessionId, String instanceId, Duration ttl) {
-        Optional<CoordLeaseEntity> existing =
-                leaseRepository.findByLeaseKindAndLeaseKey(CoordLeaseEntity.KIND_TURN, sessionId);
-        if (existing.isEmpty()) {
-            return false;
-        }
-        CoordLeaseEntity row = existing.get();
-        if (!instanceId.equals(row.getInstanceId())) {
-            return false;
-        }
-        row.setExpiresAt(System.currentTimeMillis() + ttl.toMillis());
-        leaseRepository.save(row);
-        return true;
+        return leaseRepository.heartbeatIfOwned(
+                        CoordLeaseEntity.KIND_TURN,
+                        sessionId,
+                        instanceId,
+                        System.currentTimeMillis() + ttl.toMillis())
+                > 0;
     }
 
     @Override
@@ -146,16 +143,29 @@ public class JdbcCoordinationStore implements CoordinationStore {
     @Override
     @Transactional
     public void requestTurnInterrupt(String sessionId, String reason) {
+        requestTurnInterrupt(sessionId, reason, null);
+    }
+
+    @Override
+    @Transactional
+    public void requestFencedTurnInterrupt(String sessionId, String reason, String fenceToken) {
+        if (fenceToken == null || fenceToken.isBlank()) {
+            throw new IllegalArgumentException("fenceToken is required");
+        }
+        requestTurnInterrupt(sessionId, reason, fenceToken);
+    }
+
+    private void requestTurnInterrupt(String sessionId, String reason, String fenceToken) {
         long now = System.currentTimeMillis();
         // Keep interrupt tickets long enough for a slow heartbeat cycle to pick them up.
         long expires = now + Duration.ofMinutes(5).toMillis();
         Optional<CoordLeaseEntity> existing =
                 leaseRepository.findByLeaseKindAndLeaseKey(
-                        CoordLeaseEntity.KIND_INTERRUPT, sessionId);
+                        CoordLeaseEntity.KIND_INTERRUPT, interruptLeaseKey(sessionId, fenceToken));
         if (existing.isPresent()) {
             CoordLeaseEntity row = existing.get();
             row.setOwnerId(reason != null ? reason : "interrupt");
-            row.setInstanceId("pending");
+            row.setInstanceId(interruptMarker(fenceToken));
             row.setAcquiredAt(now);
             row.setExpiresAt(expires);
             leaseRepository.save(row);
@@ -163,9 +173,9 @@ public class JdbcCoordinationStore implements CoordinationStore {
         }
         CoordLeaseEntity created = new CoordLeaseEntity();
         created.setLeaseKind(CoordLeaseEntity.KIND_INTERRUPT);
-        created.setLeaseKey(sessionId);
+        created.setLeaseKey(interruptLeaseKey(sessionId, fenceToken));
         created.setOwnerId(reason != null ? reason : "interrupt");
-        created.setInstanceId("pending");
+        created.setInstanceId(interruptMarker(fenceToken));
         created.setAcquiredAt(now);
         created.setExpiresAt(expires);
         try {
@@ -173,10 +183,13 @@ public class JdbcCoordinationStore implements CoordinationStore {
         } catch (DataIntegrityViolationException ex) {
             // Concurrent insert — refresh the winner's reason.
             leaseRepository
-                    .findByLeaseKindAndLeaseKey(CoordLeaseEntity.KIND_INTERRUPT, sessionId)
+                    .findByLeaseKindAndLeaseKey(
+                            CoordLeaseEntity.KIND_INTERRUPT,
+                            interruptLeaseKey(sessionId, fenceToken))
                     .ifPresent(
                             row -> {
                                 row.setOwnerId(reason != null ? reason : "interrupt");
+                                row.setInstanceId(interruptMarker(fenceToken));
                                 row.setAcquiredAt(now);
                                 row.setExpiresAt(expires);
                                 leaseRepository.save(row);
@@ -187,9 +200,24 @@ public class JdbcCoordinationStore implements CoordinationStore {
     @Override
     @Transactional
     public Optional<String> consumeTurnInterrupt(String sessionId) {
+        return consumeTurnInterruptRequest(sessionId).map(TurnInterruptRequest::reason);
+    }
+
+    @Override
+    @Transactional
+    public Optional<TurnInterruptRequest> consumeTurnInterruptRequest(String sessionId) {
         Optional<CoordLeaseEntity> existing =
                 leaseRepository.findByLeaseKindAndLeaseKey(
                         CoordLeaseEntity.KIND_INTERRUPT, sessionId);
+        if (existing.isEmpty()) {
+            existing =
+                    leaseRepository
+                            .findByLeaseKindAndLeaseKeyStartingWithOrderByAcquiredAtAsc(
+                                    CoordLeaseEntity.KIND_INTERRUPT,
+                                    fencedInterruptPrefix(sessionId))
+                            .stream()
+                            .findFirst();
+        }
         if (existing.isEmpty()) {
             return Optional.empty();
         }
@@ -199,8 +227,38 @@ public class JdbcCoordinationStore implements CoordinationStore {
             return Optional.empty();
         }
         String reason = row.getOwnerId() != null ? row.getOwnerId() : "interrupt";
+        String marker = row.getInstanceId();
+        String fenceToken =
+                marker != null && marker.startsWith("fence:")
+                        ? marker.substring("fence:".length())
+                        : null;
         leaseRepository.delete(row);
-        return Optional.of(reason);
+        return Optional.of(new TurnInterruptRequest(reason, fenceToken));
+    }
+
+    private static String interruptMarker(String fenceToken) {
+        return fenceToken == null || fenceToken.isBlank() ? "pending" : "fence:" + fenceToken;
+    }
+
+    private static String interruptLeaseKey(String sessionId, String fenceToken) {
+        return fenceToken == null || fenceToken.isBlank()
+                ? sessionId
+                : fencedInterruptPrefix(sessionId) + fenceToken;
+    }
+
+    private static String fencedInterruptPrefix(String sessionId) {
+        return "fi:" + sha256(sessionId) + ":";
+    }
+
+    private static String sha256(String value) {
+        try {
+            return java.util.HexFormat.of()
+                    .formatHex(
+                            MessageDigest.getInstance("SHA-256")
+                                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
     }
 
     @Override
@@ -238,48 +296,180 @@ public class JdbcCoordinationStore implements CoordinationStore {
 
     @Override
     @Transactional
-    public void putHitlTicket(HitlTicket ticket) {
-        CoordHitlTicketEntity entity =
-                hitlRepository
-                        .findByToolUseId(ticket.toolUseId())
-                        .orElseGet(CoordHitlTicketEntity::new);
+    public HitlTicket putHitlTicket(HitlTicket ticket) {
+        Optional<CoordHitlTicketEntity> existing =
+                ticket.managedTask()
+                        ? hitlRepository
+                                .findBySessionIdAndAttemptIdAndDispatchGenerationAndTurnIdAndToolUseId(
+                                        ticket.sessionId(),
+                                        ticket.attemptId(),
+                                        ticket.dispatchGeneration(),
+                                        ticket.turnId(),
+                                        ticket.toolUseId())
+                        : hitlRepository.findBySessionIdAndToolUseIdAndAgentTaskIdIsNull(
+                                ticket.sessionId(), ticket.toolUseId());
+        if (existing.isPresent()) {
+            HitlTicket stored = toHitl(existing.get());
+            if (!sameImmutableTicket(stored, ticket)) {
+                throw new IllegalStateException(
+                        "HITL ticket identity already exists with different immutable data");
+            }
+            return stored;
+        }
+        CoordHitlTicketEntity entity = new CoordHitlTicketEntity();
         entity.setToolUseId(ticket.toolUseId());
         entity.setSessionId(ticket.sessionId());
         entity.setOwnerId(ticket.ownerId());
+        entity.setApprovalId(ticket.approvalId());
+        entity.setAgentTaskId(ticket.agentTaskId());
+        entity.setAttemptId(ticket.attemptId());
+        entity.setDispatchGeneration(ticket.dispatchGeneration());
+        entity.setTurnId(ticket.turnId());
+        entity.setContinuationLeaseId(ticket.continuationLeaseId());
         entity.setToolName(ticket.toolName());
         entity.setInputJson(ticket.inputJson());
+        entity.setResolutionStatus(ticket.resolutionStatus());
+        entity.setDecisionVersion(ticket.decisionVersion());
         entity.setResolvedAllow(ticket.resolvedAllow());
         entity.setDenyMessage(ticket.denyMessage());
         entity.setCreatedAt(ticket.createdAt());
         entity.setExpiresAt(ticket.expiresAt());
-        hitlRepository.save(entity);
+        entity.setResolvedAt(ticket.resolvedAt());
+        entity.setContinuationReady(ticket.continuationReady());
+        return toHitl(hitlRepository.saveAndFlush(entity));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Optional<HitlTicket> getHitlTicket(String toolUseId) {
-        return hitlRepository.findByToolUseId(toolUseId).map(this::toHitl);
+    public Optional<HitlTicket> getHitlTicket(String sessionId, String toolUseId) {
+        return hitlRepository
+                .findBySessionIdAndToolUseIdOrderByCreatedAtDesc(sessionId, toolUseId)
+                .stream()
+                .findFirst()
+                .map(this::toHitl);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<HitlTicket> getHitlTicket(HitlDecisionFence fence) {
+        return hitlRepository
+                .findBySessionIdAndAttemptIdAndDispatchGenerationAndTurnIdAndToolUseId(
+                        fence.sessionId(),
+                        fence.attemptId(),
+                        fence.dispatchGeneration(),
+                        fence.turnId(),
+                        fence.toolUseId())
+                .filter(entity -> matches(entity.getApprovalId(), fence.approvalId()))
+                .filter(entity -> matches(entity.getAgentTaskId(), fence.agentTaskId()))
+                .map(this::toHitl);
     }
 
     @Override
     @Transactional
-    public Optional<HitlTicket> resolveHitlTicket(
-            String toolUseId, boolean allow, String denyMessage) {
-        Optional<CoordHitlTicketEntity> existing = hitlRepository.findByToolUseId(toolUseId);
+    public Optional<HitlResolution> resolveHitlTicket(
+            HitlDecisionFence fence,
+            String resolutionStatus,
+            long decisionVersion,
+            boolean allow,
+            String denyMessage,
+            long resolvedAt) {
+        Optional<CoordHitlTicketEntity> existing = findForUpdate(fence);
         if (existing.isEmpty()) {
             return Optional.empty();
         }
         CoordHitlTicketEntity entity = existing.get();
+        if (!matches(entity.getApprovalId(), fence.approvalId())
+                || !matches(entity.getAgentTaskId(), fence.agentTaskId())
+                || !matches(entity.getAttemptId(), fence.attemptId())
+                || entity.getDispatchGeneration() != fence.dispatchGeneration()
+                || !matches(entity.getTurnId(), fence.turnId())) {
+            return Optional.empty();
+        }
+        if (entity.getResolvedAllow() != null) {
+            return entity.getResolvedAllow() == allow
+                            && matches(entity.getResolutionStatus(), resolutionStatus)
+                            && entity.getDecisionVersion() == decisionVersion
+                    ? Optional.of(new HitlResolution(toHitl(entity), false))
+                    : Optional.empty();
+        }
+        // CP is the expiry/decision CAS authority for Managed AgentTasks. Its outbox may deliver a
+        // decision after the DP-local wall clock passed expiresAt; the full fence + version still
+        // make that committed decision valid. Personal chat continues to use the local deadline.
+        if ((entity.getAgentTaskId() == null || entity.getAgentTaskId().isBlank())
+                && entity.getExpiresAt() <= resolvedAt) {
+            return Optional.empty();
+        }
         entity.setResolvedAllow(allow);
+        entity.setResolutionStatus(resolutionStatus);
+        entity.setDecisionVersion(decisionVersion);
         entity.setDenyMessage(denyMessage);
+        entity.setResolvedAt(resolvedAt);
         hitlRepository.save(entity);
-        return Optional.of(toHitl(entity));
+        return Optional.of(new HitlResolution(toHitl(entity), true));
     }
 
     @Override
     @Transactional
-    public void deleteHitlTicket(String toolUseId) {
-        hitlRepository.deleteByToolUseId(toolUseId);
+    public Optional<HitlResolution> expireHitlTicket(
+            String sessionId, String toolUseId, long expiredAt) {
+        Optional<CoordHitlTicketEntity> existing =
+                hitlRepository.findPersonalForUpdate(sessionId, toolUseId);
+        if (existing.isEmpty()) {
+            return Optional.empty();
+        }
+        CoordHitlTicketEntity entity = existing.get();
+        if (entity.getResolvedAllow() != null) {
+            return Optional.of(new HitlResolution(toHitl(entity), false));
+        }
+        if (entity.getExpiresAt() > expiredAt) {
+            return Optional.empty();
+        }
+        entity.setResolvedAllow(false);
+        entity.setResolutionStatus("cancelled");
+        entity.setDecisionVersion(0L);
+        entity.setDenyMessage("timed_out");
+        entity.setResolvedAt(expiredAt);
+        hitlRepository.save(entity);
+        return Optional.of(new HitlResolution(toHitl(entity), true));
+    }
+
+    @Override
+    @Transactional
+    public boolean markHitlContinuationReady(HitlDecisionFence fence) {
+        Optional<CoordHitlTicketEntity> existing = findForUpdate(fence);
+        if (existing.isEmpty()) {
+            return false;
+        }
+        CoordHitlTicketEntity entity = existing.get();
+        if (!matches(entity.getApprovalId(), fence.approvalId())
+                || !matches(entity.getAgentTaskId(), fence.agentTaskId())
+                || !matches(entity.getAttemptId(), fence.attemptId())
+                || entity.getDispatchGeneration() != fence.dispatchGeneration()
+                || !matches(entity.getTurnId(), fence.turnId())
+                || entity.getResolvedAllow() == null) {
+            return false;
+        }
+        entity.setContinuationReady(true);
+        hitlRepository.save(entity);
+        return true;
+    }
+
+    @Override
+    @Transactional
+    public void deleteHitlTicket(String sessionId, String toolUseId) {
+        hitlRepository.deleteBySessionIdAndToolUseId(sessionId, toolUseId);
+    }
+
+    @Override
+    @Transactional
+    public void deleteHitlTicketsBySession(String sessionId) {
+        hitlRepository.deleteBySessionId(sessionId);
+    }
+
+    @Override
+    @Transactional
+    public long deleteResolvedHitlTicketsBefore(long expiresAtCutoff) {
+        return hitlRepository.deleteByResolvedAllowIsNotNullAndExpiresAtLessThan(expiresAtCutoff);
     }
 
     @Override
@@ -507,12 +697,54 @@ public class JdbcCoordinationStore implements CoordinationStore {
                 e.getToolUseId(),
                 e.getSessionId(),
                 e.getOwnerId(),
+                e.getApprovalId(),
+                e.getAgentTaskId(),
+                e.getAttemptId(),
+                e.getDispatchGeneration(),
+                e.getTurnId(),
+                e.getContinuationLeaseId(),
                 e.getToolName(),
                 e.getInputJson(),
+                e.getResolutionStatus(),
+                e.getDecisionVersion(),
                 e.getResolvedAllow(),
                 e.getDenyMessage(),
                 e.getCreatedAt(),
-                e.getExpiresAt());
+                e.getExpiresAt(),
+                e.getResolvedAt(),
+                Boolean.TRUE.equals(e.getContinuationReady()));
+    }
+
+    private static boolean matches(String stored, String expected) {
+        return stored == null ? expected == null : stored.equals(expected);
+    }
+
+    private Optional<CoordHitlTicketEntity> findForUpdate(HitlDecisionFence fence) {
+        if (fence.agentTaskId() == null || fence.agentTaskId().isBlank()) {
+            return hitlRepository.findPersonalForUpdate(fence.sessionId(), fence.toolUseId());
+        }
+        return hitlRepository.findManagedForUpdate(
+                fence.sessionId(),
+                fence.attemptId(),
+                fence.dispatchGeneration(),
+                fence.turnId(),
+                fence.toolUseId());
+    }
+
+    private static boolean sameImmutableTicket(HitlTicket left, HitlTicket right) {
+        return matches(left.sessionId(), right.sessionId())
+                && matches(left.toolUseId(), right.toolUseId())
+                && matches(left.ownerId(), right.ownerId())
+                && matches(left.approvalId(), right.approvalId())
+                && matches(left.agentTaskId(), right.agentTaskId())
+                && matches(left.attemptId(), right.attemptId())
+                && left.dispatchGeneration() == right.dispatchGeneration()
+                && matches(left.turnId(), right.turnId())
+                && matches(left.continuationLeaseId(), right.continuationLeaseId())
+                && matches(left.toolName(), right.toolName())
+                && matches(left.inputJson(), right.inputJson())
+                && left.createdAt() == right.createdAt()
+                && left.expiresAt() == right.expiresAt();
     }
 
     private WorkItemRecord toWork(CoordWorkItemEntity e) {

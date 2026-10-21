@@ -19,6 +19,8 @@
   --color-accent-foreground: #3730a3;
   --color-card: #ffffff;
   --color-card-foreground: #0f172a;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0f172a;
   --color-ring: #6366f1;
 
   --radius-lg: 0.75rem;
@@ -203,4 +205,63 @@ select:focus {
 .md-text img {
   max-width: 100%;
   border-radius: 8px;
+}
+
+/* Compatibility surface for resource pages that still use inline layout styles. */
+.console-page-legacy {
+  min-height: 100%;
+  margin-inline: auto;
+  background: #ffffff;
+}
+
+.console-page-legacy input,
+.console-page-legacy select,
+.console-page-legacy textarea {
+  border-color: #e2e8f0 !important;
+  box-shadow: none !important;
+}
+
+.console-page-legacy button[style*="linear-gradient"] {
+  background: #4f46e5 !important;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08) !important;
+}
+
+.console-page-legacy button[style*="linear-gradient"]:hover {
+  background: #4f46e5 !important;
+  filter: brightness(1.05);
+}
+
+.agent-layout-tabs {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+@media (max-width: 639px) {
+  .console-page-legacy {
+    max-width: none !important;
+    padding: 28px 20px !important;
+  }
+
+  .console-page-legacy > div[style*="grid-template-columns"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .console-page-legacy > div:first-child:has(> h1) {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+  }
+
+  .agent-layout-header {
+    padding-inline: 20px !important;
+  }
+
+  .agent-layout-header-row {
+    align-items: flex-start !important;
+    flex-wrap: wrap;
+  }
+
+  .agent-layout-header-row > span[style*="flex: 1"] {
+    display: none;
+  }
 }

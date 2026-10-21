@@ -877,4 +877,77 @@ class WorkspaceTaskRepositoryTest {
                 readResult.fileData().content().contains("test"),
                 "Task record content should be readable");
     }
+
+    @Test
+    void cancellationListenersObservePersistedTerminalState() throws Exception {
+        RuntimeContext context = RuntimeContext.builder().sessionId("cancel-parent").build();
+        CountDownLatch release = new CountDownLatch(1);
+        BackgroundTask task =
+                repo.putTask(
+                        context,
+                        "cancel-child",
+                        "worker",
+                        "cancel-parent",
+                        new TaskRunSpec.LocalTaskRunSpec(
+                                () -> {
+                                    try {
+                                        release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                                    } catch (InterruptedException e) {
+                                        Thread.currentThread().interrupt();
+                                    }
+                                    return "late result";
+                                }));
+        java.util.concurrent.CompletableFuture<TaskStatus> observed =
+                new java.util.concurrent.CompletableFuture<>();
+        task.whenComplete(
+                (value, error) -> {
+                    try {
+                        observed.complete(
+                                repo.findPendingDeliveries(context, "cancel-parent")
+                                        .get(0)
+                                        .status());
+                    } catch (RuntimeException failure) {
+                        observed.completeExceptionally(failure);
+                    }
+                });
+        try {
+            repo.cancelTask(context, "cancel-parent", "cancel-child");
+            assertEquals(
+                    TaskStatus.CANCELLED, observed.get(5, java.util.concurrent.TimeUnit.SECONDS));
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void executionOwnerCanSuppressWakeupWithoutLosingDurableDelivery() throws Exception {
+        AtomicInteger wakeups = new AtomicInteger();
+        repo.setCompletionCallback(
+                (rc, taskId, agentId, sessionId, result) -> wakeups.incrementAndGet());
+        RuntimeContext managed =
+                RuntimeContext.builder()
+                        .sessionId("managed")
+                        .put(TaskRepository.SUPPRESS_COMPLETION_CALLBACK, true)
+                        .build();
+        var task =
+                repo.putTask(
+                        managed,
+                        "owned",
+                        "worker",
+                        "managed",
+                        new TaskRunSpec.LocalTaskRunSpec(() -> "managed evidence"));
+        assertTrue(task.waitForCompletion(5000));
+        assertEquals(0, wakeups.get());
+        assertEquals(
+                "managed evidence", repo.findPendingDeliveries(managed, "managed").get(0).result());
+        var chat =
+                repo.putTask(
+                        RuntimeContext.empty(),
+                        "chat",
+                        "worker",
+                        "chat",
+                        new TaskRunSpec.LocalTaskRunSpec(() -> "chat result"));
+        assertTrue(chat.waitForCompletion(5000));
+        assertEquals(1, wakeups.get());
+    }
 }

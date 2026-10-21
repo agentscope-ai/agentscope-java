@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
+import WorkspacePublications from '../components/WorkspacePublications';
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useControlPlaneScope } from '../app/ScopeContext';
 import {
   browseMarketplaceSkills,
   createMarketplace,
@@ -43,11 +45,12 @@ import {
   WorkspaceSummary,
   BuiltinToolCatalogEntry,
 } from '../api/workspaces';
+import McpConnectionsEditor from '../components/McpConnectionsEditor';
 import { AgentToolset, McpServerSpec } from '../api/agents';
 import type { WorkspaceSkillInfo } from '../api/skills';
 import type { SubagentInfo } from '../api/subagents';
 
-type Tab = 'agentsmd' | 'skills' | 'tools' | 'subagents' | 'marketplace';
+type Tab = 'agentsmd' | 'skills' | 'tools' | 'subagents';
 
 const card: React.CSSProperties = {
   background: '#fff',
@@ -59,6 +62,7 @@ const card: React.CSSProperties = {
 export default function WorkspaceDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const scope = useControlPlaneScope();
   const [searchParams, setSearchParams] = useSearchParams();
   const [ws, setWs] = useState<WorkspaceSummary | null>(null);
   const tabParam = searchParams.get('tab');
@@ -66,11 +70,12 @@ export default function WorkspaceDetailPage() {
     tabParam === 'skills' ||
     tabParam === 'tools' ||
     tabParam === 'subagents' ||
-    tabParam === 'marketplace' ||
     tabParam === 'agentsmd'
       ? tabParam
-      : 'agentsmd';
+      : tabParam === 'marketplace' ? 'skills' : 'agentsmd';
   const [tab, setTab] = useState<Tab>(initialTab);
+  const [skillView, setSkillView] = useState<'installed' | 'browse' | 'sources'>(tabParam === 'marketplace' ? 'browse' : 'installed');
+  const [catalogDraft, setCatalogDraft] = useState<McpServerSpec>();
   const [agentsMd, setAgentsMd] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -108,12 +113,17 @@ export default function WorkspaceDetailPage() {
   }
 
   useEffect(() => {
+    if (tabParam === 'marketplace') {
+      setTab('skills');
+      setSkillView('browse');
+      setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('tab', 'skills'); return next; }, { replace: true });
+      return;
+    }
     if (
       tabParam === 'skills' ||
       tabParam === 'tools' ||
       tabParam === 'subagents' ||
-      tabParam === 'marketplace' ||
-      tabParam === 'agentsmd'
+        tabParam === 'agentsmd'
     ) {
       setTab(tabParam);
     }
@@ -187,27 +197,16 @@ export default function WorkspaceDetailPage() {
     await putWorkspaceTools(id, next, mcpServers);
   }
 
-  async function addMcpFromCatalog(entry: Record<string, unknown>) {
+  function addMcpFromCatalog(entry: Record<string, unknown>) {
     const name = String(entry.id || entry.name || 'mcp');
-    if (mcpServers.some(s => s.name === name)) return;
-    const nextServers: McpServerSpec[] = [
-      ...mcpServers,
-      {
-        name,
-        type: String(entry.transport || 'url'),
-        url: entry.url ? String(entry.url) : undefined,
-        transport: entry.transport ? String(entry.transport) : undefined,
-        command: entry.command ? String(entry.command) : undefined,
-        args: Array.isArray(entry.args) ? (entry.args as string[]) : undefined,
-      },
-    ];
-    const nextTools: AgentToolset[] = [
-      ...tools.filter(t => !(t.type === 'mcp_toolset' && t.mcpServerName === name)),
-      { type: 'mcp_toolset', mcpServerName: name },
-    ];
-    setMcpServers(nextServers);
-    setTools(nextTools);
-    await putWorkspaceTools(id, nextTools, nextServers);
+    if (mcpServers.some(server => server.name === name)) return;
+    setCatalogDraft({ name, transport: String(entry.transport || 'http'),
+      url: entry.url ? String(entry.url) : undefined,
+      command: entry.command ? String(entry.command) : undefined,
+      args: Array.isArray(entry.args) ? entry.args as string[] : undefined,
+      env: entry.env as Record<string, string> | undefined,
+      headers: entry.headers as Record<string, string> | undefined,
+      required: true, timeout: 'PT30S' });
   }
 
   async function openSkill(name: string) {
@@ -217,9 +216,9 @@ export default function WorkspaceDetailPage() {
   }
 
   return (
-    <div style={{ padding: '36px 40px', maxWidth: 1040 }}>
+    <div className="console-page-legacy" style={{ padding: '36px 40px', maxWidth: 1040 }}>
       <button
-        onClick={() => navigate('/workspaces')}
+        onClick={() => navigate(scope.scopedPath('/agent-center/workspaces'))}
         style={{
           background: 'transparent',
           border: 'none',
@@ -236,13 +235,14 @@ export default function WorkspaceDetailPage() {
         {ws?.name || id}
       </h1>
       <p style={{ margin: '0 0 8px', color: '#64748b' }}>
-        {ws?.description || 'Manage AGENTS.md, skills, tools and subagents for linked agents.'}
+        {ws?.description || 'Share instructions, skills, tools and subagents with the Agents linked to this Workspace.'}
       </p>
       <div style={{ color: '#94a3b8', fontSize: '0.82rem', marginBottom: 18 }}>
         v{ws?.version ?? '?'} · skills {ws?.skillCount ?? skills.length} · subagents{' '}
         {ws?.subagentCount ?? subagents.length}
         {ws?.agentsMdExists ? ' · AGENTS.md' : ''}
       </div>
+      <WorkspacePublications id={id} />
       {err && <div style={{ color: '#dc2626', marginBottom: 12 }}>{err}</div>}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
@@ -252,14 +252,13 @@ export default function WorkspaceDetailPage() {
             ['skills', 'Skills'],
             ['tools', 'Tools'],
             ['subagents', 'Subagents'],
-            ['marketplace', 'Marketplace'],
           ] as const
         ).map(([k, label]) => (
           <button
             key={k}
             onClick={() => {
               setTab(k);
-              setSearchParams({ tab: k }, { replace: true });
+              setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('tab', k); return next; }, { replace: true });
             }}
             style={{
               padding: '8px 14px',
@@ -311,8 +310,12 @@ export default function WorkspaceDetailPage() {
         </div>
       )}
 
-      {tab === 'skills' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 14, minHeight: 420 }}>
+      {tab === 'skills' && <div className="mb-4 flex flex-wrap items-center gap-2" aria-label="Skills navigation">
+        {([['installed', 'Installed skills'], ['browse', 'Install from marketplace'], ['sources', 'Manage sources']] as const).map(([key, label]) => <button key={key} className={`rounded-lg border border-border px-3 py-2 text-sm ${skillView === key ? 'bg-indigo-50 border-indigo-200' : 'bg-white'}`} onClick={() => setSkillView(key)}>{label}</button>)}
+        <p className="w-full text-sm text-muted-foreground">Create or install skills in this draft, then publish a revision and update the Agent binding to use them.</p>
+      </div>}
+      {tab === 'skills' && skillView === 'installed' && (
+        <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]" style={{ minHeight: 420 }}>
           <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: 12, borderBottom: '1px solid #e2e8f0', display: 'flex', gap: 8 }}>
               <input
@@ -325,6 +328,7 @@ export default function WorkspaceDetailPage() {
                 onClick={async () => {
                   const name = newSkillName.trim();
                   if (!name) return;
+                  if (skills.some(skill => skill.dirName === name)) { setErr('A skill with this name already exists. Open it to edit, or choose another name.'); return; }
                   const md = `---\nname: ${name}\ndescription: \n---\n\n# ${name}\n\n`;
                   await putWorkspaceResourceSkill(id, name, md);
                   setNewSkillName('');
@@ -342,7 +346,7 @@ export default function WorkspaceDetailPage() {
                   cursor: 'pointer',
                 }}
               >
-                Add
+                New skill
               </button>
             </div>
             {skills.map(sk => (
@@ -361,6 +365,7 @@ export default function WorkspaceDetailPage() {
                 }}
               >
                 <div style={{ fontWeight: 650 }}>{sk.name}</div>
+                <div className="mt-1 text-xs text-indigo-700">{sk.origin === 'marketplace' ? 'Marketplace' : 'Custom'}{sk.marketplace?.repoLocation ? ` · ${sk.marketplace.repoLocation}` : ''}{sk.marketplace?.version ? ` · ${sk.marketplace.version.slice(0, 12)}` : ''}{sk.modified ? ' · Locally modified' : ''}</div>
                 <div style={{ color: '#94a3b8', fontSize: '0.78rem' }}>{sk.description || sk.dirName}</div>
               </button>
             ))}
@@ -437,24 +442,6 @@ export default function WorkspaceDetailPage() {
       {tab === 'tools' && (
         <div style={{ display: 'grid', gap: 16 }}>
           <section style={card}>
-            <h3 style={{ margin: '0 0 12px' }}>Builtin toolset</h3>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {catalog.map(t => {
-                const on = enabledSet().has(t.id);
-                return (
-                  <label key={t.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <input type="checkbox" checked={on} onChange={() => toggleTool(t.id)} />
-                    <span>
-                      <strong>{t.id}</strong>
-                      <span style={{ color: '#94a3b8', marginLeft: 8 }}>{t.group}</span>
-                      <div style={{ color: '#64748b', fontSize: '0.85rem' }}>{t.description}</div>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </section>
-          <section style={card}>
             <h3 style={{ margin: '0 0 12px' }}>MCP catalog</h3>
             <div style={{ display: 'grid', gap: 10 }}>
               {mcpCatalog.map(entry => (
@@ -471,6 +458,7 @@ export default function WorkspaceDetailPage() {
                     )}
                   </div>
                   <button
+                    disabled={mcpServers.some(server => server.name === String(entry.id || entry.name))}
                     onClick={() => addMcpFromCatalog(entry)}
                     style={{
                       padding: '8px 12px',
@@ -481,7 +469,7 @@ export default function WorkspaceDetailPage() {
                       fontWeight: 600,
                     }}
                   >
-                    Add
+                    {mcpServers.some(server => server.name === String(entry.id || entry.name)) ? 'Configured' : 'Configure connection'}
                   </button>
                 </div>
               ))}
@@ -491,6 +479,28 @@ export default function WorkspaceDetailPage() {
                 Active MCP: {mcpServers.map(s => s.name).join(', ')}
               </div>
             )}
+          </section>
+          <McpConnectionsEditor catalogDraft={catalogDraft} onDraftConsumed={() => setCatalogDraft(undefined)} servers={mcpServers} tools={tools} onSave={async (servers, nextTools) => {
+            await putWorkspaceTools(id, nextTools, servers);
+            setMcpServers(servers); setTools(nextTools); await reloadMeta();
+          }} />
+          <section style={card}>
+            <h3 style={{ margin: '0 0 12px' }}>Builtin toolset</h3>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {catalog.map(t => {
+                const on = enabledSet().has(t.id);
+                return (
+                  <label key={t.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <input type="checkbox" checked={on} onChange={() => toggleTool(t.id)} />
+                    <span>
+                      <strong>{t.id}</strong>
+                      <span style={{ color: '#94a3b8', marginLeft: 8 }}>{t.group}</span>
+                      <div style={{ color: '#64748b', fontSize: '0.85rem' }}>{t.description}</div>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
           </section>
         </div>
       )}
@@ -593,14 +603,15 @@ export default function WorkspaceDetailPage() {
               </div>
             ))}
             {subagents.length === 0 && (
-              <div style={{ color: '#94a3b8' }}>No subagents yet. Stored as subagents/&lt;name&gt;.md</div>
+              <div style={{ color: '#94a3b8' }}>Create a subagent to delegate a focused part of the work. Its runtime must support the selected capabilities.</div>
             )}
           </section>
         </div>
       )}
 
-      {tab === 'marketplace' && (
+      {tab === 'skills' && skillView !== 'installed' && (
         <div style={{ display: 'grid', gap: 16 }}>
+          {skillView === 'sources' && <>
           <section style={card}>
             <h3 style={{ margin: '0 0 12px' }}>Register marketplace</h3>
             <div style={{ display: 'grid', gap: 10 }}>
@@ -749,9 +760,12 @@ export default function WorkspaceDetailPage() {
             ))}
           </section>
 
+          </>}
+          {skillView === 'browse' && <>
           <section style={card}>
             <h3 style={{ margin: '0 0 12px' }}>Browse & install into this workspace</h3>
             <select
+              aria-label="Marketplace source"
               value={selectedMarket}
               onChange={async e => {
                 const mid = e.target.value;
@@ -784,6 +798,7 @@ export default function WorkspaceDetailPage() {
                     <div style={{ color: '#64748b', fontSize: '0.85rem' }}>{sk.description}</div>
                   </div>
                   <button
+                    disabled={skills.some(installed => installed.dirName === (sk.dirName || sk.name))}
                     onClick={async () => {
                       try {
                         await installMarketplaceSkill(id, selectedMarket, sk.dirName || sk.name);
@@ -803,12 +818,13 @@ export default function WorkspaceDetailPage() {
                       fontWeight: 600,
                     }}
                   >
-                    Install
+                    {skills.some(installed => installed.dirName === (sk.dirName || sk.name)) ? 'Already installed' : 'Install'}
                   </button>
                 </div>
               ))}
             </div>
           </section>
+          </>}
         </div>
       )}
     </div>

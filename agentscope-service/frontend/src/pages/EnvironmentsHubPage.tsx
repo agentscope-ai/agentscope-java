@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import { namespaceCan } from '../lib/namespaceScope';
+import { useControlPlaneScope } from '../app/ScopeContext';
 import React, { useEffect, useState } from 'react';
 import {
   Environment,
@@ -72,6 +74,8 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function EnvironmentsHubPage() {
+  const canManage = namespaceCan(useControlPlaneScope().roles, 'configure');
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [items, setItems] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -109,7 +113,8 @@ export default function EnvironmentsHubPage() {
     setBusyId('create');
     setErr(null);
     try {
-      await createEnvironment({ name: name.trim(), type: type.trim() || 'local' });
+      const created = await createEnvironment({ name: name.trim(), type: type.trim() || 'local' });
+      setCreatedKey(created.apiKey ?? null);
       setCreating(false);
       setName('');
       setType('local');
@@ -178,15 +183,23 @@ export default function EnvironmentsHubPage() {
   }
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
+      {createdKey && <div role="dialog" aria-label="Environment API key" style={S.modal}>
+        <div style={S.modalBody}>
+          <h3>Environment API key</h3>
+          <p>Copy this key into your Environment Worker configuration. It is shown only once.</p>
+          <input aria-label="API key" readOnly value={createdKey} style={S.input} onFocus={e => e.target.select()} />
+          <button style={S.rowBtn} onClick={() => setCreatedKey(null)}>Done</button>
+        </div>
+      </div>}
       <div style={S.header}>
         <h1 style={S.title}>Environments</h1>
-        <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New environment</button>
+        <button type="button" style={S.primaryBtn} hidden={!canManage} onClick={() => setCreating(true)}>＋ New environment</button>
       </div>
       <p style={S.blurb}>
-        Execution environment templates used by managed agent sessions. Each session runs against one environment.
+        Environments determine where Managed Agents read files and run commands. New sessions use the Agent’s default automatically. Configure local execution, remote filesystems, sandbox templates or self_hosted Environment Workers here, then select the environment in the Agent’s Runtime tab or when creating a session.
       </p>
-      {hands && (
+      {canManage && hands && (
         <div style={{ ...S.card, marginBottom: 18 }}>
           <div style={{ fontWeight: 600 }}>Hands / worker status</div>
           <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
@@ -217,7 +230,7 @@ export default function EnvironmentsHubPage() {
               </span>
             </div>
             <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontFamily: 'monospace' }}>{env.id}</div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+            <div hidden={!canManage} style={canManage ? { display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' } : { display: 'none' }}>
               {!env.archivedAt && (
                 <button type="button" style={S.rowBtn} disabled={busyId === env.id} onClick={() => openEdit(env)}>
                   Edit
@@ -235,7 +248,7 @@ export default function EnvironmentsHubPage() {
           </div>
         ))}
         {!loading && items.length === 0 && (
-          <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No environments yet.</div>
+          <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No custom environments yet. A default environment is created automatically when a Managed session needs one.</div>
         )}
       </div>
 
@@ -244,10 +257,10 @@ export default function EnvironmentsHubPage() {
           <div style={S.modalBody} onClick={e => e.stopPropagation()}>
             <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>New environment</h2>
             <form onSubmit={handleCreate}>
-              <label style={S.formField}>Name</label>
-              <input style={{ ...S.input, marginBottom: 14 }} value={name} onChange={e => setName(e.target.value)} placeholder="default-local" autoFocus />
-              <label style={S.formField}>Type</label>
-              <select style={{ ...S.input, marginBottom: 20 }} value={type} onChange={e => setType(e.target.value)}>
+              <label style={S.formField} htmlFor="environment-name">Name</label>
+              <input id="environment-name" style={{ ...S.input, marginBottom: 14 }} value={name} onChange={e => setName(e.target.value)} placeholder="default-local" autoFocus />
+              <label style={S.formField} htmlFor="environment-type">Type</label>
+              <select id="environment-type" style={{ ...S.input, marginBottom: 20 }} value={type} onChange={e => setType(e.target.value)}>
                 <option value="local">local</option>
                 <option value="sandbox">sandbox</option>
                 <option value="remote">remote</option>
@@ -256,9 +269,8 @@ export default function EnvironmentsHubPage() {
               {type === 'self_hosted' && (
                 <p style={{ margin: '-14px 0 20px', color: '#64748b', fontSize: '0.82rem', lineHeight: 1.5 }}>
                   Sessions on this environment attach a hands sandbox from an Environment Worker
-                  at the start of each turn (the built-in in-process worker handles this
-                  automatically for single-server deployments). No Docker image or remote sandbox
-                  is required.
+                  at the start of each turn. Start an external Environment Worker with this
+                  environment ID and API key before running sessions.
                 </p>
               )}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>

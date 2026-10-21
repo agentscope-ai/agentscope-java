@@ -15,20 +15,17 @@
  */
 package io.agentscope.core.a2a.agent.message;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.DataPart;
-import io.a2a.spec.FilePart;
-import io.a2a.spec.FileWithBytes;
-import io.a2a.spec.Part;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -36,6 +33,11 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.VideoBlock;
 import java.util.Base64;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.FileWithBytes;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -83,6 +85,23 @@ class ContentBlockParserRouterTest {
     }
 
     @Test
+    @DisplayName("Should parse HintBlock with its identity and source")
+    void testParseHintBlock() {
+        HintBlock block = new HintBlock("hint-1", "Check the inbox", "alice");
+
+        Part<?> result = router.parse(block);
+
+        assertNotNull(result);
+        TextPart textPart = assertInstanceOf(TextPart.class, result);
+        assertEquals("Check the inbox", textPart.text());
+        assertEquals(
+                MessageConstants.BlockContent.TYPE_HINT,
+                textPart.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+        assertEquals("hint-1", textPart.metadata().get(MessageConstants.HINT_ID_METADATA_KEY));
+        assertEquals("alice", textPart.metadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
+    }
+
+    @Test
     @DisplayName("Should parse ImageBlock")
     void testParseImageBlock() {
         ImageBlock block = mock(ImageBlock.class);
@@ -95,7 +114,7 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         assertInstanceOf(FilePart.class, result);
-        assertInstanceOf(FileWithBytes.class, ((FilePart) result).getFile());
+        assertInstanceOf(FileWithBytes.class, ((FilePart) result).file());
     }
 
     @Test
@@ -111,7 +130,7 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         assertInstanceOf(FilePart.class, result);
-        assertInstanceOf(FileWithBytes.class, ((FilePart) result).getFile());
+        assertInstanceOf(FileWithBytes.class, ((FilePart) result).file());
     }
 
     @Test
@@ -127,7 +146,7 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         assertInstanceOf(FilePart.class, result);
-        assertInstanceOf(FileWithBytes.class, ((FilePart) result).getFile());
+        assertInstanceOf(FileWithBytes.class, ((FilePart) result).file());
     }
 
     @Test

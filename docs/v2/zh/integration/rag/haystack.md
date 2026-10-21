@@ -1,4 +1,7 @@
-# HayStack Knowledge
+---
+title: HayStack
+en_link: /v2/en/integration/rag/haystack
+---
 
 `agentscope-extensions-rag-haystack` 把 [HayStack](https://haystack.deepset.ai/) RAG 服务接进 AgentScope。文档管理和索引由 HayStack 那边负责，AgentScope 只负责调用其检索接口。
 

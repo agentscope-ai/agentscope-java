@@ -1,4 +1,7 @@
-# Tool
+---
+title: Tool System
+zh_link: /v1/zh/docs/task/tool
+---
 
 The tool system enables agents to perform external operations such as API calls, database queries, file operations, etc.
 
@@ -199,7 +202,7 @@ public String query(
 }
 ```
 
-> See [Agent](../quickstart/agent.md) documentation for detailed configuration.
+> See [Agent](/v1/en/docs/quickstart/agent) documentation for detailed configuration.
 
 ## Built-in Tools
 
@@ -257,7 +260,7 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 
 ### Sub-agent Tools
 
-Agents can be registered as tools for other agents to call. See [Agent as Tool](agent-as-tool.md) for details.
+Agents can be registered as tools for other agents to call. See [Agent as Tool](/v1/en/docs/task/agent-as-tool) for details.
 
 ## AgentTool Interface
 

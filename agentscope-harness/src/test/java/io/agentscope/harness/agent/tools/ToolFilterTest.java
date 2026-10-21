@@ -136,6 +136,20 @@ class ToolFilterTest {
         assertTrue(names.contains("task_output"));
     }
 
+    @Test
+    void isAllowed_matchesApplySemantics() {
+        ToolsConfig cfg = new ToolsConfig();
+        cfg.setAllow(List.of("read_file"));
+        cfg.setDeny(List.of("team"));
+
+        assertTrue(ToolFilter.isAllowed("read_file", cfg));
+        assertFalse(ToolFilter.isAllowed("execute", cfg));
+        assertTrue(ToolFilter.isAllowed("agent_spawn", cfg));
+        assertFalse(ToolFilter.isAllowed("team", cfg));
+        assertTrue(ToolFilter.isAllowed("execute", null));
+        assertFalse(ToolFilter.isAllowed("", null));
+    }
+
     private static Toolkit makeToolkit() {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new TestTools());

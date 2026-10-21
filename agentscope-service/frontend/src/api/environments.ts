@@ -17,6 +17,8 @@
 import { authHeaders, readApiError } from './http';
 
 export interface Environment {
+  /** Returned only on creation or key rotation. */
+  apiKey?: string;
   id: string;
   name: string;
   type: string;

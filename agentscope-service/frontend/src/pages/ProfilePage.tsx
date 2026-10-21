@@ -14,134 +14,46 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
-import { UserProfile, getProfile, changePassword } from '../api/auth';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { changePassword, getProfile, listLoginSessions, revokeLoginSession, revokeOtherLoginSessions, updateProfile } from '@/api/auth';
+import { getMyPreferences, setDefaultNamespace } from '@/api/permissions';
+import { api } from '@/lib/apiClient';
+import { useControlPlaneScope } from '@/app/ScopeContext';
+import { namespaceCan } from '@/lib/namespaceScope';
+import { Page, PageHeader } from '@/components/Page';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { ErrorNotice, RoleBadges, RoleGuide } from '@/features/settings/AccessComponents';
 
-const S: Record<string, React.CSSProperties> = {
-  page: { padding: '36px 40px', maxWidth: 760 },
-  title: { margin: '0 0 28px', fontSize: '1.6rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' },
-  card: {
-    background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14,
-    padding: '24px 28px', marginBottom: 20,
-    boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
-  },
-  cardLabel: {
-    fontSize: '0.78rem', color: '#94a3b8', fontWeight: 700,
-    textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 16, display: 'block',
-  },
-  row: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 },
-  rowLabel: { width: 120, fontSize: '0.88rem', color: '#94a3b8', flexShrink: 0 },
-  rowValue: { fontSize: '0.95rem', color: '#0f172a' },
-  badge: {
-    display: 'inline-block', padding: '3px 11px', borderRadius: 999, fontSize: '0.78rem',
-    fontWeight: 600,
-  },
-  fieldLabel: { display: 'block', fontSize: '0.88rem', fontWeight: 500, color: '#475569', marginBottom: 8 },
-  input: {
-    width: '100%', boxSizing: 'border-box', padding: '11px 14px',
-    background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 9,
-    color: '#0f172a', fontSize: '0.95rem',
-  },
-  saveBtn: {
-    marginTop: 18, padding: '11px 24px',
-    background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)',
-    color: '#ffffff',
-    border: 'none', borderRadius: 9, cursor: 'pointer', fontSize: '0.95rem', fontWeight: 600,
-    boxShadow: '0 2px 6px rgba(99,102,241,0.35), inset 0 1px 0 rgba(255,255,255,0.18)',
-  },
-  success: { color: '#059669', fontSize: '0.9rem', marginTop: 10 },
-  error: { color: '#dc2626', fontSize: '0.9rem', marginTop: 10 },
-};
+type IMIdentity = { channelId: string; platform: string; accountId: string; senderId: string };
+type Connections = { identities: IMIdentity[]; subscriptions: { id: string; channelId: string; platform: string; issueId: string }[] };
 
 export default function ProfilePage() {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-
-  const [curPwd, setCurPwd] = useState('');
-  const [newPwd, setNewPwd] = useState('');
-  const [conPwd, setConPwd] = useState('');
-  const [pwdErr, setPwdErr] = useState<string | null>(null);
-  const [pwdOk, setPwdOk] = useState(false);
-
-  useEffect(() => {
-    getProfile().then(setProfile).catch(e => setLoadErr(e.message));
-  }, []);
-
-  async function handleChangePwd() {
-    setPwdErr(null);
-    setPwdOk(false);
-    if (newPwd.length < 6) { setPwdErr('Password must be ≥ 6 characters'); return; }
-    if (newPwd !== conPwd) { setPwdErr('Passwords do not match'); return; }
-    try {
-      await changePassword(curPwd, newPwd);
-      setPwdOk(true);
-      setCurPwd(''); setNewPwd(''); setConPwd('');
-    } catch (e: unknown) {
-      setPwdErr(e instanceof Error ? e.message : 'Error');
-    }
-  }
-
-  return (
-    <div style={S.page}>
-      <h2 style={S.title}>My Profile</h2>
-      {loadErr && <p style={S.error}>{loadErr}</p>}
-
-      <div style={S.card}>
-        <span style={S.cardLabel}>Account</span>
-        {profile && (
-          <>
-            <div style={S.row}>
-              <span style={S.rowLabel}>Username</span>
-              <span style={{ ...S.rowValue, fontWeight: 600 }}>{profile.username}</span>
-            </div>
-            <div style={S.row}>
-              <span style={S.rowLabel}>User ID</span>
-              <span style={{ ...S.rowValue, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.88rem', color: '#64748b' }}>
-                {profile.userId}
-              </span>
-            </div>
-            <div style={S.row}>
-              <span style={S.rowLabel}>Role</span>
-              <span>
-                {profile.roles.map(r => (
-                  <span
-                    key={r}
-                    style={{
-                      ...S.badge,
-                      background: r === 'admin' ? '#eef2ff' : '#f1f5f9',
-                      color: r === 'admin' ? '#4338ca' : '#64748b',
-                      border: r === 'admin' ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
-                    }}
-                  >
-                    {r}
-                  </span>
-                ))}
-              </span>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div style={S.card}>
-        <span style={S.cardLabel}>Change Password</span>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-          <div>
-            <label style={S.fieldLabel}>Current</label>
-            <input style={S.input} type="password" value={curPwd} onChange={e => setCurPwd(e.target.value)} />
-          </div>
-          <div>
-            <label style={S.fieldLabel}>New</label>
-            <input style={S.input} type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder="≥ 6 chars" />
-          </div>
-          <div>
-            <label style={S.fieldLabel}>Confirm</label>
-            <input style={S.input} type="password" value={conPwd} onChange={e => setConPwd(e.target.value)} />
-          </div>
-        </div>
-        {pwdErr && <p style={S.error}>{pwdErr}</p>}
-        {pwdOk && <p style={S.success}>Password changed successfully!</p>}
-        <button style={S.saveBtn} onClick={handleChangePwd}>Update Password</button>
-      </div>
-    </div>
-  );
+  const scope = useControlPlaneScope(); const qc = useQueryClient(); const navigate = useNavigate();
+  const [tab, setTab] = useState('account'); const [displayName, setDisplayName] = useState('');
+  const [current, setCurrent] = useState(''); const [password, setPassword] = useState(''); const [confirm, setConfirm] = useState('');
+  const [defaultSpace, setDefaultSpace] = useState(''); const [notice, setNotice] = useState('');
+  const profile = useQuery({ queryKey: ['my-profile'], queryFn: getProfile });
+  const preferences = useQuery({ queryKey: ['my-preferences'], queryFn: getMyPreferences });
+  const sessions = useQuery({ queryKey: ['my-login-sessions'], queryFn: listLoginSessions, enabled: tab === 'security' });
+  const connections = useQuery({ queryKey: ['my-channel-connections'], queryFn: () => api.get<Connections>('/api/user/channel-connections'), enabled: tab === 'connections' });
+  useEffect(() => { if (profile.data) setDisplayName(profile.data.displayName || ''); }, [profile.data]);
+  useEffect(() => { if (preferences.data) setDefaultSpace(preferences.data.preferences.defaultNamespace || ''); }, [preferences.data]);
+  const saveProfile = useMutation({ mutationFn: () => updateProfile(displayName.trim()), onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['my-profile'] }); setNotice('Profile saved.'); } });
+  const saveDefault = useMutation({ mutationFn: () => setDefaultNamespace(defaultSpace), onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['my-preferences'] }); scope.refreshNamespaces(); setNotice('Default namespace saved. It is used when no recent or explicit selection is available.'); } });
+  const change = useMutation({ mutationFn: () => changePassword(current, password), onSuccess: () => { setCurrent(''); setPassword(''); setConfirm(''); setNotice('Password updated. Other login sessions have been revoked.'); void qc.invalidateQueries({ queryKey: ['my-login-sessions'] }); } });
+  const revoke = useMutation({ mutationFn: (id: string) => id === 'others' ? revokeOtherLoginSessions() : revokeLoginSession(id), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['my-login-sessions'] }); setNotice('Login access revoked.'); } });
+  const disconnect = useMutation({ mutationFn: (value: IMIdentity | string) => typeof value === 'string' ? api.delete(`/api/user/channel-subscriptions/${encodeURIComponent(value)}`) : api.delete('/api/user/channel-connections', value), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['my-channel-connections'] }); setNotice('Connection preferences updated.'); } });
+  const tabs = ['account', 'my namespaces', 'security', 'connections'];
+  return <Page className="max-w-5xl"><PageHeader title="Profile" description="Manage your identity, namespace preferences, account security and IM connections." /><nav aria-label="Profile settings" className="flex gap-5 overflow-x-auto border-b">{tabs.map(t => <button key={t} onClick={() => { setTab(t); setNotice(''); }} className={`whitespace-nowrap border-b-2 pb-3 text-sm font-medium capitalize ${tab === t ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500'}`}>{t}</button>)}</nav>
+    {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
+    <ErrorNotice error={profile.error || saveProfile.error || saveDefault.error || change.error || revoke.error || disconnect.error} />
+    {tab === 'account' && <section className="space-y-5 rounded-xl border p-5"><h2 className="text-lg font-semibold">Account</h2>{profile.data ? <><dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">Username</dt><dd className="mt-1 font-medium">{profile.data.username}</dd></div><div><dt className="text-slate-500">Account ID</dt><dd className="mt-1 break-all font-mono text-xs">{profile.data.userId}</dd></div><div><dt className="text-slate-500">Platform access</dt><dd className="mt-1"><Badge>{profile.data.roles.includes('admin') ? 'Platform administrator' : 'Console user'}</Badge></dd></div></dl><form className="space-y-4 border-t pt-4" onSubmit={e => { e.preventDefault(); saveProfile.mutate(); }}><label className="block max-w-md space-y-2 text-sm font-medium">Display name<Input maxLength={100} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={profile.data.username} /></label><Button type="submit" disabled={saveProfile.isPending}>Save profile</Button></form></> : <p className="text-sm text-slate-500">Loading account…</p>}</section>}
+    {tab === 'my namespaces' && <div className="space-y-5"><section className="space-y-4 rounded-xl border p-5"><h2 className="font-semibold">Default namespace</h2><ErrorNotice error={preferences.error} /><select aria-label="Default namespace" className="h-10 w-full max-w-md rounded-lg border bg-white px-3 text-sm" value={defaultSpace} onChange={e => setDefaultSpace(e.target.value)}><option value="">System default (Default)</option>{scope.namespaces.map(n => <option key={n.name} value={n.name}>{n.displayName}</option>)}</select><div><Button disabled={saveDefault.isPending || preferences.isLoading || !!preferences.error} onClick={() => saveDefault.mutate()}>Save default</Button></div></section><section className="space-y-4"><h2 className="text-lg font-semibold">My namespaces</h2>{scope.namespaces.map(n => <article key={n.name} className="space-y-3 rounded-xl border p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">{n.displayName} <span className="font-normal text-slate-400">{n.name}</span></h3><Button variant="outline" size="sm" onClick={() => { scope.setScope(n.tenant, n.name); navigate(`/work/overview?tenant=${encodeURIComponent(n.tenant)}&namespace=${encodeURIComponent(n.name)}`); }}>Open namespace</Button></div><RoleBadges roles={n.roles} />{n.groups && n.groups.length > 0 && <p className="text-sm text-slate-500">User groups: {n.groups.join(', ')}</p>}<p className="text-sm text-slate-500">{namespaceCan(n.roles, 'configure') ? 'You can configure resources and run work.' : namespaceCan(n.roles, 'write') ? 'You can create and run work using available resources.' : namespaceCan(n.roles, 'operate') ? 'You can operate namespace infrastructure.' : 'You can read the content shared with you.'} {namespaceCan(n.roles, 'audit') ? 'Auditor access includes private business work.' : 'Private work requires an explicit sharing grant.'}</p><Link className="text-sm text-indigo-600" to={`/settings/namespaces/${encodeURIComponent(n.name)}`}>{namespaceCan(n.roles, 'manage') ? 'Manage members, groups & resources' : 'View resource access & requests'}</Link></article>)}</section><details className="rounded-xl border p-5"><summary className="cursor-pointer text-sm font-medium">Understand namespace roles</summary><div className="mt-4"><RoleGuide /></div></details></div>}
+    {tab === 'security' && <div className="space-y-5"><section className="space-y-4 rounded-xl border p-5"><h2 className="font-semibold">Change password</h2><form className="max-w-lg space-y-4" onSubmit={e => { e.preventDefault(); if (password === confirm) change.mutate(); }}><label className="block space-y-2 text-sm">Current password<Input type="password" required autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)} /></label><label className="block space-y-2 text-sm">New password<Input type="password" required minLength={6} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} /></label><label className="block space-y-2 text-sm">Confirm password<Input type="password" required autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} /></label>{confirm && password !== confirm && <p className="text-sm text-red-600">Passwords do not match.</p>}<Button type="submit" disabled={change.isPending || !current || password.length < 6 || password !== confirm}>Update password</Button></form></section><section className="space-y-4 rounded-xl border p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">Login sessions</h2><Button variant="outline" disabled={revoke.isPending || !sessions.data?.items.some(s => !s.current)} onClick={() => revoke.mutate('others')}>Sign out other sessions</Button></div><ErrorNotice error={sessions.error} />{sessions.isLoading && <p className="text-sm text-slate-500">Loading sessions…</p>}{sessions.data?.items.map(s => <div key={s.id} className="flex items-start justify-between gap-4 border-t pt-4"><div className="min-w-0"><p className="break-words text-sm">{s.userAgent || 'Existing login'} {s.current && <Badge tone="info">This session</Badge>}</p><p className="mt-2 text-xs text-slate-500">Last active {new Date(s.lastSeenAt).toLocaleString()} · Expires {new Date(s.expiresAt).toLocaleString()}</p></div>{!s.current && <Button variant="ghost" size="sm" disabled={revoke.isPending} onClick={() => revoke.mutate(s.id)}>Sign out</Button>}</div>)}</section></div>}
+    {tab === 'connections' && <div className="space-y-5"><ErrorNotice error={connections.error} />{connections.isLoading && <p className="text-sm text-slate-500">Loading connections…</p>}<section className="space-y-4 rounded-xl border p-5"><h2 className="font-semibold">My IM identities</h2><p className="text-sm text-slate-500">These identities connect your IM messages to your account. Pair a new identity from the relevant Channel page.</p>{connections.data?.identities.map(i => <div key={`${i.channelId}/${i.accountId}/${i.senderId}`} className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><div><p className="text-sm font-medium">{i.platform} · {i.channelId}</p><p className="mt-1 break-all text-xs text-slate-500">{i.senderId}</p></div><Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate(i)}>Unlink identity</Button></div>)}{connections.data?.identities.length === 0 && <p className="text-sm text-slate-500">No linked IM identities.</p>}</section><section className="space-y-4 rounded-xl border p-5"><h2 className="font-semibold">Work notifications</h2><p className="text-sm text-slate-500">Manage your active Issue notifications to IM. Unsubscribing stops future event notifications for this subscription.</p>{connections.data?.subscriptions.map(s => <div key={s.id} className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><div><p className="text-sm font-medium">{s.platform} · {s.channelId}</p><p className="mt-1 break-all text-xs text-slate-500">Issue {s.issueId}</p></div><Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate(s.id)}>Unsubscribe</Button></div>)}{connections.data?.subscriptions.length === 0 && <p className="text-sm text-slate-500">No active IM notification subscriptions.</p>}</section></div>}
+  </Page>;
 }

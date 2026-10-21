@@ -1,122 +1,70 @@
 ---
-title: "AgentScope 2.0 是什么？"
-description: "Harness 工程化、企业级分布式部署、底层框架重构。"
+title: AgentScope 2.0 是什么？
+description: 用 Harness 构建能持续完成任务的 Agent，并将它接入业务应用、运行环境与服务 API。
+en_link: /v2/en/docs/index
 ---
 
-AgentScope Java 2.0 从"构建一个智能体"的工具箱，迈向**面向生产环境运行智能体**的完整平台。本次升级围绕三大主题展开，每一部分都对应一个具体要解决的问题。
+**AgentScope 2.0 是面向智能体应用的开源开发框架，帮助你把模型、工具和业务数据组织成能够持续执行任务的 Agent。** 你可以用它构建多轮对话助手，也可以让 Agent 检索资料、处理文件、运行代码、委派子任务，在需要时等待人的确认，再继续完成工作。
 
-:::{note}
-AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部分用户的平滑升级；但同时 2.0 也带来了 API 层面的不兼容变更，并在核心抽象、API 和架构上均有大幅改进。完整迁移指南详见 [V1 迁移指南](./change-log.md)。
-:::
+推荐在应用启动时定义共享 Builder，每次请求前用 `builder.build()` 创建新的 Agent，执行结束后关闭。相同会话通过稳定身份和持久存储延续，具体用法见[快速开始](/v2/zh/docs/quickstart)。
 
-## 1 · Harness 工程化 —— 长期运行、复杂任务的工程底座
+这份文档介绍 Java 版本。你可以将 Agent 直接嵌入现有 Java 或 Spring Boot 应用，从一次调用开始，逐步加入上下文管理、工作区、持久会话和多 Agent 协作。需要统一部署和对外提供 API 时，还可以使用 AgentScope Service。
 
-裸的 ReAct 循环只解决"一次推理"。真实任务往往要跑数小时、积累大量状态、依赖可持续沉淀的能力。**Harness** 把这套工程基础设施一次给齐：核心推理循环原样保留，能力按需叠加，让智能体能稳定长跑、能力越用越强、能从容完成复杂作业。
+## 用 AgentScope 能做什么
 
-::::{grid} 2
+对于客服、知识问答和业务助理，你可以让 Agent 结合会话历史、检索结果和实时业务数据回答问题，并通过工具查询订单、更新工单或调用已有系统。前端既能展示回答，也能展示正在调用的工具和需要用户处理的待办。
 
-:::{grid-item-card} 自进化与技能仓库
-:link: harness/skill.html
+对于调研、数据分析、代码修改等多步骤任务，Agent 可以在工作区中读取材料、制定计划、执行工具并生成文件；涉及不同专业能力时，再委派给子 Agent。长任务积累的上下文、用户中途补充的要求，以及暂停后继续所需的状态，都有对应的管理机制。
 
-成功模式以 Markdown 技能自动沉淀到 `workspace/skills/`，每轮按需加载、跨会话共享 —— know-how 在每次运行之间累积。
-:::
+例如，一个“整理客户反馈并生成改进报告”的 Agent，可以先读取资料和团队规范，调用业务工具核对数据，让子 Agent 分别分析不同产品线，最后生成报告。用户可以在过程中补充关注点，在发送报告前确认，也可以离开页面后再回来查看进度。**Harness 将这些步骤需要的运行能力组合起来，让开发者集中定义业务目标、工具和执行边界。**
 
-:::{grid-item-card} 分层记忆管理
-:link: harness/memory.html
+## Harness 如何支撑 Agent 持续工作
 
-三层记忆：上下文对话、agent 自维护的 `MEMORY.md`、磁盘事实流水账。自动压缩控制 prompt 体量，`memory_*` 工具提供显式回忆。
-:::
+ReAct 的“推理、执行工具、观察结果”循环是 AgentScope Harness 的基础。`ReActAgent` 提供推理、工具、权限和中间件等能力，`HarnessAgent` 在同一循环上组合工作区、上下文与会话管理，围绕下面三个维度支撑持续执行。推荐从 `HarnessAgent` 开始，再按场景配置所需能力；具体组合见 [Harness 架构](/v2/zh/docs/harness/architecture)。
 
-:::{grid-item-card} 子智能体
-:link: harness/subagent.html
+### 持续跟进长程任务
 
-在 Markdown 里声明子 agent 规格，运行时按需 `agent_spawn` / `agent_send`，支持同步与后台委派。后台终态经 system-reminder 反向推送，无需轮询。
-:::
+处理代码修复、调研等多步骤任务时，可以启用 Todo 跟踪进度，结合 Plan Mode 先调查、写计划，经用户确认后再执行；独立工作可委派给子 Agent，同步等待或在后台完成。计划、待办和子任务各有状态，后续执行能够继续跟进未完成的工作。有明确验收标准时，应用还可以记录任务要求与实际验证结果，为下一步提供依据。
 
-:::{grid-item-card} 上下文自动管理
-:link: harness/compaction.html
+Session Log 保存消息、工具调用与交互过程，checkpoint 保存继续工作所需的状态。需要后台执行、忙时排队、补充要求或中断续做时，使用 `AgentSession` 管理任务；前端则从日志补齐已有进度，再接收新增事件。详见[计划模式](/v2/zh/docs/harness/plan-mode)、[子 Agent](/v2/zh/docs/harness/subagent)和[会话操作与恢复](/v2/zh/docs/harness/session-log)。
 
-结构化压缩保留目标 / 状态 / 关键发现 / 下一步；超大工具结果落盘、只留占位符；ContextOverflow 兜底重试是最后防线。
-:::
+### 管理上下文，控制模型能看到什么
 
-:::{grid-item-card} 复杂任务规划（Plan Mode）
-:link: harness/plan-mode.html
+Harness 在每次请求模型前，重新组织稳定指令、对话历史、当前任务状态和参考材料。工作区提供项目规则、记忆、知识与 Skill，动态来源按轮次补充最新业务事实；应用可以配置内容来源、优先级和预算，让本轮输入围绕当前工作展开。记忆和外部材料作为参考资料，业务数据的读取权限仍由应用校验。
 
-只读规划态编排长任务；计划文件持久化到 `workspace/plans/` 并驱动执行，让意图与动作解耦。
-:::
+随着任务变长，Harness 将过大的工具结果保存到文件，按预算选择材料，并通过结构化压缩保留目标、关键发现和下一步。模型使用精简后的工作上下文，完整执行历史仍保留在 Session Log 中；跨会话的信息则由长期记忆承接。详见[上下文管理](/v2/zh/docs/harness/context)、[工作区](/v2/zh/docs/harness/workspace)和[记忆](/v2/zh/docs/harness/memory)。
 
-:::{grid-item-card} Workspace 工程底座
-:link: harness/workspace.html
+### 让工具受控、安全地执行
 
-人格、知识、技能、子 agent 规格、会话日志全部以磁盘 Markdown / JSON 表达，每轮自动注入 system prompt。
-:::
+Java 工具和 MCP 将模型的行动请求连接到文件、代码与业务系统。应用配置可用工具，权限系统再根据规则、运行模式和具体参数，决定允许、拒绝或请求用户确认。需要人工审批或外部系统执行的操作，可以保存待办、等待结果，再继续推理。
 
-::::
+执行代码和命令时，可以配置 Docker 或远端沙箱，并选择按用户或会话隔离的范围；实际文件、网络和资源边界由工具实现与执行后端落实。工具调用、结果和审批过程通过类型化事件与会话日志供应用展示和追踪。详见[工具](/v2/zh/docs/building-blocks/tool)、[权限与人工介入](/v2/zh/docs/building-blocks/permission-system)和[沙箱](/v2/zh/docs/harness/sandbox)。
 
-## 2 · 企业级分布式部署
+## 在业务应用中扩展和部署
 
-生产环境的智能体要服务多租户、要安全运行不可信工具代码、要在滚动发布时不丢失在途上下文。AgentScope 2.0 天然面向**无状态水平扩展**：任意副本都能恢复任意用户的完整上下文，沙箱状态可跨进程恢复，权限闸门 + 多维隔离把每一个租户的数据严格分开。
+AgentScope 通过模型扩展接入不同供应商，你可以按任务选择模型，并配置重试与备用模型策略。统一的消息结构承载文本、图片、文件和工具结果；业务能力可以通过 Java 工具或 MCP 接入。需要动态上下文、模型调用策略、审计或工具检查时，可以通过 Middleware 介入执行环节。详见[模型](/v2/zh/docs/building-blocks/model)、[工具](/v2/zh/docs/building-blocks/tool)和[Middleware](/v2/zh/docs/building-blocks/middleware)。
 
-::::{grid} 2
+从本地开发走向多用户、多副本部署时，需要为用户和会话配置稳定身份，选择合适的工作区隔离范围，并使用各副本可访问的持久后端。Workspace 的 Filesystem 可以对接共享存储，Session Log 也支持替换后端；原生会话写入通过租约和写入隔离控制并发。沙箱生命周期与恢复策略则按所选执行后端配置。部署方式和存储选型见[上生产](/v2/zh/docs/others/going-to-production)。
 
-:::{grid-item-card} 多租户隔离
-:link: building-blocks/context.html
+## 通过 AgentScope Service 对外提供 API
 
-支持 `session` / `user` / `agent` / `org` 多维度状态隔离。`RuntimeContext` 的键贯穿工作区路径、KV 命名空间、沙箱状态槽。
-:::
+[AgentScope Service](/v2/zh/service/index) 提供 Agent 的注册、托管、编排与服务发布能力。你可以配置由平台运行的 Managed Agent，也可以接入自己部署的 Agent，或连接已有的 Coding Agent；具备相应任务能力的 Agent 还可以组成 Team，或参与 Workflow。
 
-:::{grid-item-card} 安全沙箱执行
-:link: harness/sandbox.html
+对业务调用方，可以将单个 Agent、Team 或 Workflow 发布为 Endpoint，通过统一的 Invocation API 提交工作、查询结果、接收 SSE 事件和处理待办。前端使用快照与增量事件恢复完整页面，无需了解 Team 内部如何分工。需要多轮会话、文件、子会话或 checkpoint 等托管能力时，可以使用 Managed Agent API。详见[统一服务 API](/v2/zh/service/service-api)和[Managed Agent API](/v2/zh/service/session-event-log)。
 
-工具执行限定在隔离环境内 —— 本地子进程 / Docker / 远端 AgentRun 任选 —— 支持快照与恢复，长任务能在进程重启后继续。
-:::
+<Note>
+AgentScope Service 当前为预览能力，正式版本尚未发布。使用 Java SDK 构建和运行 Agent 不依赖部署 Service。
+</Note>
 
-:::{grid-item-card} 工具权限管控
-:link: building-blocks/permission-system.html
+## 从哪里开始
 
-权限三态决策（允许 / 审批 / 拒绝）综合静态规则、工具类型、输入分析；敏感工具强制人工审批，HITL 是框架内生能力。
-:::
+先用最贴近当前需求的入口，再逐步增加能力：
 
-:::{grid-item-card} 优雅上下线与会话恢复
-:link: building-blocks/context.html
+| 你的目标 | 建议入口 |
+| --- | --- |
+| 在 Java 应用中获得回复，或把 Agent 作为工作流节点 | 从[快速开始](/v2/zh/docs/quickstart)使用 `agent.call` |
+| 在当前请求中展示回答和工具执行进度 | 使用 `agent.streamEvents`，参考[消息与事件](/v2/zh/docs/building-blocks/message-and-event) |
+| 构建能后台执行、排队、交互和恢复的聊天应用 | 使用 `agent.session(ctx)` 获取 `AgentSession`，运行[可恢复聊天示例](/v2/zh/blogs/best-practices/session-chat) |
+| 将 Agent 或团队能力作为 HTTP API 提供给其他应用 | 按[服务发布指南](/v2/zh/service/service-api)创建 Endpoint |
 
-同一 `(userId, sessionId)` 在任意进程恢复完整对话；`AgentStateStore`（内存 / JSON 文件 / MySQL / Redis）支撑零停机滚动发布与崩溃恢复。
-:::
-
-::::
-
-## 3 · 底层框架升级 —— 更轻、更顺手的核心抽象
-
-底层做了一次重构：消息、事件、扩展机制更小、更正交、更顺手；HITL 与事件流式不再是外挂层，而是框架运行的一部分。
-
-::::{grid} 2
-
-:::{grid-item-card} 事件流式输出原生支持
-:link: building-blocks/message-and-event.html
-
-每一步 —— 模型调用、文本增量、工具执行、工具结果 —— 都以类型化事件流出。订阅一次，前端 UI 实时跟上。
-:::
-
-:::{grid-item-card} 更简洁的消息模型
-:link: building-blocks/message-and-event.html
-
-文本、文件、图片、音视频、模型思考、工具结果统一收敛到一个 `ContentBlock`；按 role 严格校验，非法消息在构造期就被拦下。
-:::
-
-:::{grid-item-card} Middleware 取代松散 Hook
-:link: building-blocks/middleware.html
-
-`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` 五个阶段取代 v1 的扁平 hook。每个关注点各居其层，组合干净利落。
-:::
-
-:::{grid-item-card} HITL 一等公民
-:link: building-blocks/permission-system.html
-
-可在执行中确认工具参数、审批敏感操作，或把执行交给外部系统。智能体在暂停点等待并精确恢复，无需自己搭脚手架。
-:::
-
-::::
-
----
-
-正在评估升级时间表的开发者，可以查阅 [V1 迁移指南](./change-log.md) —— 拆成"必须迁移 / 推荐迁移"两层的迁移指南，加上新功能罗列，足以端到端规划一次升级。各版本具体变更请见 [Release Notes](others/release-notes.md)。
+从 1.x 升级请阅读 [V1 迁移指南](/v2/zh/docs/change-log)；各版本的具体变化见 [Release Notes](/v2/zh/docs/others/release-notes)。

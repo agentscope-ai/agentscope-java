@@ -20,12 +20,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
+import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -42,6 +45,15 @@ import org.junit.jupiter.api.io.TempDir;
 class BaseSandboxFilesystemTest {
 
     private static final RuntimeContext RT = RuntimeContext.empty();
+
+    /**
+     * The response {@code SandboxBackedFilesystem.execute} produces when the sandbox backend
+     * call itself fails (e.g. HTTP 504): the command never ran.
+     */
+    private static ExecuteResponse sandboxRequestFailed() {
+        return new ExecuteResponse(
+                "Internal sandbox error: Execute failed (status=504)", -1, false);
+    }
 
     // ================================================================
     // Unit tests — canned responses, run on all platforms
@@ -130,6 +142,173 @@ class BaseSandboxFilesystemTest {
             assertTrue(dir.isDirectory());
             assertFalse(dir.modifiedAt().isEmpty(), "dir modifiedAt should be populated");
         }
+
+        // ==================== Bug reproduction: execute failures masked as results (#2961)
+        // ====================
+
+        @Test
+        void ls_executeFailure_negativeExit_shouldFailWithCause() {
+            LsResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed()).ls(RT, "/workspace");
+
+            assertFalse(result.isSuccess(), "ls should fail when the command never ran");
+            assertTrue(result.error().contains("/workspace"), "error should locate the target");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        @Test
+        void ls_executeFailure_nullOutput_shouldFailWithExitCodeFallback() {
+            LsResult result =
+                    new FixedResponseFilesystem(new ExecuteResponse(null, -1, false))
+                            .ls(RT, "/workspace");
+
+            assertFalse(result.isSuccess(), "a null-output failure must not collapse into success");
+            assertTrue(
+                    result.error().contains("exit code -1"),
+                    "error should fall back to the exit code when no diagnostic output exists");
+        }
+
+        @Test
+        void ls_executeFailure_unknownExitCode_shouldFail() {
+            LsResult result =
+                    new FixedResponseFilesystem(new ExecuteResponse("unknown state", null, false))
+                            .ls(RT, "/workspace");
+
+            assertFalse(result.isSuccess(), "ls should fail when the exit code is unknown");
+        }
+
+        @Test
+        void ls_executeFailure_timeout_shouldFailWithMessage() {
+            LsResult result =
+                    new FixedResponseFilesystem(
+                                    new ExecuteResponse("Command timed out after 30s", 124, false))
+                            .ls(RT, "/workspace");
+
+            assertFalse(result.isSuccess(), "ls should fail when execution times out");
+            assertTrue(result.error().contains("timed out"), "error should carry the cause");
+        }
+
+        @Test
+        void ls_commandFailure_positiveExit_shouldFailWithOutput() {
+            LsResult result =
+                    new FixedResponseFilesystem(
+                                    new ExecuteResponse("sh: stat: not found", 127, false))
+                            .ls(RT, "/workspace");
+
+            assertFalse(result.isSuccess(), "ls should fail when the command itself fails");
+            assertTrue(result.error().contains("stat"), "error should carry the command output");
+        }
+
+        @Test
+        void read_text_executeFailure_shouldFailInsteadOfErrorAsContent() {
+            ReadResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed())
+                            .read(RT, "/workspace/notes.txt", 0, 10);
+
+            assertFalse(result.isSuccess(), "read should fail when the command never ran");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        @Test
+        void read_binary_executeFailure_shouldFailInsteadOfFileNotFound() {
+            ReadResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed())
+                            .read(RT, "/workspace/logo.png", 0, 10);
+
+            assertFalse(result.isSuccess(), "read should fail when the command never ran");
+            assertTrue(
+                    result.error().contains("status=504"),
+                    "execution failure must not be mislabeled as file_not_found");
+        }
+
+        @Test
+        void read_binary_commandFailure_shouldKeepFileNotFoundSignal() {
+            ReadResult result =
+                    new FixedResponseFilesystem(new ExecuteResponse("", 1, false))
+                            .read(RT, "/workspace/logo.png", 0, 10);
+
+            assertFalse(result.isSuccess(), "a missing file is still a failure");
+            assertTrue(
+                    result.error().contains("file_not_found"),
+                    "a real command failure keeps the designed signal");
+        }
+
+        @Test
+        void read_binary_timeout_shouldFailWithMessageInsteadOfFileNotFound() {
+            ReadResult result =
+                    new FixedResponseFilesystem(
+                                    new ExecuteResponse("Command timed out after 30s", 124, false))
+                            .read(RT, "/workspace/logo.png", 0, 10);
+
+            assertFalse(result.isSuccess(), "read should fail when execution times out");
+            assertTrue(
+                    result.error().contains("timed out"),
+                    "a timeout must not be mislabeled as file_not_found");
+        }
+
+        @Test
+        void grep_executeFailure_shouldFailInsteadOfEmptySuccess() {
+            GrepResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed())
+                            .grep(RT, "pattern", "/workspace", null);
+
+            assertFalse(result.isSuccess(), "grep should fail when the command never ran");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        @Test
+        void glob_executeFailure_shouldFailInsteadOfErrorAsPaths() {
+            GlobResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed())
+                            .glob(RT, "*.md", "/workspace");
+
+            assertFalse(result.isSuccess(), "glob should fail when the command never ran");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        // ==================== Bug reproduction: edit python program collapsed into one line
+        // (#2571) ====================
+
+        @Test
+        void edit_generatedPythonProgram_isSeparatedByRealLineFeeds() {
+            FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
+
+            filesystem.edit(RT, "/workspace/file.txt", "old", "new", false);
+
+            String cmd = filesystem.lastCommand;
+            assertTrue(
+                    cmd.startsWith("python3 -c \""),
+                    "edit should drive the replacement through a python3 -c program");
+            assertTrue(
+                    cmd.contains("import sys, os, base64, json\npayload"),
+                    "the python3 -c program must be separated by real line feeds");
+            assertFalse(
+                    cmd.contains("\\n"),
+                    "a literal backslash-n sequence survives POSIX double quoting unchanged"
+                            + " and collapses the program into one line");
+        }
+
+        @Test
+        void edit_executeFailure_shouldFailWithCause() {
+            EditResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed())
+                            .edit(RT, "/workspace/file.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        @Test
+        void edit_executeFailure_nullOutput_shouldFailWithExitCodeFallback() {
+            EditResult result =
+                    new FixedResponseFilesystem(new ExecuteResponse(null, -1, false))
+                            .edit(RT, "/workspace/file.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
+            assertTrue(
+                    result.error().contains("exit code -1"),
+                    "error should fall back to the exit code when no diagnostic output exists");
+        }
     }
 
     // ================================================================
@@ -206,6 +385,72 @@ class BaseSandboxFilesystemTest {
             assertTrue(result.isSuccess());
             assertTrue(result.matches().isEmpty());
         }
+
+        // ==================== Bug reproduction: ls shell swallows errors ====================
+
+        @Test
+        void ls_nonExistentPath_shouldReturnFail() {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            LsResult r = fs.ls(RT, "/this/path/does/not/exist/at/all");
+            assertFalse(r.isSuccess(), "ls on non-existent path should fail");
+        }
+
+        @Test
+        void ls_filePath_shouldReturnFail() throws IOException {
+            Path file = tmpDir.resolve("file.txt");
+            Files.writeString(file, "content");
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            LsResult r = fs.ls(RT, file.toAbsolutePath().toString());
+            assertFalse(r.isSuccess(), "ls on a file path should fail");
+        }
+
+        // ==================== Bug reproduction: edit always failed with a SyntaxError (#2571)
+        // ====================
+
+        @Test
+        void edit_singleOccurrence_replacesIt() throws IOException {
+            Path file = tmpDir.resolve("notes.txt");
+            Files.writeString(file, "alpha\nbeta\ngamma\n");
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+
+            EditResult result = fs.edit(RT, file.toString(), "beta", "BETA", false);
+
+            assertTrue(
+                    result.isSuccess(),
+                    () -> "edit should succeed on a single occurrence: " + result.error());
+            assertEquals("alpha\nBETA\ngamma\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_multipleOccurrencesWithoutReplaceAll_failsAndKeepsFileUnchanged()
+                throws IOException {
+            Path file = tmpDir.resolve("multi.txt");
+            Files.writeString(file, "x x x\n");
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+
+            EditResult result = fs.edit(RT, file.toString(), "x", "y", false);
+
+            assertFalse(result.isSuccess(), "edit must refuse ambiguous replacement");
+            assertTrue(
+                    result.error().contains("multiple times"),
+                    "error should point at replaceAll: " + result.error());
+            assertEquals("x x x\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_replaceAll_replacesEveryOccurrence() throws IOException {
+            Path file = tmpDir.resolve("all.txt");
+            Files.writeString(file, "x x x\n");
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+
+            EditResult result = fs.edit(RT, file.toString(), "x", "y", true);
+
+            assertTrue(
+                    result.isSuccess(),
+                    () -> "edit with replaceAll should succeed: " + result.error());
+            assertEquals(3, result.occurrences());
+            assertEquals("y y y\n", Files.readString(file));
+        }
     }
 
     // ================================================================
@@ -225,7 +470,7 @@ class BaseSandboxFilesystemTest {
         public ExecuteResponse execute(
                 RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
             lastCommand = command;
-            if (command.startsWith("for f in ") && command.contains("stat -c")) {
+            if (command.startsWith("if [ ! -e ") && command.contains("stat -c")) {
                 return new ExecuteResponse(
                         "DIR:/workspace/docs\t1719300000\n"
                                 + "FILE:/workspace/readme.txt\t12\t1719300000\n",
@@ -240,6 +485,42 @@ class BaseSandboxFilesystemTest {
                         false);
             }
             return new ExecuteResponse("", 0, false);
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            return List.of();
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            return List.of();
+        }
+    }
+
+    /**
+     * execute() always returns the fixed response, standing in for any execution-layer outcome
+     * (successful or failing) without a live sandbox.
+     */
+    private static final class FixedResponseFilesystem extends BaseSandboxFilesystem {
+
+        private final ExecuteResponse response;
+
+        FixedResponseFilesystem(ExecuteResponse response) {
+            this.response = response;
+        }
+
+        @Override
+        public String id() {
+            return "fixed-response";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            return response;
         }
 
         @Override

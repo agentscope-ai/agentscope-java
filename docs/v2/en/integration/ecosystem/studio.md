@@ -1,4 +1,7 @@
-# AgentScope Studio
+---
+title: Studio
+zh_link: /v2/zh/integration/ecosystem/studio
+---
 
 `agentscope-extensions-studio` integrates Agents with [AgentScope Studio](https://github.com/agentscope-ai/agentscope-studio): every Agent invocation is pushed to Studio for visual debugging, trace replay, and human-in-the-loop input.
 

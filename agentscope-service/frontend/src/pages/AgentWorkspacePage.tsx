@@ -14,80 +14,62 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+import ResolvedDefinitionFiles from '../components/ResolvedDefinitionFiles';
+import { updateAgent } from '../api/agents';
+import { Button } from '../components/ui/button';
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
 import WorkspaceEditor from '../components/WorkspaceEditor';
 import LinkedWorkspaceBanner from '../components/LinkedWorkspaceBanner';
-import { summary as fetchSummary, WorkspaceSummary } from '../api/workspace';
 import type { AgentDefinition } from '../api/agents';
 
-const pathBar: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8,
-  padding: '6px 16px', borderBottom: '1px solid #f1f5f9',
-  background: '#f8fafc', flexShrink: 0,
-  fontSize: '0.78rem', color: '#64748b',
-};
-const pathLabel: React.CSSProperties = {
-  fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em',
-};
-const pathValue: React.CSSProperties = {
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-  color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  flex: 1, minWidth: 0,
-};
-
 export default function AgentWorkspacePage() {
-  const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
+  const { agentId, agent, canEdit = false, refreshAgent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null; canEdit?: boolean; refreshAgent?: () => Promise<unknown> }>();
+ const [view, setView] = useState('published');
+ const [publishError, setPublishError] = useState('');
+ const [publishing, setPublishing] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
   const linked = agent?.workspaceId;
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchSummary(agentId)
-      .then(s => { if (!cancelled) setSummary(s); })
-      .catch(() => { if (!cancelled) setSummary(null); });
-    return () => { cancelled = true; };
-  }, [agentId]);
-
-  async function copyPath() {
-    if (!summary?.workspacePath) return;
-    try {
-      await navigator.clipboard.writeText(summary.workspacePath);
-    } catch {
-      // ignore — clipboard unavailable
-    }
-  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {linked && <LinkedWorkspaceBanner workspaceId={linked} resource="files" />}
-      {summary?.workspacePath && (
-        <div style={pathBar} title={summary.workspacePath}>
-          <span style={pathLabel}>Path</span>
-          <span style={pathValue}>{summary.workspacePath}</span>
-          <button
-            onClick={copyPath}
-            style={{
-              background: '#ffffff', border: '1px solid #e2e8f0', color: '#475569',
-              borderRadius: 6, padding: '3px 10px', cursor: 'pointer',
-              fontSize: '0.75rem', fontWeight: 500,
-            }}
-            title="Copy path"
-          >
-            Copy
-          </button>
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-3 border-b p-3 text-sm">
+        <Button size="sm" variant={view === 'published' ? 'secondary' : 'ghost'} onClick={() => setView('published')}>Published files</Button>
+        {!linked && <Button size="sm" variant={view === 'draft' ? 'secondary' : 'ghost'} onClick={() => setView('draft')}>Private definition draft</Button>}
+        {!linked && canEdit && <Button size="sm" disabled={publishing} onClick={async () => {
+          if (!agent) return; setPublishError(''); setPublishing(true);
+          try { await updateAgent(agentId, { name: agent.name, version: agent.version }); await refreshAgent?.(); setView('published'); }
+          catch (e) { setPublishError(String(e)); } finally { setPublishing(false); }
+        }}>{publishing ? 'Publishing…' : 'Publish private files'}</Button>}
+        {publishError && <p role="alert" className="text-red-600">{publishError}</p>}
+      </div>
+      {(linked || view === 'published') && agent ? <ResolvedDefinitionFiles agent={agent} /> :
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <WorkspaceFileTree
           agentId={agentId}
           selectedPath={selected}
           onSelect={p => setSelected(p || null)}
         />
-        <WorkspaceEditor agentId={agentId} path={selected} />
-      </div>
+        <WorkspaceEditor agentId={agentId} path={selected} canEdit={canEdit} />
+      </div>}
     </div>
   );
 }
