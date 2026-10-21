@@ -32,7 +32,9 @@ import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
+import java.lang.reflect.Field;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -42,6 +44,7 @@ import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 class AgentProtocolTaskStoreConcurrentSubmitTest {
@@ -57,6 +60,47 @@ class AgentProtocolTaskStoreConcurrentSubmitTest {
     @Timeout(15)
     void submittingAnotherTaskDoesNotWaitForFirstTaskRegistration() throws Exception {
         assertConcurrentSubmissions(false);
+    }
+
+    @Test
+    @Timeout(30)
+    void taskLockStorageRemainsBoundedAfterUniqueTasksComplete() throws Exception {
+        HarnessAgent agent = mock(HarnessAgent.class);
+        when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new AgentResultEvent(
+                                        Msg.builder()
+                                                .role(MsgRole.ASSISTANT)
+                                                .textContent("done")
+                                                .build())));
+        AgentProtocolTaskStore store =
+                new AgentProtocolTaskStore(
+                        AgentFactory.fixed(agent), new WorkspaceProtocolTaskRepository(tempDir));
+
+        int submittedTasks = 80;
+        for (int i = 0; i < submittedTasks; i++) {
+            String taskId = "lock-bound-task-" + i;
+            store.submit(taskId, "worker", "request");
+            assertEquals("success", store.waitFor(taskId, 5_000).get("status"));
+        }
+
+        assertTrue(
+                retainedTaskLockCount(store) <= AgentProtocolTaskStore.TASK_LOCK_STRIPE_COUNT,
+                "completed task IDs must not accumulate lock objects");
+    }
+
+    private static int retainedTaskLockCount(AgentProtocolTaskStore store) throws Exception {
+        Field field = AgentProtocolTaskStore.class.getDeclaredField("taskLocks");
+        field.setAccessible(true);
+        Object locks = field.get(store);
+        if (locks instanceof Map<?, ?> lockMap) {
+            return lockMap.size();
+        }
+        if (locks instanceof Object[] lockStripes) {
+            return lockStripes.length;
+        }
+        throw new AssertionError("unexpected task lock storage: " + locks.getClass());
     }
 
     private void assertConcurrentSubmissions(boolean sameTask) throws Exception {
