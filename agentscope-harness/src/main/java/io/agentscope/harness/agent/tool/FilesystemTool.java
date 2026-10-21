@@ -112,8 +112,11 @@ public class FilesystemTool {
             name = "read_file",
             readOnly = true,
             description =
-                    "Read file content with line numbers. Supports pagination via offset and"
-                            + " limit.")
+                    "Read a file's content. Binary files come back base64-encoded. Paginate large"
+                            + " files with offset (0-indexed start line) and limit (max lines)"
+                            + " instead of reading everything at once; before editing, read the"
+                            + " target region with enough surrounding context so your edit"
+                            + " matches the current content.")
     public ToolResultBlock readFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File path to read") String path,
@@ -139,7 +142,11 @@ public class FilesystemTool {
 
     @Tool(
             name = "write_file",
-            description = "Write content to a new file, creating parent directories if needed.")
+            description =
+                    "Create a new file with the given full content (parent directories are"
+                            + " created). Fails if the path already exists — read_file the"
+                            + " existing file and use edit_file to change it instead of"
+                            + " overwriting.")
     public ToolResultBlock writeFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Target file path") String path,
@@ -154,8 +161,13 @@ public class FilesystemTool {
     @Tool(
             name = "edit_file",
             description =
-                    "Perform exact string replacement in a file. The old_string must be unique"
-                            + " unless replace_all is true.")
+                    "Replace an exact text string in an existing file after line-ending"
+                            + " normalization; whitespace and indentation within lines must match."
+                            + " There is no fuzzy matching. If the string is not"
+                            + " found, read_file the region again and copy the exact text (with"
+                            + " surrounding context) instead of guessing variants; if it appears"
+                            + " more than once, add surrounding context to make it unique or set"
+                            + " replace_all=true.")
     public ToolResultBlock editFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File to edit") String path,
