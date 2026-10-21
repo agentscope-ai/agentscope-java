@@ -128,6 +128,42 @@ class ToolExecutorTest {
                 "Error message should be wrapped by executor");
     }
 
+    /**
+     * Regression for #3114: the single-call path ({@code toolkit.callTool}) must stamp the
+     * returned block with the call's id/name exactly like the batch path ({@code callTools}).
+     */
+    @Test
+    @DisplayName("callTool stamps id/name on the returned block like callTools")
+    void callToolStampsIdAndName() {
+        Map<String, Object> input = Map.of("a", 1, "b", 2);
+        ToolUseBlock call =
+                ToolUseBlock.builder()
+                        .id("call-single-3114")
+                        .name("add")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolResultBlock viaCallTool =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(call).input(input).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(viaCallTool, "callTool should return a result");
+        assertEquals(
+                "call-single-3114",
+                viaCallTool.getId(),
+                "single-call path must stamp the call id (#3114)");
+        assertEquals(
+                "add", viaCallTool.getName(), "single-call path must stamp the tool name (#3114)");
+
+        ToolResultBlock viaCallTools =
+                toolkit.callTools(List.of(call), null, null, null).block(TIMEOUT).get(0);
+        assertEquals(
+                viaCallTool.getId(),
+                viaCallTools.getId(),
+                "both entry points must stamp identically");
+    }
+
     @Test
     @DisplayName("Should convert empty tool publishers to error responses")
     void shouldReturnErrorWhenToolCompletesEmpty() {

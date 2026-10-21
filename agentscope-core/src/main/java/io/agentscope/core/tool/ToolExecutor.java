@@ -342,7 +342,9 @@ class ToolExecutor {
 
         SessionRecorder recorder = SessionRecorder.from(runtimeContext);
 
-        // Zero interceptors: existing execution path, zero behavior change.
+        // Zero interceptors: existing execution path, zero behavior change. The shared
+        // error-mapping stage backfills id/name so the single-call path is stamped exactly
+        // like the batch path (#3114).
         if (interceptors.isEmpty()) {
             return applyResultErrorMapping(
                     dispatchRecord(recorder, executionParam, toolCall, mergedInput)
@@ -380,15 +382,7 @@ class ToolExecutor {
                                                         agentId,
                                                         agentName),
                                                 terminal)),
-                        toolCall)
-                // Interceptor-produced results (e.g. denials) carry no id/name — backfill them;
-                // tool results already carry theirs. Error/empty-synthesized results also gain
-                // id/name here (direct path only; normalized on the batch path).
-                .map(
-                        result ->
-                                result.getId() == null
-                                        ? result.withIdAndName(toolCall.getId(), toolCall.getName())
-                                        : result);
+                        toolCall);
     }
 
     /**
@@ -496,7 +490,15 @@ class ToolExecutor {
                         Mono.just(
                                 ToolResultBlock.error(
                                         "Tool execution failed: Tool completed without returning a"
-                                                + " result")));
+                                                + " result")))
+                // Backfill id/name on results that carry none (interceptor denials,
+                // error/empty-synthesized results, and tools that never set them) so the
+                // single-call path is stamped exactly like the batch path (#3114).
+                .map(
+                        result ->
+                                result.getId() == null
+                                        ? result.withIdAndName(toolCall.getId(), toolCall.getName())
+                                        : result);
     }
 
     /**
