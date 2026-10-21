@@ -380,7 +380,7 @@ skills/code-reviewer/
 3. `workspace/skills/` —— 工作区共用
 4. `<userId>/skills/` —— 用户隔离（覆盖以上所有）
 
-下层独有的 skill 都保留，重名时上层覆盖。每次 call 前 `HarnessSkillMiddleware` 重新合成 → 在 system prompt 里渲染成 `<available_skills>` 块（只列 name + description），agent 看到觉得相关才会 `load_skill_through_path` 拉详情。完整工作机制见 [技能](/v2/zh/docs/harness/skill)。
+下层独有的 skill 都保留，重名时上层覆盖。每次 call 前 `HarnessSkillMiddleware` 重新合成 → 渲染成 `<available_skills>` 块（只列 name + description），作为按 call 的 runtime material 放在对话之后，agent 看到觉得相关才会 `load_skill_through_path` 拉详情。完整工作机制见 [技能](/v2/zh/docs/harness/skill)。
 
 ### `subagents/`
 

@@ -37,6 +37,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.MetadataUtil;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
@@ -51,10 +52,15 @@ import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -64,6 +70,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import org.a2aproject.sdk.A2A;
 import org.a2aproject.sdk.client.Client;
 import org.a2aproject.sdk.client.ClientEvent;
@@ -89,8 +96,10 @@ import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -353,6 +362,124 @@ public class A2aAgentTest {
         call.dispose();
 
         verify(a2aClient, timeout(5000)).close();
+    }
+
+    @Test
+    @DisplayName("Should run the onAgent middlewares around the call, outermost first")
+    void testOnAgentMiddlewares() {
+        List<String> entered = new ArrayList<>();
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .middleware(onAgent("inner", 1, entered, null))
+                        .middleware(onAgent("outer", 2, entered, "changed"))
+                        .build();
+        doAnswer(mockSuccessMessage())
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Msg result = agent.call(Msg.builder().textContent("test").build()).block();
+
+        assertEquals(List.of("outer", "inner"), entered);
+        assertNotNull(result);
+        assertEquals("changed", result.getTextContent());
+    }
+
+    @Test
+    @DisplayName("Should run the onReasoning middlewares around the exchange with the remote agent")
+    void testOnReasoningMiddlewares() {
+        List<String> deltas = new ArrayList<>();
+        MiddlewareBase rewriteInput =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onReasoning(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ReasoningInput input,
+                            Function<ReasoningInput, Flux<AgentEvent>> next) {
+                        assertEquals("test", input.messages().get(0).getTextContent());
+                        return next.apply(
+                                        new ReasoningInput(
+                                                List.of(
+                                                        Msg.builder()
+                                                                .textContent("rewritten")
+                                                                .build()),
+                                                input.tools(),
+                                                input.options()))
+                                .doOnNext(
+                                        event -> {
+                                            if (event instanceof TextBlockDeltaEvent delta) {
+                                                deltas.add(delta.getDelta());
+                                            }
+                                        });
+                    }
+                };
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .middleware(rewriteInput)
+                        .build();
+        doAnswer(mockStreamedTask(new TextPart("Hello, "), new TextPart("world")))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        List<AgentEvent> events =
+                agent.streamEvents(Msg.builder().textContent("test").build()).collectList().block();
+
+        ArgumentCaptor<Message> sent = ArgumentCaptor.forClass(Message.class);
+        verify(a2aClient).sendMessage(sent.capture(), anyList(), any());
+        assertEquals("rewritten", ((TextPart) sent.getValue().parts().get(0)).text());
+        assertEquals(List.of("Hello, ", "world"), deltas);
+        assertNotNull(events);
+        assertEquals(
+                List.of("Hello, ", "world"),
+                events.stream()
+                        .filter(TextBlockDeltaEvent.class::isInstance)
+                        .map(event -> ((TextBlockDeltaEvent) event).getDelta())
+                        .toList());
+    }
+
+    @Test
+    @DisplayName("Should skip a middleware at the points it is not active at")
+    void testInactiveMiddleware() {
+        List<String> entered = new ArrayList<>();
+        MiddlewareBase actingOnly =
+                new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_ACTING);
+                    }
+
+                    @Override
+                    public Flux<AgentEvent> onAgent(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            AgentInput input,
+                            Function<AgentInput, Flux<AgentEvent>> next) {
+                        entered.add("onAgent");
+                        return next.apply(input);
+                    }
+                };
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .middleware(actingOnly)
+                        .build();
+        doAnswer(mockSuccessMessage())
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Msg result = agent.call(Msg.builder().textContent("test").build()).block();
+
+        assertNotNull(result);
+        assertEquals("mock success.", result.getTextContent());
+        assertTrue(entered.isEmpty());
     }
 
     @Test
@@ -737,6 +864,36 @@ public class A2aAgentTest {
             MessageEvent messageEvent = new MessageEvent(mockResponseMessage);
             a2aEventConsumer.forEach(consumer -> consumer.accept(messageEvent, agentCard));
             return null;
+        };
+    }
+
+    /**
+     * An onAgent middleware that records its name when it is entered, and replaces the result
+     * with {@code result} unless it is {@code null}.
+     */
+    private static MiddlewareBase onAgent(
+            String name, int order, List<String> entered, String result) {
+        return new MiddlewareBase() {
+            @Override
+            public int order() {
+                return order;
+            }
+
+            @Override
+            public Flux<AgentEvent> onAgent(
+                    Agent agent,
+                    RuntimeContext ctx,
+                    AgentInput input,
+                    Function<AgentInput, Flux<AgentEvent>> next) {
+                entered.add(name);
+                return next.apply(input)
+                        .map(
+                                event ->
+                                        null != result && event instanceof AgentResultEvent
+                                                ? new AgentResultEvent(
+                                                        Msg.builder().textContent(result).build())
+                                                : event);
+            }
         };
     }
 

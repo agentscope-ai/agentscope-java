@@ -2532,9 +2532,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         String userId = rc != null ? rc.getUserId() : null;
                         String hintContent =
                                 String.format(
-                                        "<system-notification>Background subagent task '%s'"
+                                        "<system-reminder>Background subagent task '%s'"
                                                 + " (agent=%s) has completed.\n\nResult:\n\n%s"
-                                                + "</system-notification>",
+                                                + "</system-reminder>",
                                         taskId,
                                         subAgentId,
                                         result != null ? result : "(no output)");
